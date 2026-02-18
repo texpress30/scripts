@@ -2,18 +2,17 @@
 
 Acest document îți spune exact ce facem după brief, astfel încât să trecem din zona de planificare în execuție.
 
-## 1) Decizii de kickoff (azi)
-Confirmă explicit următoarele 9 puncte:
+## 1) Decizii de kickoff (confirmate)
+Deciziile de start sunt blocate astfel:
 
-1. Backend final: **FastAPI** (da/nu).
-2. Cloud: **GCP** sau **AWS**.
-3. Structură repo: **monorepo** sau **multi-repo**.
-4. Branding minim v1: logo + paletă + font (sau „default propus”).
-5. Medii: local / staging / production + responsabil secrete.
-6. Accesuri test: Google Ads, Meta, OpenAI, BigQuery.
-7. Politică AI PR: cine aprobă PR-uri generate de AI.
-8. Billing v1: fără billing sau Stripe minim.
-9. Deadline-uri: alpha, beta intern, pilot client.
+1. Backend: **FastAPI**.
+2. Cloud: **GCP**.
+3. Structură repo: **monorepo**.
+4. Branding v1: **default propus**.
+5. Billing v1: **fără billing**.
+6. Deadline-uri: **Alpha 4 săpt / Beta 6 săpt / Pilot 8 săpt** (pentru 1–2 dev full-time).
+
+Detalii complete: `DECISIONS_LOCKED_RO.md`.
 
 ---
 
@@ -117,17 +116,11 @@ Flux standard:
 
 ---
 
-## 10) Ce aștept de la tine chiar acum (copy/paste)
-Trimite-mi răspuns în formatul:
+## 10) Ce rămâne de confirmat chiar acum
+Pentru a porni implementarea în Faza 0 mai avem nevoie doar de:
 
-- Backend: `FastAPI` / altceva
-- Cloud: `GCP` / `AWS`
-- Repo: `monorepo` / `multi-repo`
-- Branding: `ai logo/paletă` sau `folosește default`
-- Billing v1: `fără billing` / `Stripe`
-- Deadline alpha: `data`
-- Deadline beta intern: `data`
-- Deadline pilot: `data`
-- Owner aprobare PR AI: `nume/rol`
+- owner aprobare PR AI (`nume/rol`),
+- responsabili secrete pe medii (local/staging/prod),
+- accesurile tehnice de test: Google Ads / Meta / OpenAI / BigQuery.
 
-După acest răspuns, începem direct cu Faza 0 și livrăm scheletul tehnic.
+După aceste 3 confirmări, începem direct setup-ul tehnic de 48h.

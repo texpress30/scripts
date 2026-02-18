@@ -67,41 +67,30 @@ Guardrails:
 - rollback automat,
 - feature flags.
 
-## 8) Ce mai trebuie de la stakeholder pentru start efectiv de cod
-Deși specificația este foarte solidă, pentru a începe implementarea fără blocaje mai sunt necesare:
+## 8) Decizii de start confirmate + blocaje rămase
+Decizii confirmate:
 
-1. Decizia finală unică pentru backend: **FastAPI** confirmat oficial.
-2. Confirmare infrastructură: **GCP vs AWS** (implicit recomandat GCP).
-3. Repo target + convenții:
-   - mono-repo sau multi-repo,
-   - naming standard,
-   - branch strategy.
-4. Identitate vizuală minimă:
-   - logo,
-   - paletă,
-   - font,
-   - dark mode: da/nu în v1.
-5. Environment matrix:
-   - local,
-   - staging,
-   - production,
-   - cine administrează secretele.
-6. Acces integrare test:
+1. Backend: **FastAPI**.
+2. Cloud: **GCP**.
+3. Structură repo: **monorepo**.
+4. Branding v1: **default propus** (nu blochează execuția).
+5. Billing v1: **fără billing**.
+6. Milestone-uri: **Alpha 4 săpt / Beta intern 6 săpt / Pilot 8 săpt** (la 1–2 dev full-time).
+
+Mai sunt necesare pentru start fără blocaje:
+
+7. Environment matrix + ownership secrete (local/staging/prod).
+8. Acces integrare test:
    - Google Ads test token + conturi,
    - Meta app dev + test users,
    - OpenAI key cu limită,
    - BigQuery project/sandbox.
-7. Politici operaționale:
+9. Politici operaționale finale:
+   - owner aprobare PR AI,
    - SLA alertare,
-   - severitate incidente,
-   - proces aprobare PR AI.
-8. Billing model v1:
-   - fără billing,
-   - sau Stripe minim.
-9. Deadline de milestone-uri:
-   - MVP technical alpha,
-   - beta intern,
-   - pilot client.
+   - severitate incidente.
+
+Referință: `DECISIONS_LOCKED_RO.md`.
 
 ## 9) Plan de execuție propus
 - Faza 0: setup repo + CI/CD + schelet modular + observabilitate.
@@ -113,4 +102,4 @@ Deși specificația este foarte solidă, pentru a începe implementarea fără b
 - Faza 6: export BigQuery/Looker + hardening + UAT.
 
 ## 10) Definiție de "ready to build"
-Când punctele din secțiunea 8 sunt confirmate, se poate începe implementarea de la zero, cu testare continuă, optimizări iterative și pipeline AI self-improvement controlat.
+Se poate începe implementarea imediat după confirmarea celor 3 blocaje rămase din secțiunea 8 (owner PR AI, ownership secrete, accesuri tehnice de test), cu testare continuă, optimizări iterative și pipeline AI self-improvement controlat.
