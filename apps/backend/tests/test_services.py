@@ -2,6 +2,8 @@ import os
 import unittest
 
 from app.services.auth import AuthError, create_access_token, decode_access_token
+from app.services.ai_assistant import ai_assistant_service
+from app.services.insights import insights_service
 from app.services.dashboard import unified_dashboard_service
 from app.services.google_ads import GoogleAdsIntegrationError, google_ads_service
 from app.services.meta_ads import MetaAdsIntegrationError, meta_ads_service
@@ -25,6 +27,7 @@ class ServiceTests(unittest.TestCase):
         rules_engine_service._rules.clear()
         rules_engine_service._next_id = 1
         notification_service._events.clear()
+        insights_service._items.clear()
         os.environ.clear()
         os.environ.update(self.original_env)
 
@@ -134,6 +137,25 @@ class ServiceTests(unittest.TestCase):
         actions = rules_engine_service.evaluate_client_rules(client_id=4)
         self.assertGreaterEqual(len(actions), 1)
         self.assertEqual(actions[0]["rule_type"], "auto_scale")
+
+    # Sprint 5 coverage (AI assistant + insights + guardrails)
+    def test_ai_recommendation_fallback_when_insufficient_data(self):
+        rec = ai_assistant_service.generate_recommendation(client_id=999)
+        self.assertEqual(rec["recommendation"], "Nu am destule date")
+
+    def test_weekly_insight_generation_and_storage(self):
+        os.environ["GOOGLE_ADS_TOKEN"] = "google-real-token"
+        os.environ["META_ACCESS_TOKEN"] = "meta-real-token"
+        google_ads_service.sync_client(client_id=6)
+        meta_ads_service.sync_client(client_id=6)
+
+        insight = insights_service.generate_weekly_insight(client_id=6)
+        self.assertEqual(insight["client_id"], 6)
+        self.assertIn("Spend", insight["summary"])
+
+        latest = insights_service.get_latest(client_id=6)
+        self.assertIsNotNone(latest)
+        self.assertEqual(latest["client_id"], 6)
 
 
 if __name__ == "__main__":

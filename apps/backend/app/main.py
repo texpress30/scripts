@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 
 from app.api.audit import router as audit_router
+from app.api.insights import router as insights_router
+from app.api.ai import router as ai_router
 from app.api.auth import router as auth_router
 from app.api.clients import router as clients_router
 from app.api.dashboard import router as dashboard_router
@@ -12,8 +14,8 @@ from app.core.config import load_settings
 
 app = FastAPI(
     title="MCC AI Platform API",
-    version="0.5.0",
-    description="Backend skeleton with Sprint 1 (auth/RBAC/audit) and Sprint 2 (Google Ads sync/dashboard) and Sprint 3 (Meta Ads + unified dashboard) and Sprint 4 (rules engine automation).",
+    version="0.6.0",
+    description="Backend skeleton with Sprint 1 (auth/RBAC/audit) and Sprint 2 (Google Ads sync/dashboard) and Sprint 3 (Meta Ads + unified dashboard) and Sprint 4 (rules engine automation) and Sprint 5 (AI assistant + weekly insights).",
 )
 
 # Core
@@ -31,6 +33,10 @@ app.include_router(dashboard_router)
 
 # Sprint 4
 app.include_router(rules_router)
+
+# Sprint 5
+app.include_router(ai_router)
+app.include_router(insights_router)
 
 
 @app.get("/", tags=["root"])
