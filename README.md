@@ -57,5 +57,5 @@ Aplicația citește valorile din variabile de mediu prin `os.environ` și nu har
 
 ### Sprint 4
 - `GET /rules/{client_id}`
-- `POST /rules/{client_id}`
 - `POST /rules/{client_id}/evaluate`
+
