@@ -7,5 +7,26 @@
 }
 
 body {
-  @apply bg-slate-50 text-slate-900;
+  @apply bg-slate-100 text-slate-800;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+.wm-card {
+  @apply rounded-xl border border-slate-200 bg-white shadow-sm;
+}
+
+.wm-input {
+  @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition;
+}
+
+.wm-input:focus {
+  @apply border-purple-500 ring-2 ring-purple-200;
+}
+
+.wm-btn-primary {
+  @apply rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-purple-700 disabled:opacity-60;
+}
+
+.wm-btn-secondary {
+  @apply rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100;
 }

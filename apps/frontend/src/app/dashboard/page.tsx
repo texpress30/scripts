@@ -1,9 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
+import { AppShell } from "@/components/AppShell";
+import { NewDashboardOverview } from "@/components/NewDashboardOverview";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
 
@@ -60,61 +61,63 @@ export default function DashboardPage() {
 
   return (
     <ProtectedPage>
-      <main className="mx-auto min-h-screen max-w-6xl p-6">
-        <header className="mb-6 flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">Dashboard Principal</h1>
-          <nav className="flex gap-3 text-sm">
-            <Link className="text-brand-600" href="/clients">
-              Clienți
-            </Link>
-            <Link className="text-slate-600" href="/login">
-              Logout
-            </Link>
-          </nav>
-        </header>
+      <AppShell title="Dashboard Principal">
+        <main>
+          <p className="mb-4 text-sm text-slate-600">Dashboard nou instalat pentru monitorizare rapidă Google + Meta.</p>
 
-        <div className="mb-4 flex items-center gap-3">
-          <label className="text-sm text-slate-600">Client ID</label>
-          <input
-            type="number"
-            min={1}
-            value={clientId}
-            onChange={(e) => setClientId(Number(e.target.value || 1))}
-            className="w-24 rounded border border-slate-300 px-3 py-2"
-          />
-        </div>
-
-        {error ? <p className="mb-4 text-red-600">{error}</p> : null}
-
-        <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
-          <Card title="Spend" value={data ? `$${data.totals.spend}` : "-"} />
-          <Card title="Conversions" value={data ? String(data.totals.conversions) : "-"} />
-          <Card title="ROAS" value={data ? String(data.totals.roas) : "-"} />
-        </section>
-
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="mb-3 font-medium">Google vs Meta (Spend & Conversions)</h2>
-          <div className="h-80 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="spend" fill="#2563eb" />
-                <Bar dataKey="conversions" fill="#16a34a" />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="mb-4 flex items-center gap-3">
+            <label className="text-sm text-slate-600">Client ID</label>
+            <input
+              type="number"
+              min={1}
+              value={clientId}
+              onChange={(e) => setClientId(Number(e.target.value || 1))}
+              className="wm-input w-24"
+            />
           </div>
-        </section>
-      </main>
+
+          {error ? <p className="mb-4 text-red-600">{error}</p> : null}
+
+          {data ? (
+            <div className="mb-6">
+              <NewDashboardOverview
+                totals={data.totals}
+                google={data.platforms.google_ads}
+                meta={data.platforms.meta_ads}
+              />
+            </div>
+          ) : (
+            <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+              <Card title="Spend" value="-" />
+              <Card title="Conversions" value="-" />
+              <Card title="ROAS" value="-" />
+            </section>
+          )}
+
+          <section className="wm-card p-4">
+            <h2 className="mb-3 font-medium">Google vs Meta (Spend & Conversions)</h2>
+            <div className="h-80 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="spend" fill="#7c3aed" />
+                  <Bar dataKey="conversions" fill="#0ea5e9" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+        </main>
+      </AppShell>
     </ProtectedPage>
   );
 }
 
 function Card({ title, value }: { title: string; value: string }) {
   return (
-    <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <article className="wm-card p-4">
       <p className="text-sm text-slate-500">{title}</p>
       <p className="mt-1 text-xl font-semibold">{value}</p>
     </article>

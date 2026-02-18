@@ -41,17 +41,12 @@ export default function LoginPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md items-center p-6">
-      <form onSubmit={onSubmit} className="w-full rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h1 className="mb-6 text-2xl font-semibold">Login</h1>
+      <form onSubmit={onSubmit} className="wm-card w-full p-6">
+        <h1 className="mb-6 text-2xl font-semibold text-slate-900">Login</h1>
 
         <label className="mb-3 block">
           <span className="mb-1 block text-sm text-slate-600">Email</span>
-          <input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded border border-slate-300 px-3 py-2"
-            required
-          />
+          <input value={email} onChange={(e) => setEmail(e.target.value)} className="wm-input" required />
         </label>
 
         <label className="mb-3 block">
@@ -60,14 +55,14 @@ export default function LoginPage() {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded border border-slate-300 px-3 py-2"
+            className="wm-input"
             required
           />
         </label>
 
         <label className="mb-4 block">
           <span className="mb-1 block text-sm text-slate-600">Rol</span>
-          <select value={role} onChange={(e) => setRole(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2">
+          <select value={role} onChange={(e) => setRole(e.target.value)} className="wm-input">
             <option value="agency_admin">Agency Admin</option>
             <option value="account_manager">Account Manager</option>
             <option value="client_viewer">Client Viewer</option>
@@ -76,7 +71,7 @@ export default function LoginPage() {
 
         {error ? <p className="mb-3 text-sm text-red-600">{error}</p> : null}
 
-        <button disabled={loading} className="w-full rounded bg-brand-500 px-4 py-2 font-medium text-white hover:bg-brand-600 disabled:opacity-50">
+        <button disabled={loading} className="wm-btn-primary w-full disabled:opacity-50">
           {loading ? "Se autentifică..." : "Intră în platformă"}
         </button>
       </form>
