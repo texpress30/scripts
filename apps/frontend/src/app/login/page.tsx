@@ -1,0 +1,86 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { FormEvent, useState } from "react";
+
+import { apiRequest } from "@/lib/api";
+
+type LoginResponse = {
+  access_token: string;
+  token_type: string;
+};
+
+export default function LoginPage() {
+  const router = useRouter();
+  const [email, setEmail] = useState("admin@example.com");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState("agency_admin");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    try {
+      const data = await apiRequest<LoginResponse>("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email, role })
+      });
+
+      localStorage.setItem("mcc_token", data.access_token);
+      localStorage.setItem("mcc_user", email);
+      void password; // placeholder until backend password auth is enabled
+      router.push("/dashboard");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <main className="mx-auto flex min-h-screen max-w-md items-center p-6">
+      <form onSubmit={onSubmit} className="w-full rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h1 className="mb-6 text-2xl font-semibold">Login</h1>
+
+        <label className="mb-3 block">
+          <span className="mb-1 block text-sm text-slate-600">Email</span>
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full rounded border border-slate-300 px-3 py-2"
+            required
+          />
+        </label>
+
+        <label className="mb-3 block">
+          <span className="mb-1 block text-sm text-slate-600">Parolă</span>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full rounded border border-slate-300 px-3 py-2"
+            required
+          />
+        </label>
+
+        <label className="mb-4 block">
+          <span className="mb-1 block text-sm text-slate-600">Rol</span>
+          <select value={role} onChange={(e) => setRole(e.target.value)} className="w-full rounded border border-slate-300 px-3 py-2">
+            <option value="agency_admin">Agency Admin</option>
+            <option value="account_manager">Account Manager</option>
+            <option value="client_viewer">Client Viewer</option>
+          </select>
+        </label>
+
+        {error ? <p className="mb-3 text-sm text-red-600">{error}</p> : null}
+
+        <button disabled={loading} className="w-full rounded bg-brand-500 px-4 py-2 font-medium text-white hover:bg-brand-600 disabled:opacity-50">
+          {loading ? "Se autentifică..." : "Intră în platformă"}
+        </button>
+      </form>
+    </main>
+  );
+}
