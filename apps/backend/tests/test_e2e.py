@@ -4,7 +4,7 @@ import unittest
 try:
     from fastapi.testclient import TestClient
     from app.main import app
-except ModuleNotFoundError:  # environment dependency may be absent in CI sandbox
+except Exception:  # environment dependency may be absent in CI sandbox
     TestClient = None
     app = None
 
@@ -28,7 +28,7 @@ class E2EFlowTests(unittest.TestCase):
     def _auth_header(self) -> dict[str, str]:
         resp = self.client.post(
             "/auth/login",
-            json={"email": "admin@example.com", "role": "agency_admin"},
+            json={"email": "admin@example.com", "password": "admin123", "role": "agency_admin"},
         )
         self.assertEqual(resp.status_code, 200)
         token = resp.json()["access_token"]

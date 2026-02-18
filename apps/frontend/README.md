@@ -37,3 +37,8 @@ Aplicația pornește pe `http://localhost:3000`.
 
 ## Docker (via root docker-compose)
 Frontend rulează ca serviciu `frontend` și expune `localhost:3000`.
+
+
+## Important pentru Docker
+În `docker-compose.yml`, `NEXT_PUBLIC_API_BASE_URL` trebuie să fie `http://localhost:8000` pentru request-uri din browser (nu `http://backend:8000`).
+Dacă modifici această valoare, rulează rebuild: `docker compose up --build`.
