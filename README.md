@@ -9,6 +9,7 @@ Monorepo de pornire pentru platforma MCC multi-platform cu AI.
 - `NEXT_STEPS_RO.md` — roadmap pe sprinturi
 - `DECISIONS_LOCKED_RO.md` — decizii kickoff confirmate
 - `PHASE0_SETUP_RO.md` — statusul setup-ului tehnic inițial implementat
+- `SPRINT1_PROGRESS_RO.md` — progresul Sprint 1 (auth, RBAC, audit trail)
 
 ## Setup rapid (backend)
 1. Copiază variabilele de mediu:
@@ -22,6 +23,7 @@ Monorepo de pornire pentru platforma MCC multi-platform cu AI.
    - `uvicorn app.main:app --reload`
 
 ## Variabile de mediu (obligatorii)
+- `APP_AUTH_SECRET`
 - `OPENAI_API_KEY`
 - `GOOGLE_ADS_TOKEN`
 - `META_ACCESS_TOKEN`
