@@ -5,6 +5,7 @@ from app.api.dependencies import get_current_user
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
 from app.services.notifications import notification_service
+from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
 from app.services.rbac import AuthorizationError, require_permission
 from app.services.rules_engine import rules_engine_service
 
@@ -23,8 +24,11 @@ class CreateRuleRequest(BaseModel):
 def list_rules(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
         require_permission(user.role, "clients:read")
+        rate_limiter_service.check(f"rules_list:{user.email}", limit=60, window_seconds=60)
     except AuthorizationError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except RateLimitExceeded as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
     items = rules_engine_service.list_rules(client_id)
     return {"client_id": client_id, "items": items}
@@ -34,8 +38,11 @@ def list_rules(client_id: int, user: AuthUser = Depends(get_current_user)) -> di
 def create_rule(client_id: int, payload: CreateRuleRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
         require_permission(user.role, "clients:create")
+        rate_limiter_service.check(f"rules_write:{user.email}", limit=30, window_seconds=60)
     except AuthorizationError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except RateLimitExceeded as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
     if payload.rule_type not in {"stop_loss", "auto_scale"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported rule_type")
@@ -65,8 +72,11 @@ def create_rule(client_id: int, payload: CreateRuleRequest, user: AuthUser = Dep
 def evaluate_rules(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
         require_permission(user.role, "clients:create")
+        rate_limiter_service.check(f"rules_eval:{user.email}", limit=30, window_seconds=60)
     except AuthorizationError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except RateLimitExceeded as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
     actions = rules_engine_service.evaluate_client_rules(client_id)
     notifications = []

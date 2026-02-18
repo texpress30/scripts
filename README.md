@@ -14,6 +14,8 @@ Monorepo de pornire pentru platforma MCC multi-platform cu AI.
 - `SPRINT3_PROGRESS_RO.md` — progres Sprint 3 (Meta Ads + dashboard unificat)
 - `SPRINT4_PROGRESS_RO.md` — progres Sprint 4 (rules engine + notificări)
 - `SPRINT5_PROGRESS_RO.md` — progres Sprint 5 (AI assistant + insights)
+- `SPRINT6_PROGRESS_RO.md` — progres Sprint 6 (BigQuery export + hardening + E2E)
+- `READY_FOR_PILOT_RO.md` — raport final de lansare pilot
 
 ## Setup rapid (backend)
 1. Copiază variabilele de mediu:
@@ -66,3 +68,8 @@ Aplicația citește valorile din variabile de mediu prin `os.environ` și nu har
 - `GET /ai/recommendations/{client_id}`
 - `POST /insights/weekly/{client_id}/generate`
 - `GET /insights/weekly/{client_id}`
+
+
+### Sprint 6
+- `POST /exports/bigquery/{client_id}`
+- `GET /exports/bigquery/runs`

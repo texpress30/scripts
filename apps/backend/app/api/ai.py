@@ -4,6 +4,7 @@ from app.api.dependencies import get_current_user
 from app.services.ai_assistant import ai_assistant_service
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
+from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
 from app.services.rbac import AuthorizationError, require_permission
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -13,8 +14,11 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 def campaign_recommendation(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
         require_permission(user.role, "clients:read")
+        rate_limiter_service.check(f"ai:{user.email}", limit=15, window_seconds=60)
     except AuthorizationError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except RateLimitExceeded as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
     result = ai_assistant_service.generate_recommendation(client_id)
     audit_log_service.log(

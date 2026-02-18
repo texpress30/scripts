@@ -4,6 +4,7 @@ from app.api.dependencies import get_current_user
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
 from app.services.google_ads import GoogleAdsIntegrationError, google_ads_service
+from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
 from app.services.rbac import AuthorizationError, require_permission
 
 router = APIRouter(prefix="/integrations/google-ads", tags=["google-ads"])
@@ -13,8 +14,11 @@ router = APIRouter(prefix="/integrations/google-ads", tags=["google-ads"])
 def google_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, str]:
     try:
         require_permission(user.role, "clients:read")
+        rate_limiter_service.check(f"google_status:{user.email}", limit=60, window_seconds=60)
     except AuthorizationError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except RateLimitExceeded as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
     status_payload = google_ads_service.integration_status()
     audit_log_service.log(
@@ -28,16 +32,21 @@ def google_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, s
 
 
 @router.post("/{client_id}/sync")
-def sync_google_ads(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, float | int]:
+def sync_google_ads(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, float | int | str]:
     try:
         require_permission(user.role, "clients:create")
+        rate_limiter_service.check(f"google_sync:{user.email}", limit=30, window_seconds=60)
     except AuthorizationError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except RateLimitExceeded as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
     try:
         snapshot = google_ads_service.sync_client(client_id=client_id)
     except GoogleAdsIntegrationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Google Ads API unavailable") from exc
 
     audit_log_service.log(
         actor_email=user.email,
