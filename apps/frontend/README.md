@@ -19,3 +19,7 @@ npm run dev
 ```
 
 Aplicația pornește pe `http://localhost:3000`.
+
+
+## Docker (via root docker-compose)
+Frontend rulează ca serviciu `frontend` și expune `localhost:3000`.
