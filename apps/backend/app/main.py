@@ -6,12 +6,20 @@ from app.api.clients import router as clients_router
 from app.api.dashboard import router as dashboard_router
 from app.api.google_ads import router as google_ads_router
 from app.api.health import router as health_router
+<<<<<<< codex/clarify-requirements-for-ai-app-development-pehcq8
+from app.api.meta_ads import router as meta_ads_router
+=======
+>>>>>>> main
 from app.core.config import load_settings
 
 app = FastAPI(
     title="MCC AI Platform API",
     version="0.3.0",
+<<<<<<< codex/clarify-requirements-for-ai-app-development-pehcq8
+    description="Backend skeleton with Sprint 1 (auth/RBAC/audit) and Sprint 2 (Google Ads sync/dashboard) and Sprint 3 (Meta Ads + unified dashboard).",
+=======
     description="Backend skeleton with Sprint 1 (auth/RBAC/audit) and Sprint 2 (Google Ads sync/dashboard).",
+>>>>>>> main
 )
 
 # Core
@@ -24,6 +32,10 @@ app.include_router(audit_router)
 
 # Sprint 2
 app.include_router(google_ads_router)
+<<<<<<< codex/clarify-requirements-for-ai-app-development-pehcq8
+app.include_router(meta_ads_router)
+=======
+>>>>>>> main
 app.include_router(dashboard_router)
 
 

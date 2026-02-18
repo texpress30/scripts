@@ -6,12 +6,12 @@ from threading import Lock
 from app.core.config import load_settings
 
 
-class GoogleAdsIntegrationError(RuntimeError):
+class MetaAdsIntegrationError(RuntimeError):
     pass
 
 
 @dataclass
-class GoogleAdsSnapshot:
+class MetaAdsSnapshot:
     client_id: int
     spend: float
     impressions: int
@@ -20,39 +20,39 @@ class GoogleAdsSnapshot:
     revenue: float
 
 
-class GoogleAdsService:
+class MetaAdsService:
     def __init__(self) -> None:
-        self._snapshots: dict[int, GoogleAdsSnapshot] = {}
+        self._snapshots: dict[int, MetaAdsSnapshot] = {}
         self._lock = Lock()
 
     def integration_status(self) -> dict[str, str]:
         settings = load_settings()
-        token = settings.google_ads_token.strip()
+        token = settings.meta_access_token.strip()
         if not token or token.startswith("your_"):
             return {
-                "provider": "google_ads",
+                "provider": "meta_ads",
                 "status": "pending",
-                "message": "Google Ads token is configured as placeholder.",
+                "message": "Meta Ads token is configured as placeholder.",
             }
         return {
-            "provider": "google_ads",
+            "provider": "meta_ads",
             "status": "connected",
-            "message": "Google Ads token is available.",
+            "message": "Meta Ads token is available.",
         }
 
     def sync_client(self, client_id: int) -> dict[str, float | int | str]:
         settings = load_settings()
-        token = settings.google_ads_token.strip()
+        token = settings.meta_access_token.strip()
         if not token or token.startswith("your_"):
-            raise GoogleAdsIntegrationError("Google Ads token is missing or placeholder.")
+            raise MetaAdsIntegrationError("Meta Ads token is missing or placeholder.")
 
-        spend = float(100 + client_id * 17)
-        impressions = 5000 + client_id * 110
-        clicks = 200 + client_id * 9
-        conversions = 5 + client_id
-        revenue = round(spend * 3.2, 2)
+        spend = float(85 + client_id * 13)
+        impressions = 4200 + client_id * 95
+        clicks = 170 + client_id * 7
+        conversions = 4 + client_id
+        revenue = round(spend * 2.7, 2)
 
-        snapshot = GoogleAdsSnapshot(
+        snapshot = MetaAdsSnapshot(
             client_id=client_id,
             spend=round(spend, 2),
             impressions=impressions,
@@ -66,7 +66,7 @@ class GoogleAdsService:
 
         return {
             "client_id": snapshot.client_id,
-            "platform": "google_ads",
+            "platform": "meta_ads",
             "spend": snapshot.spend,
             "impressions": snapshot.impressions,
             "clicks": snapshot.clicks,
@@ -81,7 +81,7 @@ class GoogleAdsService:
         if snapshot is None:
             return {
                 "client_id": client_id,
-                "platform": "google_ads",
+                "platform": "meta_ads",
                 "spend": 0.0,
                 "impressions": 0,
                 "clicks": 0,
@@ -92,7 +92,7 @@ class GoogleAdsService:
 
         return {
             "client_id": snapshot.client_id,
-            "platform": "google_ads",
+            "platform": "meta_ads",
             "spend": snapshot.spend,
             "impressions": snapshot.impressions,
             "clicks": snapshot.clicks,
@@ -102,4 +102,4 @@ class GoogleAdsService:
         }
 
 
-google_ads_service = GoogleAdsService()
+meta_ads_service = MetaAdsService()
