@@ -15,6 +15,7 @@ Monorepo de pornire pentru platforma MCC multi-platform cu AI.
 - `SPRINT4_PROGRESS_RO.md` — progres Sprint 4 (rules engine + notificări)
 - `SPRINT5_PROGRESS_RO.md` — progres Sprint 5 (AI assistant + insights)
 - `SPRINT6_PROGRESS_RO.md` — progres Sprint 6 (BigQuery export + hardening + E2E)
+- `SPRINT6_1_CLOSEOUT_RO.md` — mini sprint 6.1 (acceptance gates + close-out Scope v1)
 - `READY_FOR_PILOT_RO.md` — raport final de lansare pilot
 - `SPRINT_FRONTEND1_PROGRESS_RO.md` — progres Faza 1 Frontend (login/dashboard/clienți)
 

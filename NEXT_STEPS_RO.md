@@ -103,6 +103,22 @@ Obiectiv: pregătire pilot client.
 
 ---
 
+
+## 8.1) Mini Sprint 6.1 (close-out Scope v1)
+Obiectiv: închidere formală Scope v1 înainte de tranziția în Out of Scope v1.
+
+- validare criterii de acceptare (coverage / p95 / error-rate / lighthouse),
+- evidence pack de release într-un artifact unic,
+- clarificare ownership operațional (owner PR AI, ownership secrete, accesuri tehnice reale),
+- go/no-go checklist pentru pilot controlat.
+
+**Criteriu de ieșire:** Scope v1 marcat explicit `Closed`, cu evidențe atașate.
+
+---
+
+## 8.2) Start Out of Scope v1 (după 6.1)
+Obiectiv: extindere platformă pe epics non-v1, planificate pe sprinturi separate.
+
 ## 9) Cum lucrăm cu AI „self-improving” în siguranță
 Flux standard:
 
