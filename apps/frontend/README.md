@@ -1,8 +1,21 @@
-# Frontend (Next.js) — Phase 0 placeholder
+# Frontend (Next.js + Tailwind)
 
-Frontend scaffolding will be added in the next implementation step.
+## Ce include acest setup
+- pagină `Login` (`/login`) cu autentificare către backend (`POST /auth/login`)
+- pagină protejată `Dashboard` (`/dashboard`) cu grafice simple (Recharts)
+- pagină `Clients` (`/clients`) pentru listare și creare client
 
-Planned stack:
-- Next.js
-- TypeScript
-- Tailwind CSS
+## Config
+Setează URL-ul backend în `.env.local`:
+
+```bash
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+```
+
+## Run
+```bash
+npm install
+npm run dev
+```
+
+Aplicația pornește pe `http://localhost:3000`.
