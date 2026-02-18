@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { AppShell } from "@/components/AppShell";
+import { NewDashboardOverview } from "@/components/NewDashboardOverview";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
 
@@ -62,6 +63,8 @@ export default function DashboardPage() {
     <ProtectedPage>
       <AppShell title="Dashboard Principal">
         <main>
+          <p className="mb-4 text-sm text-slate-600">Dashboard nou instalat pentru monitorizare rapidă Google + Meta.</p>
+
           <div className="mb-4 flex items-center gap-3">
             <label className="text-sm text-slate-600">Client ID</label>
             <input
@@ -75,11 +78,21 @@ export default function DashboardPage() {
 
           {error ? <p className="mb-4 text-red-600">{error}</p> : null}
 
-          <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
-            <Card title="Spend" value={data ? `$${data.totals.spend}` : "-"} />
-            <Card title="Conversions" value={data ? String(data.totals.conversions) : "-"} />
-            <Card title="ROAS" value={data ? String(data.totals.roas) : "-"} />
-          </section>
+          {data ? (
+            <div className="mb-6">
+              <NewDashboardOverview
+                totals={data.totals}
+                google={data.platforms.google_ads}
+                meta={data.platforms.meta_ads}
+              />
+            </div>
+          ) : (
+            <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+              <Card title="Spend" value="-" />
+              <Card title="Conversions" value="-" />
+              <Card title="ROAS" value="-" />
+            </section>
+          )}
 
           <section className="wm-card p-4">
             <h2 className="mb-3 font-medium">Google vs Meta (Spend & Conversions)</h2>
