@@ -26,12 +26,11 @@ export default function LoginPage() {
     try {
       const data = await apiRequest<LoginResponse>("/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email, role })
+        body: JSON.stringify({ email, password, role })
       });
 
       localStorage.setItem("mcc_token", data.access_token);
       localStorage.setItem("mcc_user", email);
-      void password; // placeholder until backend password auth is enabled
       router.push("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");

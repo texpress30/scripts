@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status
 
 from app.schemas.auth import LoginRequest, LoginResponse
-from app.services.auth import create_access_token
+from app.services.auth import create_access_token, validate_login_credentials
 from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
 from app.services.rbac import ROLE_PERMISSIONS
 
@@ -18,6 +18,9 @@ def login(payload: LoginRequest) -> LoginResponse:
     role = payload.role.strip().lower()
     if role not in ROLE_PERMISSIONS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported role: {payload.role}")
+
+    if not validate_login_credentials(payload.email, payload.password):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
     access_token = create_access_token(email=payload.email, role=role)
     return LoginResponse(access_token=access_token)

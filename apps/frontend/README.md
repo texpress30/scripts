@@ -6,11 +6,26 @@
 - pagină `Clients` (`/clients`) pentru listare și creare client
 
 ## Config
-Setează URL-ul backend în `.env.local`:
+Creează `apps/frontend/.env.local` din template:
+
+```bash
+cp .env.local.example .env.local
+```
+
+Valoare necesară:
 
 ```bash
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 ```
+
+## Credențiale test (default)
+- Email: `admin@example.com`
+- Parolă: `admin123`
+- Rol recomandat: `agency_admin`
+
+Acestea pot fi schimbate din backend `.env` prin:
+- `APP_LOGIN_EMAIL`
+- `APP_LOGIN_PASSWORD`
 
 ## Run
 ```bash
@@ -19,7 +34,6 @@ npm run dev
 ```
 
 Aplicația pornește pe `http://localhost:3000`.
-
 
 ## Docker (via root docker-compose)
 Frontend rulează ca serviciu `frontend` și expune `localhost:3000`.

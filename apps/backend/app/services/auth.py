@@ -24,6 +24,11 @@ def _sign(payload: str, secret: str) -> str:
     return signature
 
 
+def validate_login_credentials(email: str, password: str) -> bool:
+    settings = load_settings()
+    return email.strip().lower() == settings.app_login_email.strip().lower() and password == settings.app_login_password
+
+
 def create_access_token(email: str, role: str) -> str:
     settings = load_settings()
     payload = json.dumps({"email": email, "role": role}, separators=(",", ":"), sort_keys=True)

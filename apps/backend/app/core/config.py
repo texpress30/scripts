@@ -12,6 +12,8 @@ class Settings:
     app_host: str
     app_port: int
     app_auth_secret: str
+    app_login_email: str
+    app_login_password: str
     openai_api_key: str
     google_ads_token: str
     meta_access_token: str
@@ -35,6 +37,8 @@ def load_settings() -> Settings:
         app_host=_get_env("APP_HOST", default="0.0.0.0"),
         app_port=int(_get_env("APP_PORT", default="8000")),
         app_auth_secret=_get_env("APP_AUTH_SECRET", required=True),
+        app_login_email=_get_env("APP_LOGIN_EMAIL", default="admin@example.com"),
+        app_login_password=_get_env("APP_LOGIN_PASSWORD", default="admin123"),
         openai_api_key=_get_env("OPENAI_API_KEY", required=True),
         google_ads_token=_get_env("GOOGLE_ADS_TOKEN", required=True),
         meta_access_token=_get_env("META_ACCESS_TOKEN", required=True),

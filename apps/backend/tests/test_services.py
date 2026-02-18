@@ -1,7 +1,7 @@
 import os
 import unittest
 
-from app.services.auth import AuthError, create_access_token, decode_access_token
+from app.services.auth import AuthError, create_access_token, decode_access_token, validate_login_credentials
 from app.services.ai_assistant import ai_assistant_service
 from app.services.insights import insights_service
 from app.services.dashboard import unified_dashboard_service
@@ -16,6 +16,8 @@ class ServiceTests(unittest.TestCase):
     def setUp(self):
         self.original_env = os.environ.copy()
         os.environ["APP_AUTH_SECRET"] = "test-secret"
+        os.environ["APP_LOGIN_EMAIL"] = "admin@example.com"
+        os.environ["APP_LOGIN_PASSWORD"] = "admin123"
         os.environ["OPENAI_API_KEY"] = "test-openai-key"
         os.environ["GOOGLE_ADS_TOKEN"] = "test-google-token"
         os.environ["META_ACCESS_TOKEN"] = "test-meta-token"
@@ -37,6 +39,11 @@ class ServiceTests(unittest.TestCase):
         user = decode_access_token(token)
         self.assertEqual(user.email, "owner@example.com")
         self.assertEqual(user.role, "agency_admin")
+
+
+    def test_login_credentials_validation(self):
+        self.assertTrue(validate_login_credentials("admin@example.com", "admin123"))
+        self.assertFalse(validate_login_credentials("admin@example.com", "wrong"))
 
     def test_invalid_token_signature_is_rejected(self):
         token = create_access_token(email="owner@example.com", role="agency_admin")

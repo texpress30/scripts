@@ -43,6 +43,8 @@ class ConfigTests(unittest.TestCase):
         os.environ["APP_HOST"] = "127.0.0.1"
         os.environ["APP_PORT"] = "9000"
         os.environ["APP_AUTH_SECRET"] = "test-auth-secret"
+        os.environ["APP_LOGIN_EMAIL"] = "owner@test.com"
+        os.environ["APP_LOGIN_PASSWORD"] = "secret-pass"
         os.environ["OPENAI_API_KEY"] = "test-openai-key"
         os.environ["GOOGLE_ADS_TOKEN"] = "test-google-token"
         os.environ["META_ACCESS_TOKEN"] = "test-meta-token"
@@ -56,6 +58,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.app_host, "127.0.0.1")
         self.assertEqual(settings.app_port, 9000)
         self.assertEqual(settings.app_auth_secret, "test-auth-secret")
+        self.assertEqual(settings.app_login_email, "owner@test.com")
+        self.assertEqual(settings.app_login_password, "secret-pass")
         self.assertEqual(settings.openai_api_key, "test-openai-key")
         self.assertEqual(settings.google_ads_token, "test-google-token")
         self.assertEqual(settings.meta_access_token, "test-meta-token")
