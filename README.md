@@ -47,3 +47,8 @@ Aplicația citește valorile din variabile de mediu prin `os.environ` și nu har
 - `GET /integrations/google-ads/status`
 - `POST /integrations/google-ads/{client_id}/sync`
 - `GET /dashboard/{client_id}`
+
+
+## Status PR Sprint 2
+- Acest branch include rezolvarea conflictelor și codul Sprint 2 într-o formă pregătită pentru PR nou (clean).
+- PR-ul nou îl înlocuiește pe cel anterior cu conflicte.

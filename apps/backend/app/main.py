@@ -10,7 +10,7 @@ from app.core.config import load_settings
 
 app = FastAPI(
     title="MCC AI Platform API",
-    version="0.3.0",
+    version="0.3.1",
     description="Backend skeleton with Sprint 1 (auth/RBAC/audit) and Sprint 2 (Google Ads sync/dashboard).",
 )
 
