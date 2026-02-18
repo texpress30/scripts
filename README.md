@@ -11,10 +11,8 @@ Monorepo de pornire pentru platforma MCC multi-platform cu AI.
 - `PHASE0_SETUP_RO.md` — status setup tehnic inițial
 - `SPRINT1_PROGRESS_RO.md` — progres Sprint 1 (auth, RBAC, audit)
 - `SPRINT2_PROGRESS_RO.md` — progres Sprint 2 (Google Ads status/sync + dashboard)
-<<<<<<< codex/clarify-requirements-for-ai-app-development-pehcq8
 - `SPRINT3_PROGRESS_RO.md` — progres Sprint 3 (Meta Ads + dashboard unificat)
-=======
->>>>>>> main
+- `SPRINT4_PROGRESS_RO.md` — progres Sprint 4 (rules engine + notificări)
 
 ## Setup rapid (backend)
 1. Copiază variabilele de mediu:
@@ -50,12 +48,14 @@ Aplicația citește valorile din variabile de mediu prin `os.environ` și nu har
 ### Sprint 2
 - `GET /integrations/google-ads/status`
 - `POST /integrations/google-ads/{client_id}/sync`
-<<<<<<< codex/clarify-requirements-for-ai-app-development-pehcq8
 
 ### Sprint 3
 - `GET /integrations/meta-ads/status`
 - `POST /integrations/meta-ads/{client_id}/sync`
 - `GET /dashboard/{client_id}` (consolidat Google + Meta)
-=======
-- `GET /dashboard/{client_id}`
->>>>>>> main
+
+
+### Sprint 4
+- `GET /rules/{client_id}`
+- `POST /rules/{client_id}/evaluate`
+

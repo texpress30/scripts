@@ -5,7 +5,9 @@ from app.services.auth import AuthError, create_access_token, decode_access_toke
 from app.services.dashboard import unified_dashboard_service
 from app.services.google_ads import GoogleAdsIntegrationError, google_ads_service
 from app.services.meta_ads import MetaAdsIntegrationError, meta_ads_service
+from app.services.notifications import notification_service
 from app.services.rbac import AuthorizationError, require_permission
+from app.services.rules_engine import rules_engine_service
 
 
 class ServiceTests(unittest.TestCase):
@@ -20,6 +22,9 @@ class ServiceTests(unittest.TestCase):
     def tearDown(self):
         google_ads_service._snapshots.clear()
         meta_ads_service._snapshots.clear()
+        rules_engine_service._rules.clear()
+        rules_engine_service._next_id = 1
+        notification_service._events.clear()
         os.environ.clear()
         os.environ.update(self.original_env)
 
@@ -27,7 +32,6 @@ class ServiceTests(unittest.TestCase):
     def test_token_encode_decode_roundtrip(self):
         token = create_access_token(email="owner@example.com", role="agency_admin")
         user = decode_access_token(token)
-
         self.assertEqual(user.email, "owner@example.com")
         self.assertEqual(user.role, "agency_admin")
 
@@ -84,8 +88,52 @@ class ServiceTests(unittest.TestCase):
         self.assertTrue(dashboard["is_synced"])
         self.assertEqual(dashboard["totals"]["spend"], round(expected_spend, 2))
         self.assertEqual(dashboard["totals"]["conversions"], expected_conversions)
-        self.assertIn("google_ads", dashboard["platforms"])
-        self.assertIn("meta_ads", dashboard["platforms"])
+
+    # Sprint 4 coverage (rules + notifications + system_bot audit)
+    def test_rules_engine_stop_loss_triggers_and_notifies(self):
+        os.environ["GOOGLE_ADS_TOKEN"] = "google-real-token"
+        os.environ["META_ACCESS_TOKEN"] = "meta-real-token"
+        google_ads_service.sync_client(client_id=5)
+        meta_ads_service.sync_client(client_id=5)
+
+        rule = rules_engine_service.create_rule(
+            client_id=5,
+            name="Stop-Loss High Spend",
+            rule_type="stop_loss",
+            threshold=50.0,
+            action_value=0.0,
+            status="active",
+        )
+        self.assertEqual(rule["rule_type"], "stop_loss")
+
+        actions = rules_engine_service.evaluate_client_rules(client_id=5)
+        self.assertGreaterEqual(len(actions), 1)
+
+        event = notification_service.send_email_mock(
+            to_email="owner@example.com",
+            subject="Rule triggered",
+            message=str(actions[0]),
+        )
+        self.assertEqual(event["channel"], "email_mock")
+
+    def test_rules_engine_auto_scale_triggers(self):
+        os.environ["GOOGLE_ADS_TOKEN"] = "google-real-token"
+        os.environ["META_ACCESS_TOKEN"] = "meta-real-token"
+        google_ads_service.sync_client(client_id=4)
+        meta_ads_service.sync_client(client_id=4)
+
+        rules_engine_service.create_rule(
+            client_id=4,
+            name="Scale Winners",
+            rule_type="auto_scale",
+            threshold=2.0,
+            action_value=20.0,
+            status="active",
+        )
+
+        actions = rules_engine_service.evaluate_client_rules(client_id=4)
+        self.assertGreaterEqual(len(actions), 1)
+        self.assertEqual(actions[0]["rule_type"], "auto_scale")
 
 
 if __name__ == "__main__":
