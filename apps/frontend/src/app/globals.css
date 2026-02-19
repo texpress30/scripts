@@ -7,7 +7,7 @@
 }
 
 body {
-  @apply bg-slate-100 text-slate-800;
+  @apply bg-slate-100 text-slate-800 antialiased;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
 
@@ -29,4 +29,28 @@ body {
 
 .wm-btn-secondary {
   @apply rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100;
+}
+
+.premium-card {
+  @apply rounded-2xl border border-slate-200 bg-white shadow-sm;
+}
+
+.premium-input-wrapper {
+  @apply flex items-center gap-3 rounded-xl border border-slate-300 bg-white px-4 py-3 transition;
+}
+
+.premium-input-wrapper:focus-within {
+  @apply border-indigo-500 ring-2 ring-indigo-200;
+}
+
+.premium-input {
+  @apply w-full bg-transparent text-lg text-slate-900 outline-none;
+}
+
+.premium-btn-primary {
+  @apply inline-flex items-center rounded-xl bg-indigo-600 px-8 py-4 text-2xl font-semibold text-white transition hover:bg-indigo-700;
+}
+
+.premium-btn-secondary {
+  @apply inline-flex items-center rounded-xl border border-slate-300 bg-white px-8 py-4 text-2xl font-semibold text-slate-800 transition hover:bg-slate-50;
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { Mail, Lock, Shield, Activity } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
@@ -40,41 +41,60 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md items-center p-6">
-      <form onSubmit={onSubmit} className="wm-card w-full p-6">
-        <h1 className="mb-6 text-2xl font-semibold text-slate-900">Login</h1>
+    <main className="mx-auto flex min-h-screen max-w-6xl items-center px-6 py-16">
+      <div className="mx-auto w-full max-w-xl">
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600 shadow-lg shadow-indigo-600/25">
+            <Activity className="h-7 w-7 text-white" />
+          </div>
+          <h1 className="text-5xl font-bold tracking-tight text-slate-900">MCC Command Center</h1>
+          <p className="mt-3 text-xl text-slate-600">Autentificare in platforma</p>
+        </div>
 
-        <label className="mb-3 block">
-          <span className="mb-1 block text-sm text-slate-600">Email</span>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} className="wm-input" required />
-        </label>
+        <form onSubmit={onSubmit} className="premium-card p-8">
+          <label className="mb-4 block">
+            <span className="mb-2 block text-lg font-semibold text-slate-900">Email</span>
+            <div className="premium-input-wrapper">
+              <Mail className="h-5 w-5 text-slate-500" />
+              <input value={email} onChange={(e) => setEmail(e.target.value)} className="premium-input" required />
+            </div>
+          </label>
 
-        <label className="mb-3 block">
-          <span className="mb-1 block text-sm text-slate-600">Parolă</span>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="wm-input"
-            required
-          />
-        </label>
+          <label className="mb-4 block">
+            <span className="mb-2 block text-lg font-semibold text-slate-900">Parola</span>
+            <div className="premium-input-wrapper">
+              <Lock className="h-5 w-5 text-slate-500" />
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="premium-input"
+                required
+              />
+            </div>
+          </label>
 
-        <label className="mb-4 block">
-          <span className="mb-1 block text-sm text-slate-600">Rol</span>
-          <select value={role} onChange={(e) => setRole(e.target.value)} className="wm-input">
-            <option value="agency_admin">Agency Admin</option>
-            <option value="account_manager">Account Manager</option>
-            <option value="client_viewer">Client Viewer</option>
-          </select>
-        </label>
+          <label className="mb-5 block">
+            <span className="mb-2 block text-lg font-semibold text-slate-900">Rol</span>
+            <div className="premium-input-wrapper">
+              <Shield className="h-5 w-5 text-slate-500" />
+              <select value={role} onChange={(e) => setRole(e.target.value)} className="premium-input">
+                <option value="agency_admin">Agency Admin</option>
+                <option value="account_manager">Account Manager</option>
+                <option value="client_viewer">Client Viewer</option>
+              </select>
+            </div>
+          </label>
 
-        {error ? <p className="mb-3 text-sm text-red-600">{error}</p> : null}
+          {error ? <p className="mb-3 text-sm text-red-600">{error}</p> : null}
 
-        <button disabled={loading} className="wm-btn-primary w-full disabled:opacity-50">
-          {loading ? "Se autentifică..." : "Intră în platformă"}
-        </button>
-      </form>
+          <button disabled={loading} className="premium-btn-primary w-full justify-center disabled:opacity-50">
+            {loading ? "Se autentifica..." : "Intra in platforma"}
+          </button>
+        </form>
+
+        <p className="mt-6 text-center text-base text-slate-500">Platforma de management pentru agentii de marketing</p>
+      </div>
     </main>
   );
 }
