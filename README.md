@@ -30,14 +30,17 @@ Monorepo de pornire pentru platforma MCC multi-platform cu AI.
    - `pip install -r requirements.txt`
    - `uvicorn app.main:app --reload`
 
-## Variabile de mediu (obligatorii)
+## Variabile de mediu
+**Obligatoriu pentru boot minim (ex: login):**
 - `APP_AUTH_SECRET`
+
+**Opționale la boot, recomandate pentru funcționalitățile complete:**
 - `OPENAI_API_KEY`
 - `GOOGLE_ADS_TOKEN`
 - `META_ACCESS_TOKEN`
 - `BIGQUERY_PROJECT_ID`
 
-Aplicația citește valorile din variabile de mediu prin `os.environ` și nu hardcodează date sensibile.
+Aplicația citește valorile din variabile de mediu prin `os.environ` și nu hardcodează date sensibile. Dacă lipsesc cheile de integrare, endpoint-urile de integrare/AI/export pot răspunde cu erori controlate, dar serverul nu mai cade la startup.
 
 ## Endpoint-uri disponibile (backend)
 ### Core

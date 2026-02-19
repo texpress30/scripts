@@ -12,31 +12,23 @@ class ConfigTests(unittest.TestCase):
         os.environ.clear()
         os.environ.update(self.original_env)
 
-    def test_required_env_variables_are_enforced(self):
-        required = [
-            "APP_AUTH_SECRET",
-            "OPENAI_API_KEY",
-            "GOOGLE_ADS_TOKEN",
-            "META_ACCESS_TOKEN",
-            "BIGQUERY_PROJECT_ID",
-        ]
+    def test_app_auth_secret_is_required(self):
+        os.environ.clear()
 
-        base_env = {
-            "APP_AUTH_SECRET": "test-auth-secret",
-            "OPENAI_API_KEY": "test-openai-key",
-            "GOOGLE_ADS_TOKEN": "test-google-token",
-            "META_ACCESS_TOKEN": "test-meta-token",
-            "BIGQUERY_PROJECT_ID": "test-project",
-        }
+        with self.assertRaisesRegex(RuntimeError, "APP_AUTH_SECRET"):
+            load_settings()
 
-        for missing in required:
-            os.environ.clear()
-            for key, value in base_env.items():
-                if key != missing:
-                    os.environ[key] = value
 
-            with self.assertRaisesRegex(RuntimeError, missing):
-                load_settings()
+    def test_integration_keys_are_optional_for_boot(self):
+        os.environ.clear()
+        os.environ["APP_AUTH_SECRET"] = "test-auth-secret"
+
+        settings = load_settings()
+
+        self.assertEqual(settings.openai_api_key, "")
+        self.assertEqual(settings.google_ads_token, "")
+        self.assertEqual(settings.meta_access_token, "")
+        self.assertEqual(settings.bigquery_project_id, "")
 
     def test_settings_are_loaded_from_environment(self):
         os.environ["APP_ENV"] = "test"
