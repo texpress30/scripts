@@ -1,18 +1,17 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
+  darkMode: "class",
   content: ["./src/**/*.{js,ts,jsx,tsx,mdx}"],
   theme: {
     extend: {
-      colors: {
-        brand: {
-          500: "#2563eb",
-          600: "#1d4ed8"
-        }
-      }
-    }
+      fontFamily: {
+        sans: ["var(--font-geist-sans)", "system-ui", "sans-serif"],
+        mono: ["var(--font-geist-mono)", "monospace"],
+      },
+    },
   },
-  plugins: []
+  plugins: [],
 };
 
 export default config;
