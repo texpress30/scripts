@@ -34,6 +34,17 @@ class E2EFlowTests(unittest.TestCase):
         token = resp.json()["access_token"]
         return {"Authorization": f"Bearer {token}"}
 
+    def test_login_endpoint_accepts_post(self):
+        response = self.client.post(
+            "/auth/login",
+            json={"email": "admin@example.com", "password": "admin123", "role": "agency_admin"},
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_login_endpoint_rejects_get_with_405(self):
+        response = self.client.get("/auth/login")
+        self.assertEqual(response.status_code, 405)
+
     def test_onboarding_to_export_flow(self):
         headers = self._auth_header()
 

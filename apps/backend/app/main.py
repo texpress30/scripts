@@ -14,6 +14,8 @@ from app.api.meta_ads import router as meta_ads_router
 from app.api.rules import router as rules_router
 from app.core.config import load_settings
 
+settings = load_settings()
+
 app = FastAPI(
     title="MCC AI Platform API",
     version="0.7.1",
@@ -22,10 +24,11 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=list(settings.cors_origins),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_origin_regex=settings.cors_origin_regex,
 )
 
 # Core
@@ -54,7 +57,6 @@ app.include_router(exports_router)
 
 @app.get("/", tags=["root"])
 def root() -> dict[str, str]:
-    settings = load_settings()
     return {
         "service": "mcc-ai-platform",
         "environment": settings.app_env,

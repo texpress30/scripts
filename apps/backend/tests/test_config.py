@@ -51,6 +51,8 @@ class ConfigTests(unittest.TestCase):
         os.environ["BIGQUERY_PROJECT_ID"] = "test-project"
         os.environ["DATABASE_URL"] = "postgresql://example"
         os.environ["REDIS_URL"] = "redis://example"
+        os.environ["APP_CORS_ORIGINS"] = "https://frontend.example.com,https://admin.example.com"
+        os.environ["APP_CORS_ORIGIN_REGEX"] = r"https://.*\\.example\\.com"
 
         settings = load_settings()
 
@@ -64,6 +66,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.google_ads_token, "test-google-token")
         self.assertEqual(settings.meta_access_token, "test-meta-token")
         self.assertEqual(settings.bigquery_project_id, "test-project")
+        self.assertEqual(settings.cors_origins, ("https://frontend.example.com", "https://admin.example.com"))
+        self.assertEqual(settings.cors_origin_regex, r"https://.*\\.example\\.com")
 
 
 if __name__ == "__main__":

@@ -20,6 +20,8 @@ class Settings:
     bigquery_project_id: str
     database_url: str
     redis_url: str
+    cors_origins: tuple[str, ...]
+    cors_origin_regex: str
 
 
 def _get_env(name: str, default: str | None = None, required: bool = False) -> str:
@@ -30,6 +32,13 @@ def _get_env(name: str, default: str | None = None, required: bool = False) -> s
         raise RuntimeError(f"Environment variable {name} is not set and no default was provided")
     return value
 
+
+
+
+def _parse_csv_env(name: str, default: str) -> tuple[str, ...]:
+    raw = _get_env(name, default=default)
+    values = tuple(item.strip() for item in raw.split(",") if item.strip())
+    return values
 
 def load_settings() -> Settings:
     return Settings(
@@ -45,4 +54,6 @@ def load_settings() -> Settings:
         bigquery_project_id=_get_env("BIGQUERY_PROJECT_ID", required=True),
         database_url=_get_env("DATABASE_URL", default="postgresql://postgres:postgres@localhost:5432/mcc"),
         redis_url=_get_env("REDIS_URL", default="redis://localhost:6379/0"),
+        cors_origins=_parse_csv_env("APP_CORS_ORIGINS", default="http://localhost:3000,http://127.0.0.1:3000"),
+        cors_origin_regex=_get_env("APP_CORS_ORIGIN_REGEX", default=r"https://.*\.vercel\.app"),
     )

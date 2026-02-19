@@ -48,3 +48,17 @@ Dacă modifici această valoare, rulează rebuild: `docker compose up --build`.
 - componentă layout reutilizabilă: `src/components/AppShell.tsx`
 - overview KPI: `src/components/NewDashboardOverview.tsx`
 - pagină principală dashboard: `src/app/dashboard/page.tsx`
+
+
+## Deploy (Vercel + Railway)
+Setează în Vercel variabila:
+
+```bash
+NEXT_PUBLIC_API_BASE_URL=https://<railway-backend-domain>
+```
+
+Important:
+- nu folosi trailing slash la finalul URL-ului,
+- verifică să pointeze către backend Railway, nu către frontend Vercel,
+- testează manual: `POST https://<railway-backend-domain>/auth/login`.
+
