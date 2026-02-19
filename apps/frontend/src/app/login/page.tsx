@@ -1,8 +1,9 @@
 "use client";
 
+import { Mail, Lock, Shield, Activity } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
-import { Activity, Lock, Mail, Shield } from "lucide-react";
+
 import { apiRequest } from "@/lib/api";
 
 type LoginResponse = {
@@ -26,7 +27,7 @@ export default function LoginPage() {
     try {
       const data = await apiRequest<LoginResponse>("/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email, password, role }),
+        body: JSON.stringify({ email, password, role })
       });
 
       localStorage.setItem("mcc_token", data.access_token);
@@ -40,92 +41,59 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background p-4">
-      <div className="w-full max-w-sm">
-        {/* Logo */}
-        <div className="mb-8 flex flex-col items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary shadow-lg shadow-primary/20">
-            <Activity className="h-5 w-5 text-primary-foreground" />
+    <main className="mx-auto flex min-h-screen max-w-6xl items-center px-6 py-16">
+      <div className="mx-auto w-full max-w-xl">
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600 shadow-lg shadow-indigo-600/25">
+            <Activity className="h-7 w-7 text-white" />
           </div>
-          <div className="text-center">
-            <h1 className="text-xl font-semibold text-foreground">MCC Command Center</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Autentificare in platforma</p>
-          </div>
+          <h1 className="text-5xl font-bold tracking-tight text-slate-900">MCC Command Center</h1>
+          <p className="mt-3 text-xl text-slate-600">Autentificare in platforma</p>
         </div>
 
-        {/* Login form */}
-        <form onSubmit={onSubmit} className="mcc-card p-6">
-          <div className="flex flex-col gap-4">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-foreground">Email</span>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="mcc-input pl-10"
-                  required
-                />
-              </div>
-            </label>
+        <form onSubmit={onSubmit} className="premium-card p-8">
+          <label className="mb-4 block">
+            <span className="mb-2 block text-lg font-semibold text-slate-900">Email</span>
+            <div className="premium-input-wrapper">
+              <Mail className="h-5 w-5 text-slate-500" />
+              <input value={email} onChange={(e) => setEmail(e.target.value)} className="premium-input" required />
+            </div>
+          </label>
 
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-foreground">Parola</span>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="mcc-input pl-10"
-                  required
-                />
-              </div>
-            </label>
+          <label className="mb-4 block">
+            <span className="mb-2 block text-lg font-semibold text-slate-900">Parola</span>
+            <div className="premium-input-wrapper">
+              <Lock className="h-5 w-5 text-slate-500" />
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="premium-input"
+                required
+              />
+            </div>
+          </label>
 
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-foreground">Rol</span>
-              <div className="relative">
-                <Shield className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  className="mcc-input appearance-none pl-10"
-                >
-                  <option value="agency_admin">Agency Admin</option>
-                  <option value="account_manager">Account Manager</option>
-                  <option value="client_viewer">Client Viewer</option>
-                </select>
-              </div>
-            </label>
+          <label className="mb-5 block">
+            <span className="mb-2 block text-lg font-semibold text-slate-900">Rol</span>
+            <div className="premium-input-wrapper">
+              <Shield className="h-5 w-5 text-slate-500" />
+              <select value={role} onChange={(e) => setRole(e.target.value)} className="premium-input">
+                <option value="agency_admin">Agency Admin</option>
+                <option value="account_manager">Account Manager</option>
+                <option value="client_viewer">Client Viewer</option>
+              </select>
+            </div>
+          </label>
 
-            {error && (
-              <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3">
-                <p className="text-sm text-destructive">{error}</p>
-              </div>
-            )}
+          {error ? <p className="mb-3 text-sm text-red-600">{error}</p> : null}
 
-            <button
-              disabled={loading}
-              className="mcc-btn-primary mt-2 h-10 w-full"
-            >
-              {loading ? (
-                <span className="flex items-center gap-2">
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
-                  Se autentifica...
-                </span>
-              ) : (
-                "Intra in platforma"
-              )}
-            </button>
-          </div>
+          <button disabled={loading} className="premium-btn-primary w-full justify-center disabled:opacity-50">
+            {loading ? "Se autentifica..." : "Intra in platforma"}
+          </button>
         </form>
 
-        {/* Footer */}
-        <p className="mt-4 text-center text-xs text-muted-foreground">
-          {"Platforma de management pentru agentii de marketing"}
-        </p>
+        <p className="mt-6 text-center text-base text-slate-500">Platforma de management pentru agentii de marketing</p>
       </div>
     </main>
   );
