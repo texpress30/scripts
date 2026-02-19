@@ -6,6 +6,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { AppShell } from "@/components/AppShell";
 import { ClientCommandPalette } from "@/components/ClientCommandPalette";
+import { NewDashboardOverview } from "@/components/NewDashboardOverview";
 import { apiRequest } from "@/lib/api";
 
 type DashboardResponse = {
@@ -107,11 +108,17 @@ export default function DashboardPage() {
 
           {error ? <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p> : null}
 
-          <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
-            <MetricCard title="Spend" value={data ? `$${data.totals.spend.toLocaleString()}` : "-"} />
-            <MetricCard title="Conversions" value={data ? data.totals.conversions.toLocaleString() : "-"} />
-            <MetricCard title="ROAS" value={data ? data.totals.roas.toFixed(2) : "-"} />
-          </section>
+          {data ? (
+            <div className="mb-6">
+              <NewDashboardOverview totals={data.totals} google={data.platforms.google_ads} meta={data.platforms.meta_ads} />
+            </div>
+          ) : (
+            <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+              <MetricCard title="Spend" value="-" />
+              <MetricCard title="Conversions" value="-" />
+              <MetricCard title="ROAS" value="-" />
+            </section>
+          )}
 
           <section className="wm-card p-4">
             <h2 className="mb-3 font-medium">Google vs Meta (Spend, Conversions, ROAS)</h2>
