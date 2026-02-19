@@ -47,8 +47,11 @@
 
 ## 3) Deliverables Mini Sprint 6.1
 1. Acest document (`SPRINT6_1_CLOSEOUT_RO.md`) ca tracker central.
-2. Actualizare roadmap (`NEXT_STEPS_RO.md`) cu etapă explicită 6.1.
-3. Actualizare README pentru vizibilitate status close-out.
+2. Template raport final: `SCOPE_V1_CLOSEOUT_REPORT_TEMPLATE_RO.md`.
+3. Checklist decizie pilot: `PILOT_GO_NO_GO_CHECKLIST_RO.md`.
+4. Runbook incidente: `RUNBOOK_P1_P2_ESCALATION_RO.md`.
+5. Actualizare roadmap (`NEXT_STEPS_RO.md`) cu etapă explicită 6.1.
+6. Actualizare README pentru vizibilitate status close-out.
 
 ---
 

@@ -16,6 +16,12 @@ Monorepo de pornire pentru platforma MCC multi-platform cu AI.
 - `SPRINT5_PROGRESS_RO.md` — progres Sprint 5 (AI assistant + insights)
 - `SPRINT6_PROGRESS_RO.md` — progres Sprint 6 (BigQuery export + hardening + E2E)
 - `SPRINT6_1_CLOSEOUT_RO.md` — mini sprint 6.1 (acceptance gates + close-out Scope v1)
+<<<<<<< codex/clarify-requirements-for-ai-app-development-wh16f2
+- `SCOPE_V1_CLOSEOUT_REPORT_TEMPLATE_RO.md` — template raport final Scope v1 (criteriu/evidență/verdict)
+- `PILOT_GO_NO_GO_CHECKLIST_RO.md` — checklist executabil pentru decizie pilot
+- `RUNBOOK_P1_P2_ESCALATION_RO.md` — runbook incidente P1/P2 + escalation
+=======
+>>>>>>> main
 - `READY_FOR_PILOT_RO.md` — raport final de lansare pilot
 - `SPRINT_FRONTEND1_PROGRESS_RO.md` — progres Faza 1 Frontend (login/dashboard/clienți)
 
