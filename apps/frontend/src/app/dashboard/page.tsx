@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-
+import { useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { NewDashboardOverview } from "@/components/NewDashboardOverview";
 import { ProtectedPage } from "@/components/ProtectedPage";
+import { ClientSelector } from "@/components/ClientSelector";
+import { SpendAreaChart, ConversionsBarChart } from "@/components/PerformanceCharts";
+import { RecentActivity } from "@/components/RecentActivity";
+import { MetricCard } from "@/components/MetricCard";
 import { apiRequest } from "@/lib/api";
+import { DollarSign, MousePointerClick, Target } from "lucide-react";
 
 type DashboardResponse = {
   client_id: number;
@@ -25,16 +28,20 @@ export default function DashboardPage() {
   const [clientId, setClientId] = useState(1);
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let ignore = false;
     async function load() {
       setError("");
+      setLoading(true);
       try {
         const result = await apiRequest<DashboardResponse>(`/dashboard/${clientId}`);
         if (!ignore) setData(result);
       } catch (err) {
-        if (!ignore) setError(err instanceof Error ? err.message : "Nu pot încărca dashboard");
+        if (!ignore) setError(err instanceof Error ? err.message : "Nu pot incarca dashboard");
+      } finally {
+        if (!ignore) setLoading(false);
       }
     }
     void load();
@@ -43,83 +50,123 @@ export default function DashboardPage() {
     };
   }, [clientId]);
 
-  const chartData = useMemo(() => {
-    if (!data) return [];
-    return [
-      {
-        name: "Google",
-        spend: data.platforms.google_ads.spend,
-        conversions: data.platforms.google_ads.conversions
-      },
-      {
-        name: "Meta",
-        spend: data.platforms.meta_ads.spend,
-        conversions: data.platforms.meta_ads.conversions
-      }
-    ];
-  }, [data]);
-
   return (
     <ProtectedPage>
-      <AppShell title="Dashboard Principal">
-        <main>
-          <p className="mb-4 text-sm text-slate-600">Dashboard nou instalat pentru monitorizare rapidă Google + Meta.</p>
+      <AppShell
+        title="Dashboard"
+        headerActions={
+          <ClientSelector
+            selectedClientId={clientId}
+            onClientChange={setClientId}
+          />
+        }
+      >
+        {/* Page header description */}
+        <div className="mb-6">
+          <p className="text-sm text-muted-foreground">
+            Monitorizare in timp real pentru Google Ads si Meta Ads. Selecteaza un client pentru a vedea performanta.
+          </p>
+        </div>
 
-          <div className="mb-4 flex items-center gap-3">
-            <label className="text-sm text-slate-600">Client ID</label>
-            <input
-              type="number"
-              min={1}
-              value={clientId}
-              onChange={(e) => setClientId(Number(e.target.value || 1))}
-              className="wm-input w-24"
-            />
+        {error && (
+          <div className="mb-6 rounded-lg border border-destructive/20 bg-destructive/5 p-4">
+            <p className="text-sm text-destructive">{error}</p>
           </div>
+        )}
 
-          {error ? <p className="mb-4 text-red-600">{error}</p> : null}
+        {/* Loading skeleton */}
+        {loading && !data && (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="mcc-card animate-pulse p-5">
+                <div className="h-3 w-20 rounded bg-muted" />
+                <div className="mt-3 h-7 w-24 rounded bg-muted" />
+                <div className="mt-3 h-4 w-32 rounded bg-muted" />
+              </div>
+            ))}
+          </div>
+        )}
 
-          {data ? (
-            <div className="mb-6">
-              <NewDashboardOverview
-                totals={data.totals}
-                google={data.platforms.google_ads}
-                meta={data.platforms.meta_ads}
-              />
+        {/* Data loaded */}
+        {data && (
+          <div className="flex flex-col gap-6 animate-fade-in">
+            {/* Metrics overview */}
+            <NewDashboardOverview
+              totals={data.totals}
+              google={data.platforms.google_ads}
+              meta={data.platforms.meta_ads}
+            />
+
+            {/* Charts row */}
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <SpendAreaChart />
+              <ConversionsBarChart />
             </div>
-          ) : (
-            <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
-              <Card title="Spend" value="-" />
-              <Card title="Conversions" value="-" />
-              <Card title="ROAS" value="-" />
-            </section>
-          )}
 
-          <section className="wm-card p-4">
-            <h2 className="mb-3 font-medium">Google vs Meta (Spend & Conversions)</h2>
-            <div className="h-80 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="spend" fill="#7c3aed" />
-                  <Bar dataKey="conversions" fill="#0ea5e9" />
-                </BarChart>
-              </ResponsiveContainer>
+            {/* Activity feed */}
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+              <div className="lg:col-span-2">
+                <RecentActivity />
+              </div>
+              <div className="mcc-card flex flex-col gap-4 p-5">
+                <h3 className="text-sm font-semibold text-foreground">Sumar Rapid</h3>
+                <div className="flex flex-col gap-3">
+                  <SummaryRow
+                    label="Cost per Conversie"
+                    value={
+                      data.totals.conversions > 0
+                        ? `$${(data.totals.spend / data.totals.conversions).toFixed(2)}`
+                        : "—"
+                    }
+                  />
+                  <SummaryRow
+                    label="Google Spend %"
+                    value={
+                      data.totals.spend > 0
+                        ? `${((data.platforms.google_ads.spend / data.totals.spend) * 100).toFixed(0)}%`
+                        : "—"
+                    }
+                  />
+                  <SummaryRow
+                    label="Meta Spend %"
+                    value={
+                      data.totals.spend > 0
+                        ? `${((data.platforms.meta_ads.spend / data.totals.spend) * 100).toFixed(0)}%`
+                        : "—"
+                    }
+                  />
+                  <SummaryRow
+                    label="Platforma Top"
+                    value={
+                      data.platforms.google_ads.conversions >= data.platforms.meta_ads.conversions
+                        ? "Google"
+                        : "Meta"
+                    }
+                  />
+                </div>
+              </div>
             </div>
-          </section>
-        </main>
+          </div>
+        )}
+
+        {/* Fallback when no data and not loading */}
+        {!loading && !data && !error && (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <MetricCard title="Spend" value="—" icon={DollarSign} />
+            <MetricCard title="Conversii" value="—" icon={MousePointerClick} />
+            <MetricCard title="ROAS" value="—" icon={Target} />
+          </div>
+        )}
       </AppShell>
     </ProtectedPage>
   );
 }
 
-function Card({ title, value }: { title: string; value: string }) {
+function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
-    <article className="wm-card p-4">
-      <p className="text-sm text-slate-500">{title}</p>
-      <p className="mt-1 text-xl font-semibold">{value}</p>
-    </article>
+    <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="text-sm font-semibold text-foreground">{value}</span>
+    </div>
   );
 }
