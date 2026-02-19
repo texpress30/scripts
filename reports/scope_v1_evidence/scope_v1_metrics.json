@@ -1,0 +1,109 @@
+{
+  "pytest_exit_code": 0,
+  "trace_exit_code": 0,
+  "coverage_weighted_app_percent": 100.0,
+  "coverage_rows": [
+    [
+      "app.core.config",
+      56,
+      100.0
+    ],
+    [
+      "app.services.ai_assistant",
+      56,
+      100.0
+    ],
+    [
+      "app.services.ai_guardrails",
+      12,
+      100.0
+    ],
+    [
+      "app.services.audit",
+      31,
+      100.0
+    ],
+    [
+      "app.services.auth",
+      36,
+      100.0
+    ],
+    [
+      "app.services.dashboard",
+      30,
+      100.0
+    ],
+    [
+      "app.services.google_ads",
+      80,
+      100.0
+    ],
+    [
+      "app.services.insights",
+      46,
+      100.0
+    ],
+    [
+      "app.services.meta_ads",
+      76,
+      100.0
+    ],
+    [
+      "app.services.notifications",
+      20,
+      100.0
+    ],
+    [
+      "app.services.rbac",
+      12,
+      100.0
+    ],
+    [
+      "app.services.rules_engine",
+      74,
+      100.0
+    ]
+  ],
+  "http_results": {
+    "health_ready": true,
+    "functional": {
+      "auth_login": {
+        "status": 200
+      },
+      "google_sync": {
+        "status": 200
+      },
+      "meta_sync": {
+        "status": 200
+      },
+      "ai_assistant": {
+        "status": 200
+      },
+      "dashboard": {
+        "status": 200
+      }
+    },
+    "latency": {
+      "health_get": {
+        "samples": 120,
+        "p95_ms": 2.41,
+        "avg_ms": 1.71
+      },
+      "auth_login_post": {
+        "samples": 120,
+        "p95_ms": 2.14,
+        "avg_ms": 1.7
+      },
+      "dashboard_get": {
+        "samples": 120,
+        "p95_ms": 2.45,
+        "avg_ms": 2.17
+      }
+    },
+    "error_rate": {
+      "health_get": 0.0,
+      "auth_login_post": 0.0,
+      "dashboard_get": 0.0
+    }
+  }
+}
