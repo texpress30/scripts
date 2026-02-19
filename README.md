@@ -78,8 +78,9 @@ Aplicația citește valorile din variabile de mediu prin `os.environ` și nu har
 
 
 ## Deploy troubleshooting (405 la login)
+Frontend-ul folosește proxy Next (`/api/*`) către backend Railway, configurat prin `BACKEND_API_URL`.
 Dacă frontend-ul pe Vercel primește `405 Method Not Allowed` la login:
-- verifică `NEXT_PUBLIC_API_BASE_URL` să fie URL-ul backend-ului Railway (nu domeniul frontend),
+- verifică în Vercel variabila `BACKEND_API_URL` să fie URL-ul backend-ului Railway (nu domeniul frontend),
 - verifică endpoint-ul backend: `POST /auth/login` (nu GET),
 - verifică în Railway CORS: `APP_CORS_ORIGINS` include domeniul Vercel și/sau `APP_CORS_ORIGIN_REGEX` este configurat.
 

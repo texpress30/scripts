@@ -1,4 +1,4 @@
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+export const API_BASE_URL = "/api";
 
 export function getAuthToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -11,7 +11,8 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
   headers.set("Content-Type", "application/json");
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const requestUrl = `${API_BASE_URL}${path}`;
+  const response = await fetch(requestUrl, {
     ...options,
     headers,
     cache: "no-store"
@@ -19,7 +20,7 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
 
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error(detail || `Request failed: ${response.status}`);
+    throw new Error(detail || `Request failed: ${response.status} (${requestUrl})`);
   }
 
   return (await response.json()) as T;

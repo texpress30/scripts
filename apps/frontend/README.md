@@ -15,7 +15,7 @@ cp .env.local.example .env.local
 Valoare necesară:
 
 ```bash
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+BACKEND_API_URL=http://localhost:8000
 ```
 
 ## Credențiale test (default)
@@ -40,7 +40,7 @@ Frontend rulează ca serviciu `frontend` și expune `localhost:3000`.
 
 
 ## Important pentru Docker
-În `docker-compose.yml`, `NEXT_PUBLIC_API_BASE_URL` trebuie să fie `http://localhost:8000` pentru request-uri din browser (nu `http://backend:8000`).
+În `docker-compose.yml`, `BACKEND_API_URL` trebuie să fie `http://backend:8000` (request-urile trec prin proxy-ul Next din containerul frontend).
 Dacă modifici această valoare, rulează rebuild: `docker compose up --build`.
 
 
@@ -51,14 +51,23 @@ Dacă modifici această valoare, rulează rebuild: `docker compose up --build`.
 
 
 ## Deploy (Vercel + Railway)
-Setează în Vercel variabila:
+Setează în Vercel variabila **server-side**:
 
 ```bash
-NEXT_PUBLIC_API_BASE_URL=https://<railway-backend-domain>
+BACKEND_API_URL=https://<railway-backend-domain>
 ```
 
-Important:
-- nu folosi trailing slash la finalul URL-ului,
-- verifică să pointeze către backend Railway, nu către frontend Vercel,
-- testează manual: `POST https://<railway-backend-domain>/auth/login`.
+Frontend-ul nu mai cheamă direct backend-ul din browser; toate request-urile merg prin proxy-ul Next:
+- browser -> `https://<vercel-domain>/api/*`
+- Next proxy -> `https://<railway-backend-domain>/*`
 
+Avantaj: elimină problemele de CORS și reduce riscul de configurare greșită a `NEXT_PUBLIC_API_BASE_URL`.
+
+Debug rapid pentru 405:
+- deschide `https://<vercel-domain>/api/auth/login` în browser: trebuie să vezi `405` la GET (normal),
+- rulează un POST către același endpoint (din UI/login sau curl): trebuie să ajungă la Railway.
+
+
+
+## Notă importantă
+Dacă ai setat anterior `NEXT_PUBLIC_API_BASE_URL`, poți să îl elimini din Vercel ca să eviți confuzii; proxy-ul folosește `BACKEND_API_URL`.
