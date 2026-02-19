@@ -76,4 +76,6 @@ Dacă ai setat anterior `NEXT_PUBLIC_API_BASE_URL`, poți să îl elimini din Ve
 ## Design premium (integrare)
 - `src/app/dashboard/page.tsx` consumă live `/dashboard/{client_id}` pentru KPI + chart (Spend/Conversions/ROAS)
 - selector client tip Command Palette (`src/components/ClientCommandPalette.tsx`) încarcă `GET /clients` și filtrează selecția
-- dependențe UI noi: `cmdk`, `lucide-react`, `recharts`, `next-themes`
+- dependențe UI noi: `cmdk`, `lucide-react`, `recharts`, `next-themes`, `clsx`, `tailwind-merge`
+
+- utilitar UI pentru clase Tailwind: `src/lib/utils.ts` (`cn` via `clsx` + `tailwind-merge`)
