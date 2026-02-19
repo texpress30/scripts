@@ -2,7 +2,7 @@
 
 ## Ce include acest setup
 - pagină `Login` (`/login`) cu autentificare către backend (`POST /auth/login`)
-- pagină protejată `Dashboard` (`/dashboard`) cu shell nou (sidebar + overview cards + grafic Recharts)
+- pagină protejată `Dashboard` (`/dashboard`) cu design premium, carduri KPI conectate la API și selector client tip Command Palette
 - pagină `Clients` (`/clients`) pentru listare și creare client
 
 ## Config
@@ -71,3 +71,9 @@ Debug rapid pentru 405:
 
 ## Notă importantă
 Dacă ai setat anterior `NEXT_PUBLIC_API_BASE_URL`, poți să îl elimini din Vercel ca să eviți confuzii; proxy-ul folosește `BACKEND_API_URL`.
+
+
+## Design premium (integrare)
+- `src/app/dashboard/page.tsx` consumă live `/dashboard/{client_id}` pentru KPI + chart (Spend/Conversions/ROAS)
+- selector client tip Command Palette (`src/components/ClientCommandPalette.tsx`) încarcă `GET /clients` și filtrează selecția
+- dependențe UI noi: `cmdk`, `lucide-react`, `recharts`
