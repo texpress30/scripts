@@ -1,0 +1,17 @@
+{
+  "server_ready": true,
+  "p1_login_failed": {
+    "status": 401,
+    "body": "{\"detail\":\"Invalid email or password\"}",
+    "expected": "401"
+  },
+  "login_recovery_check": {
+    "status": 200,
+    "expected": "200"
+  },
+  "p2_server_down": {
+    "status": 0,
+    "body": "<urlopen error [Errno 111] Connection refused>",
+    "expected": "connection failure / non-200"
+  }
+}

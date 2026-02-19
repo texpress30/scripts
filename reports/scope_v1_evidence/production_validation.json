@@ -1,0 +1,47 @@
+{
+  "frontend_login": {
+    "status": 0,
+    "body_sample": "<urlopen error Tunnel connection failed: 403 Forbidden>"
+  },
+  "frontend_api_health": {
+    "status": 0,
+    "body_sample": "<urlopen error Tunnel connection failed: 403 Forbidden>"
+  },
+  "backend_health": {
+    "status": 0,
+    "body_sample": "<urlopen error Tunnel connection failed: 403 Forbidden>"
+  },
+  "auth_success": {
+    "status": 0
+  },
+  "auth_fail_wrong_password": {
+    "status": 0,
+    "body_sample": "<urlopen error Tunnel connection failed: 403 Forbidden>"
+  },
+  "clients_unauthorized": {
+    "status": 0,
+    "body_sample": "<urlopen error Tunnel connection failed: 403 Forbidden>"
+  },
+  "rate_limit_smoke": {
+    "codes_tail": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "saw_429": false
+  },
+  "frontend_api_health_perf": {
+    "samples": 40,
+    "p95_ms": 4.88,
+    "avg_ms": 3.6,
+    "error_rate_percent": 100.0
+  },
+  "backend_health_perf": {
+    "samples": 40,
+    "p95_ms": 3.9,
+    "avg_ms": 3.4,
+    "error_rate_percent": 100.0
+  }
+}
