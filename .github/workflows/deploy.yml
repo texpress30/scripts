@@ -1,0 +1,60 @@
+name: Deploy to Google Cloud Run
+
+on:
+  push:
+    branches: [ "main" ] # Se declanșează când dai push sau merge în main
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: europe-west3 # Frankfurt
+  BACKEND_SERVICE: mcc-backend
+  FRONTEND_SERVICE: mcc-frontend
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+
+      - name: Configure Docker for GCP
+        run: gcloud auth configure-docker --quiet
+
+      # --- BUILD & DEPLOY BACKEND ---
+      - name: Build and Push Backend
+        run: |
+          docker build -t gcr.io/$PROJECT_ID/$BACKEND_SERVICE:${{ github.sha }} ./apps/backend
+          docker push gcr.io/$PROJECT_ID/$BACKEND_SERVICE:${{ github.sha }}
+
+      - name: Deploy Backend to Cloud Run
+        run: |
+          gcloud run deploy $BACKEND_SERVICE \
+            --image gcr.io/$PROJECT_ID/$BACKEND_SERVICE:${{ github.sha }} \
+            --region $REGION \
+            --platform managed \
+            --allow-unauthenticated \
+            --set-env-vars "APP_AUTH_SECRET=${{ secrets.APP_AUTH_SECRET }},OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }},GOOGLE_ADS_TOKEN=${{ secrets.GOOGLE_ADS_TOKEN }},META_ACCESS_TOKEN=${{ secrets.META_ACCESS_TOKEN }},BIGQUERY_PROJECT_ID=${{ secrets.BIGQUERY_PROJECT_ID }}"
+
+      # --- BUILD & DEPLOY FRONTEND ---
+      - name: Build and Push Frontend
+        run: |
+          docker build \
+            --build-arg NEXT_PUBLIC_API_BASE_URL=${{ secrets.PROD_API_URL }} \
+            -t gcr.io/$PROJECT_ID/$FRONTEND_SERVICE:${{ github.sha }} ./apps/frontend
+          docker push gcr.io/$PROJECT_ID/$FRONTEND_SERVICE:${{ github.sha }}
+
+      - name: Deploy Frontend to Cloud Run
+        run: |
+          gcloud run deploy $FRONTEND_SERVICE \
+            --image gcr.io/$PROJECT_ID/$FRONTEND_SERVICE:${{ github.sha }} \
+            --region $REGION \
+            --platform managed \
+            --allow-unauthenticated
