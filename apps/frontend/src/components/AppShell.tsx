@@ -17,12 +17,14 @@ import {
   Settings,
   Bell,
   Search,
+  Palette,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/clients", label: "Clienti", icon: Users },
+  { href: "/creative", label: "Creative", icon: Palette },
 ];
 
 const bottomNavItems = [
