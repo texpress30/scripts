@@ -1,0 +1,64 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.api.audit import router as audit_router
+from app.api.insights import router as insights_router
+from app.api.ai import router as ai_router
+from app.api.auth import router as auth_router
+from app.api.clients import router as clients_router
+from app.api.dashboard import router as dashboard_router
+from app.api.exports import router as exports_router
+from app.api.google_ads import router as google_ads_router
+from app.api.health import router as health_router
+from app.api.meta_ads import router as meta_ads_router
+from app.api.rules import router as rules_router
+from app.core.config import load_settings
+
+settings = load_settings()
+
+app = FastAPI(
+    title="MCC AI Platform API",
+    version="0.7.1",
+    description="Backend skeleton with Sprint 1 (auth/RBAC/audit) and Sprint 2 (Google Ads sync/dashboard) and Sprint 3 (Meta Ads + unified dashboard) and Sprint 4 (rules engine automation) and Sprint 5 (AI assistant + weekly insights) and Sprint 6 (BigQuery export + hardening).",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=list(settings.cors_origins),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    allow_origin_regex=settings.cors_origin_regex,
+)
+
+# Core
+app.include_router(health_router)
+
+# Sprint 1
+app.include_router(auth_router)
+app.include_router(clients_router)
+app.include_router(audit_router)
+
+# Sprint 2
+app.include_router(google_ads_router)
+app.include_router(meta_ads_router)
+app.include_router(dashboard_router)
+
+# Sprint 4
+app.include_router(rules_router)
+
+# Sprint 5
+app.include_router(ai_router)
+app.include_router(insights_router)
+
+# Sprint 6
+app.include_router(exports_router)
+
+
+@app.get("/", tags=["root"])
+def root() -> dict[str, str]:
+    return {
+        "service": "mcc-ai-platform",
+        "environment": settings.app_env,
+        "message": "Backend skeleton is running.",
+    }
