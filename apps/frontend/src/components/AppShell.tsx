@@ -2,11 +2,37 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+<<<<<<< v0/texpress30-960bc9d4
+import { useTheme } from "next-themes";
+import { useState, useEffect } from "react";
+import {
+  LayoutDashboard,
+  Users,
+  LogOut,
+  ChevronLeft,
+  ChevronRight,
+  Moon,
+  Sun,
+  Activity,
+  BarChart3,
+  Settings,
+  Bell,
+  Search,
+  Palette,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+
+const navItems = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/clients", label: "Clienti", icon: Users },
+  { href: "/creative", label: "Creative", icon: Palette },
+=======
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/clients", label: "Clienți" },
   { href: "/login", label: "Logout" }
+>>>>>>> main
 ];
 
 export function AppShell({ title, children }: { title: string; children: React.ReactNode }) {
