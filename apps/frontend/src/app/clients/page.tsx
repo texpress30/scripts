@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-
+import { Plus, UserPlus, Search } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
@@ -18,6 +18,7 @@ export default function ClientsPage() {
   const [clients, setClients] = useState<ClientItem[]>([]);
   const [name, setName] = useState("");
   const [error, setError] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
   async function loadClients() {
     setError("");
@@ -25,7 +26,7 @@ export default function ClientsPage() {
       const result = await apiRequest<ClientsResponse>("/clients");
       setClients(result.items);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Nu pot încărca lista de clienți");
+      setError(err instanceof Error ? err.message : "Nu pot incarca lista de clienti");
     }
   }
 
@@ -39,7 +40,7 @@ export default function ClientsPage() {
     try {
       await apiRequest<ClientItem>("/clients", {
         method: "POST",
-        body: JSON.stringify({ name })
+        body: JSON.stringify({ name }),
       });
       setName("");
       await loadClients();
@@ -48,51 +49,95 @@ export default function ClientsPage() {
     }
   }
 
+  const filteredClients = clients.filter((c) =>
+    c.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <ProtectedPage>
-      <AppShell title="Clienți">
-        <main>
-          <form onSubmit={onCreate} className="mb-6 flex gap-3">
+      <AppShell title="Clienti">
+        <div className="mb-6">
+          <p className="text-sm text-muted-foreground">
+            Gestioneaza portofoliul de clienti si adauga clienti noi.
+          </p>
+        </div>
+
+        {/* Add client form */}
+        <form onSubmit={onCreate} className="mb-6 flex gap-3">
+          <div className="relative flex-1">
+            <UserPlus className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Nume client"
-              className="wm-input"
+              placeholder="Nume client nou"
+              className="mcc-input pl-10"
               required
             />
-            <button className="wm-btn-primary">Adaugă</button>
-          </form>
+          </div>
+          <button className="mcc-btn-primary gap-2">
+            <Plus className="h-4 w-4" />
+            Adauga
+          </button>
+        </form>
 
-          {error ? <p className="mb-4 text-red-600">{error}</p> : null}
+        {error && (
+          <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/5 p-4">
+            <p className="text-sm text-destructive">{error}</p>
+          </div>
+        )}
 
-          <section className="wm-card overflow-hidden">
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-100 text-left text-slate-600">
-                <tr>
-                  <th className="px-4 py-3">ID</th>
-                  <th className="px-4 py-3">Nume</th>
-                  <th className="px-4 py-3">Owner</th>
+        {/* Search bar */}
+        <div className="mb-4 relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Cauta clienti..."
+            className="mcc-input pl-10"
+          />
+        </div>
+
+        {/* Clients table */}
+        <div className="mcc-card overflow-hidden">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/50">
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  ID
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Nume
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Owner
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredClients.map((client) => (
+                <tr
+                  key={client.id}
+                  className="border-b border-border transition-colors hover:bg-muted/30"
+                >
+                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
+                    #{client.id}
+                  </td>
+                  <td className="px-4 py-3 font-medium text-foreground">{client.name}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{client.owner_email}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {clients.map((client) => (
-                  <tr key={client.id} className="border-t border-slate-100">
-                    <td className="px-4 py-3">{client.id}</td>
-                    <td className="px-4 py-3">{client.name}</td>
-                    <td className="px-4 py-3">{client.owner_email}</td>
-                  </tr>
-                ))}
-                {clients.length === 0 ? (
-                  <tr>
-                    <td className="px-4 py-4 text-slate-500" colSpan={3}>
-                      Nu există clienți încă.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </section>
-        </main>
+              ))}
+              {filteredClients.length === 0 && (
+                <tr>
+                  <td className="px-4 py-8 text-center text-muted-foreground" colSpan={3}>
+                    {searchQuery
+                      ? "Niciun client gasit pentru cautarea ta."
+                      : "Nu exista clienti inca."}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </AppShell>
     </ProtectedPage>
   );
