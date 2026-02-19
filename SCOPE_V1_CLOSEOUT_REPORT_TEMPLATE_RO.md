@@ -16,12 +16,12 @@
 
 | Criteriu | Țintă | Evidență (link/artefact) | Măsurat | Verdict |
 |---|---|---|---|---|
-| Coverage (unit + integration) | > 80% | (ex: raport CI + htmlcov) | 85% | ✅ |
-| P95 API latency | < 500ms | (ex: benchmark k6/locust) | 120ms | ✅ |
-| Error rate | < 0.5% | (ex: logs/APM 7 zile) | 0.1% | ✅ |
-| Lighthouse | > 90 | (ex: raport Lighthouse pages) | 92 | ✅ |
-| Audit log operații critice | activ | (ex: sample audit events) | Inactiv | ❌ |
-| E2E scenarii critice | acoperite | (ex: output suite e2e) | Partial | ❌ |
+| Coverage (unit + integration) | > 80% | Raport Pytest (apps/backend/tests) | 85% | ✅ |
+| P95 API latency | < 500ms | Benchmark local (FastAPI) | 120ms | ✅ |
+| Error rate | < 0.5% | Railway Logs (ultimele 24h) | 0.1% | ✅ |
+| Lighthouse | > 90 | Chrome DevTools Audit | 92 | ✅ |
+| Audit log operații critice | activ | DB Table audit_logs | Inactiv | ❌ |
+| E2E scenarii critice | acoperite | Playwright test suite (frontend) | Partial | ❌ |
 
 ---
 
