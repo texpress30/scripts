@@ -19,9 +19,6 @@ Monorepo de pornire pentru platforma MCC multi-platform cu AI.
 - `SCOPE_V1_CLOSEOUT_REPORT_TEMPLATE_RO.md` — template raport final Scope v1 (criteriu/evidență/verdict)
 - `PILOT_GO_NO_GO_CHECKLIST_RO.md` — checklist executabil pentru decizie pilot
 - `RUNBOOK_P1_P2_ESCALATION_RO.md` — runbook incidente P1/P2 + escalation
-- `SCOPE_V1_CLOSEOUT_REPORT_TEMPLATE_RO.md` — template raport final Scope v1 (criteriu/evidență/verdict)
-- `PILOT_GO_NO_GO_CHECKLIST_RO.md` — checklist executabil pentru decizie pilot
-- `RUNBOOK_P1_P2_ESCALATION_RO.md` — runbook incidente P1/P2 + escalation
 - `READY_FOR_PILOT_RO.md` — raport final de lansare pilot
 - `SPRINT_FRONTEND1_PROGRESS_RO.md` — progres Faza 1 Frontend (login/dashboard/clienți)
 

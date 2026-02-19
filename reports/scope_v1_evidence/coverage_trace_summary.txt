@@ -1,5 +1,5 @@
 .....sss..............                                                   [100%]
-19 passed, 3 skipped in 4.94s
+19 passed, 3 skipped in 4.84s
 lines   cov%   module   (path)
    63   100%   _collections_abc   (/root/.pyenv/versions/3.10.19/lib/python3.10/_collections_abc.py)
     5   100%   _distutils_hack.__init__   (/root/.pyenv/versions/3.10.19/lib/python3.10/site-packages/_distutils_hack/__init__.py)

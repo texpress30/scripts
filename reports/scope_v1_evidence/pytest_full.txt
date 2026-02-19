@@ -3,4 +3,4 @@
 SKIPPED [1] apps/backend/tests/test_e2e.py:37: fastapi/testclient dependency not available in this environment
 SKIPPED [1] apps/backend/tests/test_e2e.py:44: fastapi/testclient dependency not available in this environment
 SKIPPED [1] apps/backend/tests/test_e2e.py:48: fastapi/testclient dependency not available in this environment
-19 passed, 3 skipped in 0.52s
+19 passed, 3 skipped in 0.51s
