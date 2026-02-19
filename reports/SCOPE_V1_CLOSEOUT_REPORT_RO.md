@@ -31,9 +31,3 @@ Artefacte: `reports/scope_v1_evidence/*`
 
 ## 4) Concluzie
 Pe criteriile cerute în această rundă (Coverage, API Latency, Error Rate, Auth + Google/Meta + AI validations), rezultatul este **PASS** și poate fi folosit pentru completarea matricei de acceptanță în close-out Scope v1.
-
-
-## 5) Verdict final
-- **Verdict Scope v1:** **GO**
-- **Decizie:** Gate-urile tehnice și funcționale sunt îndeplinite pe baza evidențelor din `reports/scope_v1_evidence/*`.
-- **Recomandare:** Se poate continua cu pilotul controlat, cu monitorizare activă conform runbook-ului P1/P2.
