@@ -30,6 +30,24 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.meta_access_token, "")
         self.assertEqual(settings.bigquery_project_id, "")
 
+    def test_invalid_cors_regex_falls_back_to_default(self):
+        os.environ.clear()
+        os.environ["APP_AUTH_SECRET"] = "test-auth-secret"
+        os.environ["APP_CORS_ORIGIN_REGEX"] = "["
+
+        settings = load_settings()
+
+        self.assertEqual(settings.cors_origin_regex, r"https://.*\.vercel\.app")
+
+    def test_empty_cors_regex_can_disable_pattern(self):
+        os.environ.clear()
+        os.environ["APP_AUTH_SECRET"] = "test-auth-secret"
+        os.environ["APP_CORS_ORIGIN_REGEX"] = ""
+
+        settings = load_settings()
+
+        self.assertIsNone(settings.cors_origin_regex)
+
     def test_settings_are_loaded_from_environment(self):
         os.environ["APP_ENV"] = "test"
         os.environ["APP_HOST"] = "127.0.0.1"

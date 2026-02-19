@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 
 
@@ -21,7 +22,7 @@ class Settings:
     database_url: str
     redis_url: str
     cors_origins: tuple[str, ...]
-    cors_origin_regex: str
+    cors_origin_regex: str | None
 
 
 def _get_env(name: str, default: str | None = None, required: bool = False) -> str:
@@ -40,6 +41,18 @@ def _parse_csv_env(name: str, default: str) -> tuple[str, ...]:
     values = tuple(item.strip() for item in raw.split(",") if item.strip())
     return values
 
+
+
+def _safe_regex_env(name: str, default: str) -> str | None:
+    value = _get_env(name, default=default).strip()
+    if value == "":
+        return None
+    try:
+        re.compile(value)
+        return value
+    except re.error:
+        return default
+
 def load_settings() -> Settings:
     return Settings(
         app_env=_get_env("APP_ENV", default="development"),
@@ -55,5 +68,5 @@ def load_settings() -> Settings:
         database_url=_get_env("DATABASE_URL", default="postgresql://postgres:postgres@localhost:5432/mcc"),
         redis_url=_get_env("REDIS_URL", default="redis://localhost:6379/0"),
         cors_origins=_parse_csv_env("APP_CORS_ORIGINS", default="http://localhost:3000,http://127.0.0.1:3000"),
-        cors_origin_regex=_get_env("APP_CORS_ORIGIN_REGEX", default=r"https://.*\.vercel\.app"),
+        cors_origin_regex=_safe_regex_env("APP_CORS_ORIGIN_REGEX", default=r"https://.*\.vercel\.app"),
     )

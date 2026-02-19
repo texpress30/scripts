@@ -86,4 +86,5 @@ Dacă frontend-ul pe Vercel primește `405 Method Not Allowed` la login:
 - verifică în Vercel variabila `BACKEND_API_URL` să fie URL-ul backend-ului Railway (nu domeniul frontend),
 - verifică endpoint-ul backend: `POST /auth/login` (nu GET),
 - verifică în Railway CORS: `APP_CORS_ORIGINS` include domeniul Vercel și/sau `APP_CORS_ORIGIN_REGEX` este configurat.
+- dacă `APP_CORS_ORIGIN_REGEX` este invalid, backend-ul folosește fallback sigur (`https://.*\.vercel\.app`) în loc să pice la startup.
 
