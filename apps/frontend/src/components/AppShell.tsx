@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 
 import { apiRequest } from "@/lib/api";
-import { isTikTokIntegrationEnabled } from "@/lib/featureFlags";
+import { isPinterestIntegrationEnabled, isTikTokIntegrationEnabled } from "@/lib/featureFlags";
 import { cn } from "@/lib/utils";
 
 type ClientItem = { id: number; name: string; owner_email: string };
@@ -47,7 +47,7 @@ function getNavItems(pathname: string) {
     { href: "/creative", label: "Creative", icon: Palette },
   ];
 
-  if (isTikTokIntegrationEnabled()) {
+  if (isTikTokIntegrationEnabled() || isPinterestIntegrationEnabled()) {
     agencyItems.splice(3, 0, { href: "/agency/integrations", label: "Integrations (beta)", icon: Sparkles });
   }
 

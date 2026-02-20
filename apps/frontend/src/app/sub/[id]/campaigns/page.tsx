@@ -7,7 +7,7 @@ import { useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
-import { isTikTokIntegrationEnabled } from "@/lib/featureFlags";
+import { isPinterestIntegrationEnabled, isTikTokIntegrationEnabled } from "@/lib/featureFlags";
 import { getCurrentRole, isReadOnlyRole } from "@/lib/session";
 
 export default function SubCampaignsPage() {
@@ -16,12 +16,13 @@ export default function SubCampaignsPage() {
   const role = getCurrentRole();
   const readOnly = isReadOnlyRole(role);
   const tiktokEnabled = isTikTokIntegrationEnabled();
+  const pinterestEnabled = isPinterestIntegrationEnabled();
 
   const [result, setResult] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
 
-  async function action(name: "google" | "meta" | "tiktok" | "evaluate") {
+  async function action(name: "google" | "meta" | "tiktok" | "pinterest" | "evaluate") {
     setError("");
     setResult("");
     setBusy(name);
@@ -29,6 +30,7 @@ export default function SubCampaignsPage() {
       if (name === "google") await apiRequest(`/integrations/google-ads/${clientId}/sync`, { method: "POST" });
       if (name === "meta") await apiRequest(`/integrations/meta-ads/${clientId}/sync`, { method: "POST" });
       if (name === "tiktok") await apiRequest(`/integrations/tiktok-ads/${clientId}/sync`, { method: "POST" });
+      if (name === "pinterest") await apiRequest(`/integrations/pinterest-ads/${clientId}/sync`, { method: "POST" });
       if (name === "evaluate") await apiRequest(`/rules/${clientId}/evaluate`, { method: "POST" });
       setResult(`Acțiunea ${name} a fost executată.`);
     } catch (err) {
@@ -49,7 +51,7 @@ export default function SubCampaignsPage() {
         {error ? <p className="mb-3 text-sm text-red-600">{error}</p> : null}
         {result ? <p className="mb-3 text-sm text-emerald-600">{result}</p> : null}
 
-        <section className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <section className="grid grid-cols-1 gap-4 md:grid-cols-5">
           <ActionCard
             title="Sync Google"
             disabled={readOnly || busy !== null}
@@ -68,6 +70,14 @@ export default function SubCampaignsPage() {
               disabled={readOnly || busy !== null}
               description="Rulează endpoint-ul skeleton TikTok (Slice 8.2.1)"
               onClick={() => action("tiktok")}
+            />
+          ) : null}
+          {pinterestEnabled ? (
+            <ActionCard
+              title="Sync Pinterest (beta)"
+              disabled={readOnly || busy !== null}
+              description="Rulează endpoint-ul skeleton Pinterest (contract freeze)"
+              onClick={() => action("pinterest")}
             />
           ) : null}
           <ActionCard

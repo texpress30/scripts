@@ -24,6 +24,7 @@ class Settings:
     cors_origins: tuple[str, ...]
     cors_origin_regex: str | None
     ff_tiktok_integration: bool
+    ff_pinterest_integration: bool
     tiktok_sync_retry_attempts: int
     tiktok_sync_backoff_ms: int
     tiktok_sync_force_transient_failures: int
@@ -86,6 +87,7 @@ def load_settings() -> Settings:
         cors_origins=_parse_csv_env("APP_CORS_ORIGINS", default="http://localhost:3000,http://127.0.0.1:3000"),
         cors_origin_regex=_safe_regex_env("APP_CORS_ORIGIN_REGEX", default=r"https://.*\.vercel\.app"),
         ff_tiktok_integration=_parse_bool_env("FF_TIKTOK_INTEGRATION", default=False),
+        ff_pinterest_integration=_parse_bool_env("FF_PINTEREST_INTEGRATION", default=False),
         tiktok_sync_retry_attempts=_parse_int_env("TIKTOK_SYNC_RETRY_ATTEMPTS", default=2),
         tiktok_sync_backoff_ms=_parse_int_env("TIKTOK_SYNC_BACKOFF_MS", default=75),
         tiktok_sync_force_transient_failures=_parse_int_env("TIKTOK_SYNC_FORCE_TRANSIENT_FAILURES", default=0),

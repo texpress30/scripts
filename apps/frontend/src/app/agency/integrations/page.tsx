@@ -2,23 +2,35 @@
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
-import { isTikTokIntegrationEnabled } from "@/lib/featureFlags";
+import { isPinterestIntegrationEnabled, isTikTokIntegrationEnabled } from "@/lib/featureFlags";
 
 export default function AgencyIntegrationsPage() {
-  const enabled = isTikTokIntegrationEnabled();
+  const tiktokEnabled = isTikTokIntegrationEnabled();
+  const pinterestEnabled = isPinterestIntegrationEnabled();
 
   return (
     <ProtectedPage>
       <AppShell title="Agency Integrations">
-        <article className="wm-card p-4">
-          <h2 className="text-base font-semibold text-slate-900">TikTok Ads (Slice 8.2.2)</h2>
-          <p className="mt-2 text-sm text-slate-600">
-            {enabled
-              ? "Feature flag activ: sync-ul TikTok (mock) este disponibil și salvează snapshot-uri pentru dashboard."
-              : "Feature flag inactiv: integrarea TikTok rămâne ascunsă până la validarea UAT."}
-          </p>
-          <p className="mt-3 text-xs text-slate-500">Sync minim E2E livrat. Adapterul provider real rămâne pentru hardening ulterior.</p>
-        </article>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <article className="wm-card p-4">
+            <h2 className="text-base font-semibold text-slate-900">TikTok Ads (stabilized)</h2>
+            <p className="mt-2 text-sm text-slate-600">
+              {tiktokEnabled
+                ? "Feature flag activ: sync-ul TikTok este disponibil pentru validare/UAT."
+                : "Feature flag inactiv: integrarea TikTok rămâne ascunsă până la activare controlată."}
+            </p>
+          </article>
+
+          <article className="wm-card p-4">
+            <h2 className="text-base font-semibold text-slate-900">Pinterest Ads (slice 1)</h2>
+            <p className="mt-2 text-sm text-slate-600">
+              {pinterestEnabled
+                ? "Feature flag activ: endpoint-urile Pinterest status/sync sunt disponibile în modul skeleton."
+                : "Feature flag inactiv: integrarea Pinterest este pregătită, dar oprită implicit."}
+            </p>
+            <p className="mt-3 text-xs text-slate-500">Contract freeze only. Sync real/provider adapter urmează în slice-ul următor.</p>
+          </article>
+        </div>
       </AppShell>
     </ProtectedPage>
   );

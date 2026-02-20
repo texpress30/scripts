@@ -30,18 +30,21 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.meta_access_token, "")
         self.assertEqual(settings.bigquery_project_id, "")
         self.assertFalse(settings.ff_tiktok_integration)
+        self.assertFalse(settings.ff_pinterest_integration)
         self.assertEqual(settings.tiktok_sync_retry_attempts, 2)
         self.assertEqual(settings.tiktok_sync_backoff_ms, 75)
 
 
-    def test_tiktok_feature_flag_can_be_enabled_from_env(self):
+    def test_tiktok_and_pinterest_feature_flags_can_be_enabled_from_env(self):
         os.environ.clear()
         os.environ["APP_AUTH_SECRET"] = "test-auth-secret"
         os.environ["FF_TIKTOK_INTEGRATION"] = "true"
+        os.environ["FF_PINTEREST_INTEGRATION"] = "true"
 
         settings = load_settings()
 
         self.assertTrue(settings.ff_tiktok_integration)
+        self.assertTrue(settings.ff_pinterest_integration)
 
     def test_tiktok_retry_settings_are_configurable(self):
         os.environ.clear()
