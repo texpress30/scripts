@@ -1,12 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from app.api.dependencies import get_current_user
+from app.api.dependencies import enforce_action_scope, get_current_user
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
 from app.services.notifications import notification_service
 from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
-from app.services.rbac import AuthorizationError, require_permission
 from app.services.rules_engine import rules_engine_service
 
 router = APIRouter(prefix="/rules", tags=["rules"])
@@ -23,10 +22,8 @@ class CreateRuleRequest(BaseModel):
 @router.get("/{client_id}")
 def list_rules(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
-        require_permission(user.role, "clients:read")
+        enforce_action_scope(user=user, action="rules:list", scope="subaccount")
         rate_limiter_service.check(f"rules_list:{user.email}", limit=60, window_seconds=60)
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
@@ -37,10 +34,8 @@ def list_rules(client_id: int, user: AuthUser = Depends(get_current_user)) -> di
 @router.post("/{client_id}")
 def create_rule(client_id: int, payload: CreateRuleRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
-        require_permission(user.role, "clients:create")
+        enforce_action_scope(user=user, action="rules:create", scope="subaccount")
         rate_limiter_service.check(f"rules_write:{user.email}", limit=30, window_seconds=60)
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
@@ -71,10 +66,8 @@ def create_rule(client_id: int, payload: CreateRuleRequest, user: AuthUser = Dep
 @router.post("/{client_id}/evaluate")
 def evaluate_rules(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
-        require_permission(user.role, "clients:create")
+        enforce_action_scope(user=user, action="rules:evaluate", scope="subaccount")
         rate_limiter_service.check(f"rules_eval:{user.email}", limit=30, window_seconds=60)
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
