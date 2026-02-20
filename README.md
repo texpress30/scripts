@@ -4,6 +4,7 @@ Monorepo de pornire pentru platforma MCC multi-platform cu AI.
 
 ## Structură
 - `apps/backend` — FastAPI backend (Sprint 1 + Sprint 2)
+- `apps/backend/db/migrations/0001_core_entities.sql` — schema SQL pentru entitățile principale MCC (agencies/subaccounts/campaigns/insights/recommendations) + mapare `external_id` Google/Meta/TikTok
 - `apps/frontend` — placeholder Next.js (Phase 0)
 - `IMPLEMENTATION_BRIEF_RO.md` — brief consolidat
 - `NEXT_STEPS_RO.md` — roadmap pe sprinturi
