@@ -29,6 +29,30 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.google_ads_token, "")
         self.assertEqual(settings.meta_access_token, "")
         self.assertEqual(settings.bigquery_project_id, "")
+        self.assertFalse(settings.ff_tiktok_integration)
+        self.assertEqual(settings.tiktok_sync_retry_attempts, 2)
+        self.assertEqual(settings.tiktok_sync_backoff_ms, 75)
+
+
+    def test_tiktok_feature_flag_can_be_enabled_from_env(self):
+        os.environ.clear()
+        os.environ["APP_AUTH_SECRET"] = "test-auth-secret"
+        os.environ["FF_TIKTOK_INTEGRATION"] = "true"
+
+        settings = load_settings()
+
+        self.assertTrue(settings.ff_tiktok_integration)
+
+    def test_tiktok_retry_settings_are_configurable(self):
+        os.environ.clear()
+        os.environ["APP_AUTH_SECRET"] = "test-auth-secret"
+        os.environ["TIKTOK_SYNC_RETRY_ATTEMPTS"] = "4"
+        os.environ["TIKTOK_SYNC_BACKOFF_MS"] = "125"
+
+        settings = load_settings()
+
+        self.assertEqual(settings.tiktok_sync_retry_attempts, 4)
+        self.assertEqual(settings.tiktok_sync_backoff_ms, 125)
 
     def test_invalid_cors_regex_falls_back_to_default(self):
         os.environ.clear()
@@ -63,6 +87,8 @@ class ConfigTests(unittest.TestCase):
         os.environ["REDIS_URL"] = "redis://example"
         os.environ["APP_CORS_ORIGINS"] = "https://frontend.example.com,https://admin.example.com"
         os.environ["APP_CORS_ORIGIN_REGEX"] = r"https://.*\\.example\\.com"
+        os.environ["TIKTOK_SYNC_RETRY_ATTEMPTS"] = "3"
+        os.environ["TIKTOK_SYNC_BACKOFF_MS"] = "50"
 
         settings = load_settings()
 
@@ -78,6 +104,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.bigquery_project_id, "test-project")
         self.assertEqual(settings.cors_origins, ("https://frontend.example.com", "https://admin.example.com"))
         self.assertEqual(settings.cors_origin_regex, r"https://.*\\.example\\.com")
+        self.assertEqual(settings.tiktok_sync_retry_attempts, 3)
+        self.assertEqual(settings.tiktok_sync_backoff_ms, 50)
 
 
 if __name__ == "__main__":
