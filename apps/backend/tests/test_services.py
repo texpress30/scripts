@@ -10,8 +10,9 @@ from app.services.meta_ads import MetaAdsIntegrationError, meta_ads_service
 from app.services.creative_workflow import creative_workflow_service
 from app.services.notifications import notification_service
 from app.services.recommendations import recommendations_service
-from app.services.rbac import AuthorizationError, require_permission
+from app.services.rbac import AuthorizationError, require_action, require_permission
 from app.services.rules_engine import rules_engine_service
+from app.services.audit import audit_log_service
 
 
 class ServiceTests(unittest.TestCase):
@@ -33,6 +34,7 @@ class ServiceTests(unittest.TestCase):
         notification_service._events.clear()
         insights_service._items.clear()
         creative_workflow_service.reset()
+        audit_log_service._events.clear()
         os.environ.clear()
         os.environ.update(self.original_env)
 
@@ -58,6 +60,13 @@ class ServiceTests(unittest.TestCase):
         require_permission("agency_admin", "clients:create")
         with self.assertRaises(AuthorizationError):
             require_permission("client_viewer", "clients:create")
+
+    def test_rbac_action_scope_validation(self):
+        require_action("agency_admin", action="clients:list", scope="agency")
+        with self.assertRaises(AuthorizationError):
+            require_action("agency_admin", action="clients:list", scope="subaccount")
+        with self.assertRaises(AuthorizationError):
+            require_action("client_viewer", action="rules:create", scope="subaccount")
 
     # Sprint 2 coverage (Google)
     def test_google_ads_status_pending_when_placeholder(self):
