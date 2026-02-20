@@ -8,6 +8,7 @@ from app.services.dashboard import unified_dashboard_service
 from app.services.google_ads import GoogleAdsIntegrationError, google_ads_service
 from app.services.meta_ads import MetaAdsIntegrationError, meta_ads_service
 from app.services.pinterest_ads import PinterestAdsIntegrationError, pinterest_ads_service
+from app.services.snapchat_ads import SnapchatAdsIntegrationError, snapchat_ads_service
 from app.services.tiktok_ads import TikTokAdsIntegrationError, tiktok_ads_service
 from app.services.tiktok_store import tiktok_snapshot_store
 from app.services.tiktok_observability import tiktok_sync_metrics
@@ -131,6 +132,17 @@ class ServiceTests(unittest.TestCase):
         snapshot = pinterest_ads_service.sync_client(client_id=2)
         self.assertEqual(snapshot["status"], "stub")
         self.assertEqual(snapshot["platform"], "pinterest_ads")
+
+    def test_snapchat_ads_sync_fails_when_feature_flag_disabled(self):
+        os.environ["FF_SNAPCHAT_INTEGRATION"] = "0"
+        with self.assertRaises(SnapchatAdsIntegrationError):
+            snapchat_ads_service.sync_client(client_id=2)
+
+    def test_snapchat_ads_sync_stub_when_feature_flag_enabled(self):
+        os.environ["FF_SNAPCHAT_INTEGRATION"] = "1"
+        snapshot = snapchat_ads_service.sync_client(client_id=2)
+        self.assertEqual(snapshot["status"], "stub")
+        self.assertEqual(snapshot["platform"], "snapchat_ads")
 
     # Sprint 3 coverage (Meta + unified dashboard)
     def test_meta_ads_status_pending_when_placeholder(self):

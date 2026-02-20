@@ -7,7 +7,7 @@ import { useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
-import { isPinterestIntegrationEnabled, isTikTokIntegrationEnabled } from "@/lib/featureFlags";
+import { isPinterestIntegrationEnabled, isSnapchatIntegrationEnabled, isTikTokIntegrationEnabled } from "@/lib/featureFlags";
 import { getCurrentRole, isReadOnlyRole } from "@/lib/session";
 
 export default function SubCampaignsPage() {
@@ -17,12 +17,13 @@ export default function SubCampaignsPage() {
   const readOnly = isReadOnlyRole(role);
   const tiktokEnabled = isTikTokIntegrationEnabled();
   const pinterestEnabled = isPinterestIntegrationEnabled();
+  const snapchatEnabled = isSnapchatIntegrationEnabled();
 
   const [result, setResult] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
 
-  async function action(name: "google" | "meta" | "tiktok" | "pinterest" | "evaluate") {
+  async function action(name: "google" | "meta" | "tiktok" | "pinterest" | "snapchat" | "evaluate") {
     setError("");
     setResult("");
     setBusy(name);
@@ -31,6 +32,7 @@ export default function SubCampaignsPage() {
       if (name === "meta") await apiRequest(`/integrations/meta-ads/${clientId}/sync`, { method: "POST" });
       if (name === "tiktok") await apiRequest(`/integrations/tiktok-ads/${clientId}/sync`, { method: "POST" });
       if (name === "pinterest") await apiRequest(`/integrations/pinterest-ads/${clientId}/sync`, { method: "POST" });
+      if (name === "snapchat") await apiRequest(`/integrations/snapchat-ads/${clientId}/sync`, { method: "POST" });
       if (name === "evaluate") await apiRequest(`/rules/${clientId}/evaluate`, { method: "POST" });
       setResult(`Acțiunea ${name} a fost executată.`);
     } catch (err) {
@@ -78,6 +80,14 @@ export default function SubCampaignsPage() {
               disabled={readOnly || busy !== null}
               description="Rulează endpoint-ul skeleton Pinterest (contract freeze)"
               onClick={() => action("pinterest")}
+            />
+          ) : null}
+          {snapchatEnabled ? (
+            <ActionCard
+              title="Sync Snapchat (beta)"
+              disabled={readOnly || busy !== null}
+              description="Rulează endpoint-ul skeleton Snapchat (contract freeze)"
+              onClick={() => action("snapchat")}
             />
           ) : null}
           <ActionCard
