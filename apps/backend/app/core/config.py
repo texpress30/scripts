@@ -25,6 +25,9 @@ class Settings:
     cors_origin_regex: str | None
     ff_tiktok_integration: bool
     tiktok_sync_db_path: str
+    tiktok_sync_retry_attempts: int
+    tiktok_sync_backoff_ms: int
+    tiktok_sync_force_transient_failures: int
 
 
 def _get_env(name: str, default: str | None = None, required: bool = False) -> str:
@@ -46,6 +49,15 @@ def _parse_bool_env(name: str, default: bool = False) -> bool:
     raw = _get_env(name, default="1" if default else "0").strip().lower()
     return raw in {"1", "true", "yes", "on"}
 
+
+
+
+def _parse_int_env(name: str, default: int) -> int:
+    raw = _get_env(name, default=str(default)).strip()
+    try:
+        return int(raw)
+    except ValueError:
+        return default
 
 def _safe_regex_env(name: str, default: str) -> str | None:
     value = _get_env(name, default=default).strip()
@@ -76,4 +88,7 @@ def load_settings() -> Settings:
         cors_origin_regex=_safe_regex_env("APP_CORS_ORIGIN_REGEX", default=r"https://.*\.vercel\.app"),
         ff_tiktok_integration=_parse_bool_env("FF_TIKTOK_INTEGRATION", default=False),
         tiktok_sync_db_path=_get_env("TIKTOK_SYNC_DB_PATH", default="/tmp/mcc_tiktok_sync.sqlite3"),
+        tiktok_sync_retry_attempts=_parse_int_env("TIKTOK_SYNC_RETRY_ATTEMPTS", default=2),
+        tiktok_sync_backoff_ms=_parse_int_env("TIKTOK_SYNC_BACKOFF_MS", default=75),
+        tiktok_sync_force_transient_failures=_parse_int_env("TIKTOK_SYNC_FORCE_TRANSIENT_FAILURES", default=0),
     )

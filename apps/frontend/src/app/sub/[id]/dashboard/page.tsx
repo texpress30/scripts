@@ -15,9 +15,9 @@ type DashboardResponse = {
   client_id: number;
   totals: { spend: number; conversions: number; roas: number };
   platforms: {
-    google_ads: { spend: number; conversions: number; roas?: number };
-    meta_ads: { spend: number; conversions: number; roas?: number };
-    tiktok_ads?: { spend: number; conversions: number; roas?: number };
+    google_ads: { spend: number; conversions: number; roas?: number; is_synced?: boolean };
+    meta_ads: { spend: number; conversions: number; roas?: number; is_synced?: boolean };
+    tiktok_ads?: { spend: number; conversions: number; roas?: number; is_synced?: boolean };
   };
 };
 
@@ -83,7 +83,7 @@ export default function SubDashboardPage() {
           <Link href={`/sub/${clientId}/recommendations`} className="text-indigo-600 hover:underline">Recommendations</Link>
         </div>
 
-        {error ? <p className="mb-4 text-sm text-red-600">{error}</p> : null}
+        {error ? <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
 
         <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <MetricCard title="Spend" value={loading ? "..." : `$${totals.spend.toLocaleString()}`} />
@@ -96,6 +96,8 @@ export default function SubDashboardPage() {
             title="Google Ads"
             spend={google.spend}
             conversions={google.conversions}
+            loading={loading}
+            synced={Boolean(google.is_synced)}
             buttonLabel={busy === "google" ? "Sync..." : "Sync Google"}
             disabled={readOnly || busy !== null}
             onSync={() => sync("google")}
@@ -104,6 +106,8 @@ export default function SubDashboardPage() {
             title="Meta Ads"
             spend={meta.spend}
             conversions={meta.conversions}
+            loading={loading}
+            synced={Boolean(meta.is_synced)}
             buttonLabel={busy === "meta" ? "Sync..." : "Sync Meta"}
             disabled={readOnly || busy !== null}
             onSync={() => sync("meta")}
@@ -113,6 +117,8 @@ export default function SubDashboardPage() {
               title="TikTok Ads"
               spend={tiktok.spend}
               conversions={tiktok.conversions}
+              loading={loading}
+              synced={Boolean(tiktok.is_synced)}
               buttonLabel={busy === "tiktok" ? "Sync..." : "Sync TikTok"}
               disabled={readOnly || busy !== null}
               onSync={() => sync("tiktok")}
@@ -144,6 +150,8 @@ function IntegrationCard({
   buttonLabel,
   disabled,
   onSync,
+  loading,
+  synced,
 }: {
   title: string;
   spend: number;
@@ -151,6 +159,8 @@ function IntegrationCard({
   buttonLabel: string;
   disabled: boolean;
   onSync: () => void;
+  loading: boolean;
+  synced: boolean;
 }) {
   return (
     <Card>
@@ -158,8 +168,9 @@ function IntegrationCard({
         <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent>
-        <p className="text-sm text-slate-600">Spend: ${spend.toLocaleString()}</p>
-        <p className="text-sm text-slate-600">Conversii: {conversions.toLocaleString()}</p>
+        <p className="text-sm text-slate-600">Status: {loading ? "Loading..." : synced ? "Synced" : "No data"}</p>
+        <p className="text-sm text-slate-600">Spend: {loading ? "..." : `$${spend.toLocaleString()}`}</p>
+        <p className="text-sm text-slate-600">Conversii: {loading ? "..." : conversions.toLocaleString()}</p>
         <button
           disabled={disabled}
           onClick={onSync}

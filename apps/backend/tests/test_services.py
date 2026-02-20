@@ -9,6 +9,7 @@ from app.services.google_ads import GoogleAdsIntegrationError, google_ads_servic
 from app.services.meta_ads import MetaAdsIntegrationError, meta_ads_service
 from app.services.tiktok_ads import TikTokAdsIntegrationError, tiktok_ads_service
 from app.services.tiktok_store import tiktok_snapshot_store
+from app.services.tiktok_observability import tiktok_sync_metrics
 from app.services.creative_workflow import creative_workflow_service
 from app.services.notifications import notification_service
 from app.services.recommendations import recommendations_service
@@ -33,6 +34,7 @@ class ServiceTests(unittest.TestCase):
         google_ads_service._snapshots.clear()
         meta_ads_service._snapshots.clear()
         tiktok_snapshot_store.clear()
+        tiktok_sync_metrics.reset()
         rules_engine_service._rules.clear()
         rules_engine_service._next_id = 1
         notification_service._events.clear()
@@ -104,6 +106,17 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(metrics["platform"], "tiktok_ads")
         self.assertTrue(metrics["is_synced"])
         self.assertGreater(float(metrics["spend"]), 0.0)
+
+
+    def test_tiktok_ads_retry_succeeds_after_transient_failures(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        os.environ["TIKTOK_SYNC_RETRY_ATTEMPTS"] = "3"
+        os.environ["TIKTOK_SYNC_FORCE_TRANSIENT_FAILURES"] = "2"
+
+        snapshot = tiktok_ads_service.sync_client(client_id=10)
+
+        self.assertEqual(snapshot["status"], "success")
+        self.assertEqual(snapshot["attempts"], 3)
 
     # Sprint 3 coverage (Meta + unified dashboard)
     def test_meta_ads_status_pending_when_placeholder(self):
