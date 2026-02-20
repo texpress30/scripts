@@ -8,6 +8,7 @@ from app.services.dashboard import unified_dashboard_service
 from app.services.google_ads import GoogleAdsIntegrationError, google_ads_service
 from app.services.meta_ads import MetaAdsIntegrationError, meta_ads_service
 from app.services.notifications import notification_service
+from app.services.recommendations import recommendations_service
 from app.services.rbac import AuthorizationError, require_permission
 from app.services.rules_engine import rules_engine_service
 
@@ -30,6 +31,9 @@ class ServiceTests(unittest.TestCase):
         rules_engine_service._next_id = 1
         notification_service._events.clear()
         insights_service._items.clear()
+        recommendations_service._items.clear()
+        recommendations_service._actions.clear()
+        recommendations_service._next_id = 1
         os.environ.clear()
         os.environ.update(self.original_env)
 
@@ -144,6 +148,30 @@ class ServiceTests(unittest.TestCase):
         actions = rules_engine_service.evaluate_client_rules(client_id=4)
         self.assertGreaterEqual(len(actions), 1)
         self.assertEqual(actions[0]["rule_type"], "auto_scale")
+
+
+    def test_structured_recommendation_lifecycle_and_impact_report(self):
+        os.environ["GOOGLE_ADS_TOKEN"] = "google-real-token"
+        os.environ["META_ACCESS_TOKEN"] = "meta-real-token"
+        google_ads_service.sync_client(client_id=8)
+        meta_ads_service.sync_client(client_id=8)
+
+        generated = recommendations_service.generate_recommendations(client_id=8)
+        self.assertEqual(len(generated), 1)
+        self.assertIn("problema", generated[0]["payload"])
+
+        recommendation_id = int(generated[0]["id"])
+        updated = recommendations_service.review_recommendation(
+            client_id=8, recommendation_id=recommendation_id, action="approve", actor="tester@example.com"
+        )
+        self.assertEqual(updated["status"], "applied")
+
+        actions = recommendations_service.list_actions(client_id=8)
+        self.assertGreaterEqual(len(actions), 2)
+
+        report = recommendations_service.get_impact_report(client_id=8)
+        windows = [item["window_days"] for item in report["windows"]]
+        self.assertEqual(windows, [3, 7, 14])
 
     # Sprint 5 coverage (AI assistant + insights + guardrails)
     def test_ai_recommendation_fallback_when_insufficient_data(self):
