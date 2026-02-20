@@ -211,5 +211,20 @@ class E2EFlowTests(unittest.TestCase):
         self.assertEqual(self.client.post("/integrations/tiktok-ads/1/sync", headers=headers).status_code, 403)
 
 
+    def test_tiktok_sync_fail_audit_when_retries_exhausted(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        os.environ["TIKTOK_SYNC_RETRY_ATTEMPTS"] = "2"
+        os.environ["TIKTOK_SYNC_FORCE_TRANSIENT_FAILURES"] = "5"
+        headers = self._auth_header()
+
+        response = self.client.post("/integrations/tiktok-ads/1/sync", headers=headers)
+        self.assertEqual(response.status_code, 400)
+
+        audit_events = self.client.get("/audit", headers=headers)
+        actions = {item["action"] for item in audit_events.json()["items"]}
+        self.assertIn("tiktok_ads.sync.start", actions)
+        self.assertIn("tiktok_ads.sync.fail", actions)
+
+
 if __name__ == "__main__":
     unittest.main()
