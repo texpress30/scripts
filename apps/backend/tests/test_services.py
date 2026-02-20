@@ -12,6 +12,7 @@ from app.services.notifications import notification_service
 from app.services.recommendations import recommendations_service
 from app.services.rbac import AuthorizationError, require_action, require_permission
 from app.services.rules_engine import rules_engine_service
+from app.services.audit import audit_log_service
 
 
 class ServiceTests(unittest.TestCase):
@@ -33,6 +34,7 @@ class ServiceTests(unittest.TestCase):
         notification_service._events.clear()
         insights_service._items.clear()
         creative_workflow_service.reset()
+        audit_log_service._events.clear()
         os.environ.clear()
         os.environ.update(self.original_env)
 

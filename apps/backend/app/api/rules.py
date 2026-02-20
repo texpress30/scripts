@@ -72,6 +72,14 @@ def evaluate_rules(client_id: int, user: AuthUser = Depends(get_current_user)) -
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
     actions = rules_engine_service.evaluate_client_rules(client_id)
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="rules.evaluate",
+        resource=f"client:{client_id}",
+        details={"triggered_count": len(actions)},
+    )
+
     notifications = []
     for action in actions:
         notifications.append(

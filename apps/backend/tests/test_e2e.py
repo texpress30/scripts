@@ -4,9 +4,11 @@ import unittest
 try:
     from fastapi.testclient import TestClient
     from app.main import app
+    from app.services.audit import audit_log_service
 except Exception:  # environment dependency may be absent in CI sandbox
     TestClient = None
     app = None
+    audit_log_service = None
 
 
 @unittest.skipIf(TestClient is None or app is None, "fastapi/testclient dependency not available in this environment")
@@ -20,6 +22,7 @@ class E2EFlowTests(unittest.TestCase):
         os.environ["META_ACCESS_TOKEN"] = "meta-real-token"
         os.environ["BIGQUERY_PROJECT_ID"] = "test-project"
         self.client = TestClient(app)
+        audit_log_service._events.clear()
 
     def tearDown(self):
         os.environ.clear()
@@ -85,6 +88,17 @@ class E2EFlowTests(unittest.TestCase):
         self.assertEqual(self.client.post(f"/insights/weekly/{client_id}/generate", headers=headers).status_code, 200)
         self.assertEqual(self.client.post(f"/exports/bigquery/{client_id}", headers=headers).status_code, 200)
 
+        audit_events = self.client.get("/audit", headers=headers)
+        self.assertEqual(audit_events.status_code, 200)
+        actions = {item["action"] for item in audit_events.json()["items"]}
+        self.assertIn("auth.login.succeeded", actions)
+        self.assertIn("clients.create", actions)
+        self.assertIn("google_ads.sync", actions)
+        self.assertIn("meta_ads.sync", actions)
+        self.assertIn("rules.evaluate", actions)
+        self.assertIn("ai.weekly_insight.generate", actions)
+        self.assertIn("export.bigquery.run", actions)
+
     def test_creative_library_to_publish_flow(self):
         headers = self._auth_header()
 
@@ -146,6 +160,19 @@ class E2EFlowTests(unittest.TestCase):
             headers=headers,
         )
         self.assertEqual(write_rule.status_code, 403)
+    def test_auth_failure_is_audited(self):
+        response = self.client.post(
+            "/auth/login",
+            json={"email": "admin@example.com", "password": "wrong", "role": "agency_admin"},
+        )
+        self.assertEqual(response.status_code, 401)
+
+        admin_headers = self._auth_header(role="agency_admin")
+        audit_events = self.client.get("/audit", headers=admin_headers)
+        self.assertEqual(audit_events.status_code, 200)
+        actions = [item["action"] for item in audit_events.json()["items"]]
+        self.assertIn("auth.login.failed", actions)
+
 
 
 

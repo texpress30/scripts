@@ -14,8 +14,8 @@ def generate_weekly(client_id: int, user: AuthUser = Depends(get_current_user)) 
 
     item = insights_service.generate_weekly_insight(client_id)
     audit_log_service.log(
-        actor_email="system_bot",
-        actor_role="system",
+        actor_email=user.email,
+        actor_role=user.role,
         action="ai.weekly_insight.generate",
         resource=f"client:{client_id}",
         details={"created_at": item["created_at"]},

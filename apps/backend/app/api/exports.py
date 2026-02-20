@@ -19,8 +19,8 @@ def run_bigquery_export(client_id: int, user: AuthUser = Depends(get_current_use
 
     run = bigquery_export_service.run_export_for_client(client_id)
     audit_log_service.log(
-        actor_email="system_bot",
-        actor_role="system",
+        actor_email=user.email,
+        actor_role=user.role,
         action="export.bigquery.run",
         resource=f"client:{client_id}",
         details={"status": run["status"]},
