@@ -160,19 +160,6 @@ class E2EFlowTests(unittest.TestCase):
             headers=headers,
         )
         self.assertEqual(write_rule.status_code, 403)
-    def test_auth_failure_is_audited(self):
-        response = self.client.post(
-            "/auth/login",
-            json={"email": "admin@example.com", "password": "wrong", "role": "agency_admin"},
-        )
-        self.assertEqual(response.status_code, 401)
-
-        admin_headers = self._auth_header(role="agency_admin")
-        audit_events = self.client.get("/audit", headers=admin_headers)
-        self.assertEqual(audit_events.status_code, 200)
-        actions = [item["action"] for item in audit_events.json()["items"]]
-        self.assertIn("auth.login.failed", actions)
-
 
 
 

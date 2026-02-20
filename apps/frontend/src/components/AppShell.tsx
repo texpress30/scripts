@@ -21,11 +21,11 @@ import {
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/clients", label: "Clienti", icon: Users },
-  { href: "/creative", label: "Creative", icon: Palette },
+  { href: "/agency/dashboard", label: "Agency Dashboard", icon: LayoutDashboard },
+  { href: "/agency/clients", label: "Agency Clients", icon: Users },
+  { href: "/agency/audit", label: "Agency Audit", icon: Sparkles },
   { href: "/notifications", label: "Notificari", icon: Bell },
-  { href: "/recommendations", label: "Recommendations", icon: Sparkles },
+  { href: "/creative", label: "Creative", icon: Palette },
 ];
 
 export function AppShell({
@@ -64,7 +64,7 @@ export function AppShell({
       {/* Navigation */}
       <nav className="flex-1 space-y-1 px-3 py-4">
         {navItems.map((item) => {
-          const active = pathname === item.href;
+          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
           return (
             <Link
