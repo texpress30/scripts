@@ -1,4 +1,5 @@
 import os
+import tempfile
 import unittest
 
 try:
@@ -21,10 +22,13 @@ class E2EFlowTests(unittest.TestCase):
         os.environ["GOOGLE_ADS_TOKEN"] = "google-real-token"
         os.environ["META_ACCESS_TOKEN"] = "meta-real-token"
         os.environ["BIGQUERY_PROJECT_ID"] = "test-project"
+        self.tiktok_db_dir = tempfile.TemporaryDirectory()
+        os.environ["TIKTOK_SYNC_DB_PATH"] = f"{self.tiktok_db_dir.name}/tiktok-sync.sqlite3"
         self.client = TestClient(app)
         audit_log_service._events.clear()
 
     def tearDown(self):
+        self.tiktok_db_dir.cleanup()
         os.environ.clear()
         os.environ.update(self.original_env)
 
@@ -183,11 +187,21 @@ class E2EFlowTests(unittest.TestCase):
 
         status_response = self.client.get("/integrations/tiktok-ads/status", headers=headers)
         self.assertEqual(status_response.status_code, 200)
-        self.assertEqual(status_response.json()["status"], "preview")
+        self.assertEqual(status_response.json()["status"], "connected")
 
         sync_response = self.client.post(f"/integrations/tiktok-ads/{client_id}/sync", headers=headers)
         self.assertEqual(sync_response.status_code, 200)
-        self.assertEqual(sync_response.json()["status"], "stub")
+        self.assertEqual(sync_response.json()["status"], "success")
+
+        dashboard_response = self.client.get(f"/dashboard/{client_id}", headers=headers)
+        self.assertEqual(dashboard_response.status_code, 200)
+        self.assertGreater(float(dashboard_response.json()["platforms"]["tiktok_ads"]["spend"]), 0.0)
+
+        audit_events = self.client.get("/audit", headers=headers)
+        self.assertEqual(audit_events.status_code, 200)
+        actions = {item["action"] for item in audit_events.json()["items"]}
+        self.assertIn("tiktok_ads.sync.start", actions)
+        self.assertIn("tiktok_ads.sync.success", actions)
 
     def test_tiktok_scope_enforcement_for_client_viewer(self):
         os.environ["FF_TIKTOK_INTEGRATION"] = "1"

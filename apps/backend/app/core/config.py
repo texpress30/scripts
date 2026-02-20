@@ -24,6 +24,7 @@ class Settings:
     cors_origins: tuple[str, ...]
     cors_origin_regex: str | None
     ff_tiktok_integration: bool
+    tiktok_sync_db_path: str
 
 
 def _get_env(name: str, default: str | None = None, required: bool = False) -> str:
@@ -74,4 +75,5 @@ def load_settings() -> Settings:
         cors_origins=_parse_csv_env("APP_CORS_ORIGINS", default="http://localhost:3000,http://127.0.0.1:3000"),
         cors_origin_regex=_safe_regex_env("APP_CORS_ORIGIN_REGEX", default=r"https://.*\.vercel\.app"),
         ff_tiktok_integration=_parse_bool_env("FF_TIKTOK_INTEGRATION", default=False),
+        tiktok_sync_db_path=_get_env("TIKTOK_SYNC_DB_PATH", default="/tmp/mcc_tiktok_sync.sqlite3"),
     )

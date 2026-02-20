@@ -29,19 +29,12 @@ def tiktok_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, s
 
 
 @router.post("/{client_id}/sync")
-def sync_tiktok_ads(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, int | str]:
+def sync_tiktok_ads(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, float | int | str]:
     try:
         enforce_action_scope(user=user, action="integrations:tiktok:sync", scope="subaccount")
         rate_limiter_service.check(f"tiktok_sync:{user.email}", limit=30, window_seconds=60)
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
-
-    try:
-        snapshot = tiktok_ads_service.sync_client(client_id=client_id)
-    except TikTokAdsIntegrationError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="TikTok Ads API unavailable") from exc
 
     audit_log_service.log(
         actor_email=user.email,
@@ -50,10 +43,32 @@ def sync_tiktok_ads(client_id: int, user: AuthUser = Depends(get_current_user)) 
         resource=f"client:{client_id}",
         details={"phase": "start"},
     )
+
+    try:
+        snapshot = tiktok_ads_service.sync_client(client_id=client_id)
+    except TikTokAdsIntegrationError as exc:
+        audit_log_service.log(
+            actor_email=user.email,
+            actor_role=user.role,
+            action="tiktok_ads.sync.fail",
+            resource=f"client:{client_id}",
+            details={"error": str(exc)},
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        audit_log_service.log(
+            actor_email=user.email,
+            actor_role=user.role,
+            action="tiktok_ads.sync.fail",
+            resource=f"client:{client_id}",
+            details={"error": "TikTok Ads API unavailable"},
+        )
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="TikTok Ads API unavailable") from exc
+
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
-        action="tiktok_ads.sync.accepted",
+        action="tiktok_ads.sync.success",
         resource=f"client:{client_id}",
         details=snapshot,
     )
