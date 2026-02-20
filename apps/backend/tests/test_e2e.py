@@ -1,5 +1,4 @@
 import os
-import tempfile
 import unittest
 
 try:
@@ -22,13 +21,10 @@ class E2EFlowTests(unittest.TestCase):
         os.environ["GOOGLE_ADS_TOKEN"] = "google-real-token"
         os.environ["META_ACCESS_TOKEN"] = "meta-real-token"
         os.environ["BIGQUERY_PROJECT_ID"] = "test-project"
-        self.tiktok_db_dir = tempfile.TemporaryDirectory()
-        os.environ["TIKTOK_SYNC_DB_PATH"] = f"{self.tiktok_db_dir.name}/tiktok-sync.sqlite3"
         self.client = TestClient(app)
         audit_log_service._events.clear()
 
     def tearDown(self):
-        self.tiktok_db_dir.cleanup()
         os.environ.clear()
         os.environ.update(self.original_env)
 

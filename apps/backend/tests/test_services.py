@@ -21,6 +21,7 @@ from app.services.audit import audit_log_service
 class ServiceTests(unittest.TestCase):
     def setUp(self):
         self.original_env = os.environ.copy()
+        os.environ["APP_ENV"] = "test"
         os.environ["APP_AUTH_SECRET"] = "test-secret"
         os.environ["APP_LOGIN_EMAIL"] = "admin@example.com"
         os.environ["APP_LOGIN_PASSWORD"] = "admin123"
@@ -28,7 +29,6 @@ class ServiceTests(unittest.TestCase):
         os.environ["GOOGLE_ADS_TOKEN"] = "test-google-token"
         os.environ["META_ACCESS_TOKEN"] = "test-meta-token"
         os.environ["BIGQUERY_PROJECT_ID"] = "test-project"
-        os.environ["TIKTOK_SYNC_DB_PATH"] = "/tmp/test-mcc-tiktok-services.sqlite3"
 
     def tearDown(self):
         google_ads_service._snapshots.clear()
