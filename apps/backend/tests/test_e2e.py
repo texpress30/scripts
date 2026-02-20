@@ -74,6 +74,50 @@ class E2EFlowTests(unittest.TestCase):
         self.assertEqual(self.client.post(f"/insights/weekly/{client_id}/generate", headers=headers).status_code, 200)
         self.assertEqual(self.client.post(f"/exports/bigquery/{client_id}", headers=headers).status_code, 200)
 
+    def test_creative_library_to_publish_flow(self):
+        headers = self._auth_header()
+
+        create_asset = self.client.post(
+            "/creative/library/assets",
+            json={
+                "client_id": 1,
+                "name": "UGC Video",
+                "format": "video",
+                "dimensions": "1080x1920",
+                "objective_fit": "awareness",
+                "platform_fit": ["meta", "tiktok"],
+                "language": "ro",
+                "brand_tags": ["ugc", "q2"],
+                "legal_status": "pending",
+                "approval_status": "draft",
+            },
+            headers=headers,
+        )
+        self.assertEqual(create_asset.status_code, 200)
+        asset_id = int(create_asset.json()["id"])
+
+        ai_generate = self.client.post(
+            f"/creative/ai-generation/assets/{asset_id}/variants",
+            json={"count": 2},
+            headers=headers,
+        )
+        self.assertEqual(ai_generate.status_code, 200)
+
+        approve = self.client.post(
+            f"/creative/approvals/assets/{asset_id}",
+            json={"legal_status": "approved", "approval_status": "approved"},
+            headers=headers,
+        )
+        self.assertEqual(approve.status_code, 200)
+
+        publish = self.client.post(
+            f"/creative/publish/assets/{asset_id}/to-channel",
+            json={"channel": "tiktok"},
+            headers=headers,
+        )
+        self.assertEqual(publish.status_code, 200)
+
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -6,6 +6,7 @@ from app.api.insights import router as insights_router
 from app.api.ai import router as ai_router
 from app.api.auth import router as auth_router
 from app.api.clients import router as clients_router
+from app.api.creative import router as creative_router
 from app.api.dashboard import router as dashboard_router
 from app.api.exports import router as exports_router
 from app.api.google_ads import router as google_ads_router
@@ -53,6 +54,9 @@ app.include_router(insights_router)
 
 # Sprint 6
 app.include_router(exports_router)
+
+# Sprint 7
+app.include_router(creative_router)
 
 
 @app.get("/", tags=["root"])
