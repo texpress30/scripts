@@ -25,10 +25,10 @@ class E2EFlowTests(unittest.TestCase):
         os.environ.clear()
         os.environ.update(self.original_env)
 
-    def _auth_header(self) -> dict[str, str]:
+    def _auth_header(self, role: str = "agency_admin") -> dict[str, str]:
         resp = self.client.post(
             "/auth/login",
-            json={"email": "admin@example.com", "password": "admin123", "role": "agency_admin"},
+            json={"email": "admin@example.com", "password": "admin123", "role": role},
         )
         self.assertEqual(resp.status_code, 200)
         token = resp.json()["access_token"]
@@ -127,6 +127,25 @@ class E2EFlowTests(unittest.TestCase):
             headers=headers,
         )
         self.assertEqual(publish.status_code, 200)
+
+    def test_scope_enforcement_for_client_viewer(self):
+        headers = self._auth_header(role="client_viewer")
+
+        clients_list = self.client.get("/clients", headers=headers)
+        self.assertEqual(clients_list.status_code, 403)
+
+        write_rule = self.client.post(
+            "/rules/1",
+            json={
+                "name": "Blocked",
+                "rule_type": "stop_loss",
+                "threshold": 10.0,
+                "action_value": 0.0,
+                "status": "active",
+            },
+            headers=headers,
+        )
+        self.assertEqual(write_rule.status_code, 403)
 
 
 
