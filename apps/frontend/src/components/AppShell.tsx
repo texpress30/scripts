@@ -20,13 +20,27 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/clients", label: "Clienti", icon: Users },
-  { href: "/creative", label: "Creative", icon: Palette },
-  { href: "/notifications", label: "Notificari", icon: Bell },
-  { href: "/recommendations", label: "Recommendations", icon: Sparkles },
-];
+function getNavItems(pathname: string) {
+  const subMatch = pathname.match(/^\/sub\/(\d+)/);
+  if (subMatch) {
+    const id = subMatch[1];
+    return [
+      { href: `/sub/${id}/dashboard`, label: "Sub Dashboard", icon: LayoutDashboard },
+      { href: `/sub/${id}/campaigns`, label: "Campaigns", icon: Bell },
+      { href: `/sub/${id}/rules`, label: "Rules", icon: Sparkles },
+      { href: `/sub/${id}/creative`, label: "Creative", icon: Palette },
+      { href: `/sub/${id}/recommendations`, label: "Recommendations", icon: Users },
+    ];
+  }
+
+  return [
+    { href: "/agency/dashboard", label: "Agency Dashboard", icon: LayoutDashboard },
+    { href: "/agency/clients", label: "Agency Clients", icon: Users },
+    { href: "/agency/audit", label: "Agency Audit", icon: Sparkles },
+    { href: "/notifications", label: "Notificari", icon: Bell },
+    { href: "/creative", label: "Creative", icon: Palette },
+  ];
+}
 
 export function AppShell({
   title,
@@ -36,6 +50,7 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const navItems = getNavItems(pathname);
   const { theme, setTheme } = useTheme();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -64,7 +79,7 @@ export function AppShell({
       {/* Navigation */}
       <nav className="flex-1 space-y-1 px-3 py-4">
         {navItems.map((item) => {
-          const active = pathname === item.href;
+          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
           return (
             <Link
