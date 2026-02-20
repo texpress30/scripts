@@ -70,7 +70,18 @@ class E2EFlowTests(unittest.TestCase):
         self.assertEqual(create_rule.status_code, 200)
 
         self.assertEqual(self.client.post(f"/rules/{client_id}/evaluate", headers=headers).status_code, 200)
-        self.assertEqual(self.client.get(f"/ai/recommendations/{client_id}", headers=headers).status_code, 200)
+        ai_resp = self.client.get(f"/ai/recommendations/{client_id}", headers=headers)
+        self.assertEqual(ai_resp.status_code, 200)
+        rec_id = int(ai_resp.json()["items"][0]["id"])
+        self.assertEqual(
+            self.client.post(
+                f"/ai/recommendations/{client_id}/{rec_id}/review",
+                headers=headers,
+                json={"action": "approve", "snooze_days": 3},
+            ).status_code,
+            200,
+        )
+        self.assertEqual(self.client.get(f"/ai/recommendations/{client_id}/impact-report", headers=headers).status_code, 200)
         self.assertEqual(self.client.post(f"/insights/weekly/{client_id}/generate", headers=headers).status_code, 200)
         self.assertEqual(self.client.post(f"/exports/bigquery/{client_id}", headers=headers).status_code, 200)
 

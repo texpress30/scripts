@@ -14,6 +14,7 @@ import {
   Sun,
   Palette,
   Bell,
+  Sparkles,
   Menu,
   X,
 } from "lucide-react";
@@ -24,6 +25,7 @@ const navItems = [
   { href: "/clients", label: "Clienti", icon: Users },
   { href: "/creative", label: "Creative", icon: Palette },
   { href: "/notifications", label: "Notificari", icon: Bell },
+  { href: "/recommendations", label: "Recommendations", icon: Sparkles },
 ];
 
 export function AppShell({
