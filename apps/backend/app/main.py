@@ -12,6 +12,8 @@ from app.api.exports import router as exports_router
 from app.api.google_ads import router as google_ads_router
 from app.api.health import router as health_router
 from app.api.meta_ads import router as meta_ads_router
+from app.api.pinterest_ads import router as pinterest_ads_router
+from app.api.tiktok_ads import router as tiktok_ads_router
 from app.api.rules import router as rules_router
 from app.core.config import load_settings
 
@@ -43,6 +45,8 @@ app.include_router(audit_router)
 # Sprint 2
 app.include_router(google_ads_router)
 app.include_router(meta_ads_router)
+app.include_router(tiktok_ads_router)
+app.include_router(pinterest_ads_router)
 app.include_router(dashboard_router)
 
 # Sprint 4
