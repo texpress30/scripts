@@ -23,6 +23,7 @@ class Settings:
     redis_url: str
     cors_origins: tuple[str, ...]
     cors_origin_regex: str | None
+    ff_tiktok_integration: bool
 
 
 def _get_env(name: str, default: str | None = None, required: bool = False) -> str:
@@ -34,13 +35,15 @@ def _get_env(name: str, default: str | None = None, required: bool = False) -> s
     return value
 
 
-
-
 def _parse_csv_env(name: str, default: str) -> tuple[str, ...]:
     raw = _get_env(name, default=default)
     values = tuple(item.strip() for item in raw.split(",") if item.strip())
     return values
 
+
+def _parse_bool_env(name: str, default: bool = False) -> bool:
+    raw = _get_env(name, default="1" if default else "0").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 def _safe_regex_env(name: str, default: str) -> str | None:
@@ -52,6 +55,7 @@ def _safe_regex_env(name: str, default: str) -> str | None:
         return value
     except re.error:
         return default
+
 
 def load_settings() -> Settings:
     return Settings(
@@ -69,4 +73,5 @@ def load_settings() -> Settings:
         redis_url=_get_env("REDIS_URL", default="redis://localhost:6379/0"),
         cors_origins=_parse_csv_env("APP_CORS_ORIGINS", default="http://localhost:3000,http://127.0.0.1:3000"),
         cors_origin_regex=_safe_regex_env("APP_CORS_ORIGIN_REGEX", default=r"https://.*\.vercel\.app"),
+        ff_tiktok_integration=_parse_bool_env("FF_TIKTOK_INTEGRATION", default=False),
     )
