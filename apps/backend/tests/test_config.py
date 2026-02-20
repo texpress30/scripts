@@ -29,6 +29,17 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.google_ads_token, "")
         self.assertEqual(settings.meta_access_token, "")
         self.assertEqual(settings.bigquery_project_id, "")
+        self.assertFalse(settings.ff_tiktok_integration)
+
+
+    def test_tiktok_feature_flag_can_be_enabled_from_env(self):
+        os.environ.clear()
+        os.environ["APP_AUTH_SECRET"] = "test-auth-secret"
+        os.environ["FF_TIKTOK_INTEGRATION"] = "true"
+
+        settings = load_settings()
+
+        self.assertTrue(settings.ff_tiktok_integration)
 
     def test_invalid_cors_regex_falls_back_to_default(self):
         os.environ.clear()

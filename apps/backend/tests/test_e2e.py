@@ -163,5 +163,39 @@ class E2EFlowTests(unittest.TestCase):
 
 
 
+    def test_tiktok_contract_is_feature_flagged_off_by_default(self):
+        headers = self._auth_header()
+
+        status_response = self.client.get("/integrations/tiktok-ads/status", headers=headers)
+        self.assertEqual(status_response.status_code, 200)
+        self.assertEqual(status_response.json()["status"], "disabled")
+
+        sync_response = self.client.post("/integrations/tiktok-ads/1/sync", headers=headers)
+        self.assertEqual(sync_response.status_code, 400)
+
+    def test_tiktok_status_and_sync_contract_when_feature_enabled(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        headers = self._auth_header()
+
+        create_client = self.client.post("/clients", json={"name": "TikTok Pilot"}, headers=headers)
+        self.assertEqual(create_client.status_code, 200)
+        client_id = int(create_client.json()["id"])
+
+        status_response = self.client.get("/integrations/tiktok-ads/status", headers=headers)
+        self.assertEqual(status_response.status_code, 200)
+        self.assertEqual(status_response.json()["status"], "preview")
+
+        sync_response = self.client.post(f"/integrations/tiktok-ads/{client_id}/sync", headers=headers)
+        self.assertEqual(sync_response.status_code, 200)
+        self.assertEqual(sync_response.json()["status"], "stub")
+
+    def test_tiktok_scope_enforcement_for_client_viewer(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        headers = self._auth_header(role="client_viewer")
+
+        self.assertEqual(self.client.get("/integrations/tiktok-ads/status", headers=headers).status_code, 403)
+        self.assertEqual(self.client.post("/integrations/tiktok-ads/1/sync", headers=headers).status_code, 403)
+
+
 if __name__ == "__main__":
     unittest.main()

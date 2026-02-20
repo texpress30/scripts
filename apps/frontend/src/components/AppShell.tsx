@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 
 import { apiRequest } from "@/lib/api";
+import { isTikTokIntegrationEnabled } from "@/lib/featureFlags";
 import { cn } from "@/lib/utils";
 
 type ClientItem = { id: number; name: string; owner_email: string };
@@ -38,13 +39,19 @@ function getNavItems(pathname: string) {
     ];
   }
 
-  return [
+  const agencyItems = [
     { href: "/agency/dashboard", label: "Agency Dashboard", icon: LayoutDashboard },
     { href: "/agency/clients", label: "Agency Clients", icon: Users },
     { href: "/agency/audit", label: "Agency Audit", icon: Sparkles },
     { href: "/notifications", label: "Notificari", icon: Bell },
     { href: "/creative", label: "Creative", icon: Palette },
   ];
+
+  if (isTikTokIntegrationEnabled()) {
+    agencyItems.splice(3, 0, { href: "/agency/integrations", label: "Integrations (beta)", icon: Sparkles });
+  }
+
+  return agencyItems;
 }
 
 export function AppShell({
