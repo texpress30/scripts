@@ -91,6 +91,7 @@ Din brief-ul curent, epics OOS includ:
 - [ ] PR mici (max ~300 linii net schimbate / PR când posibil).
 - [ ] Mandatory checks: `pytest -q`, `npm run build`.
 - [ ] Feature flag default OFF până la validare UAT.
+- [ ] Runbook stabilizare + release readiness documentat (`docs/product/SPRINT8_2_STABILIZATION_RUNBOOK_RO.md`).
 
 ## 7) Riscuri și mitigări
 - **Risc:** creep de scope (prea multe epics simultan)
