@@ -3,12 +3,12 @@
 ## Obiectiv
 Închidere formală pentru Scope v1 prin:
 1) validarea criteriilor de acceptare,
-2) închiderea gap-urilor operaționale,
-3) handover oficial către Out of Scope v1.
+2) clarificarea gap-urilor operaționale rămase,
+3) pregătirea handover-ului către Out of Scope v1.
 
 ## Status global
 - **Implementare features Scope v1:** ✅ completă la nivel MVP (Sprint 1–6 livrate).
-- **Close-out operațional:** ✅ închis (done), cu decizie pilot GO confirmată.
+- **Close-out operațional:** 🟡 în progres (acțiuni de mai jos).
 
 ---
 
@@ -16,47 +16,47 @@
 
 | Criteriu | Țintă | Status | Evidență / notă |
 |---|---:|---|---|
-| Coverage (unit + integration) | > 80% | ✅ | Suita backend rulează verde (`pytest -q`, 23 passed, 5 skipped). |
-| P95 API latency | < 500ms | ✅ | Benchmark intern validat în artefactul de closeout v1. |
-| Error rate | < 0.5% | ✅ | Monitorizare pilot + baseline de eroare în limite. |
-| Lighthouse score | > 90 | ✅ | Raport Lighthouse validat în closeout v1. |
-| Audit log operații critice | activ | ✅ | Audit trail activ pe login/create/sync/rules/insights/export/review. |
-| E2E scenarii critice | acoperite | ✅ | E2E pilot acoperite (onboarding-to-export + role/scope checks). |
+| Coverage (unit + integration) | > 80% | 🟡 | Testele există (`test_config.py`, `test_services.py`, `test_e2e.py`), dar pragul procentual nu este încă raportat într-un artifact unic de release. |
+| P95 API latency | < 500ms | 🟡 | Endpoint-urile critice sunt funcționale + hardening activ, dar lipsește benchmark formal per mediu de staging. |
+| Error rate | < 0.5% | 🟡 | Tratare erori externe este implementată (`400/429/502` controlat), dar lipsește raport de observabilitate pe fereastră minimă (ex. 7 zile staging). |
+| Lighthouse score | > 90 | 🟡 | Frontend este livrat, însă nu există încă raport Lighthouse versionat. |
+| Audit log operații critice | activ | ✅ | Audit trail livrat în Sprint 1 și folosit pe fluxurile critice. |
+| E2E scenarii critice | acoperite | 🟡 | Există E2E onboarding-to-export; recomand extindere explicită pe token refresh / concurență / degradare externă în raportul final. |
 
 ---
 
 ## 2) Acțiuni Mini Sprint 6.1 (closure)
 
 ### A. Release evidence pack (obligatoriu)
-- [x] Export raport coverage + prag minim în CI.
-- [x] Raport benchmark P95 pe endpoint-uri cheie (`/auth/login`, `/dashboard/{client_id}`, `/rules/{client_id}/evaluate`, `/exports/bigquery/{client_id}`).
-- [x] Raport error-rate din staging (window 7 zile).
-- [x] Raport Lighthouse pentru ecrane: `/login`, `/dashboard`, `/clients`.
+- [ ] Export raport coverage + prag minim în CI.
+- [ ] Raport benchmark P95 pe endpoint-uri cheie (`/auth/login`, `/dashboard/{client_id}`, `/rules/{client_id}/evaluate`, `/exports/bigquery/{client_id}`).
+- [ ] Raport error-rate din staging (window 7 zile).
+- [ ] Raport Lighthouse pentru ecrane: `/login`, `/dashboard`, `/clients`.
 
 ### B. Operational ownership (obligatoriu)
-- [x] Nominalizare owner aprobare PR AI (`nume`, `rol`, backup owner).
-- [x] Ownership secrete pe medii (`local`, `staging`, `prod`).
-- [x] Confirmare accesuri tehnice reale: Google Ads, Meta, OpenAI, BigQuery.
+- [ ] Nominalizare owner aprobare PR AI (`nume`, `rol`, backup owner).
+- [ ] Ownership secrete pe medii (`local`, `staging`, `prod`).
+- [ ] Confirmare accesuri tehnice reale: Google Ads, Meta, OpenAI, BigQuery.
 
 ### C. Go/No-Go checklist (pilot)
-- [x] Runbook incident severitate P1/P2.
-- [x] SLA alertare și escalation tree.
-- [x] Plan rollback + feature flags pentru fluxuri sensibile.
+- [ ] Runbook incident severitate P1/P2.
+- [ ] SLA alertare și escalation tree.
+- [ ] Plan rollback + feature flags pentru fluxuri sensibile.
 
 ---
 
 ## 3) Deliverables Mini Sprint 6.1
-1. Acest document (`SPRINT6_1_CLOSEOUT_RO.md`) ca tracker final.
-2. Raport final: `SCOPE_V1_CLOSEOUT_REPORT_TEMPLATE_RO.md`.
+1. Acest document (`SPRINT6_1_CLOSEOUT_RO.md`) ca tracker central.
+2. Template raport final: `SCOPE_V1_CLOSEOUT_REPORT_TEMPLATE_RO.md`.
 3. Checklist decizie pilot: `PILOT_GO_NO_GO_CHECKLIST_RO.md`.
 4. Runbook incidente: `RUNBOOK_P1_P2_ESCALATION_RO.md`.
-5. Actualizare roadmap (`NEXT_STEPS_RO.md`) cu etapa 6.1 + 8.2.
-6. Decizie formală: pilot **GO**, Scope v1 **CLOSED**.
+5. Actualizare roadmap (`NEXT_STEPS_RO.md`) cu etapă explicită 6.1.
+6. Actualizare README pentru vizibilitate status close-out.
 
 ---
 
 ## 4) Criteriu de ieșire Mini Sprint 6.1
-Mini Sprint 6.1 este închis deoarece:
-- toate itemele din **A + B** sunt complete,
-- evidențele criteriu → dovadă → verdict sunt consolidate,
-- proiectul este declarat **Scope v1 Closed** și pregătit pentru **Out of Scope v1 (Sprint 8.2)**.
+Mini Sprint 6.1 se închide când:
+- toate itemele din **A + B** sunt marcate complete,
+- există un singur artifact de release care mapează clar **criteriu → evidență → verdict**,
+- proiectul poate fi declarat **Scope v1 Closed** și mutat oficial pe **Out of Scope v1**.
