@@ -7,6 +7,7 @@ from app.services.insights import insights_service
 from app.services.dashboard import unified_dashboard_service
 from app.services.google_ads import GoogleAdsIntegrationError, google_ads_service
 from app.services.meta_ads import MetaAdsIntegrationError, meta_ads_service
+from app.services.creative_workflow import creative_workflow_service
 from app.services.notifications import notification_service
 from app.services.recommendations import recommendations_service
 from app.services.rbac import AuthorizationError, require_permission
@@ -31,9 +32,7 @@ class ServiceTests(unittest.TestCase):
         rules_engine_service._next_id = 1
         notification_service._events.clear()
         insights_service._items.clear()
-        recommendations_service._items.clear()
-        recommendations_service._actions.clear()
-        recommendations_service._next_id = 1
+        creative_workflow_service.reset()
         os.environ.clear()
         os.environ.update(self.original_env)
 
@@ -191,6 +190,65 @@ class ServiceTests(unittest.TestCase):
         latest = insights_service.get_latest(client_id=6)
         self.assertIsNotNone(latest)
         self.assertEqual(latest["client_id"], 6)
+
+    # Sprint 7 coverage (creative library + ai generation + approvals + publish)
+    def test_creative_asset_metadata_variants_scores_and_links(self):
+        asset = creative_workflow_service.create_asset(
+            client_id=11,
+            name="Video Awareness RO",
+            format="video",
+            dimensions="1080x1920",
+            objective_fit="awareness",
+            platform_fit=["meta", "tiktok"],
+            language="ro",
+            brand_tags=["summer", "promo"],
+            legal_status="pending",
+            approval_status="draft",
+        )
+
+        creative_workflow_service.generate_variants(asset_id=int(asset["id"]), count=2)
+        creative_workflow_service.set_performance_scores(
+            asset_id=int(asset["id"]),
+            scores={"google": 71.2, "meta": 88.1, "tiktok": 91.4},
+        )
+        creative_workflow_service.link_to_campaign(asset_id=int(asset["id"]), campaign_id=201, ad_set_id=301)
+        full_asset = creative_workflow_service.get_asset(int(asset["id"]))
+
+        self.assertEqual(full_asset["metadata"]["format"], "video")
+        self.assertEqual(len(full_asset["creative_variants"]), 2)
+        self.assertEqual(full_asset["performance_scores"]["tiktok"], 91.4)
+        self.assertEqual(full_asset["campaign_links"][0]["campaign_id"], 201)
+
+    def test_publish_to_channel_uses_platform_adapter(self):
+        asset = creative_workflow_service.create_asset(
+            client_id=22,
+            name="Static Conversion",
+            format="image",
+            dimensions="1200x628",
+            objective_fit="conversion",
+            platform_fit=["google", "meta"],
+            language="ro",
+            brand_tags=["always_on"],
+            legal_status="approved",
+            approval_status="approved",
+        )
+        variant = creative_workflow_service.add_variant(
+            asset_id=int(asset["id"]),
+            headline="Cumpara acum",
+            body="Oferta limitata",
+            cta="Comanda",
+            media="image_v1",
+        )
+
+        published = creative_workflow_service.publish_to_channel(
+            asset_id=int(asset["id"]),
+            channel="meta",
+            variant_id=int(variant["id"]),
+        )
+
+        self.assertEqual(published["native_object_type"], "ad_creative")
+        self.assertTrue(str(published["native_id"]).startswith("meta_ad_creative_"))
+
 
 
 if __name__ == "__main__":
