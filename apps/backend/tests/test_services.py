@@ -7,11 +7,15 @@ from app.services.insights import insights_service
 from app.services.dashboard import unified_dashboard_service
 from app.services.google_ads import GoogleAdsIntegrationError, google_ads_service
 from app.services.meta_ads import MetaAdsIntegrationError, meta_ads_service
+from app.services.tiktok_ads import TikTokAdsIntegrationError, tiktok_ads_service
+from app.services.tiktok_store import tiktok_snapshot_store
+from app.services.tiktok_observability import tiktok_sync_metrics
 from app.services.creative_workflow import creative_workflow_service
 from app.services.notifications import notification_service
 from app.services.recommendations import recommendations_service
-from app.services.rbac import AuthorizationError, require_permission
+from app.services.rbac import AuthorizationError, require_action, require_permission
 from app.services.rules_engine import rules_engine_service
+from app.services.audit import audit_log_service
 
 
 class ServiceTests(unittest.TestCase):
@@ -24,15 +28,19 @@ class ServiceTests(unittest.TestCase):
         os.environ["GOOGLE_ADS_TOKEN"] = "test-google-token"
         os.environ["META_ACCESS_TOKEN"] = "test-meta-token"
         os.environ["BIGQUERY_PROJECT_ID"] = "test-project"
+        os.environ["TIKTOK_SYNC_DB_PATH"] = "/tmp/test-mcc-tiktok-services.sqlite3"
 
     def tearDown(self):
         google_ads_service._snapshots.clear()
         meta_ads_service._snapshots.clear()
+        tiktok_snapshot_store.clear()
+        tiktok_sync_metrics.reset()
         rules_engine_service._rules.clear()
         rules_engine_service._next_id = 1
         notification_service._events.clear()
         insights_service._items.clear()
         creative_workflow_service.reset()
+        audit_log_service._events.clear()
         os.environ.clear()
         os.environ.update(self.original_env)
 
@@ -59,6 +67,13 @@ class ServiceTests(unittest.TestCase):
         with self.assertRaises(AuthorizationError):
             require_permission("client_viewer", "clients:create")
 
+    def test_rbac_action_scope_validation(self):
+        require_action("agency_admin", action="clients:list", scope="agency")
+        with self.assertRaises(AuthorizationError):
+            require_action("agency_admin", action="clients:list", scope="subaccount")
+        with self.assertRaises(AuthorizationError):
+            require_action("client_viewer", action="rules:create", scope="subaccount")
+
     # Sprint 2 coverage (Google)
     def test_google_ads_status_pending_when_placeholder(self):
         os.environ["GOOGLE_ADS_TOKEN"] = "your_google_ads_token"
@@ -75,6 +90,34 @@ class ServiceTests(unittest.TestCase):
         with self.assertRaises(GoogleAdsIntegrationError):
             google_ads_service.sync_client(client_id=1)
 
+
+    def test_tiktok_ads_sync_fails_when_feature_flag_disabled(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "0"
+        with self.assertRaises(TikTokAdsIntegrationError):
+            tiktok_ads_service.sync_client(client_id=2)
+
+    def test_tiktok_ads_sync_persists_snapshot(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+
+        snapshot = tiktok_ads_service.sync_client(client_id=9)
+        metrics = tiktok_ads_service.get_metrics(client_id=9)
+
+        self.assertEqual(snapshot["status"], "success")
+        self.assertEqual(metrics["platform"], "tiktok_ads")
+        self.assertTrue(metrics["is_synced"])
+        self.assertGreater(float(metrics["spend"]), 0.0)
+
+
+    def test_tiktok_ads_retry_succeeds_after_transient_failures(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        os.environ["TIKTOK_SYNC_RETRY_ATTEMPTS"] = "3"
+        os.environ["TIKTOK_SYNC_FORCE_TRANSIENT_FAILURES"] = "2"
+
+        snapshot = tiktok_ads_service.sync_client(client_id=10)
+
+        self.assertEqual(snapshot["status"], "success")
+        self.assertEqual(snapshot["attempts"], 3)
+
     # Sprint 3 coverage (Meta + unified dashboard)
     def test_meta_ads_status_pending_when_placeholder(self):
         os.environ["META_ACCESS_TOKEN"] = "your_meta_access_token"
@@ -86,17 +129,19 @@ class ServiceTests(unittest.TestCase):
         with self.assertRaises(MetaAdsIntegrationError):
             meta_ads_service.sync_client(client_id=2)
 
-    def test_unified_dashboard_consolidates_google_and_meta(self):
+    def test_unified_dashboard_consolidates_google_meta_and_tiktok(self):
         os.environ["GOOGLE_ADS_TOKEN"] = "google-real-token"
         os.environ["META_ACCESS_TOKEN"] = "meta-real-token"
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
 
         google_snapshot = google_ads_service.sync_client(client_id=3)
         meta_snapshot = meta_ads_service.sync_client(client_id=3)
+        tiktok_snapshot = tiktok_ads_service.sync_client(client_id=3)
 
         dashboard = unified_dashboard_service.get_client_dashboard(client_id=3)
 
-        expected_spend = float(google_snapshot["spend"]) + float(meta_snapshot["spend"])
-        expected_conversions = int(google_snapshot["conversions"]) + int(meta_snapshot["conversions"])
+        expected_spend = float(google_snapshot["spend"]) + float(meta_snapshot["spend"]) + float(tiktok_snapshot["spend"])
+        expected_conversions = int(google_snapshot["conversions"]) + int(meta_snapshot["conversions"]) + int(tiktok_snapshot["conversions"])
 
         self.assertTrue(dashboard["is_synced"])
         self.assertEqual(dashboard["totals"]["spend"], round(expected_spend, 2))
