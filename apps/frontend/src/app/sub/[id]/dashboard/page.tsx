@@ -8,6 +8,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiRequest } from "@/lib/api";
+import { isTikTokIntegrationEnabled } from "@/lib/featureFlags";
 import { getCurrentRole, isReadOnlyRole } from "@/lib/session";
 
 type DashboardResponse = {
@@ -16,6 +17,7 @@ type DashboardResponse = {
   platforms: {
     google_ads: { spend: number; conversions: number; roas?: number };
     meta_ads: { spend: number; conversions: number; roas?: number };
+    tiktok_ads?: { spend: number; conversions: number; roas?: number };
   };
 };
 
@@ -24,11 +26,12 @@ export default function SubDashboardPage() {
   const clientId = Number(params.id);
   const role = getCurrentRole();
   const readOnly = isReadOnlyRole(role);
+  const tiktokEnabled = isTikTokIntegrationEnabled();
 
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<"google" | "meta" | null>(null);
+  const [busy, setBusy] = useState<"google" | "meta" | "tiktok" | null>(null);
 
   async function load() {
     setLoading(true);
@@ -47,11 +50,15 @@ export default function SubDashboardPage() {
     if (Number.isFinite(clientId)) void load();
   }, [clientId]);
 
-  async function sync(channel: "google" | "meta") {
+  async function sync(channel: "google" | "meta" | "tiktok") {
     setBusy(channel);
     setError("");
     try {
-      const path = channel === "google" ? `/integrations/google-ads/${clientId}/sync` : `/integrations/meta-ads/${clientId}/sync`;
+      const path = channel === "google"
+        ? `/integrations/google-ads/${clientId}/sync`
+        : channel === "meta"
+          ? `/integrations/meta-ads/${clientId}/sync`
+          : `/integrations/tiktok-ads/${clientId}/sync`;
       await apiRequest(path, { method: "POST" });
       await load();
     } catch (err) {
@@ -64,6 +71,7 @@ export default function SubDashboardPage() {
   const totals = data?.totals ?? { spend: 0, conversions: 0, roas: 0 };
   const google = data?.platforms.google_ads ?? { spend: 0, conversions: 0, roas: 0 };
   const meta = data?.platforms.meta_ads ?? { spend: 0, conversions: 0, roas: 0 };
+  const tiktok = data?.platforms.tiktok_ads ?? { spend: 0, conversions: 0, roas: 0 };
 
   return (
     <ProtectedPage>
@@ -83,7 +91,7 @@ export default function SubDashboardPage() {
           <MetricCard title="ROAS" value={loading ? "..." : totals.roas.toFixed(2)} />
         </section>
 
-        <section className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <section className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
           <IntegrationCard
             title="Google Ads"
             spend={google.spend}
@@ -100,6 +108,16 @@ export default function SubDashboardPage() {
             disabled={readOnly || busy !== null}
             onSync={() => sync("meta")}
           />
+          {tiktokEnabled ? (
+            <IntegrationCard
+              title="TikTok Ads"
+              spend={tiktok.spend}
+              conversions={tiktok.conversions}
+              buttonLabel={busy === "tiktok" ? "Sync..." : "Sync TikTok"}
+              disabled={readOnly || busy !== null}
+              onSync={() => sync("tiktok")}
+            />
+          ) : null}
         </section>
       </AppShell>
     </ProtectedPage>
