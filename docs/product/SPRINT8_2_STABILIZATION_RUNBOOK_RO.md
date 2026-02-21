@@ -1,7 +1,7 @@
 # Sprint 8.2 — Stabilization + Release Readiness Runbook (TikTok)
 
 ## 1) Scop
-Acest runbook definește pașii operaționali pentru validarea finală a integrării TikTok înainte de rollout/UAT:
+Acest runbook definește pașii operaționali pentru validarea finală a integrărilor (TikTok/Pinterest/Snapchat) înainte de rollout/UAT:
 - zero regresii pe fluxurile v1,
 - feature flag controlat (`OFF` by default),
 - validare cap-coadă pentru sync TikTok,
@@ -79,5 +79,6 @@ Pași:
 
 ## 6) Handoff către următorul epic
 După GO:
-- păstrăm acest runbook ca template pentru următoarele integrări (Pinterest/Snapchat),
+- păstrăm acest runbook ca template multi-provider (TikTok/Pinterest/Snapchat),
 - clonăm secțiunile RBAC/audit/flag discipline fără a modifica fluxurile v1 existente.
+- pentru fiecare canal nou, publicăm un stabilization report dedicat (ex: Pinterest/Snapchat).
