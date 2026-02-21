@@ -35,7 +35,7 @@ Executor: Codex agent
 - Rezultat: **connection refused** (non-200), comportament conform severitate incidentă
 
 ### Concluzie runbook
-Instrucțiunile din `RUNBOOK_P1_P2_ESCALATION_RO.md` sunt coerente și aplicabile practic pentru cele 2 scenarii simulate.
+Instrucțiunile din `docs/product/RUNBOOK_P1_P2_ESCALATION_RO.md` sunt coerente și aplicabile practic pentru cele 2 scenarii simulate.
 
 ### Dovezi
 - `reports/scope_v1_evidence/incident_simulation.json`

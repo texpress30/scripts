@@ -6,22 +6,22 @@ Monorepo de pornire pentru platforma MCC multi-platform cu AI.
 - `apps/backend` — FastAPI backend (Sprint 1 + Sprint 2)
 - `apps/backend/db/migrations/0001_core_entities.sql` — schema SQL pentru entitățile principale MCC (agencies/subaccounts/campaigns/insights/recommendations) + mapare `external_id` Google/Meta/TikTok
 - `apps/frontend` — placeholder Next.js (Phase 0)
-- `IMPLEMENTATION_BRIEF_RO.md` — brief consolidat
-- `NEXT_STEPS_RO.md` — roadmap pe sprinturi
-- `DECISIONS_LOCKED_RO.md` — decizii kickoff confirmate
-- `PHASE0_SETUP_RO.md` — status setup tehnic inițial
-- `SPRINT1_PROGRESS_RO.md` — progres Sprint 1 (auth, RBAC, audit)
-- `SPRINT2_PROGRESS_RO.md` — progres Sprint 2 (Google Ads status/sync + dashboard)
-- `SPRINT3_PROGRESS_RO.md` — progres Sprint 3 (Meta Ads + dashboard unificat)
-- `SPRINT4_PROGRESS_RO.md` — progres Sprint 4 (rules engine + notificări)
-- `SPRINT5_PROGRESS_RO.md` — progres Sprint 5 (AI assistant + insights)
-- `SPRINT6_PROGRESS_RO.md` — progres Sprint 6 (BigQuery export + hardening + E2E)
-- `SPRINT6_1_CLOSEOUT_RO.md` — mini sprint 6.1 (acceptance gates + close-out Scope v1)
-- `SCOPE_V1_CLOSEOUT_REPORT_TEMPLATE_RO.md` — template raport final Scope v1 (criteriu/evidență/verdict)
-- `PILOT_GO_NO_GO_CHECKLIST_RO.md` — checklist executabil pentru decizie pilot
-- `RUNBOOK_P1_P2_ESCALATION_RO.md` — runbook incidente P1/P2 + escalation
-- `READY_FOR_PILOT_RO.md` — raport final de lansare pilot
-- `SPRINT_FRONTEND1_PROGRESS_RO.md` — progres Faza 1 Frontend (login/dashboard/clienți)
+- `docs/product/IMPLEMENTATION_BRIEF_RO.md` — brief consolidat
+- `docs/product/NEXT_STEPS_RO.md` — roadmap pe sprinturi
+- `docs/product/DECISIONS_LOCKED_RO.md` — decizii kickoff confirmate
+- `docs/product/PHASE0_SETUP_RO.md` — status setup tehnic inițial
+- `docs/product/SPRINT1_PROGRESS_RO.md` — progres Sprint 1 (auth, RBAC, audit)
+- `docs/product/SPRINT2_PROGRESS_RO.md` — progres Sprint 2 (Google Ads status/sync + dashboard)
+- `docs/product/SPRINT3_PROGRESS_RO.md` — progres Sprint 3 (Meta Ads + dashboard unificat)
+- `docs/product/SPRINT4_PROGRESS_RO.md` — progres Sprint 4 (rules engine + notificări)
+- `docs/product/SPRINT5_PROGRESS_RO.md` — progres Sprint 5 (AI assistant + insights)
+- `docs/product/SPRINT6_PROGRESS_RO.md` — progres Sprint 6 (BigQuery export + hardening + E2E)
+- `docs/product/SPRINT6_1_CLOSEOUT_RO.md` — mini sprint 6.1 (acceptance gates + close-out Scope v1)
+- `docs/product/SCOPE_V1_CLOSEOUT_REPORT_TEMPLATE_RO.md` — template raport final Scope v1 (criteriu/evidență/verdict)
+- `docs/product/PILOT_GO_NO_GO_CHECKLIST_RO.md` — checklist executabil pentru decizie pilot
+- `docs/product/RUNBOOK_P1_P2_ESCALATION_RO.md` — runbook incidente P1/P2 + escalation
+- `docs/product/READY_FOR_PILOT_RO.md` — raport final de lansare pilot
+- `docs/product/SPRINT_FRONTEND1_PROGRESS_RO.md` — progres Faza 1 Frontend (login/dashboard/clienți)
 
 ## Setup rapid (backend)
 1. Copiază variabilele de mediu:

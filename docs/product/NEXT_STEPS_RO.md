@@ -12,7 +12,7 @@ Deciziile de start sunt blocate astfel:
 5. Billing v1: **fără billing**.
 6. Deadline-uri: **Alpha 4 săpt / Beta 6 săpt / Pilot 8 săpt** (pentru 1–2 dev full-time).
 
-Detalii complete: `DECISIONS_LOCKED_RO.md`.
+Detalii complete: `docs/product/DECISIONS_LOCKED_RO.md`.
 
 ---
 
