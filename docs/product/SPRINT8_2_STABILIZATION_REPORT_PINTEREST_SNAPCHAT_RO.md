@@ -1,7 +1,7 @@
 # Sprint 8.2 — Stabilization Report (Pinterest + Snapchat)
 
 ## Scope
-Aplicare checklist de stabilizare din `SPRINT8_2_STABILIZATION_RUNBOOK_RO.md`, adaptat pentru noile integrări:
+Aplicare checklist de stabilizare din `SPRINT8_2_STABILIZATION_RUNBOOK_RO.md` pentru noile integrări:
 - `pinterest_ads`
 - `snapchat_ads`
 
@@ -38,11 +38,18 @@ Aplicare checklist de stabilizare din `SPRINT8_2_STABILIZATION_RUNBOOK_RO.md`, a
   - `snapchat_sync_snapshots`
 - Migrație: `0004_pinterest_snapchat_sync_snapshots.sql`.
 
+### F) Hardening (retry/backoff + observability)
+- Retry/backoff configurabil validat în teste cu fail-uri tranziente forțate:
+  - `PINTEREST_SYNC_RETRY_ATTEMPTS` + `PINTEREST_SYNC_FORCE_TRANSIENT_FAILURES`
+  - `SNAPCHAT_SYNC_RETRY_ATTEMPTS` + `SNAPCHAT_SYNC_FORCE_TRANSIENT_FAILURES`
+- Audit pentru fail include `sync.fail` la epuizarea retry.
+- API include log structured și counters `sync_started/sync_succeeded/sync_failed` pentru ambii provideri.
+
 ## Verdict
-✅ **GO** pentru stabilizare Pinterest + Snapchat (feature flags, RBAC, audit, regression checks).
+✅ **GO** pentru stabilizare + hardening Pinterest și Snapchat (feature flags, RBAC, audit, retry/backoff, regression checks).
 
 ## Next recommended step
-- Începem **provider hardening slice**:
-  1. retry/backoff + observability counters pentru Pinterest/Snapchat,
-  2. smoke runbook reutilizabil multi-provider,
-  3. apoi trecere la onboarding următor canal/epic OOS.
+- Începem următorul Epic OOS major:
+  1. **Creative AI generation + Canva adapter skeleton** (feature-flagged),
+  2. policy matrix + audit hooks by default,
+  3. vertical slice minimal end-to-end (API + UI + tests).

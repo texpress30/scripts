@@ -34,6 +34,10 @@ class ConfigTests(unittest.TestCase):
         self.assertFalse(settings.ff_snapchat_integration)
         self.assertEqual(settings.tiktok_sync_retry_attempts, 2)
         self.assertEqual(settings.tiktok_sync_backoff_ms, 75)
+        self.assertEqual(settings.pinterest_sync_retry_attempts, 2)
+        self.assertEqual(settings.pinterest_sync_backoff_ms, 75)
+        self.assertEqual(settings.snapchat_sync_retry_attempts, 2)
+        self.assertEqual(settings.snapchat_sync_backoff_ms, 75)
 
 
     def test_tiktok_pinterest_and_snapchat_feature_flags_can_be_enabled_from_env(self):
@@ -59,6 +63,21 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(settings.tiktok_sync_retry_attempts, 4)
         self.assertEqual(settings.tiktok_sync_backoff_ms, 125)
+
+    def test_pinterest_and_snapchat_retry_settings_are_configurable(self):
+        os.environ.clear()
+        os.environ["APP_AUTH_SECRET"] = "test-auth-secret"
+        os.environ["PINTEREST_SYNC_RETRY_ATTEMPTS"] = "5"
+        os.environ["PINTEREST_SYNC_BACKOFF_MS"] = "140"
+        os.environ["SNAPCHAT_SYNC_RETRY_ATTEMPTS"] = "6"
+        os.environ["SNAPCHAT_SYNC_BACKOFF_MS"] = "155"
+
+        settings = load_settings()
+
+        self.assertEqual(settings.pinterest_sync_retry_attempts, 5)
+        self.assertEqual(settings.pinterest_sync_backoff_ms, 140)
+        self.assertEqual(settings.snapchat_sync_retry_attempts, 6)
+        self.assertEqual(settings.snapchat_sync_backoff_ms, 155)
 
     def test_invalid_cors_regex_falls_back_to_default(self):
         os.environ.clear()
@@ -95,6 +114,10 @@ class ConfigTests(unittest.TestCase):
         os.environ["APP_CORS_ORIGIN_REGEX"] = r"https://.*\\.example\\.com"
         os.environ["TIKTOK_SYNC_RETRY_ATTEMPTS"] = "3"
         os.environ["TIKTOK_SYNC_BACKOFF_MS"] = "50"
+        os.environ["PINTEREST_SYNC_RETRY_ATTEMPTS"] = "4"
+        os.environ["PINTEREST_SYNC_BACKOFF_MS"] = "65"
+        os.environ["SNAPCHAT_SYNC_RETRY_ATTEMPTS"] = "5"
+        os.environ["SNAPCHAT_SYNC_BACKOFF_MS"] = "85"
 
         settings = load_settings()
 
@@ -112,6 +135,10 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.cors_origin_regex, r"https://.*\\.example\\.com")
         self.assertEqual(settings.tiktok_sync_retry_attempts, 3)
         self.assertEqual(settings.tiktok_sync_backoff_ms, 50)
+        self.assertEqual(settings.pinterest_sync_retry_attempts, 4)
+        self.assertEqual(settings.pinterest_sync_backoff_ms, 65)
+        self.assertEqual(settings.snapchat_sync_retry_attempts, 5)
+        self.assertEqual(settings.snapchat_sync_backoff_ms, 85)
 
 
 if __name__ == "__main__":

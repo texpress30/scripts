@@ -9,8 +9,10 @@ from app.services.google_ads import GoogleAdsIntegrationError, google_ads_servic
 from app.services.meta_ads import MetaAdsIntegrationError, meta_ads_service
 from app.services.pinterest_ads import PinterestAdsIntegrationError, pinterest_ads_service
 from app.services.pinterest_store import pinterest_snapshot_store
+from app.services.pinterest_observability import pinterest_sync_metrics
 from app.services.snapchat_ads import SnapchatAdsIntegrationError, snapchat_ads_service
 from app.services.snapchat_store import snapchat_snapshot_store
+from app.services.snapchat_observability import snapchat_sync_metrics
 from app.services.tiktok_ads import TikTokAdsIntegrationError, tiktok_ads_service
 from app.services.tiktok_store import tiktok_snapshot_store
 from app.services.tiktok_observability import tiktok_sync_metrics
@@ -41,6 +43,8 @@ class ServiceTests(unittest.TestCase):
         pinterest_snapshot_store.clear()
         snapchat_snapshot_store.clear()
         tiktok_sync_metrics.reset()
+        pinterest_sync_metrics.reset()
+        snapchat_sync_metrics.reset()
         rules_engine_service._rules.clear()
         rules_engine_service._next_id = 1
         notification_service._events.clear()
@@ -137,7 +141,18 @@ class ServiceTests(unittest.TestCase):
         metrics = pinterest_ads_service.get_metrics(client_id=2)
         self.assertEqual(snapshot["status"], "success")
         self.assertEqual(snapshot["platform"], "pinterest_ads")
+        self.assertEqual(snapshot["attempts"], 1)
         self.assertTrue(metrics["is_synced"])
+
+    def test_pinterest_ads_retry_succeeds_after_transient_failures(self):
+        os.environ["FF_PINTEREST_INTEGRATION"] = "1"
+        os.environ["PINTEREST_SYNC_RETRY_ATTEMPTS"] = "3"
+        os.environ["PINTEREST_SYNC_FORCE_TRANSIENT_FAILURES"] = "2"
+
+        snapshot = pinterest_ads_service.sync_client(client_id=3)
+
+        self.assertEqual(snapshot["status"], "success")
+        self.assertEqual(snapshot["attempts"], 3)
 
     def test_snapchat_ads_sync_fails_when_feature_flag_disabled(self):
         os.environ["FF_SNAPCHAT_INTEGRATION"] = "0"
@@ -150,7 +165,18 @@ class ServiceTests(unittest.TestCase):
         metrics = snapchat_ads_service.get_metrics(client_id=2)
         self.assertEqual(snapshot["status"], "success")
         self.assertEqual(snapshot["platform"], "snapchat_ads")
+        self.assertEqual(snapshot["attempts"], 1)
         self.assertTrue(metrics["is_synced"])
+
+    def test_snapchat_ads_retry_succeeds_after_transient_failures(self):
+        os.environ["FF_SNAPCHAT_INTEGRATION"] = "1"
+        os.environ["SNAPCHAT_SYNC_RETRY_ATTEMPTS"] = "3"
+        os.environ["SNAPCHAT_SYNC_FORCE_TRANSIENT_FAILURES"] = "2"
+
+        snapshot = snapchat_ads_service.sync_client(client_id=3)
+
+        self.assertEqual(snapshot["status"], "success")
+        self.assertEqual(snapshot["attempts"], 3)
 
     # Sprint 3 coverage (Meta + unified dashboard)
     def test_meta_ads_status_pending_when_placeholder(self):

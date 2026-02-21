@@ -188,6 +188,7 @@ class E2EFlowTests(unittest.TestCase):
         sync_response = self.client.post(f"/integrations/tiktok-ads/{client_id}/sync", headers=headers)
         self.assertEqual(sync_response.status_code, 200)
         self.assertEqual(sync_response.json()["status"], "success")
+        self.assertGreaterEqual(int(sync_response.json().get("attempts", 1)), 1)
 
         dashboard_response = self.client.get(f"/dashboard/{client_id}", headers=headers)
         self.assertEqual(dashboard_response.status_code, 200)
@@ -247,6 +248,7 @@ class E2EFlowTests(unittest.TestCase):
         sync_response = self.client.post(f"/integrations/pinterest-ads/{client_id}/sync", headers=headers)
         self.assertEqual(sync_response.status_code, 200)
         self.assertEqual(sync_response.json()["status"], "success")
+        self.assertGreaterEqual(int(sync_response.json().get("attempts", 1)), 1)
 
         dashboard_response = self.client.get(f"/dashboard/{client_id}", headers=headers)
         self.assertEqual(dashboard_response.status_code, 200)
@@ -256,6 +258,20 @@ class E2EFlowTests(unittest.TestCase):
         actions = {item["action"] for item in audit_events.json()["items"]}
         self.assertIn("pinterest_ads.sync.start", actions)
         self.assertIn("pinterest_ads.sync.success", actions)
+
+    def test_pinterest_sync_fail_audit_when_retries_exhausted(self):
+        os.environ["FF_PINTEREST_INTEGRATION"] = "1"
+        os.environ["PINTEREST_SYNC_RETRY_ATTEMPTS"] = "2"
+        os.environ["PINTEREST_SYNC_FORCE_TRANSIENT_FAILURES"] = "5"
+        headers = self._auth_header()
+
+        response = self.client.post("/integrations/pinterest-ads/1/sync", headers=headers)
+        self.assertEqual(response.status_code, 400)
+
+        audit_events = self.client.get("/audit", headers=headers)
+        actions = {item["action"] for item in audit_events.json()["items"]}
+        self.assertIn("pinterest_ads.sync.start", actions)
+        self.assertIn("pinterest_ads.sync.fail", actions)
 
     def test_pinterest_scope_enforcement_for_client_viewer(self):
         os.environ["FF_PINTEREST_INTEGRATION"] = "1"
@@ -289,6 +305,7 @@ class E2EFlowTests(unittest.TestCase):
         sync_response = self.client.post(f"/integrations/snapchat-ads/{client_id}/sync", headers=headers)
         self.assertEqual(sync_response.status_code, 200)
         self.assertEqual(sync_response.json()["status"], "success")
+        self.assertGreaterEqual(int(sync_response.json().get("attempts", 1)), 1)
 
         dashboard_response = self.client.get(f"/dashboard/{client_id}", headers=headers)
         self.assertEqual(dashboard_response.status_code, 200)
@@ -298,6 +315,20 @@ class E2EFlowTests(unittest.TestCase):
         actions = {item["action"] for item in audit_events.json()["items"]}
         self.assertIn("snapchat_ads.sync.start", actions)
         self.assertIn("snapchat_ads.sync.success", actions)
+
+    def test_snapchat_sync_fail_audit_when_retries_exhausted(self):
+        os.environ["FF_SNAPCHAT_INTEGRATION"] = "1"
+        os.environ["SNAPCHAT_SYNC_RETRY_ATTEMPTS"] = "2"
+        os.environ["SNAPCHAT_SYNC_FORCE_TRANSIENT_FAILURES"] = "5"
+        headers = self._auth_header()
+
+        response = self.client.post("/integrations/snapchat-ads/1/sync", headers=headers)
+        self.assertEqual(response.status_code, 400)
+
+        audit_events = self.client.get("/audit", headers=headers)
+        actions = {item["action"] for item in audit_events.json()["items"]}
+        self.assertIn("snapchat_ads.sync.start", actions)
+        self.assertIn("snapchat_ads.sync.fail", actions)
 
     def test_snapchat_scope_enforcement_for_client_viewer(self):
         os.environ["FF_SNAPCHAT_INTEGRATION"] = "1"

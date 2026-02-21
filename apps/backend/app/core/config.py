@@ -29,6 +29,12 @@ class Settings:
     tiktok_sync_retry_attempts: int
     tiktok_sync_backoff_ms: int
     tiktok_sync_force_transient_failures: int
+    pinterest_sync_retry_attempts: int
+    pinterest_sync_backoff_ms: int
+    pinterest_sync_force_transient_failures: int
+    snapchat_sync_retry_attempts: int
+    snapchat_sync_backoff_ms: int
+    snapchat_sync_force_transient_failures: int
 
 
 def _get_env(name: str, default: str | None = None, required: bool = False) -> str:
@@ -93,4 +99,10 @@ def load_settings() -> Settings:
         tiktok_sync_retry_attempts=_parse_int_env("TIKTOK_SYNC_RETRY_ATTEMPTS", default=2),
         tiktok_sync_backoff_ms=_parse_int_env("TIKTOK_SYNC_BACKOFF_MS", default=75),
         tiktok_sync_force_transient_failures=_parse_int_env("TIKTOK_SYNC_FORCE_TRANSIENT_FAILURES", default=0),
+        pinterest_sync_retry_attempts=_parse_int_env("PINTEREST_SYNC_RETRY_ATTEMPTS", default=2),
+        pinterest_sync_backoff_ms=_parse_int_env("PINTEREST_SYNC_BACKOFF_MS", default=75),
+        pinterest_sync_force_transient_failures=_parse_int_env("PINTEREST_SYNC_FORCE_TRANSIENT_FAILURES", default=0),
+        snapchat_sync_retry_attempts=_parse_int_env("SNAPCHAT_SYNC_RETRY_ATTEMPTS", default=2),
+        snapchat_sync_backoff_ms=_parse_int_env("SNAPCHAT_SYNC_BACKOFF_MS", default=75),
+        snapchat_sync_force_transient_failures=_parse_int_env("SNAPCHAT_SYNC_FORCE_TRANSIENT_FAILURES", default=0),
     )
