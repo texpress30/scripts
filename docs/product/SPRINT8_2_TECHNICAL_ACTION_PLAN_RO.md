@@ -4,8 +4,10 @@
 După închiderea Scope v1 și decizia Pilot GO, Sprint 8.2 pornește explicit pe **Out of Scope v1**, în vertical slices mici și sigure.
 
 Referințe:
+
 - `docs/product/NEXT_STEPS_RO.md` (secțiunea 8.2)
 - `docs/product/IMPLEMENTATION_BRIEF_RO.md` (secțiunea Out of scope v1)
+
 - `docs/product/tenant-boundaries.md`
 - `docs/product/ui-contract.md`
 

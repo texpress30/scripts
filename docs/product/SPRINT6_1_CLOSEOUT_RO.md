@@ -46,11 +46,13 @@
 ---
 
 ## 3) Deliverables Mini Sprint 6.1
+
 1. Acest document (`docs/product/SPRINT6_1_CLOSEOUT_RO.md`) ca tracker final.
 2. Raport final: `docs/product/SCOPE_V1_CLOSEOUT_REPORT_TEMPLATE_RO.md`.
 3. Checklist decizie pilot: `docs/product/PILOT_GO_NO_GO_CHECKLIST_RO.md`.
 4. Runbook incidente: `docs/product/RUNBOOK_P1_P2_ESCALATION_RO.md`.
 5. Actualizare roadmap (`docs/product/NEXT_STEPS_RO.md`) cu etapa 6.1 + 8.2.
+
 6. Decizie formală: pilot **GO**, Scope v1 **CLOSED**.
 
 ---
