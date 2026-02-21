@@ -90,7 +90,7 @@ Mai sunt necesare pentru start fără blocaje:
    - SLA alertare,
    - severitate incidente.
 
-Referință: `DECISIONS_LOCKED_RO.md`.
+Referință: `docs/product/DECISIONS_LOCKED_RO.md`.
 
 ## 9) Plan de execuție propus
 - Faza 0: setup repo + CI/CD + schelet modular + observabilitate.

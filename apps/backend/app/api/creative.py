@@ -1,12 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from app.api.dependencies import get_current_user
+from app.api.dependencies import enforce_action_scope, get_current_user
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
 from app.services.creative_workflow import creative_workflow_service
 from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
-from app.services.rbac import AuthorizationError, require_permission
 
 router = APIRouter(prefix="/creative", tags=["creative-library", "ai-generation", "approvals", "publish"])
 
@@ -57,10 +56,8 @@ class PublishRequest(BaseModel):
 @router.get("/library/assets")
 def list_assets(client_id: int | None = None, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
-        require_permission(user.role, "clients:read")
+        enforce_action_scope(user=user, action="creative:list", scope="subaccount")
         rate_limiter_service.check(f"creative_list:{user.email}", limit=90, window_seconds=60)
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
@@ -70,10 +67,8 @@ def list_assets(client_id: int | None = None, user: AuthUser = Depends(get_curre
 @router.post("/library/assets")
 def create_asset(payload: CreateAssetRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
-        require_permission(user.role, "clients:create")
+        enforce_action_scope(user=user, action="creative:write", scope="subaccount")
         rate_limiter_service.check(f"creative_create:{user.email}", limit=45, window_seconds=60)
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
@@ -102,11 +97,9 @@ def create_asset(payload: CreateAssetRequest, user: AuthUser = Depends(get_curre
 @router.post("/library/assets/{asset_id}/variants")
 def add_variant(asset_id: int, payload: AddVariantRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
-        require_permission(user.role, "clients:create")
+        enforce_action_scope(user=user, action="creative:write", scope="subaccount")
         rate_limiter_service.check(f"creative_variant_add:{user.email}", limit=45, window_seconds=60)
         created = creative_workflow_service.add_variant(asset_id, payload.headline, payload.body, payload.cta, payload.media)
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
     except ValueError as exc:
@@ -118,11 +111,9 @@ def add_variant(asset_id: int, payload: AddVariantRequest, user: AuthUser = Depe
 @router.post("/ai-generation/assets/{asset_id}/variants")
 def generate_variants(asset_id: int, payload: GenerateVariantsRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
-        require_permission(user.role, "clients:create")
+        enforce_action_scope(user=user, action="creative:write", scope="subaccount")
         rate_limiter_service.check(f"creative_ai_generate:{user.email}", limit=30, window_seconds=60)
         items = creative_workflow_service.generate_variants(asset_id=asset_id, count=max(1, payload.count))
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
     except ValueError as exc:
@@ -134,15 +125,13 @@ def generate_variants(asset_id: int, payload: GenerateVariantsRequest, user: Aut
 @router.post("/approvals/assets/{asset_id}")
 def update_approval(asset_id: int, payload: UpdateApprovalRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
-        require_permission(user.role, "clients:create")
+        enforce_action_scope(user=user, action="creative:write", scope="subaccount")
         rate_limiter_service.check(f"creative_approve:{user.email}", limit=45, window_seconds=60)
         updated = creative_workflow_service.update_approval(
             asset_id=asset_id,
             legal_status=payload.legal_status,
             approval_status=payload.approval_status,
         )
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
     except ValueError as exc:
@@ -154,15 +143,13 @@ def update_approval(asset_id: int, payload: UpdateApprovalRequest, user: AuthUse
 @router.post("/library/assets/{asset_id}/links")
 def link_campaign(asset_id: int, payload: LinkCampaignRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, int]:
     try:
-        require_permission(user.role, "clients:create")
+        enforce_action_scope(user=user, action="creative:write", scope="subaccount")
         rate_limiter_service.check(f"creative_link:{user.email}", limit=45, window_seconds=60)
         link = creative_workflow_service.link_to_campaign(
             asset_id=asset_id,
             campaign_id=payload.campaign_id,
             ad_set_id=payload.ad_set_id,
         )
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
     except ValueError as exc:
@@ -174,11 +161,9 @@ def link_campaign(asset_id: int, payload: LinkCampaignRequest, user: AuthUser = 
 @router.post("/library/assets/{asset_id}/performance")
 def update_performance(asset_id: int, payload: PerformanceScoresRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
-        require_permission(user.role, "clients:create")
+        enforce_action_scope(user=user, action="creative:write", scope="subaccount")
         rate_limiter_service.check(f"creative_perf:{user.email}", limit=45, window_seconds=60)
         updated = creative_workflow_service.set_performance_scores(asset_id, payload.performance_scores)
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
     except ValueError as exc:
@@ -190,15 +175,13 @@ def update_performance(asset_id: int, payload: PerformanceScoresRequest, user: A
 @router.post("/publish/assets/{asset_id}/to-channel")
 def publish_to_channel(asset_id: int, payload: PublishRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
-        require_permission(user.role, "clients:create")
+        enforce_action_scope(user=user, action="creative:write", scope="subaccount")
         rate_limiter_service.check(f"creative_publish:{user.email}", limit=20, window_seconds=60)
         publish = creative_workflow_service.publish_to_channel(
             asset_id=asset_id,
             channel=payload.channel,
             variant_id=payload.variant_id,
         )
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
     except ValueError as exc:

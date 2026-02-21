@@ -8,6 +8,7 @@ This repository contains utility scripts. Keep changes focused, minimal, and eas
 - Preserve existing behavior unless the task explicitly asks for behavior changes.
 - Follow the existing style and conventions in nearby files.
 - Avoid adding new dependencies unless they are necessary for the task.
+- All project, sprint, and technical documentation is located in the docs/product/ directory. Always read and reference this directory for context before making architectural or planning decisions.
 
 ## Editing guidelines
 - Update docs/comments when behavior or interfaces change.
