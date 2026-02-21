@@ -29,7 +29,7 @@ def pinterest_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str
 
 
 @router.post("/{client_id}/sync")
-def sync_pinterest_ads(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, int | str]:
+def sync_pinterest_ads(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, float | int | str]:
     try:
         enforce_action_scope(user=user, action="integrations:pinterest:sync", scope="subaccount")
         rate_limiter_service.check(f"pinterest_sync:{user.email}", limit=30, window_seconds=60)
@@ -59,7 +59,7 @@ def sync_pinterest_ads(client_id: int, user: AuthUser = Depends(get_current_user
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
-        action="pinterest_ads.sync.accepted",
+        action="pinterest_ads.sync.success",
         resource=f"client:{client_id}",
         details=snapshot,
     )

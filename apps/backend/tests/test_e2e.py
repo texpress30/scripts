@@ -242,11 +242,20 @@ class E2EFlowTests(unittest.TestCase):
 
         status_response = self.client.get("/integrations/pinterest-ads/status", headers=headers)
         self.assertEqual(status_response.status_code, 200)
-        self.assertEqual(status_response.json()["status"], "preview")
+        self.assertEqual(status_response.json()["status"], "connected")
 
         sync_response = self.client.post(f"/integrations/pinterest-ads/{client_id}/sync", headers=headers)
         self.assertEqual(sync_response.status_code, 200)
-        self.assertEqual(sync_response.json()["status"], "stub")
+        self.assertEqual(sync_response.json()["status"], "success")
+
+        dashboard_response = self.client.get(f"/dashboard/{client_id}", headers=headers)
+        self.assertEqual(dashboard_response.status_code, 200)
+        self.assertGreater(float(dashboard_response.json()["platforms"]["pinterest_ads"]["spend"]), 0.0)
+
+        audit_events = self.client.get("/audit", headers=headers)
+        actions = {item["action"] for item in audit_events.json()["items"]}
+        self.assertIn("pinterest_ads.sync.start", actions)
+        self.assertIn("pinterest_ads.sync.success", actions)
 
     def test_pinterest_scope_enforcement_for_client_viewer(self):
         os.environ["FF_PINTEREST_INTEGRATION"] = "1"
@@ -275,11 +284,20 @@ class E2EFlowTests(unittest.TestCase):
 
         status_response = self.client.get("/integrations/snapchat-ads/status", headers=headers)
         self.assertEqual(status_response.status_code, 200)
-        self.assertEqual(status_response.json()["status"], "preview")
+        self.assertEqual(status_response.json()["status"], "connected")
 
         sync_response = self.client.post(f"/integrations/snapchat-ads/{client_id}/sync", headers=headers)
         self.assertEqual(sync_response.status_code, 200)
-        self.assertEqual(sync_response.json()["status"], "stub")
+        self.assertEqual(sync_response.json()["status"], "success")
+
+        dashboard_response = self.client.get(f"/dashboard/{client_id}", headers=headers)
+        self.assertEqual(dashboard_response.status_code, 200)
+        self.assertGreater(float(dashboard_response.json()["platforms"]["snapchat_ads"]["spend"]), 0.0)
+
+        audit_events = self.client.get("/audit", headers=headers)
+        actions = {item["action"] for item in audit_events.json()["items"]}
+        self.assertIn("snapchat_ads.sync.start", actions)
+        self.assertIn("snapchat_ads.sync.success", actions)
 
     def test_snapchat_scope_enforcement_for_client_viewer(self):
         os.environ["FF_SNAPCHAT_INTEGRATION"] = "1"

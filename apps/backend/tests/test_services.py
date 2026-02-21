@@ -8,7 +8,9 @@ from app.services.dashboard import unified_dashboard_service
 from app.services.google_ads import GoogleAdsIntegrationError, google_ads_service
 from app.services.meta_ads import MetaAdsIntegrationError, meta_ads_service
 from app.services.pinterest_ads import PinterestAdsIntegrationError, pinterest_ads_service
+from app.services.pinterest_store import pinterest_snapshot_store
 from app.services.snapchat_ads import SnapchatAdsIntegrationError, snapchat_ads_service
+from app.services.snapchat_store import snapchat_snapshot_store
 from app.services.tiktok_ads import TikTokAdsIntegrationError, tiktok_ads_service
 from app.services.tiktok_store import tiktok_snapshot_store
 from app.services.tiktok_observability import tiktok_sync_metrics
@@ -36,6 +38,8 @@ class ServiceTests(unittest.TestCase):
         google_ads_service._snapshots.clear()
         meta_ads_service._snapshots.clear()
         tiktok_snapshot_store.clear()
+        pinterest_snapshot_store.clear()
+        snapchat_snapshot_store.clear()
         tiktok_sync_metrics.reset()
         rules_engine_service._rules.clear()
         rules_engine_service._next_id = 1
@@ -127,22 +131,26 @@ class ServiceTests(unittest.TestCase):
         with self.assertRaises(PinterestAdsIntegrationError):
             pinterest_ads_service.sync_client(client_id=2)
 
-    def test_pinterest_ads_sync_stub_when_feature_flag_enabled(self):
+    def test_pinterest_ads_sync_persists_snapshot_when_feature_flag_enabled(self):
         os.environ["FF_PINTEREST_INTEGRATION"] = "1"
         snapshot = pinterest_ads_service.sync_client(client_id=2)
-        self.assertEqual(snapshot["status"], "stub")
+        metrics = pinterest_ads_service.get_metrics(client_id=2)
+        self.assertEqual(snapshot["status"], "success")
         self.assertEqual(snapshot["platform"], "pinterest_ads")
+        self.assertTrue(metrics["is_synced"])
 
     def test_snapchat_ads_sync_fails_when_feature_flag_disabled(self):
         os.environ["FF_SNAPCHAT_INTEGRATION"] = "0"
         with self.assertRaises(SnapchatAdsIntegrationError):
             snapchat_ads_service.sync_client(client_id=2)
 
-    def test_snapchat_ads_sync_stub_when_feature_flag_enabled(self):
+    def test_snapchat_ads_sync_persists_snapshot_when_feature_flag_enabled(self):
         os.environ["FF_SNAPCHAT_INTEGRATION"] = "1"
         snapshot = snapchat_ads_service.sync_client(client_id=2)
-        self.assertEqual(snapshot["status"], "stub")
+        metrics = snapchat_ads_service.get_metrics(client_id=2)
+        self.assertEqual(snapshot["status"], "success")
         self.assertEqual(snapshot["platform"], "snapchat_ads")
+        self.assertTrue(metrics["is_synced"])
 
     # Sprint 3 coverage (Meta + unified dashboard)
     def test_meta_ads_status_pending_when_placeholder(self):
@@ -155,19 +163,35 @@ class ServiceTests(unittest.TestCase):
         with self.assertRaises(MetaAdsIntegrationError):
             meta_ads_service.sync_client(client_id=2)
 
-    def test_unified_dashboard_consolidates_google_meta_and_tiktok(self):
+    def test_unified_dashboard_consolidates_all_platforms(self):
         os.environ["GOOGLE_ADS_TOKEN"] = "google-real-token"
         os.environ["META_ACCESS_TOKEN"] = "meta-real-token"
         os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        os.environ["FF_PINTEREST_INTEGRATION"] = "1"
+        os.environ["FF_SNAPCHAT_INTEGRATION"] = "1"
 
         google_snapshot = google_ads_service.sync_client(client_id=3)
         meta_snapshot = meta_ads_service.sync_client(client_id=3)
         tiktok_snapshot = tiktok_ads_service.sync_client(client_id=3)
+        pinterest_snapshot = pinterest_ads_service.sync_client(client_id=3)
+        snapchat_snapshot = snapchat_ads_service.sync_client(client_id=3)
 
         dashboard = unified_dashboard_service.get_client_dashboard(client_id=3)
 
-        expected_spend = float(google_snapshot["spend"]) + float(meta_snapshot["spend"]) + float(tiktok_snapshot["spend"])
-        expected_conversions = int(google_snapshot["conversions"]) + int(meta_snapshot["conversions"]) + int(tiktok_snapshot["conversions"])
+        expected_spend = (
+            float(google_snapshot["spend"])
+            + float(meta_snapshot["spend"])
+            + float(tiktok_snapshot["spend"])
+            + float(pinterest_snapshot["spend"])
+            + float(snapchat_snapshot["spend"])
+        )
+        expected_conversions = (
+            int(google_snapshot["conversions"])
+            + int(meta_snapshot["conversions"])
+            + int(tiktok_snapshot["conversions"])
+            + int(pinterest_snapshot["conversions"])
+            + int(snapchat_snapshot["conversions"])
+        )
 
         self.assertTrue(dashboard["is_synced"])
         self.assertEqual(dashboard["totals"]["spend"], round(expected_spend, 2))
