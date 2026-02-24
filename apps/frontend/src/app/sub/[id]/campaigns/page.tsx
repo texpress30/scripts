@@ -7,7 +7,6 @@ import { useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
-import { isPinterestIntegrationEnabled, isSnapchatIntegrationEnabled, isTikTokIntegrationEnabled } from "@/lib/featureFlags";
 import { getCurrentRole, isReadOnlyRole } from "@/lib/session";
 
 export default function SubCampaignsPage() {
@@ -15,10 +14,6 @@ export default function SubCampaignsPage() {
   const clientId = Number(params.id);
   const role = getCurrentRole();
   const readOnly = isReadOnlyRole(role);
-  const tiktokEnabled = isTikTokIntegrationEnabled();
-  const pinterestEnabled = isPinterestIntegrationEnabled();
-  const snapchatEnabled = isSnapchatIntegrationEnabled();
-
   const [result, setResult] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -53,7 +48,7 @@ export default function SubCampaignsPage() {
         {error ? <p className="mb-3 text-sm text-red-600">{error}</p> : null}
         {result ? <p className="mb-3 text-sm text-emerald-600">{result}</p> : null}
 
-        <section className="grid grid-cols-1 gap-4 md:grid-cols-5">
+        <section className="grid grid-cols-1 gap-4 md:grid-cols-6">
           <ActionCard
             title="Sync Google"
             disabled={readOnly || busy !== null}
@@ -66,30 +61,24 @@ export default function SubCampaignsPage() {
             description="Rulează sincronizare Meta Ads pentru acest sub-account"
             onClick={() => action("meta")}
           />
-          {tiktokEnabled ? (
-            <ActionCard
-              title="Sync TikTok (beta)"
-              disabled={readOnly || busy !== null}
-              description="Rulează endpoint-ul skeleton TikTok (Slice 8.2.1)"
-              onClick={() => action("tiktok")}
-            />
-          ) : null}
-          {pinterestEnabled ? (
-            <ActionCard
-              title="Sync Pinterest (beta)"
-              disabled={readOnly || busy !== null}
-              description="Rulează endpoint-ul skeleton Pinterest (contract freeze)"
-              onClick={() => action("pinterest")}
-            />
-          ) : null}
-          {snapchatEnabled ? (
-            <ActionCard
-              title="Sync Snapchat (beta)"
-              disabled={readOnly || busy !== null}
-              description="Rulează endpoint-ul skeleton Snapchat (contract freeze)"
-              onClick={() => action("snapchat")}
-            />
-          ) : null}
+          <ActionCard
+            title="Sync TikTok"
+            disabled={readOnly || busy !== null}
+            description="Rulează sincronizare TikTok Ads pentru acest sub-account"
+            onClick={() => action("tiktok")}
+          />
+          <ActionCard
+            title="Sync Pinterest"
+            disabled={readOnly || busy !== null}
+            description="Rulează sincronizare Pinterest Ads pentru acest sub-account"
+            onClick={() => action("pinterest")}
+          />
+          <ActionCard
+            title="Sync Snapchat"
+            disabled={readOnly || busy !== null}
+            description="Rulează sincronizare Snapchat Ads pentru acest sub-account"
+            onClick={() => action("snapchat")}
+          />
           <ActionCard
             title="Evaluate Rules"
             disabled={readOnly || busy !== null}

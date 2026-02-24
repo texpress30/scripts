@@ -8,11 +8,6 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiRequest } from "@/lib/api";
-import {
-  isPinterestIntegrationEnabled,
-  isSnapchatIntegrationEnabled,
-  isTikTokIntegrationEnabled,
-} from "@/lib/featureFlags";
 import { getCurrentRole, isReadOnlyRole } from "@/lib/session";
 
 type DashboardResponse = {
@@ -32,10 +27,6 @@ export default function SubDashboardPage() {
   const clientId = Number(params.id);
   const role = getCurrentRole();
   const readOnly = isReadOnlyRole(role);
-  const tiktokEnabled = isTikTokIntegrationEnabled();
-  const pinterestEnabled = isPinterestIntegrationEnabled();
-  const snapchatEnabled = isSnapchatIntegrationEnabled();
-
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -127,42 +118,36 @@ export default function SubDashboardPage() {
             disabled={readOnly || busy !== null}
             onSync={() => sync("meta")}
           />
-          {tiktokEnabled ? (
-            <IntegrationCard
-              title="TikTok Ads"
-              spend={tiktok.spend}
-              conversions={tiktok.conversions}
-              loading={loading}
-              synced={Boolean(tiktok.is_synced)}
-              buttonLabel={busy === "tiktok" ? "Sync..." : "Sync TikTok"}
-              disabled={readOnly || busy !== null}
-              onSync={() => sync("tiktok")}
-            />
-          ) : null}
-          {pinterestEnabled ? (
-            <IntegrationCard
-              title="Pinterest Ads"
-              spend={pinterest.spend}
-              conversions={pinterest.conversions}
-              loading={loading}
-              synced={Boolean(pinterest.is_synced)}
-              buttonLabel={busy === "pinterest" ? "Sync..." : "Sync Pinterest"}
-              disabled={readOnly || busy !== null}
-              onSync={() => sync("pinterest")}
-            />
-          ) : null}
-          {snapchatEnabled ? (
-            <IntegrationCard
-              title="Snapchat Ads"
-              spend={snapchat.spend}
-              conversions={snapchat.conversions}
-              loading={loading}
-              synced={Boolean(snapchat.is_synced)}
-              buttonLabel={busy === "snapchat" ? "Sync..." : "Sync Snapchat"}
-              disabled={readOnly || busy !== null}
-              onSync={() => sync("snapchat")}
-            />
-          ) : null}
+          <IntegrationCard
+            title="TikTok Ads"
+            spend={tiktok.spend}
+            conversions={tiktok.conversions}
+            loading={loading}
+            synced={Boolean(tiktok.is_synced)}
+            buttonLabel={busy === "tiktok" ? "Sync..." : "Sync TikTok"}
+            disabled={readOnly || busy !== null}
+            onSync={() => sync("tiktok")}
+          />
+          <IntegrationCard
+            title="Pinterest Ads"
+            spend={pinterest.spend}
+            conversions={pinterest.conversions}
+            loading={loading}
+            synced={Boolean(pinterest.is_synced)}
+            buttonLabel={busy === "pinterest" ? "Sync..." : "Sync Pinterest"}
+            disabled={readOnly || busy !== null}
+            onSync={() => sync("pinterest")}
+          />
+          <IntegrationCard
+            title="Snapchat Ads"
+            spend={snapchat.spend}
+            conversions={snapchat.conversions}
+            loading={loading}
+            synced={Boolean(snapchat.is_synced)}
+            buttonLabel={busy === "snapchat" ? "Sync..." : "Sync Snapchat"}
+            disabled={readOnly || busy !== null}
+            onSync={() => sync("snapchat")}
+          />
         </section>
       </AppShell>
     </ProtectedPage>
