@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
-import { isTikTokIntegrationEnabled } from "@/lib/featureFlags";
 
 type ClientItem = {
   id: number;
@@ -25,6 +24,8 @@ export default function AgencyDashboardPage() {
   const [googleStatus, setGoogleStatus] = useState<IntegrationStatus | null>(null);
   const [metaStatus, setMetaStatus] = useState<IntegrationStatus | null>(null);
   const [tiktokStatus, setTiktokStatus] = useState<IntegrationStatus | null>(null);
+  const [pinterestStatus, setPinterestStatus] = useState<IntegrationStatus | null>(null);
+  const [snapchatStatus, setSnapchatStatus] = useState<IntegrationStatus | null>(null);
   const [totals, setTotals] = useState({ spend: 0, conversions: 0, roas: 0 });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -42,19 +43,20 @@ export default function AgencyDashboardPage() {
 
         setClients(clientsResponse.items);
 
-        const tiktokEnabled = isTikTokIntegrationEnabled();
-        const [google, meta, tiktok] = await Promise.all([
+        const [google, meta, tiktok, pinterest, snapchat] = await Promise.all([
           apiRequest<IntegrationStatus>("/integrations/google-ads/status"),
           apiRequest<IntegrationStatus>("/integrations/meta-ads/status"),
-          tiktokEnabled
-            ? apiRequest<IntegrationStatus>("/integrations/tiktok-ads/status")
-            : Promise.resolve(null),
+          apiRequest<IntegrationStatus>("/integrations/tiktok-ads/status"),
+          apiRequest<IntegrationStatus>("/integrations/pinterest-ads/status"),
+          apiRequest<IntegrationStatus>("/integrations/snapchat-ads/status"),
         ]);
 
         if (ignore) return;
         setGoogleStatus(google);
         setMetaStatus(meta);
         setTiktokStatus(tiktok);
+        setPinterestStatus(pinterest);
+        setSnapchatStatus(snapchat);
 
         const dashboardItems = await Promise.all(
           clientsResponse.items.map((client) => apiRequest<DashboardResponse>(`/dashboard/${client.id}`))
@@ -95,9 +97,17 @@ export default function AgencyDashboardPage() {
     () => [
       { label: "Google Ads", status: googleStatus?.status ?? "unknown" },
       { label: "Meta Ads", status: metaStatus?.status ?? "unknown" },
-      ...(isTikTokIntegrationEnabled() ? [{ label: "TikTok Ads", status: tiktokStatus?.status ?? "unknown" }] : []),
+      { label: "TikTok Ads", status: tiktokStatus?.status ?? "unknown" },
+      { label: "Pinterest Ads", status: pinterestStatus?.status ?? "unknown" },
+      { label: "Snapchat Ads", status: snapchatStatus?.status ?? "unknown" },
     ],
-    [googleStatus?.status, metaStatus?.status, tiktokStatus?.status]
+    [
+      googleStatus?.status,
+      metaStatus?.status,
+      tiktokStatus?.status,
+      pinterestStatus?.status,
+      snapchatStatus?.status,
+    ]
   );
 
   return (
