@@ -3,22 +3,53 @@
 ## Purpose
 This repository contains utility scripts. Keep changes focused, minimal, and easy to review.
 
-## Working agreement for agents
-- Prefer small, single-purpose commits.
-- Preserve existing behavior unless the task explicitly asks for behavior changes.
-- Follow the existing style and conventions in nearby files.
-- Avoid adding new dependencies unless they are necessary for the task.
+## Workflow Orchestration
 
-## Editing guidelines
-- Update docs/comments when behavior or interfaces change.
-- Keep filenames, function names, and CLI flags stable unless requested.
-- Do not perform broad refactors when solving a targeted issue.
+### 1. Plan Mode Default
+- Enter plan mode for ANY non-trivial task (3+ steps or architectural decisions).
+- If something goes sideways, STOP and re-plan immediately — don't keep pushing.
+- Use plan mode for verification steps, not just building.
+- Write detailed specs upfront to reduce ambiguity.
 
-## Validation
-- Run the narrowest relevant checks first (lint/tests for touched code).
-- If full test suites are expensive, run focused checks and document what was run.
+### 2. Subagent Strategy
+- Use subagents liberally to keep main context window clean.
+- Offload research, exploration, and parallel analysis to subagents.
+- For complex problems, throw more compute at it via subagents.
+- One task per subagent for focused execution.
 
-## Pull request guidance
-- Include a concise summary of what changed and why.
-- List validation commands and their outcomes.
-- Call out trade-offs, limitations, and follow-up work if applicable.
+### 3. Self-Improvement Loop
+- After ANY correction from the user: update `tasks/lessons.md` with the pattern.
+- Write rules for yourself that prevent the same mistake.
+- Ruthlessly iterate on these lessons until mistake rate drops.
+- Review lessons at session start for relevant project.
+
+### 4. Verification Before Done
+- Never mark a task complete without proving it works.
+- Diff behavior between main and your changes when relevant.
+- Ask yourself: "Would a staff engineer approve this?"
+- Run tests, check logs, demonstrate correctness.
+
+### 5. Demand Elegance (Balanced)
+- For non-trivial changes: pause and ask "is there a more elegant way?"
+- If a fix feels hacky: "Knowing everything I know now, implement the elegant solution".
+- Skip this for simple, obvious fixes — don't over-engineer.
+- Challenge your own work before presenting it.
+
+### 6. Autonomous Bug Fixing
+- When given a bug report: just fix it. Don't ask for hand-holding.
+- Point at logs, errors, failing tests — then resolve them.
+- Zero context switching required from the user.
+- Go fix failing CI tests without being told how.
+
+## Task Management
+1. **Plan First**: Write plan to `tasks/todo.md` with checkable items.
+2. **Verify Plan**: Check in before starting implementation.
+3. **Track Progress**: Mark items complete as you go.
+4. **Explain Changes**: High-level summary at each step.
+5. **Document Results**: Add review section to `tasks/todo.md`.
+6. **Capture Lessons**: Update `tasks/lessons.md` after corrections.
+
+## Core Principles
+- **Simplicity First**: Make every change as simple as possible. Impact minimal code.
+- **No Laziness**: Find root causes. No temporary fixes. Senior developer standards.
+- **Minimal Impact**: Changes should only touch what's necessary. Avoid introducing bugs.
