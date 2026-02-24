@@ -8,7 +8,11 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiRequest } from "@/lib/api";
-import { isTikTokIntegrationEnabled } from "@/lib/featureFlags";
+import {
+  isPinterestIntegrationEnabled,
+  isSnapchatIntegrationEnabled,
+  isTikTokIntegrationEnabled,
+} from "@/lib/featureFlags";
 import { getCurrentRole, isReadOnlyRole } from "@/lib/session";
 
 type DashboardResponse = {
@@ -18,6 +22,8 @@ type DashboardResponse = {
     google_ads: { spend: number; conversions: number; roas?: number; is_synced?: boolean };
     meta_ads: { spend: number; conversions: number; roas?: number; is_synced?: boolean };
     tiktok_ads?: { spend: number; conversions: number; roas?: number; is_synced?: boolean };
+    pinterest_ads?: { spend: number; conversions: number; roas?: number; is_synced?: boolean };
+    snapchat_ads?: { spend: number; conversions: number; roas?: number; is_synced?: boolean };
   };
 };
 
@@ -27,11 +33,13 @@ export default function SubDashboardPage() {
   const role = getCurrentRole();
   const readOnly = isReadOnlyRole(role);
   const tiktokEnabled = isTikTokIntegrationEnabled();
+  const pinterestEnabled = isPinterestIntegrationEnabled();
+  const snapchatEnabled = isSnapchatIntegrationEnabled();
 
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<"google" | "meta" | "tiktok" | null>(null);
+  const [busy, setBusy] = useState<"google" | "meta" | "tiktok" | "pinterest" | "snapchat" | null>(null);
 
   async function load() {
     setLoading(true);
@@ -50,15 +58,20 @@ export default function SubDashboardPage() {
     if (Number.isFinite(clientId)) void load();
   }, [clientId]);
 
-  async function sync(channel: "google" | "meta" | "tiktok") {
+  async function sync(channel: "google" | "meta" | "tiktok" | "pinterest" | "snapchat") {
     setBusy(channel);
     setError("");
     try {
-      const path = channel === "google"
-        ? `/integrations/google-ads/${clientId}/sync`
-        : channel === "meta"
-          ? `/integrations/meta-ads/${clientId}/sync`
-          : `/integrations/tiktok-ads/${clientId}/sync`;
+      const path =
+        channel === "google"
+          ? `/integrations/google-ads/${clientId}/sync`
+          : channel === "meta"
+            ? `/integrations/meta-ads/${clientId}/sync`
+            : channel === "tiktok"
+              ? `/integrations/tiktok-ads/${clientId}/sync`
+              : channel === "pinterest"
+                ? `/integrations/pinterest-ads/${clientId}/sync`
+                : `/integrations/snapchat-ads/${clientId}/sync`;
       await apiRequest(path, { method: "POST" });
       await load();
     } catch (err) {
@@ -72,6 +85,8 @@ export default function SubDashboardPage() {
   const google = data?.platforms.google_ads ?? { spend: 0, conversions: 0, roas: 0 };
   const meta = data?.platforms.meta_ads ?? { spend: 0, conversions: 0, roas: 0 };
   const tiktok = data?.platforms.tiktok_ads ?? { spend: 0, conversions: 0, roas: 0 };
+  const pinterest = data?.platforms.pinterest_ads ?? { spend: 0, conversions: 0, roas: 0 };
+  const snapchat = data?.platforms.snapchat_ads ?? { spend: 0, conversions: 0, roas: 0 };
 
   return (
     <ProtectedPage>
@@ -91,7 +106,7 @@ export default function SubDashboardPage() {
           <MetricCard title="ROAS" value={loading ? "..." : totals.roas.toFixed(2)} />
         </section>
 
-        <section className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <section className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-5">
           <IntegrationCard
             title="Google Ads"
             spend={google.spend}
@@ -122,6 +137,30 @@ export default function SubDashboardPage() {
               buttonLabel={busy === "tiktok" ? "Sync..." : "Sync TikTok"}
               disabled={readOnly || busy !== null}
               onSync={() => sync("tiktok")}
+            />
+          ) : null}
+          {pinterestEnabled ? (
+            <IntegrationCard
+              title="Pinterest Ads"
+              spend={pinterest.spend}
+              conversions={pinterest.conversions}
+              loading={loading}
+              synced={Boolean(pinterest.is_synced)}
+              buttonLabel={busy === "pinterest" ? "Sync..." : "Sync Pinterest"}
+              disabled={readOnly || busy !== null}
+              onSync={() => sync("pinterest")}
+            />
+          ) : null}
+          {snapchatEnabled ? (
+            <IntegrationCard
+              title="Snapchat Ads"
+              spend={snapchat.spend}
+              conversions={snapchat.conversions}
+              loading={loading}
+              synced={Boolean(snapchat.is_synced)}
+              buttonLabel={busy === "snapchat" ? "Sync..." : "Sync Snapchat"}
+              disabled={readOnly || busy !== null}
+              onSync={() => sync("snapchat")}
             />
           ) : null}
         </section>

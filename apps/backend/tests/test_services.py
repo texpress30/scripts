@@ -7,6 +7,8 @@ from app.services.insights import insights_service
 from app.services.dashboard import unified_dashboard_service
 from app.services.google_ads import GoogleAdsIntegrationError, google_ads_service
 from app.services.meta_ads import MetaAdsIntegrationError, meta_ads_service
+from app.services.google_store import google_snapshot_store
+from app.services.meta_store import meta_snapshot_store
 from app.services.pinterest_ads import PinterestAdsIntegrationError, pinterest_ads_service
 from app.services.pinterest_store import pinterest_snapshot_store
 from app.services.pinterest_observability import pinterest_sync_metrics
@@ -37,8 +39,8 @@ class ServiceTests(unittest.TestCase):
         os.environ["BIGQUERY_PROJECT_ID"] = "test-project"
 
     def tearDown(self):
-        google_ads_service._snapshots.clear()
-        meta_ads_service._snapshots.clear()
+        google_snapshot_store.clear()
+        meta_snapshot_store.clear()
         tiktok_snapshot_store.clear()
         pinterest_snapshot_store.clear()
         snapchat_snapshot_store.clear()
