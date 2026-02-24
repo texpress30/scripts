@@ -221,9 +221,27 @@ class ServiceTests(unittest.TestCase):
             + int(snapchat_snapshot["conversions"])
         )
 
+        expected_revenue = (
+            float(google_snapshot["revenue"])
+            + float(meta_snapshot["revenue"])
+            + float(tiktok_snapshot["revenue"])
+            + float(pinterest_snapshot["revenue"])
+            + float(snapchat_snapshot["revenue"])
+        )
+
         self.assertTrue(dashboard["is_synced"])
         self.assertEqual(dashboard["totals"]["spend"], round(expected_spend, 2))
         self.assertEqual(dashboard["totals"]["conversions"], expected_conversions)
+        self.assertEqual(dashboard["totals"]["revenue"], round(expected_revenue, 2))
+        self.assertEqual(
+            dashboard["totals"]["roas"],
+            round(expected_revenue / expected_spend, 2),
+        )
+
+        for platform in ["google_ads", "meta_ads", "tiktok_ads", "pinterest_ads", "snapchat_ads"]:
+            self.assertIn("roas", dashboard["platforms"][platform])
+            self.assertIn("attempts", dashboard["platforms"][platform])
+            self.assertIn("synced_at", dashboard["platforms"][platform])
 
     # Sprint 4 coverage (rules + notifications + system_bot audit)
     def test_rules_engine_stop_loss_triggers_and_notifies(self):

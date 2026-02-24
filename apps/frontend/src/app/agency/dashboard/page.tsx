@@ -16,7 +16,7 @@ type ClientsResponse = { items: ClientItem[] };
 type IntegrationStatus = { platform: string; status: string };
 
 type DashboardResponse = {
-  totals: { spend: number; conversions: number; roas: number };
+  totals: { spend: number; conversions: number; revenue: number; roas: number };
 };
 
 export default function AgencyDashboardPage() {
@@ -26,7 +26,7 @@ export default function AgencyDashboardPage() {
   const [tiktokStatus, setTiktokStatus] = useState<IntegrationStatus | null>(null);
   const [pinterestStatus, setPinterestStatus] = useState<IntegrationStatus | null>(null);
   const [snapchatStatus, setSnapchatStatus] = useState<IntegrationStatus | null>(null);
-  const [totals, setTotals] = useState({ spend: 0, conversions: 0, roas: 0 });
+  const [totals, setTotals] = useState({ spend: 0, conversions: 0, revenue: 0, roas: 0 });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -68,15 +68,17 @@ export default function AgencyDashboardPage() {
           (acc, item) => {
             acc.spend += item.totals.spend;
             acc.conversions += item.totals.conversions;
+            acc.revenue += item.totals.revenue;
             return acc;
           },
-          { spend: 0, conversions: 0 }
+          { spend: 0, conversions: 0, revenue: 0 }
         );
 
         setTotals({
           spend: Number(aggregated.spend.toFixed(2)),
           conversions: aggregated.conversions,
-          roas: aggregated.spend > 0 ? Number((aggregated.conversions / aggregated.spend).toFixed(2)) : 0,
+          revenue: Number(aggregated.revenue.toFixed(2)),
+          roas: aggregated.spend > 0 ? Number((aggregated.revenue / aggregated.spend).toFixed(2)) : 0,
         });
       } catch (err) {
         if (!ignore) {
