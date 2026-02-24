@@ -3,12 +3,11 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from app.api.dependencies import get_current_user
+from app.api.dependencies import enforce_action_scope, get_current_user
 from app.services.ai_assistant import ai_assistant_service
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
 from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
-from app.services.rbac import AuthorizationError, require_permission
 from app.services.recommendations import recommendations_service
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -22,10 +21,8 @@ class RecommendationReviewRequest(BaseModel):
 @router.get("/recommendations/{client_id}")
 def campaign_recommendation(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
-        require_permission(user.role, "clients:read")
+        enforce_action_scope(user=user, action="recommendations:list", scope="subaccount")
         rate_limiter_service.check(f"ai:{user.email}", limit=15, window_seconds=60)
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
@@ -43,10 +40,8 @@ def campaign_recommendation(client_id: int, user: AuthUser = Depends(get_current
 @router.get("/recommendations/{client_id}/list")
 def list_recommendations(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
-        require_permission(user.role, "clients:read")
+        enforce_action_scope(user=user, action="recommendations:list", scope="subaccount")
         rate_limiter_service.check(f"ai_list:{user.email}", limit=60, window_seconds=60)
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
@@ -61,7 +56,7 @@ def review_recommendation(
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
     try:
-        require_permission(user.role, "clients:read")
+        enforce_action_scope(user=user, action="recommendations:review", scope="subaccount")
         rate_limiter_service.check(f"ai_review:{user.email}", limit=60, window_seconds=60)
         updated = recommendations_service.review_recommendation(
             client_id=client_id,
@@ -72,8 +67,6 @@ def review_recommendation(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
@@ -89,29 +82,17 @@ def review_recommendation(
 
 @router.get("/recommendations/{client_id}/actions")
 def list_recommendation_actions(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
-    try:
-        require_permission(user.role, "clients:read")
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-
+    enforce_action_scope(user=user, action="recommendations:list", scope="subaccount")
     return {"client_id": client_id, "items": recommendations_service.list_actions(client_id)}
 
 
 @router.get("/recommendations/{client_id}/impact-report")
 def recommendation_impact_report(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
-    try:
-        require_permission(user.role, "clients:read")
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-
+    enforce_action_scope(user=user, action="recommendations:list", scope="subaccount")
     return recommendations_service.get_impact_report(client_id)
 
 
 @router.get("/legacy/{client_id}")
 def legacy_text_recommendation(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
-    try:
-        require_permission(user.role, "clients:read")
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-
+    enforce_action_scope(user=user, action="recommendations:list", scope="subaccount")
     return ai_assistant_service.generate_recommendation(client_id)
