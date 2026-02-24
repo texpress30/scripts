@@ -1,9 +1,10 @@
 "use client";
 
-import { Mail, Lock, Shield, Activity } from "lucide-react";
+import { Activity, Lock, Mail, Shield } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiRequest } from "@/lib/api";
 
 type LoginResponse = {
@@ -27,12 +28,12 @@ export default function LoginPage() {
     try {
       const data = await apiRequest<LoginResponse>("/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email, password, role })
+        body: JSON.stringify({ email, password, role }),
       });
 
       localStorage.setItem("mcc_token", data.access_token);
       localStorage.setItem("mcc_user", email);
-      router.push("/dashboard");
+      router.push("/agency/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -41,59 +42,72 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-6xl items-center px-6 py-16">
-      <div className="mx-auto w-full max-w-xl">
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600 shadow-lg shadow-indigo-600/25">
-            <Activity className="h-7 w-7 text-white" />
+    <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10">
+      <div className="w-full max-w-md">
+        <div className="mb-6 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/30">
+            <Activity className="h-6 w-6" />
           </div>
-          <h1 className="text-5xl font-bold tracking-tight text-slate-900">MCC Command Center</h1>
-          <p className="mt-3 text-xl text-slate-600">Autentificare in platforma</p>
+          <h1 className="text-2xl font-bold text-slate-900">MCC Command Center</h1>
+          <p className="mt-1 text-sm text-slate-600">Intră în platformă</p>
         </div>
 
-        <form onSubmit={onSubmit} className="premium-card p-8">
-          <label className="mb-4 block">
-            <span className="mb-2 block text-lg font-semibold text-slate-900">Email</span>
-            <div className="premium-input-wrapper">
-              <Mail className="h-5 w-5 text-slate-500" />
-              <input value={email} onChange={(e) => setEmail(e.target.value)} className="premium-input" required />
-            </div>
-          </label>
+        <Card className="border-slate-200 bg-white shadow-xl">
+          <CardHeader>
+            <CardTitle>Autentificare</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={onSubmit} className="space-y-4">
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-slate-700">Email</span>
+                <div className="flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3">
+                  <Mail className="h-4 w-4 text-slate-400" />
+                  <input
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="h-10 w-full bg-transparent text-sm outline-none"
+                    required
+                  />
+                </div>
+              </label>
 
-          <label className="mb-4 block">
-            <span className="mb-2 block text-lg font-semibold text-slate-900">Parola</span>
-            <div className="premium-input-wrapper">
-              <Lock className="h-5 w-5 text-slate-500" />
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="premium-input"
-                required
-              />
-            </div>
-          </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-slate-700">Parola</span>
+                <div className="flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3">
+                  <Lock className="h-4 w-4 text-slate-400" />
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="h-10 w-full bg-transparent text-sm outline-none"
+                    required
+                  />
+                </div>
+              </label>
 
-          <label className="mb-5 block">
-            <span className="mb-2 block text-lg font-semibold text-slate-900">Rol</span>
-            <div className="premium-input-wrapper">
-              <Shield className="h-5 w-5 text-slate-500" />
-              <select value={role} onChange={(e) => setRole(e.target.value)} className="premium-input">
-                <option value="agency_admin">Agency Admin</option>
-                <option value="account_manager">Account Manager</option>
-                <option value="client_viewer">Client Viewer</option>
-              </select>
-            </div>
-          </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-slate-700">Rol</span>
+                <div className="flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3">
+                  <Shield className="h-4 w-4 text-slate-400" />
+                  <select value={role} onChange={(e) => setRole(e.target.value)} className="h-10 w-full bg-transparent text-sm outline-none">
+                    <option value="agency_admin">Agency Admin</option>
+                    <option value="account_manager">Account Manager</option>
+                    <option value="client_viewer">Client Viewer</option>
+                  </select>
+                </div>
+              </label>
 
-          {error ? <p className="mb-3 text-sm text-red-600">{error}</p> : null}
+              {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
-          <button disabled={loading} className="premium-btn-primary w-full justify-center disabled:opacity-50">
-            {loading ? "Se autentifica..." : "Intra in platforma"}
-          </button>
-        </form>
-
-        <p className="mt-6 text-center text-base text-slate-500">Platforma de management pentru agentii de marketing</p>
+              <button
+                disabled={loading}
+                className="h-10 w-full rounded-md bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+              >
+                {loading ? "Se autentifică..." : "Intră în platformă"}
+              </button>
+            </form>
+          </CardContent>
+        </Card>
       </div>
     </main>
   );
