@@ -151,8 +151,12 @@ class ServiceTests(unittest.TestCase):
         try:
             google_ads_service._access_token_from_refresh = lambda: "ya29.token"
 
+            captured_headers: dict[str, str] = {}
+
             def fake_http_json(*, method: str, url: str, payload=None, headers=None):
                 calls.append((method, url))
+                if isinstance(headers, dict):
+                    captured_headers.update({str(k): str(v) for k, v in headers.items()})
                 return [{"results": [{"customerClient": {"id": "1111111111"}}, {"customerClient": {"id": "2222222222"}}]}]
 
             google_ads_service._http_json = fake_http_json
@@ -164,6 +168,8 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(result, ["3908678909", "1111111111", "2222222222"])
         self.assertEqual(calls[0][0], "POST")
         self.assertIn("/v18/customers/3908678909/googleAds:searchStream", calls[0][1])
+        self.assertEqual(captured_headers.get("login-customer-id"), "3908678909")
+        self.assertEqual(captured_headers.get("developer-token"), "dev-token-123456")
 
     def test_google_ads_discovery_falls_back_to_search_when_searchstream_404(self):
         os.environ["GOOGLE_ADS_MODE"] = "production"
@@ -232,6 +238,37 @@ class ServiceTests(unittest.TestCase):
     def test_google_ads_api_version_normalizes_numeric_input(self):
         os.environ["GOOGLE_ADS_API_VERSION"] = "18"
         self.assertEqual(google_ads_service._google_api_version(), "v18")
+
+    def test_google_ads_fetch_production_metrics_uses_manager_login_customer_id(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
+        os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
+        os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token-123456"
+        os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://app.example.com/agency/integrations/google/callback"
+        os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
+        os.environ["GOOGLE_ADS_MANAGER_CUSTOMER_ID"] = "398-659-7205"
+        os.environ["GOOGLE_ADS_API_VERSION"] = "v18"
+
+        original_token = google_ads_service._access_token_from_refresh
+        original_http = google_ads_service._http_json
+        captured_headers: dict[str, str] = {}
+        try:
+            google_ads_service._access_token_from_refresh = lambda: "ya29.token"
+
+            def fake_http_json(*, method: str, url: str, payload=None, headers=None):
+                if isinstance(headers, dict):
+                    captured_headers.update({str(k): str(v) for k, v in headers.items()})
+                return [{"results": [{"metrics": {"costMicros": 1000000, "impressions": 10, "clicks": 1, "conversions": 1, "conversionsValue": 5}}]}]
+
+            google_ads_service._http_json = fake_http_json
+            result = google_ads_service._fetch_production_metrics(customer_id="357-869-7670")
+        finally:
+            google_ads_service._access_token_from_refresh = original_token
+            google_ads_service._http_json = original_http
+
+        self.assertEqual(captured_headers.get("login-customer-id"), "3986597205")
+        self.assertEqual(captured_headers.get("developer-token"), "dev-token-123456")
+        self.assertEqual(result["google_customer_id"], "3578697670")
 
     def test_google_ads_diagnostics_flags_invalid_manager_id(self):
         os.environ["GOOGLE_ADS_MODE"] = "production"

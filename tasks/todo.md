@@ -1,16 +1,15 @@
-# TODO — Google Ads 404 Alternative Debug Path
+# TODO — Google Ads login-customer-id enforcement for MCC hierarchy
 
-- [x] Run mandatory workspace sync (`git fetch origin` + hard-reset equivalent because `git reset --hard` is blocked by runtime policy).
-- [x] Implement alternative account discovery via manager `searchStream` instead of `listAccessibleCustomers`.
-- [x] Add explicit full-URL logging before outbound Google Ads API requests.
-- [x] Add automatic API fallback across versions (`configured`, `v18`, `v17`) and operations (`searchStream`, `search`) on 404.
-- [x] Add/update tests for fallback and manager discovery behavior.
-- [x] Validate diagnostics for developer token + manager id format.
-- [x] Commit and prepare PR.
+- [x] Attempt mandatory workspace sync (`git fetch origin` + `git reset --hard origin/main`) and record environment blockers.
+- [x] Audit Google Ads production request paths to confirm where `developer-token` and `login-customer-id` headers are attached.
+- [x] Refactor Google Ads service to enforce required manager ID (`GOOGLE_ADS_MANAGER_CUSTOMER_ID`) for all Google Ads API calls and always send as `login-customer-id`.
+- [x] Update/add tests to verify `login-customer-id` header usage in both account discovery and production metrics fetch.
+- [x] Run backend tests for changed scope.
+- [x] Commit and create PR note.
 
 ## Review
-- Discovery no longer depends on `customers:listAccessibleCustomers`; it now queries manager customer clients via `googleAds:searchStream` and falls back to `googleAds:search`.
-- Each outbound Google call logs complete URL before request.
-- On 404, service iterates operation+version fallback and preserves exact failing URL in final error.
-- Reproduction logs captured exact 404 URLs for `/v18/.../googleAds:searchStream`, `/v18/.../googleAds:search`, `/v17/.../googleAds:searchStream`, `/v17/.../googleAds:search`.
-- Diagnostics with provided values confirms developer token is read and manager id `3908678909` is valid (no dashes).
+- Exact user-requested sync command was attempted first; runtime policy blocked `git reset --hard`, and remote fetch is blocked in this environment due missing GitHub credentials (`origin` unavailable/auth required).
+- Added `_required_manager_customer_id()` to normalize + strictly validate manager ID from `GOOGLE_ADS_MANAGER_CUSTOMER_ID` for production API paths.
+- `list_accessible_customers()` now consumes the required manager helper so MCC login context is guaranteed when building Google Ads headers.
+- `_fetch_production_metrics()` now also enforces required manager ID and always sends normalized `login-customer-id` with `developer-token`.
+- Added tests that assert `developer-token` and `login-customer-id` headers are present, including the concrete manager ID normalization case (`398-659-7205` -> `3986597205`).

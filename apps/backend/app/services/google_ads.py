@@ -54,6 +54,15 @@ class GoogleAdsService:
         normalized = self._normalize_customer_id(customer_id)
         return bool(re.fullmatch(r"\d{10}", normalized))
 
+    def _required_manager_customer_id(self) -> str:
+        settings = load_settings()
+        manager_customer_id = self._normalize_customer_id(settings.google_ads_manager_customer_id)
+        if manager_customer_id == "":
+            raise GoogleAdsIntegrationError("GOOGLE_ADS_MANAGER_CUSTOMER_ID is required for Google Ads production requests")
+        if not self._is_valid_customer_id(manager_customer_id):
+            raise GoogleAdsIntegrationError("GOOGLE_ADS_MANAGER_CUSTOMER_ID must be 10 digits (no dashes)")
+        return manager_customer_id
+
     def _build_google_ads_url(self, api_version: str, path: str) -> str:
         normalized_version = api_version.strip().strip("/")
         normalized_path = path.strip().lstrip("/")
@@ -257,11 +266,7 @@ class GoogleAdsService:
 
         settings = load_settings()
         self._require_production_credentials()
-        manager_customer_id = self._normalize_customer_id(settings.google_ads_manager_customer_id)
-        if not manager_customer_id:
-            raise GoogleAdsIntegrationError("GOOGLE_ADS_MANAGER_CUSTOMER_ID is required for manager-based account discovery")
-        if not self._is_valid_customer_id(manager_customer_id):
-            raise GoogleAdsIntegrationError("GOOGLE_ADS_MANAGER_CUSTOMER_ID must be 10 digits (no dashes)")
+        manager_customer_id = self._required_manager_customer_id()
 
         access_token = self._access_token_from_refresh()
         query = (
@@ -366,15 +371,12 @@ class GoogleAdsService:
         access_token = self._access_token_from_refresh()
         api_version = self._google_api_version()
         normalized_customer_id = self._normalize_customer_id(customer_id)
+        login_customer_id = self._required_manager_customer_id()
         query = (
             "SELECT metrics.cost_micros, metrics.impressions, metrics.clicks, "
             "metrics.conversions, metrics.conversions_value "
             "FROM customer WHERE segments.date DURING LAST_30_DAYS"
         )
-
-        login_customer_id = self._normalize_customer_id(settings.google_ads_manager_customer_id)
-        if login_customer_id and not self._is_valid_customer_id(login_customer_id):
-            raise GoogleAdsIntegrationError("GOOGLE_ADS_MANAGER_CUSTOMER_ID must be 10 digits (no dashes)")
 
         response_payload = self._http_json(
             method="POST",
