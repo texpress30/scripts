@@ -268,6 +268,34 @@ class ServiceTests(unittest.TestCase):
         os.environ["GOOGLE_ADS_API_VERSION"] = "18"
         self.assertEqual(google_ads_service._google_api_version(), "v18")
 
+    def test_google_ads_list_accessible_customers_http_preflight_uses_post_and_required_headers(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token-123456"
+
+        original_http = google_ads_service._http_json
+        captured: dict[str, object] = {}
+        try:
+            def fake_http_json(*, method: str, url: str, payload=None, headers=None):
+                captured["method"] = method
+                captured["url"] = url
+                captured["payload"] = payload
+                captured["headers"] = headers or {}
+                return {"resourceNames": ["customers/3986597205"]}
+
+            google_ads_service._http_json = fake_http_json
+            result = google_ads_service._list_accessible_customers_via_http(access_token="ya29.token")
+        finally:
+            google_ads_service._http_json = original_http
+
+        self.assertEqual(captured.get("method"), "POST")
+        self.assertEqual(captured.get("url"), "https://googleads.googleapis.com/v18/customers:listAccessibleCustomers")
+        self.assertEqual(captured.get("payload"), {})
+        headers = captured.get("headers", {})
+        self.assertEqual(headers.get("Authorization"), "Bearer ya29.token")
+        self.assertEqual(headers.get("developer-token"), "dev-token-123456")
+        self.assertFalse("login-customer-id" in headers)
+        self.assertEqual(result, ["3986597205"])
+
     def test_google_ads_sdk_client_requires_refresh_token(self):
         os.environ["GOOGLE_ADS_MODE"] = "production"
         os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"

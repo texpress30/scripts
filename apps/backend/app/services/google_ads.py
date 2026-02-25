@@ -122,9 +122,11 @@ class GoogleAdsService:
 
     def _list_accessible_customers_via_http(self, *, access_token: str) -> list[str]:
         settings = load_settings()
+        url = "https://googleads.googleapis.com/v18/customers:listAccessibleCustomers".strip()
         payload = self._http_json(
-            method="GET",
-            url="https://googleads.googleapis.com/v18/customers:listAccessibleCustomers",
+            method="POST",
+            url=url,
+            payload={},
             headers={
                 "Authorization": f"Bearer {access_token}",
                 "developer-token": settings.google_ads_developer_token,
@@ -179,25 +181,34 @@ class GoogleAdsService:
 
             request_id: str | None = None
             failure_details: list[object] = []
+            response_headers = getattr(exc, "headers", None)
+            response_headers_debug: dict[str, str] = {}
+            if hasattr(response_headers, "items"):
+                try:
+                    response_headers_debug = {str(k): str(v) for k, v in response_headers.items()}
+                except Exception:  # noqa: BLE001
+                    response_headers_debug = {}
             if "googleads.googleapis.com" in url:
                 request_id, failure_details = self._extract_google_ads_error_details(
                     response_body=response_body,
-                    response_headers=getattr(exc, "headers", None),
+                    response_headers=response_headers,
                 )
                 logger.error(
-                    "Google Ads error payload: method=%s url=%s status=%s request_id=%s failure_details=%s response=%s",
+                    "Google Ads error payload: method=%s url=%s status=%s request_id=%s failure_details=%s response_headers=%s response=%s",
                     method,
                     url,
                     exc.code,
                     request_id,
                     failure_details,
+                    response_headers_debug,
                     response_body[:2000],
                 )
 
             raise GoogleAdsIntegrationError(
                 "Google Ads HTTP request failed: "
                 f"method={method} url={url} status={exc.code} reason={exc.reason} "
-                f"request_id={request_id} failure_details={failure_details} response={response_body[:1200]}"
+                f"request_id={request_id} failure_details={failure_details} response_headers={response_headers_debug} "
+                f"response={response_body[:1200]}"
             ) from exc
         except Exception as exc:  # noqa: BLE001
             raise GoogleAdsIntegrationError(f"Google Ads HTTP request failed: method={method} url={url} error={exc}") from exc

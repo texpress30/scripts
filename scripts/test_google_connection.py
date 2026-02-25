@@ -46,7 +46,7 @@ def main() -> int:
         return original_http(method=method, url=url, payload=payload, headers=headers)
 
     def debug_preflight_http(*, access_token: str) -> list[str]:
-        print("[debug] http GET /customers:listAccessibleCustomers invoked (no login-customer-id header expected)")
+        print("[debug] http POST /customers:listAccessibleCustomers invoked (no login-customer-id header expected)")
         print(f"[debug] preflight access_token_present={bool(access_token)}")
         return ["3986597205", "3578697670"]
 

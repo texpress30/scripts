@@ -15,3 +15,4 @@
 - 2026-02-25: In Google OAuth callback flows, only initialize GoogleAdsClient after obtaining refresh_token from token exchange, and pass that token explicitly into post-exchange discovery to avoid SDK ValueError on missing OAuth credentials.
 - 2026-02-25: During OAuth code exchange, pass the freshly received refresh token explicitly into any immediate Google Ads SDK discovery call; do not rely only on env/runtime side effects to avoid missing-credential crashes.
 - 2026-02-25: If SDK OAuth config validation is crashing during callback/login discovery, bypass SDK for account listing and call `v18/customers:listAccessibleCustomers` directly over HTTP with bearer token + developer-token only.
+- 2026-02-25: When Google Ads accessible-customers still returns 404, test POST `v18/customers:listAccessibleCustomers` with explicit bearer + developer-token and log full response headers for endpoint/version clues.
