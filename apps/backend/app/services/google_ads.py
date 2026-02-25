@@ -269,37 +269,53 @@ class GoogleAdsService:
             "FROM customer_client"
         )
 
+        operations = [
+            {
+                "name": "searchStream",
+                "method": "POST",
+                "path": f"customers/{manager_customer_id}/googleAds:searchStream",
+                "payload": {"query": query},
+            },
+            {
+                "name": "search",
+                "method": "POST",
+                "path": f"customers/{manager_customer_id}/googleAds:search",
+                "payload": {"query": query, "pageSize": 1000},
+            },
+        ]
+
         last_error: GoogleAdsIntegrationError | None = None
         for api_version in self._candidate_api_versions():
-            url = self._build_google_ads_url(
-                api_version,
-                f"customers/{manager_customer_id}/googleAds:searchStream",
-            )
-            try:
-                payload = self._http_json(
-                    method="POST",
-                    url=url,
-                    payload={"query": query},
-                    headers={
-                        "Authorization": f"Bearer {access_token}",
-                        "developer-token": settings.google_ads_developer_token,
-                        "login-customer-id": manager_customer_id,
-                    },
-                )
+            for operation in operations:
+                url = self._build_google_ads_url(api_version, operation["path"])
+                try:
+                    payload = self._http_json(
+                        method=str(operation["method"]),
+                        url=url,
+                        payload=operation["payload"],
+                        headers={
+                            "Authorization": f"Bearer {access_token}",
+                            "developer-token": settings.google_ads_developer_token,
+                            "login-customer-id": manager_customer_id,
+                        },
+                    )
 
-                if not isinstance(payload, list):
-                    raise GoogleAdsIntegrationError("Invalid response received from Google manager searchStream")
+                    rows: list[dict[str, object]] = []
+                    if operation["name"] == "searchStream":
+                        if not isinstance(payload, list):
+                            raise GoogleAdsIntegrationError("Invalid response received from Google manager searchStream")
+                        for chunk in payload:
+                            if isinstance(chunk, dict) and isinstance(chunk.get("results"), list):
+                                rows.extend([item for item in chunk["results"] if isinstance(item, dict)])
+                    else:
+                        if not isinstance(payload, dict):
+                            raise GoogleAdsIntegrationError("Invalid response received from Google manager search")
+                        result_rows = payload.get("results", [])
+                        if isinstance(result_rows, list):
+                            rows.extend([item for item in result_rows if isinstance(item, dict)])
 
-                account_ids: list[str] = []
-                for chunk in payload:
-                    if not isinstance(chunk, dict):
-                        continue
-                    results = chunk.get("results", [])
-                    if not isinstance(results, list):
-                        continue
-                    for row in results:
-                        if not isinstance(row, dict):
-                            continue
+                    account_ids: list[str] = []
+                    for row in rows:
                         customer_client = row.get("customerClient", {})
                         if not isinstance(customer_client, dict):
                             continue
@@ -307,19 +323,30 @@ class GoogleAdsService:
                         if cid and cid not in account_ids:
                             account_ids.append(cid)
 
-                if manager_customer_id not in account_ids:
-                    account_ids.insert(0, manager_customer_id)
-                return account_ids
-            except GoogleAdsIntegrationError as exc:
-                last_error = exc
-                if "status=404" in str(exc):
-                    logger.warning("Google Ads manager searchStream 404 for version=%s url=%s", api_version, url)
-                    continue
-                raise
+                    if manager_customer_id not in account_ids:
+                        account_ids.insert(0, manager_customer_id)
+                    logger.info(
+                        "Google Ads manager discovery succeeded using operation=%s version=%s count=%s",
+                        operation["name"],
+                        api_version,
+                        len(account_ids),
+                    )
+                    return account_ids
+                except GoogleAdsIntegrationError as exc:
+                    last_error = exc
+                    if "status=404" in str(exc):
+                        logger.warning(
+                            "Google Ads manager discovery 404 for operation=%s version=%s url=%s",
+                            operation["name"],
+                            api_version,
+                            url,
+                        )
+                        continue
+                    raise
 
         if last_error is not None:
             raise GoogleAdsIntegrationError(
-                "Google Ads manager account discovery failed after version fallback attempts. "
+                "Google Ads manager account discovery failed after operation/version fallback attempts. "
                 f"Last error: {last_error}"
             ) from last_error
 
