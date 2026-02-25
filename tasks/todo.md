@@ -1,15 +1,17 @@
-# TODO — Google Ads login-customer-id enforcement for MCC hierarchy
+# TODO — Google Ads 404 deep debug (MCC 3986597205)
 
-- [x] Attempt mandatory workspace sync (`git fetch origin` + `git reset --hard origin/main`) and record environment blockers.
-- [x] Audit Google Ads production request paths to confirm where `developer-token` and `login-customer-id` headers are attached.
-- [x] Refactor Google Ads service to enforce required manager ID (`GOOGLE_ADS_MANAGER_CUSTOMER_ID`) for all Google Ads API calls and always send as `login-customer-id`.
-- [x] Update/add tests to verify `login-customer-id` header usage in both account discovery and production metrics fetch.
-- [x] Run backend tests for changed scope.
-- [x] Commit and create PR note.
+- [x] Attempt mandatory sync command (`git fetch origin && git reset --hard origin/main`) and record blockers.
+- [x] Add extended Google error logging (request_id + failure details + full payload body when available).
+- [x] Implement discovery fallback check through `customers:listAccessibleCustomers` before manager search flow.
+- [x] Ensure a single consistent API version strategy across Google Ads service requests.
+- [x] Add `scripts/test_google_connection.py` to validate headers (`developer-token`, `login-customer-id`) and discovery behavior.
+- [x] Run targeted test suite and script help/smoke checks.
+- [x] Commit and create PR.
 
 ## Review
-- Exact user-requested sync command was attempted first; runtime policy blocked `git reset --hard`, and remote fetch is blocked in this environment due missing GitHub credentials (`origin` unavailable/auth required).
-- Added `_required_manager_customer_id()` to normalize + strictly validate manager ID from `GOOGLE_ADS_MANAGER_CUSTOMER_ID` for production API paths.
-- `list_accessible_customers()` now consumes the required manager helper so MCC login context is guaranteed when building Google Ads headers.
-- `_fetch_production_metrics()` now also enforces required manager ID and always sends normalized `login-customer-id` with `developer-token`.
-- Added tests that assert `developer-token` and `login-customer-id` headers are present, including the concrete manager ID normalization case (`398-659-7205` -> `3986597205`).
+- Attempted exact sync command requested by user; runtime policy blocks `git reset --hard` and environment lacks authenticated GitHub access for `git fetch origin`.
+- Added Google Ads error-detail extraction to include `request_id` + `error.details` and log full payload body for `googleads.googleapis.com` failures.
+- Added service preflight to `customers:listAccessibleCustomers` with `developer-token` and `login-customer-id`; if empty, returns actionable auth/token access error before manager search.
+- Standardized discovery to a single configured API version (`GOOGLE_ADS_API_VERSION`) to eliminate mixed v17/v18 behavior during debugging.
+- Added `scripts/test_google_connection.py` that monkeypatches transport and prints outbound headers to prove `login-customer-id` is sent.
+- Validated with backend tests and local debug script run.

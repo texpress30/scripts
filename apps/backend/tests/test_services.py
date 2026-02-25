@@ -157,6 +157,8 @@ class ServiceTests(unittest.TestCase):
                 calls.append((method, url))
                 if isinstance(headers, dict):
                     captured_headers.update({str(k): str(v) for k, v in headers.items()})
+                if "customers:listAccessibleCustomers" in url:
+                    return {"resourceNames": ["customers/3908678909", "customers/1111111111"]}
                 return [{"results": [{"customerClient": {"id": "1111111111"}}, {"customerClient": {"id": "2222222222"}}]}]
 
             google_ads_service._http_json = fake_http_json
@@ -166,8 +168,10 @@ class ServiceTests(unittest.TestCase):
             google_ads_service._http_json = original_http
 
         self.assertEqual(result, ["3908678909", "1111111111", "2222222222"])
-        self.assertEqual(calls[0][0], "POST")
-        self.assertIn("/v18/customers/3908678909/googleAds:searchStream", calls[0][1])
+        self.assertEqual(calls[0][0], "GET")
+        self.assertIn("/v18/customers:listAccessibleCustomers", calls[0][1])
+        self.assertEqual(calls[1][0], "POST")
+        self.assertIn("/v18/customers/3908678909/googleAds:searchStream", calls[1][1])
         self.assertEqual(captured_headers.get("login-customer-id"), "3908678909")
         self.assertEqual(captured_headers.get("developer-token"), "dev-token-123456")
 
@@ -189,6 +193,8 @@ class ServiceTests(unittest.TestCase):
 
             def fake_http_json(*, method: str, url: str, payload=None, headers=None):
                 calls.append(url)
+                if "customers:listAccessibleCustomers" in url:
+                    return {"resourceNames": ["customers/3908678909", "customers/4444444444"]}
                 if "googleAds:searchStream" in url:
                     raise GoogleAdsIntegrationError("Google Ads HTTP request failed: method=POST url=%s status=404 reason=Not Found response=..." % url)
                 return {"results": [{"customerClient": {"id": "4444444444"}}]}
@@ -203,7 +209,7 @@ class ServiceTests(unittest.TestCase):
         self.assertTrue(any("googleAds:search" in call for call in calls))
         self.assertEqual(result, ["3908678909", "4444444444"])
 
-    def test_google_ads_list_accessible_customers_fallbacks_to_v17_on_v18_404(self):
+    def test_google_ads_list_accessible_customers_uses_single_configured_version(self):
         os.environ["GOOGLE_ADS_MODE"] = "production"
         os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
         os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
@@ -221,8 +227,8 @@ class ServiceTests(unittest.TestCase):
 
             def fake_http_json(*, method: str, url: str, payload=None, headers=None):
                 calls.append(url)
-                if "/v18/" in url:
-                    raise GoogleAdsIntegrationError("Google Ads HTTP request failed: method=POST url=%s status=404 reason=Not Found response=..." % url)
+                if "customers:listAccessibleCustomers" in url:
+                    return {"resourceNames": ["customers/3908678909", "customers/3333333333"]}
                 return [{"results": [{"customerClient": {"id": "3333333333"}}]}]
 
             google_ads_service._http_json = fake_http_json
@@ -231,9 +237,35 @@ class ServiceTests(unittest.TestCase):
             google_ads_service._access_token_from_refresh = original_token
             google_ads_service._http_json = original_http
 
-        self.assertIn("/v18/", calls[0])
-        self.assertTrue(any("/v17/" in call for call in calls))
+        self.assertTrue(all("/v18/" in call for call in calls))
         self.assertEqual(result, ["3908678909", "3333333333"])
+
+    def test_google_ads_list_accessible_customers_fails_when_service_accessible_empty(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
+        os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
+        os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token-123456"
+        os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://app.example.com/agency/integrations/google/callback"
+        os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
+        os.environ["GOOGLE_ADS_MANAGER_CUSTOMER_ID"] = "3908678909"
+        os.environ["GOOGLE_ADS_API_VERSION"] = "v18"
+
+        original_token = google_ads_service._access_token_from_refresh
+        original_http = google_ads_service._http_json
+        try:
+            google_ads_service._access_token_from_refresh = lambda: "ya29.token"
+
+            def fake_http_json(*, method: str, url: str, payload=None, headers=None):
+                if "customers:listAccessibleCustomers" in url:
+                    return {"resourceNames": []}
+                return [{"results": []}]
+
+            google_ads_service._http_json = fake_http_json
+            with self.assertRaises(GoogleAdsIntegrationError):
+                google_ads_service.list_accessible_customers()
+        finally:
+            google_ads_service._access_token_from_refresh = original_token
+            google_ads_service._http_json = original_http
 
     def test_google_ads_api_version_normalizes_numeric_input(self):
         os.environ["GOOGLE_ADS_API_VERSION"] = "18"
