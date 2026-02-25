@@ -149,7 +149,7 @@ class ServiceTests(unittest.TestCase):
 
         original_token = google_ads_service._access_token_from_refresh
         original_http = google_ads_service._http_json
-        original_preflight = google_ads_service._list_accessible_customers_via_sdk
+        original_preflight = google_ads_service._list_accessible_customers_via_http
         calls: list[tuple[str, str]] = []
         try:
             google_ads_service._access_token_from_refresh = lambda: "ya29.token"
@@ -162,13 +162,13 @@ class ServiceTests(unittest.TestCase):
                     captured_headers.update({str(k): str(v) for k, v in headers.items()})
                 return [{"results": [{"customerClient": {"id": "1111111111"}}, {"customerClient": {"id": "2222222222"}}]}]
 
-            google_ads_service._list_accessible_customers_via_sdk = lambda **kwargs: ["3908678909", "1111111111"]
+            google_ads_service._list_accessible_customers_via_http = lambda **kwargs: ["3908678909", "1111111111"]
             google_ads_service._http_json = fake_http_json
             result = google_ads_service.list_accessible_customers()
         finally:
             google_ads_service._access_token_from_refresh = original_token
             google_ads_service._http_json = original_http
-            google_ads_service._list_accessible_customers_via_sdk = original_preflight
+            google_ads_service._list_accessible_customers_via_http = original_preflight
 
         self.assertEqual(result, ["3908678909", "1111111111", "2222222222"])
         self.assertEqual(calls[0][0], "POST")
@@ -188,11 +188,11 @@ class ServiceTests(unittest.TestCase):
 
         original_token = google_ads_service._access_token_from_refresh
         original_http = google_ads_service._http_json
-        original_preflight = google_ads_service._list_accessible_customers_via_sdk
+        original_preflight = google_ads_service._list_accessible_customers_via_http
         calls: list[str] = []
         try:
             google_ads_service._access_token_from_refresh = lambda: "ya29.token"
-            google_ads_service._list_accessible_customers_via_sdk = lambda **kwargs: ["3908678909", "4444444444"]
+            google_ads_service._list_accessible_customers_via_http = lambda **kwargs: ["3908678909", "4444444444"]
 
             def fake_http_json(*, method: str, url: str, payload=None, headers=None):
                 calls.append(url)
@@ -205,7 +205,7 @@ class ServiceTests(unittest.TestCase):
         finally:
             google_ads_service._access_token_from_refresh = original_token
             google_ads_service._http_json = original_http
-            google_ads_service._list_accessible_customers_via_sdk = original_preflight
+            google_ads_service._list_accessible_customers_via_http = original_preflight
 
         self.assertTrue(any("googleAds:searchStream" in call for call in calls))
         self.assertTrue(any("googleAds:search" in call for call in calls))
@@ -223,11 +223,11 @@ class ServiceTests(unittest.TestCase):
 
         original_token = google_ads_service._access_token_from_refresh
         original_http = google_ads_service._http_json
-        original_preflight = google_ads_service._list_accessible_customers_via_sdk
+        original_preflight = google_ads_service._list_accessible_customers_via_http
         calls: list[str] = []
         try:
             google_ads_service._access_token_from_refresh = lambda: "ya29.token"
-            google_ads_service._list_accessible_customers_via_sdk = lambda **kwargs: ["3908678909", "3333333333"]
+            google_ads_service._list_accessible_customers_via_http = lambda **kwargs: ["3908678909", "3333333333"]
 
             def fake_http_json(*, method: str, url: str, payload=None, headers=None):
                 calls.append(url)
@@ -238,7 +238,7 @@ class ServiceTests(unittest.TestCase):
         finally:
             google_ads_service._access_token_from_refresh = original_token
             google_ads_service._http_json = original_http
-            google_ads_service._list_accessible_customers_via_sdk = original_preflight
+            google_ads_service._list_accessible_customers_via_http = original_preflight
 
         self.assertTrue(all("/v18/" in call for call in calls))
         self.assertEqual(result, ["3908678909", "3333333333"])
@@ -254,15 +254,15 @@ class ServiceTests(unittest.TestCase):
         os.environ["GOOGLE_ADS_API_VERSION"] = "v18"
 
         original_token = google_ads_service._access_token_from_refresh
-        original_preflight = google_ads_service._list_accessible_customers_via_sdk
+        original_preflight = google_ads_service._list_accessible_customers_via_http
         try:
             google_ads_service._access_token_from_refresh = lambda: "ya29.token"
-            google_ads_service._list_accessible_customers_via_sdk = lambda **kwargs: []
+            google_ads_service._list_accessible_customers_via_http = lambda **kwargs: []
             with self.assertRaises(GoogleAdsIntegrationError):
                 google_ads_service.list_accessible_customers()
         finally:
             google_ads_service._access_token_from_refresh = original_token
-            google_ads_service._list_accessible_customers_via_sdk = original_preflight
+            google_ads_service._list_accessible_customers_via_http = original_preflight
 
     def test_google_ads_api_version_normalizes_numeric_input(self):
         os.environ["GOOGLE_ADS_API_VERSION"] = "18"
@@ -283,7 +283,7 @@ class ServiceTests(unittest.TestCase):
         finally:
             google_ads_service._runtime_refresh_token = original_runtime
 
-    def test_google_ads_exchange_uses_refresh_token_for_post_exchange_discovery(self):
+    def test_google_ads_exchange_discovers_accounts_after_token_exchange(self):
         os.environ["GOOGLE_ADS_MODE"] = "production"
         os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
         os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
@@ -300,8 +300,8 @@ class ServiceTests(unittest.TestCase):
             def fake_http_json(*, method: str, url: str, payload=None, headers=None):
                 return {"refresh_token": "refresh-from-exchange"}
 
-            def fake_list_accessible_customers(*, refresh_token=None):
-                captured["refresh_token"] = refresh_token
+            def fake_list_accessible_customers():
+                captured["called"] = True
                 return ["3986597205", "3578697670"]
 
             google_ads_service._http_json = fake_http_json
@@ -312,7 +312,7 @@ class ServiceTests(unittest.TestCase):
             google_ads_service._http_json = original_http
             google_ads_service.list_accessible_customers = original_list
 
-        self.assertEqual(captured.get("refresh_token"), "refresh-from-exchange")
+        self.assertTrue(bool(captured.get("called")))
         self.assertEqual(response["accessible_customers"], ["3986597205", "3578697670"])
 
     def test_google_ads_sdk_client_config_uses_refresh_and_developer_token(self):

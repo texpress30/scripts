@@ -6,7 +6,7 @@ Usage:
 
 What it does:
 - Loads backend settings/environment.
-- Monkeypatches SDK preflight and HTTP transport helper.
+- Monkeypatches HTTP preflight and HTTP transport helper.
 - Verifies `login-customer-id` is absent from list-accessible preflight path
   and present on manager customer-specific search requests.
 """
@@ -30,7 +30,7 @@ def main() -> int:
     os.environ.setdefault("GOOGLE_ADS_API_VERSION", "v18")
 
     original_http = google_ads_service._http_json
-    original_preflight = google_ads_service._list_accessible_customers_via_sdk
+    original_preflight = google_ads_service._list_accessible_customers_via_http
 
     def debug_http_json(*, method: str, url: str, payload=None, headers=None):
         print(f"[debug] method={method} url={url}")
@@ -45,12 +45,13 @@ def main() -> int:
             return {"results": [{"customerClient": {"id": "3578697670"}}]}
         return original_http(method=method, url=url, payload=payload, headers=headers)
 
-    def debug_preflight_sdk(*, refresh_token=None) -> list[str]:
-        print("[debug] sdk.list_accessible_customers() invoked (no login-customer-id header expected)")
+    def debug_preflight_http(*, access_token: str) -> list[str]:
+        print("[debug] http GET /customers:listAccessibleCustomers invoked (no login-customer-id header expected)")
+        print(f"[debug] preflight access_token_present={bool(access_token)}")
         return ["3986597205", "3578697670"]
 
     google_ads_service._http_json = debug_http_json
-    google_ads_service._list_accessible_customers_via_sdk = debug_preflight_sdk
+    google_ads_service._list_accessible_customers_via_http = debug_preflight_http
     try:
         accounts = google_ads_service.list_accessible_customers()
         print(f"[ok] accessible_customers={accounts}")
@@ -60,7 +61,7 @@ def main() -> int:
         return 1
     finally:
         google_ads_service._http_json = original_http
-        google_ads_service._list_accessible_customers_via_sdk = original_preflight
+        google_ads_service._list_accessible_customers_via_http = original_preflight
 
 
 if __name__ == "__main__":
