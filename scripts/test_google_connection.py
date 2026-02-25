@@ -45,7 +45,7 @@ def main() -> int:
             return {"results": [{"customerClient": {"id": "3578697670"}}]}
         return original_http(method=method, url=url, payload=payload, headers=headers)
 
-    def debug_preflight_sdk() -> list[str]:
+    def debug_preflight_sdk(*, refresh_token=None) -> list[str]:
         print("[debug] sdk.list_accessible_customers() invoked (no login-customer-id header expected)")
         return ["3986597205", "3578697670"]
 

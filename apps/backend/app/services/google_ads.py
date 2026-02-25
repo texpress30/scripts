@@ -95,11 +95,17 @@ class GoogleAdsService:
 
         return request_id, failure_details
 
-    def _google_ads_client(self) -> object:
+    def _google_ads_client(self, *, refresh_token: str | None = None) -> object:
         settings = load_settings()
         if GoogleAdsClient is None:
             raise GoogleAdsIntegrationError(
                 "google-ads SDK is not installed. Add it to backend requirements to use production account discovery."
+            )
+
+        effective_refresh_token = (refresh_token or self._runtime_refresh_token or settings.google_ads_refresh_token).strip()
+        if effective_refresh_token == "":
+            raise GoogleAdsIntegrationError(
+                "Google Ads SDK client requires refresh token. Complete OAuth exchange first and set GOOGLE_ADS_REFRESH_TOKEN."
             )
 
         config: dict[str, object] = {
@@ -107,12 +113,15 @@ class GoogleAdsService:
             "use_proto_plus": True,
             "oauth2_client_id": settings.google_ads_client_id,
             "oauth2_client_secret": settings.google_ads_client_secret,
-            "oauth2_refresh_token": self._refresh_token(),
+            "oauth2_refresh_token": effective_refresh_token,
         }
-        return GoogleAdsClient.load_from_dict(config, version=self._google_api_version())
+        try:
+            return GoogleAdsClient.load_from_dict(config, version=self._google_api_version())
+        except ValueError as exc:
+            raise GoogleAdsIntegrationError(f"Google Ads SDK configuration error: {exc}") from exc
 
-    def _list_accessible_customers_via_sdk(self) -> list[str]:
-        client = self._google_ads_client()
+    def _list_accessible_customers_via_sdk(self, *, refresh_token: str | None = None) -> list[str]:
+        client = self._google_ads_client(refresh_token=refresh_token)
         customer_service = client.get_service("CustomerService")
 
         # Per Google Ads SDK standard flow, list_accessible_customers uses OAuth + developer token
@@ -333,7 +342,7 @@ class GoogleAdsService:
         refresh_token = str(token_payload["refresh_token"])
         self._runtime_refresh_token = refresh_token
 
-        accessible_customers = self.list_accessible_customers()
+        accessible_customers = self.list_accessible_customers(refresh_token=refresh_token)
         return {
             "status": "connected",
             "refresh_token": refresh_token,
@@ -341,7 +350,7 @@ class GoogleAdsService:
             "persist_instruction": "Set GOOGLE_ADS_REFRESH_TOKEN in Railway using refresh_token from this response.",
         }
 
-    def list_accessible_customers(self) -> list[str]:
+    def list_accessible_customers(self, *, refresh_token: str | None = None) -> list[str]:
         if not self._is_production_mode():
             return []
 
@@ -350,7 +359,7 @@ class GoogleAdsService:
         manager_customer_id = self._required_manager_customer_id()
 
         access_token = self._access_token_from_refresh()
-        preflight_accounts = self._list_accessible_customers_via_sdk()
+        preflight_accounts = self._list_accessible_customers_via_sdk(refresh_token=refresh_token)
         if not preflight_accounts:
             raise GoogleAdsIntegrationError(
                 "Google customers:listAccessibleCustomers returned no accounts. "

@@ -1,18 +1,16 @@
-# TODO — Urgent Google Ads SDK fix for list_accessible_customers
+# TODO — Fix Google Ads SDK ValueError during OAuth exchange
 
-- [x] Attempt mandatory sync (`git fetch origin && git reset --hard origin/main`) and record blockers.
-- [x] Replace manual `customers:listAccessibleCustomers` URL call with official Google Ads SDK `CustomerService.list_accessible_customers`.
-- [x] Ensure `login-customer-id` is NOT sent for list_accessible_customers flow, but remains for customer-specific search/metrics calls.
-- [x] Align dependency version in `requirements.txt` for official `google-ads` SDK compatibility.
-- [x] Update tests for SDK-based accessible-customer flow + header behavior.
-- [x] Update debug script to validate new behavior.
-- [x] Run targeted tests and script checks.
+- [x] Attempt mandatory sync (`git fetch origin && git reset --hard origin/main`) and record blocker.
+- [x] Make GoogleAdsClient initialization lazy and refresh-token aware so SDK is never instantiated without full OAuth credentials.
+- [x] Keep manual OAuth code exchange via token endpoint, then perform preflight discovery only after refresh token is confirmed.
+- [x] Add friendly error path in `_google_ads_client` when refresh token is missing.
+- [x] Update tests for exchange flow + SDK init guard behavior.
+- [x] Run backend tests and debug script checks.
 - [x] Commit and create PR.
 
 ## Review
-- Attempted exact mandatory sync command first; runtime policy blocks `git reset --hard origin/main` in this environment.
-- Replaced manual REST path `.../customers:listAccessibleCustomers` with official SDK flow: `GoogleAdsClient` + `CustomerService.list_accessible_customers()`.
-- Removed `login-customer-id` usage from list-accessible discovery preflight path by design; retained `login-customer-id` for customer-specific search calls.
-- Added explicit `google-ads==25.1.0` dependency in backend requirements for SDK compatibility.
-- Updated unit tests to mock SDK preflight helper and validate customer-specific calls still send required headers.
-- Updated `scripts/test_google_connection.py` to show SDK preflight invocation and manager search header usage.
+- Mandatory sync command was attempted exactly; runtime policy blocks `git reset --hard`.
+- `_google_ads_client` now accepts optional explicit refresh token, validates it before SDK init, and wraps SDK ValueError with a friendly integration error.
+- `exchange_oauth_code` still does manual token exchange first, stores the returned refresh token, and then runs account discovery by passing that token explicitly.
+- `list_accessible_customers` now supports optional refresh token propagation so post-exchange preflight cannot race on missing env state.
+- Unit tests now cover refresh-token guard and exchange flow passing token into discovery; all targeted tests are green.
