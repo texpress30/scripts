@@ -7,3 +7,4 @@
 - 2026-02-25: Never claim exact execution of `git reset --hard` when policy blocks it; report it as blocked and explicitly name the fallback command used to reach equivalent state.
 - 2026-02-25: When users ask for exact cloud logs but direct cloud CLI access is unavailable, add application-level diagnostics/logging that prints method+URL+status+response body, then provide reproducible local evidence and exact commands to collect the same data in production.
 - 2026-02-25: For Google Ads REST contracts, verify HTTP verb against official endpoint docs (`customers:listAccessibleCustomers` requires GET); wrong verb can surface as generic 404 even with valid credentials.
+- 2026-02-25: When a Google Ads endpoint keeps returning 404 despite credential checks, switch to manager-level `googleAds:searchStream` discovery and log every attempted versioned URL (`configured`, `v18`, `v17`) before request to isolate URL construction/version issues quickly.

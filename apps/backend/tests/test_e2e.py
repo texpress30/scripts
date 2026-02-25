@@ -244,6 +244,10 @@ class E2EFlowTests(unittest.TestCase):
         self.assertEqual(response.json()["count"], 2)
         self.assertEqual(response.json()["items"], ["3908678909", "1234567890"])
 
+        alias = self.client.get("/integrations/google/accounts", headers=headers)
+        self.assertEqual(alias.status_code, 200)
+        self.assertEqual(alias.json()["count"], 2)
+
     def test_pinterest_contract_is_feature_flagged_off_by_default(self):
         headers = self._auth_header()
 

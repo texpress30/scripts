@@ -10,6 +10,7 @@ from app.api.creative import router as creative_router
 from app.api.dashboard import router as dashboard_router
 from app.api.exports import router as exports_router
 from app.api.google_ads import router as google_ads_router
+from app.api.google_accounts import router as google_accounts_router
 from app.api.health import router as health_router
 from app.api.meta_ads import router as meta_ads_router
 from app.api.pinterest_ads import router as pinterest_ads_router
@@ -45,6 +46,7 @@ app.include_router(audit_router)
 
 # Sprint 2
 app.include_router(google_ads_router)
+app.include_router(google_accounts_router)
 app.include_router(meta_ads_router)
 app.include_router(tiktok_ads_router)
 app.include_router(pinterest_ads_router)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import re
 import secrets
 from datetime import datetime, timezone
@@ -9,6 +10,8 @@ from urllib import error, parse, request
 
 from app.core.config import load_settings
 from app.services.google_store import google_snapshot_store
+
+logger = logging.getLogger(__name__)
 
 
 class GoogleAdsIntegrationError(RuntimeError):
@@ -36,12 +39,25 @@ class GoogleAdsService:
             return f"v{raw}"
         return raw
 
+    def _candidate_api_versions(self) -> list[str]:
+        primary = self._google_api_version()
+        candidates = [primary]
+        for version in ["v18", "v17"]:
+            if version not in candidates:
+                candidates.append(version)
+        return candidates
+
     def _normalize_customer_id(self, customer_id: str) -> str:
         return customer_id.replace("-", "").strip()
 
     def _is_valid_customer_id(self, customer_id: str) -> bool:
         normalized = self._normalize_customer_id(customer_id)
         return bool(re.fullmatch(r"\d{10}", normalized))
+
+    def _build_google_ads_url(self, api_version: str, path: str) -> str:
+        normalized_version = api_version.strip().strip("/")
+        normalized_path = path.strip().lstrip("/")
+        return f"https://googleads.googleapis.com/{normalized_version}/{normalized_path}"
 
     def _http_json(
         self,
@@ -58,6 +74,8 @@ class GoogleAdsService:
         if payload is not None:
             body = json.dumps(payload).encode("utf-8")
         req = request.Request(url, data=body, headers=request_headers, method=method)
+
+        logger.info("Google Ads request: method=%s url=%s", method, url)
 
         try:
             with request.urlopen(req, timeout=20) as response:
@@ -117,6 +135,7 @@ class GoogleAdsService:
         return {
             "mode": settings.google_ads_mode,
             "api_version_effective": self._google_api_version(),
+            "api_version_candidates": self._candidate_api_versions(),
             "developer_token_present": settings.google_ads_developer_token.strip() != "",
             "manager_customer_id_raw": manager_raw,
             "manager_customer_id_normalized": manager_normalized,
@@ -235,24 +254,76 @@ class GoogleAdsService:
     def list_accessible_customers(self) -> list[str]:
         if not self._is_production_mode():
             return []
+
         settings = load_settings()
         self._require_production_credentials()
+        manager_customer_id = self._normalize_customer_id(settings.google_ads_manager_customer_id)
+        if not manager_customer_id:
+            raise GoogleAdsIntegrationError("GOOGLE_ADS_MANAGER_CUSTOMER_ID is required for manager-based account discovery")
+        if not self._is_valid_customer_id(manager_customer_id):
+            raise GoogleAdsIntegrationError("GOOGLE_ADS_MANAGER_CUSTOMER_ID must be 10 digits (no dashes)")
+
         access_token = self._access_token_from_refresh()
-        api_version = self._google_api_version()
-        payload = self._http_json(
-            method="GET",
-            url=f"https://googleads.googleapis.com/{api_version}/customers:listAccessibleCustomers",
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "developer-token": settings.google_ads_developer_token,
-            },
+        query = (
+            "SELECT customer_client.id, customer_client.descriptive_name, customer_client.manager "
+            "FROM customer_client"
         )
-        if not isinstance(payload, dict):
-            raise GoogleAdsIntegrationError("Invalid response received from Google listAccessibleCustomers")
-        resource_names = payload.get("resourceNames", [])
-        if not isinstance(resource_names, list):
-            return []
-        return [str(name).split("/")[-1] for name in resource_names]
+
+        last_error: GoogleAdsIntegrationError | None = None
+        for api_version in self._candidate_api_versions():
+            url = self._build_google_ads_url(
+                api_version,
+                f"customers/{manager_customer_id}/googleAds:searchStream",
+            )
+            try:
+                payload = self._http_json(
+                    method="POST",
+                    url=url,
+                    payload={"query": query},
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "developer-token": settings.google_ads_developer_token,
+                        "login-customer-id": manager_customer_id,
+                    },
+                )
+
+                if not isinstance(payload, list):
+                    raise GoogleAdsIntegrationError("Invalid response received from Google manager searchStream")
+
+                account_ids: list[str] = []
+                for chunk in payload:
+                    if not isinstance(chunk, dict):
+                        continue
+                    results = chunk.get("results", [])
+                    if not isinstance(results, list):
+                        continue
+                    for row in results:
+                        if not isinstance(row, dict):
+                            continue
+                        customer_client = row.get("customerClient", {})
+                        if not isinstance(customer_client, dict):
+                            continue
+                        cid = str(customer_client.get("id", "")).strip()
+                        if cid and cid not in account_ids:
+                            account_ids.append(cid)
+
+                if manager_customer_id not in account_ids:
+                    account_ids.insert(0, manager_customer_id)
+                return account_ids
+            except GoogleAdsIntegrationError as exc:
+                last_error = exc
+                if "status=404" in str(exc):
+                    logger.warning("Google Ads manager searchStream 404 for version=%s url=%s", api_version, url)
+                    continue
+                raise
+
+        if last_error is not None:
+            raise GoogleAdsIntegrationError(
+                "Google Ads manager account discovery failed after version fallback attempts. "
+                f"Last error: {last_error}"
+            ) from last_error
+
+        return [manager_customer_id]
 
     def get_recommended_customer_id_for_client(self, client_id: int) -> str | None:
         settings = load_settings()
@@ -280,7 +351,7 @@ class GoogleAdsService:
 
         response_payload = self._http_json(
             method="POST",
-            url=f"https://googleads.googleapis.com/{api_version}/customers/{normalized_customer_id}/googleAds:searchStream",
+            url=self._build_google_ads_url(api_version, f"customers/{normalized_customer_id}/googleAds:searchStream"),
             payload={"query": query},
             headers={
                 "Authorization": f"Bearer {access_token}",
