@@ -7,16 +7,29 @@ from app.services.insights import insights_service
 from app.services.dashboard import unified_dashboard_service
 from app.services.google_ads import GoogleAdsIntegrationError, google_ads_service
 from app.services.meta_ads import MetaAdsIntegrationError, meta_ads_service
+from app.services.google_store import google_snapshot_store
+from app.services.meta_store import meta_snapshot_store
+from app.services.pinterest_ads import PinterestAdsIntegrationError, pinterest_ads_service
+from app.services.pinterest_store import pinterest_snapshot_store
+from app.services.pinterest_observability import pinterest_sync_metrics
+from app.services.snapchat_ads import SnapchatAdsIntegrationError, snapchat_ads_service
+from app.services.snapchat_store import snapchat_snapshot_store
+from app.services.snapchat_observability import snapchat_sync_metrics
+from app.services.tiktok_ads import TikTokAdsIntegrationError, tiktok_ads_service
+from app.services.tiktok_store import tiktok_snapshot_store
+from app.services.tiktok_observability import tiktok_sync_metrics
 from app.services.creative_workflow import creative_workflow_service
 from app.services.notifications import notification_service
 from app.services.recommendations import recommendations_service
-from app.services.rbac import AuthorizationError, require_permission
+from app.services.rbac import AuthorizationError, require_action, require_permission
 from app.services.rules_engine import rules_engine_service
+from app.services.audit import audit_log_service
 
 
 class ServiceTests(unittest.TestCase):
     def setUp(self):
         self.original_env = os.environ.copy()
+        os.environ["APP_ENV"] = "test"
         os.environ["APP_AUTH_SECRET"] = "test-secret"
         os.environ["APP_LOGIN_EMAIL"] = "admin@example.com"
         os.environ["APP_LOGIN_PASSWORD"] = "admin123"
@@ -26,13 +39,20 @@ class ServiceTests(unittest.TestCase):
         os.environ["BIGQUERY_PROJECT_ID"] = "test-project"
 
     def tearDown(self):
-        google_ads_service._snapshots.clear()
-        meta_ads_service._snapshots.clear()
+        google_snapshot_store.clear()
+        meta_snapshot_store.clear()
+        tiktok_snapshot_store.clear()
+        pinterest_snapshot_store.clear()
+        snapchat_snapshot_store.clear()
+        tiktok_sync_metrics.reset()
+        pinterest_sync_metrics.reset()
+        snapchat_sync_metrics.reset()
         rules_engine_service._rules.clear()
         rules_engine_service._next_id = 1
         notification_service._events.clear()
         insights_service._items.clear()
         creative_workflow_service.reset()
+        audit_log_service._events.clear()
         os.environ.clear()
         os.environ.update(self.original_env)
 
@@ -59,6 +79,13 @@ class ServiceTests(unittest.TestCase):
         with self.assertRaises(AuthorizationError):
             require_permission("client_viewer", "clients:create")
 
+    def test_rbac_action_scope_validation(self):
+        require_action("agency_admin", action="clients:list", scope="agency")
+        with self.assertRaises(AuthorizationError):
+            require_action("agency_admin", action="clients:list", scope="subaccount")
+        with self.assertRaises(AuthorizationError):
+            require_action("client_viewer", action="rules:create", scope="subaccount")
+
     # Sprint 2 coverage (Google)
     def test_google_ads_status_pending_when_placeholder(self):
         os.environ["GOOGLE_ADS_TOKEN"] = "your_google_ads_token"
@@ -75,6 +102,84 @@ class ServiceTests(unittest.TestCase):
         with self.assertRaises(GoogleAdsIntegrationError):
             google_ads_service.sync_client(client_id=1)
 
+
+    def test_tiktok_ads_sync_fails_when_feature_flag_disabled(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "0"
+        with self.assertRaises(TikTokAdsIntegrationError):
+            tiktok_ads_service.sync_client(client_id=2)
+
+    def test_tiktok_ads_sync_persists_snapshot(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+
+        snapshot = tiktok_ads_service.sync_client(client_id=9)
+        metrics = tiktok_ads_service.get_metrics(client_id=9)
+
+        self.assertEqual(snapshot["status"], "success")
+        self.assertEqual(metrics["platform"], "tiktok_ads")
+        self.assertTrue(metrics["is_synced"])
+        self.assertGreater(float(metrics["spend"]), 0.0)
+
+
+    def test_tiktok_ads_retry_succeeds_after_transient_failures(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        os.environ["TIKTOK_SYNC_RETRY_ATTEMPTS"] = "3"
+        os.environ["TIKTOK_SYNC_FORCE_TRANSIENT_FAILURES"] = "2"
+
+        snapshot = tiktok_ads_service.sync_client(client_id=10)
+
+        self.assertEqual(snapshot["status"], "success")
+        self.assertEqual(snapshot["attempts"], 3)
+
+
+
+    def test_pinterest_ads_sync_fails_when_feature_flag_disabled(self):
+        os.environ["FF_PINTEREST_INTEGRATION"] = "0"
+        with self.assertRaises(PinterestAdsIntegrationError):
+            pinterest_ads_service.sync_client(client_id=2)
+
+    def test_pinterest_ads_sync_persists_snapshot_when_feature_flag_enabled(self):
+        os.environ["FF_PINTEREST_INTEGRATION"] = "1"
+        snapshot = pinterest_ads_service.sync_client(client_id=2)
+        metrics = pinterest_ads_service.get_metrics(client_id=2)
+        self.assertEqual(snapshot["status"], "success")
+        self.assertEqual(snapshot["platform"], "pinterest_ads")
+        self.assertEqual(snapshot["attempts"], 1)
+        self.assertTrue(metrics["is_synced"])
+
+    def test_pinterest_ads_retry_succeeds_after_transient_failures(self):
+        os.environ["FF_PINTEREST_INTEGRATION"] = "1"
+        os.environ["PINTEREST_SYNC_RETRY_ATTEMPTS"] = "3"
+        os.environ["PINTEREST_SYNC_FORCE_TRANSIENT_FAILURES"] = "2"
+
+        snapshot = pinterest_ads_service.sync_client(client_id=3)
+
+        self.assertEqual(snapshot["status"], "success")
+        self.assertEqual(snapshot["attempts"], 3)
+
+    def test_snapchat_ads_sync_fails_when_feature_flag_disabled(self):
+        os.environ["FF_SNAPCHAT_INTEGRATION"] = "0"
+        with self.assertRaises(SnapchatAdsIntegrationError):
+            snapchat_ads_service.sync_client(client_id=2)
+
+    def test_snapchat_ads_sync_persists_snapshot_when_feature_flag_enabled(self):
+        os.environ["FF_SNAPCHAT_INTEGRATION"] = "1"
+        snapshot = snapchat_ads_service.sync_client(client_id=2)
+        metrics = snapchat_ads_service.get_metrics(client_id=2)
+        self.assertEqual(snapshot["status"], "success")
+        self.assertEqual(snapshot["platform"], "snapchat_ads")
+        self.assertEqual(snapshot["attempts"], 1)
+        self.assertTrue(metrics["is_synced"])
+
+    def test_snapchat_ads_retry_succeeds_after_transient_failures(self):
+        os.environ["FF_SNAPCHAT_INTEGRATION"] = "1"
+        os.environ["SNAPCHAT_SYNC_RETRY_ATTEMPTS"] = "3"
+        os.environ["SNAPCHAT_SYNC_FORCE_TRANSIENT_FAILURES"] = "2"
+
+        snapshot = snapchat_ads_service.sync_client(client_id=3)
+
+        self.assertEqual(snapshot["status"], "success")
+        self.assertEqual(snapshot["attempts"], 3)
+
     # Sprint 3 coverage (Meta + unified dashboard)
     def test_meta_ads_status_pending_when_placeholder(self):
         os.environ["META_ACCESS_TOKEN"] = "your_meta_access_token"
@@ -86,21 +191,57 @@ class ServiceTests(unittest.TestCase):
         with self.assertRaises(MetaAdsIntegrationError):
             meta_ads_service.sync_client(client_id=2)
 
-    def test_unified_dashboard_consolidates_google_and_meta(self):
+    def test_unified_dashboard_consolidates_all_platforms(self):
         os.environ["GOOGLE_ADS_TOKEN"] = "google-real-token"
         os.environ["META_ACCESS_TOKEN"] = "meta-real-token"
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        os.environ["FF_PINTEREST_INTEGRATION"] = "1"
+        os.environ["FF_SNAPCHAT_INTEGRATION"] = "1"
 
         google_snapshot = google_ads_service.sync_client(client_id=3)
         meta_snapshot = meta_ads_service.sync_client(client_id=3)
+        tiktok_snapshot = tiktok_ads_service.sync_client(client_id=3)
+        pinterest_snapshot = pinterest_ads_service.sync_client(client_id=3)
+        snapchat_snapshot = snapchat_ads_service.sync_client(client_id=3)
 
         dashboard = unified_dashboard_service.get_client_dashboard(client_id=3)
 
-        expected_spend = float(google_snapshot["spend"]) + float(meta_snapshot["spend"])
-        expected_conversions = int(google_snapshot["conversions"]) + int(meta_snapshot["conversions"])
+        expected_spend = (
+            float(google_snapshot["spend"])
+            + float(meta_snapshot["spend"])
+            + float(tiktok_snapshot["spend"])
+            + float(pinterest_snapshot["spend"])
+            + float(snapchat_snapshot["spend"])
+        )
+        expected_conversions = (
+            int(google_snapshot["conversions"])
+            + int(meta_snapshot["conversions"])
+            + int(tiktok_snapshot["conversions"])
+            + int(pinterest_snapshot["conversions"])
+            + int(snapchat_snapshot["conversions"])
+        )
+
+        expected_revenue = (
+            float(google_snapshot["revenue"])
+            + float(meta_snapshot["revenue"])
+            + float(tiktok_snapshot["revenue"])
+            + float(pinterest_snapshot["revenue"])
+            + float(snapchat_snapshot["revenue"])
+        )
 
         self.assertTrue(dashboard["is_synced"])
         self.assertEqual(dashboard["totals"]["spend"], round(expected_spend, 2))
         self.assertEqual(dashboard["totals"]["conversions"], expected_conversions)
+        self.assertEqual(dashboard["totals"]["revenue"], round(expected_revenue, 2))
+        self.assertEqual(
+            dashboard["totals"]["roas"],
+            round(expected_revenue / expected_spend, 2),
+        )
+
+        for platform in ["google_ads", "meta_ads", "tiktok_ads", "pinterest_ads", "snapchat_ads"]:
+            self.assertIn("roas", dashboard["platforms"][platform])
+            self.assertIn("attempts", dashboard["platforms"][platform])
+            self.assertIn("synced_at", dashboard["platforms"][platform])
 
     # Sprint 4 coverage (rules + notifications + system_bot audit)
     def test_rules_engine_stop_loss_triggers_and_notifies(self):
