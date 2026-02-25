@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import secrets
 from datetime import datetime, timezone
-from urllib import parse, request
+from urllib import error, parse, request
 
 from app.core.config import load_settings
 from app.services.google_store import google_snapshot_store
@@ -28,10 +29,19 @@ class GoogleAdsService:
 
     def _google_api_version(self) -> str:
         settings = load_settings()
-        return settings.google_ads_api_version.strip() or "v18"
+        raw = settings.google_ads_api_version.strip().lower() or "v18"
+        if raw.startswith("v"):
+            return raw
+        if raw.isdigit():
+            return f"v{raw}"
+        return raw
 
     def _normalize_customer_id(self, customer_id: str) -> str:
         return customer_id.replace("-", "").strip()
+
+    def _is_valid_customer_id(self, customer_id: str) -> bool:
+        normalized = self._normalize_customer_id(customer_id)
+        return bool(re.fullmatch(r"\d{10}", normalized))
 
     def _http_json(
         self,
@@ -48,14 +58,24 @@ class GoogleAdsService:
         if payload is not None:
             body = json.dumps(payload).encode("utf-8")
         req = request.Request(url, data=body, headers=request_headers, method=method)
+
         try:
             with request.urlopen(req, timeout=20) as response:
                 raw = response.read().decode("utf-8")
                 if raw.strip() == "":
                     return {}
                 return json.loads(raw)
+        except error.HTTPError as exc:
+            try:
+                response_body = exc.read().decode("utf-8")
+            except Exception:  # noqa: BLE001
+                response_body = "<unreadable body>"
+            raise GoogleAdsIntegrationError(
+                "Google Ads HTTP request failed: "
+                f"method={method} url={url} status={exc.code} reason={exc.reason} response={response_body[:1200]}"
+            ) from exc
         except Exception as exc:  # noqa: BLE001
-            raise GoogleAdsIntegrationError(f"Google Ads HTTP request failed: {exc}") from exc
+            raise GoogleAdsIntegrationError(f"Google Ads HTTP request failed: method={method} url={url} error={exc}") from exc
 
     def _require_production_credentials(self) -> None:
         settings = load_settings()
@@ -70,6 +90,43 @@ class GoogleAdsService:
             missing.append("GOOGLE_ADS_REDIRECT_URI")
         if missing:
             raise GoogleAdsIntegrationError(f"Google Ads production mode missing env vars: {', '.join(missing)}")
+
+    def production_diagnostics(self) -> dict[str, object]:
+        settings = load_settings()
+        manager_raw = settings.google_ads_manager_customer_id.strip()
+        manager_normalized = self._normalize_customer_id(manager_raw)
+        manager_has_dashes = "-" in manager_raw
+        warnings: list[str] = []
+
+        if settings.google_ads_developer_token.strip() == "":
+            warnings.append("GOOGLE_ADS_DEVELOPER_TOKEN is missing")
+        elif len(settings.google_ads_developer_token.strip()) < 10:
+            warnings.append("GOOGLE_ADS_DEVELOPER_TOKEN looks too short")
+
+        if manager_raw == "":
+            warnings.append("GOOGLE_ADS_MANAGER_CUSTOMER_ID is missing")
+        elif not self._is_valid_customer_id(manager_raw):
+            warnings.append("GOOGLE_ADS_MANAGER_CUSTOMER_ID must be 10 digits (no dashes)")
+        elif manager_has_dashes:
+            warnings.append("GOOGLE_ADS_MANAGER_CUSTOMER_ID contains dashes; set it in Railway without dashes")
+
+        refresh_available = bool((self._runtime_refresh_token or settings.google_ads_refresh_token).strip())
+        if not refresh_available:
+            warnings.append("GOOGLE_ADS_REFRESH_TOKEN is missing (complete OAuth exchange first)")
+
+        return {
+            "mode": settings.google_ads_mode,
+            "api_version_effective": self._google_api_version(),
+            "developer_token_present": settings.google_ads_developer_token.strip() != "",
+            "manager_customer_id_raw": manager_raw,
+            "manager_customer_id_normalized": manager_normalized,
+            "manager_customer_id_valid": self._is_valid_customer_id(manager_raw) if manager_raw else False,
+            "manager_customer_id_has_dashes": manager_has_dashes,
+            "refresh_token_present": refresh_available,
+            "redirect_uri": settings.google_ads_redirect_uri,
+            "customer_ids_csv_count": len([item for item in settings.google_ads_customer_ids_csv.split(",") if item.strip()]),
+            "warnings": warnings,
+        }
 
     def _refresh_token(self) -> str:
         settings = load_settings()
@@ -218,6 +275,10 @@ class GoogleAdsService:
             "FROM customer WHERE segments.date DURING LAST_30_DAYS"
         )
 
+        login_customer_id = self._normalize_customer_id(settings.google_ads_manager_customer_id)
+        if login_customer_id and not self._is_valid_customer_id(login_customer_id):
+            raise GoogleAdsIntegrationError("GOOGLE_ADS_MANAGER_CUSTOMER_ID must be 10 digits (no dashes)")
+
         response_payload = self._http_json(
             method="POST",
             url=f"https://googleads.googleapis.com/{api_version}/customers/{normalized_customer_id}/googleAds:searchStream",
@@ -225,7 +286,7 @@ class GoogleAdsService:
             headers={
                 "Authorization": f"Bearer {access_token}",
                 "developer-token": settings.google_ads_developer_token,
-                "login-customer-id": self._normalize_customer_id(settings.google_ads_manager_customer_id),
+                "login-customer-id": login_customer_id,
             },
         )
 
@@ -273,6 +334,8 @@ class GoogleAdsService:
                 raise GoogleAdsIntegrationError(
                     "No Google customer mapping for this client. Set GOOGLE_ADS_CUSTOMER_IDS_CSV ordered by local client ids or import accounts first."
                 )
+            if not self._is_valid_customer_id(customer_id):
+                raise GoogleAdsIntegrationError(f"Invalid customer id mapping '{customer_id}'. Expected 10 digits.")
             real_metrics = self._fetch_production_metrics(customer_id=customer_id)
             snapshot = {
                 "client_id": client_id,

@@ -109,6 +109,22 @@ def import_google_accounts(user: AuthUser = Depends(get_current_user)) -> dict[s
     }
 
 
+
+
+@router.get("/diagnostics")
+def google_ads_diagnostics(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+    details = google_ads_service.production_diagnostics()
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="google_ads.diagnostics",
+        resource="integration:google_ads",
+        details={"warnings": len(details.get("warnings", []))},
+    )
+    return details
+
+
 @router.post("/{client_id}/sync")
 def sync_google_ads(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, float | int | str]:
     try:

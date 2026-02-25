@@ -135,6 +135,25 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(snapshot["conversions"], 44)
         self.assertEqual(snapshot["revenue"], 901.1)
 
+    def test_google_ads_api_version_normalizes_numeric_input(self):
+        os.environ["GOOGLE_ADS_API_VERSION"] = "18"
+        self.assertEqual(google_ads_service._google_api_version(), "v18")
+
+    def test_google_ads_diagnostics_flags_invalid_manager_id(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_MANAGER_CUSTOMER_ID"] = "123-45"
+        diagnostics = google_ads_service.production_diagnostics()
+        self.assertFalse(bool(diagnostics["manager_customer_id_valid"]))
+        self.assertTrue(any("MANAGER" in msg for msg in diagnostics["warnings"]))
+
+    def test_google_ads_diagnostics_warns_when_manager_id_contains_dashes(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_MANAGER_CUSTOMER_ID"] = "123-456-7890"
+        diagnostics = google_ads_service.production_diagnostics()
+        self.assertTrue(bool(diagnostics["manager_customer_id_valid"]))
+        self.assertTrue(bool(diagnostics["manager_customer_id_has_dashes"]))
+        self.assertTrue(any("without dashes" in msg for msg in diagnostics["warnings"]))
+
     def test_google_ads_oauth_url_requires_production_credentials(self):
         os.environ["GOOGLE_ADS_MODE"] = "production"
         os.environ["GOOGLE_ADS_CLIENT_ID"] = ""
