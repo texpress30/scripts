@@ -240,9 +240,8 @@ class GoogleAdsService:
         access_token = self._access_token_from_refresh()
         api_version = self._google_api_version()
         payload = self._http_json(
-            method="POST",
+            method="GET",
             url=f"https://googleads.googleapis.com/{api_version}/customers:listAccessibleCustomers",
-            payload={},
             headers={
                 "Authorization": f"Bearer {access_token}",
                 "developer-token": settings.google_ads_developer_token,

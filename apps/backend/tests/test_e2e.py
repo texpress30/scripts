@@ -223,6 +223,27 @@ class E2EFlowTests(unittest.TestCase):
         self.assertIn("tiktok_ads.sync.fail", actions)
 
 
+    def test_google_accounts_endpoint_contract(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
+        os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
+        os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token-123456"
+        os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://scripts-chi-nine.vercel.app/agency/integrations/google/callback"
+        os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
+        headers = self._auth_header()
+
+        from app.services.google_ads import google_ads_service
+        original = google_ads_service.list_accessible_customers
+        try:
+            google_ads_service.list_accessible_customers = lambda: ["3908678909", "1234567890"]
+            response = self.client.get("/integrations/google-ads/accounts", headers=headers)
+        finally:
+            google_ads_service.list_accessible_customers = original
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["count"], 2)
+        self.assertEqual(response.json()["items"], ["3908678909", "1234567890"])
+
     def test_pinterest_contract_is_feature_flagged_off_by_default(self):
         headers = self._auth_header()
 

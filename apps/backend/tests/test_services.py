@@ -135,6 +135,34 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(snapshot["conversions"], 44)
         self.assertEqual(snapshot["revenue"], 901.1)
 
+    def test_google_ads_list_accessible_customers_uses_get(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
+        os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
+        os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token-123456"
+        os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://app.example.com/agency/integrations/google/callback"
+        os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
+
+        original_token = google_ads_service._access_token_from_refresh
+        original_http = google_ads_service._http_json
+        calls: list[tuple[str, str]] = []
+        try:
+            google_ads_service._access_token_from_refresh = lambda: "ya29.token"
+
+            def fake_http_json(*, method: str, url: str, payload=None, headers=None):
+                calls.append((method, url))
+                return {"resourceNames": ["customers/3908678909"]}
+
+            google_ads_service._http_json = fake_http_json
+            result = google_ads_service.list_accessible_customers()
+        finally:
+            google_ads_service._access_token_from_refresh = original_token
+            google_ads_service._http_json = original_http
+
+        self.assertEqual(result, ["3908678909"])
+        self.assertEqual(calls[0][0], "GET")
+        self.assertIn("customers:listAccessibleCustomers", calls[0][1])
+
     def test_google_ads_api_version_normalizes_numeric_input(self):
         os.environ["GOOGLE_ADS_API_VERSION"] = "18"
         self.assertEqual(google_ads_service._google_api_version(), "v18")

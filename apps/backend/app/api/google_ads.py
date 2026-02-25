@@ -73,6 +73,26 @@ def google_ads_oauth_exchange(
     return response_payload
 
 
+
+
+@router.get("/accounts")
+def list_google_accounts(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+    try:
+        accounts = google_ads_service.list_accessible_customers()
+    except GoogleAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="google_ads.accounts.list",
+        resource="integration:google_ads",
+        details={"count": len(accounts)},
+    )
+    return {"items": accounts, "count": len(accounts)}
+
+
 @router.post("/import-accounts")
 def import_google_accounts(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
