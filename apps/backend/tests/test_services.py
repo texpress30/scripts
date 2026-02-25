@@ -103,6 +103,44 @@ class ServiceTests(unittest.TestCase):
             google_ads_service.sync_client(client_id=1)
 
 
+
+    def test_google_ads_sync_uses_production_metrics_when_mode_enabled(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
+        os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
+        os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token"
+        os.environ["GOOGLE_ADS_MANAGER_CUSTOMER_ID"] = "1234567890"
+        os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://app.example.com/agency/integrations/google/callback"
+        os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
+        os.environ["GOOGLE_ADS_CUSTOMER_IDS_CSV"] = "1111111111,2222222222"
+
+        original = google_ads_service._fetch_production_metrics
+        try:
+            google_ads_service._fetch_production_metrics = lambda customer_id: {
+                "spend": 300.5,
+                "impressions": 12000,
+                "clicks": 530,
+                "conversions": 44,
+                "revenue": 901.1,
+                "google_customer_id": customer_id,
+            }
+            snapshot = google_ads_service.sync_client(client_id=2)
+        finally:
+            google_ads_service._fetch_production_metrics = original
+
+        self.assertEqual(snapshot["google_customer_id"], "2222222222")
+        self.assertEqual(snapshot["spend"], 300.5)
+        self.assertEqual(snapshot["impressions"], 12000)
+        self.assertEqual(snapshot["clicks"], 530)
+        self.assertEqual(snapshot["conversions"], 44)
+        self.assertEqual(snapshot["revenue"], 901.1)
+
+    def test_google_ads_oauth_url_requires_production_credentials(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_CLIENT_ID"] = ""
+        with self.assertRaises(GoogleAdsIntegrationError):
+            google_ads_service.build_oauth_authorize_url()
+
     def test_tiktok_ads_sync_fails_when_feature_flag_disabled(self):
         os.environ["FF_TIKTOK_INTEGRATION"] = "0"
         with self.assertRaises(TikTokAdsIntegrationError):

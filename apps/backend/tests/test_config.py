@@ -27,6 +27,15 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(settings.openai_api_key, "")
         self.assertEqual(settings.google_ads_token, "")
+        self.assertEqual(settings.google_ads_mode, "mock")
+        self.assertEqual(settings.google_ads_client_id, "")
+        self.assertEqual(settings.google_ads_client_secret, "")
+        self.assertEqual(settings.google_ads_developer_token, "")
+        self.assertEqual(settings.google_ads_manager_customer_id, "")
+        self.assertEqual(settings.google_ads_redirect_uri, "")
+        self.assertEqual(settings.google_ads_refresh_token, "")
+        self.assertEqual(settings.google_ads_customer_ids_csv, "")
+        self.assertEqual(settings.google_ads_api_version, "v18")
         self.assertEqual(settings.meta_access_token, "")
         self.assertEqual(settings.bigquery_project_id, "")
         self.assertFalse(settings.ff_tiktok_integration)
@@ -106,6 +115,15 @@ class ConfigTests(unittest.TestCase):
         os.environ["APP_LOGIN_PASSWORD"] = "secret-pass"
         os.environ["OPENAI_API_KEY"] = "test-openai-key"
         os.environ["GOOGLE_ADS_TOKEN"] = "test-google-token"
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
+        os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
+        os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token"
+        os.environ["GOOGLE_ADS_MANAGER_CUSTOMER_ID"] = "1234567890"
+        os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://app.example.com/agency/integrations/google/callback"
+        os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
+        os.environ["GOOGLE_ADS_CUSTOMER_IDS_CSV"] = "1111111111,2222222222"
+        os.environ["GOOGLE_ADS_API_VERSION"] = "v18"
         os.environ["META_ACCESS_TOKEN"] = "test-meta-token"
         os.environ["BIGQUERY_PROJECT_ID"] = "test-project"
         os.environ["DATABASE_URL"] = "postgresql://example"
@@ -129,6 +147,15 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.app_login_password, "secret-pass")
         self.assertEqual(settings.openai_api_key, "test-openai-key")
         self.assertEqual(settings.google_ads_token, "test-google-token")
+        self.assertEqual(settings.google_ads_mode, "production")
+        self.assertEqual(settings.google_ads_client_id, "client-id")
+        self.assertEqual(settings.google_ads_client_secret, "client-secret")
+        self.assertEqual(settings.google_ads_developer_token, "dev-token")
+        self.assertEqual(settings.google_ads_manager_customer_id, "1234567890")
+        self.assertEqual(settings.google_ads_redirect_uri, "https://app.example.com/agency/integrations/google/callback")
+        self.assertEqual(settings.google_ads_refresh_token, "refresh-token")
+        self.assertEqual(settings.google_ads_customer_ids_csv, "1111111111,2222222222")
+        self.assertEqual(settings.google_ads_api_version, "v18")
         self.assertEqual(settings.meta_access_token, "test-meta-token")
         self.assertEqual(settings.bigquery_project_id, "test-project")
         self.assertEqual(settings.cors_origins, ("https://frontend.example.com", "https://admin.example.com"))

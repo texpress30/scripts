@@ -17,6 +17,15 @@ class Settings:
     app_login_password: str
     openai_api_key: str
     google_ads_token: str
+    google_ads_mode: str
+    google_ads_client_id: str
+    google_ads_client_secret: str
+    google_ads_developer_token: str
+    google_ads_manager_customer_id: str
+    google_ads_redirect_uri: str
+    google_ads_refresh_token: str
+    google_ads_customer_ids_csv: str
+    google_ads_api_version: str
     meta_access_token: str
     bigquery_project_id: str
     database_url: str
@@ -87,6 +96,15 @@ def load_settings() -> Settings:
         app_login_password=_get_env("APP_LOGIN_PASSWORD", default="admin123"),
         openai_api_key=_get_env("OPENAI_API_KEY", default=""),
         google_ads_token=_get_env("GOOGLE_ADS_TOKEN", default=""),
+        google_ads_mode=_get_env("GOOGLE_ADS_MODE", default="mock").strip().lower(),
+        google_ads_client_id=_get_env("GOOGLE_ADS_CLIENT_ID", default=""),
+        google_ads_client_secret=_get_env("GOOGLE_ADS_CLIENT_SECRET", default=""),
+        google_ads_developer_token=_get_env("GOOGLE_ADS_DEVELOPER_TOKEN", default=""),
+        google_ads_manager_customer_id=_get_env("GOOGLE_ADS_MANAGER_CUSTOMER_ID", default=""),
+        google_ads_redirect_uri=_get_env("GOOGLE_ADS_REDIRECT_URI", default=""),
+        google_ads_refresh_token=_get_env("GOOGLE_ADS_REFRESH_TOKEN", default=""),
+        google_ads_customer_ids_csv=_get_env("GOOGLE_ADS_CUSTOMER_IDS_CSV", default=""),
+        google_ads_api_version=_get_env("GOOGLE_ADS_API_VERSION", default="v18"),
         meta_access_token=_get_env("META_ACCESS_TOKEN", default=""),
         bigquery_project_id=_get_env("BIGQUERY_PROJECT_ID", default=""),
         database_url=_get_env("DATABASE_URL", default="postgresql://postgres:postgres@localhost:5432/mcc"),
