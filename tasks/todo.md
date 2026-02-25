@@ -1,14 +1,16 @@
-# TODO — Data Normalization (Slice 1)
+# TODO — Data Normalization (Slice 2: UI Update)
 
-- [x] Sync workspace to latest `origin/main`.
-- [x] Define normalization scope for backend dashboard payload (platform fields + totals).
-- [x] Implement normalization in backend aggregation (`UnifiedDashboardService`).
-- [x] Fix Agency aggregated ROAS calculation to use revenue/spend.
-- [x] Add/adjust tests to validate normalized payload behavior.
-- [x] Run focused validation (`pytest`, frontend build).
-- [x] Commit and push.
+- [x] Sync workspace to latest `origin/main` and resolve pull strategy conflict.
+- [x] Review current Agency/Sub-account UI usage of dashboard payload.
+- [x] Update Agency Dashboard cards/tables to display normalized metrics: Spend, Impressions, Clicks, Conversions, Revenue, ROAS.
+- [x] Update Sub-account Dashboard and Campaigns views to display the same normalized metric set.
+- [x] Add UI-level defensive formatting to avoid `undefined`/`NaN` (fallback to `0` or `-`).
+- [x] Validate ROAS display aligns with backend formula (`revenue / spend`, guarded for zero spend).
+- [x] Run frontend checks (build/lint where available) and capture visual screenshot.
+- [x] Commit and prepare PR.
 
 ## Review
-- Implemented a normalization layer in backend dashboard aggregation so each platform now exposes consistent numeric fields (`spend`, `impressions`, `clicks`, `conversions`, `revenue`, `roas`) plus sync metadata fields (`is_synced`, `synced_at`, `attempts`).
-- Fixed Agency Dashboard aggregation bug: ROAS now uses `revenue / spend` instead of `conversions / spend`.
-- Added/updated service test assertions to validate normalized totals and normalized per-platform shape.
+- Agency Dashboard now aggregates and renders normalized totals (`spend`, `impressions`, `clicks`, `conversions`, `revenue`, `roas`) in both cards and a totals table.
+- Sub-account Dashboard now consumes normalized metrics for totals and each platform, renders all required columns, and computes ROAS as `revenue / spend` with zero-guard.
+- Sub-account Campaigns now includes normalized totals and per-platform metrics tables so campaign operators can validate the unified data shape after sync actions.
+- Defensive `safeNumber` normalization is applied in each page so missing provider fields render safely (`0` instead of `undefined`/`NaN`).

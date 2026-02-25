@@ -12,15 +12,60 @@ import { getCurrentRole, isReadOnlyRole } from "@/lib/session";
 
 type DashboardResponse = {
   client_id: number;
-  totals: { spend: number; conversions: number; roas: number };
+  totals: {
+    spend?: number;
+    impressions?: number;
+    clicks?: number;
+    conversions?: number;
+    revenue?: number;
+    roas?: number;
+  };
   platforms: {
-    google_ads: { spend: number; conversions: number; roas?: number; is_synced?: boolean };
-    meta_ads: { spend: number; conversions: number; roas?: number; is_synced?: boolean };
-    tiktok_ads?: { spend: number; conversions: number; roas?: number; is_synced?: boolean };
-    pinterest_ads?: { spend: number; conversions: number; roas?: number; is_synced?: boolean };
-    snapchat_ads?: { spend: number; conversions: number; roas?: number; is_synced?: boolean };
+    google_ads?: PlatformMetrics;
+    meta_ads?: PlatformMetrics;
+    tiktok_ads?: PlatformMetrics;
+    pinterest_ads?: PlatformMetrics;
+    snapchat_ads?: PlatformMetrics;
   };
 };
+
+type PlatformMetrics = {
+  spend?: number;
+  impressions?: number;
+  clicks?: number;
+  conversions?: number;
+  revenue?: number;
+  roas?: number;
+  is_synced?: boolean;
+};
+
+type NormalizedMetrics = {
+  spend: number;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  revenue: number;
+  roas: number;
+  isSynced: boolean;
+};
+
+function safeNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function normalizeMetrics(value?: PlatformMetrics): NormalizedMetrics {
+  const spend = safeNumber(value?.spend);
+  const revenue = safeNumber(value?.revenue);
+  return {
+    spend,
+    impressions: Math.max(0, Math.trunc(safeNumber(value?.impressions))),
+    clicks: Math.max(0, Math.trunc(safeNumber(value?.clicks))),
+    conversions: Math.max(0, Math.trunc(safeNumber(value?.conversions))),
+    revenue,
+    roas: spend > 0 ? revenue / spend : 0,
+    isSynced: Boolean(value?.is_synced),
+  };
+}
 
 export default function SubDashboardPage() {
   const params = useParams<{ id: string }>();
@@ -72,12 +117,12 @@ export default function SubDashboardPage() {
     }
   }
 
-  const totals = data?.totals ?? { spend: 0, conversions: 0, roas: 0 };
-  const google = data?.platforms.google_ads ?? { spend: 0, conversions: 0, roas: 0 };
-  const meta = data?.platforms.meta_ads ?? { spend: 0, conversions: 0, roas: 0 };
-  const tiktok = data?.platforms.tiktok_ads ?? { spend: 0, conversions: 0, roas: 0 };
-  const pinterest = data?.platforms.pinterest_ads ?? { spend: 0, conversions: 0, roas: 0 };
-  const snapchat = data?.platforms.snapchat_ads ?? { spend: 0, conversions: 0, roas: 0 };
+  const totals = normalizeMetrics(data?.totals);
+  const google = normalizeMetrics(data?.platforms.google_ads);
+  const meta = normalizeMetrics(data?.platforms.meta_ads);
+  const tiktok = normalizeMetrics(data?.platforms.tiktok_ads);
+  const pinterest = normalizeMetrics(data?.platforms.pinterest_ads);
+  const snapchat = normalizeMetrics(data?.platforms.snapchat_ads);
 
   return (
     <ProtectedPage>
@@ -91,19 +136,63 @@ export default function SubDashboardPage() {
 
         {error ? <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
 
-        <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <MetricCard title="Spend" value={loading ? "..." : `$${totals.spend.toLocaleString()}`} />
-          <MetricCard title="Conversii" value={loading ? "..." : totals.conversions.toLocaleString()} />
+        <section className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-6">
+          <MetricCard title="Spend" value={loading ? "..." : `$${totals.spend.toLocaleString(undefined, { maximumFractionDigits: 2 })}`} />
+          <MetricCard title="Impressions" value={loading ? "..." : totals.impressions.toLocaleString()} />
+          <MetricCard title="Clicks" value={loading ? "..." : totals.clicks.toLocaleString()} />
+          <MetricCard title="Conversions" value={loading ? "..." : totals.conversions.toLocaleString()} />
+          <MetricCard title="Revenue" value={loading ? "..." : `$${totals.revenue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`} />
           <MetricCard title="ROAS" value={loading ? "..." : totals.roas.toFixed(2)} />
+        </section>
+
+        <section className="mt-6 overflow-x-auto">
+          <table className="min-w-full wm-card text-left text-sm">
+            <thead className="text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Platform</th>
+                <th className="px-4 py-3">Spend</th>
+                <th className="px-4 py-3">Impressions</th>
+                <th className="px-4 py-3">Clicks</th>
+                <th className="px-4 py-3">Conversions</th>
+                <th className="px-4 py-3">Revenue</th>
+                <th className="px-4 py-3">ROAS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {([
+                ["Google Ads", google],
+                ["Meta Ads", meta],
+                ["TikTok Ads", tiktok],
+                ["Pinterest Ads", pinterest],
+                ["Snapchat Ads", snapchat],
+              ] as Array<[string, NormalizedMetrics]>).map(([name, m]) => {
+                return (
+                  <tr key={name} className="border-t border-slate-200 text-slate-900">
+                    <td className="px-4 py-3">{name}</td>
+                    <td className="px-4 py-3">{loading ? "..." : `$${m.spend.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</td>
+                    <td className="px-4 py-3">{loading ? "..." : m.impressions.toLocaleString()}</td>
+                    <td className="px-4 py-3">{loading ? "..." : m.clicks.toLocaleString()}</td>
+                    <td className="px-4 py-3">{loading ? "..." : m.conversions.toLocaleString()}</td>
+                    <td className="px-4 py-3">{loading ? "..." : `$${m.revenue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</td>
+                    <td className="px-4 py-3">{loading ? "..." : m.roas.toFixed(2)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </section>
 
         <section className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-5">
           <IntegrationCard
             title="Google Ads"
             spend={google.spend}
+            impressions={google.impressions}
+            clicks={google.clicks}
             conversions={google.conversions}
+            revenue={google.revenue}
+            roas={google.roas}
             loading={loading}
-            synced={Boolean(google.is_synced)}
+            synced={google.isSynced}
             buttonLabel={busy === "google" ? "Sync..." : "Sync Google"}
             disabled={readOnly || busy !== null}
             onSync={() => sync("google")}
@@ -111,9 +200,13 @@ export default function SubDashboardPage() {
           <IntegrationCard
             title="Meta Ads"
             spend={meta.spend}
+            impressions={meta.impressions}
+            clicks={meta.clicks}
             conversions={meta.conversions}
+            revenue={meta.revenue}
+            roas={meta.roas}
             loading={loading}
-            synced={Boolean(meta.is_synced)}
+            synced={meta.isSynced}
             buttonLabel={busy === "meta" ? "Sync..." : "Sync Meta"}
             disabled={readOnly || busy !== null}
             onSync={() => sync("meta")}
@@ -121,9 +214,13 @@ export default function SubDashboardPage() {
           <IntegrationCard
             title="TikTok Ads"
             spend={tiktok.spend}
+            impressions={tiktok.impressions}
+            clicks={tiktok.clicks}
             conversions={tiktok.conversions}
+            revenue={tiktok.revenue}
+            roas={tiktok.roas}
             loading={loading}
-            synced={Boolean(tiktok.is_synced)}
+            synced={tiktok.isSynced}
             buttonLabel={busy === "tiktok" ? "Sync..." : "Sync TikTok"}
             disabled={readOnly || busy !== null}
             onSync={() => sync("tiktok")}
@@ -131,9 +228,13 @@ export default function SubDashboardPage() {
           <IntegrationCard
             title="Pinterest Ads"
             spend={pinterest.spend}
+            impressions={pinterest.impressions}
+            clicks={pinterest.clicks}
             conversions={pinterest.conversions}
+            revenue={pinterest.revenue}
+            roas={pinterest.roas}
             loading={loading}
-            synced={Boolean(pinterest.is_synced)}
+            synced={pinterest.isSynced}
             buttonLabel={busy === "pinterest" ? "Sync..." : "Sync Pinterest"}
             disabled={readOnly || busy !== null}
             onSync={() => sync("pinterest")}
@@ -141,9 +242,13 @@ export default function SubDashboardPage() {
           <IntegrationCard
             title="Snapchat Ads"
             spend={snapchat.spend}
+            impressions={snapchat.impressions}
+            clicks={snapchat.clicks}
             conversions={snapchat.conversions}
+            revenue={snapchat.revenue}
+            roas={snapchat.roas}
             loading={loading}
-            synced={Boolean(snapchat.is_synced)}
+            synced={snapchat.isSynced}
             buttonLabel={busy === "snapchat" ? "Sync..." : "Sync Snapchat"}
             disabled={readOnly || busy !== null}
             onSync={() => sync("snapchat")}
@@ -170,7 +275,11 @@ function MetricCard({ title, value }: { title: string; value: string }) {
 function IntegrationCard({
   title,
   spend,
+  impressions,
+  clicks,
   conversions,
+  revenue,
+  roas,
   buttonLabel,
   disabled,
   onSync,
@@ -179,7 +288,11 @@ function IntegrationCard({
 }: {
   title: string;
   spend: number;
+  impressions: number;
+  clicks: number;
   conversions: number;
+  revenue: number;
+  roas: number;
   buttonLabel: string;
   disabled: boolean;
   onSync: () => void;
@@ -193,8 +306,12 @@ function IntegrationCard({
       </CardHeader>
       <CardContent>
         <p className="text-sm text-slate-600">Status: {loading ? "Loading..." : synced ? "Synced" : "No data"}</p>
-        <p className="text-sm text-slate-600">Spend: {loading ? "..." : `$${spend.toLocaleString()}`}</p>
-        <p className="text-sm text-slate-600">Conversii: {loading ? "..." : conversions.toLocaleString()}</p>
+        <p className="text-sm text-slate-600">Spend: {loading ? "..." : `$${spend.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</p>
+        <p className="text-sm text-slate-600">Impressions: {loading ? "..." : impressions.toLocaleString()}</p>
+        <p className="text-sm text-slate-600">Clicks: {loading ? "..." : clicks.toLocaleString()}</p>
+        <p className="text-sm text-slate-600">Conversions: {loading ? "..." : conversions.toLocaleString()}</p>
+        <p className="text-sm text-slate-600">Revenue: {loading ? "..." : `$${revenue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</p>
+        <p className="text-sm text-slate-600">ROAS: {loading ? "..." : roas.toFixed(2)}</p>
         <button
           disabled={disabled}
           onClick={onSync}

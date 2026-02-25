@@ -16,8 +16,43 @@ type ClientsResponse = { items: ClientItem[] };
 type IntegrationStatus = { platform: string; status: string };
 
 type DashboardResponse = {
-  totals: { spend: number; conversions: number; revenue: number; roas: number };
+  totals: {
+    spend?: number;
+    impressions?: number;
+    clicks?: number;
+    conversions?: number;
+    revenue?: number;
+    roas?: number;
+  };
 };
+
+type NormalizedTotals = {
+  spend: number;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  revenue: number;
+  roas: number;
+};
+
+const ZERO_TOTALS: NormalizedTotals = { spend: 0, impressions: 0, clicks: 0, conversions: 0, revenue: 0, roas: 0 };
+
+function safeNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function normalizeTotals(value?: DashboardResponse["totals"]): NormalizedTotals {
+  const spend = safeNumber(value?.spend);
+  const revenue = safeNumber(value?.revenue);
+  return {
+    spend,
+    impressions: Math.max(0, Math.trunc(safeNumber(value?.impressions))),
+    clicks: Math.max(0, Math.trunc(safeNumber(value?.clicks))),
+    conversions: Math.max(0, Math.trunc(safeNumber(value?.conversions))),
+    revenue,
+    roas: spend > 0 ? revenue / spend : 0,
+  };
+}
 
 export default function AgencyDashboardPage() {
   const [clients, setClients] = useState<ClientItem[]>([]);
@@ -26,7 +61,7 @@ export default function AgencyDashboardPage() {
   const [tiktokStatus, setTiktokStatus] = useState<IntegrationStatus | null>(null);
   const [pinterestStatus, setPinterestStatus] = useState<IntegrationStatus | null>(null);
   const [snapchatStatus, setSnapchatStatus] = useState<IntegrationStatus | null>(null);
-  const [totals, setTotals] = useState({ spend: 0, conversions: 0, revenue: 0, roas: 0 });
+  const [totals, setTotals] = useState<NormalizedTotals>(ZERO_TOTALS);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -66,16 +101,21 @@ export default function AgencyDashboardPage() {
 
         const aggregated = dashboardItems.reduce(
           (acc, item) => {
-            acc.spend += item.totals.spend;
-            acc.conversions += item.totals.conversions;
-            acc.revenue += item.totals.revenue;
+            const normalized = normalizeTotals(item.totals);
+            acc.spend += normalized.spend;
+            acc.impressions += normalized.impressions;
+            acc.clicks += normalized.clicks;
+            acc.conversions += normalized.conversions;
+            acc.revenue += normalized.revenue;
             return acc;
           },
-          { spend: 0, conversions: 0, revenue: 0 }
+          { ...ZERO_TOTALS }
         );
 
         setTotals({
           spend: Number(aggregated.spend.toFixed(2)),
+          impressions: aggregated.impressions,
+          clicks: aggregated.clicks,
           conversions: aggregated.conversions,
           revenue: Number(aggregated.revenue.toFixed(2)),
           roas: aggregated.spend > 0 ? Number((aggregated.revenue / aggregated.spend).toFixed(2)) : 0,
@@ -117,11 +157,40 @@ export default function AgencyDashboardPage() {
       <AppShell title="Agency Dashboard">
         {error ? <p className="mb-4 text-sm text-red-600">{error}</p> : null}
 
-        <section className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <section className="grid grid-cols-1 gap-4 md:grid-cols-4 xl:grid-cols-7">
           <Card title="Clienți activi" value={loading ? "..." : String(clients.length)} />
-          <Card title="Spend total" value={loading ? "..." : `$${totals.spend.toLocaleString()}`} />
+          <Card title="Spend total" value={loading ? "..." : `$${totals.spend.toLocaleString(undefined, { maximumFractionDigits: 2 })}`} />
+          <Card title="Impressions" value={loading ? "..." : totals.impressions.toLocaleString()} />
+          <Card title="Clicks" value={loading ? "..." : totals.clicks.toLocaleString()} />
           <Card title="Conversii total" value={loading ? "..." : totals.conversions.toLocaleString()} />
+          <Card title="Revenue total" value={loading ? "..." : `$${totals.revenue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`} />
           <Card title="ROAS agregat" value={loading ? "..." : totals.roas.toFixed(2)} />
+        </section>
+
+        <section className="mt-6 overflow-x-auto wm-card p-4">
+          <h3 className="text-sm font-semibold text-slate-900">Normalized totals</h3>
+          <table className="mt-3 min-w-full text-left text-sm">
+            <thead className="text-slate-500">
+              <tr>
+                <th className="py-2 pr-4">Spend</th>
+                <th className="py-2 pr-4">Impressions</th>
+                <th className="py-2 pr-4">Clicks</th>
+                <th className="py-2 pr-4">Conversions</th>
+                <th className="py-2 pr-4">Revenue</th>
+                <th className="py-2 pr-4">ROAS</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="text-slate-900">
+                <td className="py-2 pr-4">{loading ? "..." : `$${totals.spend.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</td>
+                <td className="py-2 pr-4">{loading ? "..." : totals.impressions.toLocaleString()}</td>
+                <td className="py-2 pr-4">{loading ? "..." : totals.clicks.toLocaleString()}</td>
+                <td className="py-2 pr-4">{loading ? "..." : totals.conversions.toLocaleString()}</td>
+                <td className="py-2 pr-4">{loading ? "..." : `$${totals.revenue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</td>
+                <td className="py-2 pr-4">{loading ? "..." : totals.roas.toFixed(2)}</td>
+              </tr>
+            </tbody>
+          </table>
         </section>
 
         <section className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
