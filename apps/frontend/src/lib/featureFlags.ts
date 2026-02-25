@@ -1,0 +1,17 @@
+const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
+
+export function isTikTokIntegrationEnabled(): boolean {
+  const value = process.env.NEXT_PUBLIC_FF_TIKTOK_INTEGRATION ?? "";
+  return TRUE_VALUES.has(value.trim().toLowerCase());
+}
+
+export function isPinterestIntegrationEnabled(): boolean {
+  const value = process.env.NEXT_PUBLIC_FF_PINTEREST_INTEGRATION ?? "";
+  return TRUE_VALUES.has(value.trim().toLowerCase());
+}
+
+
+export function isSnapchatIntegrationEnabled(): boolean {
+  const value = process.env.NEXT_PUBLIC_FF_SNAPCHAT_INTEGRATION ?? "";
+  return TRUE_VALUES.has(value.trim().toLowerCase());
+}
