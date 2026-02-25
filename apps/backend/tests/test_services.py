@@ -7,16 +7,29 @@ from app.services.insights import insights_service
 from app.services.dashboard import unified_dashboard_service
 from app.services.google_ads import GoogleAdsIntegrationError, google_ads_service
 from app.services.meta_ads import MetaAdsIntegrationError, meta_ads_service
+from app.services.google_store import google_snapshot_store
+from app.services.meta_store import meta_snapshot_store
+from app.services.pinterest_ads import PinterestAdsIntegrationError, pinterest_ads_service
+from app.services.pinterest_store import pinterest_snapshot_store
+from app.services.pinterest_observability import pinterest_sync_metrics
+from app.services.snapchat_ads import SnapchatAdsIntegrationError, snapchat_ads_service
+from app.services.snapchat_store import snapchat_snapshot_store
+from app.services.snapchat_observability import snapchat_sync_metrics
+from app.services.tiktok_ads import TikTokAdsIntegrationError, tiktok_ads_service
+from app.services.tiktok_store import tiktok_snapshot_store
+from app.services.tiktok_observability import tiktok_sync_metrics
 from app.services.creative_workflow import creative_workflow_service
 from app.services.notifications import notification_service
 from app.services.recommendations import recommendations_service
-from app.services.rbac import AuthorizationError, require_permission
+from app.services.rbac import AuthorizationError, require_action, require_permission
 from app.services.rules_engine import rules_engine_service
+from app.services.audit import audit_log_service
 
 
 class ServiceTests(unittest.TestCase):
     def setUp(self):
         self.original_env = os.environ.copy()
+        os.environ["APP_ENV"] = "test"
         os.environ["APP_AUTH_SECRET"] = "test-secret"
         os.environ["APP_LOGIN_EMAIL"] = "admin@example.com"
         os.environ["APP_LOGIN_PASSWORD"] = "admin123"
@@ -24,15 +37,24 @@ class ServiceTests(unittest.TestCase):
         os.environ["GOOGLE_ADS_TOKEN"] = "test-google-token"
         os.environ["META_ACCESS_TOKEN"] = "test-meta-token"
         os.environ["BIGQUERY_PROJECT_ID"] = "test-project"
+        google_ads_service._runtime_refresh_token = None
 
     def tearDown(self):
-        google_ads_service._snapshots.clear()
-        meta_ads_service._snapshots.clear()
+        google_snapshot_store.clear()
+        meta_snapshot_store.clear()
+        tiktok_snapshot_store.clear()
+        pinterest_snapshot_store.clear()
+        snapchat_snapshot_store.clear()
+        tiktok_sync_metrics.reset()
+        pinterest_sync_metrics.reset()
+        snapchat_sync_metrics.reset()
         rules_engine_service._rules.clear()
         rules_engine_service._next_id = 1
         notification_service._events.clear()
         insights_service._items.clear()
         creative_workflow_service.reset()
+        audit_log_service._events.clear()
+        google_ads_service._runtime_refresh_token = None
         os.environ.clear()
         os.environ.update(self.original_env)
 
@@ -59,6 +81,13 @@ class ServiceTests(unittest.TestCase):
         with self.assertRaises(AuthorizationError):
             require_permission("client_viewer", "clients:create")
 
+    def test_rbac_action_scope_validation(self):
+        require_action("agency_admin", action="clients:list", scope="agency")
+        with self.assertRaises(AuthorizationError):
+            require_action("agency_admin", action="clients:list", scope="subaccount")
+        with self.assertRaises(AuthorizationError):
+            require_action("client_viewer", action="rules:create", scope="subaccount")
+
     # Sprint 2 coverage (Google)
     def test_google_ads_status_pending_when_placeholder(self):
         os.environ["GOOGLE_ADS_TOKEN"] = "your_google_ads_token"
@@ -75,6 +104,405 @@ class ServiceTests(unittest.TestCase):
         with self.assertRaises(GoogleAdsIntegrationError):
             google_ads_service.sync_client(client_id=1)
 
+
+
+    def test_google_ads_sync_uses_production_metrics_when_mode_enabled(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
+        os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
+        os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token"
+        os.environ["GOOGLE_ADS_MANAGER_CUSTOMER_ID"] = "1234567890"
+        os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://app.example.com/agency/integrations/google/callback"
+        os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
+        os.environ["GOOGLE_ADS_CUSTOMER_IDS_CSV"] = "1111111111,2222222222"
+
+        original = google_ads_service._fetch_production_metrics
+        try:
+            google_ads_service._fetch_production_metrics = lambda customer_id: {
+                "spend": 300.5,
+                "impressions": 12000,
+                "clicks": 530,
+                "conversions": 44,
+                "revenue": 901.1,
+                "google_customer_id": customer_id,
+            }
+            snapshot = google_ads_service.sync_client(client_id=2)
+        finally:
+            google_ads_service._fetch_production_metrics = original
+
+        self.assertEqual(snapshot["google_customer_id"], "2222222222")
+        self.assertEqual(snapshot["spend"], 300.5)
+        self.assertEqual(snapshot["impressions"], 12000)
+        self.assertEqual(snapshot["clicks"], 530)
+        self.assertEqual(snapshot["conversions"], 44)
+        self.assertEqual(snapshot["revenue"], 901.1)
+
+    def test_google_ads_list_accessible_customers_uses_manager_search_stream(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
+        os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
+        os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token-123456"
+        os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://app.example.com/agency/integrations/google/callback"
+        os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
+        os.environ["GOOGLE_ADS_MANAGER_CUSTOMER_ID"] = "3908678909"
+        os.environ["GOOGLE_ADS_API_VERSION"] = "v18"
+
+        original_token = google_ads_service._access_token_from_refresh
+        original_http = google_ads_service._http_json
+        original_preflight = google_ads_service._list_accessible_customers_via_http
+        calls: list[tuple[str, str]] = []
+        try:
+            google_ads_service._access_token_from_refresh = lambda: "ya29.token"
+
+            captured_headers: dict[str, str] = {}
+
+            def fake_http_json(*, method: str, url: str, payload=None, headers=None):
+                calls.append((method, url))
+                if isinstance(headers, dict):
+                    captured_headers.update({str(k): str(v) for k, v in headers.items()})
+                return [{"results": [{"customerClient": {"id": "1111111111"}}, {"customerClient": {"id": "2222222222"}}]}]
+
+            google_ads_service._list_accessible_customers_via_http = lambda **kwargs: ["3908678909", "1111111111"]
+            google_ads_service._http_json = fake_http_json
+            result = google_ads_service.list_accessible_customers()
+        finally:
+            google_ads_service._access_token_from_refresh = original_token
+            google_ads_service._http_json = original_http
+            google_ads_service._list_accessible_customers_via_http = original_preflight
+
+        self.assertEqual(result, ["3908678909", "1111111111", "2222222222"])
+        self.assertEqual(calls[0][0], "POST")
+        self.assertIn("/v18/customers/3908678909/googleAds:searchStream", calls[0][1])
+        self.assertEqual(captured_headers.get("login-customer-id"), "3908678909")
+        self.assertEqual(captured_headers.get("developer-token"), "dev-token-123456")
+
+    def test_google_ads_discovery_falls_back_to_search_when_searchstream_404(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
+        os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
+        os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token-123456"
+        os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://app.example.com/agency/integrations/google/callback"
+        os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
+        os.environ["GOOGLE_ADS_MANAGER_CUSTOMER_ID"] = "3908678909"
+        os.environ["GOOGLE_ADS_API_VERSION"] = "v18"
+
+        original_token = google_ads_service._access_token_from_refresh
+        original_http = google_ads_service._http_json
+        original_preflight = google_ads_service._list_accessible_customers_via_http
+        calls: list[str] = []
+        try:
+            google_ads_service._access_token_from_refresh = lambda: "ya29.token"
+            google_ads_service._list_accessible_customers_via_http = lambda **kwargs: ["3908678909", "4444444444"]
+
+            def fake_http_json(*, method: str, url: str, payload=None, headers=None):
+                calls.append(url)
+                if "googleAds:searchStream" in url:
+                    raise GoogleAdsIntegrationError("Google Ads HTTP request failed: method=POST url=%s status=404 reason=Not Found response=..." % url)
+                return {"results": [{"customerClient": {"id": "4444444444"}}]}
+
+            google_ads_service._http_json = fake_http_json
+            result = google_ads_service.list_accessible_customers()
+        finally:
+            google_ads_service._access_token_from_refresh = original_token
+            google_ads_service._http_json = original_http
+            google_ads_service._list_accessible_customers_via_http = original_preflight
+
+        self.assertTrue(any("googleAds:searchStream" in call for call in calls))
+        self.assertTrue(any("googleAds:search" in call for call in calls))
+        self.assertEqual(result, ["3908678909", "4444444444"])
+
+    def test_google_ads_list_accessible_customers_uses_single_configured_version(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
+        os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
+        os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token-123456"
+        os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://app.example.com/agency/integrations/google/callback"
+        os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
+        os.environ["GOOGLE_ADS_MANAGER_CUSTOMER_ID"] = "3908678909"
+        os.environ["GOOGLE_ADS_API_VERSION"] = "v18"
+
+        original_token = google_ads_service._access_token_from_refresh
+        original_http = google_ads_service._http_json
+        original_preflight = google_ads_service._list_accessible_customers_via_http
+        calls: list[str] = []
+        try:
+            google_ads_service._access_token_from_refresh = lambda: "ya29.token"
+            google_ads_service._list_accessible_customers_via_http = lambda **kwargs: ["3908678909", "3333333333"]
+
+            def fake_http_json(*, method: str, url: str, payload=None, headers=None):
+                calls.append(url)
+                return [{"results": [{"customerClient": {"id": "3333333333"}}]}]
+
+            google_ads_service._http_json = fake_http_json
+            result = google_ads_service.list_accessible_customers()
+        finally:
+            google_ads_service._access_token_from_refresh = original_token
+            google_ads_service._http_json = original_http
+            google_ads_service._list_accessible_customers_via_http = original_preflight
+
+        self.assertTrue(all("/v18/" in call for call in calls))
+        self.assertEqual(result, ["3908678909", "3333333333"])
+
+    def test_google_ads_list_accessible_customers_fails_when_service_accessible_empty(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
+        os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
+        os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token-123456"
+        os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://app.example.com/agency/integrations/google/callback"
+        os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
+        os.environ["GOOGLE_ADS_MANAGER_CUSTOMER_ID"] = "3908678909"
+        os.environ["GOOGLE_ADS_API_VERSION"] = "v18"
+
+        original_token = google_ads_service._access_token_from_refresh
+        original_preflight = google_ads_service._list_accessible_customers_via_http
+        try:
+            google_ads_service._access_token_from_refresh = lambda: "ya29.token"
+            google_ads_service._list_accessible_customers_via_http = lambda **kwargs: []
+            with self.assertRaises(GoogleAdsIntegrationError):
+                google_ads_service.list_accessible_customers()
+        finally:
+            google_ads_service._access_token_from_refresh = original_token
+            google_ads_service._list_accessible_customers_via_http = original_preflight
+
+    def test_google_ads_api_version_normalizes_numeric_input(self):
+        os.environ["GOOGLE_ADS_API_VERSION"] = "18"
+        self.assertEqual(google_ads_service._google_api_version(), "v18")
+
+    def test_google_ads_list_accessible_customers_http_preflight_uses_post_and_required_headers(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token-123456"
+
+        original_http = google_ads_service._http_json
+        captured: dict[str, object] = {}
+        try:
+            def fake_http_json(*, method: str, url: str, payload=None, headers=None):
+                captured["method"] = method
+                captured["url"] = url
+                captured["payload"] = payload
+                captured["headers"] = headers or {}
+                return {"resourceNames": ["customers/3986597205"]}
+
+            google_ads_service._http_json = fake_http_json
+            result = google_ads_service._list_accessible_customers_via_http(access_token="ya29.token")
+        finally:
+            google_ads_service._http_json = original_http
+
+        self.assertEqual(captured.get("method"), "POST")
+        self.assertEqual(captured.get("url"), "https://googleads.googleapis.com/v18/customers:listAccessibleCustomers")
+        self.assertEqual(captured.get("payload"), {})
+        headers = captured.get("headers", {})
+        self.assertEqual(headers.get("Authorization"), "Bearer ya29.token")
+        self.assertEqual(headers.get("developer-token"), "dev-token-123456")
+        self.assertFalse("login-customer-id" in headers)
+        self.assertEqual(result, ["3986597205"])
+
+    def test_google_ads_sdk_client_requires_refresh_token(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
+        os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
+        os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token-123456"
+        os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = ""
+
+        original_runtime = google_ads_service._runtime_refresh_token
+        google_ads_service._runtime_refresh_token = None
+        try:
+            with self.assertRaises(GoogleAdsIntegrationError):
+                google_ads_service._google_ads_client()
+        finally:
+            google_ads_service._runtime_refresh_token = original_runtime
+
+    def test_google_ads_exchange_discovers_accounts_after_token_exchange(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
+        os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
+        os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token-123456"
+        os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://app.example.com/agency/integrations/google/callback"
+
+        state = "test-oauth-state"
+        google_ads_service._oauth_state_cache.add(state)
+
+        original_http = google_ads_service._http_json
+        original_list = google_ads_service.list_accessible_customers
+        captured: dict[str, object] = {}
+        try:
+            def fake_http_json(*, method: str, url: str, payload=None, headers=None):
+                return {"refresh_token": "refresh-from-exchange"}
+
+            def fake_list_accessible_customers():
+                captured["called"] = True
+                return ["3986597205", "3578697670"]
+
+            google_ads_service._http_json = fake_http_json
+            google_ads_service.list_accessible_customers = fake_list_accessible_customers
+
+            response = google_ads_service.exchange_oauth_code(code="auth-code", state=state)
+        finally:
+            google_ads_service._http_json = original_http
+            google_ads_service.list_accessible_customers = original_list
+
+        self.assertTrue(bool(captured.get("called")))
+        self.assertEqual(response["accessible_customers"], ["3986597205", "3578697670"])
+
+    def test_google_ads_sdk_client_config_uses_refresh_and_developer_token(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
+        os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
+        os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token-123456"
+        os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
+        os.environ["GOOGLE_ADS_API_VERSION"] = "v18"
+
+        module = __import__("app.services.google_ads", fromlist=["GoogleAdsClient"])
+        original_client = module.GoogleAdsClient
+
+        captured: dict[str, object] = {}
+
+        class FakeGoogleAdsClient:
+            @staticmethod
+            def load_from_dict(config, version=None):
+                captured["config"] = config
+                captured["version"] = version
+                return object()
+
+        try:
+            module.GoogleAdsClient = FakeGoogleAdsClient
+            google_ads_service._google_ads_client()
+        finally:
+            module.GoogleAdsClient = original_client
+
+        self.assertEqual(str(captured["version"]), "v18")
+        config = captured["config"]
+        self.assertEqual(config["developer_token"], "dev-token-123456")
+        self.assertEqual(config["oauth2_refresh_token"], "refresh-token")
+
+    def test_google_ads_fetch_production_metrics_uses_manager_login_customer_id(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
+        os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
+        os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token-123456"
+        os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://app.example.com/agency/integrations/google/callback"
+        os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
+        os.environ["GOOGLE_ADS_MANAGER_CUSTOMER_ID"] = "398-659-7205"
+        os.environ["GOOGLE_ADS_API_VERSION"] = "v18"
+
+        original_token = google_ads_service._access_token_from_refresh
+        original_http = google_ads_service._http_json
+        captured_headers: dict[str, str] = {}
+        try:
+            google_ads_service._access_token_from_refresh = lambda: "ya29.token"
+
+            def fake_http_json(*, method: str, url: str, payload=None, headers=None):
+                if isinstance(headers, dict):
+                    captured_headers.update({str(k): str(v) for k, v in headers.items()})
+                return [{"results": [{"metrics": {"costMicros": 1000000, "impressions": 10, "clicks": 1, "conversions": 1, "conversionsValue": 5}}]}]
+
+            google_ads_service._http_json = fake_http_json
+            result = google_ads_service._fetch_production_metrics(customer_id="357-869-7670")
+        finally:
+            google_ads_service._access_token_from_refresh = original_token
+            google_ads_service._http_json = original_http
+
+        self.assertEqual(captured_headers.get("login-customer-id"), "3986597205")
+        self.assertEqual(captured_headers.get("developer-token"), "dev-token-123456")
+        self.assertEqual(result["google_customer_id"], "3578697670")
+
+    def test_google_ads_diagnostics_flags_invalid_manager_id(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_MANAGER_CUSTOMER_ID"] = "123-45"
+        diagnostics = google_ads_service.production_diagnostics()
+        self.assertFalse(bool(diagnostics["manager_customer_id_valid"]))
+        self.assertTrue(any("MANAGER" in msg for msg in diagnostics["warnings"]))
+
+    def test_google_ads_diagnostics_warns_when_manager_id_contains_dashes(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_MANAGER_CUSTOMER_ID"] = "123-456-7890"
+        diagnostics = google_ads_service.production_diagnostics()
+        self.assertTrue(bool(diagnostics["manager_customer_id_valid"]))
+        self.assertTrue(bool(diagnostics["manager_customer_id_has_dashes"]))
+        self.assertTrue(any("without dashes" in msg for msg in diagnostics["warnings"]))
+
+    def test_google_ads_oauth_url_requires_production_credentials(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_CLIENT_ID"] = ""
+        with self.assertRaises(GoogleAdsIntegrationError):
+            google_ads_service.build_oauth_authorize_url()
+
+    def test_tiktok_ads_sync_fails_when_feature_flag_disabled(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "0"
+        with self.assertRaises(TikTokAdsIntegrationError):
+            tiktok_ads_service.sync_client(client_id=2)
+
+    def test_tiktok_ads_sync_persists_snapshot(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+
+        snapshot = tiktok_ads_service.sync_client(client_id=9)
+        metrics = tiktok_ads_service.get_metrics(client_id=9)
+
+        self.assertEqual(snapshot["status"], "success")
+        self.assertEqual(metrics["platform"], "tiktok_ads")
+        self.assertTrue(metrics["is_synced"])
+        self.assertGreater(float(metrics["spend"]), 0.0)
+
+
+    def test_tiktok_ads_retry_succeeds_after_transient_failures(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        os.environ["TIKTOK_SYNC_RETRY_ATTEMPTS"] = "3"
+        os.environ["TIKTOK_SYNC_FORCE_TRANSIENT_FAILURES"] = "2"
+
+        snapshot = tiktok_ads_service.sync_client(client_id=10)
+
+        self.assertEqual(snapshot["status"], "success")
+        self.assertEqual(snapshot["attempts"], 3)
+
+
+
+    def test_pinterest_ads_sync_fails_when_feature_flag_disabled(self):
+        os.environ["FF_PINTEREST_INTEGRATION"] = "0"
+        with self.assertRaises(PinterestAdsIntegrationError):
+            pinterest_ads_service.sync_client(client_id=2)
+
+    def test_pinterest_ads_sync_persists_snapshot_when_feature_flag_enabled(self):
+        os.environ["FF_PINTEREST_INTEGRATION"] = "1"
+        snapshot = pinterest_ads_service.sync_client(client_id=2)
+        metrics = pinterest_ads_service.get_metrics(client_id=2)
+        self.assertEqual(snapshot["status"], "success")
+        self.assertEqual(snapshot["platform"], "pinterest_ads")
+        self.assertEqual(snapshot["attempts"], 1)
+        self.assertTrue(metrics["is_synced"])
+
+    def test_pinterest_ads_retry_succeeds_after_transient_failures(self):
+        os.environ["FF_PINTEREST_INTEGRATION"] = "1"
+        os.environ["PINTEREST_SYNC_RETRY_ATTEMPTS"] = "3"
+        os.environ["PINTEREST_SYNC_FORCE_TRANSIENT_FAILURES"] = "2"
+
+        snapshot = pinterest_ads_service.sync_client(client_id=3)
+
+        self.assertEqual(snapshot["status"], "success")
+        self.assertEqual(snapshot["attempts"], 3)
+
+    def test_snapchat_ads_sync_fails_when_feature_flag_disabled(self):
+        os.environ["FF_SNAPCHAT_INTEGRATION"] = "0"
+        with self.assertRaises(SnapchatAdsIntegrationError):
+            snapchat_ads_service.sync_client(client_id=2)
+
+    def test_snapchat_ads_sync_persists_snapshot_when_feature_flag_enabled(self):
+        os.environ["FF_SNAPCHAT_INTEGRATION"] = "1"
+        snapshot = snapchat_ads_service.sync_client(client_id=2)
+        metrics = snapchat_ads_service.get_metrics(client_id=2)
+        self.assertEqual(snapshot["status"], "success")
+        self.assertEqual(snapshot["platform"], "snapchat_ads")
+        self.assertEqual(snapshot["attempts"], 1)
+        self.assertTrue(metrics["is_synced"])
+
+    def test_snapchat_ads_retry_succeeds_after_transient_failures(self):
+        os.environ["FF_SNAPCHAT_INTEGRATION"] = "1"
+        os.environ["SNAPCHAT_SYNC_RETRY_ATTEMPTS"] = "3"
+        os.environ["SNAPCHAT_SYNC_FORCE_TRANSIENT_FAILURES"] = "2"
+
+        snapshot = snapchat_ads_service.sync_client(client_id=3)
+
+        self.assertEqual(snapshot["status"], "success")
+        self.assertEqual(snapshot["attempts"], 3)
+
     # Sprint 3 coverage (Meta + unified dashboard)
     def test_meta_ads_status_pending_when_placeholder(self):
         os.environ["META_ACCESS_TOKEN"] = "your_meta_access_token"
@@ -86,21 +514,57 @@ class ServiceTests(unittest.TestCase):
         with self.assertRaises(MetaAdsIntegrationError):
             meta_ads_service.sync_client(client_id=2)
 
-    def test_unified_dashboard_consolidates_google_and_meta(self):
+    def test_unified_dashboard_consolidates_all_platforms(self):
         os.environ["GOOGLE_ADS_TOKEN"] = "google-real-token"
         os.environ["META_ACCESS_TOKEN"] = "meta-real-token"
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        os.environ["FF_PINTEREST_INTEGRATION"] = "1"
+        os.environ["FF_SNAPCHAT_INTEGRATION"] = "1"
 
         google_snapshot = google_ads_service.sync_client(client_id=3)
         meta_snapshot = meta_ads_service.sync_client(client_id=3)
+        tiktok_snapshot = tiktok_ads_service.sync_client(client_id=3)
+        pinterest_snapshot = pinterest_ads_service.sync_client(client_id=3)
+        snapchat_snapshot = snapchat_ads_service.sync_client(client_id=3)
 
         dashboard = unified_dashboard_service.get_client_dashboard(client_id=3)
 
-        expected_spend = float(google_snapshot["spend"]) + float(meta_snapshot["spend"])
-        expected_conversions = int(google_snapshot["conversions"]) + int(meta_snapshot["conversions"])
+        expected_spend = (
+            float(google_snapshot["spend"])
+            + float(meta_snapshot["spend"])
+            + float(tiktok_snapshot["spend"])
+            + float(pinterest_snapshot["spend"])
+            + float(snapchat_snapshot["spend"])
+        )
+        expected_conversions = (
+            int(google_snapshot["conversions"])
+            + int(meta_snapshot["conversions"])
+            + int(tiktok_snapshot["conversions"])
+            + int(pinterest_snapshot["conversions"])
+            + int(snapchat_snapshot["conversions"])
+        )
+
+        expected_revenue = (
+            float(google_snapshot["revenue"])
+            + float(meta_snapshot["revenue"])
+            + float(tiktok_snapshot["revenue"])
+            + float(pinterest_snapshot["revenue"])
+            + float(snapchat_snapshot["revenue"])
+        )
 
         self.assertTrue(dashboard["is_synced"])
         self.assertEqual(dashboard["totals"]["spend"], round(expected_spend, 2))
         self.assertEqual(dashboard["totals"]["conversions"], expected_conversions)
+        self.assertEqual(dashboard["totals"]["revenue"], round(expected_revenue, 2))
+        self.assertEqual(
+            dashboard["totals"]["roas"],
+            round(expected_revenue / expected_spend, 2),
+        )
+
+        for platform in ["google_ads", "meta_ads", "tiktok_ads", "pinterest_ads", "snapchat_ads"]:
+            self.assertIn("roas", dashboard["platforms"][platform])
+            self.assertIn("attempts", dashboard["platforms"][platform])
+            self.assertIn("synced_at", dashboard["platforms"][platform])
 
     # Sprint 4 coverage (rules + notifications + system_bot audit)
     def test_rules_engine_stop_loss_triggers_and_notifies(self):
