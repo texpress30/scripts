@@ -147,6 +147,7 @@ class ServiceTests(unittest.TestCase):
 
         original_token = google_ads_service._access_token_from_refresh
         original_http = google_ads_service._http_json
+        original_preflight = google_ads_service._list_accessible_customers_via_sdk
         calls: list[tuple[str, str]] = []
         try:
             google_ads_service._access_token_from_refresh = lambda: "ya29.token"
@@ -157,21 +158,19 @@ class ServiceTests(unittest.TestCase):
                 calls.append((method, url))
                 if isinstance(headers, dict):
                     captured_headers.update({str(k): str(v) for k, v in headers.items()})
-                if "customers:listAccessibleCustomers" in url:
-                    return {"resourceNames": ["customers/3908678909", "customers/1111111111"]}
                 return [{"results": [{"customerClient": {"id": "1111111111"}}, {"customerClient": {"id": "2222222222"}}]}]
 
+            google_ads_service._list_accessible_customers_via_sdk = lambda: ["3908678909", "1111111111"]
             google_ads_service._http_json = fake_http_json
             result = google_ads_service.list_accessible_customers()
         finally:
             google_ads_service._access_token_from_refresh = original_token
             google_ads_service._http_json = original_http
+            google_ads_service._list_accessible_customers_via_sdk = original_preflight
 
         self.assertEqual(result, ["3908678909", "1111111111", "2222222222"])
-        self.assertEqual(calls[0][0], "GET")
-        self.assertIn("/v18/customers:listAccessibleCustomers", calls[0][1])
-        self.assertEqual(calls[1][0], "POST")
-        self.assertIn("/v18/customers/3908678909/googleAds:searchStream", calls[1][1])
+        self.assertEqual(calls[0][0], "POST")
+        self.assertIn("/v18/customers/3908678909/googleAds:searchStream", calls[0][1])
         self.assertEqual(captured_headers.get("login-customer-id"), "3908678909")
         self.assertEqual(captured_headers.get("developer-token"), "dev-token-123456")
 
@@ -187,14 +186,14 @@ class ServiceTests(unittest.TestCase):
 
         original_token = google_ads_service._access_token_from_refresh
         original_http = google_ads_service._http_json
+        original_preflight = google_ads_service._list_accessible_customers_via_sdk
         calls: list[str] = []
         try:
             google_ads_service._access_token_from_refresh = lambda: "ya29.token"
+            google_ads_service._list_accessible_customers_via_sdk = lambda: ["3908678909", "4444444444"]
 
             def fake_http_json(*, method: str, url: str, payload=None, headers=None):
                 calls.append(url)
-                if "customers:listAccessibleCustomers" in url:
-                    return {"resourceNames": ["customers/3908678909", "customers/4444444444"]}
                 if "googleAds:searchStream" in url:
                     raise GoogleAdsIntegrationError("Google Ads HTTP request failed: method=POST url=%s status=404 reason=Not Found response=..." % url)
                 return {"results": [{"customerClient": {"id": "4444444444"}}]}
@@ -204,6 +203,7 @@ class ServiceTests(unittest.TestCase):
         finally:
             google_ads_service._access_token_from_refresh = original_token
             google_ads_service._http_json = original_http
+            google_ads_service._list_accessible_customers_via_sdk = original_preflight
 
         self.assertTrue(any("googleAds:searchStream" in call for call in calls))
         self.assertTrue(any("googleAds:search" in call for call in calls))
@@ -221,14 +221,14 @@ class ServiceTests(unittest.TestCase):
 
         original_token = google_ads_service._access_token_from_refresh
         original_http = google_ads_service._http_json
+        original_preflight = google_ads_service._list_accessible_customers_via_sdk
         calls: list[str] = []
         try:
             google_ads_service._access_token_from_refresh = lambda: "ya29.token"
+            google_ads_service._list_accessible_customers_via_sdk = lambda: ["3908678909", "3333333333"]
 
             def fake_http_json(*, method: str, url: str, payload=None, headers=None):
                 calls.append(url)
-                if "customers:listAccessibleCustomers" in url:
-                    return {"resourceNames": ["customers/3908678909", "customers/3333333333"]}
                 return [{"results": [{"customerClient": {"id": "3333333333"}}]}]
 
             google_ads_service._http_json = fake_http_json
@@ -236,6 +236,7 @@ class ServiceTests(unittest.TestCase):
         finally:
             google_ads_service._access_token_from_refresh = original_token
             google_ads_service._http_json = original_http
+            google_ads_service._list_accessible_customers_via_sdk = original_preflight
 
         self.assertTrue(all("/v18/" in call for call in calls))
         self.assertEqual(result, ["3908678909", "3333333333"])
@@ -251,25 +252,50 @@ class ServiceTests(unittest.TestCase):
         os.environ["GOOGLE_ADS_API_VERSION"] = "v18"
 
         original_token = google_ads_service._access_token_from_refresh
-        original_http = google_ads_service._http_json
+        original_preflight = google_ads_service._list_accessible_customers_via_sdk
         try:
             google_ads_service._access_token_from_refresh = lambda: "ya29.token"
-
-            def fake_http_json(*, method: str, url: str, payload=None, headers=None):
-                if "customers:listAccessibleCustomers" in url:
-                    return {"resourceNames": []}
-                return [{"results": []}]
-
-            google_ads_service._http_json = fake_http_json
+            google_ads_service._list_accessible_customers_via_sdk = lambda: []
             with self.assertRaises(GoogleAdsIntegrationError):
                 google_ads_service.list_accessible_customers()
         finally:
             google_ads_service._access_token_from_refresh = original_token
-            google_ads_service._http_json = original_http
+            google_ads_service._list_accessible_customers_via_sdk = original_preflight
 
     def test_google_ads_api_version_normalizes_numeric_input(self):
         os.environ["GOOGLE_ADS_API_VERSION"] = "18"
         self.assertEqual(google_ads_service._google_api_version(), "v18")
+
+    def test_google_ads_sdk_client_config_uses_refresh_and_developer_token(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
+        os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
+        os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token-123456"
+        os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
+        os.environ["GOOGLE_ADS_API_VERSION"] = "v18"
+
+        module = __import__("app.services.google_ads", fromlist=["GoogleAdsClient"])
+        original_client = module.GoogleAdsClient
+
+        captured: dict[str, object] = {}
+
+        class FakeGoogleAdsClient:
+            @staticmethod
+            def load_from_dict(config, version=None):
+                captured["config"] = config
+                captured["version"] = version
+                return object()
+
+        try:
+            module.GoogleAdsClient = FakeGoogleAdsClient
+            google_ads_service._google_ads_client()
+        finally:
+            module.GoogleAdsClient = original_client
+
+        self.assertEqual(str(captured["version"]), "v18")
+        config = captured["config"]
+        self.assertEqual(config["developer_token"], "dev-token-123456")
+        self.assertEqual(config["oauth2_refresh_token"], "refresh-token")
 
     def test_google_ads_fetch_production_metrics_uses_manager_login_customer_id(self):
         os.environ["GOOGLE_ADS_MODE"] = "production"

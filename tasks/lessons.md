@@ -11,3 +11,4 @@
 - 2026-02-25: When provider discovery endpoints keep returning 404, add dual-operation fallback (`googleAds:searchStream` then `googleAds:search`) across adjacent API versions and log the exact URL per attempt to isolate contract/runtime issues.
 - 2026-02-25: When Google Ads access differs between individual and MCC under the same email, enforce normalized `GOOGLE_ADS_MANAGER_CUSTOMER_ID` and always send `login-customer-id` + `developer-token` on every Google Ads API request path to preserve manager hierarchy visibility.
 - 2026-02-25: For persistent Google Ads 404s on MCC search, add preflight `customers:listAccessibleCustomers` with the same headers and log request_id + failure details from Google error payload before changing business logic.
+- 2026-02-25: If Google Ads list-accessible endpoint returns 404 in REST path form, switch to official Python SDK `CustomerService.list_accessible_customers()` and avoid passing `login-customer-id` for that specific call.

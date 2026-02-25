@@ -8,6 +8,11 @@ import secrets
 from datetime import datetime, timezone
 from urllib import error, parse, request
 
+try:
+    from google.ads.googleads.client import GoogleAdsClient
+except Exception:  # noqa: BLE001
+    GoogleAdsClient = None
+
 from app.core.config import load_settings
 from app.services.google_store import google_snapshot_store
 
@@ -90,25 +95,31 @@ class GoogleAdsService:
 
         return request_id, failure_details
 
-    def _list_accessible_customers_via_service(self, *, access_token: str, manager_customer_id: str) -> list[str]:
+    def _google_ads_client(self) -> object:
         settings = load_settings()
-        api_version = self._google_api_version()
-        payload = self._http_json(
-            method="GET",
-            url=self._build_google_ads_url(api_version, "customers:listAccessibleCustomers"),
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "developer-token": settings.google_ads_developer_token,
-                "login-customer-id": manager_customer_id,
-            },
-        )
-        if not isinstance(payload, dict):
-            raise GoogleAdsIntegrationError("Invalid response received from Google customers:listAccessibleCustomers")
+        if GoogleAdsClient is None:
+            raise GoogleAdsIntegrationError(
+                "google-ads SDK is not installed. Add it to backend requirements to use production account discovery."
+            )
 
-        resource_names = payload.get("resourceNames", [])
-        if not isinstance(resource_names, list):
-            return []
+        config: dict[str, object] = {
+            "developer_token": settings.google_ads_developer_token,
+            "use_proto_plus": True,
+            "oauth2_client_id": settings.google_ads_client_id,
+            "oauth2_client_secret": settings.google_ads_client_secret,
+            "oauth2_refresh_token": self._refresh_token(),
+        }
+        return GoogleAdsClient.load_from_dict(config, version=self._google_api_version())
 
+    def _list_accessible_customers_via_sdk(self) -> list[str]:
+        client = self._google_ads_client()
+        customer_service = client.get_service("CustomerService")
+
+        # Per Google Ads SDK standard flow, list_accessible_customers uses OAuth + developer token
+        # without login-customer-id.
+        response = customer_service.list_accessible_customers()
+
+        resource_names = list(getattr(response, "resource_names", []) or [])
         discovered: list[str] = []
         for resource_name in resource_names:
             value = str(resource_name).strip()
@@ -339,10 +350,7 @@ class GoogleAdsService:
         manager_customer_id = self._required_manager_customer_id()
 
         access_token = self._access_token_from_refresh()
-        preflight_accounts = self._list_accessible_customers_via_service(
-            access_token=access_token,
-            manager_customer_id=manager_customer_id,
-        )
+        preflight_accounts = self._list_accessible_customers_via_sdk()
         if not preflight_accounts:
             raise GoogleAdsIntegrationError(
                 "Google customers:listAccessibleCustomers returned no accounts. "

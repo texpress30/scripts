@@ -6,15 +6,16 @@ Usage:
 
 What it does:
 - Loads backend settings/environment.
-- Monkeypatches GoogleAdsService._http_json to print outbound Google Ads headers.
-- Runs list_accessible_customers() to verify `developer-token` and
-  `login-customer-id` are present on transport-bound requests.
+- Monkeypatches SDK preflight and HTTP transport helper.
+- Verifies `login-customer-id` is absent from list-accessible preflight path
+  and present on manager customer-specific search requests.
 """
 
 from __future__ import annotations
 
-from app.services.google_ads import GoogleAdsIntegrationError, google_ads_service
 import os
+
+from app.services.google_ads import GoogleAdsIntegrationError, google_ads_service
 
 
 def main() -> int:
@@ -27,7 +28,9 @@ def main() -> int:
     os.environ.setdefault("GOOGLE_ADS_REFRESH_TOKEN", "debug-refresh-token")
     os.environ.setdefault("GOOGLE_ADS_MANAGER_CUSTOMER_ID", "3986597205")
     os.environ.setdefault("GOOGLE_ADS_API_VERSION", "v18")
+
     original_http = google_ads_service._http_json
+    original_preflight = google_ads_service._list_accessible_customers_via_sdk
 
     def debug_http_json(*, method: str, url: str, payload=None, headers=None):
         print(f"[debug] method={method} url={url}")
@@ -36,17 +39,18 @@ def main() -> int:
             print(f"[debug] login-customer-id={headers.get('login-customer-id')}")
         if "oauth2.googleapis.com/token" in url:
             return {"access_token": "ya29.debug-token"}
-        if "customers:listAccessibleCustomers" in url:
-            # Simulated positive preflight response.
-            return {"resourceNames": ["customers/3986597205", "customers/3578697670"]}
         if "googleAds:searchStream" in url:
-            # Simulated manager discovery results.
             return [{"results": [{"customerClient": {"id": "3578697670"}}]}]
         if "googleAds:search" in url:
             return {"results": [{"customerClient": {"id": "3578697670"}}]}
         return original_http(method=method, url=url, payload=payload, headers=headers)
 
+    def debug_preflight_sdk() -> list[str]:
+        print("[debug] sdk.list_accessible_customers() invoked (no login-customer-id header expected)")
+        return ["3986597205", "3578697670"]
+
     google_ads_service._http_json = debug_http_json
+    google_ads_service._list_accessible_customers_via_sdk = debug_preflight_sdk
     try:
         accounts = google_ads_service.list_accessible_customers()
         print(f"[ok] accessible_customers={accounts}")
@@ -56,6 +60,7 @@ def main() -> int:
         return 1
     finally:
         google_ads_service._http_json = original_http
+        google_ads_service._list_accessible_customers_via_sdk = original_preflight
 
 
 if __name__ == "__main__":
