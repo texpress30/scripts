@@ -27,8 +27,66 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(settings.openai_api_key, "")
         self.assertEqual(settings.google_ads_token, "")
+        self.assertEqual(settings.google_ads_mode, "mock")
+        self.assertEqual(settings.google_ads_client_id, "")
+        self.assertEqual(settings.google_ads_client_secret, "")
+        self.assertEqual(settings.google_ads_developer_token, "")
+        self.assertEqual(settings.google_ads_manager_customer_id, "")
+        self.assertEqual(settings.google_ads_redirect_uri, "")
+        self.assertEqual(settings.google_ads_refresh_token, "")
+        self.assertEqual(settings.google_ads_customer_ids_csv, "")
+        self.assertEqual(settings.google_ads_api_version, "v18")
         self.assertEqual(settings.meta_access_token, "")
         self.assertEqual(settings.bigquery_project_id, "")
+        self.assertFalse(settings.ff_tiktok_integration)
+        self.assertFalse(settings.ff_pinterest_integration)
+        self.assertFalse(settings.ff_snapchat_integration)
+        self.assertEqual(settings.tiktok_sync_retry_attempts, 2)
+        self.assertEqual(settings.tiktok_sync_backoff_ms, 75)
+        self.assertEqual(settings.pinterest_sync_retry_attempts, 2)
+        self.assertEqual(settings.pinterest_sync_backoff_ms, 75)
+        self.assertEqual(settings.snapchat_sync_retry_attempts, 2)
+        self.assertEqual(settings.snapchat_sync_backoff_ms, 75)
+
+
+    def test_tiktok_pinterest_and_snapchat_feature_flags_can_be_enabled_from_env(self):
+        os.environ.clear()
+        os.environ["APP_AUTH_SECRET"] = "test-auth-secret"
+        os.environ["FF_TIKTOK_INTEGRATION"] = "true"
+        os.environ["FF_PINTEREST_INTEGRATION"] = "true"
+        os.environ["FF_SNAPCHAT_INTEGRATION"] = "true"
+
+        settings = load_settings()
+
+        self.assertTrue(settings.ff_tiktok_integration)
+        self.assertTrue(settings.ff_pinterest_integration)
+        self.assertTrue(settings.ff_snapchat_integration)
+
+    def test_tiktok_retry_settings_are_configurable(self):
+        os.environ.clear()
+        os.environ["APP_AUTH_SECRET"] = "test-auth-secret"
+        os.environ["TIKTOK_SYNC_RETRY_ATTEMPTS"] = "4"
+        os.environ["TIKTOK_SYNC_BACKOFF_MS"] = "125"
+
+        settings = load_settings()
+
+        self.assertEqual(settings.tiktok_sync_retry_attempts, 4)
+        self.assertEqual(settings.tiktok_sync_backoff_ms, 125)
+
+    def test_pinterest_and_snapchat_retry_settings_are_configurable(self):
+        os.environ.clear()
+        os.environ["APP_AUTH_SECRET"] = "test-auth-secret"
+        os.environ["PINTEREST_SYNC_RETRY_ATTEMPTS"] = "5"
+        os.environ["PINTEREST_SYNC_BACKOFF_MS"] = "140"
+        os.environ["SNAPCHAT_SYNC_RETRY_ATTEMPTS"] = "6"
+        os.environ["SNAPCHAT_SYNC_BACKOFF_MS"] = "155"
+
+        settings = load_settings()
+
+        self.assertEqual(settings.pinterest_sync_retry_attempts, 5)
+        self.assertEqual(settings.pinterest_sync_backoff_ms, 140)
+        self.assertEqual(settings.snapchat_sync_retry_attempts, 6)
+        self.assertEqual(settings.snapchat_sync_backoff_ms, 155)
 
     def test_invalid_cors_regex_falls_back_to_default(self):
         os.environ.clear()
@@ -57,12 +115,27 @@ class ConfigTests(unittest.TestCase):
         os.environ["APP_LOGIN_PASSWORD"] = "secret-pass"
         os.environ["OPENAI_API_KEY"] = "test-openai-key"
         os.environ["GOOGLE_ADS_TOKEN"] = "test-google-token"
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
+        os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
+        os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token"
+        os.environ["GOOGLE_ADS_MANAGER_CUSTOMER_ID"] = "1234567890"
+        os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://app.example.com/agency/integrations/google/callback"
+        os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
+        os.environ["GOOGLE_ADS_CUSTOMER_IDS_CSV"] = "1111111111,2222222222"
+        os.environ["GOOGLE_ADS_API_VERSION"] = "v18"
         os.environ["META_ACCESS_TOKEN"] = "test-meta-token"
         os.environ["BIGQUERY_PROJECT_ID"] = "test-project"
         os.environ["DATABASE_URL"] = "postgresql://example"
         os.environ["REDIS_URL"] = "redis://example"
         os.environ["APP_CORS_ORIGINS"] = "https://frontend.example.com,https://admin.example.com"
         os.environ["APP_CORS_ORIGIN_REGEX"] = r"https://.*\\.example\\.com"
+        os.environ["TIKTOK_SYNC_RETRY_ATTEMPTS"] = "3"
+        os.environ["TIKTOK_SYNC_BACKOFF_MS"] = "50"
+        os.environ["PINTEREST_SYNC_RETRY_ATTEMPTS"] = "4"
+        os.environ["PINTEREST_SYNC_BACKOFF_MS"] = "65"
+        os.environ["SNAPCHAT_SYNC_RETRY_ATTEMPTS"] = "5"
+        os.environ["SNAPCHAT_SYNC_BACKOFF_MS"] = "85"
 
         settings = load_settings()
 
@@ -74,10 +147,25 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.app_login_password, "secret-pass")
         self.assertEqual(settings.openai_api_key, "test-openai-key")
         self.assertEqual(settings.google_ads_token, "test-google-token")
+        self.assertEqual(settings.google_ads_mode, "production")
+        self.assertEqual(settings.google_ads_client_id, "client-id")
+        self.assertEqual(settings.google_ads_client_secret, "client-secret")
+        self.assertEqual(settings.google_ads_developer_token, "dev-token")
+        self.assertEqual(settings.google_ads_manager_customer_id, "1234567890")
+        self.assertEqual(settings.google_ads_redirect_uri, "https://app.example.com/agency/integrations/google/callback")
+        self.assertEqual(settings.google_ads_refresh_token, "refresh-token")
+        self.assertEqual(settings.google_ads_customer_ids_csv, "1111111111,2222222222")
+        self.assertEqual(settings.google_ads_api_version, "v18")
         self.assertEqual(settings.meta_access_token, "test-meta-token")
         self.assertEqual(settings.bigquery_project_id, "test-project")
         self.assertEqual(settings.cors_origins, ("https://frontend.example.com", "https://admin.example.com"))
         self.assertEqual(settings.cors_origin_regex, r"https://.*\\.example\\.com")
+        self.assertEqual(settings.tiktok_sync_retry_attempts, 3)
+        self.assertEqual(settings.tiktok_sync_backoff_ms, 50)
+        self.assertEqual(settings.pinterest_sync_retry_attempts, 4)
+        self.assertEqual(settings.pinterest_sync_backoff_ms, 65)
+        self.assertEqual(settings.snapchat_sync_retry_attempts, 5)
+        self.assertEqual(settings.snapchat_sync_backoff_ms, 85)
 
 
 if __name__ == "__main__":
