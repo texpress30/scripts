@@ -223,6 +223,20 @@ class E2EFlowTests(unittest.TestCase):
         self.assertIn("tiktok_ads.sync.fail", actions)
 
 
+    def test_attach_google_account_to_client(self):
+        headers = self._auth_header()
+        created = self.client.post("/clients", json={"name": "Client Attach"}, headers=headers)
+        self.assertEqual(created.status_code, 200)
+        client_id = int(created.json()["id"])
+
+        response = self.client.post(
+            f"/clients/{client_id}/attach-google-account",
+            json={"customer_id": "7563058696"},
+            headers=headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json().get("google_customer_id"), "7563058696")
+
     def test_google_accounts_endpoint_contract(self):
         os.environ["GOOGLE_ADS_MODE"] = "production"
         os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
@@ -242,7 +256,8 @@ class E2EFlowTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["count"], 2)
-        self.assertEqual(response.json()["items"], ["3908678909", "1234567890"])
+        self.assertEqual(response.json()["items"][0]["id"], "3908678909")
+        self.assertIn("name", response.json()["items"][0])
 
         alias = self.client.get("/integrations/google/accounts", headers=headers)
         self.assertEqual(alias.status_code, 200)

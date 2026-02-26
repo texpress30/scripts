@@ -1,14 +1,19 @@
-# TODO — Google Ads API version upgrade and de-hardcode URL
+# TODO — Agency connected-state UX + persistent accounts/client mapping
 
-- [x] Replace hardcoded `v18` in accessible-customers URL with dynamic `self._google_api_version()` path.
-- [x] Update default Google Ads API version to `v23` in config/service fallbacks.
-- [x] Update tests/scripts expecting previous default/API version.
-- [x] Run targeted backend tests and debug script.
+- [x] Persist Agency Clients data in Postgres so records survive deploy/restart.
+- [x] Add Google account import metadata persistence (last import timestamp + imported account registry).
+- [x] Update Integrations UI to show active Google connected state and persistent last-import info.
+- [x] Add Agency Accounts section under Agency Clients with platform cards and Google account attach workflow.
+- [x] Wire Google customer mapping to client registry so Sub-Account sync can use attached Google account IDs.
+- [x] Apply account naming override: `7563058696` -> `OMA-Test 2`.
+- [x] Run backend/frontend checks and produce screenshot evidence.
 - [x] Commit and create PR.
 
 ## Review
-- `customers:listAccessibleCustomers` URL now uses `_build_google_ads_url(self._google_api_version(), ...)`, eliminating hardcoded version segments.
-- Default Google Ads API version is now `v23` in both config env defaults and service fallback path.
-- Tests and debug script were updated to reflect v23 behavior and dynamic URL construction.
-- Validation confirms backend tests pass and debug script now hits v23 manager search URL.
-- Sunset-doc probe in this environment shows `v23` marker present and no `v18` marker in fetched page content.
+- Implemented persistent `agency_clients`, `agency_platform_accounts`, and `agency_platform_imports` tables with in-memory test fallback.
+- Google import now upserts imported accounts + last import timestamp and exposes metadata to UI.
+- Integrations page now fetches Google status on load and clearly displays connected state, connected account count, and last import time.
+- Agency Clients now includes a new Agency Accounts section with platform cards; Google card lists available accounts and allows attaching an account to an existing client.
+- Google mapping is now resolved from persisted client registry before env CSV fallback, so sub-account sync uses attached account IDs.
+- Added naming override for account `7563058696` to display as `OMA-Test 2` in imported/listed accounts.
+- Captured updated Agency Clients screenshot artifact.

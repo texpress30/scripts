@@ -24,6 +24,7 @@ from app.services.recommendations import recommendations_service
 from app.services.rbac import AuthorizationError, require_action, require_permission
 from app.services.rules_engine import rules_engine_service
 from app.services.audit import audit_log_service
+from app.services.client_registry import client_registry_service
 
 
 class ServiceTests(unittest.TestCase):
@@ -54,6 +55,7 @@ class ServiceTests(unittest.TestCase):
         insights_service._items.clear()
         creative_workflow_service.reset()
         audit_log_service._events.clear()
+        client_registry_service.clear()
         google_ads_service._runtime_refresh_token = None
         os.environ.clear()
         os.environ.update(self.original_env)

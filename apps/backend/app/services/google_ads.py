@@ -14,6 +14,7 @@ except Exception:  # noqa: BLE001
     GoogleAdsClient = None
 
 from app.core.config import load_settings
+from app.services.client_registry import client_registry_service
 from app.services.google_store import google_snapshot_store
 
 logger = logging.getLogger(__name__)
@@ -474,10 +475,15 @@ class GoogleAdsService:
         return [manager_customer_id]
 
     def get_recommended_customer_id_for_client(self, client_id: int) -> str | None:
-        settings = load_settings()
-        configured = tuple(item.strip() for item in settings.google_ads_customer_ids_csv.split(",") if item.strip())
         if client_id <= 0:
             return None
+
+        mapped_customer_id = client_registry_service.get_google_customer_for_client(client_id=client_id)
+        if mapped_customer_id:
+            return self._normalize_customer_id(mapped_customer_id)
+
+        settings = load_settings()
+        configured = tuple(item.strip() for item in settings.google_ads_customer_ids_csv.split(",") if item.strip())
         if client_id <= len(configured):
             return self._normalize_customer_id(configured[client_id - 1])
         return None

@@ -23,4 +23,5 @@ def list_google_accounts_alias(user: AuthUser = Depends(get_current_user)) -> di
         resource="integration:google_ads",
         details={"count": len(accounts)},
     )
-    return {"items": accounts, "count": len(accounts)}
+    items = [{"id": account_id, "name": "OMA-Test 2" if account_id == "7563058696" else f"Google Account {account_id}"} for account_id in accounts]
+    return {"items": items, "count": len(items)}

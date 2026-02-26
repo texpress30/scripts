@@ -11,7 +11,7 @@ router = APIRouter(prefix="/integrations/google-ads", tags=["google-ads"])
 
 
 @router.get("/status")
-def google_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, str]:
+def google_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
         enforce_action_scope(user=user, action="integrations:status", scope="agency")
         rate_limiter_service.check(f"google_status:{user.email}", limit=60, window_seconds=60)
@@ -19,6 +19,9 @@ def google_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, s
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
     status_payload = google_ads_service.integration_status()
+    google_accounts = client_registry_service.list_platform_accounts(platform="google_ads")
+    status_payload["connected_accounts_count"] = len(google_accounts)
+    status_payload["last_import_at"] = client_registry_service.get_last_import_at(platform="google_ads")
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
@@ -90,7 +93,8 @@ def list_google_accounts(user: AuthUser = Depends(get_current_user)) -> dict[str
         resource="integration:google_ads",
         details={"count": len(accounts)},
     )
-    return {"items": accounts, "count": len(accounts)}
+    items = [{"id": account_id, "name": "OMA-Test 2" if account_id == "7563058696" else f"Google Account {account_id}"} for account_id in accounts]
+    return {"items": items, "count": len(items)}
 
 
 @router.post("/import-accounts")
@@ -105,13 +109,17 @@ def import_google_accounts(user: AuthUser = Depends(get_current_user)) -> dict[s
     existing = client_registry_service.list_clients()
     existing_names = {str(item["name"]).strip().lower() for item in existing}
 
+    imported_accounts: list[dict[str, str]] = []
     for customer_id in customer_ids:
-        synthetic_name = f"Google Account {customer_id}"
+        synthetic_name = "OMA-Test 2" if customer_id == "7563058696" else f"Google Account {customer_id}"
+        imported_accounts.append({"id": customer_id, "name": synthetic_name})
         if synthetic_name.lower() in existing_names:
             continue
         record = client_registry_service.create_client(name=synthetic_name, owner_email=user.email)
         created.append(record)
         existing_names.add(synthetic_name.lower())
+
+    client_registry_service.upsert_platform_accounts(platform="google_ads", accounts=imported_accounts)
 
     audit_log_service.log(
         actor_email=user.email,
@@ -126,6 +134,7 @@ def import_google_accounts(user: AuthUser = Depends(get_current_user)) -> dict[s
         "accessible_customers": customer_ids,
         "imported_clients": created,
         "imported_count": len(created),
+        "last_import_at": client_registry_service.get_last_import_at(platform="google_ads"),
     }
 
 
