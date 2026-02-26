@@ -18,6 +18,7 @@ class ClientRecord:
     name: str
     owner_email: str
     google_customer_id: str | None = None
+    source: str = "manual"
 
 
 class ClientRegistryService:
@@ -50,11 +51,13 @@ class ClientRegistryService:
                         name TEXT NOT NULL,
                         owner_email TEXT NOT NULL,
                         google_customer_id TEXT NULL,
+                        source TEXT NOT NULL DEFAULT 'manual',
                         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                     )
                     """
                 )
+                cur.execute("ALTER TABLE agency_clients ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manual'")
                 cur.execute(
                     """
                     CREATE TABLE IF NOT EXISTS agency_platform_accounts (
@@ -74,6 +77,24 @@ class ClientRegistryService:
                     )
                     """
                 )
+                # Legacy cleanup: rows auto-created from import should not appear under manual Agency Clients.
+                cur.execute(
+                    """
+                    UPDATE agency_clients c
+                    SET source = 'imported'
+                    WHERE c.source = 'manual'
+                      AND c.google_customer_id IS NULL
+                      AND (
+                        c.name LIKE 'Google Account %'
+                        OR EXISTS (
+                            SELECT 1
+                            FROM agency_platform_accounts a
+                            WHERE a.platform = 'google_ads'
+                              AND a.account_name = c.name
+                        )
+                      )
+                    """
+                )
             conn.commit()
 
     def create_client(self, name: str, owner_email: str) -> dict[str, str | int | None]:
@@ -81,17 +102,19 @@ class ClientRegistryService:
 
         if self._is_test_mode():
             with self._lock:
-                record = ClientRecord(id=self._next_id, name=name, owner_email=owner_email)
+                record = ClientRecord(id=self._next_id, name=name, owner_email=owner_email, source="manual")
                 self._next_id += 1
                 self._clients.append(record)
-                return asdict(record)
+                payload = asdict(record)
+                payload.pop("source", None)
+                return payload
 
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO agency_clients (name, owner_email)
-                    VALUES (%s, %s)
+                    INSERT INTO agency_clients (name, owner_email, source)
+                    VALUES (%s, %s, 'manual')
                     RETURNING id, name, owner_email, google_customer_id
                     """,
                     (name, owner_email),
@@ -111,11 +134,27 @@ class ClientRegistryService:
 
         if self._is_test_mode():
             with self._lock:
-                return [asdict(c) for c in self._clients]
+                return [
+                    {
+                        "id": c.id,
+                        "name": c.name,
+                        "owner_email": c.owner_email,
+                        "google_customer_id": c.google_customer_id,
+                    }
+                    for c in self._clients
+                    if c.source == "manual"
+                ]
 
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT id, name, owner_email, google_customer_id FROM agency_clients ORDER BY id ASC")
+                cur.execute(
+                    """
+                    SELECT id, name, owner_email, google_customer_id
+                    FROM agency_clients
+                    WHERE source = 'manual'
+                    ORDER BY id ASC
+                    """
+                )
                 rows = cur.fetchall()
 
         return [
@@ -133,15 +172,18 @@ class ClientRegistryService:
         if self._is_test_mode():
             with self._lock:
                 for idx, client in enumerate(self._clients):
-                    if client.id == client_id:
+                    if client.id == client_id and client.source == "manual":
                         updated = ClientRecord(
                             id=client.id,
                             name=client.name,
                             owner_email=client.owner_email,
                             google_customer_id=customer_id,
+                            source=client.source,
                         )
                         self._clients[idx] = updated
-                        return asdict(updated)
+                        payload = asdict(updated)
+                        payload.pop("source", None)
+                        return payload
             return None
 
         with self._connect() as conn:
@@ -150,7 +192,7 @@ class ClientRegistryService:
                     """
                     UPDATE agency_clients
                     SET google_customer_id = %s, updated_at = NOW()
-                    WHERE id = %s
+                    WHERE id = %s AND source = 'manual'
                     RETURNING id, name, owner_email, google_customer_id
                     """,
                     (customer_id, client_id),
@@ -172,13 +214,13 @@ class ClientRegistryService:
         if self._is_test_mode():
             with self._lock:
                 for client in self._clients:
-                    if client.id == client_id:
+                    if client.id == client_id and client.source == "manual":
                         return client.google_customer_id
             return None
 
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT google_customer_id FROM agency_clients WHERE id = %s", (client_id,))
+                cur.execute("SELECT google_customer_id FROM agency_clients WHERE id = %s AND source = 'manual'", (client_id,))
                 row = cur.fetchone()
         if row is None or row[0] is None:
             return None

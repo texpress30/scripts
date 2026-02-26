@@ -1,16 +1,19 @@
-# TODO — Agency Clients manual-only + sidebar accounts restructure
+# TODO — Urgent Agency Accounts page + strict manual clients filtering
 
-- [x] Sync local workspace with latest main snapshot (remote unavailable in this environment; proceeded from clean local main state).
-- [x] Ensure Google account import updates only Agency platform account registry (no auto-created Agency Clients).
-- [x] Use Google Ads descriptive account names for all imported/listed accounts.
-- [x] Move Agency Accounts UI from Agency Clients page into AppShell sidebar under Agency Clients navigation.
-- [x] Keep attach dropdown scoped to manually created Agency Clients.
-- [x] Run targeted backend/frontend checks.
-- [x] Commit and open PR.
+- [x] Review current navigation and client/account flows (sidebar, Agency Clients, Google import naming/mapping).
+- [x] Backend: enforce manual-only Agency Clients visibility and hide legacy imported accounts from Agency Clients list.
+- [x] Backend: ensure Google account naming uses descriptive_name or fallback ID only (no `Google Account [ID]`).
+- [x] Frontend: remove platform cards from sidebar; add single `Agency Accounts` menu entry between `Agency Clients` and `Agency Audit`.
+- [x] Frontend: create dedicated `/agency-accounts` page containing platform cards + imported accounts list + attach dropdown.
+- [x] Frontend: keep Agency Clients page manual-only (no imported accounts area).
+- [x] Validate with targeted backend tests + frontend build and capture screenshot.
+- [ ] Commit changes and create PR.
 
 ## Review
-- Refactored Google account discovery to return `{id, name}` account objects and use `descriptive_name` globally when available.
-- Updated Google endpoints to expose real account names and to import only into `agency_platform_accounts`, preserving Agency Clients as manual entities.
-- Simplified Agency Clients page to manual client CRUD/list only.
-- Added Agency Accounts cards + Google account attachment workflow in the sidebar, under core agency navigation.
-- Attach-to-client dropdown now inherently uses `/clients` data only (manual Agency Clients), excluding imported ad accounts.
+- Added strict manual/client separation by introducing a persisted `source` marker on `agency_clients`, and listing/updating only `source = manual` in Agency Clients workflows.
+- Added legacy cleanup step to mark prior auto-imported Google rows as `imported` so they disappear from Agency Clients visualization.
+- Sidebar now contains only navigation entries; platform cards were removed and replaced with a single `Agency Accounts` menu item.
+- Added dedicated `/agency-accounts` page containing platform cards and Google imported accounts list with attach-to-client dropdown.
+- Attach dropdown sources only `/clients` records, so only manual Agency Clients are selectable for mapping.
+- Google account naming remains descriptive-name first, then ID fallback (no `Google Account [ID]` synthetic prefix).
+
