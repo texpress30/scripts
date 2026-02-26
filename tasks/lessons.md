@@ -26,3 +26,5 @@
 - 2026-02-26: For navigation refactors, never embed data-heavy feature panels directly in sidebar; add a dedicated route/page and keep sidebar to menu items only unless explicitly requested otherwise.
 
 - 2026-02-26: When introducing alias/compatibility endpoints, verify they use the same naming/data-shaping path as primary endpoints; stale alias logic can silently reintroduce deprecated UI values.
+
+- 2026-02-26: For attach/mapping dropdowns, always use controlled component values derived from persisted backend state; never reset to placeholder after successful save.

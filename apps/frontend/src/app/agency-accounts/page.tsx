@@ -112,6 +112,17 @@ export default function AgencyAccountsPage() {
 
   const selectedSummary = useMemo(() => summary.find((item) => item.platform === selectedPlatform), [summary, selectedPlatform]);
 
+  const attachedClientByCustomerId = useMemo(() => {
+    const map = new Map<string, ClientRecord>();
+    for (const client of clients) {
+      const customerId = client.google_customer_id?.trim();
+      if (customerId) {
+        map.set(customerId, client);
+      }
+    }
+    return map;
+  }, [clients]);
+
   return (
     <ProtectedPage>
       <AppShell title="Agency Accounts">
@@ -151,20 +162,22 @@ export default function AgencyAccountsPage() {
                       <div>
                         <p className="text-sm font-medium text-slate-900">{account.name}</p>
                         <p className="text-xs text-slate-500">ID: {account.id}</p>
+                        {attachedClientByCustomerId.get(account.id) ? (
+                          <p className="text-xs text-emerald-700">Atașat la: {attachedClientByCustomerId.get(account.id)?.name}</p>
+                        ) : null}
                       </div>
                       <div className="flex items-center gap-2">
                         <select
                           className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+                          value={attachedClientByCustomerId.get(account.id)?.id?.toString() ?? ""}
                           onChange={(event) => {
                             const value = Number(event.target.value);
                             if (value > 0) {
                               void attachGoogleAccount(value, account.id);
-                              event.currentTarget.value = "";
                             }
                           }}
-                          defaultValue=""
                         >
-                          <option value="" disabled>
+                          <option value="">
                             Atașează la client...
                           </option>
                           {clients.map((client) => (
