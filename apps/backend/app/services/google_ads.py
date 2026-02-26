@@ -362,7 +362,7 @@ class GoogleAdsService:
         refresh_token = str(token_payload["refresh_token"])
         self._runtime_refresh_token = refresh_token
 
-        accessible_customers = self.list_accessible_customers()
+        accessible_customers = [item["id"] for item in self.list_accessible_customer_accounts()]
         return {
             "status": "connected",
             "refresh_token": refresh_token,
@@ -370,7 +370,7 @@ class GoogleAdsService:
             "persist_instruction": "Set GOOGLE_ADS_REFRESH_TOKEN in Railway using refresh_token from this response.",
         }
 
-    def list_accessible_customers(self) -> list[str]:
+    def list_accessible_customer_accounts(self) -> list[dict[str, str]]:
         if not self._is_production_mode():
             return []
 
@@ -436,24 +436,28 @@ class GoogleAdsService:
                     if isinstance(result_rows, list):
                         rows.extend([item for item in result_rows if isinstance(item, dict)])
 
-                account_ids: list[str] = []
+                account_items: list[dict[str, str]] = []
                 for row in rows:
                     customer_client = row.get("customerClient", {})
                     if not isinstance(customer_client, dict):
                         continue
                     cid = str(customer_client.get("id", "")).strip()
-                    if cid and cid not in account_ids:
-                        account_ids.append(cid)
+                    if not cid:
+                        continue
+                    descriptive_name = str(customer_client.get("descriptiveName", "")).strip() or cid
+                    if any(item["id"] == cid for item in account_items):
+                        continue
+                    account_items.append({"id": cid, "name": descriptive_name})
 
-                if manager_customer_id not in account_ids:
-                    account_ids.insert(0, manager_customer_id)
+                if not any(item["id"] == manager_customer_id for item in account_items):
+                    account_items.insert(0, {"id": manager_customer_id, "name": manager_customer_id})
                 logger.info(
                     "Google Ads manager discovery succeeded using operation=%s version=%s count=%s",
                     operation["name"],
                     api_version,
-                    len(account_ids),
+                    len(account_items),
                 )
-                return account_ids
+                return account_items
             except GoogleAdsIntegrationError as exc:
                 last_error = exc
                 if "status=404" in str(exc):
@@ -472,7 +476,10 @@ class GoogleAdsService:
                 f"Last error: {last_error}"
             ) from last_error
 
-        return [manager_customer_id]
+        return [{"id": manager_customer_id, "name": manager_customer_id}]
+
+    def list_accessible_customers(self) -> list[str]:
+        return [item["id"] for item in self.list_accessible_customer_accounts()]
 
     def get_recommended_customer_id_for_client(self, client_id: int) -> str | None:
         if client_id <= 0:

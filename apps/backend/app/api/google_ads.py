@@ -82,7 +82,7 @@ def google_ads_oauth_exchange(
 def list_google_accounts(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="integrations:status", scope="agency")
     try:
-        accounts = google_ads_service.list_accessible_customers()
+        accounts = google_ads_service.list_accessible_customer_accounts()
     except GoogleAdsIntegrationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -93,31 +93,18 @@ def list_google_accounts(user: AuthUser = Depends(get_current_user)) -> dict[str
         resource="integration:google_ads",
         details={"count": len(accounts)},
     )
-    items = [{"id": account_id, "name": "OMA-Test 2" if account_id == "7563058696" else f"Google Account {account_id}"} for account_id in accounts]
-    return {"items": items, "count": len(items)}
+    return {"items": accounts, "count": len(accounts)}
 
 
 @router.post("/import-accounts")
 def import_google_accounts(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
     try:
-        customer_ids = google_ads_service.list_accessible_customers()
+        accounts = google_ads_service.list_accessible_customer_accounts()
     except GoogleAdsIntegrationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    created: list[dict[str, str | int]] = []
-    existing = client_registry_service.list_clients()
-    existing_names = {str(item["name"]).strip().lower() for item in existing}
-
-    imported_accounts: list[dict[str, str]] = []
-    for customer_id in customer_ids:
-        synthetic_name = "OMA-Test 2" if customer_id == "7563058696" else f"Google Account {customer_id}"
-        imported_accounts.append({"id": customer_id, "name": synthetic_name})
-        if synthetic_name.lower() in existing_names:
-            continue
-        record = client_registry_service.create_client(name=synthetic_name, owner_email=user.email)
-        created.append(record)
-        existing_names.add(synthetic_name.lower())
+    imported_accounts = [{"id": item["id"], "name": item["name"]} for item in accounts]
 
     client_registry_service.upsert_platform_accounts(platform="google_ads", accounts=imported_accounts)
 
@@ -126,14 +113,14 @@ def import_google_accounts(user: AuthUser = Depends(get_current_user)) -> dict[s
         actor_role=user.role,
         action="google_ads.import_accounts",
         resource="integration:google_ads",
-        details={"imported": len(created), "accessible": len(customer_ids)},
+        details={"imported": len(imported_accounts), "accessible": len(imported_accounts)},
     )
 
     return {
         "status": "ok",
-        "accessible_customers": customer_ids,
-        "imported_clients": created,
-        "imported_count": len(created),
+        "accessible_customers": [item["id"] for item in imported_accounts],
+        "imported_accounts": imported_accounts,
+        "imported_count": len(imported_accounts),
         "last_import_at": client_registry_service.get_last_import_at(platform="google_ads"),
     }
 

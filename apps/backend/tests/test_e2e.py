@@ -247,12 +247,15 @@ class E2EFlowTests(unittest.TestCase):
         headers = self._auth_header()
 
         from app.services.google_ads import google_ads_service
-        original = google_ads_service.list_accessible_customers
+        original = google_ads_service.list_accessible_customer_accounts
         try:
-            google_ads_service.list_accessible_customers = lambda: ["3908678909", "1234567890"]
+            google_ads_service.list_accessible_customer_accounts = lambda: [
+                {"id": "3908678909", "name": "Account 3908678909"},
+                {"id": "1234567890", "name": "Account 1234567890"},
+            ]
             response = self.client.get("/integrations/google-ads/accounts", headers=headers)
         finally:
-            google_ads_service.list_accessible_customers = original
+            google_ads_service.list_accessible_customer_accounts = original
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["count"], 2)

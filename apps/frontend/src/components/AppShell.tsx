@@ -25,6 +25,26 @@ import { isPinterestIntegrationEnabled, isSnapchatIntegrationEnabled, isTikTokIn
 import { cn } from "@/lib/utils";
 
 type ClientItem = { id: number; name: string; owner_email: string };
+type AccountSummaryItem = { platform: string; connected_count: number; last_import_at?: string | null };
+type GoogleAccount = { id: string; name: string };
+
+function prettyPlatform(platform: string): string {
+  const map: Record<string, string> = {
+    google_ads: "Google Ads",
+    meta_ads: "Meta Ads",
+    tiktok_ads: "TikTok Ads",
+    pinterest_ads: "Pinterest Ads",
+    snapchat_ads: "Snapchat Ads",
+  };
+  return map[platform] ?? platform;
+}
+
+function formatDate(value?: string | null): string {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+}
 
 function getNavItems(pathname: string) {
   const subMatch = pathname.match(/^\/sub\/(\d+)/);
@@ -73,6 +93,10 @@ export function AppShell({
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [clients, setClients] = useState<ClientItem[]>([]);
+  const [accountSummary, setAccountSummary] = useState<AccountSummaryItem[]>([]);
+  const [selectedPlatform, setSelectedPlatform] = useState<string>("google_ads");
+  const [googleAccounts, setGoogleAccounts] = useState<GoogleAccount[]>([]);
+  const [attachStatus, setAttachStatus] = useState("");
 
   const subMatch = pathname.match(/^\/sub\/(\d+)/);
   const currentSubId = subMatch ? Number(subMatch[1]) : null;
@@ -97,11 +121,55 @@ export function AppShell({
     };
   }, []);
 
+
+  useEffect(() => {
+    let ignore = false;
+    async function loadAccounts() {
+      try {
+        const summary = await apiRequest<{ items: AccountSummaryItem[] }>("/clients/accounts/summary");
+        const google = await apiRequest<{ items: GoogleAccount[] }>("/clients/accounts/google");
+        if (!ignore) {
+          setAccountSummary(summary.items);
+          setGoogleAccounts(google.items);
+        }
+      } catch {
+        if (!ignore) {
+          setAccountSummary([]);
+          setGoogleAccounts([]);
+        }
+      }
+    }
+
+    if (!currentSubId) {
+      void loadAccounts();
+    }
+    return () => {
+      ignore = true;
+    };
+  }, [currentSubId]);
+
+  async function attachGoogleAccount(clientId: number, customerId: string) {
+    setAttachStatus("");
+    try {
+      await apiRequest(`/clients/${clientId}/attach-google-account`, {
+        method: "POST",
+        body: JSON.stringify({ customer_id: customerId }),
+      });
+      setAttachStatus(`Contul ${customerId} a fost atașat clientului #${clientId}.`);
+      const result = await apiRequest<{ items: ClientItem[] }>("/clients");
+      setClients(result.items);
+    } catch (err) {
+      setAttachStatus(err instanceof Error ? err.message : "Nu am putut atașa contul Google");
+    }
+  }
+
   const filteredClients = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return clients;
     return clients.filter((c) => c.name.toLowerCase().includes(query) || String(c.id).includes(query));
   }, [clients, search]);
+
+  const selectedSummary = useMemo(() => accountSummary.find((item) => item.platform === selectedPlatform), [accountSummary, selectedPlatform]);
 
   const currentTitle = useMemo(() => {
     if (!currentSubId) return "Agency MCC";
@@ -186,6 +254,73 @@ export function AppShell({
             </Link>
           );
         })}
+
+
+        {!currentSubId ? (
+          <section className="mt-3 space-y-3">
+            <p className="px-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Agency Accounts</p>
+            <div className="grid grid-cols-1 gap-2 px-3">
+              {accountSummary.map((item) => {
+                const active = item.platform === selectedPlatform;
+                return (
+                  <button
+                    key={item.platform}
+                    onClick={() => setSelectedPlatform(item.platform)}
+                    className={cn(
+                      "rounded-lg border px-3 py-2 text-left text-xs transition",
+                      active
+                        ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950/40 dark:text-indigo-300"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                    )}
+                  >
+                    <p className="font-semibold">{prettyPlatform(item.platform)}</p>
+                    <p>Conturi: {item.connected_count}</p>
+                    <p>Import: {formatDate(item.last_import_at)}</p>
+                  </button>
+                );
+              })}
+            </div>
+
+            {selectedPlatform === "google_ads" ? (
+              <div className="px-3">
+                <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Ultimul import: {formatDate(selectedSummary?.last_import_at)}</p>
+                  {attachStatus ? <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-400">{attachStatus}</p> : null}
+                  <div className="mt-2 max-h-56 space-y-2 overflow-auto">
+                    {googleAccounts.map((account) => (
+                      <div key={account.id} className="rounded-md border border-slate-200 px-2 py-2 dark:border-slate-700">
+                        <p className="text-xs font-medium text-slate-900 dark:text-slate-100">{account.name}</p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">ID: {account.id}</p>
+                        <select
+                          className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-800"
+                          onChange={(event) => {
+                            const value = Number(event.target.value);
+                            if (value > 0) {
+                              void attachGoogleAccount(value, account.id);
+                              event.currentTarget.value = "";
+                            }
+                          }}
+                          defaultValue=""
+                        >
+                          <option value="" disabled>
+                            Atașează la client...
+                          </option>
+                          {clients.map((client) => (
+                            <option key={client.id} value={client.id}>
+                              #{client.id} {client.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                    {googleAccounts.length === 0 ? <p className="text-xs text-slate-500 dark:text-slate-400">Nu există conturi importate.</p> : null}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
       </nav>
 
       <div className="space-y-1 border-t border-slate-200 px-3 py-4 dark:border-slate-700">

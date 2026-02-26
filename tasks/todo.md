@@ -1,19 +1,16 @@
-# TODO — Agency connected-state UX + persistent accounts/client mapping
+# TODO — Agency Clients manual-only + sidebar accounts restructure
 
-- [x] Persist Agency Clients data in Postgres so records survive deploy/restart.
-- [x] Add Google account import metadata persistence (last import timestamp + imported account registry).
-- [x] Update Integrations UI to show active Google connected state and persistent last-import info.
-- [x] Add Agency Accounts section under Agency Clients with platform cards and Google account attach workflow.
-- [x] Wire Google customer mapping to client registry so Sub-Account sync can use attached Google account IDs.
-- [x] Apply account naming override: `7563058696` -> `OMA-Test 2`.
-- [x] Run backend/frontend checks and produce screenshot evidence.
-- [x] Commit and create PR.
+- [x] Sync local workspace with latest main snapshot (remote unavailable in this environment; proceeded from clean local main state).
+- [x] Ensure Google account import updates only Agency platform account registry (no auto-created Agency Clients).
+- [x] Use Google Ads descriptive account names for all imported/listed accounts.
+- [x] Move Agency Accounts UI from Agency Clients page into AppShell sidebar under Agency Clients navigation.
+- [x] Keep attach dropdown scoped to manually created Agency Clients.
+- [x] Run targeted backend/frontend checks.
+- [x] Commit and open PR.
 
 ## Review
-- Implemented persistent `agency_clients`, `agency_platform_accounts`, and `agency_platform_imports` tables with in-memory test fallback.
-- Google import now upserts imported accounts + last import timestamp and exposes metadata to UI.
-- Integrations page now fetches Google status on load and clearly displays connected state, connected account count, and last import time.
-- Agency Clients now includes a new Agency Accounts section with platform cards; Google card lists available accounts and allows attaching an account to an existing client.
-- Google mapping is now resolved from persisted client registry before env CSV fallback, so sub-account sync uses attached account IDs.
-- Added naming override for account `7563058696` to display as `OMA-Test 2` in imported/listed accounts.
-- Captured updated Agency Clients screenshot artifact.
+- Refactored Google account discovery to return `{id, name}` account objects and use `descriptive_name` globally when available.
+- Updated Google endpoints to expose real account names and to import only into `agency_platform_accounts`, preserving Agency Clients as manual entities.
+- Simplified Agency Clients page to manual client CRUD/list only.
+- Added Agency Accounts cards + Google account attachment workflow in the sidebar, under core agency navigation.
+- Attach-to-client dropdown now inherently uses `/clients` data only (manual Agency Clients), excluding imported ad accounts.

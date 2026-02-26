@@ -20,3 +20,5 @@
 - 2026-02-25: `customers:listAccessibleCustomers` is a GET contract in Google Ads REST; send no body and avoid introducing POST regressions when debugging 404s.
 - 2026-02-25: For Google Ads API version drift issues, avoid hardcoding version segments in URLs; always build paths from `GOOGLE_ADS_API_VERSION` and keep default on latest stable version (currently v23).
 - 2026-02-25: Agency Integrations must explicitly fetch and display backend connection status + last import metadata on page load; success state should not rely on transient callback messages.
+
+- 2026-02-26: In agency client management, never auto-create Agency Clients from imported ad-platform accounts; keep imports only in platform account registry and allow attachment only to manually created agency clients.
