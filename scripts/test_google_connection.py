@@ -27,7 +27,7 @@ def main() -> int:
     os.environ.setdefault("GOOGLE_ADS_REDIRECT_URI", "https://app.example.com/agency/integrations/google/callback")
     os.environ.setdefault("GOOGLE_ADS_REFRESH_TOKEN", "debug-refresh-token")
     os.environ.setdefault("GOOGLE_ADS_MANAGER_CUSTOMER_ID", "3986597205")
-    os.environ.setdefault("GOOGLE_ADS_API_VERSION", "v18")
+    os.environ.setdefault("GOOGLE_ADS_API_VERSION", "v23")
 
     original_http = google_ads_service._http_json
     original_preflight = google_ads_service._list_accessible_customers_via_http

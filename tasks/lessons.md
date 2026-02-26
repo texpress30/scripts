@@ -18,3 +18,4 @@
 - 2026-02-25: When Google Ads accessible-customers still returns 404, test POST `v18/customers:listAccessibleCustomers` with explicit bearer + developer-token and log full response headers for endpoint/version clues.
 - 2026-02-25: Do not override verified Google Ads endpoint verbs from docs under pressure; `customers:listAccessibleCustomers` must remain GET with no request body.
 - 2026-02-25: `customers:listAccessibleCustomers` is a GET contract in Google Ads REST; send no body and avoid introducing POST regressions when debugging 404s.
+- 2026-02-25: For Google Ads API version drift issues, avoid hardcoding version segments in URLs; always build paths from `GOOGLE_ADS_API_VERSION` and keep default on latest stable version (currently v23).

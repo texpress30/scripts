@@ -1,15 +1,14 @@
-# TODO — Fix Google Ads listAccessibleCustomers verb + version check
+# TODO — Google Ads API version upgrade and de-hardcode URL
 
-- [x] Change `customers:listAccessibleCustomers` preflight back to HTTP GET with no body.
-- [x] Ensure `_http_json` usage sends `payload=None` for GET in discovery flow.
-- [x] Update tests and debug script expectations from POST to GET.
-- [x] Verify Google Ads API sunset status for v18 from official docs and document finding.
-- [x] Run targeted tests/checks.
+- [x] Replace hardcoded `v18` in accessible-customers URL with dynamic `self._google_api_version()` path.
+- [x] Update default Google Ads API version to `v23` in config/service fallbacks.
+- [x] Update tests/scripts expecting previous default/API version.
+- [x] Run targeted backend tests and debug script.
 - [x] Commit and create PR.
 
 ## Review
-- Reverted preflight discovery to `GET https://googleads.googleapis.com/v18/customers:listAccessibleCustomers` with `Authorization` + `developer-token`, and no body (`payload=None`).
-- Kept manager customer-specific queries on POST with `login-customer-id`.
-- Added/kept Google error logging that includes `response_headers` for endpoint/version diagnostics.
-- Updated tests and debug script to assert/reflect GET for accessible-customer preflight.
-- Checked official sunset docs page; page content in this environment includes `v22` references and no visible `v18` marker, so default API version was moved from `v18` to `v22` (while env override remains supported).
+- `customers:listAccessibleCustomers` URL now uses `_build_google_ads_url(self._google_api_version(), ...)`, eliminating hardcoded version segments.
+- Default Google Ads API version is now `v23` in both config env defaults and service fallback path.
+- Tests and debug script were updated to reflect v23 behavior and dynamic URL construction.
+- Validation confirms backend tests pass and debug script now hits v23 manager search URL.
+- Sunset-doc probe in this environment shows `v23` marker present and no `v18` marker in fetched page content.

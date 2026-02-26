@@ -145,7 +145,7 @@ class ServiceTests(unittest.TestCase):
         os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://app.example.com/agency/integrations/google/callback"
         os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
         os.environ["GOOGLE_ADS_MANAGER_CUSTOMER_ID"] = "3908678909"
-        os.environ["GOOGLE_ADS_API_VERSION"] = "v18"
+        os.environ["GOOGLE_ADS_API_VERSION"] = "v23"
 
         original_token = google_ads_service._access_token_from_refresh
         original_http = google_ads_service._http_json
@@ -172,7 +172,7 @@ class ServiceTests(unittest.TestCase):
 
         self.assertEqual(result, ["3908678909", "1111111111", "2222222222"])
         self.assertEqual(calls[0][0], "POST")
-        self.assertIn("/v18/customers/3908678909/googleAds:searchStream", calls[0][1])
+        self.assertIn("/v23/customers/3908678909/googleAds:searchStream", calls[0][1])
         self.assertEqual(captured_headers.get("login-customer-id"), "3908678909")
         self.assertEqual(captured_headers.get("developer-token"), "dev-token-123456")
 
@@ -184,7 +184,7 @@ class ServiceTests(unittest.TestCase):
         os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://app.example.com/agency/integrations/google/callback"
         os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
         os.environ["GOOGLE_ADS_MANAGER_CUSTOMER_ID"] = "3908678909"
-        os.environ["GOOGLE_ADS_API_VERSION"] = "v18"
+        os.environ["GOOGLE_ADS_API_VERSION"] = "v23"
 
         original_token = google_ads_service._access_token_from_refresh
         original_http = google_ads_service._http_json
@@ -219,7 +219,7 @@ class ServiceTests(unittest.TestCase):
         os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://app.example.com/agency/integrations/google/callback"
         os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
         os.environ["GOOGLE_ADS_MANAGER_CUSTOMER_ID"] = "3908678909"
-        os.environ["GOOGLE_ADS_API_VERSION"] = "v18"
+        os.environ["GOOGLE_ADS_API_VERSION"] = "v23"
 
         original_token = google_ads_service._access_token_from_refresh
         original_http = google_ads_service._http_json
@@ -240,7 +240,7 @@ class ServiceTests(unittest.TestCase):
             google_ads_service._http_json = original_http
             google_ads_service._list_accessible_customers_via_http = original_preflight
 
-        self.assertTrue(all("/v18/" in call for call in calls))
+        self.assertTrue(all("/v23/" in call for call in calls))
         self.assertEqual(result, ["3908678909", "3333333333"])
 
     def test_google_ads_list_accessible_customers_fails_when_service_accessible_empty(self):
@@ -251,7 +251,7 @@ class ServiceTests(unittest.TestCase):
         os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://app.example.com/agency/integrations/google/callback"
         os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
         os.environ["GOOGLE_ADS_MANAGER_CUSTOMER_ID"] = "3908678909"
-        os.environ["GOOGLE_ADS_API_VERSION"] = "v18"
+        os.environ["GOOGLE_ADS_API_VERSION"] = "v23"
 
         original_token = google_ads_service._access_token_from_refresh
         original_preflight = google_ads_service._list_accessible_customers_via_http
@@ -265,8 +265,8 @@ class ServiceTests(unittest.TestCase):
             google_ads_service._list_accessible_customers_via_http = original_preflight
 
     def test_google_ads_api_version_normalizes_numeric_input(self):
-        os.environ["GOOGLE_ADS_API_VERSION"] = "18"
-        self.assertEqual(google_ads_service._google_api_version(), "v18")
+        os.environ["GOOGLE_ADS_API_VERSION"] = "23"
+        self.assertEqual(google_ads_service._google_api_version(), "v23")
 
     def test_google_ads_list_accessible_customers_http_preflight_uses_get_and_required_headers(self):
         os.environ["GOOGLE_ADS_MODE"] = "production"
@@ -288,7 +288,7 @@ class ServiceTests(unittest.TestCase):
             google_ads_service._http_json = original_http
 
         self.assertEqual(captured.get("method"), "GET")
-        self.assertEqual(captured.get("url"), "https://googleads.googleapis.com/v18/customers:listAccessibleCustomers")
+        self.assertEqual(captured.get("url"), "https://googleads.googleapis.com/v23/customers:listAccessibleCustomers")
         self.assertIsNone(captured.get("payload"))
         headers = captured.get("headers", {})
         self.assertEqual(headers.get("Authorization"), "Bearer ya29.token")
@@ -349,7 +349,7 @@ class ServiceTests(unittest.TestCase):
         os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
         os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token-123456"
         os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
-        os.environ["GOOGLE_ADS_API_VERSION"] = "v18"
+        os.environ["GOOGLE_ADS_API_VERSION"] = "v23"
 
         module = __import__("app.services.google_ads", fromlist=["GoogleAdsClient"])
         original_client = module.GoogleAdsClient
@@ -369,7 +369,7 @@ class ServiceTests(unittest.TestCase):
         finally:
             module.GoogleAdsClient = original_client
 
-        self.assertEqual(str(captured["version"]), "v18")
+        self.assertEqual(str(captured["version"]), "v23")
         config = captured["config"]
         self.assertEqual(config["developer_token"], "dev-token-123456")
         self.assertEqual(config["oauth2_refresh_token"], "refresh-token")
@@ -382,7 +382,7 @@ class ServiceTests(unittest.TestCase):
         os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://app.example.com/agency/integrations/google/callback"
         os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
         os.environ["GOOGLE_ADS_MANAGER_CUSTOMER_ID"] = "398-659-7205"
-        os.environ["GOOGLE_ADS_API_VERSION"] = "v18"
+        os.environ["GOOGLE_ADS_API_VERSION"] = "v23"
 
         original_token = google_ads_service._access_token_from_refresh
         original_http = google_ads_service._http_json

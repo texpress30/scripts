@@ -104,7 +104,7 @@ def load_settings() -> Settings:
         google_ads_redirect_uri=_get_env("GOOGLE_ADS_REDIRECT_URI", default=""),
         google_ads_refresh_token=_get_env("GOOGLE_ADS_REFRESH_TOKEN", default=""),
         google_ads_customer_ids_csv=_get_env("GOOGLE_ADS_CUSTOMER_IDS_CSV", default=""),
-        google_ads_api_version=_get_env("GOOGLE_ADS_API_VERSION", default="v22"),
+        google_ads_api_version=_get_env("GOOGLE_ADS_API_VERSION", default="v23"),
         meta_access_token=_get_env("META_ACCESS_TOKEN", default=""),
         bigquery_project_id=_get_env("BIGQUERY_PROJECT_ID", default=""),
         database_url=_get_env("DATABASE_URL", default="postgresql://postgres:postgres@localhost:5432/mcc"),
