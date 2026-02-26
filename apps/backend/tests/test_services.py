@@ -268,7 +268,7 @@ class ServiceTests(unittest.TestCase):
         os.environ["GOOGLE_ADS_API_VERSION"] = "18"
         self.assertEqual(google_ads_service._google_api_version(), "v18")
 
-    def test_google_ads_list_accessible_customers_http_preflight_uses_post_and_required_headers(self):
+    def test_google_ads_list_accessible_customers_http_preflight_uses_get_and_required_headers(self):
         os.environ["GOOGLE_ADS_MODE"] = "production"
         os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token-123456"
 
@@ -287,9 +287,9 @@ class ServiceTests(unittest.TestCase):
         finally:
             google_ads_service._http_json = original_http
 
-        self.assertEqual(captured.get("method"), "POST")
+        self.assertEqual(captured.get("method"), "GET")
         self.assertEqual(captured.get("url"), "https://googleads.googleapis.com/v18/customers:listAccessibleCustomers")
-        self.assertEqual(captured.get("payload"), {})
+        self.assertIsNone(captured.get("payload"))
         headers = captured.get("headers", {})
         self.assertEqual(headers.get("Authorization"), "Bearer ya29.token")
         self.assertEqual(headers.get("developer-token"), "dev-token-123456")

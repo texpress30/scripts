@@ -35,7 +35,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.google_ads_redirect_uri, "")
         self.assertEqual(settings.google_ads_refresh_token, "")
         self.assertEqual(settings.google_ads_customer_ids_csv, "")
-        self.assertEqual(settings.google_ads_api_version, "v18")
+        self.assertEqual(settings.google_ads_api_version, "v22")
         self.assertEqual(settings.meta_access_token, "")
         self.assertEqual(settings.bigquery_project_id, "")
         self.assertFalse(settings.ff_tiktok_integration)

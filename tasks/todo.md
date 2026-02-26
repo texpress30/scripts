@@ -1,14 +1,15 @@
-# TODO — Google Ads listAccessibleCustomers POST debug change
+# TODO — Fix Google Ads listAccessibleCustomers verb + version check
 
-- [x] Change list-accessible call to POST with required headers and empty body.
-- [x] Ensure URL is sanitized and log response headers on HTTP failures.
-- [x] Update tests/debug script expectations for POST behavior.
-- [x] Run targeted checks.
+- [x] Change `customers:listAccessibleCustomers` preflight back to HTTP GET with no body.
+- [x] Ensure `_http_json` usage sends `payload=None` for GET in discovery flow.
+- [x] Update tests and debug script expectations from POST to GET.
+- [x] Verify Google Ads API sunset status for v18 from official docs and document finding.
+- [x] Run targeted tests/checks.
 - [x] Commit and create PR.
 
 ## Review
-- Updated preflight account discovery to `POST https://googleads.googleapis.com/v18/customers:listAccessibleCustomers` with `Authorization` and `developer-token` headers and `{}` payload.
-- URL is sanitized using `.strip()` before request dispatch.
-- Added response-header diagnostics to Google Ads HTTP error logging and propagated headers in raised integration errors.
-- Added a focused unit test validating POST method, URL, payload, and required headers (without `login-customer-id`) for preflight call.
-- Updated debug script output text to reflect POST preflight behavior.
+- Reverted preflight discovery to `GET https://googleads.googleapis.com/v18/customers:listAccessibleCustomers` with `Authorization` + `developer-token`, and no body (`payload=None`).
+- Kept manager customer-specific queries on POST with `login-customer-id`.
+- Added/kept Google error logging that includes `response_headers` for endpoint/version diagnostics.
+- Updated tests and debug script to assert/reflect GET for accessible-customer preflight.
+- Checked official sunset docs page; page content in this environment includes `v22` references and no visible `v18` marker, so default API version was moved from `v18` to `v22` (while env override remains supported).

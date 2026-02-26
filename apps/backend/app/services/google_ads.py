@@ -37,7 +37,7 @@ class GoogleAdsService:
 
     def _google_api_version(self) -> str:
         settings = load_settings()
-        raw = settings.google_ads_api_version.strip().lower() or "v18"
+        raw = settings.google_ads_api_version.strip().lower() or "v22"
         if raw.startswith("v"):
             return raw
         if raw.isdigit():
@@ -124,9 +124,9 @@ class GoogleAdsService:
         settings = load_settings()
         url = "https://googleads.googleapis.com/v18/customers:listAccessibleCustomers".strip()
         payload = self._http_json(
-            method="POST",
+            method="GET",
             url=url,
-            payload={},
+            payload=None,
             headers={
                 "Authorization": f"Bearer {access_token}",
                 "developer-token": settings.google_ads_developer_token,
