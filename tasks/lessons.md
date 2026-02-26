@@ -24,3 +24,5 @@
 - 2026-02-26: In agency client management, never auto-create Agency Clients from imported ad-platform accounts; keep imports only in platform account registry and allow attachment only to manually created agency clients.
 
 - 2026-02-26: For navigation refactors, never embed data-heavy feature panels directly in sidebar; add a dedicated route/page and keep sidebar to menu items only unless explicitly requested otherwise.
+
+- 2026-02-26: When introducing alias/compatibility endpoints, verify they use the same naming/data-shaping path as primary endpoints; stale alias logic can silently reintroduce deprecated UI values.

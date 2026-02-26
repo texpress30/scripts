@@ -55,6 +55,7 @@ export default function AgencyAccountsPage() {
   const [selectedPlatform, setSelectedPlatform] = useState<string>("google_ads");
   const [googleAccounts, setGoogleAccounts] = useState<GoogleAccount[]>([]);
   const [attachStatus, setAttachStatus] = useState("");
+  const [refreshBusy, setRefreshBusy] = useState(false);
 
   async function loadClients() {
     const payload = await apiRequest<ClientsResponse>("/clients");
@@ -91,6 +92,24 @@ export default function AgencyAccountsPage() {
     }
   }
 
+
+  async function refreshGoogleAccountNames() {
+    setAttachStatus("");
+    setRefreshBusy(true);
+    try {
+      const payload = await apiRequest<{ refreshed_count: number }>("/integrations/google-ads/refresh-account-names", {
+        method: "POST",
+      });
+      setAttachStatus(`Au fost actualizate ${payload.refreshed_count} conturi Google.`);
+      await loadAccountSummary();
+      await loadGoogleAccounts();
+    } catch (err) {
+      setAttachStatus(err instanceof Error ? err.message : "Nu am putut actualiza numele conturilor Google");
+    } finally {
+      setRefreshBusy(false);
+    }
+  }
+
   const selectedSummary = useMemo(() => summary.find((item) => item.platform === selectedPlatform), [summary, selectedPlatform]);
 
   return (
@@ -118,7 +137,12 @@ export default function AgencyAccountsPage() {
 
             {selectedPlatform === "google_ads" ? (
               <div className="mt-4 wm-card p-4">
-                <h3 className="text-base font-semibold text-slate-900">Google Accounts disponibile</h3>
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-base font-semibold text-slate-900">Google Accounts disponibile</h3>
+                  <button className="wm-btn" onClick={() => void refreshGoogleAccountNames()} disabled={refreshBusy}>
+                    {refreshBusy ? "Refresh..." : "Refresh Names"}
+                  </button>
+                </div>
                 <p className="mt-1 text-xs text-slate-500">Ultimul import: {formatDate(selectedSummary?.last_import_at)}</p>
                 {attachStatus ? <p className="mt-2 text-xs text-emerald-700">{attachStatus}</p> : null}
                 <div className="mt-3 space-y-2">

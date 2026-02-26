@@ -125,6 +125,30 @@ def import_google_accounts(user: AuthUser = Depends(get_current_user)) -> dict[s
     }
 
 
+@router.post("/refresh-account-names")
+def refresh_google_account_names(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    try:
+        accounts = google_ads_service.list_accessible_customer_accounts()
+    except GoogleAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    refreshed_accounts = [{"id": item["id"], "name": item["name"]} for item in accounts]
+    client_registry_service.upsert_platform_accounts(platform="google_ads", accounts=refreshed_accounts)
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="google_ads.refresh_account_names",
+        resource="integration:google_ads",
+        details={"refreshed": len(refreshed_accounts)},
+    )
+    return {
+        "status": "ok",
+        "refreshed_count": len(refreshed_accounts),
+        "items": refreshed_accounts,
+        "last_import_at": client_registry_service.get_last_import_at(platform="google_ads"),
+    }
 
 
 @router.get("/diagnostics")

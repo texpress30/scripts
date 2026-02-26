@@ -12,7 +12,7 @@ router = APIRouter(prefix="/integrations/google", tags=["google"])
 def list_google_accounts_alias(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="integrations:status", scope="agency")
     try:
-        accounts = google_ads_service.list_accessible_customers()
+        accounts = google_ads_service.list_accessible_customer_accounts()
     except GoogleAdsIntegrationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -23,5 +23,4 @@ def list_google_accounts_alias(user: AuthUser = Depends(get_current_user)) -> di
         resource="integration:google_ads",
         details={"count": len(accounts)},
     )
-    items = [{"id": account_id, "name": "OMA-Test 2" if account_id == "7563058696" else f"Google Account {account_id}"} for account_id in accounts]
-    return {"items": items, "count": len(items)}
+    return {"items": accounts, "count": len(accounts)}

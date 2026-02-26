@@ -77,22 +77,14 @@ class ClientRegistryService:
                     )
                     """
                 )
-                # Legacy cleanup: rows auto-created from import should not appear under manual Agency Clients.
+                # Legacy cleanup: mark only obvious old synthetic imports as imported.
                 cur.execute(
                     """
                     UPDATE agency_clients c
                     SET source = 'imported'
                     WHERE c.source = 'manual'
                       AND c.google_customer_id IS NULL
-                      AND (
-                        c.name LIKE 'Google Account %'
-                        OR EXISTS (
-                            SELECT 1
-                            FROM agency_platform_accounts a
-                            WHERE a.platform = 'google_ads'
-                              AND a.account_name = c.name
-                        )
-                      )
+                      AND c.name LIKE 'Google Account %'
                     """
                 )
             conn.commit()

@@ -1,19 +1,18 @@
-# TODO — Urgent Agency Accounts page + strict manual clients filtering
+# TODO — Fix attach persistence + enforce real Google account names
 
-- [x] Review current navigation and client/account flows (sidebar, Agency Clients, Google import naming/mapping).
-- [x] Backend: enforce manual-only Agency Clients visibility and hide legacy imported accounts from Agency Clients list.
-- [x] Backend: ensure Google account naming uses descriptive_name or fallback ID only (no `Google Account [ID]`).
-- [x] Frontend: remove platform cards from sidebar; add single `Agency Accounts` menu entry between `Agency Clients` and `Agency Audit`.
-- [x] Frontend: create dedicated `/agency-accounts` page containing platform cards + imported accounts list + attach dropdown.
-- [x] Frontend: keep Agency Clients page manual-only (no imported accounts area).
-- [x] Validate with targeted backend tests + frontend build and capture screenshot.
-- [ ] Commit changes and create PR.
+- [x] Execute mandatory workspace sync commands (`git fetch origin`, `git reset --hard origin/main`) and document environment limitations.
+- [x] Diagnose attach mapping persistence path (frontend onChange + backend attach endpoint + registry update query).
+- [x] Fix backend/client registry behavior to ensure manual client attachment persists reliably in Postgres.
+- [x] Remove any remaining synthetic `Google Account [ID]` naming logic from API responses.
+- [x] Add refresh mechanism to overwrite existing imported Google account names with live descriptive names from Google API.
+- [x] Wire refresh action in Agency Accounts UI and revalidate mapping flow.
+- [x] Run backend/frontend validation and capture screenshot.
+- [ ] Commit and create PR.
 
 ## Review
-- Added strict manual/client separation by introducing a persisted `source` marker on `agency_clients`, and listing/updating only `source = manual` in Agency Clients workflows.
-- Added legacy cleanup step to mark prior auto-imported Google rows as `imported` so they disappear from Agency Clients visualization.
-- Sidebar now contains only navigation entries; platform cards were removed and replaced with a single `Agency Accounts` menu item.
-- Added dedicated `/agency-accounts` page containing platform cards and Google imported accounts list with attach-to-client dropdown.
-- Attach dropdown sources only `/clients` records, so only manual Agency Clients are selectable for mapping.
-- Google account naming remains descriptive-name first, then ID fallback (no `Google Account [ID]` synthetic prefix).
-
+- Ran requested sync command; environment has no `origin` remote so fetch/reset cannot be completed here.
+- Fixed alias API route still returning synthetic names by switching it to `list_accessible_customer_accounts()`.
+- Added `POST /integrations/google-ads/refresh-account-names` to refresh persisted names in `agency_platform_accounts` from live Google account discovery.
+- Added utility script `scripts/refresh_google_account_names.py` for operational refresh runs.
+- Updated Agency Accounts page with `Refresh Names` action and reload of summary/account lists.
+- Narrowed legacy source cleanup in client registry to avoid over-marking manual clients, which could block attach persistence.
