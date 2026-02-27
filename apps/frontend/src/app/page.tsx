@@ -37,7 +37,7 @@ export default function HomePage() {
             Intra in platforma
             <ArrowRight className="h-4 w-4" />
           </Link>
-          <Link href="/dashboard" className="premium-btn-secondary inline-flex items-center gap-2">
+          <Link href="/agency/dashboard" className="premium-btn-secondary inline-flex items-center gap-2">
             <BarChart3 className="h-4 w-4" />
             Dashboard
           </Link>

@@ -1,43 +1,210 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.dependencies import get_current_user
+from app.api.dependencies import enforce_action_scope, get_current_user
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
+from app.services.client_registry import client_registry_service
 from app.services.google_ads import GoogleAdsIntegrationError, google_ads_service
 from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
-from app.services.rbac import AuthorizationError, require_permission
 
 router = APIRouter(prefix="/integrations/google-ads", tags=["google-ads"])
 
 
 @router.get("/status")
-def google_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, str]:
+def google_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
-        require_permission(user.role, "clients:read")
+        enforce_action_scope(user=user, action="integrations:status", scope="agency")
         rate_limiter_service.check(f"google_status:{user.email}", limit=60, window_seconds=60)
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
     status_payload = google_ads_service.integration_status()
+    google_accounts = client_registry_service.list_platform_accounts(platform="google_ads")
+    status_payload["connected_accounts_count"] = len(google_accounts)
+    status_payload["last_import_at"] = client_registry_service.get_last_import_at(platform="google_ads")
+
+    diagnostics = google_ads_service.run_diagnostics()
+    status_payload["accounts_found"] = diagnostics.get("accessible_customers_count", 0)
+    status_payload["rows_in_db_last_30_days"] = diagnostics.get("db_rows_last_30_days", 0)
+    status_payload["last_sync_at"] = diagnostics.get("last_sync_at")
+    status_payload["last_error"] = diagnostics.get("last_error")
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
         action="google_ads.status",
         resource="integration:google_ads",
-        details={"status": status_payload["status"]},
+        details={"status": status_payload["status"], "mode": status_payload.get("mode", "mock")},
     )
     return status_payload
 
 
+@router.get("/connect")
+def connect_google_ads(user: AuthUser = Depends(get_current_user)) -> dict[str, str]:
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+    try:
+        payload = google_ads_service.build_oauth_authorize_url()
+    except GoogleAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="google_ads.connect.start",
+        resource="integration:google_ads",
+        details={"state": payload["state"]},
+    )
+    return payload
+
+
+@router.post("/oauth/exchange")
+def google_ads_oauth_exchange(
+    payload: dict[str, str],
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+    code = str(payload.get("code", "")).strip()
+    state = str(payload.get("state", "")).strip()
+    if not code or not state:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing code/state for OAuth exchange")
+
+    try:
+        response_payload = google_ads_service.exchange_oauth_code(code=code, state=state)
+    except GoogleAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="google_ads.connect.success",
+        resource="integration:google_ads",
+        details={"customers": len(response_payload.get("accessible_customers", []))},
+    )
+    return response_payload
+
+
+
+
+@router.get("/accounts")
+def list_google_accounts(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+    try:
+        accounts = google_ads_service.list_accessible_customer_accounts()
+    except GoogleAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="google_ads.accounts.list",
+        resource="integration:google_ads",
+        details={"count": len(accounts)},
+    )
+    return {"items": accounts, "count": len(accounts)}
+
+
+@router.post("/import-accounts")
+def import_google_accounts(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    try:
+        accounts = google_ads_service.list_accessible_customer_accounts()
+    except GoogleAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    imported_accounts = [{"id": item["id"], "name": item["name"]} for item in accounts]
+
+    client_registry_service.upsert_platform_accounts(platform="google_ads", accounts=imported_accounts)
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="google_ads.import_accounts",
+        resource="integration:google_ads",
+        details={"imported": len(imported_accounts), "accessible": len(imported_accounts)},
+    )
+
+    return {
+        "status": "ok",
+        "accessible_customers": [item["id"] for item in imported_accounts],
+        "imported_accounts": imported_accounts,
+        "imported_count": len(imported_accounts),
+        "last_import_at": client_registry_service.get_last_import_at(platform="google_ads"),
+    }
+
+
+@router.post("/refresh-account-names")
+def refresh_google_account_names(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    try:
+        accounts = google_ads_service.list_accessible_customer_accounts()
+    except GoogleAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    refreshed_accounts = [{"id": item["id"], "name": item["name"]} for item in accounts]
+    client_registry_service.upsert_platform_accounts(platform="google_ads", accounts=refreshed_accounts)
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="google_ads.refresh_account_names",
+        resource="integration:google_ads",
+        details={"refreshed": len(refreshed_accounts)},
+    )
+    return {
+        "status": "ok",
+        "refreshed_count": len(refreshed_accounts),
+        "items": refreshed_accounts,
+        "last_import_at": client_registry_service.get_last_import_at(platform="google_ads"),
+    }
+
+
+@router.get("/diagnostics")
+def google_ads_diagnostics(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+    details = google_ads_service.run_diagnostics()
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="google_ads.diagnostics",
+        resource="integration:google_ads",
+        details={"warnings": len(details.get("warnings", []))},
+    )
+    return details
+
+
+
+
+@router.post("/sync-now")
+def sync_google_ads_now(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+
+    accounts = client_registry_service.list_platform_accounts(platform="google_ads")
+    synced: list[dict[str, object]] = []
+    errors: list[dict[str, str]] = []
+
+    for item in accounts:
+        client_id = item.get("attached_client_id")
+        if client_id is None:
+            continue
+        try:
+            snapshot = google_ads_service.sync_client(int(client_id))
+            synced.append({"client_id": int(client_id), "spend": float(snapshot.get("spend", 0.0))})
+        except Exception as exc:  # noqa: BLE001
+            errors.append({"client_id": str(client_id), "error": str(exc)[:300]})
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="google_ads.sync_now",
+        resource="integration:google_ads",
+        details={"synced": len(synced), "errors": len(errors)},
+    )
+
+    return {"status": "ok", "synced": synced, "errors": errors, "accounts_seen": len(accounts)}
 @router.post("/{client_id}/sync")
 def sync_google_ads(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, float | int | str]:
     try:
-        require_permission(user.role, "clients:create")
+        enforce_action_scope(user=user, action="integrations:sync", scope="subaccount")
         rate_limiter_service.check(f"google_sync:{user.email}", limit=30, window_seconds=60)
-    except AuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
