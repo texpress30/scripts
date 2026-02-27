@@ -1,16 +1,15 @@
-# TODO — Settings /storage (Utilizare Stocare Media)
+# TODO — Branding dinamic în Sidebar (Logo & Context Selector)
 
-- [x] Analizez implementarea curentă pentru `/settings/storage` și datele disponibile în backend.
-- [x] Adaug backend pentru listare utilizare stocare per sub-cont din Postgres (căutare + paginare).
-- [x] Extind schema existentă pentru proprietatea `media_storage` la nivel de sub-cont/client.
-- [x] Implementez UI complet în română pentru `/settings/storage` (header, badge, tabel, căutare, paginare).
-- [x] Implementez conversie corectă unități (MB/GB) pe frontend.
-- [x] Rulez verificări backend/frontend și capturez screenshot.
+- [x] Analizez AppShell curent și sursele de date disponibile pentru context Agency/Sub-account.
+- [x] Extind backend client/company payload unde e necesar pentru logo context (agency/sub-account).
+- [x] Implementez secțiunea de branding în partea de sus a sidebar-ului, deasupra selectorului Agency MCC.
+- [x] Aplic logica dinamică: logo agency în Agency View, logo client/sub-cont în Sub-Account View.
+- [x] Rulez verificări (build/test), fac screenshot și finalizez documentarea task/lessons.
 - [x] Commit + PR.
 
 ## Review
-- Am implementat endpoint backend `GET /storage/media-usage` cu RBAC agency scope, căutare și paginare.
-- În `ClientRegistryService` am adăugat proprietatea persistentă `media_storage_bytes` pe `agency_clients` și listare dedicată pentru raportare stocare.
-- Pagina `/settings/storage` a fost reconstruită complet în română, cu card principal, badge număr sub-conturi, căutare live, tabel cu nume+adresă și spațiu utilizat, plus paginare cu selector rânduri/pagină.
-- Conversia unităților este implementată corect: MB implicit, GB când depășește 1024 MB.
-- Screenshot-ul paginii a fost capturat cu succes prin browser tool.
+- Am extins modelul client cu `client_logo_url` în backend (schema, listare, update profil), astfel AppShell poate primi logo specific pe sub-cont.
+- Am adăugat card de branding în vârful sidebar-ului, deasupra selectorului Agency MCC, cu avatar circular, titlu context și locație.
+- Logica de context este dinamică: în Agency View se folosește logo-ul agenției din `/company/settings`; în Sub-Account View se folosește `client_logo_url` (fallback pe inițiale).
+- Contextul este detectat atât pe `/sub/:id/*`, cât și pe `/subaccount/:id/settings/*`, pentru consistență în settings mode.
+- Screenshot-ul nu a putut fi generat în această rulare din cauza crash-ului Playwright Chromium (SIGSEGV) în container.

@@ -47,3 +47,4 @@
 - 2026-02-27: For UI recreation requests, replace placeholder pages with complete section/card hierarchy in one pass (layout + labels + field states + CTA placement) to avoid iterative churn.
 - 2026-02-27: Pentru paginile de settings cerute ca "production-ready", nu livra placeholder-uri frontend-only; implementează în același slice și endpoint-urile backend + persistența Postgres + stări UX (loading/toast/error).
 - 2026-02-27: Pentru paginile de settings cerute după mockuri de referință, livrează UI complet în română (fără texte placeholder precum "Basic View") și conectează direct la date persistente din backend.
+- 2026-02-27: Pentru branding context-aware în sidebar, afișează blocul de branding deasupra selectorului de conturi și derivă contextul din ambele rute (`/sub/:id/*` și `/subaccount/:id/settings/*`) ca să nu pierzi logo-ul în settings mode.

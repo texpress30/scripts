@@ -25,7 +25,8 @@ import { apiRequest } from "@/lib/api";
 import { isPinterestIntegrationEnabled, isSnapchatIntegrationEnabled, isTikTokIntegrationEnabled } from "@/lib/featureFlags";
 import { cn } from "@/lib/utils";
 
-type ClientItem = { id: number; name: string; owner_email: string };
+type ClientItem = { id: number; name: string; owner_email: string; client_logo_url?: string | null };
+type CompanySettings = { logo_url: string; city: string; country: string; company_name: string };
 
 function getNavItems(pathname: string) {
   const subMatch = pathname.match(/^\/sub\/(\d+)/);
@@ -77,12 +78,14 @@ export function AppShell({
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [clients, setClients] = useState<ClientItem[]>([]);
+  const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
 
   const subMatch = pathname.match(/^\/sub\/(\d+)/);
   const currentSubId = subMatch ? Number(subMatch[1]) : null;
 
   const subSettingsMatch = pathname.match(/^\/subaccount\/(\d+)\/settings\//);
   const subSettingsId = subSettingsMatch ? Number(subSettingsMatch[1]) : null;
+  const contextClientId = currentSubId ?? subSettingsId;
 
   const isAgencySettingsMode = pathname.startsWith("/settings/");
   const isSubSettingsMode = pathname.startsWith("/subaccount/") && pathname.includes("/settings/");
@@ -139,6 +142,22 @@ export function AppShell({
     };
   }, []);
 
+  useEffect(() => {
+    let ignore = false;
+    async function loadCompanySettings() {
+      try {
+        const result = await apiRequest<CompanySettings>("/company/settings");
+        if (!ignore) setCompanySettings(result);
+      } catch {
+        if (!ignore) setCompanySettings(null);
+      }
+    }
+    void loadCompanySettings();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
   const filteredClients = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return clients;
@@ -151,6 +170,22 @@ export function AppShell({
     return clients.find((c) => c.id === currentSubId)?.name ?? `Sub-account #${currentSubId}`;
   }, [clients, currentSubId, isSettingsMode]);
 
+  const currentClient = useMemo(() => clients.find((c) => c.id === contextClientId) ?? null, [clients, contextClientId]);
+  const isSubContext = contextClientId !== null || isSubSettingsMode;
+  const brandingTitle = isSubContext ? (currentClient?.name ?? "Sub-cont") : (companySettings?.company_name || "Agency MCC");
+  const brandingSubtitle = isSubContext
+    ? `Locație: ${companySettings?.city || "-"}, ${companySettings?.country || "-"}`
+    : `Locație: ${companySettings?.city || "-"}, ${companySettings?.country || "-"}`;
+  const agencyLogoUrl = companySettings?.logo_url?.trim() || "";
+  const subLogoUrl = currentClient?.client_logo_url?.trim() || "";
+  const brandingLogoUrl = isSubContext ? subLogoUrl : agencyLogoUrl;
+  const brandingInitials = useMemo(() => {
+    const words = brandingTitle.split(" ").filter(Boolean);
+    if (words.length === 0) return "AG";
+    if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+    return `${words[0][0] || ""}${words[1][0] || ""}`.toUpperCase();
+  }, [brandingTitle]);
+
   const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
 
   const settingsEntryHref = currentSubId ? `/subaccount/${currentSubId}/settings/profile` : "/settings/profile";
@@ -158,6 +193,19 @@ export function AppShell({
   const sidebarContent = (
     <div className="flex h-full flex-col">
       <div className="border-b border-slate-200 px-3 py-3 dark:border-slate-700">
+        <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-center dark:border-slate-700 dark:bg-slate-800/50">
+          <div className="mx-auto mb-2 flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-white dark:border-slate-600 dark:bg-slate-900">
+            {brandingLogoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={brandingLogoUrl} alt="Logo context" className="h-full w-full object-cover" />
+            ) : (
+              <span className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">{brandingInitials}</span>
+            )}
+          </div>
+          <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{brandingTitle}</p>
+          <p className="truncate text-xs text-slate-500 dark:text-slate-400">{brandingSubtitle}</p>
+        </div>
+
         {isSettingsMode ? (
           <div className="space-y-2">
             <Link

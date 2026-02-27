@@ -123,6 +123,7 @@ def update_client_profile(
     updated = client_registry_service.update_client_profile_by_display_id(
         display_id=display_id,
         name=payload.name,
+        client_logo_url=payload.client_logo_url,
         client_type=payload.client_type,
         account_manager=payload.account_manager,
         platform=payload.platform,

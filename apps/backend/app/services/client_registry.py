@@ -21,6 +21,7 @@ class ClientRecord:
     source: str = "manual"
     client_type: str = "lead"
     account_manager: str = ""
+    client_logo_url: str = ""
     media_storage_bytes: int = 0
 
 
@@ -70,6 +71,7 @@ class ClientRegistryService:
                 cur.execute("ALTER TABLE agency_clients ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manual'")
                 cur.execute("ALTER TABLE agency_clients ADD COLUMN IF NOT EXISTS client_type TEXT NOT NULL DEFAULT 'lead'")
                 cur.execute("ALTER TABLE agency_clients ADD COLUMN IF NOT EXISTS account_manager TEXT NOT NULL DEFAULT ''")
+                cur.execute("ALTER TABLE agency_clients ADD COLUMN IF NOT EXISTS client_logo_url TEXT NOT NULL DEFAULT ''")
                 cur.execute("ALTER TABLE agency_clients ADD COLUMN IF NOT EXISTS media_storage_bytes BIGINT NOT NULL DEFAULT 0")
                 cur.execute(
                     """
@@ -147,7 +149,7 @@ class ClientRegistryService:
 
         if self._is_test_mode():
             with self._lock:
-                record = ClientRecord(id=self._next_id, name=name, owner_email=owner_email, source="manual", client_type="lead", account_manager="", media_storage_bytes=0)
+                record = ClientRecord(id=self._next_id, name=name, owner_email=owner_email, source="manual", client_type="lead", account_manager="", client_logo_url="", media_storage_bytes=0)
                 self._next_id += 1
                 self._clients.append(record)
                 manual_count = len([c for c in self._clients if c.source == "manual"])
@@ -159,6 +161,7 @@ class ClientRegistryService:
                     "client_type": record.client_type,
                     "account_manager": record.account_manager,
                     "google_customer_id": None,
+                    "client_logo_url": "",
                     "media_storage_bytes": 0,
                 }
 
@@ -168,7 +171,7 @@ class ClientRegistryService:
                     """
                     INSERT INTO agency_clients (name, owner_email, source)
                     VALUES (%s, %s, 'manual')
-                    RETURNING id, name, owner_email, client_type, account_manager, media_storage_bytes
+                    RETURNING id, name, owner_email, client_type, account_manager, client_logo_url, media_storage_bytes
                     """,
                     (name, owner_email),
                 )
@@ -183,7 +186,8 @@ class ClientRegistryService:
             "owner_email": str(row[2]),
             "client_type": str(row[3]),
             "account_manager": str(row[4]),
-            "media_storage_bytes": int(row[5]),
+            "client_logo_url": str(row[5]),
+            "media_storage_bytes": int(row[6]),
             "google_customer_id": self.get_google_customer_for_client(client_id=client_id),
         }
 
@@ -202,6 +206,7 @@ class ClientRegistryService:
                     "owner_email": c.owner_email,
                     "client_type": c.client_type,
                     "account_manager": c.account_manager,
+                    "client_logo_url": c.client_logo_url,
                     "google_customer_id": next((aid for aid, client_ids in self._memory_account_client_mappings.get("google_ads", {}).items() if c.id in client_ids), None),
                     "media_storage_bytes": c.media_storage_bytes,
                 }
@@ -218,7 +223,7 @@ class ClientRegistryService:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT c.id, c.name, c.owner_email, c.client_type, c.account_manager, c.media_storage_bytes,
+                    SELECT c.id, c.name, c.owner_email, c.client_type, c.account_manager, c.client_logo_url, c.media_storage_bytes,
                            ROW_NUMBER() OVER (ORDER BY c.id ASC) AS display_id,
                            (
                               SELECT m.account_id
@@ -241,9 +246,10 @@ class ClientRegistryService:
                 "owner_email": str(row[2]),
                 "client_type": str(row[3]),
                 "account_manager": str(row[4]),
-                "display_id": int(row[6]),
-                "media_storage_bytes": int(row[5] or 0),
-                "google_customer_id": str(row[7]) if row[7] else None,
+                "client_logo_url": str(row[5]),
+                "display_id": int(row[7]),
+                "media_storage_bytes": int(row[6] or 0),
+                "google_customer_id": str(row[8]) if row[8] else None,
             }
             for row in rows
         ]
@@ -630,6 +636,7 @@ class ClientRegistryService:
         name: str | None = None,
         client_type: str | None = None,
         account_manager: str | None = None,
+        client_logo_url: str | None = None,
         platform: str | None = None,
         account_id: str | None = None,
     ) -> dict[str, object] | None:
@@ -642,6 +649,7 @@ class ClientRegistryService:
         if normalized_type is not None and normalized_type not in {"lead", "e-commerce", "programmatic"}:
             normalized_type = "lead"
         normalized_manager = account_manager.strip() if account_manager is not None else None
+        normalized_logo = client_logo_url.strip() if client_logo_url is not None else None
 
         if self._is_test_mode():
             with self._lock:
@@ -654,6 +662,7 @@ class ClientRegistryService:
                             source=c.source,
                             client_type=normalized_type if normalized_type is not None else c.client_type,
                             account_manager=normalized_manager if normalized_manager is not None else c.account_manager,
+                            client_logo_url=normalized_logo if normalized_logo is not None else c.client_logo_url,
                         )
                         normalized_platform = platform.strip() if platform is not None else None
                         normalized_account_id = account_id.strip() if account_id is not None else None
@@ -698,6 +707,9 @@ class ClientRegistryService:
         if normalized_manager is not None:
             set_clauses.append("account_manager = %s")
             values.append(normalized_manager)
+        if normalized_logo is not None:
+            set_clauses.append("client_logo_url = %s")
+            values.append(normalized_logo)
 
         if set_clauses:
             with self._connect_or_raise() as conn:
