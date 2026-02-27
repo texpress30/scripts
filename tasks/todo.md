@@ -107,3 +107,18 @@
 - Dacă tabela lipsește sau DB este indisponibilă, funcția întoarce `db_rows_last_30_days=0` și un `db_error` descriptiv, fără crash.
 - `run_diagnostics()` expune și aliasul `rows_in_db_last_30_days` pentru endpoint-ul `/integrations/google-ads/diagnostics`, împreună cu `oauth_ok`, `last_sync_at`, `last_error`.
 - Scriptul `scripts/diag_google_ads.py` a fost actualizat să afișeze explicit starea DB diagnostics și să citească noul câmp `rows_in_db_last_30_days`; README include acum secțiune dedicată de rulare + env vars.
+
+---
+
+# TODO — DB debug agregat pentru Google Ads diagnostics
+
+- [x] Identific tabelele folosite de dashboard pentru metrici și traseul de citire.
+- [x] Adaug endpoint debug (`/integrations/google-ads/db-debug`) cu agregări sigure (count/max, fără rows brute).
+- [x] Adaug breakdown 90 zile (total, by provider, by platform, max date/synced_at) pentru tabela principală.
+- [x] Adaug scanare pentru alte tabele relevante (coloane `customer_id/platform/provider/cost_micros/impressions`) cu agregări.
+- [x] Rulez verificări și documentez rezultatul.
+
+## Review
+- Dashboard Agency citește metricile din `ad_performance_reports` prin `DashboardService` (agregări pe `report_date` + `platform`), iar pentru status Google se folosește `run_diagnostics()`.
+- Endpoint-ul nou `GET /integrations/google-ads/db-debug` întoarce `db_ok`, `table_exists`, agregări pe 90 zile pentru `ad_performance_reports` și `other_relevant_tables` (fără date sensibile brute).
+- Dacă `ad_performance_reports` este gol/lipsește, payload-ul indică explicit situația și expune tabele alternative cu același profil de coloane pentru troubleshooting ingestion.

@@ -350,6 +350,174 @@ class GoogleAdsService:
                 "db_error": message,
             }
 
+    def db_debug_summary(self) -> dict[str, object]:
+        database_url = os.environ.get("DATABASE_URL") or load_settings().database_url
+        result: dict[str, object] = {
+            "db_ok": False,
+            "table_exists": False,
+            "table": "ad_performance_reports",
+            "last_90_days": {
+                "count_total": 0,
+                "count_by_provider": [],
+                "count_by_platform": [],
+                "max_report_date": None,
+                "max_synced_at": None,
+            },
+            "other_relevant_tables": [],
+            "last_error": None,
+        }
+
+        try:
+            if psycopg is None:
+                raise RuntimeError("psycopg not installed")
+
+            with psycopg.connect(database_url) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT to_regclass('public.ad_performance_reports')")
+                    table_exists = (cur.fetchone() or [None])[0] is not None
+                    result["table_exists"] = bool(table_exists)
+
+                    if table_exists:
+                        cur.execute(
+                            """
+                            SELECT COALESCE(COUNT(*), 0), MAX(report_date), MAX(synced_at)
+                            FROM ad_performance_reports
+                            WHERE synced_at >= NOW() - INTERVAL '90 days'
+                            """
+                        )
+                        total_row = cur.fetchone() or (0, None, None)
+                        result["last_90_days"] = {
+                            "count_total": int(total_row[0] or 0),
+                            "count_by_provider": [],
+                            "count_by_platform": [],
+                            "max_report_date": str(total_row[1]) if total_row[1] else None,
+                            "max_synced_at": str(total_row[2]) if total_row[2] else None,
+                        }
+
+                        cur.execute(
+                            """
+                            SELECT EXISTS (
+                                SELECT 1
+                                FROM information_schema.columns
+                                WHERE table_schema='public' AND table_name='ad_performance_reports' AND column_name='provider'
+                            )
+                            """
+                        )
+                        has_provider = bool((cur.fetchone() or [False])[0])
+                        if has_provider:
+                            cur.execute(
+                                """
+                                SELECT provider, COUNT(*)
+                                FROM ad_performance_reports
+                                WHERE synced_at >= NOW() - INTERVAL '90 days'
+                                GROUP BY provider
+                                ORDER BY COUNT(*) DESC
+                                """
+                            )
+                            result["last_90_days"]["count_by_provider"] = [
+                                {"provider": str(row[0] or ""), "count": int(row[1] or 0)} for row in cur.fetchall() or []
+                            ]
+
+                        cur.execute(
+                            """
+                            SELECT EXISTS (
+                                SELECT 1
+                                FROM information_schema.columns
+                                WHERE table_schema='public' AND table_name='ad_performance_reports' AND column_name='platform'
+                            )
+                            """
+                        )
+                        has_platform = bool((cur.fetchone() or [False])[0])
+                        if has_platform:
+                            cur.execute(
+                                """
+                                SELECT platform, COUNT(*)
+                                FROM ad_performance_reports
+                                WHERE synced_at >= NOW() - INTERVAL '90 days'
+                                GROUP BY platform
+                                ORDER BY COUNT(*) DESC
+                                """
+                            )
+                            result["last_90_days"]["count_by_platform"] = [
+                                {"platform": str(row[0] or ""), "count": int(row[1] or 0)} for row in cur.fetchall() or []
+                            ]
+
+                    cur.execute(
+                        """
+                        SELECT table_name,
+                               MAX(CASE WHEN column_name='customer_id' THEN 1 ELSE 0 END) AS has_customer_id,
+                               MAX(CASE WHEN column_name='provider' THEN 1 ELSE 0 END) AS has_provider,
+                               MAX(CASE WHEN column_name='platform' THEN 1 ELSE 0 END) AS has_platform,
+                               MAX(CASE WHEN column_name='cost_micros' THEN 1 ELSE 0 END) AS has_cost_micros,
+                               MAX(CASE WHEN column_name='impressions' THEN 1 ELSE 0 END) AS has_impressions,
+                               MAX(CASE WHEN column_name='synced_at' THEN 1 ELSE 0 END) AS has_synced_at,
+                               MAX(CASE WHEN column_name='report_date' THEN 1 ELSE 0 END) AS has_report_date
+                        FROM information_schema.columns
+                        WHERE table_schema='public'
+                        GROUP BY table_name
+                        HAVING MAX(CASE WHEN column_name IN ('customer_id','provider','platform','cost_micros','impressions') THEN 1 ELSE 0 END) = 1
+                        ORDER BY table_name
+                        """
+                    )
+                    tables = cur.fetchall() or []
+                    extras: list[dict[str, object]] = []
+                    for row in tables:
+                        table_name = str(row[0])
+                        if table_name == "ad_performance_reports":
+                            continue
+                        has_synced_at = bool(row[6])
+                        has_report_date = bool(row[7])
+                        row_count = 0
+                        max_date = None
+                        max_synced_at = None
+                        if has_synced_at:
+                            cur.execute(
+                                psycopg.sql.SQL(
+                                    "SELECT COALESCE(COUNT(*), 0), MAX(synced_at) FROM {} WHERE synced_at >= NOW() - INTERVAL '90 days'"
+                                ).format(psycopg.sql.Identifier(table_name))
+                            )
+                            agg = cur.fetchone() or (0, None)
+                            row_count = int(agg[0] or 0)
+                            max_synced_at = str(agg[1]) if agg[1] else None
+                        elif has_report_date:
+                            cur.execute(
+                                psycopg.sql.SQL(
+                                    "SELECT COALESCE(COUNT(*), 0), MAX(report_date) FROM {} WHERE report_date >= CURRENT_DATE - INTERVAL '90 days'"
+                                ).format(psycopg.sql.Identifier(table_name))
+                            )
+                            agg = cur.fetchone() or (0, None)
+                            row_count = int(agg[0] or 0)
+                            max_date = str(agg[1]) if agg[1] else None
+                        else:
+                            cur.execute(
+                                psycopg.sql.SQL("SELECT COALESCE(COUNT(*), 0) FROM {}").format(
+                                    psycopg.sql.Identifier(table_name)
+                                )
+                            )
+                            agg = cur.fetchone() or (0,)
+                            row_count = int(agg[0] or 0)
+
+                        extras.append(
+                            {
+                                "table": table_name,
+                                "rows_last_90_days": row_count,
+                                "max_report_date": max_date,
+                                "max_synced_at": max_synced_at,
+                                "has_customer_id": bool(row[1]),
+                                "has_provider": bool(row[2]),
+                                "has_platform": bool(row[3]),
+                                "has_cost_micros": bool(row[4]),
+                                "has_impressions": bool(row[5]),
+                            }
+                        )
+
+                    result["other_relevant_tables"] = extras
+                    result["db_ok"] = True
+        except Exception as exc:  # noqa: BLE001
+            result["last_error"] = str(exc)
+
+        return result
+
     def run_diagnostics(self) -> dict[str, object]:
         base = self.production_diagnostics()
         manager_id = str(base.get("manager_customer_id_normalized") or "")
