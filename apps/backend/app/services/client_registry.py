@@ -12,6 +12,13 @@ try:
 except Exception:  # noqa: BLE001
     psycopg = None
 
+from app.core.config import load_settings
+
+try:
+    import psycopg
+except Exception:  # noqa: BLE001
+    psycopg = None
+
 
 @dataclass
 class ClientRecord:
