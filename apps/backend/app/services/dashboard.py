@@ -158,33 +158,35 @@ class UnifiedDashboardService:
                 cur.execute(
                     """
                     WITH perf AS (
-                        SELECT client_id, spend, impressions, clicks, conversions, revenue, synced_at::date AS metric_date
+                        SELECT client_id, spend, impressions, clicks, conversions, revenue
                         FROM google_sync_snapshots
                         WHERE synced_at::date BETWEEN %s AND %s
                         UNION ALL
-                        SELECT client_id, spend, impressions, clicks, conversions, revenue, synced_at::date AS metric_date
+                        SELECT client_id, spend, impressions, clicks, conversions, revenue
                         FROM meta_sync_snapshots
                         WHERE synced_at::date BETWEEN %s AND %s
                         UNION ALL
-                        SELECT client_id, spend, impressions, clicks, conversions, revenue, synced_at::date AS metric_date
+                        SELECT client_id, spend, impressions, clicks, conversions, revenue
                         FROM tiktok_sync_snapshots
                         WHERE synced_at::date BETWEEN %s AND %s
                         UNION ALL
-                        SELECT client_id, spend, impressions, clicks, conversions, revenue, synced_at::date AS metric_date
+                        SELECT client_id, spend, impressions, clicks, conversions, revenue
                         FROM pinterest_sync_snapshots
                         WHERE synced_at::date BETWEEN %s AND %s
                         UNION ALL
-                        SELECT client_id, spend, impressions, clicks, conversions, revenue, synced_at::date AS metric_date
+                        SELECT client_id, spend, impressions, clicks, conversions, revenue
                         FROM snapchat_sync_snapshots
                         WHERE synced_at::date BETWEEN %s AND %s
                     )
                     SELECT
-                        COALESCE(SUM(spend), 0),
-                        COALESCE(SUM(impressions), 0),
-                        COALESCE(SUM(clicks), 0),
-                        COALESCE(SUM(conversions), 0),
-                        COALESCE(SUM(revenue), 0)
+                        COALESCE(SUM(perf.spend), 0),
+                        COALESCE(SUM(perf.impressions), 0),
+                        COALESCE(SUM(perf.clicks), 0),
+                        COALESCE(SUM(perf.conversions), 0),
+                        COALESCE(SUM(perf.revenue), 0)
                     FROM perf
+                    JOIN agency_clients c ON c.id = perf.client_id
+                    WHERE c.source = 'manual'
                     """,
                     (start_date, end_date, start_date, end_date, start_date, end_date, start_date, end_date, start_date, end_date),
                 )
@@ -193,23 +195,23 @@ class UnifiedDashboardService:
                 cur.execute(
                     """
                     WITH perf AS (
-                        SELECT client_id, spend, synced_at::date AS metric_date
+                        SELECT client_id, spend
                         FROM google_sync_snapshots
                         WHERE synced_at::date BETWEEN %s AND %s
                         UNION ALL
-                        SELECT client_id, spend, synced_at::date AS metric_date
+                        SELECT client_id, spend
                         FROM meta_sync_snapshots
                         WHERE synced_at::date BETWEEN %s AND %s
                         UNION ALL
-                        SELECT client_id, spend, synced_at::date AS metric_date
+                        SELECT client_id, spend
                         FROM tiktok_sync_snapshots
                         WHERE synced_at::date BETWEEN %s AND %s
                         UNION ALL
-                        SELECT client_id, spend, synced_at::date AS metric_date
+                        SELECT client_id, spend
                         FROM pinterest_sync_snapshots
                         WHERE synced_at::date BETWEEN %s AND %s
                         UNION ALL
-                        SELECT client_id, spend, synced_at::date AS metric_date
+                        SELECT client_id, spend
                         FROM snapchat_sync_snapshots
                         WHERE synced_at::date BETWEEN %s AND %s
                     )

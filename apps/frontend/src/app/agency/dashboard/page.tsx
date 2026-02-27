@@ -2,6 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { addDays, format, startOfMonth, subDays } from "date-fns";
+import { DayPicker, type DateRange } from "react-day-picker";
+import "react-day-picker/dist/style.css";
+
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
@@ -22,137 +26,184 @@ type AgencySummaryResponse = {
   top_clients: Array<{ client_id: number; name: string; spend: number }>;
 };
 
-type DatePresetKey = "today" | "last7" | "last30" | "month" | "custom";
+type DatePresetKey = "today" | "yesterday" | "last7" | "last30" | "month" | "custom";
 
-function isoDate(value: Date): string {
-  return value.toISOString().slice(0, 10);
+const PRESET_ITEMS: Array<{ key: DatePresetKey; label: string }> = [
+  { key: "today", label: "Today" },
+  { key: "yesterday", label: "Yesterday" },
+  { key: "last7", label: "Last 7 days" },
+  { key: "last30", label: "Last 30 days" },
+  { key: "month", label: "This month" },
+  { key: "custom", label: "Custom" },
+];
+
+function toIso(value: Date): string {
+  return format(value, "yyyy-MM-dd");
 }
 
-function startOfMonth(now: Date): Date {
-  return new Date(now.getFullYear(), now.getMonth(), 1);
-}
 
-function resolvePresetRange(preset: DatePresetKey): { startDate: string; endDate: string } {
+function rangeForPreset(preset: DatePresetKey): DateRange {
   const now = new Date();
-  const end = isoDate(now);
-  if (preset === "today") return { startDate: end, endDate: end };
-  if (preset === "last30") {
-    const start = new Date(now);
-    start.setDate(start.getDate() - 29);
-    return { startDate: isoDate(start), endDate: end };
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (preset === "today") return { from: today, to: today };
+  if (preset === "yesterday") {
+    const y = subDays(today, 1);
+    return { from: y, to: y };
   }
-  if (preset === "month") return { startDate: isoDate(startOfMonth(now)), endDate: end };
+  if (preset === "last7") return { from: subDays(today, 6), to: today };
+  if (preset === "last30") return { from: subDays(today, 29), to: today };
+  if (preset === "month") return { from: startOfMonth(today), to: today };
+  return { from: subDays(today, 29), to: today };
+}
 
-  const start = new Date(now);
-  start.setDate(start.getDate() - 6);
-  return { startDate: isoDate(start), endDate: end };
+function formatRangeLabel(preset: DatePresetKey, range: DateRange): string {
+  const from = range.from ?? new Date();
+  const to = range.to ?? range.from ?? new Date();
+  const presetLabel = PRESET_ITEMS.find((item) => item.key === preset)?.label ?? "Custom";
+  return `${presetLabel}: ${format(from, "MMM d, yyyy")} - ${format(to, "MMM d, yyyy")}`;
 }
 
 function statusTone(status: string): string {
   const normalized = status.toLowerCase();
   if (normalized === "connected") return "text-emerald-600";
-  if (normalized === "disabled") return "text-slate-500";
+  if (normalized === "disabled" || normalized === "inactive") return "text-slate-500";
   if (normalized === "error") return "text-red-600";
-  return "text-red-600";
+  return "text-slate-500";
 }
 
 export default function AgencyDashboardPage() {
-  const defaultRange = resolvePresetRange("last7");
-  const [preset, setPreset] = useState<DatePresetKey>("last7");
-  const [startDate, setStartDate] = useState(defaultRange.startDate);
-  const [endDate, setEndDate] = useState(defaultRange.endDate);
+  const [openPicker, setOpenPicker] = useState(false);
+
+  const initialRange = rangeForPreset("last30");
+  const [appliedPreset, setAppliedPreset] = useState<DatePresetKey>("last30");
+  const [appliedRange, setAppliedRange] = useState<DateRange>(initialRange);
+
+  const [draftPreset, setDraftPreset] = useState<DatePresetKey>("last30");
+  const [draftRange, setDraftRange] = useState<DateRange>(initialRange);
 
   const [googleStatus, setGoogleStatus] = useState<IntegrationStatus | null>(null);
-  const [metaStatus, setMetaStatus] = useState<IntegrationStatus | null>(null);
-  const [tiktokStatus, setTiktokStatus] = useState<IntegrationStatus | null>(null);
-  const [pinterestStatus, setPinterestStatus] = useState<IntegrationStatus | null>(null);
-  const [snapchatStatus, setSnapchatStatus] = useState<IntegrationStatus | null>(null);
-
   const [summary, setSummary] = useState<AgencySummaryResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
-  async function loadDashboard(range: { startDate: string; endDate: string }) {
-    setLoading(true);
-    setError("");
-
-    try {
-      const [google, meta, tiktok, pinterest, snapchat, agencySummary] = await Promise.all([
-        apiRequest<IntegrationStatus>("/integrations/google-ads/status"),
-        apiRequest<IntegrationStatus>("/integrations/meta-ads/status"),
-        apiRequest<IntegrationStatus>("/integrations/tiktok-ads/status"),
-        apiRequest<IntegrationStatus>("/integrations/pinterest-ads/status"),
-        apiRequest<IntegrationStatus>("/integrations/snapchat-ads/status"),
-        apiRequest<AgencySummaryResponse>(`/dashboard/agency/summary?start_date=${range.startDate}&end_date=${range.endDate}`),
-      ]);
-
-      setGoogleStatus(google);
-      setMetaStatus(meta);
-      setTiktokStatus(tiktok);
-      setPinterestStatus(pinterest);
-      setSnapchatStatus(snapchat);
-      setSummary(agencySummary);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Nu am putut încărca dashboard-ul agency");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const appliedFrom = appliedRange.from ?? subDays(new Date(), 29);
+  const appliedTo = appliedRange.to ?? appliedFrom;
 
   useEffect(() => {
-    void loadDashboard({ startDate, endDate });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    async function loadDashboard() {
+      setLoading(true);
+      setError("");
+      try {
+        const [google, agencySummary] = await Promise.all([
+          apiRequest<IntegrationStatus>("/integrations/google-ads/status"),
+          apiRequest<AgencySummaryResponse>(
+            `/dashboard/agency/summary?start_date=${toIso(appliedFrom)}&end_date=${toIso(appliedTo)}`
+          ),
+        ]);
+
+        setGoogleStatus(google);
+        setSummary(agencySummary);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Nu am putut încărca dashboard-ul agency");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    void loadDashboard();
+  }, [appliedFrom, appliedTo]);
 
   const integrationSummary = useMemo(
     () => [
       { label: "Google Ads", status: googleStatus?.status ?? "error" },
-      { label: "Meta Ads", status: metaStatus?.status ?? "error" },
-      { label: "TikTok Ads", status: tiktokStatus?.status ?? "error" },
-      { label: "Pinterest Ads", status: pinterestStatus?.status ?? "error" },
-      { label: "Snapchat Ads", status: snapchatStatus?.status ?? "error" },
+      { label: "Meta Ads", status: "disabled" },
+      { label: "TikTok Ads", status: "disabled" },
+      { label: "Pinterest Ads", status: "disabled" },
+      { label: "Snapchat Ads", status: "disabled" },
     ],
-    [googleStatus?.status, metaStatus?.status, tiktokStatus?.status, pinterestStatus?.status, snapchatStatus?.status]
+    [googleStatus?.status]
   );
 
-  function onPresetChange(nextPreset: DatePresetKey) {
-    setPreset(nextPreset);
+  function handlePresetClick(nextPreset: DatePresetKey) {
+    setDraftPreset(nextPreset);
     if (nextPreset === "custom") return;
-    const range = resolvePresetRange(nextPreset);
-    setStartDate(range.startDate);
-    setEndDate(range.endDate);
+    setDraftRange(rangeForPreset(nextPreset));
   }
+
+  function handleCancel() {
+    setDraftPreset(appliedPreset);
+    setDraftRange(appliedRange);
+    setOpenPicker(false);
+  }
+
+  function handleUpdate() {
+    if (!draftRange.from || !draftRange.to) return;
+    setAppliedPreset(draftPreset);
+    setAppliedRange({ from: draftRange.from, to: draftRange.to });
+    setOpenPicker(false);
+  }
+
+  const label = formatRangeLabel(appliedPreset, appliedRange);
 
   return (
     <ProtectedPage>
       <AppShell title="Agency Dashboard">
         {error ? <p className="mb-4 text-sm text-red-600">{error}</p> : null}
 
-        <section className="mb-4 flex flex-col items-start gap-2 rounded-xl border border-slate-200 bg-white p-3 md:ml-auto md:w-fit md:items-end">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Date range</p>
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              className="wm-input h-9 w-[200px]"
-              value={preset}
-              onChange={(e) => onPresetChange(e.target.value as DatePresetKey)}
-            >
-              <option value="today">Astăzi</option>
-              <option value="last7">Ultimele 7 zile</option>
-              <option value="last30">Ultimele 30 zile</option>
-              <option value="month">Luna aceasta</option>
-              <option value="custom">Custom range</option>
-            </select>
+        <section className="relative mb-4 flex justify-end">
+          <button
+            onClick={() => setOpenPicker((prev) => !prev)}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            {label}
+          </button>
 
-            <input type="date" className="wm-input h-9" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-            <input type="date" className="wm-input h-9" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+          {openPicker ? (
+            <div className="absolute right-0 top-12 z-50 flex w-[820px] gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-xl">
+              <div className="w-48 border-r border-slate-200 pr-3">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Presets</p>
+                <div className="space-y-1">
+                  {PRESET_ITEMS.map((item) => (
+                    <button
+                      key={item.key}
+                      onClick={() => handlePresetClick(item.key)}
+                      className={`w-full rounded-md px-2 py-2 text-left text-sm ${
+                        draftPreset === item.key ? "bg-indigo-50 font-medium text-indigo-700" : "text-slate-700 hover:bg-slate-100"
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-            <button
-              onClick={() => void loadDashboard({ startDate, endDate })}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-            >
-              Update
-            </button>
-          </div>
+              <div className="flex-1">
+                <DayPicker
+                  mode="range"
+                  numberOfMonths={2}
+                  selected={draftRange}
+                  onSelect={(range) => {
+                    setDraftPreset("custom");
+                    setDraftRange(range ?? { from: undefined, to: undefined });
+                  }}
+                  defaultMonth={draftRange.from}
+                />
+
+                <div className="mt-3 flex justify-end gap-2 border-t border-slate-200 pt-3">
+                  <button onClick={handleCancel} className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleUpdate}
+                    disabled={!draftRange.from || !draftRange.to}
+                    className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Update
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </section>
 
         <section className="grid grid-cols-1 gap-4 md:grid-cols-4 xl:grid-cols-7">

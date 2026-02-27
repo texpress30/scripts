@@ -83,6 +83,9 @@ class ServiceTests(unittest.TestCase):
         with self.assertRaises(AuthorizationError):
             require_permission("client_viewer", "clients:create")
 
+    def test_rbac_dashboard_view_allowed_for_agency_scope(self):
+        require_action("agency_admin", action="dashboard:view", scope="agency")
+
     def test_rbac_action_scope_validation(self):
         require_action("agency_admin", action="clients:list", scope="agency")
         with self.assertRaises(AuthorizationError):

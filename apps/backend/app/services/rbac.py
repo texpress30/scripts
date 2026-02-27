@@ -10,7 +10,7 @@ Scope = Literal["agency", "subaccount"]
 @dataclass(frozen=True)
 class ActionPolicy:
     permission: str
-    scope: Scope
+    scopes: tuple[Scope, ...]
 
 
 
@@ -111,30 +111,30 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
 
 ACTION_POLICIES: dict[str, ActionPolicy] = {
     # agency scope
-    "clients:list": ActionPolicy(permission="clients:read", scope="agency"),
-    "clients:create": ActionPolicy(permission="clients:create", scope="agency"),
-    "audit:list": ActionPolicy(permission="audit:read", scope="agency"),
-    "integrations:status": ActionPolicy(permission="integrations:status", scope="agency"),
-    "integrations:tiktok:status": ActionPolicy(permission="integrations:tiktok:status", scope="agency"),
-    "integrations:pinterest:status": ActionPolicy(permission="integrations:pinterest:status", scope="agency"),
-    "integrations:snapchat:status": ActionPolicy(permission="integrations:snapchat:status", scope="agency"),
-    "exports:list": ActionPolicy(permission="exports:read", scope="agency"),
+    "clients:list": ActionPolicy(permission="clients:read", scopes=("agency",)),
+    "clients:create": ActionPolicy(permission="clients:create", scopes=("agency",)),
+    "audit:list": ActionPolicy(permission="audit:read", scopes=("agency",)),
+    "integrations:status": ActionPolicy(permission="integrations:status", scopes=("agency",)),
+    "integrations:tiktok:status": ActionPolicy(permission="integrations:tiktok:status", scopes=("agency",)),
+    "integrations:pinterest:status": ActionPolicy(permission="integrations:pinterest:status", scopes=("agency",)),
+    "integrations:snapchat:status": ActionPolicy(permission="integrations:snapchat:status", scopes=("agency",)),
+    "exports:list": ActionPolicy(permission="exports:read", scopes=("agency",)),
     # sub-account scope
-    "dashboard:view": ActionPolicy(permission="clients:read", scope="subaccount"),
-    "integrations:sync": ActionPolicy(permission="integrations:sync", scope="subaccount"),
-    "integrations:tiktok:sync": ActionPolicy(permission="integrations:tiktok:sync", scope="subaccount"),
-    "integrations:pinterest:sync": ActionPolicy(permission="integrations:pinterest:sync", scope="subaccount"),
-    "integrations:snapchat:sync": ActionPolicy(permission="integrations:snapchat:sync", scope="subaccount"),
-    "rules:list": ActionPolicy(permission="rules:read", scope="subaccount"),
-    "rules:create": ActionPolicy(permission="rules:write", scope="subaccount"),
-    "rules:evaluate": ActionPolicy(permission="rules:write", scope="subaccount"),
-    "insights:get": ActionPolicy(permission="insights:read", scope="subaccount"),
-    "insights:generate": ActionPolicy(permission="insights:generate", scope="subaccount"),
-    "exports:run": ActionPolicy(permission="exports:run", scope="subaccount"),
-    "recommendations:list": ActionPolicy(permission="recommendations:read", scope="subaccount"),
-    "recommendations:review": ActionPolicy(permission="recommendations:review", scope="subaccount"),
-    "creative:list": ActionPolicy(permission="creative:read", scope="subaccount"),
-    "creative:write": ActionPolicy(permission="creative:write", scope="subaccount"),
+    "dashboard:view": ActionPolicy(permission="clients:read", scopes=("agency", "subaccount")),
+    "integrations:sync": ActionPolicy(permission="integrations:sync", scopes=("subaccount",)),
+    "integrations:tiktok:sync": ActionPolicy(permission="integrations:tiktok:sync", scopes=("subaccount",)),
+    "integrations:pinterest:sync": ActionPolicy(permission="integrations:pinterest:sync", scopes=("subaccount",)),
+    "integrations:snapchat:sync": ActionPolicy(permission="integrations:snapchat:sync", scopes=("subaccount",)),
+    "rules:list": ActionPolicy(permission="rules:read", scopes=("subaccount",)),
+    "rules:create": ActionPolicy(permission="rules:write", scopes=("subaccount",)),
+    "rules:evaluate": ActionPolicy(permission="rules:write", scopes=("subaccount",)),
+    "insights:get": ActionPolicy(permission="insights:read", scopes=("subaccount",)),
+    "insights:generate": ActionPolicy(permission="insights:generate", scopes=("subaccount",)),
+    "exports:run": ActionPolicy(permission="exports:run", scopes=("subaccount",)),
+    "recommendations:list": ActionPolicy(permission="recommendations:read", scopes=("subaccount",)),
+    "recommendations:review": ActionPolicy(permission="recommendations:review", scopes=("subaccount",)),
+    "creative:list": ActionPolicy(permission="creative:read", scopes=("subaccount",)),
+    "creative:write": ActionPolicy(permission="creative:write", scopes=("subaccount",)),
 }
 
 
@@ -152,9 +152,10 @@ def require_action(role: str, action: str, scope: Scope) -> None:
     policy = ACTION_POLICIES.get(action)
     if policy is None:
         raise AuthorizationError(f"Unknown action '{action}'")
-    if policy.scope != scope:
+    if scope not in policy.scopes:
+        expected = ", ".join(policy.scopes)
         raise AuthorizationError(
-            f"Action '{action}' is not allowed in scope '{scope}' (expected '{policy.scope}')"
+            f"Action '{action}' is not allowed in scope '{scope}' (expected one of: {expected})"
         )
 
     role_scopes = ROLE_SCOPES.get(role, set())
