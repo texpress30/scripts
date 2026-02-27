@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+from datetime import date
+
+from app.core.config import load_settings
+from app.services.client_registry import client_registry_service
 from app.services.google_ads import google_ads_service
 from app.services.meta_ads import meta_ads_service
 from app.services.pinterest_ads import pinterest_ads_service
 from app.services.snapchat_ads import snapchat_ads_service
 from app.services.tiktok_ads import tiktok_ads_service
+
+try:
+    import psycopg
+except Exception:  # noqa: BLE001
+    psycopg = None
 
 
 def _to_float(value: object) -> float:
@@ -16,6 +25,15 @@ def _to_int(value: object) -> int:
 
 
 class UnifiedDashboardService:
+    def _is_test_mode(self) -> bool:
+        return load_settings().app_env == "test"
+
+    def _connect(self):
+        settings = load_settings()
+        if psycopg is None:
+            raise RuntimeError("psycopg is required for dashboard Postgres queries")
+        return psycopg.connect(settings.database_url)
+
     def _normalize_platform_metrics(self, platform: str, metrics: dict[str, object], client_id: int) -> dict[str, object]:
         spend = round(_to_float(metrics.get("spend")), 2)
         revenue = round(_to_float(metrics.get("revenue")), 2)
@@ -101,6 +119,131 @@ class UnifiedDashboardService:
                 or pinterest_metrics.get("is_synced")
                 or snapchat_metrics.get("is_synced")
             ),
+        }
+
+    def get_agency_dashboard(self, *, start_date: date, end_date: date) -> dict[str, object]:
+        if self._is_test_mode():
+            clients = client_registry_service.list_clients()
+            totals = {"spend": 0.0, "impressions": 0, "clicks": 0, "conversions": 0, "revenue": 0.0}
+            top_clients: list[dict[str, object]] = []
+            for client in clients:
+                cid = int(client["id"])
+                metrics = self.get_client_dashboard(cid)
+                mt = metrics["totals"]
+                spend = _to_float(mt.get("spend"))
+                totals["spend"] += spend
+                totals["impressions"] += _to_int(mt.get("impressions"))
+                totals["clicks"] += _to_int(mt.get("clicks"))
+                totals["conversions"] += _to_int(mt.get("conversions"))
+                totals["revenue"] += _to_float(mt.get("revenue"))
+                top_clients.append({"client_id": cid, "name": str(client.get("name") or f"Client {cid}"), "spend": round(spend, 2)})
+
+            top_clients.sort(key=lambda item: float(item["spend"]), reverse=True)
+            return {
+                "date_range": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
+                "active_clients": len(clients),
+                "totals": {
+                    "spend": round(float(totals["spend"]), 2),
+                    "impressions": int(totals["impressions"]),
+                    "clicks": int(totals["clicks"]),
+                    "conversions": int(totals["conversions"]),
+                    "revenue": round(float(totals["revenue"]), 2),
+                    "roas": round(float(totals["revenue"]) / float(totals["spend"]), 2) if float(totals["spend"]) > 0 else 0.0,
+                },
+                "top_clients": top_clients[:5],
+            }
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    WITH perf AS (
+                        SELECT client_id, spend, impressions, clicks, conversions, revenue, synced_at::date AS metric_date
+                        FROM google_sync_snapshots
+                        WHERE synced_at::date BETWEEN %s AND %s
+                        UNION ALL
+                        SELECT client_id, spend, impressions, clicks, conversions, revenue, synced_at::date AS metric_date
+                        FROM meta_sync_snapshots
+                        WHERE synced_at::date BETWEEN %s AND %s
+                        UNION ALL
+                        SELECT client_id, spend, impressions, clicks, conversions, revenue, synced_at::date AS metric_date
+                        FROM tiktok_sync_snapshots
+                        WHERE synced_at::date BETWEEN %s AND %s
+                        UNION ALL
+                        SELECT client_id, spend, impressions, clicks, conversions, revenue, synced_at::date AS metric_date
+                        FROM pinterest_sync_snapshots
+                        WHERE synced_at::date BETWEEN %s AND %s
+                        UNION ALL
+                        SELECT client_id, spend, impressions, clicks, conversions, revenue, synced_at::date AS metric_date
+                        FROM snapchat_sync_snapshots
+                        WHERE synced_at::date BETWEEN %s AND %s
+                    )
+                    SELECT
+                        COALESCE(SUM(spend), 0),
+                        COALESCE(SUM(impressions), 0),
+                        COALESCE(SUM(clicks), 0),
+                        COALESCE(SUM(conversions), 0),
+                        COALESCE(SUM(revenue), 0)
+                    FROM perf
+                    """,
+                    (start_date, end_date, start_date, end_date, start_date, end_date, start_date, end_date, start_date, end_date),
+                )
+                totals_row = cur.fetchone() or (0, 0, 0, 0, 0)
+
+                cur.execute(
+                    """
+                    WITH perf AS (
+                        SELECT client_id, spend, synced_at::date AS metric_date
+                        FROM google_sync_snapshots
+                        WHERE synced_at::date BETWEEN %s AND %s
+                        UNION ALL
+                        SELECT client_id, spend, synced_at::date AS metric_date
+                        FROM meta_sync_snapshots
+                        WHERE synced_at::date BETWEEN %s AND %s
+                        UNION ALL
+                        SELECT client_id, spend, synced_at::date AS metric_date
+                        FROM tiktok_sync_snapshots
+                        WHERE synced_at::date BETWEEN %s AND %s
+                        UNION ALL
+                        SELECT client_id, spend, synced_at::date AS metric_date
+                        FROM pinterest_sync_snapshots
+                        WHERE synced_at::date BETWEEN %s AND %s
+                        UNION ALL
+                        SELECT client_id, spend, synced_at::date AS metric_date
+                        FROM snapchat_sync_snapshots
+                        WHERE synced_at::date BETWEEN %s AND %s
+                    )
+                    SELECT c.id, c.name, COALESCE(SUM(perf.spend), 0) AS total_spend
+                    FROM agency_clients c
+                    JOIN perf ON perf.client_id = c.id
+                    WHERE c.source = 'manual'
+                    GROUP BY c.id, c.name
+                    ORDER BY total_spend DESC, c.id ASC
+                    LIMIT 5
+                    """,
+                    (start_date, end_date, start_date, end_date, start_date, end_date, start_date, end_date, start_date, end_date),
+                )
+                top_rows = cur.fetchall()
+
+                cur.execute("SELECT COUNT(*) FROM agency_clients WHERE source = 'manual'")
+                active_clients = int((cur.fetchone() or [0])[0])
+
+        total_spend = _to_float(totals_row[0])
+        total_revenue = _to_float(totals_row[4])
+        return {
+            "date_range": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
+            "active_clients": active_clients,
+            "totals": {
+                "spend": round(total_spend, 2),
+                "impressions": _to_int(totals_row[1]),
+                "clicks": _to_int(totals_row[2]),
+                "conversions": _to_int(totals_row[3]),
+                "revenue": round(total_revenue, 2),
+                "roas": round(total_revenue / total_spend, 2) if total_spend > 0 else 0.0,
+            },
+            "top_clients": [
+                {"client_id": int(row[0]), "name": str(row[1]), "spend": round(_to_float(row[2]), 2)} for row in top_rows
+            ],
         }
 
 
