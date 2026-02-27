@@ -61,3 +61,18 @@
 - `git cherry-pick 7bb0a45` a eșuat cu `fatal: bad revision '7bb0a45'` (hash-ul nu există în istoricul local după fetch).
 - Verificări suplimentare (`git log --all`, `git show 7bb0a45`, `git fetch origin 7bb0a45`) confirmă că obiectul nu este disponibil pe remote-ul curent.
 - Nu există fișiere de cod actualizate prin cherry-pick deoarece commit-ul cerut nu a putut fi rezolvat. Workspace-ul rămâne sincronizat cu remotes cunoscute.
+
+---
+
+# TODO — Fix NameError `psycopg` în Google Ads diagnostics
+
+- [x] Identific fișierul/funcția unde se calculează `rows_in_db_last_30_days` și apare `name 'psycopg' is not defined`.
+- [x] Verific ce driver Postgres este standard în repo (psycopg vs psycopg2).
+- [x] Adaug importul lipsă și aliniez folosirea conexiunii DB cu convenția proiectului.
+- [x] Rulez verificări (minim compile / script diagnostic) și documentez rezultatul.
+
+## Review
+- Eroarea provine din `apps/backend/app/services/google_ads.py`, funcția `_db_diagnostics_last_30_days()`, care folosea `psycopg.connect(...)` fără import declarat pentru `psycopg`.
+- Driverul folosit în proiect este Psycopg 3 (`psycopg[binary]==3.2.1` în `apps/backend/requirements.txt`), iar majoritatea serviciilor backend folosesc deja pattern-ul `try: import psycopg ...`.
+- Am adăugat importul lipsă în `google_ads.py` și am păstrat conexiunea existentă `psycopg.connect(settings.database_url)` pentru consistență cu restul codului.
+- Verificări: compile pentru fișierul modificat + execuție controlată a `_db_diagnostics_last_30_days()` (cu `load_settings` monkeypatched) confirmă că nu mai apare `NameError`, iar funcția întoarce `db_error` de conectivitate când DB-ul este indisponibil.
