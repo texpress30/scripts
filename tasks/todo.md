@@ -18,3 +18,15 @@
 - În `GET /integrations/google-ads/status` am expus `accounts_found`, `rows_in_db_last_30_days`, `last_sync_at`, `last_error` pentru Integration Health.
 - Frontend Agency Dashboard afișează detaliile Google în blocul Integration Health și păstrează loading state cu text `Se încarcă datele...`; date range este trimis în format `YYYY-MM-DD`.
 - Verificările reale au confirmat în mediul curent: OAuth nu poate rula fără refresh token setat și DB local nu e disponibil implicit (connection refused), dar diagnosticul returnează explicit aceste cauze și endpoint-urile sunt pregătite pentru Railway.
+
+---
+
+# TODO — Verificare remote/fetch workspace nou
+
+- [x] Verific remotes configurate (`git remote -v`).
+- [x] Rulez fetch global cu prune (`git fetch --all --prune`).
+- [x] Documentez rezultatul verificării.
+
+## Review
+- Repository-ul local nu are niciun remote configurat momentan (nici `origin`).
+- `git fetch --all --prune` s-a executat cu succes, dar fără efect deoarece nu există remotes definite.
