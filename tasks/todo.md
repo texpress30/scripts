@@ -46,3 +46,18 @@
 - Primul `git pull origin main` a eșuat cu mesajul Git despre strategia de reconciliere pentru branch-uri divergente.
 - Am setat explicit `git config pull.rebase false` (local repo), apoi am rerulat `git pull origin main` și sincronizarea s-a finalizat cu merge (`ort`).
 - Starea finală arată branch local sincronizat cu modificările locale păstrate pentru commitul curent.
+
+---
+
+# TODO — Bring commit 7bb0a45 into current workspace
+
+- [x] Rulez `git fetch --all` pentru actualizare istoric remote.
+- [x] Rulez `git cherry-pick 7bb0a45`.
+- [x] Dacă apar conflicte, le rezolv păstrând versiunea din commit-ul cherry-picked. (N/A: cherry-pick nu a pornit, commit inexistent local/remote)
+- [x] Verific fișierele actualizate și confirm starea finală.
+
+## Review
+- `git fetch --all` a rulat cu succes și a actualizat referințele remote disponibile.
+- `git cherry-pick 7bb0a45` a eșuat cu `fatal: bad revision '7bb0a45'` (hash-ul nu există în istoricul local după fetch).
+- Verificări suplimentare (`git log --all`, `git show 7bb0a45`, `git fetch origin 7bb0a45`) confirmă că obiectul nu este disponibil pe remote-ul curent.
+- Nu există fișiere de cod actualizate prin cherry-pick deoarece commit-ul cerut nu a putut fi rezolvat. Workspace-ul rămâne sincronizat cu remotes cunoscute.
