@@ -125,6 +125,8 @@ def update_client_profile(
         name=payload.name,
         client_type=payload.client_type,
         account_manager=payload.account_manager,
+        platform=payload.platform,
+        account_id=payload.account_id,
     )
     if updated is None:
         raise HTTPException(status_code=404, detail="Client not found")

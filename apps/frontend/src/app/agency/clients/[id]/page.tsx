@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Check, Pencil } from "lucide-react";
+import { ArrowLeft, Check, Loader2, Pencil } from "lucide-react";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
 
-type Account = { id: string; name: string };
+type Account = { id: string; name: string; client_type?: string; account_manager?: string };
 type PlatformInfo = { platform: string; enabled: boolean; count: number; accounts: Account[] };
 type ClientDetails = {
   client: {
@@ -54,6 +54,7 @@ export default function AgencyClientDetailsPage() {
   const [rowDrafts, setRowDrafts] = useState<Record<string, RowDraft>>({});
 
   const [savingField, setSavingField] = useState<SaveField | null>(null);
+  const [savingRowId, setSavingRowId] = useState<string | null>(null);
   const [savedField, setSavedField] = useState<string | null>(null);
 
   function markSaved(field: string) {
@@ -66,8 +67,8 @@ export default function AgencyClientDetailsPage() {
     for (const platform of payload.platforms) {
       for (const account of platform.accounts) {
         next[rowKey(platform.platform, account.id)] = {
-          clientType: payload.client.client_type ?? "lead",
-          accountManager: payload.client.account_manager ?? "",
+          clientType: account.client_type ?? payload.client.client_type ?? "lead",
+          accountManager: account.account_manager ?? payload.client.account_manager ?? "",
         };
       }
     }
@@ -92,8 +93,9 @@ export default function AgencyClientDetailsPage() {
     }
   }, [displayId]);
 
-  async function patchProfile(payload: { name?: string; client_type?: string; account_manager?: string }, field: SaveField, successKey: string) {
+  async function patchProfile(payload: { name?: string; client_type?: string; account_manager?: string; platform?: string; account_id?: string }, field: SaveField, successKey: string, rowId?: string) {
     setSavingField(field);
+    if (rowId) setSavingRowId(rowId);
     setError("");
     try {
       const response = await apiRequest<ClientDetails>(`/clients/display/${displayId}`, {
@@ -108,6 +110,7 @@ export default function AgencyClientDetailsPage() {
       setError(err instanceof Error ? err.message : "Nu am putut salva modificarea.");
     } finally {
       setSavingField((current) => (current === field ? null : current));
+      if (rowId) setSavingRowId((current) => (current === rowId ? null : current));
     }
   }
 
@@ -124,7 +127,7 @@ export default function AgencyClientDetailsPage() {
     setEditingName(false);
   }
 
-  async function saveRowIfChanged(key: string, nextDraft?: RowDraft) {
+  async function saveRowIfChanged(key: string, platform: string, accountId: string, nextDraft?: RowDraft) {
     if (!data) return;
     const draft = nextDraft ?? rowDrafts[key];
     if (!draft) {
@@ -133,14 +136,17 @@ export default function AgencyClientDetailsPage() {
     }
 
     const normalizedManager = draft.accountManager.trim();
-    const currentType = data.client.client_type ?? "lead";
-    const currentManager = data.client.account_manager ?? "";
+    const currentAccount = data.platforms
+      .find((item) => item.platform === platform)
+      ?.accounts.find((item) => item.id === accountId);
+    const currentType = currentAccount?.client_type ?? data.client.client_type ?? "lead";
+    const currentManager = currentAccount?.account_manager ?? data.client.account_manager ?? "";
     if (draft.clientType === currentType && normalizedManager === currentManager) {
       setEditingRowId(null);
       return;
     }
 
-    await patchProfile({ client_type: draft.clientType, account_manager: normalizedManager }, "row", key);
+    await patchProfile({ client_type: draft.clientType, account_manager: normalizedManager, platform, account_id: accountId }, "row", key, key);
     setEditingRowId(null);
   }
 
@@ -212,8 +218,8 @@ export default function AgencyClientDetailsPage() {
                         const key = rowKey(platform.platform, account.id);
                         const isEditingRow = editingRowId === key;
                         const draft = rowDrafts[key] ?? {
-                          clientType: data.client.client_type ?? "lead",
-                          accountManager: data.client.account_manager ?? "",
+                          clientType: account.client_type ?? data.client.client_type ?? "lead",
+                          accountManager: account.account_manager ?? data.client.account_manager ?? "",
                         };
                         return (
                           <li key={key} className="rounded-md border border-slate-100 p-2 text-sm text-slate-700">
@@ -226,9 +232,9 @@ export default function AgencyClientDetailsPage() {
                                 onClick={() => setEditingRowId((current) => (current === key ? null : key))}
                                 className="rounded p-1 text-slate-500 hover:bg-slate-100"
                                 title="Editează tip client și responsabil"
-                                disabled={savingField === "row"}
+                                disabled={savingRowId === key}
                               >
-                                {savedField === key ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Pencil className="h-3.5 w-3.5" />}
+                                {savingRowId === key ? <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-500" /> : savedField === key ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Pencil className="h-3.5 w-3.5" />}
                               </button>
                             </div>
 
@@ -242,10 +248,10 @@ export default function AgencyClientDetailsPage() {
                                       const value = e.target.value;
                                       const nextDraft = { ...draft, clientType: value };
                                       setRowDrafts((prev) => ({ ...prev, [key]: nextDraft }));
-                                      void saveRowIfChanged(key, nextDraft);
+                                      void saveRowIfChanged(key, platform.platform, account.id, nextDraft);
                                     }}
                                     className="rounded border border-slate-300 px-2 py-1 text-xs"
-                                    disabled={savingField === "row"}
+                                    disabled={savingRowId === key}
                                   >
                                     <option value="lead">lead</option>
                                     <option value="e-commerce">e-commerce</option>
@@ -262,11 +268,11 @@ export default function AgencyClientDetailsPage() {
                                   <input
                                     value={draft.accountManager}
                                     onChange={(e) => setRowDrafts((prev) => ({ ...prev, [key]: { ...draft, accountManager: e.target.value } }))}
-                                    onBlur={() => void saveRowIfChanged(key)}
+                                    onBlur={() => void saveRowIfChanged(key, platform.platform, account.id)}
                                     onKeyDown={(e) => {
                                       if (e.key === "Enter") {
                                         e.preventDefault();
-                                        void saveRowIfChanged(key);
+                                        void saveRowIfChanged(key, platform.platform, account.id);
                                       }
                                       if (e.key === "Escape") {
                                         setEditingRowId(null);

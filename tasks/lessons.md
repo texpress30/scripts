@@ -39,3 +39,4 @@
 - 2026-02-27: Never execute data backfill/seed INSERT...SELECT ON CONFLICT logic inside per-request schema guards; run schema changes once at startup and keep one-off data migrations in dedicated scripts/migrations.
 - 2026-02-27: For profile forms requested as inline UX, remove bulk save CTA and implement per-field autosave contracts (blur/Enter/select) with immediate visual success feedback.
 - 2026-02-27: For list-item inline editors, always scope editing state by stable row identity (e.g., platform:account_id); never use a single global boolean that toggles all rows.
+- 2026-02-27: If UI edits are scoped per account row, backend contracts must carry row identity (`platform` + `account_id`) and response payloads must return row-level fields; otherwise frontend will mirror values across the list.

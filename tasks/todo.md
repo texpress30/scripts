@@ -1,13 +1,15 @@
-# TODO — UI refinement for Agency Client Details row editing
+# TODO — Critical row-level state isolation fix (Agency Client Details)
 
-- [x] Fix per-row editing bug so pencil/edit mode is isolated per account row (by row key), not global for entire list.
-- [x] Place `Tip client` + `Responsabil` inline on each account row and make both editable only when that row is in edit mode.
-- [x] Move Back button from body/title card into main page header (left of `Client: ...`).
-- [x] Remove legacy global `Responsabil cont` section from top card.
-- [x] Validate frontend build and capture screenshot.
+- [x] Implement true per-row state isolation so edit mode/value are keyed by `platform + account_id`.
+- [x] Ensure row updates for `Tip client` and `Responsabil` use per-row values (not shared global fallback).
+- [x] Add row-scoped saving indicator near each row pencil while save is in progress.
+- [x] Include `platform` and `account_id` in frontend PATCH payload for row edits.
+- [x] Extend backend PATCH contract and persistence logic to update only targeted mapping row.
+- [x] Return row-specific `client_type` and `account_manager` in account detail payloads for UI binding.
+- [x] Run backend compile + frontend build and capture screenshot evidence.
 
 ## Review
-- Refactored row editing state to use unique row IDs (`platform:account_id`) so activating edit for one row does not open editors for all rows.
-- Each row now shows `Tip client` and `Responsabil` on the same line block, with a single row pencil controlling edit mode and autosave behavior for that row.
-- Back navigation was moved into the AppShell header via new `headerPrefix` support, matching standard system navigation placement.
-- Removed the old global responsible section under the client title card.
+- Frontend now keeps isolated drafts by row key and compares/saves against the specific row’s current values.
+- Saving is row-scoped (`savingRowId`) with spinner feedback on the row pencil only.
+- Backend accepts `platform` + `account_id` on profile PATCH and applies updates to exactly one mapping row (`platform/account_id/client_id`).
+- Client detail account rows now include row-level `client_type` and `account_manager`, eliminating list-wide mirroring behavior caused by global values.

@@ -13,3 +13,5 @@ class UpdateClientProfileRequest(BaseModel):
     name: str | None = None
     client_type: str | None = None
     account_manager: str | None = None
+    platform: str | None = None
+    account_id: str | None = None

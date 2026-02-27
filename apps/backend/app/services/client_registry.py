@@ -31,6 +31,7 @@ class ClientRegistryService:
         self._memory_platform_accounts: dict[str, dict[str, dict[str, str]]] = {}
         self._memory_last_import_at: dict[str, str] = {}
         self._memory_account_client_mappings: dict[str, dict[str, set[int]]] = {}
+        self._memory_account_profiles: dict[str, dict[str, dict[int, dict[str, str]]]] = {}
 
     def _is_test_mode(self) -> bool:
         # Use in-memory registry only while running pytest to avoid accidental data loss in deployed environments.
@@ -108,6 +109,8 @@ class ClientRegistryService:
                     DROP CONSTRAINT IF EXISTS agency_account_client_mappings_platform_account_id_key
                     """
                 )
+                cur.execute("ALTER TABLE agency_account_client_mappings ADD COLUMN IF NOT EXISTS client_type TEXT NULL")
+                cur.execute("ALTER TABLE agency_account_client_mappings ADD COLUMN IF NOT EXISTS account_manager TEXT NULL")
                 cur.execute(
                     """
                     DO $$
@@ -257,6 +260,9 @@ class ClientRegistryService:
                 mappings = self._memory_account_client_mappings.setdefault(platform, {})
                 mappings.setdefault(account_id, set()).add(client_id)
                 client = next(c for c in self._clients if c.id == client_id)
+                per_platform = self._memory_account_profiles.setdefault(platform, {})
+                per_account = per_platform.setdefault(account_id, {})
+                per_account.setdefault(client_id, {"client_type": client.client_type, "account_manager": client.account_manager})
                 return {
                     "id": client.id,
                     "name": client.name,
@@ -281,12 +287,18 @@ class ClientRegistryService:
 
                 cur.execute(
                     """
-                    INSERT INTO agency_account_client_mappings (platform, account_id, client_id)
-                    VALUES (%s, %s, %s)
+                    INSERT INTO agency_account_client_mappings (platform, account_id, client_id, client_type, account_manager)
+                    VALUES (
+                        %s,
+                        %s,
+                        %s,
+                        (SELECT client_type FROM agency_clients WHERE id = %s),
+                        (SELECT account_manager FROM agency_clients WHERE id = %s)
+                    )
                     ON CONFLICT(platform, account_id, client_id)
                     DO UPDATE SET updated_at = NOW()
                     """,
-                    (platform, account_id, client_id),
+                    (platform, account_id, client_id, client_id, client_id),
                 )
                 if platform == "google_ads":
                     # Keep legacy column in sync (best effort; not used as source-of-truth).
@@ -331,6 +343,11 @@ class ClientRegistryService:
                 client_ids.remove(client_id)
                 if not client_ids:
                     del mappings[account_id]
+                profiles = self._memory_account_profiles.setdefault(platform, {})
+                per_account = profiles.get(account_id, {})
+                per_account.pop(client_id, None)
+                if not per_account and account_id in profiles:
+                    del profiles[account_id]
                 return True
 
         with self._connect_or_raise() as conn:
@@ -471,19 +488,26 @@ class ClientRegistryService:
                 mappings = self._memory_account_client_mappings.get(platform, {})
                 accounts = self._memory_platform_accounts.get(platform, {})
                 result: list[dict[str, str]] = []
+                profiles = self._memory_account_profiles.get(platform, {})
                 for account_id, mapped_client_ids in mappings.items():
                     if client_id not in mapped_client_ids:
                         continue
                     info = accounts.get(account_id)
                     if info:
-                        result.append({"id": info["id"], "name": info["name"]})
+                        profile = profiles.get(account_id, {}).get(client_id, {})
+                        result.append({
+                            "id": info["id"],
+                            "name": info["name"],
+                            "client_type": str(profile.get("client_type", "lead")),
+                            "account_manager": str(profile.get("account_manager", "")),
+                        })
                 return sorted(result, key=lambda item: item["id"])
 
         with self._connect_or_raise() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT a.account_id, a.account_name
+                    SELECT a.account_id, a.account_name, m.client_type, m.account_manager
                     FROM agency_account_client_mappings m
                     JOIN agency_platform_accounts a
                       ON a.platform = m.platform AND a.account_id = m.account_id
@@ -493,7 +517,7 @@ class ClientRegistryService:
                     (platform, client_id),
                 )
                 rows = cur.fetchall()
-        return [{"id": str(row[0]), "name": str(row[1])} for row in rows]
+        return [{"id": str(row[0]), "name": str(row[1]), "client_type": str(row[2]) if row[2] else "lead", "account_manager": str(row[3]) if row[3] else ""} for row in rows]
 
     def get_last_import_at(self, *, platform: str) -> str | None:
         if self._is_test_mode():
@@ -600,6 +624,8 @@ class ClientRegistryService:
         name: str | None = None,
         client_type: str | None = None,
         account_manager: str | None = None,
+        platform: str | None = None,
+        account_id: str | None = None,
     ) -> dict[str, object] | None:
         client_id = self._resolve_client_id_by_display_id(display_id=display_id)
         if client_id is None:
@@ -623,8 +649,37 @@ class ClientRegistryService:
                             client_type=normalized_type if normalized_type is not None else c.client_type,
                             account_manager=normalized_manager if normalized_manager is not None else c.account_manager,
                         )
+                        normalized_platform = platform.strip() if platform is not None else None
+                        normalized_account_id = account_id.strip() if account_id is not None else None
+                        if normalized_platform and normalized_account_id and (normalized_type is not None or normalized_manager is not None):
+                            per_platform = self._memory_account_profiles.setdefault(normalized_platform, {})
+                            per_account = per_platform.setdefault(normalized_account_id, {})
+                            profile = per_account.setdefault(client_id, {"client_type": c.client_type, "account_manager": c.account_manager})
+                            if normalized_type is not None:
+                                profile["client_type"] = normalized_type
+                            if normalized_manager is not None:
+                                profile["account_manager"] = normalized_manager
                         return self.get_client_details(client_id=client_id)
             return None
+
+        normalized_platform = platform.strip() if platform is not None else None
+        normalized_account_id = account_id.strip() if account_id is not None else None
+
+        if normalized_platform and normalized_account_id:
+            with self._connect_or_raise() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE agency_account_client_mappings
+                        SET client_type = COALESCE(%s, client_type),
+                            account_manager = COALESCE(%s, account_manager),
+                            updated_at = NOW()
+                        WHERE platform = %s AND account_id = %s AND client_id = %s
+                        """,
+                        (normalized_type, normalized_manager, normalized_platform, normalized_account_id, client_id),
+                    )
+                conn.commit()
+            return self.get_client_details(client_id=client_id)
 
         set_clauses: list[str] = []
         values: list[object] = []
@@ -662,6 +717,7 @@ class ClientRegistryService:
                 self._memory_platform_accounts.clear()
                 self._memory_last_import_at.clear()
                 self._memory_account_client_mappings.clear()
+                self._memory_account_profiles.clear()
             return
 
         with self._connect_or_raise() as conn:
