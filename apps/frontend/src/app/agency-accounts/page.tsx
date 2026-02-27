@@ -23,7 +23,12 @@ type AccountSummaryItem = {
 
 type AccountSummaryResponse = { items: AccountSummaryItem[] };
 
-type GoogleAccount = { id: string; name: string };
+type GoogleAccount = {
+  id: string;
+  name: string;
+  attached_client_id?: number | null;
+  attached_client_name?: string | null;
+};
 
 type GoogleAccountsResponse = {
   items: GoogleAccount[];
@@ -72,10 +77,12 @@ export default function AgencyAccountsPage() {
     setGoogleAccounts(payload.items);
   }
 
+  async function reloadAccountsData() {
+    await Promise.all([loadClients(), loadAccountSummary(), loadGoogleAccounts()]);
+  }
+
   useEffect(() => {
-    void loadClients();
-    void loadAccountSummary();
-    void loadGoogleAccounts();
+    void reloadAccountsData();
   }, []);
 
   async function attachGoogleAccount(clientId: number, customerId: string) {
@@ -86,12 +93,25 @@ export default function AgencyAccountsPage() {
         body: JSON.stringify({ customer_id: customerId }),
       });
       setAttachStatus(`Contul ${customerId} a fost atașat clientului #${clientId}.`);
-      await loadClients();
+      await reloadAccountsData();
     } catch (err) {
       setAttachStatus(err instanceof Error ? err.message : "Nu am putut atașa contul Google");
     }
   }
 
+  async function detachGoogleAccount(clientId: number, customerId: string) {
+    setAttachStatus("");
+    try {
+      await apiRequest(`/clients/${clientId}/detach-google-account`, {
+        method: "DELETE",
+        body: JSON.stringify({ customer_id: customerId }),
+      });
+      setAttachStatus(`Contul ${customerId} a fost detașat de la clientul #${clientId}.`);
+      await reloadAccountsData();
+    } catch (err) {
+      setAttachStatus(err instanceof Error ? err.message : "Nu am putut detașa contul Google");
+    }
+  }
 
   async function refreshGoogleAccountNames() {
     setAttachStatus("");
@@ -101,8 +121,7 @@ export default function AgencyAccountsPage() {
         method: "POST",
       });
       setAttachStatus(`Au fost actualizate ${payload.refreshed_count} conturi Google.`);
-      await loadAccountSummary();
-      await loadGoogleAccounts();
+      await reloadAccountsData();
     } catch (err) {
       setAttachStatus(err instanceof Error ? err.message : "Nu am putut actualiza numele conturilor Google");
     } finally {
@@ -111,17 +130,6 @@ export default function AgencyAccountsPage() {
   }
 
   const selectedSummary = useMemo(() => summary.find((item) => item.platform === selectedPlatform), [summary, selectedPlatform]);
-
-  const attachedClientByCustomerId = useMemo(() => {
-    const map = new Map<string, ClientRecord>();
-    for (const client of clients) {
-      const customerId = client.google_customer_id?.trim();
-      if (customerId) {
-        map.set(customerId, client);
-      }
-    }
-    return map;
-  }, [clients]);
 
   return (
     <ProtectedPage>
@@ -162,14 +170,12 @@ export default function AgencyAccountsPage() {
                       <div>
                         <p className="text-sm font-medium text-slate-900">{account.name}</p>
                         <p className="text-xs text-slate-500">ID: {account.id}</p>
-                        {attachedClientByCustomerId.get(account.id) ? (
-                          <p className="text-xs text-emerald-700">Atașat la: {attachedClientByCustomerId.get(account.id)?.name}</p>
-                        ) : null}
+                        {account.attached_client_name ? <p className="text-xs text-emerald-700">Atașat la: {account.attached_client_name}</p> : null}
                       </div>
                       <div className="flex items-center gap-2">
                         <select
                           className="rounded-md border border-slate-300 px-2 py-1 text-sm"
-                          value={attachedClientByCustomerId.get(account.id)?.id?.toString() ?? ""}
+                          value={account.attached_client_id?.toString() ?? ""}
                           onChange={(event) => {
                             const value = Number(event.target.value);
                             if (value > 0) {
@@ -177,15 +183,21 @@ export default function AgencyAccountsPage() {
                             }
                           }}
                         >
-                          <option value="">
-                            Atașează la client...
-                          </option>
+                          <option value="">Atașează la client...</option>
                           {clients.map((client) => (
                             <option key={client.id} value={client.id}>
                               #{client.id} {client.name}
                             </option>
                           ))}
                         </select>
+                        {account.attached_client_id ? (
+                          <button
+                            className="wm-btn"
+                            onClick={() => void detachGoogleAccount(account.attached_client_id ?? 0, account.id)}
+                          >
+                            Detașează
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                   ))}

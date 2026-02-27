@@ -28,3 +28,5 @@
 - 2026-02-26: When introducing alias/compatibility endpoints, verify they use the same naming/data-shaping path as primary endpoints; stale alias logic can silently reintroduce deprecated UI values.
 
 - 2026-02-26: For attach/mapping dropdowns, always use controlled component values derived from persisted backend state; never reset to placeholder after successful save.
+
+- 2026-02-26: For account mappings, model agency client↔platform account as explicit link table semantics from day one (client can have many accounts) and never encode mapping in a single client column.

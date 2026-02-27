@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.dependencies import enforce_action_scope, get_current_user
-from app.schemas.client import AttachGoogleAccountRequest, CreateClientRequest
+from app.schemas.client import AttachGoogleAccountRequest, CreateClientRequest, DetachGoogleAccountRequest
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
 from app.services.client_registry import client_registry_service
@@ -60,9 +60,13 @@ def list_google_accounts(user: AuthUser = Depends(get_current_user)) -> dict[str
 @router.post("/{client_id}/attach-google-account")
 def attach_google_account(client_id: int, payload: AttachGoogleAccountRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, str | int | None]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
-    updated = client_registry_service.assign_google_customer(client_id=client_id, customer_id=payload.customer_id)
+    updated = client_registry_service.attach_platform_account_to_client(
+        platform="google_ads",
+        client_id=client_id,
+        account_id=payload.customer_id,
+    )
     if updated is None:
-        raise HTTPException(status_code=404, detail="Client not found")
+        raise HTTPException(status_code=404, detail="Client or Google account not found")
 
     audit_log_service.log(
         actor_email=user.email,
@@ -72,3 +76,31 @@ def attach_google_account(client_id: int, payload: AttachGoogleAccountRequest, u
         details={"customer_id": payload.customer_id},
     )
     return updated
+
+
+@router.delete("/{client_id}/detach-google-account")
+def detach_google_account(client_id: int, payload: DetachGoogleAccountRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    deleted = client_registry_service.detach_platform_account_from_client(
+        platform="google_ads",
+        client_id=client_id,
+        account_id=payload.customer_id,
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Google account mapping not found")
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="clients.detach_google_account",
+        resource=f"client:{client_id}",
+        details={"customer_id": payload.customer_id},
+    )
+    return {"status": "ok", "client_id": client_id, "customer_id": payload.customer_id}
+
+
+@router.get("/{client_id}/accounts")
+def list_client_google_accounts(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    items = client_registry_service.list_client_platform_accounts(platform="google_ads", client_id=client_id)
+    return {"items": items, "count": len(items)}

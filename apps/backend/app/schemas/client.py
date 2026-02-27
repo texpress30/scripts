@@ -7,3 +7,7 @@ class CreateClientRequest(BaseModel):
 
 class AttachGoogleAccountRequest(BaseModel):
     customer_id: str
+
+
+class DetachGoogleAccountRequest(BaseModel):
+    customer_id: str

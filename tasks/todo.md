@@ -1,14 +1,19 @@
-# TODO — Show attached client name in Agency Accounts dropdown
+# TODO — Many-to-many Google account mappings + README refresh
 
-- [x] Inspect current attach dropdown behavior in `/agency-accounts` and identify why it resets to placeholder.
-- [x] Update UI mapping logic so each Google account row displays attached client name after successful attach.
-- [x] Keep dropdown options limited to manual Agency Clients and allow re-attach to another client.
-- [x] Validate via frontend build and visual check.
-- [x] Commit changes and create PR.
+- [x] Attempt required workspace sync commands and record environment limitations.
+- [x] Inspect current one-to-one Google account attachment model in backend and frontend.
+- [x] Implement many-to-many-compatible mapping model using link table semantics (client can have multiple Google accounts; account maps to one client).
+- [x] Add/adjust endpoints: attach (idempotent), detach, list client accounts.
+- [x] Update Agency Accounts dropdown UX to keep all clients selectable and show current attachment with change/detach actions.
+- [x] Update repository README with current architecture/endpoints/UI workflow.
+- [x] Run backend/frontend checks and take screenshot.
+- [x] Commit changes and create PR with title reflecting this specific scope.
 
 ## Review
-- Converted the account-client selector to a controlled dropdown based on persisted `clients[].google_customer_id` mapping.
-- After attach, UI now reloads clients and each account row resolves to selected client value; placeholder appears only when no mapping exists.
-- Added explicit `Atașat la: <client name>` label per Google account row for clear confirmation.
-- Dropdown keeps manual clients list and still allows changing attachment by selecting a different client.
+- Added table-backed mapping model `agency_account_client_mappings` (unique per platform/account) and backfill from legacy `agency_clients.google_customer_id`.
+- Implemented idempotent attach (upsert), detach endpoint, and per-client account listing endpoint for Google mappings.
+- Updated `GET /clients/accounts/google` to return attached client metadata per account, enabling reliable UI binding.
+- Updated Agency Accounts UI to keep all clients available in each dropdown, display current attachment, and allow detach/reassign.
+- Refreshed root README with current architecture, endpoints, mapping model, and operational scripts.
+- Validation executed with backend targeted tests, frontend build, and screenshot artifact.
 
