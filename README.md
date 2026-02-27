@@ -1,94 +1,100 @@
 # scripts
 
-Monorepo de pornire pentru platforma MCC multi-platform cu AI.
+Monorepo pentru platforma MCC multi-provider (Google/Meta/TikTok/Pinterest/Snapchat) cu backend FastAPI și frontend Next.js.
 
-## Structură
-- `apps/backend` — FastAPI backend (Sprint 1 + Sprint 2)
-- `apps/backend/db/migrations/0001_core_entities.sql` — schema SQL pentru entitățile principale MCC (agencies/subaccounts/campaigns/insights/recommendations) + mapare `external_id` Google/Meta/TikTok
-- `apps/frontend` — placeholder Next.js (Phase 0)
-- `IMPLEMENTATION_BRIEF_RO.md` — brief consolidat
-- `NEXT_STEPS_RO.md` — roadmap pe sprinturi
-- `DECISIONS_LOCKED_RO.md` — decizii kickoff confirmate
-- `PHASE0_SETUP_RO.md` — status setup tehnic inițial
-- `SPRINT1_PROGRESS_RO.md` — progres Sprint 1 (auth, RBAC, audit)
-- `SPRINT2_PROGRESS_RO.md` — progres Sprint 2 (Google Ads status/sync + dashboard)
-- `SPRINT3_PROGRESS_RO.md` — progres Sprint 3 (Meta Ads + dashboard unificat)
-- `SPRINT4_PROGRESS_RO.md` — progres Sprint 4 (rules engine + notificări)
-- `SPRINT5_PROGRESS_RO.md` — progres Sprint 5 (AI assistant + insights)
-- `SPRINT6_PROGRESS_RO.md` — progres Sprint 6 (BigQuery export + hardening + E2E)
-- `SPRINT6_1_CLOSEOUT_RO.md` — mini sprint 6.1 (acceptance gates + close-out Scope v1)
-- `SCOPE_V1_CLOSEOUT_REPORT_TEMPLATE_RO.md` — template raport final Scope v1 (criteriu/evidență/verdict)
-- `PILOT_GO_NO_GO_CHECKLIST_RO.md` — checklist executabil pentru decizie pilot
-- `RUNBOOK_P1_P2_ESCALATION_RO.md` — runbook incidente P1/P2 + escalation
-- `READY_FOR_PILOT_RO.md` — raport final de lansare pilot
-- `SPRINT_FRONTEND1_PROGRESS_RO.md` — progres Faza 1 Frontend (login/dashboard/clienți)
+## Structură principală
+- `apps/backend` — API FastAPI, RBAC action+scope, servicii integrare, audit, persistență Postgres.
+- `apps/frontend` — aplicație Next.js (Agency + Sub-account UI).
+- `apps/backend/db/migrations` — migrații SQL pentru snapshot-uri, importuri și mapări.
+- `scripts` — scripturi operaționale (ex: refresh nume conturi Google).
+- `tasks` — TODO + lessons pentru execuție și postmortem.
 
-## Setup rapid (backend)
-1. Copiază variabilele de mediu:
-   - `cp .env.example .env`
-2. Completează în `.env` cheile tale reale (nu se commit-uiesc).
-3. Încarcă variabilele în shell:
-   - `set -a && source .env && set +a`
-4. Rulează backend local:
-   - `cd apps/backend`
-   - `pip install -r requirements.txt`
-   - `uvicorn app.main:app --reload`
+## Setup rapid
+### Backend
+```bash
+cd apps/backend
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+```
 
-## Variabile de mediu
-**Obligatoriu pentru boot minim (ex: login):**
-- `APP_AUTH_SECRET`
+### Frontend
+```bash
+cd apps/frontend
+npm install
+npm run dev
+```
 
-**Opționale la boot, recomandate pentru funcționalitățile complete:**
-- `OPENAI_API_KEY`
-- `GOOGLE_ADS_TOKEN`
-- `META_ACCESS_TOKEN`
-- `BIGQUERY_PROJECT_ID`
+## Config minim
+Variabile importante:
+- `APP_AUTH_SECRET` (obligatoriu)
+- `DATABASE_URL` (pentru persistență non-test)
+- `APP_ENV=test` trebuie folosit doar în teste automate (pytest), altfel aplicația poate porni în mod de test și pierde persistența la restart.
+- Google Ads production flow:
+  - `GOOGLE_ADS_MODE=production`
+  - `GOOGLE_ADS_CLIENT_ID`
+  - `GOOGLE_ADS_CLIENT_SECRET`
+  - `GOOGLE_ADS_DEVELOPER_TOKEN`
+  - `GOOGLE_ADS_MANAGER_CUSTOMER_ID`
+  - `GOOGLE_ADS_REDIRECT_URI`
+  - `GOOGLE_ADS_REFRESH_TOKEN` (după OAuth exchange)
 
-Aplicația citește valorile din variabile de mediu prin `os.environ` și nu hardcodează date sensibile. Dacă lipsesc cheile de integrare, endpoint-urile de integrare/AI/export pot răspunde cu erori controlate, dar serverul nu mai cade la startup.
+Feature flags:
+- `FF_TIKTOK_INTEGRATION`
+- `FF_PINTEREST_INTEGRATION`
+- `FF_SNAPCHAT_INTEGRATION`
 
-## Endpoint-uri disponibile (backend)
+## Flux Agency Accounts (Google)
+### Import + naming real
+1. Import conturi prin endpoint-urile Google Ads.
+2. Numele conturilor se persistă din `descriptive_name` (fallback: ID simplu).
+3. Refresh operațional al numelor deja importate:
+```bash
+cd apps/backend
+python ../../scripts/refresh_google_account_names.py
+```
+
+### Mapping conturi la clienți (many-to-many client-side)
+- Un cont Google Ads este atașat la **un singur client**.
+- Un client poate avea **mai multe conturi Google Ads**.
+- Persistența se face în tabelul de legătură `agency_account_client_mappings`.
+
+Endpoint-uri relevante:
+- `POST /clients/{client_id}/attach-google-account`
+- `DELETE /clients/{client_id}/detach-google-account`
+- `GET /clients/{client_id}/accounts`
+- `GET /clients/accounts/google`
+
+## Endpoint-uri cheie
 ### Core
-- `GET /`
-- `GET /health`
-
-### Sprint 1
 - `POST /auth/login`
 - `GET /clients`
 - `POST /clients`
 - `GET /audit`
 
-### Sprint 2
+### Agency accounts / integrations
 - `GET /integrations/google-ads/status`
+- `GET /integrations/google-ads/accounts`
+- `POST /integrations/google-ads/import-accounts`
+- `POST /integrations/google-ads/refresh-account-names`
 - `POST /integrations/google-ads/{client_id}/sync`
-
-### Sprint 3
 - `GET /integrations/meta-ads/status`
 - `POST /integrations/meta-ads/{client_id}/sync`
-- `GET /dashboard/{client_id}` (consolidat Google + Meta)
+- `GET /integrations/tiktok-ads/status`
+- `POST /integrations/tiktok-ads/{client_id}/sync`
+- `GET /integrations/pinterest-ads/status`
+- `POST /integrations/pinterest-ads/{client_id}/sync`
+- `GET /integrations/snapchat-ads/status`
+- `POST /integrations/snapchat-ads/{client_id}/sync`
+
+## Verificare locală
+```bash
+cd apps/backend && pytest -q
+cd apps/frontend && npm run build
+```
 
 
-### Sprint 4
-- `GET /rules/{client_id}`
-- `POST /rules/{client_id}`
-- `POST /rules/{client_id}/evaluate`
-
-
-### Sprint 5
-- `GET /ai/recommendations/{client_id}`
-- `POST /insights/weekly/{client_id}/generate`
-- `GET /insights/weekly/{client_id}`
-
-
-### Sprint 6
-- `POST /exports/bigquery/{client_id}`
-- `GET /exports/bigquery/runs`
-
-
-## Deploy troubleshooting (405 la login)
-Frontend-ul folosește proxy Next (`/api/*`) către backend Railway, configurat prin `BACKEND_API_URL`.
-Dacă frontend-ul pe Vercel primește `405 Method Not Allowed` la login:
-- verifică în Vercel variabila `BACKEND_API_URL` să fie URL-ul backend-ului Railway (nu domeniul frontend),
-- verifică endpoint-ul backend: `POST /auth/login` (nu GET),
-- verifică în Railway CORS: `APP_CORS_ORIGINS` include domeniul Vercel și/sau `APP_CORS_ORIGIN_REGEX` este configurat.
-- dacă `APP_CORS_ORIGIN_REGEX` este invalid, backend-ul folosește fallback sigur (`https://.*\.vercel\.app`) în loc să pice la startup.
-
+## UI Agency
+- `/agency/clients`: listă clienți manuali (ID afișat secvențial de la 1).
+- Click pe numele clientului duce la `/agency/clients/{id}` (ID afișat) pentru detalii complete (platforme active + conturi atașate per platformă).
+- În pagina de detalii client poți seta `tip client` (lead/e-commerce/programmatic) și `responsabil cont` (membru echipă).
+- `/agency-accounts`: atașare/detașare conturi Google la clienți, inclusiv re-atașare.
