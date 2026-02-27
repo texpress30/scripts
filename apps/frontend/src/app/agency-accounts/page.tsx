@@ -63,6 +63,8 @@ export default function AgencyAccountsPage() {
   const [attachStatus, setAttachStatus] = useState("");
   const [loadError, setLoadError] = useState("");
   const [refreshBusy, setRefreshBusy] = useState(false);
+  const [accountsPage, setAccountsPage] = useState(1);
+  const [accountsPageSize, setAccountsPageSize] = useState(50);
 
   async function loadClients() {
     const payload = await apiRequest<ClientsResponse>("/clients");
@@ -143,6 +145,23 @@ export default function AgencyAccountsPage() {
 
   const selectedSummary = useMemo(() => summary.find((item) => item.platform === selectedPlatform), [summary, selectedPlatform]);
 
+  const totalAccountsPages = useMemo(() => Math.max(1, Math.ceil(googleAccounts.length / accountsPageSize)), [googleAccounts.length, accountsPageSize]);
+
+  const pagedGoogleAccounts = useMemo(() => {
+    const start = (accountsPage - 1) * accountsPageSize;
+    return googleAccounts.slice(start, start + accountsPageSize);
+  }, [googleAccounts, accountsPage, accountsPageSize]);
+
+  useEffect(() => {
+    setAccountsPage(1);
+  }, [accountsPageSize]);
+
+  useEffect(() => {
+    if (accountsPage > totalAccountsPages) {
+      setAccountsPage(totalAccountsPages);
+    }
+  }, [accountsPage, totalAccountsPages]);
+
   return (
     <ProtectedPage>
       <AppShell title="Agency Accounts">
@@ -178,7 +197,7 @@ export default function AgencyAccountsPage() {
                 {loadError ? <p className="mt-2 text-xs text-red-600">{loadError}</p> : null}
                 {attachStatus ? <p className="mt-2 text-xs text-emerald-700">{attachStatus}</p> : null}
                 <div className="mt-3 space-y-2">
-                  {googleAccounts.map((account) => (
+                  {pagedGoogleAccounts.map((account) => (
                     <div key={account.id} className="flex flex-wrap items-center justify-between rounded-md border border-slate-200 px-3 py-2">
                       <div>
                         <p className="text-sm font-medium text-slate-900">{account.name}</p>
@@ -216,6 +235,43 @@ export default function AgencyAccountsPage() {
                   ))}
                   {googleAccounts.length === 0 ? <p className="text-sm text-slate-500">Nu există conturi importate.</p> : null}
                 </div>
+                {googleAccounts.length > 0 ? (
+                  <div className="mt-3 flex flex-col gap-2 border-t border-slate-100 pt-3 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
+                    <p>
+                      Afișare {(accountsPage - 1) * accountsPageSize + 1}-{Math.min(accountsPage * accountsPageSize, googleAccounts.length)} din {googleAccounts.length}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <span>Rânduri/pagină</span>
+                      <select
+                        className="rounded-md border border-slate-300 px-2 py-1"
+                        value={accountsPageSize}
+                        onChange={(event) => setAccountsPageSize(Number(event.target.value))}
+                      >
+                        {[25, 50, 100, 200, 500].map((size) => (
+                          <option key={size} value={size}>{size}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="rounded border border-slate-300 px-2 py-1 disabled:opacity-50"
+                        disabled={accountsPage <= 1}
+                        onClick={() => setAccountsPage((current) => Math.max(1, current - 1))}
+                      >
+                        Anterior
+                      </button>
+                      <span>Pagina {accountsPage}/{totalAccountsPages}</span>
+                      <button
+                        type="button"
+                        className="rounded border border-slate-300 px-2 py-1 disabled:opacity-50"
+                        disabled={accountsPage >= totalAccountsPages}
+                        onClick={() => setAccountsPage((current) => Math.min(totalAccountsPages, current + 1))}
+                      >
+                        Următor
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
               </div>
             ) : (
               <div className="mt-4 wm-card p-4 text-sm text-slate-500">Detalierea conturilor este disponibilă momentan pentru Google Ads.</div>
