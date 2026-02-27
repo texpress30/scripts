@@ -1,14 +1,13 @@
-# TODO — Context-aware settings sidebar (Agency vs Sub-Account)
+# TODO — Recreate Settings/Profile page (Agency Account View)
 
-- [x] Make `Go Back` dynamic based on settings context (agency -> agency dashboard, sub-account -> matching sub dashboard).
-- [x] Add context-aware settings menu lists (Agency list vs Sub-Account list).
-- [x] Persist sub-account settings context via ID-based routes (`/subaccount/[id]/settings/*`).
-- [x] Keep active-state highlighting and update settings header label by context (`AGENCY SETTINGS` / `SUB-ACCOUNT SETTINGS`).
-- [x] Ensure Settings entry in main sidebar routes to context-appropriate destination.
-- [x] Run frontend build and capture screenshot evidence.
+- [x] Build two-column responsive layout for `/settings/profile`.
+- [x] Implement left `Personal Data` card with avatar section, required fields, validation messages, language select, and `Update Profile` action.
+- [x] Implement right column cards: `Change Password`, `Sign Out Everywhere`, `Two-factor Authentication (2FA) App`.
+- [x] Match requested control placement (buttons bottom-right / outlined 2FA CTA, info icon tooltip).
+- [x] Run frontend build and capture screenshot.
 
 ## Review
-- AppShell now detects agency/sub-account settings mode from route prefixes and swaps sidebar link sets accordingly.
-- `Go Back` destination is dynamic and returns to `/agency/dashboard` or `/sub/{id}/dashboard`.
-- Added sub-account settings routes with persistent `id` in URL for refresh-safe context.
-- Sidebar section title now clearly indicates context: `AGENCY SETTINGS` or `SUB-ACCOUNT SETTINGS`.
+- Replaced placeholder Settings/Profile page with full UI layout and form sections requested.
+- Added profile avatar area with edit/delete overlay controls and image size guidance text.
+- Added field-level required indicators and inline validation messages for first/last name.
+- Added separate action cards for password update, sign out everywhere, and 2FA setup.
