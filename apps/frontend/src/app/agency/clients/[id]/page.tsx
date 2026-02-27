@@ -23,6 +23,9 @@ type ClientDetails = {
   platforms: PlatformInfo[];
 };
 
+type SaveField = "name" | "row";
+type RowDraft = { clientType: string; accountManager: string };
+
 function prettyPlatform(platform: string): string {
   const map: Record<string, string> = {
     google_ads: "Google Ads",
@@ -34,7 +37,9 @@ function prettyPlatform(platform: string): string {
   return map[platform] ?? platform;
 }
 
-type SaveField = "name" | "client_type" | "account_manager";
+function rowKey(platform: string, accountId: string): string {
+  return `${platform}:${accountId}`;
+}
 
 export default function AgencyClientDetailsPage() {
   const params = useParams<{ id: string }>();
@@ -43,19 +48,30 @@ export default function AgencyClientDetailsPage() {
   const [error, setError] = useState("");
 
   const [editingName, setEditingName] = useState(false);
-  const [editingClientType, setEditingClientType] = useState(false);
-  const [editingManager, setEditingManager] = useState(false);
+  const [editingRowId, setEditingRowId] = useState<string | null>(null);
 
   const [nameInput, setNameInput] = useState("");
-  const [clientType, setClientType] = useState("lead");
-  const [accountManager, setAccountManager] = useState("");
+  const [rowDrafts, setRowDrafts] = useState<Record<string, RowDraft>>({});
 
   const [savingField, setSavingField] = useState<SaveField | null>(null);
-  const [savedField, setSavedField] = useState<SaveField | null>(null);
+  const [savedField, setSavedField] = useState<string | null>(null);
 
-  function markSaved(field: SaveField) {
+  function markSaved(field: string) {
     setSavedField(field);
     window.setTimeout(() => setSavedField((current) => (current === field ? null : current)), 1200);
+  }
+
+  function setAllRowDraftsFromPayload(payload: ClientDetails) {
+    const next: Record<string, RowDraft> = {};
+    for (const platform of payload.platforms) {
+      for (const account of platform.accounts) {
+        next[rowKey(platform.platform, account.id)] = {
+          clientType: payload.client.client_type ?? "lead",
+          accountManager: payload.client.account_manager ?? "",
+        };
+      }
+    }
+    setRowDrafts(next);
   }
 
   async function load() {
@@ -64,8 +80,7 @@ export default function AgencyClientDetailsPage() {
       const payload = await apiRequest<ClientDetails>(`/clients/display/${displayId}`);
       setData(payload);
       setNameInput(payload.client.name);
-      setClientType(payload.client.client_type ?? "lead");
-      setAccountManager(payload.client.account_manager ?? "");
+      setAllRowDraftsFromPayload(payload);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Nu am putut încărca detaliile clientului.");
     }
@@ -77,7 +92,7 @@ export default function AgencyClientDetailsPage() {
     }
   }, [displayId]);
 
-  async function patchProfile(payload: { name?: string; client_type?: string; account_manager?: string }, field: SaveField) {
+  async function patchProfile(payload: { name?: string; client_type?: string; account_manager?: string }, field: SaveField, successKey: string) {
     setSavingField(field);
     setError("");
     try {
@@ -87,9 +102,8 @@ export default function AgencyClientDetailsPage() {
       });
       setData(response);
       setNameInput(response.client.name);
-      setClientType(response.client.client_type ?? "lead");
-      setAccountManager(response.client.account_manager ?? "");
-      markSaved(field);
+      setAllRowDraftsFromPayload(response);
+      markSaved(successKey);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Nu am putut salva modificarea.");
     } finally {
@@ -106,116 +120,85 @@ export default function AgencyClientDetailsPage() {
       setEditingName(false);
       return;
     }
-    await patchProfile({ name: trimmed }, "name");
+    await patchProfile({ name: trimmed }, "name", "name");
     setEditingName(false);
   }
 
-  async function saveManagerIfChanged() {
+  async function saveRowIfChanged(key: string, nextDraft?: RowDraft) {
     if (!data) return;
-    const trimmed = accountManager.trim();
-    const current = data.client.account_manager ?? "";
-    if (trimmed === current) {
-      setEditingManager(false);
+    const draft = nextDraft ?? rowDrafts[key];
+    if (!draft) {
+      setEditingRowId(null);
       return;
     }
-    await patchProfile({ account_manager: trimmed }, "account_manager");
-    setEditingManager(false);
-  }
 
-  async function selectClientType(value: string) {
-    setClientType(value);
-    await patchProfile({ client_type: value }, "client_type");
-    setEditingClientType(false);
+    const normalizedManager = draft.accountManager.trim();
+    const currentType = data.client.client_type ?? "lead";
+    const currentManager = data.client.account_manager ?? "";
+    if (draft.clientType === currentType && normalizedManager === currentManager) {
+      setEditingRowId(null);
+      return;
+    }
+
+    await patchProfile({ client_type: draft.clientType, account_manager: normalizedManager }, "row", key);
+    setEditingRowId(null);
   }
 
   const title = useMemo(() => (data ? `Client: ${data.client.name}` : `Client #${displayId}`), [data, displayId]);
 
   return (
     <ProtectedPage>
-      <AppShell title={title}>
+      <AppShell
+        title={title}
+        headerPrefix={
+          <Link
+            href="/agency/clients"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50"
+            title="Înapoi la clienți"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+        }
+      >
         <main className="space-y-4 p-6">
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
           {data ? (
             <>
               <section className="wm-card p-4">
-                <div className="flex items-center gap-3">
-                  <Link href="/agency/clients" className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50" title="Înapoi la clienți">
-                    <ArrowLeft className="h-4 w-4" />
-                  </Link>
-                  <div>
-                    <p className="text-sm text-slate-500">Client #{data.client.display_id ?? displayId}</p>
-                    <div className="flex items-center gap-2">
-                      {editingName ? (
-                        <input
-                          autoFocus
-                          value={nameInput}
-                          onChange={(e) => setNameInput(e.target.value)}
-                          onBlur={() => void saveNameIfChanged()}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              void saveNameIfChanged();
-                            }
-                            if (e.key === "Escape") {
-                              setNameInput(data.client.name);
-                              setEditingName(false);
-                            }
-                          }}
-                          className="rounded-md border border-slate-300 px-2 py-1 text-xl font-semibold text-slate-900"
-                        />
-                      ) : (
-                        <h2 className="text-xl font-semibold text-slate-900">{data.client.name}</h2>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setEditingName(true)}
-                        className="rounded-md p-1 text-slate-500 hover:bg-slate-100"
-                        title="Editează nume client"
-                        disabled={savingField === "name"}
-                      >
-                        {savedField === "name" ? <Check className="h-4 w-4 text-emerald-600" /> : <Pencil className="h-4 w-4" />}
-                      </button>
-                    </div>
-                    <p className="text-sm text-slate-600">Owner: {data.client.owner_email}</p>
-                  </div>
+                <p className="text-sm text-slate-500">Client #{data.client.display_id ?? displayId}</p>
+                <div className="mt-1 flex items-center gap-2">
+                  {editingName ? (
+                    <input
+                      autoFocus
+                      value={nameInput}
+                      onChange={(e) => setNameInput(e.target.value)}
+                      onBlur={() => void saveNameIfChanged()}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void saveNameIfChanged();
+                        }
+                        if (e.key === "Escape") {
+                          setNameInput(data.client.name);
+                          setEditingName(false);
+                        }
+                      }}
+                      className="rounded-md border border-slate-300 px-2 py-1 text-xl font-semibold text-slate-900"
+                    />
+                  ) : (
+                    <h2 className="text-xl font-semibold text-slate-900">{data.client.name}</h2>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setEditingName(true)}
+                    className="rounded-md p-1 text-slate-500 hover:bg-slate-100"
+                    title="Editează nume client"
+                    disabled={savingField === "name"}
+                  >
+                    {savedField === "name" ? <Check className="h-4 w-4 text-emerald-600" /> : <Pencil className="h-4 w-4" />}
+                  </button>
                 </div>
-
-                <div className="mt-4">
-                  <p className="text-xs font-medium text-slate-500">Responsabil cont</p>
-                  <div className="mt-1 flex items-center gap-2">
-                    {editingManager ? (
-                      <input
-                        autoFocus
-                        value={accountManager}
-                        onChange={(e) => setAccountManager(e.target.value)}
-                        onBlur={() => void saveManagerIfChanged()}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            void saveManagerIfChanged();
-                          }
-                          if (e.key === "Escape") {
-                            setAccountManager(data.client.account_manager ?? "");
-                            setEditingManager(false);
-                          }
-                        }}
-                        className="w-full max-w-md rounded-md border border-slate-300 px-2 py-1 text-sm"
-                        placeholder="Nume membru echipă"
-                      />
-                    ) : (
-                      <p className="text-sm text-slate-700">{accountManager || "—"}</p>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setEditingManager(true)}
-                      className="rounded-md p-1 text-slate-500 hover:bg-slate-100"
-                      title="Editează responsabil cont"
-                      disabled={savingField === "account_manager"}
-                    >
-                      {savedField === "account_manager" ? <Check className="h-4 w-4 text-emerald-600" /> : <Pencil className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </div>
+                <p className="text-sm text-slate-600">Owner: {data.client.owner_email}</p>
               </section>
 
               <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -225,39 +208,82 @@ export default function AgencyClientDetailsPage() {
                     <p className="mt-1 text-xs text-slate-500">Activ: {platform.enabled ? "Da" : "Nu"}</p>
                     <p className="text-xs text-slate-500">Conturi atașate: {platform.count}</p>
                     <ul className="mt-2 space-y-2">
-                      {platform.accounts.map((account) => (
-                        <li key={account.id} className="rounded-md border border-slate-100 p-2 text-sm text-slate-700">
-                          <div>
-                            {account.name} <span className="text-xs text-slate-500">({account.id})</span>
-                          </div>
-                          <div className="mt-2 flex items-center gap-2 text-xs">
-                            <span className="text-slate-500">Tip client:</span>
-                            {editingClientType ? (
-                              <select
-                                value={clientType}
-                                onChange={(e) => void selectClientType(e.target.value)}
-                                className="rounded border border-slate-300 px-2 py-1 text-xs"
-                                disabled={savingField === "client_type"}
+                      {platform.accounts.map((account) => {
+                        const key = rowKey(platform.platform, account.id);
+                        const isEditingRow = editingRowId === key;
+                        const draft = rowDrafts[key] ?? {
+                          clientType: data.client.client_type ?? "lead",
+                          accountManager: data.client.account_manager ?? "",
+                        };
+                        return (
+                          <li key={key} className="rounded-md border border-slate-100 p-2 text-sm text-slate-700">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                {account.name} <span className="text-xs text-slate-500">({account.id})</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setEditingRowId((current) => (current === key ? null : key))}
+                                className="rounded p-1 text-slate-500 hover:bg-slate-100"
+                                title="Editează tip client și responsabil"
+                                disabled={savingField === "row"}
                               >
-                                <option value="lead">lead</option>
-                                <option value="e-commerce">e-commerce</option>
-                                <option value="programmatic">programmatic</option>
-                              </select>
-                            ) : (
-                              <span className="font-medium text-slate-700">{clientType}</span>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => setEditingClientType(true)}
-                              className="rounded p-1 text-slate-500 hover:bg-slate-100"
-                              title="Editează tip client"
-                              disabled={savingField === "client_type"}
-                            >
-                              {savedField === "client_type" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Pencil className="h-3.5 w-3.5" />}
-                            </button>
-                          </div>
-                        </li>
-                      ))}
+                                {savedField === key ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Pencil className="h-3.5 w-3.5" />}
+                              </button>
+                            </div>
+
+                            <div className="mt-2 grid grid-cols-1 gap-2 text-xs md:grid-cols-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-slate-500">Tip client:</span>
+                                {isEditingRow ? (
+                                  <select
+                                    value={draft.clientType}
+                                    onChange={(e) => {
+                                      const value = e.target.value;
+                                      const nextDraft = { ...draft, clientType: value };
+                                      setRowDrafts((prev) => ({ ...prev, [key]: nextDraft }));
+                                      void saveRowIfChanged(key, nextDraft);
+                                    }}
+                                    className="rounded border border-slate-300 px-2 py-1 text-xs"
+                                    disabled={savingField === "row"}
+                                  >
+                                    <option value="lead">lead</option>
+                                    <option value="e-commerce">e-commerce</option>
+                                    <option value="programmatic">programmatic</option>
+                                  </select>
+                                ) : (
+                                  <span className="font-medium text-slate-700">{draft.clientType}</span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <span className="text-slate-500">Responsabil:</span>
+                                {isEditingRow ? (
+                                  <input
+                                    value={draft.accountManager}
+                                    onChange={(e) => setRowDrafts((prev) => ({ ...prev, [key]: { ...draft, accountManager: e.target.value } }))}
+                                    onBlur={() => void saveRowIfChanged(key)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        void saveRowIfChanged(key);
+                                      }
+                                      if (e.key === "Escape") {
+                                        setEditingRowId(null);
+                                      }
+                                    }}
+                                    className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                                    placeholder="Nume responsabil"
+                                    autoFocus
+                                  />
+                                ) : (
+                                  <span className="font-medium text-slate-700">{draft.accountManager || "—"}</span>
+                                )}
+                              </div>
+                            </div>
+                          </li>
+                        );
+                      })}
                       {platform.accounts.length === 0 ? <li className="text-sm text-slate-400">Fără conturi atașate.</li> : null}
                     </ul>
                   </article>

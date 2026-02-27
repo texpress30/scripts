@@ -1,15 +1,13 @@
-# TODO — Inline editing + navigation refactor for Agency Client Details
+# TODO — UI refinement for Agency Client Details row editing
 
-- [x] Add back navigation control near client title to return quickly to `/agency/clients`.
-- [x] Replace title display with inline name editing (pencil toggle, save on blur/Enter, visual success indicator).
-- [x] Move `Tip client` editing into platform account rows with inline pencil-to-dropdown interaction and immediate autosave.
-- [x] Remove the large `Salvează profil client` button and switch to per-field autosave (name, type, account manager).
-- [x] Extend backend profile PATCH payload to support inline name updates alongside type/manager.
-- [x] Run verification (build/tests) and capture screenshot of UI changes.
+- [x] Fix per-row editing bug so pencil/edit mode is isolated per account row (by row key), not global for entire list.
+- [x] Place `Tip client` + `Responsabil` inline on each account row and make both editable only when that row is in edit mode.
+- [x] Move Back button from body/title card into main page header (left of `Client: ...`).
+- [x] Remove legacy global `Responsabil cont` section from top card.
+- [x] Validate frontend build and capture screenshot.
 
 ## Review
-- Added back arrow action next to client title for fast return navigation.
-- Implemented inline edit for client name and account manager with blur/Enter save and temporary green check feedback.
-- Refactored client type editing into each platform account row with pencil-to-dropdown toggle and autosave on selection.
-- Removed bulk save action; updates are now granular and immediate via PATCH.
-- Backend PATCH contract now supports optional `name`, `client_type`, and `account_manager`, allowing single-field updates required by inline UX.
+- Refactored row editing state to use unique row IDs (`platform:account_id`) so activating edit for one row does not open editors for all rows.
+- Each row now shows `Tip client` and `Responsabil` on the same line block, with a single row pencil controlling edit mode and autosave behavior for that row.
+- Back navigation was moved into the AppShell header via new `headerPrefix` support, matching standard system navigation placement.
+- Removed the old global responsible section under the client title card.

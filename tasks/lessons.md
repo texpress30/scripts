@@ -38,3 +38,4 @@
 - 2026-02-26: Never gate production persistence only on `APP_ENV=test`; require a test-run signal (e.g. `PYTEST_CURRENT_TEST`) to prevent accidental in-memory mode and data disappearance after restart.
 - 2026-02-27: Never execute data backfill/seed INSERT...SELECT ON CONFLICT logic inside per-request schema guards; run schema changes once at startup and keep one-off data migrations in dedicated scripts/migrations.
 - 2026-02-27: For profile forms requested as inline UX, remove bulk save CTA and implement per-field autosave contracts (blur/Enter/select) with immediate visual success feedback.
+- 2026-02-27: For list-item inline editors, always scope editing state by stable row identity (e.g., platform:account_id); never use a single global boolean that toggles all rows.

@@ -56,9 +56,11 @@ function getNavItems(pathname: string) {
 
 export function AppShell({
   title,
+  headerPrefix,
   children,
 }: {
-  title: string;
+  title: React.ReactNode;
+  headerPrefix?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -256,7 +258,10 @@ export function AppShell({
           <button onClick={() => setMobileOpen(true)} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 md:hidden">
             <Menu className="h-5 w-5" />
           </button>
-          <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{title}</h1>
+          <div className="flex items-center gap-2">
+            {headerPrefix}
+            <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{title}</h1>
+          </div>
         </header>
 
         <main className="p-4 md:p-6">{children}</main>
