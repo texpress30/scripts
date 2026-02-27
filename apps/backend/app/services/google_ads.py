@@ -5,13 +5,19 @@ import json
 import logging
 import re
 import secrets
-from datetime import datetime, timezone, timedelta
+import os
+from datetime import datetime, timezone
 from urllib import error, parse, request
 
 try:
     from google.ads.googleads.client import GoogleAdsClient
 except Exception:  # noqa: BLE001
     GoogleAdsClient = None
+
+try:
+    import psycopg
+except Exception:  # noqa: BLE001
+    psycopg = None
 
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
@@ -276,34 +282,72 @@ class GoogleAdsService:
         return f"***{normalized[-4:]}"
 
     def _db_diagnostics_last_30_days(self) -> dict[str, object]:
-        settings = load_settings()
+        database_url = os.environ.get("DATABASE_URL") or load_settings().database_url
         try:
             if psycopg is None:
                 raise RuntimeError("psycopg not installed")
-            with psycopg.connect(settings.database_url) as conn:
+            with psycopg.connect(database_url) as conn:
                 with conn.cursor() as cur:
+                    cur.execute("SELECT to_regclass('public.ad_performance_reports')")
+                    table_exists = (cur.fetchone() or [None])[0] is not None
+                    if not table_exists:
+                        return {
+                            "db_rows_last_30_days": 0,
+                            "last_report_date": None,
+                            "last_sync_at": None,
+                            "db_error": "Tabela ad_performance_reports lipsește",
+                        }
+
                     cur.execute(
                         """
-                        SELECT COALESCE(COUNT(*), 0), MAX(report_date), MAX(synced_at)
-                        FROM ad_performance_reports
-                        WHERE platform = 'google_ads'
-                          AND report_date BETWEEN %s AND %s
-                        """,
-                        (datetime.now(timezone.utc).date() - timedelta(days=29), datetime.now(timezone.utc).date()),
+                        SELECT EXISTS (
+                            SELECT 1
+                            FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'ad_performance_reports'
+                              AND column_name = 'provider'
+                        )
+                        """
                     )
-                    row = cur.fetchone() or (0, None, None)
+                    has_provider = bool((cur.fetchone() or [False])[0])
+
+                    if has_provider:
+                        cur.execute(
+                            """
+                            SELECT COALESCE(COUNT(*), 0), MAX(synced_at)
+                            FROM ad_performance_reports
+                            WHERE provider = %s
+                              AND synced_at >= NOW() - INTERVAL '30 days'
+                            """,
+                            ("google",),
+                        )
+                    else:
+                        cur.execute(
+                            """
+                            SELECT COALESCE(COUNT(*), 0), MAX(synced_at)
+                            FROM ad_performance_reports
+                            WHERE platform = %s
+                              AND synced_at >= NOW() - INTERVAL '30 days'
+                            """,
+                            ("google_ads",),
+                        )
+                    row = cur.fetchone() or (0, None)
             return {
                 "db_rows_last_30_days": int(row[0] or 0),
-                "last_report_date": str(row[1]) if row[1] else None,
-                "last_sync_at": str(row[2]) if row[2] else None,
+                "last_report_date": None,
+                "last_sync_at": str(row[1]) if row[1] else None,
                 "db_error": None,
             }
         except Exception as exc:  # noqa: BLE001
+            message = str(exc)
+            lowered = message.lower()
+            if "does not exist" in lowered and "ad_performance_reports" in lowered:
+                message = "Tabela ad_performance_reports lipsește"
             return {
                 "db_rows_last_30_days": 0,
                 "last_report_date": None,
                 "last_sync_at": None,
-                "db_error": str(exc),
+                "db_error": message,
             }
 
     def run_diagnostics(self) -> dict[str, object]:
@@ -392,6 +436,7 @@ class GoogleAdsService:
             "accessible_customers_count": accessible_customers_count,
             "sample_metrics_last_30_days": sample_metrics_last_30_days,
             "db_rows_last_30_days": db_diag["db_rows_last_30_days"],
+            "rows_in_db_last_30_days": db_diag["db_rows_last_30_days"],
             "last_sync_at": db_diag["last_sync_at"],
             "last_error": last_error or db_diag.get("db_error"),
             "api_version": self._google_api_version(),
