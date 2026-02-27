@@ -10,10 +10,17 @@ from app.api.creative import router as creative_router
 from app.api.dashboard import router as dashboard_router
 from app.api.exports import router as exports_router
 from app.api.google_ads import router as google_ads_router
+from app.api.google_accounts import router as google_accounts_router
 from app.api.health import router as health_router
 from app.api.meta_ads import router as meta_ads_router
+from app.api.pinterest_ads import router as pinterest_ads_router
+from app.api.snapchat_ads import router as snapchat_ads_router
+from app.api.tiktok_ads import router as tiktok_ads_router
+from app.api.user_profile import router as user_profile_router
 from app.api.rules import router as rules_router
 from app.core.config import load_settings
+from app.services.client_registry import client_registry_service
+from app.services.user_profile import user_profile_service
 
 settings = load_settings()
 
@@ -42,7 +49,11 @@ app.include_router(audit_router)
 
 # Sprint 2
 app.include_router(google_ads_router)
+app.include_router(google_accounts_router)
 app.include_router(meta_ads_router)
+app.include_router(tiktok_ads_router)
+app.include_router(pinterest_ads_router)
+app.include_router(snapchat_ads_router)
 app.include_router(dashboard_router)
 
 # Sprint 4
@@ -57,6 +68,7 @@ app.include_router(exports_router)
 
 # Sprint 7
 app.include_router(creative_router)
+app.include_router(user_profile_router)
 
 
 @app.get("/", tags=["root"])
@@ -66,3 +78,9 @@ def root() -> dict[str, str]:
         "environment": settings.app_env,
         "message": "Backend skeleton is running.",
     }
+
+
+@app.on_event("startup")
+def initialize_client_registry_schema() -> None:
+    client_registry_service.initialize_schema()
+    user_profile_service.initialize_schema()
