@@ -14,10 +14,10 @@ import {
   Menu,
   Moon,
   Palette,
+  Settings,
   Sparkles,
   Sun,
   Users,
-  Settings,
   X,
 } from "lucide-react";
 
@@ -26,6 +26,7 @@ import { isPinterestIntegrationEnabled, isSnapchatIntegrationEnabled, isTikTokIn
 import { cn } from "@/lib/utils";
 
 type ClientItem = { id: number; name: string; owner_email: string };
+
 function getNavItems(pathname: string) {
   const subMatch = pathname.match(/^\/sub\/(\d+)/);
   if (subMatch) {
@@ -79,9 +80,18 @@ export function AppShell({
 
   const subMatch = pathname.match(/^\/sub\/(\d+)/);
   const currentSubId = subMatch ? Number(subMatch[1]) : null;
-  const isSettingsMode = pathname.startsWith("/settings/");
 
-  const settingsItems = [
+  const subSettingsMatch = pathname.match(/^\/subaccount\/(\d+)\/settings\//);
+  const subSettingsId = subSettingsMatch ? Number(subSettingsMatch[1]) : null;
+
+  const isAgencySettingsMode = pathname.startsWith("/settings/");
+  const isSubSettingsMode = pathname.startsWith("/subaccount/") && pathname.includes("/settings/");
+  const isSettingsMode = isAgencySettingsMode || isSubSettingsMode;
+
+  const settingsHeaderLabel = isSubSettingsMode ? "SUB-ACCOUNT SETTINGS" : "AGENCY SETTINGS";
+  const goBackHref = isSubSettingsMode && subSettingsId ? `/sub/${subSettingsId}/dashboard` : "/agency/dashboard";
+
+  const agencySettingsItems = [
     { href: "/settings/profile", label: "Profile" },
     { href: "/settings/company", label: "Company" },
     { href: "/settings/team", label: "My Team" },
@@ -90,6 +100,24 @@ export function AppShell({
     { href: "/settings/ai-agents", label: "Ai Agents" },
     { href: "/settings/storage", label: "Media Storage Usage" },
   ] as const;
+
+  const subSettingsItems = useMemo(
+    () =>
+      subSettingsId
+        ? [
+            { href: `/subaccount/${subSettingsId}/settings/profile`, label: "Profil Business" },
+            { href: `/subaccount/${subSettingsId}/settings/team`, label: "Echipa Mea" },
+            { href: `/subaccount/${subSettingsId}/settings/integrations`, label: "Integrări" },
+            { href: `/subaccount/${subSettingsId}/settings/accounts`, label: "Conturi" },
+            { href: `/subaccount/${subSettingsId}/settings/tags`, label: "Tag-uri" },
+            { href: `/subaccount/${subSettingsId}/settings/audit-logs`, label: "Audit Logs" },
+            { href: `/subaccount/${subSettingsId}/settings/ai-agents`, label: "Agenți AI" },
+          ]
+        : [],
+    [subSettingsId]
+  );
+
+  const settingsItems = isSubSettingsMode ? subSettingsItems : agencySettingsItems;
 
   useEffect(() => {
     setMounted(true);
@@ -125,19 +153,21 @@ export function AppShell({
 
   const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
 
+  const settingsEntryHref = currentSubId ? `/subaccount/${currentSubId}/settings/profile` : "/settings/profile";
+
   const sidebarContent = (
     <div className="flex h-full flex-col">
       <div className="border-b border-slate-200 px-3 py-3 dark:border-slate-700">
         {isSettingsMode ? (
           <div className="space-y-2">
             <Link
-              href="/agency-dashboard"
+              href={goBackHref}
               onClick={() => setMobileOpen(false)}
               className="block w-full rounded-md bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300"
             >
               ← Go Back
             </Link>
-            <p className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Settings</p>
+            <p className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{settingsHeaderLabel}</p>
           </div>
         ) : (
           <>
@@ -184,9 +214,7 @@ export function AppShell({
                       <span className="ml-1 text-xs text-slate-400">#{client.id}</span>
                     </button>
                   ))}
-                  {filteredClients.length === 0 ? (
-                    <p className="px-2 py-2 text-xs text-slate-500">No sub-accounts found.</p>
-                  ) : null}
+                  {filteredClients.length === 0 ? <p className="px-2 py-2 text-xs text-slate-500">No sub-accounts found.</p> : null}
                 </div>
               </div>
             ) : null}
@@ -240,7 +268,7 @@ export function AppShell({
       <div className="space-y-1 border-t border-slate-200 px-3 py-4 dark:border-slate-700">
         {!isSettingsMode ? (
           <Link
-            href="/settings/profile"
+            href={settingsEntryHref}
             onClick={() => setMobileOpen(false)}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
             title={collapsed ? "Settings" : undefined}

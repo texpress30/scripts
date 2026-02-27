@@ -1,15 +1,14 @@
-# TODO — Dynamic sidebar settings mode (GHL-style)
+# TODO — Context-aware settings sidebar (Agency vs Sub-Account)
 
-- [x] Add `Settings` link in bottom section of primary sidebar above `Schimbă tema`.
-- [x] Route settings entry to `/settings/profile`.
-- [x] Implement settings-mode sidebar for `/settings/*` routes that replaces main nav links.
-- [x] Add prominent `← Go Back` action in settings mode, routing to `/agency-dashboard`.
-- [x] Add settings nav list: Profile, Company, My Team, Tags, Audit Logs, Ai Agents, Media Storage Usage.
-- [x] Implement active-state highlighting for current settings route.
-- [x] Add pages for settings routes and alias route `/agency-dashboard` -> `/agency/dashboard`.
-- [x] Run frontend build and capture screenshot.
+- [x] Make `Go Back` dynamic based on settings context (agency -> agency dashboard, sub-account -> matching sub dashboard).
+- [x] Add context-aware settings menu lists (Agency list vs Sub-Account list).
+- [x] Persist sub-account settings context via ID-based routes (`/subaccount/[id]/settings/*`).
+- [x] Keep active-state highlighting and update settings header label by context (`AGENCY SETTINGS` / `SUB-ACCOUNT SETTINGS`).
+- [x] Ensure Settings entry in main sidebar routes to context-appropriate destination.
+- [x] Run frontend build and capture screenshot evidence.
 
 ## Review
-- Sidebar now has a dedicated Settings entry near the bottom in normal navigation mode.
-- When path starts with `/settings/`, sidebar switches to settings-only navigation with go-back CTA and active link highlight.
-- Added concrete settings pages for all requested routes plus an agency-dashboard alias route for back navigation.
+- AppShell now detects agency/sub-account settings mode from route prefixes and swaps sidebar link sets accordingly.
+- `Go Back` destination is dynamic and returns to `/agency/dashboard` or `/sub/{id}/dashboard`.
+- Added sub-account settings routes with persistent `id` in URL for refresh-safe context.
+- Sidebar section title now clearly indicates context: `AGENCY SETTINGS` or `SUB-ACCOUNT SETTINGS`.
