@@ -13,6 +13,11 @@ try:
 except Exception:  # noqa: BLE001
     GoogleAdsClient = None
 
+try:
+    import psycopg
+except Exception:  # noqa: BLE001
+    psycopg = None
+
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
 from app.services.google_store import google_snapshot_store
