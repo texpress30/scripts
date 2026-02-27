@@ -1,17 +1,16 @@
-# TODO — Settings /company (Account-View)
+# TODO — Settings /storage (Utilizare Stocare Media)
 
-- [x] Analizez starea curentă a paginii `/settings/company` și contractele backend existente.
-- [x] Adaug persistență backend pentru setări companie în Postgres (`companies` + GET/PATCH API).
-- [x] Implementez pagina `/settings/company` conform layout-ului de carduri și etichetelor în română.
-- [x] Implementez branding logo/favicon + formular detalii + formular adresă + acțiuni Anulează/Salvează.
-- [x] Adaug loading/toast/error handling pentru salvare și încărcare.
-- [x] Rulez verificări (backend + frontend) și capturez screenshot.
+- [x] Analizez implementarea curentă pentru `/settings/storage` și datele disponibile în backend.
+- [x] Adaug backend pentru listare utilizare stocare per sub-cont din Postgres (căutare + paginare).
+- [x] Extind schema existentă pentru proprietatea `media_storage` la nivel de sub-cont/client.
+- [x] Implementez UI complet în română pentru `/settings/storage` (header, badge, tabel, căutare, paginare).
+- [x] Implementez conversie corectă unități (MB/GB) pe frontend.
+- [x] Rulez verificări backend/frontend și capturez screenshot.
 - [x] Commit + PR.
 
 ## Review
-- Am implementat backend dedicat pentru setări companie cu tabel `companies` și persistență per owner email (`GET/PATCH /company/settings`).
-- Am conectat inițializarea schemei la startup-ul backend pentru a evita erori runtime la primul request.
-- Pagina `/settings/company` a fost reconstruită complet cu cele 3 secțiuni cerute: Branding, Detalii Companie, Adresă Companie.
-- Am adăugat acțiuni de upload/replace/delete logo (preview), iar schimbarea de logo actualizează automat favicon-ul în contextul paginii.
-- Fluxul de salvare are loading state, feedback toast în română, validări obligatorii în backend și opțiune `Anulează` care revine la ultima stare salvată.
-- Screenshot-ul nu a putut fi generat în acest environment deoarece browser container Playwright a crăpat cu SIGSEGV la launch.
+- Am implementat endpoint backend `GET /storage/media-usage` cu RBAC agency scope, căutare și paginare.
+- În `ClientRegistryService` am adăugat proprietatea persistentă `media_storage_bytes` pe `agency_clients` și listare dedicată pentru raportare stocare.
+- Pagina `/settings/storage` a fost reconstruită complet în română, cu card principal, badge număr sub-conturi, căutare live, tabel cu nume+adresă și spațiu utilizat, plus paginare cu selector rânduri/pagină.
+- Conversia unităților este implementată corect: MB implicit, GB când depășește 1024 MB.
+- Screenshot-ul paginii a fost capturat cu succes prin browser tool.

@@ -21,6 +21,7 @@ class ClientRecord:
     source: str = "manual"
     client_type: str = "lead"
     account_manager: str = ""
+    media_storage_bytes: int = 0
 
 
 class ClientRegistryService:
@@ -69,6 +70,7 @@ class ClientRegistryService:
                 cur.execute("ALTER TABLE agency_clients ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manual'")
                 cur.execute("ALTER TABLE agency_clients ADD COLUMN IF NOT EXISTS client_type TEXT NOT NULL DEFAULT 'lead'")
                 cur.execute("ALTER TABLE agency_clients ADD COLUMN IF NOT EXISTS account_manager TEXT NOT NULL DEFAULT ''")
+                cur.execute("ALTER TABLE agency_clients ADD COLUMN IF NOT EXISTS media_storage_bytes BIGINT NOT NULL DEFAULT 0")
                 cur.execute(
                     """
                     CREATE TABLE IF NOT EXISTS agency_platform_accounts (
@@ -145,7 +147,7 @@ class ClientRegistryService:
 
         if self._is_test_mode():
             with self._lock:
-                record = ClientRecord(id=self._next_id, name=name, owner_email=owner_email, source="manual", client_type="lead", account_manager="")
+                record = ClientRecord(id=self._next_id, name=name, owner_email=owner_email, source="manual", client_type="lead", account_manager="", media_storage_bytes=0)
                 self._next_id += 1
                 self._clients.append(record)
                 manual_count = len([c for c in self._clients if c.source == "manual"])
@@ -157,6 +159,7 @@ class ClientRegistryService:
                     "client_type": record.client_type,
                     "account_manager": record.account_manager,
                     "google_customer_id": None,
+                    "media_storage_bytes": 0,
                 }
 
         with self._connect_or_raise() as conn:
@@ -165,7 +168,7 @@ class ClientRegistryService:
                     """
                     INSERT INTO agency_clients (name, owner_email, source)
                     VALUES (%s, %s, 'manual')
-                    RETURNING id, name, owner_email, client_type, account_manager
+                    RETURNING id, name, owner_email, client_type, account_manager, media_storage_bytes
                     """,
                     (name, owner_email),
                 )
@@ -180,6 +183,7 @@ class ClientRegistryService:
             "owner_email": str(row[2]),
             "client_type": str(row[3]),
             "account_manager": str(row[4]),
+            "media_storage_bytes": int(row[5]),
             "google_customer_id": self.get_google_customer_for_client(client_id=client_id),
         }
 
@@ -199,6 +203,7 @@ class ClientRegistryService:
                     "client_type": c.client_type,
                     "account_manager": c.account_manager,
                     "google_customer_id": next((aid for aid, client_ids in self._memory_account_client_mappings.get("google_ads", {}).items() if c.id in client_ids), None),
+                    "media_storage_bytes": c.media_storage_bytes,
                 }
             )
         return records
@@ -213,7 +218,7 @@ class ClientRegistryService:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT c.id, c.name, c.owner_email, c.client_type, c.account_manager,
+                    SELECT c.id, c.name, c.owner_email, c.client_type, c.account_manager, c.media_storage_bytes,
                            ROW_NUMBER() OVER (ORDER BY c.id ASC) AS display_id,
                            (
                               SELECT m.account_id
@@ -236,8 +241,9 @@ class ClientRegistryService:
                 "owner_email": str(row[2]),
                 "client_type": str(row[3]),
                 "account_manager": str(row[4]),
-                "display_id": int(row[5]),
-                "google_customer_id": str(row[6]) if row[6] else None,
+                "display_id": int(row[6]),
+                "media_storage_bytes": int(row[5] or 0),
+                "google_customer_id": str(row[7]) if row[7] else None,
             }
             for row in rows
         ]
@@ -707,6 +713,68 @@ class ClientRegistryService:
                 conn.commit()
 
         return self.get_client_details(client_id=client_id)
+
+
+    def list_media_storage_usage(
+        self,
+        *,
+        search: str,
+        page: int,
+        page_size: int,
+    ) -> tuple[list[dict[str, str | int]], int]:
+        token = search.strip().lower()
+
+        if self._is_test_mode():
+            with self._lock:
+                items = [
+                    {
+                        "id": c.id,
+                        "name": c.name,
+                        "address": c.owner_email,
+                        "media_storage_bytes": c.media_storage_bytes,
+                    }
+                    for c in self._clients
+                    if c.source == "manual" and (token == "" or token in c.name.lower())
+                ]
+            total = len(items)
+            start = (page - 1) * page_size
+            end = start + page_size
+            return items[start:end], total
+
+        clauses = ["c.source = 'manual'"]
+        values: list[object] = []
+        if token:
+            clauses.append("LOWER(c.name) LIKE %s")
+            values.append(f"%{token}%")
+        where_sql = " AND ".join(clauses)
+        offset = (page - 1) * page_size
+
+        with self._connect_or_raise() as conn:
+            with conn.cursor() as cur:
+                cur.execute(f"SELECT COUNT(*) FROM agency_clients c WHERE {where_sql}", tuple(values))
+                total = int(cur.fetchone()[0])
+                cur.execute(
+                    f"""
+                    SELECT c.id, c.name, c.owner_email, c.media_storage_bytes
+                    FROM agency_clients c
+                    WHERE {where_sql}
+                    ORDER BY c.id ASC
+                    LIMIT %s OFFSET %s
+                    """,
+                    tuple(values + [page_size, offset]),
+                )
+                rows = cur.fetchall()
+
+        items = [
+            {
+                "id": int(row[0]),
+                "name": str(row[1]),
+                "address": str(row[2]),
+                "media_storage_bytes": int(row[3] or 0),
+            }
+            for row in rows
+        ]
+        return items, total
 
 
     def clear(self) -> None:

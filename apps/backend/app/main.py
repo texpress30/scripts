@@ -16,6 +16,7 @@ from app.api.health import router as health_router
 from app.api.meta_ads import router as meta_ads_router
 from app.api.pinterest_ads import router as pinterest_ads_router
 from app.api.snapchat_ads import router as snapchat_ads_router
+from app.api.storage import router as storage_router
 from app.api.team import router as team_router
 from app.api.tiktok_ads import router as tiktok_ads_router
 from app.api.user_profile import router as user_profile_router
@@ -75,6 +76,7 @@ app.include_router(creative_router)
 app.include_router(company_router)
 app.include_router(user_profile_router)
 app.include_router(team_router)
+app.include_router(storage_router)
 
 
 @app.get("/", tags=["root"])
