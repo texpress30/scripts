@@ -30,3 +30,5 @@
 - 2026-02-26: For attach/mapping dropdowns, always use controlled component values derived from persisted backend state; never reset to placeholder after successful save.
 
 - 2026-02-26: For account mappings, model agency client↔platform account as explicit link table semantics from day one (client can have many accounts) and never encode mapping in a single client column.
+
+- 2026-02-26: Always verify the actual PR title recorded by automation after calling `make_pr`; never rely on intended title in narrative summaries.

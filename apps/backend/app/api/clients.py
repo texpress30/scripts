@@ -99,6 +99,15 @@ def detach_google_account(client_id: int, payload: DetachGoogleAccountRequest, u
     return {"status": "ok", "client_id": client_id, "customer_id": payload.customer_id}
 
 
+@router.get("/{client_id}")
+def get_client_details(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    payload = client_registry_service.get_client_details(client_id=client_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Client not found")
+    return payload
+
+
 @router.get("/{client_id}/accounts")
 def list_client_google_accounts(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:list", scope="agency")

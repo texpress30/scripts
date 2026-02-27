@@ -133,8 +133,10 @@ class ClientRegistryService:
                 record = ClientRecord(id=self._next_id, name=name, owner_email=owner_email, source="manual")
                 self._next_id += 1
                 self._clients.append(record)
+                manual_count = len([c for c in self._clients if c.source == "manual"])
                 return {
                     "id": record.id,
+                    "display_id": manual_count,
                     "name": record.name,
                     "owner_email": record.owner_email,
                     "google_customer_id": self.get_google_customer_for_client(client_id=record.id),
@@ -156,6 +158,7 @@ class ClientRegistryService:
         client_id = int(row[0])
         return {
             "id": client_id,
+            "display_id": self.get_manual_display_id(client_id=client_id),
             "name": str(row[1]),
             "owner_email": str(row[2]),
             "google_customer_id": self.get_google_customer_for_client(client_id=client_id),
@@ -163,12 +166,15 @@ class ClientRegistryService:
 
     def _list_clients_test(self) -> list[dict[str, str | int | None]]:
         records: list[dict[str, str | int | None]] = []
+        display_id = 0
         for c in self._clients:
             if c.source != "manual":
                 continue
+            display_id += 1
             records.append(
                 {
                     "id": c.id,
+                    "display_id": display_id,
                     "name": c.name,
                     "owner_email": c.owner_email,
                     "google_customer_id": self.get_google_customer_for_client(client_id=c.id),
@@ -188,6 +194,7 @@ class ClientRegistryService:
                 cur.execute(
                     """
                     SELECT c.id, c.name, c.owner_email,
+                           ROW_NUMBER() OVER (ORDER BY c.id ASC) AS display_id,
                            (
                               SELECT m.account_id
                               FROM agency_account_client_mappings m
@@ -207,7 +214,8 @@ class ClientRegistryService:
                 "id": int(row[0]),
                 "name": str(row[1]),
                 "owner_email": str(row[2]),
-                "google_customer_id": str(row[3]) if row[3] else None,
+                "display_id": int(row[3]),
+                "google_customer_id": str(row[4]) if row[4] else None,
             }
             for row in rows
         ]
@@ -493,6 +501,63 @@ class ClientRegistryService:
                 }
             )
         return summary
+
+    def get_manual_display_id(self, *, client_id: int) -> int | None:
+        self._ensure_schema()
+        if self._is_test_mode():
+            with self._lock:
+                display_id = 0
+                for c in self._clients:
+                    if c.source != "manual":
+                        continue
+                    display_id += 1
+                    if c.id == client_id:
+                        return display_id
+                return None
+
+        with self._connect_or_raise() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT display_id FROM (
+                      SELECT id, ROW_NUMBER() OVER (ORDER BY id ASC) AS display_id
+                      FROM agency_clients
+                      WHERE source = 'manual'
+                    ) ranked
+                    WHERE id = %s
+                    """,
+                    (client_id,),
+                )
+                row = cur.fetchone()
+        if row is None:
+            return None
+        return int(row[0])
+
+    def get_client_details(self, *, client_id: int) -> dict[str, object] | None:
+        self._ensure_schema()
+        clients = self.list_clients()
+        target = next((item for item in clients if int(item["id"]) == client_id), None)
+        if target is None:
+            return None
+
+        platforms = ["google_ads", "meta_ads", "tiktok_ads", "pinterest_ads", "snapchat_ads"]
+        platform_items: list[dict[str, object]] = []
+        for platform in platforms:
+            accounts = self.list_client_platform_accounts(platform=platform, client_id=client_id)
+            platform_items.append(
+                {
+                    "platform": platform,
+                    "enabled": len(accounts) > 0,
+                    "accounts": accounts,
+                    "count": len(accounts),
+                }
+            )
+
+        return {
+            "client": target,
+            "platforms": platform_items,
+        }
+
 
     def clear(self) -> None:
         if self._is_test_mode():

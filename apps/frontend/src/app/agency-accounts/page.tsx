@@ -11,6 +11,7 @@ type ClientRecord = {
   name: string;
   owner_email: string;
   google_customer_id?: string | null;
+  display_id?: number;
 };
 
 type ClientsResponse = { items: ClientRecord[] };
@@ -92,7 +93,8 @@ export default function AgencyAccountsPage() {
         method: "POST",
         body: JSON.stringify({ customer_id: customerId }),
       });
-      setAttachStatus(`Contul ${customerId} a fost atașat clientului #${clientId}.`);
+      const target = clients.find((c) => c.id === clientId);
+      setAttachStatus(`Contul ${customerId} a fost atașat clientului ${target?.name ?? `#${clientId}`}.`);
       await reloadAccountsData();
     } catch (err) {
       setAttachStatus(err instanceof Error ? err.message : "Nu am putut atașa contul Google");
@@ -106,7 +108,8 @@ export default function AgencyAccountsPage() {
         method: "DELETE",
         body: JSON.stringify({ customer_id: customerId }),
       });
-      setAttachStatus(`Contul ${customerId} a fost detașat de la clientul #${clientId}.`);
+      const target = clients.find((c) => c.id === clientId);
+      setAttachStatus(`Contul ${customerId} a fost detașat de la clientul ${target?.name ?? `#${clientId}`}.`);
       await reloadAccountsData();
     } catch (err) {
       setAttachStatus(err instanceof Error ? err.message : "Nu am putut detașa contul Google");
@@ -186,7 +189,7 @@ export default function AgencyAccountsPage() {
                           <option value="">Atașează la client...</option>
                           {clients.map((client) => (
                             <option key={client.id} value={client.id}>
-                              #{client.id} {client.name}
+                              #{client.display_id ?? client.id} {client.name}
                             </option>
                           ))}
                         </select>

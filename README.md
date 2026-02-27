@@ -90,3 +90,9 @@ Endpoint-uri relevante:
 cd apps/backend && pytest -q
 cd apps/frontend && npm run build
 ```
+
+
+## UI Agency
+- `/agency/clients`: listă clienți manuali (ID afișat secvențial de la 1).
+- Click pe numele clientului duce la `/agency/clients/{id}` pentru detalii complete (platforme active + conturi atașate per platformă).
+- `/agency-accounts`: atașare/detașare conturi Google la clienți, inclusiv re-atașare.

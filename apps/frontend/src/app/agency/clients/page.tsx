@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
@@ -8,6 +9,7 @@ import { apiRequest } from "@/lib/api";
 
 type ClientRecord = {
   id: number;
+  display_id?: number;
   name: string;
   owner_email: string;
   google_customer_id?: string | null;
@@ -20,7 +22,6 @@ export default function AgencyClientsPage() {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-
 
   async function loadClients() {
     const payload = await apiRequest<ClientsResponse>("/clients");
@@ -48,7 +49,6 @@ export default function AgencyClientsPage() {
       setBusy(false);
     }
   }
-
 
   return (
     <ProtectedPage>
@@ -80,8 +80,12 @@ export default function AgencyClientsPage() {
               <tbody>
                 {clients.map((client) => (
                   <tr key={client.id} className="border-t border-slate-100">
-                    <td className="px-4 py-3">{client.id}</td>
-                    <td className="px-4 py-3">{client.name}</td>
+                    <td className="px-4 py-3">{client.display_id ?? client.id}</td>
+                    <td className="px-4 py-3">
+                      <Link href={`/agency/clients/${client.id}`} className="text-indigo-700 hover:underline">
+                        {client.name}
+                      </Link>
+                    </td>
                     <td className="px-4 py-3">{client.google_customer_id ?? "-"}</td>
                     <td className="px-4 py-3">{client.owner_email}</td>
                   </tr>
@@ -96,7 +100,6 @@ export default function AgencyClientsPage() {
               </tbody>
             </table>
           </section>
-
         </main>
       </AppShell>
     </ProtectedPage>

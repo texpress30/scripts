@@ -1,19 +1,17 @@
-# TODO — Many-to-many Google account mappings + README refresh
+# TODO — Client ID display normalization + client details page
 
-- [x] Attempt required workspace sync commands and record environment limitations.
-- [x] Inspect current one-to-one Google account attachment model in backend and frontend.
-- [x] Implement many-to-many-compatible mapping model using link table semantics (client can have multiple Google accounts; account maps to one client).
-- [x] Add/adjust endpoints: attach (idempotent), detach, list client accounts.
-- [x] Update Agency Accounts dropdown UX to keep all clients selectable and show current attachment with change/detach actions.
-- [x] Update repository README with current architecture/endpoints/UI workflow.
-- [x] Run backend/frontend checks and take screenshot.
-- [x] Commit changes and create PR with title reflecting this specific scope.
+- [x] Attempt mandatory workspace sync commands and note environment limitations.
+- [x] Ensure client IDs shown in Agency UI start from 1 for manual clients.
+- [x] Add client details backend endpoint with enabled platforms + attached accounts per platform.
+- [x] Add clickable client name in Agency Clients list and new client details page UI.
+- [x] Update README with client details navigation and API.
+- [x] Run checks (backend + frontend) and capture screenshot.
+- [x] Commit changes and create PR with title specific to this scope.
 
 ## Review
-- Added table-backed mapping model `agency_account_client_mappings` (unique per platform/account) and backfill from legacy `agency_clients.google_customer_id`.
-- Implemented idempotent attach (upsert), detach endpoint, and per-client account listing endpoint for Google mappings.
-- Updated `GET /clients/accounts/google` to return attached client metadata per account, enabling reliable UI binding.
-- Updated Agency Accounts UI to keep all clients available in each dropdown, display current attachment, and allow detach/reassign.
-- Refreshed root README with current architecture, endpoints, mapping model, and operational scripts.
-- Validation executed with backend targeted tests, frontend build, and screenshot artifact.
+- Normalized manual-client display IDs in API/UI to start from 1 using ranked/manual ordering while preserving internal primary keys for relations.
+- Added client details endpoint (`GET /clients/{id}`) with platform activation + attached account lists.
+- Added new Agency Client details page and linked client names from Agency Clients table.
+- Kept many-to-many mapping behavior and updated Agency Accounts dropdown labels to use display IDs.
+- Updated README with current agency navigation and client-details workflow.
 
