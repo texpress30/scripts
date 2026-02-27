@@ -25,7 +25,7 @@ def google_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, o
 
     diagnostics = google_ads_service.run_diagnostics()
     status_payload["accounts_found"] = diagnostics.get("accessible_customers_count", 0)
-    status_payload["rows_in_db_last_30_days"] = diagnostics.get("db_rows_last_30_days", 0)
+    status_payload["rows_in_db_last_30_days"] = diagnostics.get("rows_in_db_last_30_days", diagnostics.get("db_rows_last_30_days", 0))
     status_payload["last_sync_at"] = diagnostics.get("last_sync_at")
     status_payload["last_error"] = diagnostics.get("last_error")
     audit_log_service.log(
@@ -172,6 +172,29 @@ def google_ads_diagnostics(user: AuthUser = Depends(get_current_user)) -> dict[s
 
 
 
+
+
+
+@router.get("/db-debug")
+def google_ads_db_debug(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+    diagnostics = google_ads_service.run_diagnostics()
+    db_debug = google_ads_service.db_debug_summary()
+    payload = {
+        "oauth_ok": bool(diagnostics.get("oauth_ok")),
+        "rows_in_db_last_30_days": int(diagnostics.get("rows_in_db_last_30_days", 0) or 0),
+        "last_sync_at": diagnostics.get("last_sync_at"),
+        "last_error": diagnostics.get("last_error"),
+        "db_debug": db_debug,
+    }
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="google_ads.db_debug",
+        resource="integration:google_ads",
+        details={"db_ok": bool(db_debug.get("db_ok")), "table_exists": bool(db_debug.get("table_exists"))},
+    )
+    return payload
 
 @router.post("/sync-now")
 def sync_google_ads_now(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
