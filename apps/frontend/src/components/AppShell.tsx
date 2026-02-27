@@ -10,10 +10,12 @@ import {
   ChevronLeft,
   ChevronRight,
   LayoutDashboard,
-  LogOut,
   Menu,
+  Maximize2,
+  Minimize2,
   Moon,
   Palette,
+  Search,
   Settings,
   Sparkles,
   Sun,
@@ -23,10 +25,13 @@ import {
 
 import { apiRequest } from "@/lib/api";
 import { isPinterestIntegrationEnabled, isSnapchatIntegrationEnabled, isTikTokIntegrationEnabled } from "@/lib/featureFlags";
+import { AppRole, getSessionInfo } from "@/lib/session";
 import { cn } from "@/lib/utils";
 
 type ClientItem = { id: number; name: string; owner_email: string; client_logo_url?: string | null };
 type CompanySettings = { logo_url: string; city: string; country: string; company_name: string };
+type TeamMemberItem = { id: number; first_name: string; last_name: string; email: string; user_role: string };
+type TeamMembersResponse = { items: TeamMemberItem[]; total: number };
 
 function getNavItems(pathname: string) {
   const subMatch = pathname.match(/^\/sub\/(\d+)/);
@@ -57,6 +62,24 @@ function getNavItems(pathname: string) {
   return agencyItems;
 }
 
+function initials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "U";
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return `${words[0][0] || ""}${words[1][0] || ""}`.toUpperCase();
+}
+
+function roleForImpersonation(value: string): AppRole {
+  const role = value.trim().toLowerCase();
+  if (role === "admin") return "agency_admin";
+  if (role === "viewer") return "client_viewer";
+  if (role === "member") return "account_manager";
+  if (["super_admin", "agency_owner", "agency_admin", "account_manager", "client_viewer"].includes(role)) {
+    return role as AppRole;
+  }
+  return "account_manager";
+}
+
 export function AppShell({
   title,
   headerPrefix,
@@ -79,6 +102,13 @@ export function AppShell({
   const [search, setSearch] = useState("");
   const [clients, setClients] = useState<ClientItem[]>([]);
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
+
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [loginAsOpen, setLoginAsOpen] = useState(false);
+  const [userSearch, setUserSearch] = useState("");
+  const [teamUsers, setTeamUsers] = useState<TeamMemberItem[]>([]);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [impersonatingAs, setImpersonatingAs] = useState<{ email: string; role: string } | null>(null);
 
   const subMatch = pathname.match(/^\/sub\/(\d+)/);
   const currentSubId = subMatch ? Number(subMatch[1]) : null;
@@ -158,11 +188,57 @@ export function AppShell({
     };
   }, []);
 
+  useEffect(() => {
+    let ignore = false;
+    async function loadTeamUsers() {
+      try {
+        const result = await apiRequest<TeamMembersResponse>("/team/members?page=1&page_size=500");
+        if (!ignore) setTeamUsers(result.items);
+      } catch {
+        if (!ignore) setTeamUsers([]);
+      }
+    }
+    void loadTeamUsers();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const onFullscreen = () => setFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onFullscreen);
+    return () => document.removeEventListener("fullscreenchange", onFullscreen);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const value = localStorage.getItem("mcc_impersonating");
+    if (!value) {
+      setImpersonatingAs(null);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(value) as { email: string; role: string };
+      setImpersonatingAs(parsed);
+    } catch {
+      setImpersonatingAs(null);
+    }
+  }, []);
+
   const filteredClients = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return clients;
     return clients.filter((c) => c.name.toLowerCase().includes(query) || String(c.id).includes(query));
   }, [clients, search]);
+
+  const filteredTeamUsers = useMemo(() => {
+    const q = userSearch.trim().toLowerCase();
+    if (!q) return teamUsers;
+    return teamUsers.filter((u) => {
+      const fullName = `${u.first_name} ${u.last_name}`.toLowerCase();
+      return fullName.includes(q) || u.email.toLowerCase().includes(q);
+    });
+  }, [teamUsers, userSearch]);
 
   const currentTitle = useMemo(() => {
     if (isSettingsMode) return "Settings";
@@ -173,22 +249,78 @@ export function AppShell({
   const currentClient = useMemo(() => clients.find((c) => c.id === contextClientId) ?? null, [clients, contextClientId]);
   const isSubContext = contextClientId !== null || isSubSettingsMode;
   const brandingTitle = isSubContext ? (currentClient?.name ?? "Sub-cont") : (companySettings?.company_name || "Agency MCC");
-  const brandingSubtitle = isSubContext
-    ? `Locație: ${companySettings?.city || "-"}, ${companySettings?.country || "-"}`
-    : `Locație: ${companySettings?.city || "-"}, ${companySettings?.country || "-"}`;
+  const brandingSubtitle = `Locație: ${companySettings?.city || "-"}, ${companySettings?.country || "-"}`;
   const agencyLogoUrl = companySettings?.logo_url?.trim() || "";
   const subLogoUrl = currentClient?.client_logo_url?.trim() || "";
   const brandingLogoUrl = isSubContext ? subLogoUrl : agencyLogoUrl;
-  const brandingInitials = useMemo(() => {
-    const words = brandingTitle.split(" ").filter(Boolean);
-    if (words.length === 0) return "AG";
-    if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-    return `${words[0][0] || ""}${words[1][0] || ""}`.toUpperCase();
-  }, [brandingTitle]);
+  const brandingInitials = useMemo(() => initials(brandingTitle), [brandingTitle]);
+
+  const sessionInfo = getSessionInfo();
+  const profileName = useMemo(() => {
+    const email = sessionInfo.email || "admin@omarosa.ro";
+    const local = email.split("@")[0] || "User";
+    return local
+      .split(/[._-]+/)
+      .map((part) => (part ? `${part[0].toUpperCase()}${part.slice(1)}` : ""))
+      .join(" ") || "Utilizator";
+  }, [sessionInfo.email]);
 
   const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
 
-  const settingsEntryHref = currentSubId ? `/subaccount/${currentSubId}/settings/profile` : "/settings/profile";
+  async function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      await document.documentElement.requestFullscreen();
+    } else {
+      await document.exitFullscreen();
+    }
+  }
+
+  async function loginAs(user: TeamMemberItem) {
+    try {
+      const currentToken = localStorage.getItem("mcc_token");
+      if (!currentToken) return;
+      if (!localStorage.getItem("mcc_admin_token")) {
+        localStorage.setItem("mcc_admin_token", currentToken);
+      }
+
+      const targetRole = roleForImpersonation(user.user_role);
+      const result = await apiRequest<{ access_token: string }>("/auth/impersonate", {
+        method: "POST",
+        body: JSON.stringify({ email: user.email, role: targetRole }),
+      });
+
+      localStorage.setItem("mcc_token", result.access_token);
+      localStorage.setItem("mcc_impersonating", JSON.stringify({ email: user.email, role: targetRole }));
+      setImpersonatingAs({ email: user.email, role: targetRole });
+      setProfileOpen(false);
+      setLoginAsOpen(false);
+      router.refresh();
+    } catch {
+      // noop for now
+    }
+  }
+
+  function stopImpersonation() {
+    const adminToken = localStorage.getItem("mcc_admin_token");
+    if (adminToken) {
+      localStorage.setItem("mcc_token", adminToken);
+    }
+    localStorage.removeItem("mcc_admin_token");
+    localStorage.removeItem("mcc_impersonating");
+    setImpersonatingAs(null);
+    router.refresh();
+  }
+
+  function signout() {
+    localStorage.removeItem("mcc_token");
+    localStorage.removeItem("mcc_admin_token");
+    localStorage.removeItem("mcc_impersonating");
+    router.push("/login");
+  }
+
+  const settingsEntryHref = contextClientId ? `/subaccount/${contextClientId}/settings/profile` : "/settings/profile";
+
+  const profileTargetHref = isSubContext ? "/settings/team" : ["super_admin", "agency_owner", "agency_admin"].includes(sessionInfo.role) ? "/settings/profile" : "/settings/team";
 
   const sidebarContent = (
     <div className="flex h-full flex-col">
@@ -208,32 +340,32 @@ export function AppShell({
 
         {isSettingsMode ? (
           <div className="space-y-2">
+            <p className="text-xs font-semibold tracking-wide text-slate-500 dark:text-slate-400">{settingsHeaderLabel}</p>
             <Link
               href={goBackHref}
               onClick={() => setMobileOpen(false)}
-              className="block w-full rounded-md bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300"
+              className="block rounded-md bg-indigo-50 px-2 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100"
             >
               ← Go Back
             </Link>
-            <p className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{settingsHeaderLabel}</p>
           </div>
         ) : (
           <>
             <button
-              onClick={() => setSwitcherOpen((v) => !v)}
-              className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+              onClick={() => setSwitcherOpen((prev) => !prev)}
+              className="flex w-full items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
             >
               <span className="truncate">{currentTitle}</span>
-              <ChevronDown className="h-4 w-4 shrink-0" />
+              <ChevronDown className={cn("h-4 w-4 shrink-0 transition-transform", switcherOpen && "rotate-180")} />
             </button>
 
             {switcherOpen ? (
-              <div className="mt-2 rounded-lg border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+              <div className="mt-2 rounded-lg border border-slate-200 bg-white p-2 shadow-sm dark:border-slate-700 dark:bg-slate-900">
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search sub-account..."
-                  className="mb-2 h-9 w-full rounded-md border border-slate-200 px-2 text-sm outline-none dark:border-slate-700 dark:bg-slate-800"
+                  className="wm-input mb-2 h-9"
                 />
 
                 {currentSubId ? (
@@ -325,25 +457,6 @@ export function AppShell({
             {!collapsed && <span>Settings</span>}
           </Link>
         ) : null}
-
-        <button
-          onClick={toggleTheme}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-          title={collapsed ? "Schimba tema" : undefined}
-        >
-          {mounted && theme === "dark" ? <Sun className="h-4 w-4 shrink-0" /> : <Moon className="h-4 w-4 shrink-0" />}
-          {!collapsed && <span>Schimba tema</span>}
-        </button>
-
-        <Link
-          href="/login"
-          onClick={() => setMobileOpen(false)}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-slate-400 dark:hover:bg-red-950/30 dark:hover:text-red-400"
-          title={collapsed ? "Logout" : undefined}
-        >
-          <LogOut className="h-4 w-4 shrink-0" />
-          {!collapsed && <span>Logout</span>}
-        </Link>
       </div>
 
       <div className="hidden border-t border-slate-200 px-3 py-3 dark:border-slate-700 md:block">
@@ -384,16 +497,121 @@ export function AppShell({
         {sidebarContent}
       </aside>
 
-      <div className={cn("transition-all duration-200", collapsed ? "md:pl-16" : "md:pl-72")}>
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-4 border-b border-slate-200 bg-white/80 px-4 backdrop-blur dark:border-slate-700 dark:bg-slate-900/80 md:px-6">
-          <button onClick={() => setMobileOpen(true)} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 md:hidden">
-            <Menu className="h-5 w-5" />
-          </button>
+      <div className={cn("transition-all duration-200", collapsed ? "md:pl-16" : "md:pl-72")}> 
+        <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-4 border-b border-slate-200 bg-white px-4 md:px-6">
           <div className="flex items-center gap-2">
+            <button onClick={() => setMobileOpen(true)} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 md:hidden">
+              <Menu className="h-5 w-5" />
+            </button>
             {headerPrefix}
-            <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{title}</h1>
+            <h1 className="text-lg font-semibold text-slate-900">{title}</h1>
+          </div>
+
+          <div className="relative flex items-center gap-2">
+            <button className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100" title="Notificări">
+              <Bell className="h-5 w-5" />
+              <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500" />
+            </button>
+
+            <button onClick={toggleTheme} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" title="Schimbă tema">
+              {mounted && theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+            </button>
+
+            <button onClick={toggleFullscreen} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" title="Fullscreen">
+              {fullscreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
+            </button>
+
+            <button
+              onClick={() => {
+                setProfileOpen((prev) => !prev);
+                setLoginAsOpen(false);
+              }}
+              className="flex items-center gap-2 rounded-lg border border-slate-200 px-2 py-1.5 hover:bg-slate-50"
+            >
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700">
+                {initials(profileName)}
+              </div>
+              <div className="hidden text-left md:block">
+                <p className="text-xs font-semibold text-slate-800">{profileName}</p>
+                <p className="text-[11px] text-slate-500">{sessionInfo.email || "admin@omarosa.ro"}</p>
+              </div>
+              <ChevronDown className="h-4 w-4 text-slate-400" />
+            </button>
+
+            {profileOpen ? (
+              <div className="absolute right-0 top-12 z-50 w-80 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+                <div className="rounded-lg border border-slate-100 bg-slate-50 p-2">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700">{initials(profileName)}</div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">{profileName}</p>
+                      <p className="text-xs text-slate-500">{sessionInfo.email || "admin@omarosa.ro"}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="relative mt-2">
+                  <button
+                    onClick={() => setLoginAsOpen((prev) => !prev)}
+                    className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+                  >
+                    <span>Login As</span>
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+
+                  {loginAsOpen ? (
+                    <div className="absolute right-full top-0 z-50 mr-2 w-80 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+                      <div className="mb-2 flex items-center gap-2 rounded-md border border-slate-200 px-2 py-1.5">
+                        <Search className="h-4 w-4 text-slate-400" />
+                        <input
+                          className="w-full bg-transparent text-sm outline-none"
+                          placeholder="Search users"
+                          value={userSearch}
+                          onChange={(e) => setUserSearch(e.target.value)}
+                        />
+                      </div>
+                      <div className="max-h-64 space-y-1 overflow-y-auto">
+                        {filteredTeamUsers.map((u) => (
+                          <button
+                            key={u.id}
+                            onClick={() => void loginAs(u)}
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-slate-100"
+                          >
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-700">
+                              {initials(`${u.first_name} ${u.last_name}`)}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-slate-800">{u.first_name} {u.last_name}</p>
+                              <p className="truncate text-xs text-slate-500">{u.email}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
+                <Link href={profileTargetHref} className="mt-1 block rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-slate-100" onClick={() => setProfileOpen(false)}>
+                  Profil
+                </Link>
+                <button className="mt-1 w-full rounded-md px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50" onClick={signout}>
+                  Signout
+                </button>
+              </div>
+            ) : null}
           </div>
         </header>
+
+        {impersonatingAs ? (
+          <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800 md:px-6">
+            <div className="flex items-center justify-between gap-2">
+              <span>Impersonating: <strong>{impersonatingAs.email}</strong> ({impersonatingAs.role})</span>
+              <button className="rounded-md border border-amber-300 bg-white px-2 py-1 text-xs font-medium hover:bg-amber-100" onClick={stopImpersonation}>
+                Switch back to Admin
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         <main className="p-4 md:p-6">{children}</main>
       </div>

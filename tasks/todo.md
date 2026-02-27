@@ -1,15 +1,16 @@
-# TODO — Branding dinamic în Sidebar (Logo & Context Selector)
+# TODO — Modernizare Header/Sidebar + Profil Dropdown cu Login As
 
-- [x] Analizez AppShell curent și sursele de date disponibile pentru context Agency/Sub-account.
-- [x] Extind backend client/company payload unde e necesar pentru logo context (agency/sub-account).
-- [x] Implementez secțiunea de branding în partea de sus a sidebar-ului, deasupra selectorului Agency MCC.
-- [x] Aplic logica dinamică: logo agency în Agency View, logo client/sub-cont în Sub-Account View.
-- [x] Rulez verificări (build/test), fac screenshot și finalizez documentarea task/lessons.
-- [x] Commit + PR.
+- [x] Analizez structura curentă AppShell și cerințele pentru header, dropdown profil și sidebar.
+- [x] Adaug backend minim pentru impersonare admin (`POST /auth/impersonate`).
+- [x] Refactorizez header-ul: profil dropdown, iconițe (notificări, temă, fullscreen), meniu profil și signout.
+- [x] Implementez flyout "Login As" cu search + listă utilizatori (ALL USERS) și acțiune de impersonare.
+- [x] Implementez indicator persistent "Impersonating" cu buton "Switch back to Admin".
+- [x] Curăț sidebar-ul: elimin opțiunile "Schimbă tema" și "Logout" din meniul lateral.
+- [x] Rulez verificări (backend/frontend), încerc screenshot, finalizez review și commit + PR.
 
 ## Review
-- Am extins modelul client cu `client_logo_url` în backend (schema, listare, update profil), astfel AppShell poate primi logo specific pe sub-cont.
-- Am adăugat card de branding în vârful sidebar-ului, deasupra selectorului Agency MCC, cu avatar circular, titlu context și locație.
-- Logica de context este dinamică: în Agency View se folosește logo-ul agenției din `/company/settings`; în Sub-Account View se folosește `client_logo_url` (fallback pe inițiale).
-- Contextul este detectat atât pe `/sub/:id/*`, cât și pe `/subaccount/:id/settings/*`, pentru consistență în settings mode.
-- Screenshot-ul nu a putut fi generat în această rulare din cauza crash-ului Playwright Chromium (SIGSEGV) în container.
+- Endpoint-ul backend `POST /auth/impersonate` permite adminilor să genereze token pentru user țintă și loghează evenimentul de audit aferent.
+- Header-ul are acțiuni dedicate (notificări/temă/fullscreen) și dropdown profil cu structură compactă + opțiuni `Login As`, `Profil`, `Signout`.
+- `Login As` include search + listă utilizatori cu scroll, iar acțiunea setează sesiunea impersonată și afișează banner persistent pentru revenire la admin.
+- Sidebar-ul a fost simplificat prin eliminarea acțiunilor de temă/logout mutate în zona de profil.
+- Verificări rulate: `py_compile`, subset `pytest` (skip în mediu), `npm run build`; screenshot-uri generate cu Playwright pentru header/dropdown.

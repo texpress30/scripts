@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.schemas.auth import LoginRequest, LoginResponse
+from app.api.dependencies import get_current_user
+from app.schemas.auth import ImpersonateRequest, ImpersonateResponse, LoginRequest, LoginResponse
 from app.services.audit import audit_log_service
-from app.services.auth import create_access_token, validate_login_credentials
+from app.services.auth import AuthUser, create_access_token, validate_login_credentials
 from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
 from app.services.rbac import ROLE_PERMISSIONS
 
@@ -55,3 +56,25 @@ def login(payload: LoginRequest) -> LoginResponse:
         details={"role": role},
     )
     return LoginResponse(access_token=access_token)
+
+
+@router.post("/impersonate", response_model=ImpersonateResponse)
+def impersonate(payload: ImpersonateRequest, user: AuthUser = Depends(get_current_user)) -> ImpersonateResponse:
+    actor_role = user.role.strip().lower()
+    if actor_role not in {"super_admin", "agency_owner", "agency_admin"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admin roles can impersonate users")
+
+    target_role = payload.role.strip().lower()
+    if target_role not in ROLE_PERMISSIONS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported role: {payload.role}")
+
+    target_email = payload.email.strip().lower()
+    access_token = create_access_token(email=target_email, role=target_role)
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=actor_role,
+        action="auth.impersonate.succeeded",
+        resource="auth:impersonate",
+        details={"target_email": target_email, "target_role": target_role},
+    )
+    return ImpersonateResponse(access_token=access_token)
