@@ -18,6 +18,7 @@ from app.api.snapchat_ads import router as snapchat_ads_router
 from app.api.tiktok_ads import router as tiktok_ads_router
 from app.api.rules import router as rules_router
 from app.core.config import load_settings
+from app.services.client_registry import client_registry_service
 
 settings = load_settings()
 
@@ -74,3 +75,8 @@ def root() -> dict[str, str]:
         "environment": settings.app_env,
         "message": "Backend skeleton is running.",
     }
+
+
+@app.on_event("startup")
+def initialize_client_registry_schema() -> None:
+    client_registry_service.initialize_schema()

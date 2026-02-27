@@ -12,13 +12,6 @@ try:
 except Exception:  # noqa: BLE001
     psycopg = None
 
-from app.core.config import load_settings
-
-try:
-    import psycopg
-except Exception:  # noqa: BLE001
-    psycopg = None
-
 
 @dataclass
 class ClientRecord:
@@ -37,7 +30,7 @@ class ClientRegistryService:
         self._lock = Lock()
         self._memory_platform_accounts: dict[str, dict[str, dict[str, str]]] = {}
         self._memory_last_import_at: dict[str, str] = {}
-        self._memory_account_client_mappings: dict[str, dict[str, int]] = {}
+        self._memory_account_client_mappings: dict[str, dict[str, set[int]]] = {}
 
     def _is_test_mode(self) -> bool:
         # Use in-memory registry only while running pytest to avoid accidental data loss in deployed environments.
@@ -103,10 +96,31 @@ class ClientRegistryService:
                         client_id INTEGER NOT NULL,
                         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        UNIQUE(platform, account_id),
+                        UNIQUE(platform, account_id, client_id),
                         FOREIGN KEY (platform, account_id) REFERENCES agency_platform_accounts(platform, account_id) ON DELETE CASCADE,
                         FOREIGN KEY (client_id) REFERENCES agency_clients(id) ON DELETE CASCADE
                     )
+                    """
+                )
+                cur.execute(
+                    """
+                    ALTER TABLE agency_account_client_mappings
+                    DROP CONSTRAINT IF EXISTS agency_account_client_mappings_platform_account_id_key
+                    """
+                )
+                cur.execute(
+                    """
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1
+                            FROM pg_constraint
+                            WHERE conname = 'agency_account_client_mappings_unique'
+                        ) THEN
+                            ALTER TABLE agency_account_client_mappings
+                            ADD CONSTRAINT agency_account_client_mappings_unique UNIQUE(platform, account_id, client_id);
+                        END IF;
+                    END$$;
                     """
                 )
                 # Legacy cleanup: mark obvious synthetic auto-imported rows as imported.
@@ -119,27 +133,12 @@ class ClientRegistryService:
                       AND c.name LIKE 'Google Account %'
                     """
                 )
-                # Backfill old one-to-one google_customer_id into mapping table.
-                cur.execute(
-                    """
-                    INSERT INTO agency_account_client_mappings (platform, account_id, client_id)
-                    SELECT 'google_ads', c.google_customer_id, c.id
-                    FROM agency_clients c
-                    WHERE c.google_customer_id IS NOT NULL
-                      AND c.source = 'manual'
-                      AND EXISTS (
-                        SELECT 1
-                        FROM agency_platform_accounts a
-                        WHERE a.platform = 'google_ads' AND a.account_id = c.google_customer_id
-                      )
-                    ON CONFLICT(platform, account_id)
-                    DO UPDATE SET client_id = EXCLUDED.client_id, updated_at = NOW()
-                    """
-                )
             conn.commit()
 
-    def create_client(self, name: str, owner_email: str) -> dict[str, str | int | None]:
+    def initialize_schema(self) -> None:
         self._ensure_schema()
+
+    def create_client(self, name: str, owner_email: str) -> dict[str, str | int | None]:
 
         if self._is_test_mode():
             with self._lock:
@@ -196,13 +195,12 @@ class ClientRegistryService:
                     "owner_email": c.owner_email,
                     "client_type": c.client_type,
                     "account_manager": c.account_manager,
-                    "google_customer_id": next((aid for aid, cid in self._memory_account_client_mappings.get("google_ads", {}).items() if cid == c.id), None),
+                    "google_customer_id": next((aid for aid, client_ids in self._memory_account_client_mappings.get("google_ads", {}).items() if c.id in client_ids), None),
                 }
             )
         return records
 
     def list_clients(self) -> list[dict[str, str | int | None]]:
-        self._ensure_schema()
 
         if self._is_test_mode():
             with self._lock:
@@ -245,7 +243,6 @@ class ClientRegistryService:
         return any(c.id == client_id and c.source == "manual" for c in self._clients)
 
     def attach_platform_account_to_client(self, *, platform: str, client_id: int, account_id: str) -> dict[str, str | int | None] | None:
-        self._ensure_schema()
         account_id = str(account_id).strip()
         if account_id == "":
             return None
@@ -258,13 +255,13 @@ class ClientRegistryService:
                 if account_id not in platform_accounts:
                     return None
                 mappings = self._memory_account_client_mappings.setdefault(platform, {})
-                mappings[account_id] = client_id
+                mappings.setdefault(account_id, set()).add(client_id)
                 client = next(c for c in self._clients if c.id == client_id)
                 return {
                     "id": client.id,
                     "name": client.name,
                     "owner_email": client.owner_email,
-                    "google_customer_id": next((aid for aid, cid in mappings.items() if cid == client.id), None),
+                    "google_customer_id": next((aid for aid, client_ids in mappings.items() if client.id in client_ids), None),
                 }
 
         with self._connect_or_raise() as conn:
@@ -286,8 +283,8 @@ class ClientRegistryService:
                     """
                     INSERT INTO agency_account_client_mappings (platform, account_id, client_id)
                     VALUES (%s, %s, %s)
-                    ON CONFLICT(platform, account_id)
-                    DO UPDATE SET client_id = EXCLUDED.client_id, updated_at = NOW()
+                    ON CONFLICT(platform, account_id, client_id)
+                    DO UPDATE SET updated_at = NOW()
                     """,
                     (platform, account_id, client_id),
                 )
@@ -321,7 +318,6 @@ class ClientRegistryService:
         return self.attach_platform_account_to_client(platform="google_ads", client_id=client_id, account_id=customer_id)
 
     def detach_platform_account_from_client(self, *, platform: str, client_id: int, account_id: str) -> bool:
-        self._ensure_schema()
         account_id = str(account_id).strip()
         if account_id == "":
             return False
@@ -329,9 +325,12 @@ class ClientRegistryService:
         if self._is_test_mode():
             with self._lock:
                 mappings = self._memory_account_client_mappings.setdefault(platform, {})
-                if mappings.get(account_id) != client_id:
+                client_ids = mappings.get(account_id)
+                if client_ids is None or client_id not in client_ids:
                     return False
-                del mappings[account_id]
+                client_ids.remove(client_id)
+                if not client_ids:
+                    del mappings[account_id]
                 return True
 
         with self._connect_or_raise() as conn:
@@ -361,12 +360,11 @@ class ClientRegistryService:
         return deleted
 
     def get_google_customer_for_client(self, *, client_id: int) -> str | None:
-        self._ensure_schema()
         if self._is_test_mode():
             with self._lock:
                 mappings = self._memory_account_client_mappings.get("google_ads", {})
-                for account_id, mapped_client_id in mappings.items():
-                    if mapped_client_id == client_id:
+                for account_id, mapped_client_ids in mappings.items():
+                    if client_id in mapped_client_ids:
                         return account_id
                 return None
 
@@ -388,7 +386,6 @@ class ClientRegistryService:
         return str(row[0])
 
     def upsert_platform_accounts(self, *, platform: str, accounts: list[dict[str, str]]) -> None:
-        self._ensure_schema()
         now_iso = datetime.now(timezone.utc).isoformat()
         if self._is_test_mode():
             with self._lock:
@@ -422,7 +419,6 @@ class ClientRegistryService:
             conn.commit()
 
     def list_platform_accounts(self, *, platform: str) -> list[dict[str, str | int | None]]:
-        self._ensure_schema()
         if self._is_test_mode():
             with self._lock:
                 items = self._memory_platform_accounts.get(platform, {})
@@ -431,8 +427,8 @@ class ClientRegistryService:
                 result: list[dict[str, str | int | None]] = []
                 for key in sorted(items.keys()):
                     item = dict(items[key])
-                    mapped_client_id = mappings.get(item["id"])
-                    mapped_client = clients_by_id.get(mapped_client_id) if mapped_client_id else None
+                    mapped_client_ids = sorted(mappings.get(item["id"], set()))
+                    mapped_client = clients_by_id.get(mapped_client_ids[0]) if mapped_client_ids else None
                     item["attached_client_id"] = mapped_client.id if mapped_client else None
                     item["attached_client_name"] = mapped_client.name if mapped_client else None
                     result.append(item)
@@ -444,8 +440,13 @@ class ClientRegistryService:
                     """
                     SELECT a.account_id, a.account_name, m.client_id, c.name
                     FROM agency_platform_accounts a
-                    LEFT JOIN agency_account_client_mappings m
-                      ON m.platform = a.platform AND m.account_id = a.account_id
+                    LEFT JOIN LATERAL (
+                      SELECT client_id
+                      FROM agency_account_client_mappings
+                      WHERE platform = a.platform AND account_id = a.account_id
+                      ORDER BY updated_at DESC, created_at DESC
+                      LIMIT 1
+                    ) m ON TRUE
                     LEFT JOIN agency_clients c
                       ON c.id = m.client_id
                     WHERE a.platform = %s
@@ -465,14 +466,13 @@ class ClientRegistryService:
         ]
 
     def list_client_platform_accounts(self, *, platform: str, client_id: int) -> list[dict[str, str]]:
-        self._ensure_schema()
         if self._is_test_mode():
             with self._lock:
                 mappings = self._memory_account_client_mappings.get(platform, {})
                 accounts = self._memory_platform_accounts.get(platform, {})
                 result: list[dict[str, str]] = []
-                for account_id, mapped_client_id in mappings.items():
-                    if mapped_client_id != client_id:
+                for account_id, mapped_client_ids in mappings.items():
+                    if client_id not in mapped_client_ids:
                         continue
                     info = accounts.get(account_id)
                     if info:
@@ -496,7 +496,6 @@ class ClientRegistryService:
         return [{"id": str(row[0]), "name": str(row[1])} for row in rows]
 
     def get_last_import_at(self, *, platform: str) -> str | None:
-        self._ensure_schema()
         if self._is_test_mode():
             with self._lock:
                 return self._memory_last_import_at.get(platform)
@@ -524,7 +523,6 @@ class ClientRegistryService:
         return summary
 
     def get_manual_display_id(self, *, client_id: int) -> int | None:
-        self._ensure_schema()
         if self._is_test_mode():
             with self._lock:
                 display_id = 0
@@ -555,7 +553,6 @@ class ClientRegistryService:
         return int(row[0])
 
     def get_client_details(self, *, client_id: int) -> dict[str, object] | None:
-        self._ensure_schema()
         clients = self.list_clients()
         target = next((item for item in clients if int(item["id"]) == client_id), None)
         if target is None:
@@ -621,7 +618,6 @@ class ClientRegistryService:
                         return self.get_client_details(client_id=client_id)
             return None
 
-        self._ensure_schema()
         with self._connect_or_raise() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -647,7 +643,6 @@ class ClientRegistryService:
                 self._memory_account_client_mappings.clear()
             return
 
-        self._ensure_schema()
         with self._connect_or_raise() as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM agency_account_client_mappings")
