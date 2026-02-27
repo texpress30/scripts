@@ -593,15 +593,23 @@ class ClientRegistryService:
             return None
         return details
 
-    def update_client_profile_by_display_id(self, *, display_id: int, client_type: str, account_manager: str) -> dict[str, object] | None:
+    def update_client_profile_by_display_id(
+        self,
+        *,
+        display_id: int,
+        name: str | None = None,
+        client_type: str | None = None,
+        account_manager: str | None = None,
+    ) -> dict[str, object] | None:
         client_id = self._resolve_client_id_by_display_id(display_id=display_id)
         if client_id is None:
             return None
 
-        normalized_type = client_type.strip().lower()
-        if normalized_type not in {"lead", "e-commerce", "programmatic"}:
+        normalized_name = name.strip() if name is not None else None
+        normalized_type = client_type.strip().lower() if client_type is not None else None
+        if normalized_type is not None and normalized_type not in {"lead", "e-commerce", "programmatic"}:
             normalized_type = "lead"
-        normalized_manager = account_manager.strip()
+        normalized_manager = account_manager.strip() if account_manager is not None else None
 
         if self._is_test_mode():
             with self._lock:
@@ -609,26 +617,39 @@ class ClientRegistryService:
                     if c.id == client_id and c.source == "manual":
                         self._clients[idx] = ClientRecord(
                             id=c.id,
-                            name=c.name,
+                            name=normalized_name if normalized_name is not None and normalized_name != "" else c.name,
                             owner_email=c.owner_email,
                             source=c.source,
-                            client_type=normalized_type,
-                            account_manager=normalized_manager,
+                            client_type=normalized_type if normalized_type is not None else c.client_type,
+                            account_manager=normalized_manager if normalized_manager is not None else c.account_manager,
                         )
                         return self.get_client_details(client_id=client_id)
             return None
 
-        with self._connect_or_raise() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE agency_clients
-                    SET client_type = %s, account_manager = %s, updated_at = NOW()
-                    WHERE id = %s AND source = 'manual'
-                    """,
-                    (normalized_type, normalized_manager, client_id),
-                )
-            conn.commit()
+        set_clauses: list[str] = []
+        values: list[object] = []
+        if normalized_name is not None and normalized_name != "":
+            set_clauses.append("name = %s")
+            values.append(normalized_name)
+        if normalized_type is not None:
+            set_clauses.append("client_type = %s")
+            values.append(normalized_type)
+        if normalized_manager is not None:
+            set_clauses.append("account_manager = %s")
+            values.append(normalized_manager)
+
+        if set_clauses:
+            with self._connect_or_raise() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""
+                        UPDATE agency_clients
+                        SET {", ".join(set_clauses)}, updated_at = NOW()
+                        WHERE id = %s AND source = 'manual'
+                        """,
+                        tuple(values + [client_id]),
+                    )
+                conn.commit()
 
         return self.get_client_details(client_id=client_id)
 
