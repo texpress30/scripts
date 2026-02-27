@@ -10,7 +10,14 @@ import { apiRequest } from "@/lib/api";
 type Account = { id: string; name: string };
 type PlatformInfo = { platform: string; enabled: boolean; count: number; accounts: Account[] };
 type ClientDetails = {
-  client: { id: number; display_id?: number; name: string; owner_email: string; google_customer_id?: string | null };
+  client: {
+    id: number;
+    display_id?: number;
+    name: string;
+    owner_email: string;
+    client_type?: string;
+    account_manager?: string;
+  };
   platforms: PlatformInfo[];
 };
 
@@ -27,26 +34,48 @@ function prettyPlatform(platform: string): string {
 
 export default function AgencyClientDetailsPage() {
   const params = useParams<{ id: string }>();
-  const clientId = Number(params.id);
+  const displayId = Number(params.id);
   const [data, setData] = useState<ClientDetails | null>(null);
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [clientType, setClientType] = useState("lead");
+  const [accountManager, setAccountManager] = useState("");
+
+  async function load() {
+    setError("");
+    try {
+      const payload = await apiRequest<ClientDetails>(`/clients/display/${displayId}`);
+      setData(payload);
+      setClientType(payload.client.client_type ?? "lead");
+      setAccountManager(payload.client.account_manager ?? "");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nu am putut încărca detaliile clientului.");
+    }
+  }
 
   useEffect(() => {
-    async function load() {
-      setError("");
-      try {
-        const payload = await apiRequest<ClientDetails>(`/clients/${clientId}`);
-        setData(payload);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Nu am putut încărca detaliile clientului.");
-      }
-    }
-    if (clientId > 0) {
+    if (displayId > 0) {
       void load();
     }
-  }, [clientId]);
+  }, [displayId]);
 
-  const title = useMemo(() => (data ? `Client: ${data.client.name}` : "Client details"), [data]);
+  async function saveProfile() {
+    setSaving(true);
+    setError("");
+    try {
+      const payload = await apiRequest<ClientDetails>(`/clients/display/${displayId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ client_type: clientType, account_manager: accountManager }),
+      });
+      setData(payload);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nu am putut salva profilul clientului.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const title = useMemo(() => (data ? `Client: ${data.client.name}` : `Client #${displayId}`), [data, displayId]);
 
   return (
     <ProtectedPage>
@@ -56,9 +85,34 @@ export default function AgencyClientDetailsPage() {
           {data ? (
             <>
               <section className="wm-card p-4">
-                <p className="text-sm text-slate-500">Client #{data.client.display_id ?? data.client.id}</p>
+                <p className="text-sm text-slate-500">Client #{data.client.display_id ?? displayId}</p>
                 <h2 className="text-xl font-semibold text-slate-900">{data.client.name}</h2>
                 <p className="text-sm text-slate-600">Owner: {data.client.owner_email}</p>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <label className="text-sm text-slate-700">
+                    Tip client
+                    <select value={clientType} onChange={(e) => setClientType(e.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2">
+                      <option value="lead">lead</option>
+                      <option value="e-commerce">e-commerce</option>
+                      <option value="programmatic">programmatic</option>
+                    </select>
+                  </label>
+
+                  <label className="text-sm text-slate-700">
+                    Responsabil cont
+                    <input
+                      value={accountManager}
+                      onChange={(e) => setAccountManager(e.target.value)}
+                      className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2"
+                      placeholder="Nume membru echipă"
+                    />
+                  </label>
+                </div>
+
+                <button className="wm-btn-primary mt-3" onClick={() => void saveProfile()} disabled={saving}>
+                  {saving ? "Se salvează..." : "Salvează profil client"}
+                </button>
               </section>
 
               <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">

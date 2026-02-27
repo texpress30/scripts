@@ -82,7 +82,7 @@ export default function AgencyClientsPage() {
                   <tr key={client.id} className="border-t border-slate-100">
                     <td className="px-4 py-3">{client.display_id ?? client.id}</td>
                     <td className="px-4 py-3">
-                      <Link href={`/agency/clients/${client.id}`} className="text-indigo-700 hover:underline">
+                      <Link href={`/agency/clients/${client.display_id ?? client.id}`} className="text-indigo-700 hover:underline">
                         {client.name}
                       </Link>
                     </td>

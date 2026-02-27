@@ -32,3 +32,5 @@
 - 2026-02-26: For account mappings, model agency client↔platform account as explicit link table semantics from day one (client can have many accounts) and never encode mapping in a single client column.
 
 - 2026-02-26: Always verify the actual PR title recorded by automation after calling `make_pr`; never rely on intended title in narrative summaries.
+
+- 2026-02-26: When exposing human-facing IDs in URLs, route by display_id consistently across list links and detail APIs to avoid leaking raw internal IDs.

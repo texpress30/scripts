@@ -11,3 +11,8 @@ class AttachGoogleAccountRequest(BaseModel):
 
 class DetachGoogleAccountRequest(BaseModel):
     customer_id: str
+
+
+class UpdateClientProfileRequest(BaseModel):
+    client_type: str
+    account_manager: str

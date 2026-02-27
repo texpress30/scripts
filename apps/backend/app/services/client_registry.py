@@ -18,6 +18,8 @@ class ClientRecord:
     name: str
     owner_email: str
     source: str = "manual"
+    client_type: str = "lead"
+    account_manager: str = ""
 
 
 class ClientRegistryService:
@@ -62,6 +64,8 @@ class ClientRegistryService:
                     """
                 )
                 cur.execute("ALTER TABLE agency_clients ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manual'")
+                cur.execute("ALTER TABLE agency_clients ADD COLUMN IF NOT EXISTS client_type TEXT NOT NULL DEFAULT 'lead'")
+                cur.execute("ALTER TABLE agency_clients ADD COLUMN IF NOT EXISTS account_manager TEXT NOT NULL DEFAULT ''")
                 cur.execute(
                     """
                     CREATE TABLE IF NOT EXISTS agency_platform_accounts (
@@ -130,7 +134,7 @@ class ClientRegistryService:
 
         if self._is_test_mode():
             with self._lock:
-                record = ClientRecord(id=self._next_id, name=name, owner_email=owner_email, source="manual")
+                record = ClientRecord(id=self._next_id, name=name, owner_email=owner_email, source="manual", client_type="lead", account_manager="")
                 self._next_id += 1
                 self._clients.append(record)
                 manual_count = len([c for c in self._clients if c.source == "manual"])
@@ -139,6 +143,8 @@ class ClientRegistryService:
                     "display_id": manual_count,
                     "name": record.name,
                     "owner_email": record.owner_email,
+                    "client_type": record.client_type,
+                    "account_manager": record.account_manager,
                     "google_customer_id": self.get_google_customer_for_client(client_id=record.id),
                 }
 
@@ -148,7 +154,7 @@ class ClientRegistryService:
                     """
                     INSERT INTO agency_clients (name, owner_email, source)
                     VALUES (%s, %s, 'manual')
-                    RETURNING id, name, owner_email
+                    RETURNING id, name, owner_email, client_type, account_manager
                     """,
                     (name, owner_email),
                 )
@@ -161,6 +167,8 @@ class ClientRegistryService:
             "display_id": self.get_manual_display_id(client_id=client_id),
             "name": str(row[1]),
             "owner_email": str(row[2]),
+            "client_type": str(row[3]),
+            "account_manager": str(row[4]),
             "google_customer_id": self.get_google_customer_for_client(client_id=client_id),
         }
 
@@ -177,6 +185,8 @@ class ClientRegistryService:
                     "display_id": display_id,
                     "name": c.name,
                     "owner_email": c.owner_email,
+                    "client_type": c.client_type,
+                    "account_manager": c.account_manager,
                     "google_customer_id": self.get_google_customer_for_client(client_id=c.id),
                 }
             )
@@ -193,7 +203,7 @@ class ClientRegistryService:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT c.id, c.name, c.owner_email,
+                    SELECT c.id, c.name, c.owner_email, c.client_type, c.account_manager,
                            ROW_NUMBER() OVER (ORDER BY c.id ASC) AS display_id,
                            (
                               SELECT m.account_id
@@ -214,8 +224,10 @@ class ClientRegistryService:
                 "id": int(row[0]),
                 "name": str(row[1]),
                 "owner_email": str(row[2]),
-                "display_id": int(row[3]),
-                "google_customer_id": str(row[4]) if row[4] else None,
+                "client_type": str(row[3]),
+                "account_manager": str(row[4]),
+                "display_id": int(row[5]),
+                "google_customer_id": str(row[6]) if row[6] else None,
             }
             for row in rows
         ]
@@ -557,6 +569,63 @@ class ClientRegistryService:
             "client": target,
             "platforms": platform_items,
         }
+
+
+    def _resolve_client_id_by_display_id(self, *, display_id: int) -> int | None:
+        clients = self.list_clients()
+        for item in clients:
+            if int(item.get("display_id", -1)) == display_id:
+                return int(item["id"])
+        return None
+
+    def get_client_details_by_display_id(self, *, display_id: int) -> dict[str, object] | None:
+        client_id = self._resolve_client_id_by_display_id(display_id=display_id)
+        if client_id is None:
+            return None
+        details = self.get_client_details(client_id=client_id)
+        if details is None:
+            return None
+        return details
+
+    def update_client_profile_by_display_id(self, *, display_id: int, client_type: str, account_manager: str) -> dict[str, object] | None:
+        client_id = self._resolve_client_id_by_display_id(display_id=display_id)
+        if client_id is None:
+            return None
+
+        normalized_type = client_type.strip().lower()
+        if normalized_type not in {"lead", "e-commerce", "programmatic"}:
+            normalized_type = "lead"
+        normalized_manager = account_manager.strip()
+
+        if self._is_test_mode():
+            with self._lock:
+                for idx, c in enumerate(self._clients):
+                    if c.id == client_id and c.source == "manual":
+                        self._clients[idx] = ClientRecord(
+                            id=c.id,
+                            name=c.name,
+                            owner_email=c.owner_email,
+                            source=c.source,
+                            client_type=normalized_type,
+                            account_manager=normalized_manager,
+                        )
+                        return self.get_client_details(client_id=client_id)
+            return None
+
+        self._ensure_schema()
+        with self._connect_or_raise() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE agency_clients
+                    SET client_type = %s, account_manager = %s, updated_at = NOW()
+                    WHERE id = %s AND source = 'manual'
+                    """,
+                    (normalized_type, normalized_manager, client_id),
+                )
+            conn.commit()
+
+        return self.get_client_details(client_id=client_id)
 
 
     def clear(self) -> None:

@@ -94,5 +94,6 @@ cd apps/frontend && npm run build
 
 ## UI Agency
 - `/agency/clients`: listă clienți manuali (ID afișat secvențial de la 1).
-- Click pe numele clientului duce la `/agency/clients/{id}` pentru detalii complete (platforme active + conturi atașate per platformă).
+- Click pe numele clientului duce la `/agency/clients/{id}` (ID afișat) pentru detalii complete (platforme active + conturi atașate per platformă).
+- În pagina de detalii client poți seta `tip client` (lead/e-commerce/programmatic) și `responsabil cont` (membru echipă).
 - `/agency-accounts`: atașare/detașare conturi Google la clienți, inclusiv re-atașare.

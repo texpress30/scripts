@@ -1,7 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.dependencies import enforce_action_scope, get_current_user
-from app.schemas.client import AttachGoogleAccountRequest, CreateClientRequest, DetachGoogleAccountRequest
+from app.schemas.client import (
+    AttachGoogleAccountRequest,
+    CreateClientRequest,
+    DetachGoogleAccountRequest,
+    UpdateClientProfileRequest,
+)
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
 from app.services.client_registry import client_registry_service
@@ -99,13 +104,30 @@ def detach_google_account(client_id: int, payload: DetachGoogleAccountRequest, u
     return {"status": "ok", "client_id": client_id, "customer_id": payload.customer_id}
 
 
-@router.get("/{client_id}")
-def get_client_details(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+@router.get("/display/{display_id}")
+def get_client_details(display_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
-    payload = client_registry_service.get_client_details(client_id=client_id)
+    payload = client_registry_service.get_client_details_by_display_id(display_id=display_id)
     if payload is None:
         raise HTTPException(status_code=404, detail="Client not found")
     return payload
+
+
+@router.patch("/display/{display_id}")
+def update_client_profile(
+    display_id: int,
+    payload: UpdateClientProfileRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    updated = client_registry_service.update_client_profile_by_display_id(
+        display_id=display_id,
+        client_type=payload.client_type,
+        account_manager=payload.account_manager,
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Client not found")
+    return updated
 
 
 @router.get("/{client_id}/accounts")
