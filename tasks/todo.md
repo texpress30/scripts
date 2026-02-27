@@ -90,3 +90,20 @@
 - Fișierul de dependențe backend este `apps/backend/requirements.txt`; am confirmat și păstrat `psycopg[binary]==3.2.1` și am adăugat comentariu explicit pentru contextul Railway production.
 - În repo există `apps/backend/Dockerfile` (nu există `railway.json` sau `nixpacks.toml`), iar build-ul instalează dependențele prin `RUN pip install --no-cache-dir -r requirements.txt` la deploy.
 - Verificările rapide (`python -m compileall` pe serviciul Google Ads și `git diff`) confirmă că schimbarea este minimă și fără impact logic.
+
+---
+
+# TODO — Robust DB diagnostics + script Google Ads
+
+- [x] Ajustez `_db_diagnostics_last_30_days` pentru query pe ultimele 30 zile cu fallback robust la erori DB/tabel.
+- [x] Verific/ajustez endpoint-ul `/integrations/google-ads/diagnostics` să expună `oauth_ok`, `rows_in_db_last_30_days`, `last_sync_at`, `last_error`.
+- [x] Creez/actualizez `scripts/diag_google_ads.py` pentru verificare API + DB + rows.
+- [x] Update README cu pașii de rulare și variabilele de mediu necesare.
+- [x] Rulez verificări și documentez rezultatele.
+
+## Review
+- În `GoogleAdsService._db_diagnostics_last_30_days` conexiunea DB folosește `DATABASE_URL` din env (fallback `load_settings().database_url`), verifică existența tabelului și rulează query parametrizat pe ultimele 30 zile.
+- Query-ul folosește `provider = %s` dacă există coloana `provider`; fallback pe schema actuală `platform = %s` pentru compatibilitate, ambele filtrate cu `synced_at >= NOW() - INTERVAL '30 days'`.
+- Dacă tabela lipsește sau DB este indisponibilă, funcția întoarce `db_rows_last_30_days=0` și un `db_error` descriptiv, fără crash.
+- `run_diagnostics()` expune și aliasul `rows_in_db_last_30_days` pentru endpoint-ul `/integrations/google-ads/diagnostics`, împreună cu `oauth_ok`, `last_sync_at`, `last_error`.
+- Scriptul `scripts/diag_google_ads.py` a fost actualizat să afișeze explicit starea DB diagnostics și să citească noul câmp `rows_in_db_last_30_days`; README include acum secțiune dedicată de rulare + env vars.

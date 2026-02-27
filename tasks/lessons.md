@@ -56,3 +56,4 @@
 - 2026-02-27: Când utilizatorul cere cherry-pick după `git fetch --all`, dacă hash-ul scurt rămâne nerezolvabil (`bad revision`), verifică explicit disponibilitatea cu `git log --all`, `git show <hash>`, `git fetch origin <hash>` și documentează clar că obiectul nu există pe remote-ul curent.
 - 2026-02-27: Pentru bug-uri runtime de tip `NameError` în diagnostice backend, verifică imediat consistența importurilor modulare cu pattern-ul folosit în celelalte servicii (ex: `try: import psycopg ...`) înainte de orice schimbare logică.
 - 2026-02-27: Pentru deploy Railway, păstrează explicit `psycopg[binary]` în dependențele backend și verifică Docker build că rulează `pip install -r requirements.txt` la fiecare deploy.
+- 2026-02-27: Pentru diagnostice DB cross-env, implementează query compatibil de schemă (ex: `provider` vs `platform`) și tratează explicit lipsa tabelului cu mesaj clar, fără să oprești endpoint-ul de diagnostics.
