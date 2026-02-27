@@ -10,7 +10,14 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
 
-type IntegrationStatus = { platform: string; status: string };
+type IntegrationStatus = {
+  platform: string;
+  status: string;
+  accounts_found?: number;
+  rows_in_db_last_30_days?: number;
+  last_sync_at?: string | null;
+  last_error?: string | null;
+};
 
 type AgencySummaryResponse = {
   date_range: { start_date: string; end_date: string };
@@ -115,13 +122,19 @@ export default function AgencyDashboardPage() {
 
   const integrationSummary = useMemo(
     () => [
-      { label: "Google Ads", status: googleStatus?.status ?? "error" },
-      { label: "Meta Ads", status: "disabled" },
-      { label: "TikTok Ads", status: "disabled" },
-      { label: "Pinterest Ads", status: "disabled" },
-      { label: "Snapchat Ads", status: "disabled" },
+      {
+        label: "Google Ads",
+        status: googleStatus?.status ?? "error",
+        details: `accounts=${googleStatus?.accounts_found ?? 0} · rows30=${googleStatus?.rows_in_db_last_30_days ?? 0}`,
+        lastSyncAt: googleStatus?.last_sync_at ?? null,
+        lastError: googleStatus?.last_error ?? null,
+      },
+      { label: "Meta Ads", status: "disabled", details: null, lastSyncAt: null, lastError: null },
+      { label: "TikTok Ads", status: "disabled", details: null, lastSyncAt: null, lastError: null },
+      { label: "Pinterest Ads", status: "disabled", details: null, lastSyncAt: null, lastError: null },
+      { label: "Snapchat Ads", status: "disabled", details: null, lastSyncAt: null, lastError: null },
     ],
-    [googleStatus?.status]
+    [googleStatus?.status, googleStatus?.accounts_found, googleStatus?.rows_in_db_last_30_days, googleStatus?.last_sync_at, googleStatus?.last_error]
   );
 
   function handlePresetClick(nextPreset: DatePresetKey) {
@@ -221,8 +234,13 @@ export default function AgencyDashboardPage() {
             <h3 className="text-sm font-semibold text-slate-900">Integration health</h3>
             <ul className="mt-3 space-y-2 text-sm text-slate-600">
               {integrationSummary.map((item) => (
-                <li key={item.label} className="flex items-center justify-between">
-                  <span>{item.label}</span>
+                <li key={item.label} className="flex items-start justify-between gap-3">
+                  <div>
+                    <p>{item.label}</p>
+                    {item.details ? <p className="text-xs text-slate-500">{item.details}</p> : null}
+                    {item.lastSyncAt ? <p className="text-xs text-slate-500">last_sync_at: {item.lastSyncAt}</p> : null}
+                    {item.lastError ? <p className="max-w-[320px] truncate text-xs text-red-500">last_error: {item.lastError}</p> : null}
+                  </div>
                   <span className={`font-medium ${statusTone(item.status)}`}>{item.status}</span>
                 </li>
               ))}

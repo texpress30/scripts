@@ -22,6 +22,12 @@ def google_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, o
     google_accounts = client_registry_service.list_platform_accounts(platform="google_ads")
     status_payload["connected_accounts_count"] = len(google_accounts)
     status_payload["last_import_at"] = client_registry_service.get_last_import_at(platform="google_ads")
+
+    diagnostics = google_ads_service.run_diagnostics()
+    status_payload["accounts_found"] = diagnostics.get("accessible_customers_count", 0)
+    status_payload["rows_in_db_last_30_days"] = diagnostics.get("db_rows_last_30_days", 0)
+    status_payload["last_sync_at"] = diagnostics.get("last_sync_at")
+    status_payload["last_error"] = diagnostics.get("last_error")
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
@@ -154,7 +160,7 @@ def refresh_google_account_names(user: AuthUser = Depends(get_current_user)) -> 
 @router.get("/diagnostics")
 def google_ads_diagnostics(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="integrations:status", scope="agency")
-    details = google_ads_service.production_diagnostics()
+    details = google_ads_service.run_diagnostics()
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
@@ -165,6 +171,35 @@ def google_ads_diagnostics(user: AuthUser = Depends(get_current_user)) -> dict[s
     return details
 
 
+
+
+@router.post("/sync-now")
+def sync_google_ads_now(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+
+    accounts = client_registry_service.list_platform_accounts(platform="google_ads")
+    synced: list[dict[str, object]] = []
+    errors: list[dict[str, str]] = []
+
+    for item in accounts:
+        client_id = item.get("attached_client_id")
+        if client_id is None:
+            continue
+        try:
+            snapshot = google_ads_service.sync_client(int(client_id))
+            synced.append({"client_id": int(client_id), "spend": float(snapshot.get("spend", 0.0))})
+        except Exception as exc:  # noqa: BLE001
+            errors.append({"client_id": str(client_id), "error": str(exc)[:300]})
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="google_ads.sync_now",
+        resource="integration:google_ads",
+        details={"synced": len(synced), "errors": len(errors)},
+    )
+
+    return {"status": "ok", "synced": synced, "errors": errors, "accounts_seen": len(accounts)}
 @router.post("/{client_id}/sync")
 def sync_google_ads(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, float | int | str]:
     try:

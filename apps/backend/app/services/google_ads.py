@@ -5,7 +5,7 @@ import json
 import logging
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from urllib import error, parse, request
 
 try:
@@ -257,7 +257,7 @@ class GoogleAdsService:
             "api_version_effective": self._google_api_version(),
             "api_version_candidates": self._candidate_api_versions(),
             "developer_token_present": settings.google_ads_developer_token.strip() != "",
-            "manager_customer_id_raw": manager_raw,
+            "manager_customer_id_raw_masked": self._mask_identifier(manager_raw),
             "manager_customer_id_normalized": manager_normalized,
             "manager_customer_id_valid": self._is_valid_customer_id(manager_raw) if manager_raw else False,
             "manager_customer_id_has_dashes": manager_has_dashes,
@@ -265,6 +265,136 @@ class GoogleAdsService:
             "redirect_uri": settings.google_ads_redirect_uri,
             "customer_ids_csv_count": len([item for item in settings.google_ads_customer_ids_csv.split(",") if item.strip()]),
             "warnings": warnings,
+        }
+
+    def _mask_identifier(self, value: str) -> str:
+        normalized = value.strip()
+        if normalized == "":
+            return ""
+        if len(normalized) <= 4:
+            return "****"
+        return f"***{normalized[-4:]}"
+
+    def _db_diagnostics_last_30_days(self) -> dict[str, object]:
+        settings = load_settings()
+        try:
+            if psycopg is None:
+                raise RuntimeError("psycopg not installed")
+            with psycopg.connect(settings.database_url) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT COALESCE(COUNT(*), 0), MAX(report_date), MAX(synced_at)
+                        FROM ad_performance_reports
+                        WHERE platform = 'google_ads'
+                          AND report_date BETWEEN %s AND %s
+                        """,
+                        (datetime.now(timezone.utc).date() - timedelta(days=29), datetime.now(timezone.utc).date()),
+                    )
+                    row = cur.fetchone() or (0, None, None)
+            return {
+                "db_rows_last_30_days": int(row[0] or 0),
+                "last_report_date": str(row[1]) if row[1] else None,
+                "last_sync_at": str(row[2]) if row[2] else None,
+                "db_error": None,
+            }
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "db_rows_last_30_days": 0,
+                "last_report_date": None,
+                "last_sync_at": None,
+                "db_error": str(exc),
+            }
+
+    def run_diagnostics(self) -> dict[str, object]:
+        base = self.production_diagnostics()
+        manager_id = str(base.get("manager_customer_id_normalized") or "")
+
+        oauth_ok = False
+        developer_token_ok = False
+        child_accounts_count = 0
+        accessible_customers_count = 0
+        sample_metrics_last_30_days: dict[str, object] = {
+            "customer_id_masked": None,
+            "impressions": 0,
+            "clicks": 0,
+            "cost_micros": 0,
+        }
+        last_error: str | None = None
+
+        try:
+            access_token = self._access_token_from_refresh()
+            oauth_ok = bool(access_token)
+            accounts = self.list_accessible_customer_accounts()
+            accessible_customers_count = len(accounts)
+            developer_token_ok = accessible_customers_count > 0
+
+            non_manager = [item for item in accounts if self._normalize_customer_id(item.get("id", "")) != manager_id]
+            child_accounts_count = len(non_manager)
+            target = non_manager[0]["id"] if non_manager else (accounts[0]["id"] if accounts else "")
+
+            if target:
+                normalized_customer_id = self._normalize_customer_id(target)
+                metrics_payload = self._http_json(
+                    method="POST",
+                    url=self._build_google_ads_url(
+                        self._google_api_version(),
+                        f"customers/{normalized_customer_id}/googleAds:searchStream",
+                    ),
+                    payload={
+                        "query": (
+                            "SELECT segments.date, metrics.impressions, metrics.clicks, metrics.cost_micros "
+                            "FROM customer WHERE segments.date DURING LAST_30_DAYS"
+                        )
+                    },
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "developer-token": load_settings().google_ads_developer_token,
+                        "login-customer-id": manager_id,
+                    },
+                )
+
+                impressions = 0
+                clicks = 0
+                cost_micros = 0
+                if isinstance(metrics_payload, list):
+                    for chunk in metrics_payload:
+                        if not isinstance(chunk, dict):
+                            continue
+                        rows = chunk.get("results", [])
+                        if not isinstance(rows, list):
+                            continue
+                        for row in rows:
+                            if not isinstance(row, dict):
+                                continue
+                            metrics = row.get("metrics", {})
+                            if not isinstance(metrics, dict):
+                                continue
+                            impressions += int(metrics.get("impressions", 0) or 0)
+                            clicks += int(metrics.get("clicks", 0) or 0)
+                            cost_micros += int(metrics.get("costMicros", 0) or 0)
+
+                sample_metrics_last_30_days = {
+                    "customer_id_masked": self._mask_identifier(normalized_customer_id),
+                    "impressions": impressions,
+                    "clicks": clicks,
+                    "cost_micros": cost_micros,
+                }
+        except Exception as exc:  # noqa: BLE001
+            last_error = str(exc)
+
+        db_diag = self._db_diagnostics_last_30_days()
+        return {
+            "oauth_ok": oauth_ok,
+            "developer_token_ok": developer_token_ok,
+            "manager_id": self._mask_identifier(manager_id),
+            "child_accounts_count": child_accounts_count,
+            "accessible_customers_count": accessible_customers_count,
+            "sample_metrics_last_30_days": sample_metrics_last_30_days,
+            "db_rows_last_30_days": db_diag["db_rows_last_30_days"],
+            "last_sync_at": db_diag["last_sync_at"],
+            "last_error": last_error or db_diag.get("db_error"),
+            "api_version": self._google_api_version(),
         }
 
     def _refresh_token(self) -> str:

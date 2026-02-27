@@ -51,3 +51,4 @@
 - 2026-02-27: Când mediul cere folosirea tool-ului `apply_patch`, evit editările patch prin `exec_command`; folosesc editare directă de fișiere (cat/python) sau tool-ul dedicat dacă este disponibil.
 - 2026-02-27: Pentru acțiuni RBAC reutilizate în mai multe contexte (ex: `dashboard:view`), definește politicile cu scope-uri multiple; un singur scope hardcodat produce blocaje 403 în Agency View.
 - 2026-02-27: Când dashboard-ul afișează 0 deși integrarea e "connected", validează explicit traseul end-to-end sync->persistență->agregare; status-ul token nu garantează existența datelor în tabelul de raportare.
+- 2026-02-27: Pentru incidente “connected dar 0 în dashboard”, adaugă obligatoriu diagnostic combinat OAuth+Google query+DB rows (last_30_days); fără acest trilateral check, cauza reală (ingestion vs agregare) rămâne ambiguă.

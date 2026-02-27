@@ -77,6 +77,8 @@ Endpoint-uri relevante:
 - `POST /integrations/google-ads/import-accounts`
 - `POST /integrations/google-ads/refresh-account-names`
 - `POST /integrations/google-ads/{client_id}/sync`
+- `POST /integrations/google-ads/sync-now`
+- `GET /integrations/google-ads/diagnostics`
 - `GET /integrations/meta-ads/status`
 - `POST /integrations/meta-ads/{client_id}/sync`
 - `GET /integrations/tiktok-ads/status`
@@ -98,3 +100,22 @@ cd apps/frontend && npm run build
 - Click pe numele clientului duce la `/agency/clients/{id}` (ID afișat) pentru detalii complete (platforme active + conturi atașate per platformă).
 - În pagina de detalii client poți seta `tip client` (lead/e-commerce/programmatic) și `responsabil cont` (membru echipă).
 - `/agency-accounts`: atașare/detașare conturi Google la clienți, inclusiv re-atașare.
+
+
+## Railway: verificare Google Ads end-to-end
+1. Setează env vars (doar nume):
+   - `APP_AUTH_SECRET`
+   - `DATABASE_URL`
+   - `GOOGLE_ADS_MODE`
+   - `GOOGLE_ADS_CLIENT_ID`
+   - `GOOGLE_ADS_CLIENT_SECRET`
+   - `GOOGLE_ADS_DEVELOPER_TOKEN`
+   - `GOOGLE_ADS_MANAGER_CUSTOMER_ID`
+   - `GOOGLE_ADS_REDIRECT_URI`
+   - `GOOGLE_ADS_REFRESH_TOKEN`
+   - opțional: `GOOGLE_ADS_API_VERSION` (default `v23`)
+2. Rulează migrațiile DB (în ordinea fișierelor din `apps/backend/db/migrations`).
+3. Rulează diagnostic local/remote: `PYTHONPATH=apps/backend python scripts/diag_google_ads.py`.
+4. Rulează sync on-demand pentru conturile mapate: `POST /integrations/google-ads/sync-now` (agency admin).
+5. Verifică datele în DB (`ad_performance_reports`) pe ultimele 30 zile și endpoint-ul `GET /dashboard/agency/summary?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD`.
+6. Confirmă în UI că Google Ads arată `rows30 > 0` și cardurile dashboard nu mai rămân pe 0 după sync.
