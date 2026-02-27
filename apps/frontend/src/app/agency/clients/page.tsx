@@ -24,8 +24,13 @@ export default function AgencyClientsPage() {
   const [busy, setBusy] = useState(false);
 
   async function loadClients() {
-    const payload = await apiRequest<ClientsResponse>("/clients");
-    setClients(payload.items);
+    try {
+      const payload = await apiRequest<ClientsResponse>("/clients");
+      setClients(payload.items);
+    } catch (err) {
+      setClients([]);
+      setError(err instanceof Error ? err.message : "Nu am putut încărca clienții");
+    }
   }
 
   useEffect(() => {

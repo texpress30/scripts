@@ -61,6 +61,7 @@ export default function AgencyAccountsPage() {
   const [selectedPlatform, setSelectedPlatform] = useState<string>("google_ads");
   const [googleAccounts, setGoogleAccounts] = useState<GoogleAccount[]>([]);
   const [attachStatus, setAttachStatus] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [refreshBusy, setRefreshBusy] = useState(false);
 
   async function loadClients() {
@@ -79,7 +80,15 @@ export default function AgencyAccountsPage() {
   }
 
   async function reloadAccountsData() {
-    await Promise.all([loadClients(), loadAccountSummary(), loadGoogleAccounts()]);
+    try {
+      setLoadError("");
+      await Promise.all([loadClients(), loadAccountSummary(), loadGoogleAccounts()]);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Nu am putut încărca datele Agency Accounts");
+      setClients([]);
+      setSummary([]);
+      setGoogleAccounts([]);
+    }
   }
 
   useEffect(() => {
@@ -166,6 +175,7 @@ export default function AgencyAccountsPage() {
                   </button>
                 </div>
                 <p className="mt-1 text-xs text-slate-500">Ultimul import: {formatDate(selectedSummary?.last_import_at)}</p>
+                {loadError ? <p className="mt-2 text-xs text-red-600">{loadError}</p> : null}
                 {attachStatus ? <p className="mt-2 text-xs text-emerald-700">{attachStatus}</p> : null}
                 <div className="mt-3 space-y-2">
                   {googleAccounts.map((account) => (

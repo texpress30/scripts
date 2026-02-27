@@ -1,17 +1,16 @@
-# TODO — Client ID display normalization + client details page
+# TODO — Investigate disappearing clients/accounts and harden registry behavior
 
-- [x] Attempt mandatory workspace sync commands and note environment limitations.
-- [x] Ensure client IDs shown in Agency UI start from 1 for manual clients.
-- [x] Add client details backend endpoint with enabled platforms + attached accounts per platform.
-- [x] Add clickable client name in Agency Clients list and new client details page UI.
-- [x] Update README with client details navigation and API.
-- [x] Run checks (backend + frontend) and capture screenshot.
-- [x] Commit changes and create PR with title specific to this scope.
+- [x] Reproduce/analyze failure path after wrong Google account attach and identify likely root causes.
+- [x] Fix risky in-memory fallback trigger so production never silently uses test-memory registry.
+- [x] Remove deadlock-prone test-mode lock nesting and harden list/create/attach test paths.
+- [x] Improve frontend data-load error handling so backend failures are visible (not shown as empty lists).
+- [x] Run validation checks and capture screenshot.
+- [x] Commit and create PR with specific title.
 
 ## Review
-- Normalized manual-client display IDs in API/UI to start from 1 using ranked/manual ordering while preserving internal primary keys for relations.
-- Added client details endpoint (`GET /clients/{id}`) with platform activation + attached account lists.
-- Added new Agency Client details page and linked client names from Agency Clients table.
-- Kept many-to-many mapping behavior and updated Agency Accounts dropdown labels to use display IDs.
-- Updated README with current agency navigation and client-details workflow.
+- Root-cause analysis indicates data disappearance can happen if app accidentally runs with `APP_ENV=test`, which previously forced in-memory registry fallback and loses all state on restart.
+- Hardened `_is_test_mode()` to activate in-memory registry only during pytest (`PYTEST_CURRENT_TEST` present), preventing silent production data loss.
+- Removed lock re-entrancy deadlocks in test mode by avoiding nested lock-acquire flows in list/create/attach paths.
+- Added frontend load error handling in Agency Clients and Agency Accounts so backend failures are explicit instead of silently rendering empty tables/cards.
+- Verified service behavior in test mode with a direct script and rebuilt backend/frontend successfully.
 

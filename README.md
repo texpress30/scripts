@@ -28,6 +28,7 @@ npm run dev
 Variabile importante:
 - `APP_AUTH_SECRET` (obligatoriu)
 - `DATABASE_URL` (pentru persistență non-test)
+- `APP_ENV=test` trebuie folosit doar în teste automate (pytest), altfel aplicația poate porni în mod de test și pierde persistența la restart.
 - Google Ads production flow:
   - `GOOGLE_ADS_MODE=production`
   - `GOOGLE_ADS_CLIENT_ID`

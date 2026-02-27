@@ -3,6 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from threading import Lock
+import os
+
+from app.core.config import load_settings
+
+try:
+    import psycopg
+except Exception:  # noqa: BLE001
+    psycopg = None
 
 from app.core.config import load_settings
 
@@ -32,7 +40,8 @@ class ClientRegistryService:
         self._memory_account_client_mappings: dict[str, dict[str, int]] = {}
 
     def _is_test_mode(self) -> bool:
-        return load_settings().app_env == "test"
+        # Use in-memory registry only while running pytest to avoid accidental data loss in deployed environments.
+        return load_settings().app_env == "test" and os.environ.get("PYTEST_CURRENT_TEST") is not None
 
     def _connect(self):
         settings = load_settings()
@@ -145,7 +154,7 @@ class ClientRegistryService:
                     "owner_email": record.owner_email,
                     "client_type": record.client_type,
                     "account_manager": record.account_manager,
-                    "google_customer_id": self.get_google_customer_for_client(client_id=record.id),
+                    "google_customer_id": None,
                 }
 
         with self._connect_or_raise() as conn:
@@ -187,7 +196,7 @@ class ClientRegistryService:
                     "owner_email": c.owner_email,
                     "client_type": c.client_type,
                     "account_manager": c.account_manager,
-                    "google_customer_id": self.get_google_customer_for_client(client_id=c.id),
+                    "google_customer_id": next((aid for aid, cid in self._memory_account_client_mappings.get("google_ads", {}).items() if cid == c.id), None),
                 }
             )
         return records
@@ -255,7 +264,7 @@ class ClientRegistryService:
                     "id": client.id,
                     "name": client.name,
                     "owner_email": client.owner_email,
-                    "google_customer_id": self.get_google_customer_for_client(client_id=client.id),
+                    "google_customer_id": next((aid for aid, cid in mappings.items() if cid == client.id), None),
                 }
 
         with self._connect_or_raise() as conn:
