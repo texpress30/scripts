@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.dependencies import enforce_action_scope, get_current_user
@@ -201,28 +203,88 @@ def sync_google_ads_now(user: AuthUser = Depends(get_current_user)) -> dict[str,
     enforce_action_scope(user=user, action="clients:create", scope="agency")
 
     accounts = client_registry_service.list_platform_accounts(platform="google_ads")
-    synced: list[dict[str, object]] = []
-    errors: list[dict[str, str]] = []
+    mapped_accounts = [item for item in accounts if item.get("attached_client_id") is not None]
+    mapped_accounts_count = len(mapped_accounts)
 
-    for item in accounts:
-        client_id = item.get("attached_client_id")
-        if client_id is None:
-            continue
+    if mapped_accounts_count == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No mapped Google Ads customer IDs for any subaccount",
+        )
+
+    attempts: list[dict[str, object]] = []
+    errors_summary: list[dict[str, str | int]] = []
+    inserted_rows_total = 0
+
+    for item in mapped_accounts:
+        client_id = int(item.get("attached_client_id"))
+        raw_customer_id = str(item.get("account_id") or "").strip()
+        masked_customer_id = f"***{raw_customer_id[-4:]}" if len(raw_customer_id) >= 4 else "****"
         try:
-            snapshot = google_ads_service.sync_client(int(client_id))
-            synced.append({"client_id": int(client_id), "spend": float(snapshot.get("spend", 0.0))})
+            snapshot = google_ads_service.sync_customer_for_client(client_id=client_id, customer_id=raw_customer_id)
+            inserted_rows = int(snapshot.get("inserted_rows", 0) or 0)
+            inserted_rows_total += inserted_rows
+            attempts.append(
+                {
+                    "client_id": client_id,
+                    "customer_id_masked": masked_customer_id,
+                    "status": "ok",
+                    "inserted_rows": inserted_rows,
+                }
+            )
         except Exception as exc:  # noqa: BLE001
-            errors.append({"client_id": str(client_id), "error": str(exc)[:300]})
+            message = str(exc)
+            safe_message = message.replace(raw_customer_id, "***")[:300]
+            attempts.append(
+                {
+                    "client_id": client_id,
+                    "customer_id_masked": masked_customer_id,
+                    "status": "error",
+                    "inserted_rows": 0,
+                }
+            )
+            errors_summary.append(
+                {
+                    "client_id": client_id,
+                    "customer_id_masked": masked_customer_id,
+                    "error": safe_message,
+                }
+            )
+
+    succeeded_accounts_count = len([item for item in attempts if item["status"] == "ok"])
+    failed_accounts_count = len([item for item in attempts if item["status"] == "error"])
+    attempted_accounts_count = len(attempts)
+    sample_customer_ids = [item["customer_id_masked"] for item in attempts[:10]]
+
+    today_iso = datetime.utcnow().date().isoformat()
+    payload = {
+        "status": "ok" if failed_accounts_count == 0 else "partial",
+        "mapped_accounts_count": mapped_accounts_count,
+        "attempted_accounts_count": attempted_accounts_count,
+        "succeeded_accounts_count": succeeded_accounts_count,
+        "failed_accounts_count": failed_accounts_count,
+        "inserted_rows_total": inserted_rows_total,
+        "date_range": {"start": today_iso, "end": today_iso},
+        "sample_customer_ids": sample_customer_ids,
+        "errors_summary": errors_summary,
+        "attempts": attempts,
+    }
 
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
         action="google_ads.sync_now",
         resource="integration:google_ads",
-        details={"synced": len(synced), "errors": len(errors)},
+        details={
+            "mapped_accounts_count": mapped_accounts_count,
+            "attempted_accounts_count": attempted_accounts_count,
+            "succeeded_accounts_count": succeeded_accounts_count,
+            "failed_accounts_count": failed_accounts_count,
+            "inserted_rows_total": inserted_rows_total,
+        },
     )
 
-    return {"status": "ok", "synced": synced, "errors": errors, "accounts_seen": len(accounts)}
+    return payload
 @router.post("/{client_id}/sync")
 def sync_google_ads(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, float | int | str]:
     try:

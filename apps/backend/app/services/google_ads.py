@@ -900,7 +900,7 @@ class GoogleAdsService:
         }
 
 
-    def _persist_performance_report(self, *, snapshot: dict[str, float | int | str], client_id: int) -> None:
+    def _persist_performance_report(self, *, snapshot: dict[str, float | int | str], client_id: int) -> int:
         customer_id = str(snapshot.get("google_customer_id") or self.get_recommended_customer_id_for_client(client_id) or f"client-{client_id}")
         performance_reports_store.write_daily_report(
             report_date=datetime.now(timezone.utc).date(),
@@ -913,6 +913,7 @@ class GoogleAdsService:
             conversions=float(snapshot.get("conversions", 0)),
             conversion_value=float(snapshot.get("revenue", 0.0)),
         )
+        return 1
 
     def sync_client(self, client_id: int) -> dict[str, float | int | str]:
         if self._is_production_mode():
@@ -963,6 +964,77 @@ class GoogleAdsService:
 
         google_snapshot_store.upsert_snapshot(payload=snapshot)
         self._persist_performance_report(snapshot=snapshot, client_id=client_id)
+        return snapshot
+
+    def sync_customer_for_client(self, *, client_id: int, customer_id: str) -> dict[str, float | int | str]:
+        normalized_customer_id = self._normalize_customer_id(customer_id)
+        if not self._is_valid_customer_id(normalized_customer_id):
+            raise GoogleAdsIntegrationError(f"Invalid customer id mapping '{customer_id}'. Expected 10 digits.")
+
+        logger.info(
+            "google_ads.sync_now customer_id=%s client_id=%s START",
+            normalized_customer_id,
+            client_id,
+        )
+
+        if self._is_production_mode():
+            real_metrics = self._fetch_production_metrics(customer_id=normalized_customer_id)
+            logger.info(
+                "google_ads.sync_now customer_id=%s client_id=%s GAQL ok spend=%s impressions=%s clicks=%s",
+                normalized_customer_id,
+                client_id,
+                real_metrics.get("spend", 0.0),
+                real_metrics.get("impressions", 0),
+                real_metrics.get("clicks", 0),
+            )
+            snapshot = {
+                "client_id": client_id,
+                "platform": "google_ads",
+                "spend": round(float(real_metrics["spend"]), 2),
+                "impressions": int(real_metrics["impressions"]),
+                "clicks": int(real_metrics["clicks"]),
+                "conversions": int(real_metrics["conversions"]),
+                "revenue": round(float(real_metrics["revenue"]), 2),
+                "google_customer_id": str(real_metrics["google_customer_id"]),
+                "synced_at": datetime.now(timezone.utc).isoformat(),
+            }
+        else:
+            spend = float(100 + client_id * 17)
+            impressions = 5000 + client_id * 110
+            clicks = 200 + client_id * 9
+            conversions = 5 + client_id
+            revenue = round(spend * 3.2, 2)
+            snapshot = {
+                "client_id": client_id,
+                "platform": "google_ads",
+                "spend": round(spend, 2),
+                "impressions": impressions,
+                "clicks": clicks,
+                "conversions": conversions,
+                "revenue": revenue,
+                "google_customer_id": normalized_customer_id,
+                "synced_at": datetime.now(timezone.utc).isoformat(),
+            }
+            logger.info(
+                "google_ads.sync_now customer_id=%s client_id=%s GAQL ok (mock mode)",
+                normalized_customer_id,
+                client_id,
+            )
+
+        google_snapshot_store.upsert_snapshot(payload=snapshot)
+        inserted_rows = self._persist_performance_report(snapshot=snapshot, client_id=client_id)
+        logger.info(
+            "google_ads.sync_now customer_id=%s client_id=%s INSERTED n_rows=%s",
+            normalized_customer_id,
+            client_id,
+            inserted_rows,
+        )
+        logger.info(
+            "google_ads.sync_now customer_id=%s client_id=%s DONE",
+            normalized_customer_id,
+            client_id,
+        )
+        snapshot["inserted_rows"] = inserted_rows
         return snapshot
 
     def get_metrics(self, client_id: int) -> dict[str, float | int | str | bool]:

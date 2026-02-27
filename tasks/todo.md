@@ -122,3 +122,18 @@
 - Dashboard Agency citește metricile din `ad_performance_reports` prin `DashboardService` (agregări pe `report_date` + `platform`), iar pentru status Google se folosește `run_diagnostics()`.
 - Endpoint-ul nou `GET /integrations/google-ads/db-debug` întoarce `db_ok`, `table_exists`, agregări pe 90 zile pentru `ad_performance_reports` și `other_relevant_tables` (fără date sensibile brute).
 - Dacă `ad_performance_reports` este gol/lipsește, payload-ul indică explicit situația și expune tabele alternative cu același profil de coloane pentru troubleshooting ingestion.
+
+---
+
+# TODO — Sync-now observabil pentru Google Ads
+
+- [x] Modific `POST /integrations/google-ads/sync-now` să returneze counters detaliați + date_range + sample customer_ids + error summary.
+- [x] Returnez 400 cu mesaj explicit când `mapped_accounts_count = 0`.
+- [x] Adaug logging clar per customer_id în fluxul de sync (START / GAQL ok / INSERTED n rows / DONE).
+- [x] Rulez verificări și documentez rezultatul.
+
+## Review
+- `sync-now` returnează acum un payload observabil cu `mapped/attempted/succeeded/failed`, `inserted_rows_total`, `date_range`, `sample_customer_ids` mascate și `errors_summary` sanitizat.
+- Dacă nu există conturi Google Ads mapate la niciun subaccount (`mapped_accounts_count=0`), endpoint-ul întoarce `400` cu mesajul exact cerut.
+- Fluxul de sync scrie loguri clare per customer_id în ordinea: `START`, `GAQL ok`, `INSERTED n_rows`, `DONE` (în `GoogleAdsService.sync_customer_for_client`).
+- Verificările locale (compile + smoke tests prin monkeypatch) confirmă comportamentul nou fără a necesita DB/API reale.
