@@ -76,3 +76,17 @@
 - Driverul folosit în proiect este Psycopg 3 (`psycopg[binary]==3.2.1` în `apps/backend/requirements.txt`), iar majoritatea serviciilor backend folosesc deja pattern-ul `try: import psycopg ...`.
 - Am adăugat importul lipsă în `google_ads.py` și am păstrat conexiunea existentă `psycopg.connect(settings.database_url)` pentru consistență cu restul codului.
 - Verificări: compile pentru fișierul modificat + execuție controlată a `_db_diagnostics_last_30_days()` (cu `load_settings` monkeypatched) confirmă că nu mai apare `NameError`, iar funcția întoarce `db_error` de conectivitate când DB-ul este indisponibil.
+
+---
+
+# TODO — Asigurare Psycopg 3 binary pentru Railway production
+
+- [x] Verific fișierul(ele) de dependențe backend.
+- [x] Mă asigur că `psycopg[binary]==3.2.1` este prezent.
+- [x] Verific configurația de build/deploy Railway (`railway.json`/`Dockerfile`/`nixpacks.toml`).
+- [x] Rulez verificări rapide și documentez rezultatul.
+
+## Review
+- Fișierul de dependențe backend este `apps/backend/requirements.txt`; am confirmat și păstrat `psycopg[binary]==3.2.1` și am adăugat comentariu explicit pentru contextul Railway production.
+- În repo există `apps/backend/Dockerfile` (nu există `railway.json` sau `nixpacks.toml`), iar build-ul instalează dependențele prin `RUN pip install --no-cache-dir -r requirements.txt` la deploy.
+- Verificările rapide (`python -m compileall` pe serviciul Google Ads și `git diff`) confirmă că schimbarea este minimă și fără impact logic.

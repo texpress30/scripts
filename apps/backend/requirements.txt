@@ -1,5 +1,6 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
+# Railway production: use psycopg binary wheel to avoid build-time libpq compilation issues
 psycopg[binary]==3.2.1
 
 google-ads==25.1.0
