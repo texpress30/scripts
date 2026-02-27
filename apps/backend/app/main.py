@@ -7,6 +7,7 @@ from app.api.ai import router as ai_router
 from app.api.auth import router as auth_router
 from app.api.clients import router as clients_router
 from app.api.creative import router as creative_router
+from app.api.company import router as company_router
 from app.api.dashboard import router as dashboard_router
 from app.api.exports import router as exports_router
 from app.api.google_ads import router as google_ads_router
@@ -21,6 +22,7 @@ from app.api.user_profile import router as user_profile_router
 from app.api.rules import router as rules_router
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
+from app.services.company_settings import company_settings_service
 from app.services.team_members import team_members_service
 from app.services.user_profile import user_profile_service
 
@@ -70,6 +72,7 @@ app.include_router(exports_router)
 
 # Sprint 7
 app.include_router(creative_router)
+app.include_router(company_router)
 app.include_router(user_profile_router)
 app.include_router(team_router)
 
@@ -88,3 +91,4 @@ def initialize_client_registry_schema() -> None:
     client_registry_service.initialize_schema()
     user_profile_service.initialize_schema()
     team_members_service.initialize_schema()
+    company_settings_service.initialize_schema()

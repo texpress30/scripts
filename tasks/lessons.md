@@ -45,3 +45,4 @@
 - 2026-02-27: For two-level navigation (main vs settings), switch sidebar link sets based on route prefix and keep active state logic explicit per mode.
 - 2026-02-27: For contextual settings nav, encode context in the URL (e.g., `/subaccount/[id]/settings/*`) and derive both menu items and back target from route prefix/params.
 - 2026-02-27: For UI recreation requests, replace placeholder pages with complete section/card hierarchy in one pass (layout + labels + field states + CTA placement) to avoid iterative churn.
+- 2026-02-27: Pentru paginile de settings cerute ca "production-ready", nu livra placeholder-uri frontend-only; implementează în același slice și endpoint-urile backend + persistența Postgres + stări UX (loading/toast/error).
