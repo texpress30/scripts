@@ -17,6 +17,7 @@ import {
   Sparkles,
   Sun,
   Users,
+  Settings,
   X,
 } from "lucide-react";
 
@@ -78,6 +79,17 @@ export function AppShell({
 
   const subMatch = pathname.match(/^\/sub\/(\d+)/);
   const currentSubId = subMatch ? Number(subMatch[1]) : null;
+  const isSettingsMode = pathname.startsWith("/settings/");
+
+  const settingsItems = [
+    { href: "/settings/profile", label: "Profile" },
+    { href: "/settings/company", label: "Company" },
+    { href: "/settings/team", label: "My Team" },
+    { href: "/settings/tags", label: "Tags" },
+    { href: "/settings/audit-logs", label: "Audit Logs" },
+    { href: "/settings/ai-agents", label: "Ai Agents" },
+    { href: "/settings/storage", label: "Media Storage Usage" },
+  ] as const;
 
   useEffect(() => {
     setMounted(true);
@@ -106,95 +118,138 @@ export function AppShell({
   }, [clients, search]);
 
   const currentTitle = useMemo(() => {
+    if (isSettingsMode) return "Settings";
     if (!currentSubId) return "Agency MCC";
     return clients.find((c) => c.id === currentSubId)?.name ?? `Sub-account #${currentSubId}`;
-  }, [clients, currentSubId]);
+  }, [clients, currentSubId, isSettingsMode]);
 
   const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
 
   const sidebarContent = (
     <div className="flex h-full flex-col">
       <div className="border-b border-slate-200 px-3 py-3 dark:border-slate-700">
-        <button
-          onClick={() => setSwitcherOpen((v) => !v)}
-          className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-        >
-          <span className="truncate">{currentTitle}</span>
-          <ChevronDown className="h-4 w-4 shrink-0" />
-        </button>
-
-        {switcherOpen ? (
-          <div className="mt-2 rounded-lg border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-700 dark:bg-slate-900">
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search sub-account..."
-              className="mb-2 h-9 w-full rounded-md border border-slate-200 px-2 text-sm outline-none dark:border-slate-700 dark:bg-slate-800"
-            />
-
-            {currentSubId ? (
-              <button
-                onClick={() => {
-                  setSwitcherOpen(false);
-                  router.push("/agency/dashboard");
-                }}
-                className="mb-2 w-full rounded-md bg-indigo-50 px-2 py-2 text-left text-sm font-medium text-indigo-700 hover:bg-indigo-100"
-              >
-                ← Back to Agency
-              </button>
-            ) : null}
-
-            <div className="max-h-56 overflow-auto">
-              {filteredClients.map((client) => (
-                <button
-                  key={client.id}
-                  onClick={() => {
-                    setSwitcherOpen(false);
-                    router.push(`/sub/${client.id}/dashboard`);
-                  }}
-                  className="block w-full rounded-md px-2 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
-                >
-                  {client.name}
-                  <span className="ml-1 text-xs text-slate-400">#{client.id}</span>
-                </button>
-              ))}
-              {filteredClients.length === 0 ? (
-                <p className="px-2 py-2 text-xs text-slate-500">No sub-accounts found.</p>
-              ) : null}
-            </div>
+        {isSettingsMode ? (
+          <div className="space-y-2">
+            <Link
+              href="/agency-dashboard"
+              onClick={() => setMobileOpen(false)}
+              className="block w-full rounded-md bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300"
+            >
+              ← Go Back
+            </Link>
+            <p className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Settings</p>
           </div>
-        ) : null}
+        ) : (
+          <>
+            <button
+              onClick={() => setSwitcherOpen((v) => !v)}
+              className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+            >
+              <span className="truncate">{currentTitle}</span>
+              <ChevronDown className="h-4 w-4 shrink-0" />
+            </button>
+
+            {switcherOpen ? (
+              <div className="mt-2 rounded-lg border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search sub-account..."
+                  className="mb-2 h-9 w-full rounded-md border border-slate-200 px-2 text-sm outline-none dark:border-slate-700 dark:bg-slate-800"
+                />
+
+                {currentSubId ? (
+                  <button
+                    onClick={() => {
+                      setSwitcherOpen(false);
+                      router.push("/agency/dashboard");
+                    }}
+                    className="mb-2 w-full rounded-md bg-indigo-50 px-2 py-2 text-left text-sm font-medium text-indigo-700 hover:bg-indigo-100"
+                  >
+                    ← Back to Agency
+                  </button>
+                ) : null}
+
+                <div className="max-h-56 overflow-auto">
+                  {filteredClients.map((client) => (
+                    <button
+                      key={client.id}
+                      onClick={() => {
+                        setSwitcherOpen(false);
+                        router.push(`/sub/${client.id}/dashboard`);
+                      }}
+                      className="block w-full rounded-md px-2 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+                    >
+                      {client.name}
+                      <span className="ml-1 text-xs text-slate-400">#{client.id}</span>
+                    </button>
+                  ))}
+                  {filteredClients.length === 0 ? (
+                    <p className="px-2 py-2 text-xs text-slate-500">No sub-accounts found.</p>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
 
       <nav className="flex-1 space-y-1 px-3 py-4">
-        {navItems.map((item) => {
-          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setMobileOpen(false)}
-              className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                active
-                  ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300"
-                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-              )}
-              title={collapsed ? item.label : undefined}
-            >
-              <Icon className="h-4 w-4 shrink-0" />
-              {!collapsed && <span className="truncate">{item.label}</span>}
-            </Link>
-          );
-        })}
-
-
-
-
+        {isSettingsMode
+          ? settingsItems.map((item) => {
+              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setMobileOpen(false)}
+                  className={cn(
+                    "block rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                    active
+                      ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                  )}
+                >
+                  {item.label}
+                </Link>
+              );
+            })
+          : navItems.map((item) => {
+              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setMobileOpen(false)}
+                  className={cn(
+                    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                    active
+                      ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                  )}
+                  title={collapsed ? item.label : undefined}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {!collapsed && <span className="truncate">{item.label}</span>}
+                </Link>
+              );
+            })}
       </nav>
 
       <div className="space-y-1 border-t border-slate-200 px-3 py-4 dark:border-slate-700">
+        {!isSettingsMode ? (
+          <Link
+            href="/settings/profile"
+            onClick={() => setMobileOpen(false)}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+            title={collapsed ? "Settings" : undefined}
+          >
+            <Settings className="h-4 w-4 shrink-0" />
+            {!collapsed && <span>Settings</span>}
+          </Link>
+        ) : null}
+
         <button
           onClick={toggleTheme}
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"

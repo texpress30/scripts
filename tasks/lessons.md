@@ -42,3 +42,4 @@
 - 2026-02-27: If UI edits are scoped per account row, backend contracts must carry row identity (`platform` + `account_id`) and response payloads must return row-level fields; otherwise frontend will mirror values across the list.
 - 2026-02-27: For list-table inline edits, keep editing and saving state keyed by row identity (client_id/account_id) and render feedback only on that row to avoid cross-row UI side effects.
 - 2026-02-27: For long account registries, ship explicit page-size controls (25/50/100/200/500) with a sensible default and page-range feedback to keep management views responsive.
+- 2026-02-27: For two-level navigation (main vs settings), switch sidebar link sets based on route prefix and keep active state logic explicit per mode.

@@ -1,13 +1,15 @@
-# TODO — Agency Accounts pagination refactor
+# TODO — Dynamic sidebar settings mode (GHL-style)
 
-- [x] Add pagination for Google accounts list with default page size 50.
-- [x] Add page size selector options 25, 50, 100, 200, 500.
-- [x] Add previous/next controls and display current range/page.
-- [x] Keep existing attach/detach interactions functional on paged rows.
+- [x] Add `Settings` link in bottom section of primary sidebar above `Schimbă tema`.
+- [x] Route settings entry to `/settings/profile`.
+- [x] Implement settings-mode sidebar for `/settings/*` routes that replaces main nav links.
+- [x] Add prominent `← Go Back` action in settings mode, routing to `/agency-dashboard`.
+- [x] Add settings nav list: Profile, Company, My Team, Tags, Audit Logs, Ai Agents, Media Storage Usage.
+- [x] Implement active-state highlighting for current settings route.
+- [x] Add pages for settings routes and alias route `/agency-dashboard` -> `/agency/dashboard`.
 - [x] Run frontend build and capture screenshot.
 
 ## Review
-- Implemented client-side pagination over imported Google accounts in Agency Accounts page.
-- Default list now shows 50 rows/page, with selectable larger page sizes before moving to next page.
-- Added paging footer showing visible interval and page navigation actions.
-- Attach/detach controls remain unchanged per row and continue to work on current page items.
+- Sidebar now has a dedicated Settings entry near the bottom in normal navigation mode.
+- When path starts with `/settings/`, sidebar switches to settings-only navigation with go-back CTA and active link highlight.
+- Added concrete settings pages for all requested routes plus an agency-dashboard alias route for back navigation.
