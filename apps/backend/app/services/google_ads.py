@@ -16,6 +16,7 @@ except Exception:  # noqa: BLE001
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
 from app.services.google_store import google_snapshot_store
+from app.services.performance_reports import performance_reports_store
 
 logger = logging.getLogger(__name__)
 
@@ -555,6 +556,21 @@ class GoogleAdsService:
             "google_customer_id": normalized_customer_id,
         }
 
+
+    def _persist_performance_report(self, *, snapshot: dict[str, float | int | str], client_id: int) -> None:
+        customer_id = str(snapshot.get("google_customer_id") or self.get_recommended_customer_id_for_client(client_id) or f"client-{client_id}")
+        performance_reports_store.write_daily_report(
+            report_date=datetime.now(timezone.utc).date(),
+            platform="google_ads",
+            customer_id=customer_id,
+            client_id=client_id,
+            spend=float(snapshot.get("spend", 0.0)),
+            impressions=int(snapshot.get("impressions", 0)),
+            clicks=int(snapshot.get("clicks", 0)),
+            conversions=float(snapshot.get("conversions", 0)),
+            conversion_value=float(snapshot.get("revenue", 0.0)),
+        )
+
     def sync_client(self, client_id: int) -> dict[str, float | int | str]:
         if self._is_production_mode():
             customer_id = self.get_recommended_customer_id_for_client(client_id)
@@ -577,6 +593,7 @@ class GoogleAdsService:
                 "synced_at": datetime.now(timezone.utc).isoformat(),
             }
             google_snapshot_store.upsert_snapshot(payload=snapshot)
+            self._persist_performance_report(snapshot=snapshot, client_id=client_id)
             return snapshot
 
         settings = load_settings()
@@ -602,6 +619,7 @@ class GoogleAdsService:
         }
 
         google_snapshot_store.upsert_snapshot(payload=snapshot)
+        self._persist_performance_report(snapshot=snapshot, client_id=client_id)
         return snapshot
 
     def get_metrics(self, client_id: int) -> dict[str, float | int | str | bool]:

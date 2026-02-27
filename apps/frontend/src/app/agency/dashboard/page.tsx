@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { addDays, format, startOfMonth, subDays } from "date-fns";
+import { format, startOfMonth, subDays } from "date-fns";
 import { DayPicker, type DateRange } from "react-day-picker";
 import "react-day-picker/dist/style.css";
 
@@ -251,7 +251,7 @@ function Card({ title, value, loading }: { title: string; value: string; loading
   return (
     <article className="wm-card p-4">
       <p className="text-xs uppercase tracking-wide text-slate-500">{title}</p>
-      {loading ? <div className="mt-2 h-8 w-3/4 animate-pulse rounded bg-slate-200" /> : <p className="mt-2 text-2xl font-semibold text-slate-900">{value}</p>}
+      {loading ? <p className="mt-2 text-sm font-medium text-slate-500">Se încarcă datele...</p> : <p className="mt-2 text-2xl font-semibold text-slate-900">{value}</p>}
     </article>
   );
 }

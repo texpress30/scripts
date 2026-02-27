@@ -50,3 +50,4 @@
 - 2026-02-27: Pentru branding context-aware în sidebar, afișează blocul de branding deasupra selectorului de conturi și derivă contextul din ambele rute (`/sub/:id/*` și `/subaccount/:id/settings/*`) ca să nu pierzi logo-ul în settings mode.
 - 2026-02-27: Când mediul cere folosirea tool-ului `apply_patch`, evit editările patch prin `exec_command`; folosesc editare directă de fișiere (cat/python) sau tool-ul dedicat dacă este disponibil.
 - 2026-02-27: Pentru acțiuni RBAC reutilizate în mai multe contexte (ex: `dashboard:view`), definește politicile cu scope-uri multiple; un singur scope hardcodat produce blocaje 403 în Agency View.
+- 2026-02-27: Când dashboard-ul afișează 0 deși integrarea e "connected", validează explicit traseul end-to-end sync->persistență->agregare; status-ul token nu garantează existența datelor în tabelul de raportare.

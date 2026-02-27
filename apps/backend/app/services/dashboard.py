@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from datetime import date
+import logging
 
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
 from app.services.google_ads import google_ads_service
 from app.services.meta_ads import meta_ads_service
+from app.services.performance_reports import performance_reports_store
 from app.services.pinterest_ads import pinterest_ads_service
 from app.services.snapchat_ads import snapchat_ads_service
 from app.services.tiktok_ads import tiktok_ads_service
@@ -22,6 +24,9 @@ def _to_float(value: object) -> float:
 
 def _to_int(value: object) -> int:
     return int(value) if isinstance(value, (int, float)) else 0
+
+
+logger = logging.getLogger(__name__)
 
 
 class UnifiedDashboardService:
@@ -53,11 +58,69 @@ class UnifiedDashboardService:
         return normalized
 
     def get_client_dashboard(self, client_id: int) -> dict[str, object]:
-        google_metrics = self._normalize_platform_metrics("google_ads", google_ads_service.get_metrics(client_id), client_id)
-        meta_metrics = self._normalize_platform_metrics("meta_ads", meta_ads_service.get_metrics(client_id), client_id)
-        tiktok_metrics = self._normalize_platform_metrics("tiktok_ads", tiktok_ads_service.get_metrics(client_id), client_id)
-        pinterest_metrics = self._normalize_platform_metrics("pinterest_ads", pinterest_ads_service.get_metrics(client_id), client_id)
-        snapchat_metrics = self._normalize_platform_metrics("snapchat_ads", snapchat_ads_service.get_metrics(client_id), client_id)
+        if not self._is_test_mode():
+            performance_reports_store.initialize_schema()
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        WITH perf AS (
+                            SELECT
+                                apr.platform,
+                                COALESCE(apr.client_id, mapped.client_id) AS resolved_client_id,
+                                apr.spend,
+                                apr.impressions,
+                                apr.clicks,
+                                apr.conversions,
+                                apr.conversion_value
+                            FROM ad_performance_reports apr
+                            LEFT JOIN LATERAL (
+                                SELECT m.client_id
+                                FROM agency_account_client_mappings m
+                                WHERE m.platform = apr.platform AND m.account_id = apr.customer_id
+                                ORDER BY m.updated_at DESC, m.created_at DESC
+                                LIMIT 1
+                            ) mapped ON TRUE
+                        )
+                        SELECT platform,
+                               COALESCE(SUM(spend), 0),
+                               COALESCE(SUM(impressions), 0),
+                               COALESCE(SUM(clicks), 0),
+                               COALESCE(SUM(conversions), 0),
+                               COALESCE(SUM(conversion_value), 0)
+                        FROM perf
+                        WHERE resolved_client_id = %s
+                        GROUP BY platform
+                        """,
+                        (client_id,),
+                    )
+                    rows = cur.fetchall()
+
+            platform_totals = {
+                str(row[0]): {
+                    "spend": _to_float(row[1]),
+                    "impressions": _to_int(row[2]),
+                    "clicks": _to_int(row[3]),
+                    "conversions": _to_int(row[4]),
+                    "revenue": _to_float(row[5]),
+                }
+                for row in rows
+            }
+
+            def platform_metrics(name: str) -> dict[str, object]:
+                return self._normalize_platform_metrics(name, {"client_id": client_id, **platform_totals.get(name, {})}, client_id)
+
+            google_metrics = platform_metrics("google_ads")
+            meta_metrics = platform_metrics("meta_ads")
+            tiktok_metrics = platform_metrics("tiktok_ads")
+            pinterest_metrics = platform_metrics("pinterest_ads")
+            snapchat_metrics = platform_metrics("snapchat_ads")
+        else:
+            google_metrics = self._normalize_platform_metrics("google_ads", google_ads_service.get_metrics(client_id), client_id)
+            meta_metrics = self._normalize_platform_metrics("meta_ads", meta_ads_service.get_metrics(client_id), client_id)
+            tiktok_metrics = self._normalize_platform_metrics("tiktok_ads", tiktok_ads_service.get_metrics(client_id), client_id)
+            pinterest_metrics = self._normalize_platform_metrics("pinterest_ads", pinterest_ads_service.get_metrics(client_id), client_id)
+            snapchat_metrics = self._normalize_platform_metrics("snapchat_ads", snapchat_ads_service.get_metrics(client_id), client_id)
 
         total_spend = (
             _to_float(google_metrics.get("spend"))
@@ -153,82 +216,91 @@ class UnifiedDashboardService:
                 "top_clients": top_clients[:5],
             }
 
+        performance_reports_store.initialize_schema()
+
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
                     WITH perf AS (
-                        SELECT client_id, spend, impressions, clicks, conversions, revenue
-                        FROM google_sync_snapshots
-                        WHERE synced_at::date BETWEEN %s AND %s
-                        UNION ALL
-                        SELECT client_id, spend, impressions, clicks, conversions, revenue
-                        FROM meta_sync_snapshots
-                        WHERE synced_at::date BETWEEN %s AND %s
-                        UNION ALL
-                        SELECT client_id, spend, impressions, clicks, conversions, revenue
-                        FROM tiktok_sync_snapshots
-                        WHERE synced_at::date BETWEEN %s AND %s
-                        UNION ALL
-                        SELECT client_id, spend, impressions, clicks, conversions, revenue
-                        FROM pinterest_sync_snapshots
-                        WHERE synced_at::date BETWEEN %s AND %s
-                        UNION ALL
-                        SELECT client_id, spend, impressions, clicks, conversions, revenue
-                        FROM snapchat_sync_snapshots
-                        WHERE synced_at::date BETWEEN %s AND %s
+                        SELECT
+                            apr.platform,
+                            apr.customer_id,
+                            COALESCE(apr.client_id, mapped.client_id) AS resolved_client_id,
+                            apr.spend,
+                            apr.impressions,
+                            apr.clicks,
+                            apr.conversions,
+                            apr.conversion_value
+                        FROM ad_performance_reports apr
+                        LEFT JOIN LATERAL (
+                            SELECT m.client_id
+                            FROM agency_account_client_mappings m
+                            WHERE m.platform = apr.platform AND m.account_id = apr.customer_id
+                            ORDER BY m.updated_at DESC, m.created_at DESC
+                            LIMIT 1
+                        ) mapped ON TRUE
+                        WHERE apr.report_date BETWEEN %s AND %s
                     )
                     SELECT
-                        COALESCE(SUM(perf.spend), 0),
-                        COALESCE(SUM(perf.impressions), 0),
-                        COALESCE(SUM(perf.clicks), 0),
-                        COALESCE(SUM(perf.conversions), 0),
-                        COALESCE(SUM(perf.revenue), 0)
+                        COALESCE(SUM(spend), 0),
+                        COALESCE(SUM(impressions), 0),
+                        COALESCE(SUM(clicks), 0),
+                        COALESCE(SUM(conversions), 0),
+                        COALESCE(SUM(conversion_value), 0),
+                        COUNT(*)
                     FROM perf
-                    JOIN agency_clients c ON c.id = perf.client_id
-                    WHERE c.source = 'manual'
                     """,
-                    (start_date, end_date, start_date, end_date, start_date, end_date, start_date, end_date, start_date, end_date),
+                    (start_date, end_date),
                 )
-                totals_row = cur.fetchone() or (0, 0, 0, 0, 0)
+                totals_row = cur.fetchone() or (0, 0, 0, 0, 0, 0)
 
                 cur.execute(
                     """
                     WITH perf AS (
-                        SELECT client_id, spend
-                        FROM google_sync_snapshots
-                        WHERE synced_at::date BETWEEN %s AND %s
-                        UNION ALL
-                        SELECT client_id, spend
-                        FROM meta_sync_snapshots
-                        WHERE synced_at::date BETWEEN %s AND %s
-                        UNION ALL
-                        SELECT client_id, spend
-                        FROM tiktok_sync_snapshots
-                        WHERE synced_at::date BETWEEN %s AND %s
-                        UNION ALL
-                        SELECT client_id, spend
-                        FROM pinterest_sync_snapshots
-                        WHERE synced_at::date BETWEEN %s AND %s
-                        UNION ALL
-                        SELECT client_id, spend
-                        FROM snapchat_sync_snapshots
-                        WHERE synced_at::date BETWEEN %s AND %s
+                        SELECT
+                            COALESCE(apr.client_id, mapped.client_id) AS resolved_client_id,
+                            apr.spend
+                        FROM ad_performance_reports apr
+                        LEFT JOIN LATERAL (
+                            SELECT m.client_id
+                            FROM agency_account_client_mappings m
+                            WHERE m.platform = apr.platform AND m.account_id = apr.customer_id
+                            ORDER BY m.updated_at DESC, m.created_at DESC
+                            LIMIT 1
+                        ) mapped ON TRUE
+                        WHERE apr.report_date BETWEEN %s AND %s
                     )
                     SELECT c.id, c.name, COALESCE(SUM(perf.spend), 0) AS total_spend
                     FROM agency_clients c
-                    JOIN perf ON perf.client_id = c.id
+                    JOIN perf ON perf.resolved_client_id = c.id
                     WHERE c.source = 'manual'
                     GROUP BY c.id, c.name
                     ORDER BY total_spend DESC, c.id ASC
                     LIMIT 5
                     """,
-                    (start_date, end_date, start_date, end_date, start_date, end_date, start_date, end_date, start_date, end_date),
+                    (start_date, end_date),
                 )
                 top_rows = cur.fetchall()
 
                 cur.execute("SELECT COUNT(*) FROM agency_clients WHERE source = 'manual'")
                 active_clients = int((cur.fetchone() or [0])[0])
+
+        if _to_int(totals_row[5]) == 0:
+            logger.warning(
+                "agency_dashboard_empty_result",
+                extra={"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
+            )
+        else:
+            logger.info(
+                "agency_dashboard_query_rows",
+                extra={
+                    "start_date": start_date.isoformat(),
+                    "end_date": end_date.isoformat(),
+                    "rows": _to_int(totals_row[5]),
+                    "top_clients": len(top_rows),
+                },
+            )
 
         total_spend = _to_float(totals_row[0])
         total_revenue = _to_float(totals_row[4])
