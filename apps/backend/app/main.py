@@ -16,9 +16,11 @@ from app.api.meta_ads import router as meta_ads_router
 from app.api.pinterest_ads import router as pinterest_ads_router
 from app.api.snapchat_ads import router as snapchat_ads_router
 from app.api.tiktok_ads import router as tiktok_ads_router
+from app.api.user_profile import router as user_profile_router
 from app.api.rules import router as rules_router
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
+from app.services.user_profile import user_profile_service
 
 settings = load_settings()
 
@@ -66,6 +68,7 @@ app.include_router(exports_router)
 
 # Sprint 7
 app.include_router(creative_router)
+app.include_router(user_profile_router)
 
 
 @app.get("/", tags=["root"])
@@ -80,3 +83,4 @@ def root() -> dict[str, str]:
 @app.on_event("startup")
 def initialize_client_registry_schema() -> None:
     client_registry_service.initialize_schema()
+    user_profile_service.initialize_schema()

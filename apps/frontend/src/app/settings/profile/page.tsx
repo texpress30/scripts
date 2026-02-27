@@ -1,15 +1,25 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { Info, Pencil, Trash2, UserCircle2 } from "lucide-react";
+import { FormEvent, useEffect, useState } from "react";
+import { Info, Loader2, Pencil, Trash2, UserCircle2 } from "lucide-react";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
+import { apiRequest } from "@/lib/api";
+
+type ProfilePayload = {
+  email: string;
+  first_name: string;
+  last_name: string;
+  phone: string;
+  extension: string;
+  platform_language: string;
+};
 
 export default function SettingsProfilePage() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [email, setEmail] = useState("admin@example.com");
+  const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [extension, setExtension] = useState("");
   const [language, setLanguage] = useState("ro");
@@ -18,18 +28,102 @@ export default function SettingsProfilePage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
-  function submitProfile(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [toastMessage, setToastMessage] = useState("");
+
+  function showToast(message: string) {
+    setToastMessage(message);
+    window.setTimeout(() => setToastMessage(""), 2200);
   }
 
-  function submitPassword(event: FormEvent<HTMLFormElement>) {
+  async function loadProfile() {
+    setLoadingProfile(true);
+    setErrorMessage("");
+    try {
+      const payload = await apiRequest<ProfilePayload>("/user/profile");
+      setFirstName(payload.first_name);
+      setLastName(payload.last_name);
+      setEmail(payload.email);
+      setPhone(payload.phone);
+      setExtension(payload.extension);
+      setLanguage(payload.platform_language || "ro");
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Nu am putut încărca profilul.");
+    } finally {
+      setLoadingProfile(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadProfile();
+  }, []);
+
+  async function submitProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setErrorMessage("");
+    setSavingProfile(true);
+    try {
+      const payload = await apiRequest<ProfilePayload>("/user/profile", {
+        method: "PATCH",
+        body: JSON.stringify({
+          first_name: firstName,
+          last_name: lastName,
+          phone,
+          extension,
+          platform_language: language,
+        }),
+      });
+      setFirstName(payload.first_name);
+      setLastName(payload.last_name);
+      setEmail(payload.email);
+      setPhone(payload.phone);
+      setExtension(payload.extension);
+      setLanguage(payload.platform_language);
+      showToast("Profile updated successfully!");
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Nu am putut salva profilul.");
+    } finally {
+      setSavingProfile(false);
+    }
+  }
+
+  async function submitPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setErrorMessage("");
+    setSavingPassword(true);
+    try {
+      await apiRequest<{ status: string }>("/user/profile/password", {
+        method: "POST",
+        body: JSON.stringify({
+          current_password: currentPassword,
+          password,
+          confirm_password: confirmPassword,
+        }),
+      });
+      setCurrentPassword("");
+      setPassword("");
+      setConfirmPassword("");
+      showToast("Password updated successfully!");
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Nu am putut actualiza parola.");
+    } finally {
+      setSavingPassword(false);
+    }
   }
 
   return (
     <ProtectedPage>
       <AppShell title="Settings — Personal Profile">
         <main className="p-6">
+          {toastMessage ? (
+            <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{toastMessage}</div>
+          ) : null}
+          {errorMessage ? <p className="mb-3 text-sm text-red-600">{errorMessage}</p> : null}
+          {loadingProfile ? <p className="mb-3 text-sm text-slate-500">Loading profile...</p> : null}
+
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
             <section className="wm-card p-4 xl:col-span-2">
               <h2 className="text-lg font-semibold text-slate-900">Personal Data</h2>
@@ -65,7 +159,7 @@ export default function SettingsProfilePage() {
 
                   <label className="text-sm text-slate-700 md:col-span-2">
                     Email <span className="text-red-500">*</span>
-                    <input className="wm-input mt-1" value={email} onChange={(e) => setEmail(e.target.value)} />
+                    <input className="wm-input mt-1" value={email} readOnly />
                   </label>
 
                   <label className="text-sm text-slate-700">
@@ -88,7 +182,13 @@ export default function SettingsProfilePage() {
                 </div>
 
                 <div className="flex justify-end">
-                  <button className="wm-btn-primary" type="submit">Update Profile</button>
+                  <button className="wm-btn-primary" type="submit" disabled={savingProfile || loadingProfile}>
+                    {savingProfile ? (
+                      <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Saving...</span>
+                    ) : (
+                      "Update Profile"
+                    )}
+                  </button>
                 </div>
               </form>
             </section>
@@ -110,7 +210,13 @@ export default function SettingsProfilePage() {
                     <input type="password" className="wm-input mt-1" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
                   </label>
                   <div className="flex justify-end">
-                    <button className="wm-btn-primary" type="submit">Update Password</button>
+                    <button className="wm-btn-primary" type="submit" disabled={savingPassword}>
+                      {savingPassword ? (
+                        <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Saving...</span>
+                      ) : (
+                        "Update Password"
+                      )}
+                    </button>
                   </div>
                 </form>
               </article>

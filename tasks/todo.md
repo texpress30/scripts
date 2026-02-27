@@ -1,13 +1,13 @@
-# TODO — Recreate Settings/Profile page (Agency Account View)
+# TODO — Persist `/settings/profile` form with backend APIs
 
-- [x] Build two-column responsive layout for `/settings/profile`.
-- [x] Implement left `Personal Data` card with avatar section, required fields, validation messages, language select, and `Update Profile` action.
-- [x] Implement right column cards: `Change Password`, `Sign Out Everywhere`, `Two-factor Authentication (2FA) App`.
-- [x] Match requested control placement (buttons bottom-right / outlined 2FA CTA, info icon tooltip).
-- [x] Run frontend build and capture screenshot.
+- [x] Review existing `/settings/profile` frontend and backend auth flow.
+- [x] Add backend profile persistence service + schema initialization for `users` profile data.
+- [x] Add authenticated profile endpoints (`GET/PATCH /user/profile`, `POST /user/profile/password`).
+- [x] Wire profile page to load and submit data with loading/success/error states.
+- [x] Run targeted checks and collect evidence.
+- [x] Commit changes and open PR.
 
 ## Review
-- Replaced placeholder Settings/Profile page with full UI layout and form sections requested.
-- Added profile avatar area with edit/delete overlay controls and image size guidance text.
-- Added field-level required indicators and inline validation messages for first/last name.
-- Added separate action cards for password update, sign out everywhere, and 2FA setup.
+- Added `user_profile` backend service with Postgres-backed `users` table initialization and CRUD-style profile/password updates.
+- Registered new profile router in FastAPI app and initialized schema at startup.
+- Updated `/settings/profile` page to fetch initial profile data, submit updates via backend APIs, and surface loading/toast/error UX.
