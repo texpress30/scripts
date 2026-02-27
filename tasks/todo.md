@@ -30,3 +30,19 @@
 ## Review
 - Repository-ul local nu are niciun remote configurat momentan (nici `origin`).
 - `git fetch --all --prune` s-a executat cu succes, dar fără efect deoarece nu există remotes definite.
+
+---
+
+# TODO — Reconfigurare origin + sync cu main
+
+- [x] Adaug remote `origin` cu URL-ul furnizat.
+- [x] Rulez `git fetch origin`.
+- [x] Rulez `git pull origin main`.
+- [x] Verific starea repo după sincronizare.
+
+## Review
+- `git remote add origin ...` a fost executat cu succes și remote-ul a fost configurat.
+- `git fetch origin` a adus referințele remote (inclusiv `origin/main`).
+- Primul `git pull origin main` a eșuat cu mesajul Git despre strategia de reconciliere pentru branch-uri divergente.
+- Am setat explicit `git config pull.rebase false` (local repo), apoi am rerulat `git pull origin main` și sincronizarea s-a finalizat cu merge (`ort`).
+- Starea finală arată branch local sincronizat cu modificările locale păstrate pentru commitul curent.
