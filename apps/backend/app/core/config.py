@@ -17,12 +17,33 @@ class Settings:
     app_login_password: str
     openai_api_key: str
     google_ads_token: str
+    google_ads_mode: str
+    google_ads_client_id: str
+    google_ads_client_secret: str
+    google_ads_developer_token: str
+    google_ads_manager_customer_id: str
+    google_ads_redirect_uri: str
+    google_ads_refresh_token: str
+    google_ads_customer_ids_csv: str
+    google_ads_api_version: str
     meta_access_token: str
     bigquery_project_id: str
     database_url: str
     redis_url: str
     cors_origins: tuple[str, ...]
     cors_origin_regex: str | None
+    ff_tiktok_integration: bool
+    ff_pinterest_integration: bool
+    ff_snapchat_integration: bool
+    tiktok_sync_retry_attempts: int
+    tiktok_sync_backoff_ms: int
+    tiktok_sync_force_transient_failures: int
+    pinterest_sync_retry_attempts: int
+    pinterest_sync_backoff_ms: int
+    pinterest_sync_force_transient_failures: int
+    snapchat_sync_retry_attempts: int
+    snapchat_sync_backoff_ms: int
+    snapchat_sync_force_transient_failures: int
 
 
 def _get_env(name: str, default: str | None = None, required: bool = False) -> str:
@@ -34,14 +55,25 @@ def _get_env(name: str, default: str | None = None, required: bool = False) -> s
     return value
 
 
-
-
 def _parse_csv_env(name: str, default: str) -> tuple[str, ...]:
     raw = _get_env(name, default=default)
     values = tuple(item.strip() for item in raw.split(",") if item.strip())
     return values
 
 
+def _parse_bool_env(name: str, default: bool = False) -> bool:
+    raw = _get_env(name, default="1" if default else "0").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+
+
+def _parse_int_env(name: str, default: int) -> int:
+    raw = _get_env(name, default=str(default)).strip()
+    try:
+        return int(raw)
+    except ValueError:
+        return default
 
 def _safe_regex_env(name: str, default: str) -> str | None:
     value = _get_env(name, default=default).strip()
@@ -53,6 +85,7 @@ def _safe_regex_env(name: str, default: str) -> str | None:
     except re.error:
         return default
 
+
 def load_settings() -> Settings:
     return Settings(
         app_env=_get_env("APP_ENV", default="development"),
@@ -63,10 +96,31 @@ def load_settings() -> Settings:
         app_login_password=_get_env("APP_LOGIN_PASSWORD", default="admin123"),
         openai_api_key=_get_env("OPENAI_API_KEY", default=""),
         google_ads_token=_get_env("GOOGLE_ADS_TOKEN", default=""),
+        google_ads_mode=_get_env("GOOGLE_ADS_MODE", default="mock").strip().lower(),
+        google_ads_client_id=_get_env("GOOGLE_ADS_CLIENT_ID", default=""),
+        google_ads_client_secret=_get_env("GOOGLE_ADS_CLIENT_SECRET", default=""),
+        google_ads_developer_token=_get_env("GOOGLE_ADS_DEVELOPER_TOKEN", default=""),
+        google_ads_manager_customer_id=_get_env("GOOGLE_ADS_MANAGER_CUSTOMER_ID", default=""),
+        google_ads_redirect_uri=_get_env("GOOGLE_ADS_REDIRECT_URI", default=""),
+        google_ads_refresh_token=_get_env("GOOGLE_ADS_REFRESH_TOKEN", default=""),
+        google_ads_customer_ids_csv=_get_env("GOOGLE_ADS_CUSTOMER_IDS_CSV", default=""),
+        google_ads_api_version=_get_env("GOOGLE_ADS_API_VERSION", default="v23"),
         meta_access_token=_get_env("META_ACCESS_TOKEN", default=""),
         bigquery_project_id=_get_env("BIGQUERY_PROJECT_ID", default=""),
         database_url=_get_env("DATABASE_URL", default="postgresql://postgres:postgres@localhost:5432/mcc"),
         redis_url=_get_env("REDIS_URL", default="redis://localhost:6379/0"),
         cors_origins=_parse_csv_env("APP_CORS_ORIGINS", default="http://localhost:3000,http://127.0.0.1:3000"),
         cors_origin_regex=_safe_regex_env("APP_CORS_ORIGIN_REGEX", default=r"https://.*\.vercel\.app"),
+        ff_tiktok_integration=_parse_bool_env("FF_TIKTOK_INTEGRATION", default=False),
+        ff_pinterest_integration=_parse_bool_env("FF_PINTEREST_INTEGRATION", default=False),
+        ff_snapchat_integration=_parse_bool_env("FF_SNAPCHAT_INTEGRATION", default=False),
+        tiktok_sync_retry_attempts=_parse_int_env("TIKTOK_SYNC_RETRY_ATTEMPTS", default=2),
+        tiktok_sync_backoff_ms=_parse_int_env("TIKTOK_SYNC_BACKOFF_MS", default=75),
+        tiktok_sync_force_transient_failures=_parse_int_env("TIKTOK_SYNC_FORCE_TRANSIENT_FAILURES", default=0),
+        pinterest_sync_retry_attempts=_parse_int_env("PINTEREST_SYNC_RETRY_ATTEMPTS", default=2),
+        pinterest_sync_backoff_ms=_parse_int_env("PINTEREST_SYNC_BACKOFF_MS", default=75),
+        pinterest_sync_force_transient_failures=_parse_int_env("PINTEREST_SYNC_FORCE_TRANSIENT_FAILURES", default=0),
+        snapchat_sync_retry_attempts=_parse_int_env("SNAPCHAT_SYNC_RETRY_ATTEMPTS", default=2),
+        snapchat_sync_backoff_ms=_parse_int_env("SNAPCHAT_SYNC_BACKOFF_MS", default=75),
+        snapchat_sync_force_transient_failures=_parse_int_env("SNAPCHAT_SYNC_FORCE_TRANSIENT_FAILURES", default=0),
     )
