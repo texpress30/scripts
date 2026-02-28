@@ -388,6 +388,32 @@ export default function AgencyClientDetailsPage() {
                                   {savingRowFieldKey === currencyFieldId ? <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-500" /> : savedField === currencyFieldId ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Pencil className="h-3.5 w-3.5" />}
                                 </button>
                               </div>
+
+                              <div className="flex items-center gap-2">
+                                <span className="text-slate-500">Monedă:</span>
+                                {isEditingRow ? (
+                                  <select
+                                    value={draft.accountCurrency}
+                                    onChange={(e) => {
+                                      const value = e.target.value;
+                                      const nextDraft = { ...draft, accountCurrency: value };
+                                      setRowDrafts((prev) => ({ ...prev, [key]: nextDraft }));
+                                      void saveRowIfChanged(key, platform.platform, account.id, nextDraft);
+                                    }}
+                                    className="rounded border border-slate-300 px-2 py-1 text-xs"
+                                    disabled={savingRowId === key}
+                                  >
+                                    <option value="USD">USD</option>
+                                    <option value="EUR">EUR</option>
+                                    <option value="RON">RON</option>
+                                    <option value="GBP">GBP</option>
+                                    <option value="CAD">CAD</option>
+                                    <option value="AUD">AUD</option>
+                                  </select>
+                                ) : (
+                                  <span className="font-medium text-slate-700">{draft.accountCurrency || "USD"}</span>
+                                )}
+                              </div>
                             </div>
                           </li>
                         );

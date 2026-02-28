@@ -815,6 +815,15 @@ class ClientRegistryService:
         return self.get_client_details(client_id=client_id)
 
 
+    def get_preferred_currency_for_client(self, *, client_id: int) -> str:
+        accounts = self.list_client_platform_accounts(platform="google_ads", client_id=client_id)
+        for account in accounts:
+            currency = str(account.get("account_currency") or "").upper()
+            if len(currency) == 3 and currency.isalpha():
+                return currency
+        return "USD"
+
+
     def list_media_storage_usage(
         self,
         *,

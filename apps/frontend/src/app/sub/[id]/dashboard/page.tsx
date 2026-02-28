@@ -12,6 +12,7 @@ import { getCurrentRole, isReadOnlyRole } from "@/lib/session";
 
 type DashboardResponse = {
   client_id: number;
+  currency?: string;
   totals: {
     spend?: number;
     impressions?: number;
@@ -51,6 +52,16 @@ type NormalizedMetrics = {
 
 function safeNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+
+function normalizeCurrencyCode(value: string | undefined): string {
+  const code = (value ?? "USD").toUpperCase();
+  return code.length === 3 ? code : "USD";
+}
+
+function formatCurrency(value: number, currencyCode: string): string {
+  return new Intl.NumberFormat(undefined, { style: "currency", currency: currencyCode, maximumFractionDigits: 2 }).format(value);
 }
 
 function normalizeMetrics(value?: PlatformMetrics): NormalizedMetrics {
@@ -117,6 +128,7 @@ export default function SubDashboardPage() {
     }
   }
 
+  const currencyCode = normalizeCurrencyCode(data?.currency);
   const totals = normalizeMetrics(data?.totals);
   const google = normalizeMetrics(data?.platforms.google_ads);
   const meta = normalizeMetrics(data?.platforms.meta_ads);
@@ -137,11 +149,11 @@ export default function SubDashboardPage() {
         {error ? <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
 
         <section className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-6">
-          <MetricCard title="Spend" value={loading ? "..." : `$${totals.spend.toLocaleString(undefined, { maximumFractionDigits: 2 })}`} />
+          <MetricCard title="Spend" value={loading ? "..." : formatCurrency(totals.spend, currencyCode)} />
           <MetricCard title="Impressions" value={loading ? "..." : totals.impressions.toLocaleString()} />
           <MetricCard title="Clicks" value={loading ? "..." : totals.clicks.toLocaleString()} />
           <MetricCard title="Conversions" value={loading ? "..." : totals.conversions.toLocaleString()} />
-          <MetricCard title="Revenue" value={loading ? "..." : `$${totals.revenue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`} />
+          <MetricCard title="Revenue" value={loading ? "..." : formatCurrency(totals.revenue, currencyCode)} />
           <MetricCard title="ROAS" value={loading ? "..." : totals.roas.toFixed(2)} />
         </section>
 
@@ -169,11 +181,11 @@ export default function SubDashboardPage() {
                 return (
                   <tr key={name} className="border-t border-slate-200 text-slate-900">
                     <td className="px-4 py-3">{name}</td>
-                    <td className="px-4 py-3">{loading ? "..." : `$${m.spend.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</td>
+                    <td className="px-4 py-3">{loading ? "..." : formatCurrency(m.spend, currencyCode)}</td>
                     <td className="px-4 py-3">{loading ? "..." : m.impressions.toLocaleString()}</td>
                     <td className="px-4 py-3">{loading ? "..." : m.clicks.toLocaleString()}</td>
                     <td className="px-4 py-3">{loading ? "..." : m.conversions.toLocaleString()}</td>
-                    <td className="px-4 py-3">{loading ? "..." : `$${m.revenue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</td>
+                    <td className="px-4 py-3">{loading ? "..." : formatCurrency(m.revenue, currencyCode)}</td>
                     <td className="px-4 py-3">{loading ? "..." : m.roas.toFixed(2)}</td>
                   </tr>
                 );
@@ -191,6 +203,7 @@ export default function SubDashboardPage() {
             conversions={google.conversions}
             revenue={google.revenue}
             roas={google.roas}
+            currencyCode={currencyCode}
             loading={loading}
             synced={google.isSynced}
             buttonLabel={busy === "google" ? "Sync..." : "Sync Google"}
@@ -205,6 +218,7 @@ export default function SubDashboardPage() {
             conversions={meta.conversions}
             revenue={meta.revenue}
             roas={meta.roas}
+            currencyCode={currencyCode}
             loading={loading}
             synced={meta.isSynced}
             buttonLabel={busy === "meta" ? "Sync..." : "Sync Meta"}
@@ -219,6 +233,7 @@ export default function SubDashboardPage() {
             conversions={tiktok.conversions}
             revenue={tiktok.revenue}
             roas={tiktok.roas}
+            currencyCode={currencyCode}
             loading={loading}
             synced={tiktok.isSynced}
             buttonLabel={busy === "tiktok" ? "Sync..." : "Sync TikTok"}
@@ -233,6 +248,7 @@ export default function SubDashboardPage() {
             conversions={pinterest.conversions}
             revenue={pinterest.revenue}
             roas={pinterest.roas}
+            currencyCode={currencyCode}
             loading={loading}
             synced={pinterest.isSynced}
             buttonLabel={busy === "pinterest" ? "Sync..." : "Sync Pinterest"}
@@ -247,6 +263,7 @@ export default function SubDashboardPage() {
             conversions={snapchat.conversions}
             revenue={snapchat.revenue}
             roas={snapchat.roas}
+            currencyCode={currencyCode}
             loading={loading}
             synced={snapchat.isSynced}
             buttonLabel={busy === "snapchat" ? "Sync..." : "Sync Snapchat"}
@@ -281,6 +298,7 @@ function IntegrationCard({
   revenue,
   roas,
   buttonLabel,
+  currencyCode,
   disabled,
   onSync,
   loading,
@@ -294,6 +312,7 @@ function IntegrationCard({
   revenue: number;
   roas: number;
   buttonLabel: string;
+  currencyCode: string;
   disabled: boolean;
   onSync: () => void;
   loading: boolean;
@@ -306,11 +325,11 @@ function IntegrationCard({
       </CardHeader>
       <CardContent>
         <p className="text-sm text-slate-600">Status: {loading ? "Loading..." : synced ? "Synced" : "No data"}</p>
-        <p className="text-sm text-slate-600">Spend: {loading ? "..." : `$${spend.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</p>
+        <p className="text-sm text-slate-600">Spend: {loading ? "..." : formatCurrency(spend, currencyCode)}</p>
         <p className="text-sm text-slate-600">Impressions: {loading ? "..." : impressions.toLocaleString()}</p>
         <p className="text-sm text-slate-600">Clicks: {loading ? "..." : clicks.toLocaleString()}</p>
         <p className="text-sm text-slate-600">Conversions: {loading ? "..." : conversions.toLocaleString()}</p>
-        <p className="text-sm text-slate-600">Revenue: {loading ? "..." : `$${revenue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</p>
+        <p className="text-sm text-slate-600">Revenue: {loading ? "..." : formatCurrency(revenue, currencyCode)}</p>
         <p className="text-sm text-slate-600">ROAS: {loading ? "..." : roas.toFixed(2)}</p>
         <button
           disabled={disabled}
