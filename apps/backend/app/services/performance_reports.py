@@ -5,6 +5,7 @@ from threading import Lock
 import os
 
 from app.core.config import load_settings
+from app.services.sync_engine import DailyMetricRow
 
 try:
     import psycopg
@@ -34,7 +35,7 @@ class PerformanceReportsStore:
                         SELECT
                             id,
                             ROW_NUMBER() OVER (
-                                PARTITION BY report_date, platform, customer_id
+                                PARTITION BY report_date, platform, customer_id, client_id
                                 ORDER BY synced_at DESC, id DESC
                             ) AS rn
                         FROM ad_performance_reports
@@ -69,7 +70,7 @@ class PerformanceReportsStore:
                             conversions NUMERIC(14,4) NOT NULL DEFAULT 0,
                             conversion_value NUMERIC(14,2) NOT NULL DEFAULT 0,
                             synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                            UNIQUE (report_date, platform, customer_id)
+                            UNIQUE (report_date, platform, customer_id, client_id)
                         )
                         """
                     )
@@ -86,11 +87,10 @@ class PerformanceReportsStore:
                         """
                     )
                     cur.execute(self._deduplicate_reports_query())
-                    cur.execute("DROP INDEX IF EXISTS idx_ad_performance_reports_unique_daily_customer")
                     cur.execute(
                         """
-                        CREATE UNIQUE INDEX idx_ad_performance_reports_unique_daily_customer
-                        ON ad_performance_reports (report_date, platform, customer_id)
+                        CREATE UNIQUE INDEX IF NOT EXISTS idx_ad_performance_reports_unique_daily_customer
+                        ON ad_performance_reports (report_date, platform, customer_id, client_id)
                         """
                     )
                 conn.commit()
@@ -99,6 +99,23 @@ class PerformanceReportsStore:
 
     def initialize_schema(self) -> None:
         self._ensure_schema()
+
+    def upsert_rows(self, rows: list[DailyMetricRow]) -> int:
+        if len(rows) == 0:
+            return 0
+        for row in rows:
+            self.write_daily_report(
+                report_date=row.report_date,
+                platform=row.platform,
+                customer_id=row.account_id,
+                client_id=row.client_id,
+                spend=float(row.spend),
+                impressions=int(row.impressions),
+                clicks=int(row.clicks),
+                conversions=float(row.conversions),
+                conversion_value=float(row.revenue),
+            )
+        return len(rows)
 
     def write_daily_report(
         self,
@@ -138,9 +155,8 @@ class PerformanceReportsStore:
                     INSERT INTO ad_performance_reports (
                         report_date, platform, customer_id, client_id, spend, impressions, clicks, conversions, conversion_value
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (report_date, platform, customer_id)
+                    ON CONFLICT (report_date, platform, customer_id, client_id)
                     DO UPDATE SET
-                        client_id = EXCLUDED.client_id,
                         spend = EXCLUDED.spend,
                         impressions = EXCLUDED.impressions,
                         clicks = EXCLUDED.clicks,

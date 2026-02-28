@@ -960,15 +960,6 @@ class GoogleAdsService:
         login_customer_id = self._required_manager_customer_id()
         window_days = max(1, min(int(days), 3660))
 
-        resolved_end = end_date or datetime.now(timezone.utc).date()
-        resolved_start = start_date or (resolved_end - timedelta(days=window_days - 1))
-        if resolved_start > resolved_end:
-            resolved_start, resolved_end = resolved_end, resolved_start
-
-        start_literal = resolved_start.isoformat()
-        end_literal = resolved_end.isoformat()
-        date_clause = f"segments.date BETWEEN '{start_literal}' AND '{end_literal}'"
-
         primary_query = (
             "SELECT segments.date, metrics.impressions, metrics.clicks, metrics.cost_micros "
             f"FROM customer WHERE {date_clause}"
@@ -1152,6 +1143,38 @@ class GoogleAdsService:
         google_snapshot_store.upsert_snapshot(payload=snapshot)
         return snapshot
 
+    def fetch_chunk(self, *, account_id: str, chunk_start: date, chunk_end: date) -> dict[str, object]:
+        return self._fetch_production_daily_metrics(
+            customer_id=account_id,
+            start_date=chunk_start,
+            end_date=chunk_end,
+            days=max(1, (chunk_end - chunk_start).days + 1),
+        )
+
+    def normalize_to_rows(self, *, payload: dict[str, object], account_id: str, client_id: int) -> list[DailyMetricRow]:
+        rows: list[DailyMetricRow] = []
+        for item in list(payload.get("rows", [])):
+            raw_date = str(item.get("report_date") or "").strip()
+            if raw_date == "":
+                continue
+            rows.append(
+                DailyMetricRow(
+                    platform="google_ads",
+                    account_id=account_id,
+                    client_id=client_id,
+                    report_date=date.fromisoformat(raw_date),
+                    spend=float(item.get("spend", 0.0) or 0.0),
+                    impressions=int(item.get("impressions", 0) or 0),
+                    clicks=int(item.get("clicks", 0) or 0),
+                    conversions=float(item.get("conversions", 0) or 0.0),
+                    revenue=float(item.get("revenue", 0.0) or 0.0),
+                )
+            )
+        return rows
+
+    def upsert_rows(self, rows: list[DailyMetricRow]) -> int:
+        return performance_reports_store.upsert_rows(rows)
+
     def sync_customer_for_client(self, *, client_id: int, customer_id: str, days: int = 30, start_date: date | None = None, end_date: date | None = None) -> dict[str, float | int | str]:
         normalized_customer_id = self._normalize_customer_id(customer_id)
         if not self._is_valid_customer_id(normalized_customer_id):
@@ -1169,25 +1192,37 @@ class GoogleAdsService:
         gaql_rows_fetched = 0
 
         if self._is_production_mode():
-            daily_payload = self._fetch_production_daily_metrics(customer_id=normalized_customer_id, days=window_days, start_date=start_date, end_date=end_date)
-            daily_rows = list(daily_payload.get("rows", []))
-            resolved_start = str(daily_payload.get("resolved_start_date") or "")
-            resolved_end = str(daily_payload.get("resolved_end_date") or "")
-            gaql_rows_fetched = int(daily_payload.get("gaql_rows_fetched", 0) or 0)
+            resolved_end = end_date or datetime.now(timezone.utc).date()
+            resolved_start = start_date or (resolved_end - timedelta(days=window_days - 1))
+            run_result = enqueue_backfill(
+                platform="google_ads",
+                account_id=normalized_customer_id,
+                client_id=client_id,
+                start=resolved_start,
+                end=resolved_end,
+                chunk_days=7,
+                fetch_chunk=lambda account_id, chunk_start, chunk_end: self.fetch_chunk(account_id=account_id, chunk_start=chunk_start, chunk_end=chunk_end),
+                normalize_to_rows=lambda payload, account_id, cid: self.normalize_to_rows(payload=payload, account_id=account_id, client_id=cid),
+                upsert_rows=self.upsert_rows,
+            )
+            gaql_rows_fetched = int(run_result.fetched_rows_total)
+            inserted_rows = int(run_result.upserted_rows_total)
             if gaql_rows_fetched == 0:
                 reason_if_zero = "GAQL_RETURNED_0"
-                zero_message = str(daily_payload.get("zero_data_message") or "Account has no data in last 30 days or no permission")
+                zero_message = f"Account has no data in selected range {resolved_start.isoformat()}..{resolved_end.isoformat()} or no permission"
 
-            total_spend = sum(float(item.get("spend", 0.0)) for item in daily_rows)
-            total_impressions = sum(int(item.get("impressions", 0)) for item in daily_rows)
-            total_clicks = sum(int(item.get("clicks", 0)) for item in daily_rows)
+            total_spend = sum(float(chunk.spend) for chunk in run_result.chunks)
+            total_impressions = sum(int(chunk.impressions) for chunk in run_result.chunks)
+            total_clicks = sum(int(chunk.clicks) for chunk in run_result.chunks)
+            total_conversions = sum(float(chunk.conversions) for chunk in run_result.chunks)
+            total_revenue = sum(float(chunk.revenue) for chunk in run_result.chunks)
             logger.info(
-                "google_ads.sync_now customer_id=%s client_id=%s GAQL ok days=%s rows=%s spend=%s",
+                "google_ads.sync_now customer_id=%s client_id=%s CHUNKS ok=%s failed=%s upserted=%s",
                 normalized_customer_id,
                 client_id,
-                window_days,
-                len(daily_rows),
-                round(total_spend, 2),
+                run_result.successful_chunks,
+                run_result.failed_chunks,
+                run_result.upserted_rows_total,
             )
             snapshot: dict[str, float | int | str] = {
                 "client_id": client_id,
@@ -1195,13 +1230,14 @@ class GoogleAdsService:
                 "spend": round(float(total_spend), 2),
                 "impressions": int(total_impressions),
                 "clicks": int(total_clicks),
-                "conversions": 0,
-                "revenue": 0.0,
+                "conversions": int(total_conversions),
+                "revenue": round(float(total_revenue), 2),
                 "google_customer_id": normalized_customer_id,
                 "synced_at": datetime.now(timezone.utc).isoformat(),
             }
         else:
             daily_rows = []
+            inserted_rows = 0
             spend = float(100 + client_id * 17)
             impressions = 5000 + client_id * 110
             clicks = 200 + client_id * 9
@@ -1233,14 +1269,8 @@ class GoogleAdsService:
         )
 
         google_snapshot_store.upsert_snapshot(payload=snapshot)
-        inserted_rows = 0
         try:
-            if self._is_production_mode():
-                for row in daily_rows:
-                    payload_row = dict(row)
-                    payload_row["google_customer_id"] = normalized_customer_id
-                    inserted_rows += self._persist_performance_report(snapshot=payload_row, client_id=client_id)
-            else:
+            if not self._is_production_mode():
                 inserted_rows = self._persist_performance_report(snapshot=snapshot, client_id=client_id)
         except Exception as exc:  # noqa: BLE001
             reason_if_zero = "DB_INSERT_FAILED"
