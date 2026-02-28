@@ -33,3 +33,16 @@
 - Root-cause: agregările SQL întorc valori `numeric` din Postgres, iar conversia locală din `dashboard.py` accepta doar `(int, float)`. Valorile `Decimal` erau tratate ca nevalide și transformate în `0`, de aici dashboard cu zero chiar când DB avea date.
 - Fix aplicat: `_to_float` și `_to_int` acceptă acum și `Decimal`, astfel metricele agregate din query-uri SQL sunt păstrate corect în payload-ul dashboard (sub-account + agency).
 - Verificare: compilare backend + smoke Python care validează explicit conversia `Decimal` pentru spend/impressions/clicks.
+
+---
+
+# TODO — Git workflow alignment pe branch fix `work`
+
+- [x] Revin local pe branch-ul `work` și setez tracking la `origin/work`.
+- [x] Confirm regula de lucru: fără branch-uri noi `codex/*`, folosim același PR #127 pentru iterații.
+- [x] Documentez în lessons regula pentru a evita repetarea deviației de branch workflow.
+
+## Review
+- Workspace-ul rulează acum pe `work` (tracking `origin/work`).
+- Fluxul viitor rămâne pe același branch + același PR #127, fără creare automată de branch-uri per task.
+
