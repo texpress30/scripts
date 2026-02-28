@@ -64,6 +64,24 @@ Endpoint-uri relevante:
 - `GET /clients/{client_id}/accounts`
 - `GET /clients/accounts/google`
 
+## Script diagnostic Google Ads
+Rulează scriptul pentru verificare rapidă API + DB (oauth, conturi accesibile, rows din Postgres, last_sync_at, last_error):
+
+```bash
+PYTHONPATH=apps/backend python scripts/diag_google_ads.py
+```
+
+Variabile minime necesare:
+- `APP_AUTH_SECRET`
+- `DATABASE_URL`
+- `GOOGLE_ADS_MODE=production`
+- `GOOGLE_ADS_CLIENT_ID`
+- `GOOGLE_ADS_CLIENT_SECRET`
+- `GOOGLE_ADS_DEVELOPER_TOKEN`
+- `GOOGLE_ADS_MANAGER_CUSTOMER_ID`
+- `GOOGLE_ADS_REDIRECT_URI`
+- `GOOGLE_ADS_REFRESH_TOKEN`
+
 ## Endpoint-uri cheie
 ### Core
 - `POST /auth/login`
