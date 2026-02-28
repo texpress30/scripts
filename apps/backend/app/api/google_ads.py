@@ -285,7 +285,7 @@ def _run_google_backfill_job(job_id: str, *, mapped_accounts: list[dict[str, obj
         "errors_summary": errors_summary,
         "attempts": attempts,
         "client_id": requested_client_id,
-        "days": int(days),
+        "days": int((resolved_end - resolved_start).days + 1),
     }
     backfill_job_store.set_done(job_id, result=payload)
 
