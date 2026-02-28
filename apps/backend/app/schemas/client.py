@@ -14,5 +14,6 @@ class UpdateClientProfileRequest(BaseModel):
     client_logo_url: str | None = None
     client_type: str | None = None
     account_manager: str | None = None
+    account_currency: str | None = None
     platform: str | None = None
     account_id: str | None = None

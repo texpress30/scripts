@@ -9,7 +9,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
 
-type Account = { id: string; name: string; client_type?: string; account_manager?: string };
+type Account = { id: string; name: string; client_type?: string; account_manager?: string; account_currency?: string };
 type PlatformInfo = { platform: string; enabled: boolean; count: number; accounts: Account[] };
 type ClientDetails = {
   client: {
@@ -24,7 +24,7 @@ type ClientDetails = {
 };
 
 type SaveField = "name" | "row";
-type RowDraft = { clientType: string; accountManager: string };
+type RowDraft = { clientType: string; accountManager: string; accountCurrency: string };
 
 function prettyPlatform(platform: string): string {
   const map: Record<string, string> = {
@@ -69,6 +69,7 @@ export default function AgencyClientDetailsPage() {
         next[rowKey(platform.platform, account.id)] = {
           clientType: account.client_type ?? payload.client.client_type ?? "lead",
           accountManager: account.account_manager ?? payload.client.account_manager ?? "",
+          accountCurrency: account.account_currency ?? "USD",
         };
       }
     }
@@ -93,7 +94,7 @@ export default function AgencyClientDetailsPage() {
     }
   }, [displayId]);
 
-  async function patchProfile(payload: { name?: string; client_type?: string; account_manager?: string; platform?: string; account_id?: string }, field: SaveField, successKey: string, rowId?: string) {
+  async function patchProfile(payload: { name?: string; client_type?: string; account_manager?: string; account_currency?: string; platform?: string; account_id?: string }, field: SaveField, successKey: string, rowId?: string) {
     setSavingField(field);
     if (rowId) setSavingRowId(rowId);
     setError("");
@@ -141,12 +142,13 @@ export default function AgencyClientDetailsPage() {
       ?.accounts.find((item) => item.id === accountId);
     const currentType = currentAccount?.client_type ?? data.client.client_type ?? "lead";
     const currentManager = currentAccount?.account_manager ?? data.client.account_manager ?? "";
-    if (draft.clientType === currentType && normalizedManager === currentManager) {
+    const currentCurrency = (currentAccount?.account_currency ?? "USD").toUpperCase();
+    if (draft.clientType === currentType && normalizedManager === currentManager && draft.accountCurrency.toUpperCase() === currentCurrency) {
       setEditingRowId(null);
       return;
     }
 
-    await patchProfile({ client_type: draft.clientType, account_manager: normalizedManager, platform, account_id: accountId }, "row", key, key);
+    await patchProfile({ client_type: draft.clientType, account_manager: normalizedManager, account_currency: draft.accountCurrency, platform, account_id: accountId }, "row", key, key);
     setEditingRowId(null);
   }
 
@@ -220,6 +222,7 @@ export default function AgencyClientDetailsPage() {
                         const draft = rowDrafts[key] ?? {
                           clientType: account.client_type ?? data.client.client_type ?? "lead",
                           accountManager: account.account_manager ?? data.client.account_manager ?? "",
+                          accountCurrency: account.account_currency ?? "USD",
                         };
                         return (
                           <li key={key} className="rounded-md border border-slate-100 p-2 text-sm text-slate-700">
@@ -238,7 +241,7 @@ export default function AgencyClientDetailsPage() {
                               </button>
                             </div>
 
-                            <div className="mt-2 grid grid-cols-1 gap-2 text-xs md:grid-cols-2">
+                            <div className="mt-2 grid grid-cols-1 gap-2 text-xs md:grid-cols-3">
                               <div className="flex items-center gap-2">
                                 <span className="text-slate-500">Tip client:</span>
                                 {isEditingRow ? (
@@ -284,6 +287,32 @@ export default function AgencyClientDetailsPage() {
                                   />
                                 ) : (
                                   <span className="font-medium text-slate-700">{draft.accountManager || "—"}</span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <span className="text-slate-500">Monedă:</span>
+                                {isEditingRow ? (
+                                  <select
+                                    value={draft.accountCurrency}
+                                    onChange={(e) => {
+                                      const value = e.target.value;
+                                      const nextDraft = { ...draft, accountCurrency: value };
+                                      setRowDrafts((prev) => ({ ...prev, [key]: nextDraft }));
+                                      void saveRowIfChanged(key, platform.platform, account.id, nextDraft);
+                                    }}
+                                    className="rounded border border-slate-300 px-2 py-1 text-xs"
+                                    disabled={savingRowId === key}
+                                  >
+                                    <option value="USD">USD</option>
+                                    <option value="EUR">EUR</option>
+                                    <option value="RON">RON</option>
+                                    <option value="GBP">GBP</option>
+                                    <option value="CAD">CAD</option>
+                                    <option value="AUD">AUD</option>
+                                  </select>
+                                ) : (
+                                  <span className="font-medium text-slate-700">{draft.accountCurrency || "USD"}</span>
                                 )}
                               </div>
                             </div>

@@ -163,8 +163,11 @@ class UnifiedDashboardService:
             + _to_int(snapchat_metrics.get("conversions"))
         )
 
+        preferred_currency = client_registry_service.get_preferred_currency_for_client(client_id=client_id)
+
         return {
             "client_id": client_id,
+            "currency": preferred_currency,
             "totals": {
                 "spend": round(total_spend, 2),
                 "impressions": total_impressions,
