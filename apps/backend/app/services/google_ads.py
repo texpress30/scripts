@@ -960,6 +960,13 @@ class GoogleAdsService:
         login_customer_id = self._required_manager_customer_id()
         window_days = max(1, min(int(days), 3660))
 
+        resolved_end = end_date or datetime.now(timezone.utc).date()
+        resolved_start = start_date or (resolved_end - timedelta(days=window_days - 1))
+        if resolved_start > resolved_end:
+            resolved_start, resolved_end = resolved_end, resolved_start
+
+        date_clause = f"segments.date BETWEEN '{resolved_start.isoformat()}' AND '{resolved_end.isoformat()}'"
+
         primary_query = (
             "SELECT segments.date, metrics.impressions, metrics.clicks, metrics.cost_micros "
             f"FROM customer WHERE {date_clause}"
@@ -995,7 +1002,9 @@ class GoogleAdsService:
         gaql_rows_fetched = primary_fetched if primary_fetched > 0 else fallback_fetched
         zero_data_message = None
         if gaql_rows_fetched == 0:
-            zero_data_message = f"Account has no data in selected range {start_literal}..{end_literal} or no permission"
+            zero_data_message = (
+                f"Account has no data in selected range {resolved_start.isoformat()}..{resolved_end.isoformat()} or no permission"
+            )
 
         return {
             "rows": rows,

@@ -280,3 +280,17 @@
 - Am introdus `try/except` per customer în `sync_client`: orice excepție neașteptată este mapată la `GoogleAdsIntegrationError` cu context de customer ID mascat.
 - Endpoint-ul păstrează 502 doar pentru fallback-ul generic, dar acum include și cauza trunchiată (`Google Ads API unavailable: ...`) pentru debugging mai rapid.
 - Am acoperit comportamentul cu test nou care validează wrapping-ul erorilor neașteptate.
+
+---
+
+# TODO — Fix runtime NameError la Sync Google (`date_clause`)
+
+- [x] Reproduc și localizez eroarea `name 'date_clause' is not defined` pe path-ul Google Ads daily metrics.
+- [x] Refactor minimal în `_fetch_production_daily_metrics` pentru a construi explicit `resolved_start/resolved_end` și `date_clause` în toate query-urile.
+- [x] Adaug test de regresie pentru query-ul GAQL cu `segments.date BETWEEN ...`.
+- [x] Rulez verificări targetate (compile + pytest selectiv).
+
+## Review — Fix runtime NameError la Sync Google (`date_clause`)
+- Root-cause: path-ul de sync Google folosea logică de date-range incompletă/inconsistentă, ceea ce putea arunca NameError (`date_clause`) în runtime.
+- Fix: `_fetch_production_daily_metrics` primește acum oficial `start_date/end_date`, calculează robust intervalul (`resolved_start/resolved_end`, inclusiv swap dacă sunt inversate) și construiește un singur `date_clause` reutilizat pe primary + fallback query.
+- Rezultat: Sync Google nu mai cade cu NameError, iar filtrarea pe interval explicit funcționează predictibil în query-urile GAQL.

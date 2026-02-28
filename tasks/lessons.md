@@ -70,3 +70,4 @@
 - 2026-02-28: Când mediul cere tool-ul `apply_patch`, folosește-l direct pentru patch-uri; nu îl rula prin `exec_command` pentru a evita avertismente și neconformități de workflow.
 - 2026-02-28: Pentru cerințe operaționale de tip backfill live, verifică de la început prezența env-urilor critice (`DATABASE_URL`, `APP_AUTH_SECRET`, `GOOGLE_ADS_*`) și raportează explicit blocajele de execuție înainte de promisiuni de rezultat numeric.
 - 2026-02-28: Pentru endpoint-uri de sync care afișează erori în UI, nu lăsa excepțiile neașteptate să iasă ca 502 generic opac; convertește-le în erori de integrare cu context util (fără date sensibile) și acoperă cu test.
+- 2026-02-28: Când extinzi un query builder cu date-range, centralizează construcția expresiei (`date_clause`) într-un singur loc și acoperă cu test de regresie; astfel eviți NameError-uri de runtime în branch-urile de fallback.

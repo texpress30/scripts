@@ -242,6 +242,43 @@ class ServiceTests(unittest.TestCase):
         self.assertIn("Google Ads sync failed for customer", str(ctx.exception))
         self.assertIn("db write failed", str(ctx.exception))
 
+    def test_google_ads_fetch_daily_metrics_uses_between_clause_for_explicit_range(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
+        os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
+        os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token"
+        os.environ["GOOGLE_ADS_MANAGER_CUSTOMER_ID"] = "1234567890"
+        os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://app.example.com/agency/integrations/google/callback"
+        os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
+
+        original_access_token = google_ads_service._access_token_from_refresh
+        original_required_manager = google_ads_service._required_manager_customer_id
+        original_fetch_rows = google_ads_service._fetch_gaql_daily_rows
+        captured_queries: list[str] = []
+        try:
+            google_ads_service._access_token_from_refresh = lambda: "ya29.token"
+            google_ads_service._required_manager_customer_id = lambda: "1234567890"
+
+            def fake_fetch_rows(*, customer_id, query, login_customer_id, access_token):
+                captured_queries.append(query)
+                return {"rows": [], "gaql_rows_fetched": 0}
+
+            google_ads_service._fetch_gaql_daily_rows = fake_fetch_rows
+            google_ads_service._fetch_production_daily_metrics(
+                customer_id="1111111111",
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 1, 31),
+                days=31,
+            )
+        finally:
+            google_ads_service._access_token_from_refresh = original_access_token
+            google_ads_service._required_manager_customer_id = original_required_manager
+            google_ads_service._fetch_gaql_daily_rows = original_fetch_rows
+
+        self.assertEqual(len(captured_queries), 2)
+        self.assertIn("segments.date BETWEEN '2026-01-01' AND '2026-01-31'", captured_queries[0])
+        self.assertIn("segments.date BETWEEN '2026-01-01' AND '2026-01-31'", captured_queries[1])
+
     def test_google_ads_list_accessible_customers_uses_manager_search_stream(self):
         os.environ["GOOGLE_ADS_MODE"] = "production"
         os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
