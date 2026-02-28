@@ -46,3 +46,18 @@
 - Workspace-ul rulează acum pe `work` (tracking `origin/work`).
 - Fluxul viitor rămâne pe același branch + același PR #127, fără creare automată de branch-uri per task.
 
+
+---
+
+# TODO — Agency Clients: monedă per cont + editare individuală pe câmp
+
+- [x] Confirm context/branch și traseul actual frontend/backend pentru editarea pe rând în Agency Clients.
+- [x] Extind backend-ul pentru câmp `currency` per account mapping (schema + payload update + response details).
+- [x] Actualizez UI Agency Client details cu 3 acțiuni separate (creion individual pentru tip cont, responsabil, monedă).
+- [x] Rulez verificări țintite (backend tests + frontend lint/type), apoi completez review.
+
+
+## Review — Agency Clients: monedă per cont + editare individuală pe câmp
+- Backend: am adăugat `currency` la nivel de client și `account_currency` în `agency_account_client_mappings`, plus propagare în endpoint-ul `PATCH /clients/display/{display_id}` pentru update per cont (`platform` + `account_id`).
+- Frontend: în Agency Client details există acum câte un creion separat pentru fiecare câmp editabil de pe rând (tip client, responsabil, monedă), cu salvare individuală și feedback vizual per câmp.
+- Verificare: `python -m py_compile` pe fișierele modificate și `npx tsc --noEmit` pe frontend au trecut; `next lint` nu poate rula non-interactiv deoarece proiectul solicită inițializare ESLint interactivă.

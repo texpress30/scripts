@@ -54,3 +54,4 @@
 - 2026-02-27: Pentru incidente “connected dar 0 în dashboard”, adaugă obligatoriu diagnostic combinat OAuth+Google query+DB rows (last_30_days); fără acest trilateral check, cauza reală (ingestion vs agregare) rămâne ambiguă.
 - 2026-02-28: După commit pentru livrare, verifică explicit că branch-ul local este împins pe `origin` (nu doar commit local) și re-rulează `make_pr`; fără push, butonul/PR-ul poate lipsi chiar dacă rezumatul spune că PR-ul există.
 - 2026-02-28: Când utilizatorul cere branch fix de lucru (ex. `work`) și PR unic activ, nu crea branch-uri noi per task; menține toate schimbările pe branch-ul indicat și actualizează același PR până la confirmarea finală.
+- 2026-02-28: În Agency Clients, pentru câmpurile editabile pe rând (tip cont, responsabil, monedă), oferă controale de editare separate per câmp (creion individual), nu un singur toggle global pe rând.

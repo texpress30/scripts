@@ -126,6 +126,7 @@ def update_client_profile(
         client_logo_url=payload.client_logo_url,
         client_type=payload.client_type,
         account_manager=payload.account_manager,
+        currency=payload.currency,
         platform=payload.platform,
         account_id=payload.account_id,
     )

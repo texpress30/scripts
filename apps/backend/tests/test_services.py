@@ -94,6 +94,31 @@ class ServiceTests(unittest.TestCase):
         with self.assertRaises(AuthorizationError):
             require_action("client_viewer", action="rules:create", scope="subaccount")
 
+
+    def test_client_registry_updates_account_currency_per_mapping(self):
+        created = client_registry_service.create_client(name="Currency Client", owner_email="owner@example.com")
+        client_registry_service.upsert_platform_accounts(
+            platform="google_ads",
+            accounts=[{"id": "1234567890", "name": "Currency Account"}],
+        )
+        client_registry_service.attach_platform_account_to_client(
+            platform="google_ads",
+            client_id=int(created["id"]),
+            account_id="1234567890",
+        )
+
+        updated = client_registry_service.update_client_profile_by_display_id(
+            display_id=int(created["display_id"]),
+            platform="google_ads",
+            account_id="1234567890",
+            currency="ron",
+        )
+
+        self.assertIsNotNone(updated)
+        assert updated is not None
+        google_platform = next(item for item in updated["platforms"] if item["platform"] == "google_ads")
+        self.assertEqual(google_platform["accounts"][0]["currency"], "RON")
+
     # Sprint 2 coverage (Google)
     def test_google_ads_status_pending_when_placeholder(self):
         os.environ["GOOGLE_ADS_TOKEN"] = "your_google_ads_token"
