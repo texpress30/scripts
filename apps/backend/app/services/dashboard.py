@@ -55,6 +55,17 @@ class UnifiedDashboardService:
             return code
         return fallback
 
+    def _fallback_fx_rate_to_ron(self, *, currency_code: str) -> float:
+        defaults = {
+            "USD": 4.318394,
+            "EUR": 4.97,
+            "GBP": 5.82,
+            "CHF": 5.12,
+            "CAD": 3.2,
+            "AUD": 2.85,
+        }
+        return float(defaults.get(currency_code, 1.0))
+
     def _get_fx_rate_to_ron(self, *, currency_code: str, rate_date: date) -> float:
         normalized_currency = self._normalize_currency_code(currency_code, fallback="RON")
         if normalized_currency == "RON":
@@ -65,7 +76,6 @@ class UnifiedDashboardService:
         if cached is not None:
             return cached
 
-        # Frankfurter supplies historical daily rates; fallback to previous business days if date is unavailable.
         for day_offset in range(0, 7):
             target_date = rate_date - timedelta(days=day_offset)
             url = f"https://api.frankfurter.app/{target_date.isoformat()}"
@@ -82,16 +92,19 @@ class UnifiedDashboardService:
             except Exception:  # noqa: BLE001
                 continue
 
+        fallback_rate = self._fallback_fx_rate_to_ron(currency_code=normalized_currency)
         logger.warning(
             "agency_dashboard_fx_fallback",
-            extra={"currency": normalized_currency, "date": rate_date.isoformat()},
+            extra={"currency": normalized_currency, "date": rate_date.isoformat(), "fallback_rate": fallback_rate},
         )
-        self._fx_cache[cache_key] = 1.0
-        return 1.0
+        self._fx_cache[cache_key] = fallback_rate
+        return fallback_rate
 
-    def _aggregate_agency_rows(self, rows: list[tuple[object, object, object, object, object, object, object, object]]) -> tuple[dict[str, float | int], dict[int, float], int]:
+    def _aggregate_agency_rows(self, rows: list[tuple[object, object, object, object, object, object, object, object]]) -> tuple[dict[str, float | int], dict[int, float], dict[int, float], dict[int, str], int]:
         totals: dict[str, float | int] = {"spend": 0.0, "impressions": 0, "clicks": 0, "conversions": 0, "revenue": 0.0}
-        spend_by_client: dict[int, float] = {}
+        spend_by_client_ron: dict[int, float] = {}
+        spend_by_client_native: dict[int, float] = {}
+        client_currency_votes: dict[int, dict[str, int]] = {}
 
         for row in rows:
             report_date = row[0] if isinstance(row[0], date) else date.today()
@@ -114,9 +127,16 @@ class UnifiedDashboardService:
             totals["revenue"] = float(totals["revenue"]) + revenue_ron
 
             if resolved_client_id > 0:
-                spend_by_client[resolved_client_id] = spend_by_client.get(resolved_client_id, 0.0) + spend_ron
+                spend_by_client_ron[resolved_client_id] = spend_by_client_ron.get(resolved_client_id, 0.0) + spend_ron
+                spend_by_client_native[resolved_client_id] = spend_by_client_native.get(resolved_client_id, 0.0) + spend
+                votes = client_currency_votes.setdefault(resolved_client_id, {})
+                votes[currency] = votes.get(currency, 0) + 1
 
-        return totals, spend_by_client, len(rows)
+        client_currency: dict[int, str] = {}
+        for client_id, votes in client_currency_votes.items():
+            client_currency[client_id] = sorted(votes.items(), key=lambda item: item[1], reverse=True)[0][0]
+
+        return totals, spend_by_client_ron, spend_by_client_native, client_currency, len(rows)
 
     def _normalize_platform_metrics(self, platform: str, metrics: dict[str, object], client_id: int) -> dict[str, object]:
         spend = round(_to_float(metrics.get("spend")), 2)
@@ -281,7 +301,7 @@ class UnifiedDashboardService:
                 totals["clicks"] += _to_int(mt.get("clicks"))
                 totals["conversions"] += _to_int(mt.get("conversions"))
                 totals["revenue"] += _to_float(mt.get("revenue"))
-                top_clients.append({"client_id": cid, "name": str(client.get("name") or f"Client {cid}"), "spend": round(spend, 2)})
+                top_clients.append({"client_id": cid, "name": str(client.get("name") or f"Client {cid}"), "spend": round(spend, 2), "currency": "RON", "spend_ron": round(spend, 2)})
 
             top_clients.sort(key=lambda item: float(item["spend"]), reverse=True)
             return {
@@ -340,17 +360,27 @@ class UnifiedDashboardService:
                 )
                 rows = cur.fetchall()
 
-        totals, spend_by_client, row_count = self._aggregate_agency_rows(rows)
+        totals, spend_by_client_ron, spend_by_client_native, client_currency, row_count = self._aggregate_agency_rows(rows)
 
         manual_clients = client_registry_service.list_clients()
         active_clients = len(manual_clients)
         client_names = {int(item["id"]): str(item.get("name") or f"Client {item['id']}") for item in manual_clients}
 
         top_clients: list[dict[str, object]] = []
-        for client_id, spend in sorted(spend_by_client.items(), key=lambda item: item[1], reverse=True):
+        for client_id, spend_ron in sorted(spend_by_client_ron.items(), key=lambda item: item[1], reverse=True):
             if client_id not in client_names:
                 continue
-            top_clients.append({"client_id": client_id, "name": client_names[client_id], "spend": round(spend, 2)})
+            preferred_currency = client_currency.get(client_id, "RON")
+            display_spend = spend_by_client_native.get(client_id, 0.0) if preferred_currency != "RON" else spend_ron
+            top_clients.append(
+                {
+                    "client_id": client_id,
+                    "name": client_names[client_id],
+                    "spend": round(display_spend, 2),
+                    "currency": preferred_currency,
+                    "spend_ron": round(spend_ron, 2),
+                }
+            )
             if len(top_clients) >= 5:
                 break
 

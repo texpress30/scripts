@@ -30,7 +30,7 @@ type AgencySummaryResponse = {
     revenue: number;
     roas: number;
   };
-  top_clients: Array<{ client_id: number; name: string; spend: number }>;
+  top_clients: Array<{ client_id: number; name: string; spend: number; currency?: string; spend_ron?: number }>;
   currency?: string;
 };
 
@@ -271,7 +271,7 @@ export default function AgencyDashboardPage() {
               {(summary?.top_clients ?? []).map((client) => (
                 <li key={client.client_id} className="flex items-center justify-between">
                   <span>{client.name}</span>
-                  <span className="text-slate-900">{formatCurrency(client.spend, currencyCode)}</span>
+                  <span className="text-slate-900">{formatCurrency(client.spend, normalizeCurrencyCode(client.currency ?? "RON"))}</span>
                 </li>
               ))}
               {!loading && (summary?.top_clients.length ?? 0) === 0 ? <li>Nu există clienți.</li> : null}

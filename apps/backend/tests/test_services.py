@@ -614,7 +614,7 @@ class ServiceTests(unittest.TestCase):
         original_rate = unified_dashboard_service._get_fx_rate_to_ron
         try:
             unified_dashboard_service._get_fx_rate_to_ron = lambda **kwargs: {"USD": 5.0, "EUR": 4.0, "RON": 1.0}.get(kwargs.get("currency_code"), 1.0)
-            totals, spend_by_client, row_count = unified_dashboard_service._aggregate_agency_rows(
+            totals, spend_by_client_ron, spend_by_client_native, client_currency, row_count = unified_dashboard_service._aggregate_agency_rows(
                 [
                     (date(2026, 2, 1), 10, "USD", 100.0, 1000, 100, 10, 50.0),
                     (date(2026, 2, 1), 10, "RON", 200.0, 2000, 200, 20, 100.0),
@@ -630,8 +630,12 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(int(totals["impressions"]), 3500)
         self.assertEqual(int(totals["clicks"]), 350)
         self.assertEqual(int(totals["conversions"]), 35)
-        self.assertEqual(round(spend_by_client[10], 2), 700.0)
-        self.assertEqual(round(spend_by_client[11], 2), 200.0)
+        self.assertEqual(round(spend_by_client_ron[10], 2), 700.0)
+        self.assertEqual(round(spend_by_client_ron[11], 2), 200.0)
+        self.assertEqual(round(spend_by_client_native[10], 2), 300.0)
+        self.assertEqual(round(spend_by_client_native[11], 2), 50.0)
+        self.assertEqual(client_currency[10], "USD")
+        self.assertEqual(client_currency[11], "EUR")
 
     # Sprint 3 coverage (Meta + unified dashboard)
     def test_meta_ads_status_pending_when_placeholder(self):
