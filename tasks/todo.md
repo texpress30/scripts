@@ -137,3 +137,18 @@
 - Dacă nu există conturi Google Ads mapate la niciun subaccount (`mapped_accounts_count=0`), endpoint-ul întoarce `400` cu mesajul exact cerut.
 - Fluxul de sync scrie loguri clare per customer_id în ordinea: `START`, `GAQL ok`, `INSERTED n_rows`, `DONE` (în `GoogleAdsService.sync_customer_for_client`).
 - Verificările locale (compile + smoke tests prin monkeypatch) confirmă comportamentul nou fără a necesita DB/API reale.
+
+---
+
+# TODO — Mapping Google Ads per client + sync-now din DB mappings
+
+- [x] Verific structura actuală pentru mapping per client (tabele + servicii + endpoint-uri existente).
+- [x] Adaug endpoint-uri: listare conturi accesibile, setare mapping per client, citire mapping per client.
+- [x] Conectez `/integrations/google-ads/status` și `/integrations/google-ads/sync-now` la mapping-urile reale din DB.
+- [x] Rulez verificări și documentez rezultatul.
+
+## Review
+- Am identificat că persistența mapping-ului per client există deja în `agency_account_client_mappings` (`platform`, `account_id`, `client_id`, `updated_at`), deci nu a fost necesară o coloană nouă; am folosit acest model consistent pentru Google Ads mapping per subaccount.
+- `GET /integrations/google-ads/accounts` întoarce acum shape-ul cerut: `customer_id` normalizat, `name`, `is_manager`, `currency_code` (opțional), fără secrete.
+- Am adăugat endpoint-uri noi: `POST /agency/clients/{client_id}/integrations/google-ads/map` (validare format + accesibilitate + blocare MCC) și `GET /agency/clients/{client_id}/integrations/google-ads` (mapped/customer_id/updated_at).
+- `status` include acum `mapped_accounts_count` + `sample_customer_ids` mascate, iar `sync-now` citește mapping-urile reale din DB (`list_google_mapped_accounts`), astfel încât dacă există mapping-uri, `attempted_accounts_count` devine >0.

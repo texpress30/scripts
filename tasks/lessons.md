@@ -59,3 +59,4 @@
 - 2026-02-27: Pentru diagnostice DB cross-env, implementează query compatibil de schemă (ex: `provider` vs `platform`) și tratează explicit lipsa tabelului cu mesaj clar, fără să oprești endpoint-ul de diagnostics.
 - 2026-02-27: Pentru investigarea cazurilor "connected dar rows=0", adaugă endpoint debug cu agregări DB-only (count/max/group-by) și inventar de tabele relevante pe coloane-cheie, fără a expune rânduri brute.
 - 2026-02-27: Pentru endpoint-uri de orchestrare sync multi-account, expune obligatoriu counters observabili + sample IDs mascate + error summary sanitizat, iar când nu există mapping-uri valide răspunde 400 explicit (nu 200 gol) pentru a evita ambiguitatea operațională.
+- 2026-02-27: Pentru probleme „mapped_accounts_count=0”, evită câmpuri derivate din registry UI și citește direct mapping-urile persistente (`agency_account_client_mappings`) cu endpoint-uri dedicate map/get ca sursă unică de adevăr pentru sync orchestration.

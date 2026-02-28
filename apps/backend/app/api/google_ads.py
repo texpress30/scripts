@@ -12,6 +12,13 @@ from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
 router = APIRouter(prefix="/integrations/google-ads", tags=["google-ads"])
 
 
+def _mask_customer_id(customer_id: str) -> str:
+    normalized = customer_id.strip()
+    if len(normalized) < 4:
+        return "****"
+    return f"***{normalized[-4:]}"
+
+
 @router.get("/status")
 def google_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
@@ -26,10 +33,13 @@ def google_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, o
     status_payload["last_import_at"] = client_registry_service.get_last_import_at(platform="google_ads")
 
     diagnostics = google_ads_service.run_diagnostics()
+    mapped_accounts = client_registry_service.list_google_mapped_accounts()
     status_payload["accounts_found"] = diagnostics.get("accessible_customers_count", 0)
     status_payload["rows_in_db_last_30_days"] = diagnostics.get("rows_in_db_last_30_days", diagnostics.get("db_rows_last_30_days", 0))
     status_payload["last_sync_at"] = diagnostics.get("last_sync_at")
     status_payload["last_error"] = diagnostics.get("last_error")
+    status_payload["mapped_accounts_count"] = len(mapped_accounts)
+    status_payload["sample_customer_ids"] = [_mask_customer_id(str(item.get("customer_id") or "")) for item in mapped_accounts[:10]]
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
@@ -94,14 +104,24 @@ def list_google_accounts(user: AuthUser = Depends(get_current_user)) -> dict[str
     except GoogleAdsIntegrationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
+    normalized_items = [
+        {
+            "customer_id": str(item.get("id", "")).replace("-", "").strip(),
+            "name": str(item.get("name") or str(item.get("id") or "")),
+            "is_manager": bool(item.get("is_manager", False)),
+            "currency_code": (str(item.get("currency_code")).strip() if item.get("currency_code") is not None else None),
+        }
+        for item in accounts
+    ]
+
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
         action="google_ads.accounts.list",
         resource="integration:google_ads",
-        details={"count": len(accounts)},
+        details={"count": len(normalized_items)},
     )
-    return {"items": accounts, "count": len(accounts)}
+    return {"items": normalized_items, "count": len(normalized_items)}
 
 
 @router.post("/import-accounts")
@@ -202,8 +222,7 @@ def google_ads_db_debug(user: AuthUser = Depends(get_current_user)) -> dict[str,
 def sync_google_ads_now(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
 
-    accounts = client_registry_service.list_platform_accounts(platform="google_ads")
-    mapped_accounts = [item for item in accounts if item.get("attached_client_id") is not None]
+    mapped_accounts = client_registry_service.list_google_mapped_accounts()
     mapped_accounts_count = len(mapped_accounts)
 
     if mapped_accounts_count == 0:
@@ -217,8 +236,8 @@ def sync_google_ads_now(user: AuthUser = Depends(get_current_user)) -> dict[str,
     inserted_rows_total = 0
 
     for item in mapped_accounts:
-        client_id = int(item.get("attached_client_id"))
-        raw_customer_id = str(item.get("account_id") or "").strip()
+        client_id = int(item.get("client_id") or 0)
+        raw_customer_id = str(item.get("customer_id") or "").strip()
         masked_customer_id = f"***{raw_customer_id[-4:]}" if len(raw_customer_id) >= 4 else "****"
         try:
             snapshot = google_ads_service.sync_customer_for_client(client_id=client_id, customer_id=raw_customer_id)
