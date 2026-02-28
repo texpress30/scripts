@@ -34,7 +34,7 @@ class PerformanceReportsStore:
                         SELECT
                             id,
                             ROW_NUMBER() OVER (
-                                PARTITION BY report_date, platform, customer_id, client_id
+                                PARTITION BY report_date, platform, customer_id
                                 ORDER BY synced_at DESC, id DESC
                             ) AS rn
                         FROM ad_performance_reports
@@ -69,7 +69,7 @@ class PerformanceReportsStore:
                             conversions NUMERIC(14,4) NOT NULL DEFAULT 0,
                             conversion_value NUMERIC(14,2) NOT NULL DEFAULT 0,
                             synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                            UNIQUE (report_date, platform, customer_id, client_id)
+                            UNIQUE (report_date, platform, customer_id)
                         )
                         """
                     )
@@ -86,10 +86,11 @@ class PerformanceReportsStore:
                         """
                     )
                     cur.execute(self._deduplicate_reports_query())
+                    cur.execute("DROP INDEX IF EXISTS idx_ad_performance_reports_unique_daily_customer")
                     cur.execute(
                         """
-                        CREATE UNIQUE INDEX IF NOT EXISTS idx_ad_performance_reports_unique_daily_customer
-                        ON ad_performance_reports (report_date, platform, customer_id, client_id)
+                        CREATE UNIQUE INDEX idx_ad_performance_reports_unique_daily_customer
+                        ON ad_performance_reports (report_date, platform, customer_id)
                         """
                     )
                 conn.commit()
@@ -137,8 +138,9 @@ class PerformanceReportsStore:
                     INSERT INTO ad_performance_reports (
                         report_date, platform, customer_id, client_id, spend, impressions, clicks, conversions, conversion_value
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (report_date, platform, customer_id, client_id)
+                    ON CONFLICT (report_date, platform, customer_id)
                     DO UPDATE SET
+                        client_id = EXCLUDED.client_id,
                         spend = EXCLUDED.spend,
                         impressions = EXCLUDED.impressions,
                         clicks = EXCLUDED.clicks,

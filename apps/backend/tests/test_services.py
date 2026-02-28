@@ -161,6 +161,33 @@ class ServiceTests(unittest.TestCase):
 
 
 
+    def test_google_ads_daily_metrics_query_uses_custom_date_bounds(self):
+        original_access = google_ads_service._access_token_from_refresh
+        original_manager = google_ads_service._required_manager_customer_id
+        original_fetch = google_ads_service._fetch_gaql_daily_rows
+        queries: list[str] = []
+        try:
+            google_ads_service._access_token_from_refresh = lambda: "token"
+            google_ads_service._required_manager_customer_id = lambda: "1234567890"
+
+            def fake_fetch_gaql_daily_rows(*, customer_id, query, login_customer_id, access_token):
+                queries.append(query)
+                return {"rows": [], "gaql_rows_fetched": 0}
+
+            google_ads_service._fetch_gaql_daily_rows = fake_fetch_gaql_daily_rows
+            google_ads_service._fetch_production_daily_metrics(
+                customer_id="7563058696",
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 2, 27),
+            )
+        finally:
+            google_ads_service._access_token_from_refresh = original_access
+            google_ads_service._required_manager_customer_id = original_manager
+            google_ads_service._fetch_gaql_daily_rows = original_fetch
+
+        self.assertTrue(len(queries) >= 1)
+        self.assertIn("segments.date BETWEEN '2026-01-01' AND '2026-02-27'", queries[0])
+
     def test_google_ads_sync_uses_production_daily_metrics_when_mode_enabled(self):
         os.environ["GOOGLE_ADS_MODE"] = "production"
         os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
@@ -622,7 +649,7 @@ class ServiceTests(unittest.TestCase):
     def test_performance_reports_dedup_query_targets_daily_duplicate_keys(self):
         query = performance_reports_store._deduplicate_reports_query()
 
-        self.assertIn("PARTITION BY report_date, platform, customer_id, client_id", query)
+        self.assertIn("PARTITION BY report_date, platform, customer_id", query)
         self.assertIn("DELETE FROM ad_performance_reports", query)
         self.assertIn("ranked.rn > 1", query)
 

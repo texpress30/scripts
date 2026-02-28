@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -222,7 +222,9 @@ def google_ads_db_debug(user: AuthUser = Depends(get_current_user)) -> dict[str,
 def sync_google_ads_now(
     user: AuthUser = Depends(get_current_user),
     client_id: int | None = Query(default=None),
-    days: int = Query(default=30, ge=1, le=90),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    days: int = Query(default=30, ge=1, le=3660),
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
 
@@ -231,6 +233,17 @@ def sync_google_ads_now(
     if requested_client_id is not None:
         mapped_accounts = [item for item in mapped_accounts if int(item.get("client_id") or 0) == int(requested_client_id)]
     mapped_accounts_count = len(mapped_accounts)
+
+    yesterday = datetime.utcnow().date() - timedelta(days=1)
+    resolved_end = end_date or yesterday
+    if start_date is not None:
+        resolved_start = start_date
+    elif end_date is not None:
+        resolved_start = resolved_end - timedelta(days=int(days) - 1)
+    else:
+        resolved_start = date(2026, 1, 1)
+    if resolved_start > resolved_end:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="start_date must be <= end_date")
 
     if mapped_accounts_count == 0:
         raise HTTPException(
@@ -247,7 +260,7 @@ def sync_google_ads_now(
         raw_customer_id = str(item.get("customer_id") or "").strip()
         masked_customer_id = f"***{raw_customer_id[-4:]}" if len(raw_customer_id) >= 4 else "****"
         try:
-            snapshot = google_ads_service.sync_customer_for_client(client_id=client_id, customer_id=raw_customer_id, days=days)
+            snapshot = google_ads_service.sync_customer_for_client(client_id=client_id, customer_id=raw_customer_id, days=days, start_date=resolved_start, end_date=resolved_end)
             inserted_rows = int(snapshot.get("inserted_rows", 0) or 0)
             inserted_rows_total += inserted_rows
             attempts.append(
@@ -288,8 +301,6 @@ def sync_google_ads_now(
     attempted_accounts_count = len(attempts)
     sample_customer_ids = [item["customer_id_masked"] for item in attempts[:10]]
 
-    today = datetime.utcnow().date()
-    start = today - timedelta(days=int(days) - 1)
     payload = {
         "status": "ok" if failed_accounts_count == 0 else "partial",
         "mapped_accounts_count": mapped_accounts_count,
@@ -297,12 +308,12 @@ def sync_google_ads_now(
         "succeeded_accounts_count": succeeded_accounts_count,
         "failed_accounts_count": failed_accounts_count,
         "inserted_rows_total": inserted_rows_total,
-        "date_range": {"start": start.isoformat(), "end": today.isoformat()},
+        "date_range": {"start": resolved_start.isoformat(), "end": resolved_end.isoformat()},
         "sample_customer_ids": sample_customer_ids,
         "errors_summary": errors_summary,
         "attempts": attempts,
         "client_id": requested_client_id,
-        "days": int(days),
+        "days": int((resolved_end - resolved_start).days + 1),
     }
 
     audit_log_service.log(
@@ -317,7 +328,9 @@ def sync_google_ads_now(
             "failed_accounts_count": failed_accounts_count,
             "inserted_rows_total": inserted_rows_total,
             "client_id": requested_client_id,
-            "days": int(days),
+            "days": int((resolved_end - resolved_start).days + 1),
+            "start_date": resolved_start.isoformat(),
+            "end_date": resolved_end.isoformat(),
         },
     )
 
