@@ -16,6 +16,8 @@ class PerformanceReportsStore:
     def __init__(self) -> None:
         self._lock = Lock()
         self._memory_rows: list[dict[str, object]] = []
+        self._schema_lock = Lock()
+        self._schema_initialized = False
 
     def _is_test_mode(self) -> bool:
         return load_settings().app_env == "test" and os.environ.get("PYTEST_CURRENT_TEST") is not None
@@ -26,48 +28,73 @@ class PerformanceReportsStore:
             raise RuntimeError("psycopg is required for ad performance persistence")
         return psycopg.connect(settings.database_url)
 
-    def _ensure_schema(self) -> None:
-        if self._is_test_mode():
-            return
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS ad_performance_reports (
-                        id BIGSERIAL PRIMARY KEY,
-                        report_date DATE NOT NULL,
-                        platform TEXT NOT NULL,
-                        customer_id TEXT NOT NULL,
-                        client_id INTEGER NULL,
-                        spend NUMERIC(14,2) NOT NULL DEFAULT 0,
-                        impressions BIGINT NOT NULL DEFAULT 0,
-                        clicks BIGINT NOT NULL DEFAULT 0,
-                        conversions NUMERIC(14,4) NOT NULL DEFAULT 0,
-                        conversion_value NUMERIC(14,2) NOT NULL DEFAULT 0,
-                        synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        UNIQUE (report_date, platform, customer_id, client_id)
+    def _deduplicate_reports_query(self) -> str:
+        return """
+                    WITH ranked AS (
+                        SELECT
+                            id,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY report_date, platform, customer_id, client_id
+                                ORDER BY synced_at DESC, id DESC
+                            ) AS rn
+                        FROM ad_performance_reports
                     )
+                    DELETE FROM ad_performance_reports apr
+                    USING ranked
+                    WHERE apr.id = ranked.id
+                      AND ranked.rn > 1
                     """
-                )
-                cur.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_ad_performance_reports_date_platform
-                    ON ad_performance_reports (report_date DESC, platform)
-                    """
-                )
-                cur.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_ad_performance_reports_customer
-                    ON ad_performance_reports (platform, customer_id, report_date DESC)
-                    """
-                )
-                cur.execute(
-                    """
-                    CREATE UNIQUE INDEX IF NOT EXISTS idx_ad_performance_reports_unique_daily_customer
-                    ON ad_performance_reports (report_date, platform, customer_id, client_id)
-                    """
-                )
-            conn.commit()
+
+    def _ensure_schema(self) -> None:
+        if self._is_test_mode() or self._schema_initialized:
+            return
+
+        with self._schema_lock:
+            if self._schema_initialized:
+                return
+
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS ad_performance_reports (
+                            id BIGSERIAL PRIMARY KEY,
+                            report_date DATE NOT NULL,
+                            platform TEXT NOT NULL,
+                            customer_id TEXT NOT NULL,
+                            client_id INTEGER NULL,
+                            spend NUMERIC(14,2) NOT NULL DEFAULT 0,
+                            impressions BIGINT NOT NULL DEFAULT 0,
+                            clicks BIGINT NOT NULL DEFAULT 0,
+                            conversions NUMERIC(14,4) NOT NULL DEFAULT 0,
+                            conversion_value NUMERIC(14,2) NOT NULL DEFAULT 0,
+                            synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            UNIQUE (report_date, platform, customer_id, client_id)
+                        )
+                        """
+                    )
+                    cur.execute(
+                        """
+                        CREATE INDEX IF NOT EXISTS idx_ad_performance_reports_date_platform
+                        ON ad_performance_reports (report_date DESC, platform)
+                        """
+                    )
+                    cur.execute(
+                        """
+                        CREATE INDEX IF NOT EXISTS idx_ad_performance_reports_customer
+                        ON ad_performance_reports (platform, customer_id, report_date DESC)
+                        """
+                    )
+                    cur.execute(self._deduplicate_reports_query())
+                    cur.execute(
+                        """
+                        CREATE UNIQUE INDEX IF NOT EXISTS idx_ad_performance_reports_unique_daily_customer
+                        ON ad_performance_reports (report_date, platform, customer_id, client_id)
+                        """
+                    )
+                conn.commit()
+
+            self._schema_initialized = True
 
     def initialize_schema(self) -> None:
         self._ensure_schema()

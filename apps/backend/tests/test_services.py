@@ -27,6 +27,7 @@ from app.services.rbac import AuthorizationError, require_action, require_permis
 from app.services.rules_engine import rules_engine_service
 from app.services.audit import audit_log_service
 from app.services.client_registry import client_registry_service
+from app.services.performance_reports import performance_reports_store
 
 
 class ServiceTests(unittest.TestCase):
@@ -617,6 +618,13 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(metrics["impressions"], 4363)
         self.assertEqual(metrics["clicks"], 376)
 
+
+    def test_performance_reports_dedup_query_targets_daily_duplicate_keys(self):
+        query = performance_reports_store._deduplicate_reports_query()
+
+        self.assertIn("PARTITION BY report_date, platform, customer_id, client_id", query)
+        self.assertIn("DELETE FROM ad_performance_reports", query)
+        self.assertIn("ranked.rn > 1", query)
 
     def test_client_dashboard_query_filters_by_date_range(self):
         query = unified_dashboard_service._client_reports_query()
