@@ -143,8 +143,9 @@ export default function SubDashboardPage() {
     setLoading(true);
     setError("");
     try {
+      const rangeNonce = `${toIso(appliedFrom)}_${toIso(appliedTo)}_${Date.now()}`;
       const result = await apiRequest<DashboardResponse>(
-        `/dashboard/${clientId}?start_date=${toIso(appliedFrom)}&end_date=${toIso(appliedTo)}`
+        `/dashboard/${clientId}?start_date=${toIso(appliedFrom)}&end_date=${toIso(appliedTo)}&_=${encodeURIComponent(rangeNonce)}`
       );
       setData(result);
     } catch (err) {
