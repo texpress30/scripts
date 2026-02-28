@@ -27,6 +27,7 @@ from app.services.rbac import AuthorizationError, require_action, require_permis
 from app.services.rules_engine import rules_engine_service
 from app.services.audit import audit_log_service
 from app.services.client_registry import client_registry_service
+from app.services.performance_reports import performance_reports_store
 
 
 class ServiceTests(unittest.TestCase):
@@ -198,29 +199,6 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(snapshot["conversions"], 0)
         self.assertEqual(snapshot["revenue"], 0.0)
         self.assertEqual(sorted(persisted_report_dates), ["2026-02-27", "2026-02-28"])
-
-
-    def test_google_ads_sync_aggregates_all_mapped_accounts_for_client(self):
-        original_ids = google_ads_service.get_recommended_customer_ids_for_client
-        original_persist = google_ads_service._persist_performance_report
-        persisted: list[str] = []
-        try:
-            google_ads_service.get_recommended_customer_ids_for_client = lambda client_id: ["1111111111", "2222222222"]
-
-            def fake_persist(*, snapshot, client_id):
-                persisted.append(str(snapshot.get("google_customer_id") or ""))
-                return 1
-
-            google_ads_service._persist_performance_report = fake_persist
-            snapshot = google_ads_service.sync_client(client_id=2)
-        finally:
-            google_ads_service.get_recommended_customer_ids_for_client = original_ids
-            google_ads_service._persist_performance_report = original_persist
-
-        self.assertEqual(snapshot["synced_customers_count"], 2)
-        self.assertEqual(snapshot["spend"], round((100 + 2 * 17) * 2, 2))
-        self.assertEqual(snapshot["google_customer_id"], "1111111111")
-        self.assertEqual(sorted(persisted), ["1111111111", "2222222222"])
 
 
     def test_google_ads_sync_aggregates_all_mapped_accounts_for_client(self):
@@ -640,6 +618,13 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(metrics["impressions"], 4363)
         self.assertEqual(metrics["clicks"], 376)
 
+
+    def test_performance_reports_dedup_query_targets_daily_duplicate_keys(self):
+        query = performance_reports_store._deduplicate_reports_query()
+
+        self.assertIn("PARTITION BY report_date, platform, customer_id, client_id", query)
+        self.assertIn("DELETE FROM ad_performance_reports", query)
+        self.assertIn("ranked.rn > 1", query)
 
     def test_client_dashboard_query_filters_by_date_range(self):
         query = unified_dashboard_service._client_reports_query()
