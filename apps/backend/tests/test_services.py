@@ -1,4 +1,5 @@
 import os
+from datetime import date
 import unittest
 from decimal import Decimal
 
@@ -119,6 +120,28 @@ class ServiceTests(unittest.TestCase):
         google_platform = next(item for item in updated["platforms"] if item["platform"] == "google_ads")
         self.assertEqual(google_platform["accounts"][0]["currency"], "RON")
 
+
+    def test_client_registry_preferred_currency_uses_account_mapping_currency(self):
+        created = client_registry_service.create_client(name="Currency Pref Client", owner_email="owner@example.com")
+        client_registry_service.upsert_platform_accounts(
+            platform="google_ads",
+            accounts=[{"id": "7777777777", "name": "Google Currency Ref"}],
+        )
+        client_registry_service.attach_platform_account_to_client(
+            platform="google_ads",
+            client_id=int(created["id"]),
+            account_id="7777777777",
+        )
+        client_registry_service.update_client_profile_by_display_id(
+            display_id=int(created["display_id"]),
+            platform="google_ads",
+            account_id="7777777777",
+            currency="eur",
+        )
+
+        preferred_currency = client_registry_service.get_preferred_currency_for_client(client_id=int(created["id"]))
+        self.assertEqual(preferred_currency, "EUR")
+
     # Sprint 2 coverage (Google)
     def test_google_ads_status_pending_when_placeholder(self):
         os.environ["GOOGLE_ADS_TOKEN"] = "your_google_ads_token"
@@ -167,6 +190,29 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(snapshot["clicks"], 530)
         self.assertEqual(snapshot["conversions"], 44)
         self.assertEqual(snapshot["revenue"], 901.1)
+
+
+    def test_google_ads_sync_aggregates_all_mapped_accounts_for_client(self):
+        original_ids = google_ads_service.get_recommended_customer_ids_for_client
+        original_persist = google_ads_service._persist_performance_report
+        persisted: list[str] = []
+        try:
+            google_ads_service.get_recommended_customer_ids_for_client = lambda client_id: ["1111111111", "2222222222"]
+
+            def fake_persist(*, snapshot, client_id):
+                persisted.append(str(snapshot.get("google_customer_id") or ""))
+                return 1
+
+            google_ads_service._persist_performance_report = fake_persist
+            snapshot = google_ads_service.sync_client(client_id=2)
+        finally:
+            google_ads_service.get_recommended_customer_ids_for_client = original_ids
+            google_ads_service._persist_performance_report = original_persist
+
+        self.assertEqual(snapshot["synced_customers_count"], 2)
+        self.assertEqual(snapshot["spend"], round((100 + 2 * 17) * 2, 2))
+        self.assertEqual(snapshot["google_customer_id"], "1111111111")
+        self.assertEqual(sorted(persisted), ["1111111111", "2222222222"])
 
     def test_google_ads_list_accessible_customers_uses_manager_search_stream(self):
         os.environ["GOOGLE_ADS_MODE"] = "production"
@@ -562,6 +608,34 @@ class ServiceTests(unittest.TestCase):
 
         self.assertEqual(metrics["impressions"], 4363)
         self.assertEqual(metrics["clicks"], 376)
+
+
+    def test_agency_dashboard_rows_are_converted_to_ron_by_day_currency(self):
+        original_rate = unified_dashboard_service._get_fx_rate_to_ron
+        try:
+            unified_dashboard_service._get_fx_rate_to_ron = lambda **kwargs: {"USD": 5.0, "EUR": 4.0, "RON": 1.0}.get(kwargs.get("currency_code"), 1.0)
+            totals, spend_by_client_ron, spend_by_client_native, client_currency, row_count = unified_dashboard_service._aggregate_agency_rows(
+                [
+                    (date(2026, 2, 1), 10, "USD", 100.0, 1000, 100, 10, 50.0),
+                    (date(2026, 2, 1), 10, "RON", 200.0, 2000, 200, 20, 100.0),
+                    (date(2026, 2, 1), 11, "EUR", 50.0, 500, 50, 5, 25.0),
+                ]
+            )
+        finally:
+            unified_dashboard_service._get_fx_rate_to_ron = original_rate
+
+        self.assertEqual(row_count, 3)
+        self.assertEqual(round(float(totals["spend"]), 2), 900.0)
+        self.assertEqual(round(float(totals["revenue"]), 2), 450.0)
+        self.assertEqual(int(totals["impressions"]), 3500)
+        self.assertEqual(int(totals["clicks"]), 350)
+        self.assertEqual(int(totals["conversions"]), 35)
+        self.assertEqual(round(spend_by_client_ron[10], 2), 700.0)
+        self.assertEqual(round(spend_by_client_ron[11], 2), 200.0)
+        self.assertEqual(round(spend_by_client_native[10], 2), 300.0)
+        self.assertEqual(round(spend_by_client_native[11], 2), 50.0)
+        self.assertEqual(client_currency[10], "USD")
+        self.assertEqual(client_currency[11], "EUR")
 
     # Sprint 3 coverage (Meta + unified dashboard)
     def test_meta_ads_status_pending_when_placeholder(self):
