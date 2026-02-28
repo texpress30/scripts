@@ -854,6 +854,32 @@ class GoogleAdsService:
             return self._normalize_customer_id(configured[client_id - 1])
         return None
 
+    def get_recommended_customer_ids_for_client(self, client_id: int) -> list[str]:
+        if client_id <= 0:
+            return []
+
+        mapped_accounts = [
+            self._normalize_customer_id(str(item.get("customer_id") or ""))
+            for item in client_registry_service.list_google_mapped_accounts()
+            if int(item.get("client_id") or 0) == client_id
+        ]
+
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for item in mapped_accounts:
+            if not self._is_valid_customer_id(item):
+                continue
+            if item in seen:
+                continue
+            seen.add(item)
+            deduped.append(item)
+
+        if deduped:
+            return deduped
+
+        fallback = self.get_recommended_customer_id_for_client(client_id)
+        return [fallback] if fallback else []
+
     def _fetch_gaql_daily_rows(
         self,
         *,
@@ -1036,54 +1062,75 @@ class GoogleAdsService:
             return 0
 
     def sync_client(self, client_id: int) -> dict[str, float | int | str]:
-        if self._is_production_mode():
-            customer_id = self.get_recommended_customer_id_for_client(client_id)
-            if not customer_id:
-                raise GoogleAdsIntegrationError(
-                    "No Google customer mapping for this client. Set GOOGLE_ADS_CUSTOMER_IDS_CSV ordered by local client ids or import accounts first."
-                )
-            if not self._is_valid_customer_id(customer_id):
-                raise GoogleAdsIntegrationError(f"Invalid customer id mapping '{customer_id}'. Expected 10 digits.")
-            real_metrics = self._fetch_production_metrics(customer_id=customer_id)
-            snapshot = {
-                "client_id": client_id,
-                "platform": "google_ads",
-                "spend": round(float(real_metrics["spend"]), 2),
-                "impressions": int(real_metrics["impressions"]),
-                "clicks": int(real_metrics["clicks"]),
-                "conversions": int(real_metrics["conversions"]),
-                "revenue": round(float(real_metrics["revenue"]), 2),
-                "google_customer_id": str(real_metrics["google_customer_id"]),
-                "synced_at": datetime.now(timezone.utc).isoformat(),
-            }
-            google_snapshot_store.upsert_snapshot(payload=snapshot)
-            self._persist_performance_report(snapshot=snapshot, client_id=client_id)
-            return snapshot
+        customer_ids = self.get_recommended_customer_ids_for_client(client_id)
+        if not customer_ids:
+            raise GoogleAdsIntegrationError(
+                "No Google customer mapping for this client. Set GOOGLE_ADS_CUSTOMER_IDS_CSV ordered by local client ids or import accounts first."
+            )
 
-        settings = load_settings()
-        token = settings.google_ads_token.strip()
-        if not token or token.startswith("your_"):
-            raise GoogleAdsIntegrationError("Google Ads token is missing or placeholder.")
+        invalid_ids = [item for item in customer_ids if not self._is_valid_customer_id(item)]
+        if invalid_ids:
+            raise GoogleAdsIntegrationError(f"Invalid customer id mapping '{invalid_ids[0]}'. Expected 10 digits.")
 
-        spend = float(100 + client_id * 17)
-        impressions = 5000 + client_id * 110
-        clicks = 200 + client_id * 9
-        conversions = 5 + client_id
-        revenue = round(spend * 3.2, 2)
+        synced_at = datetime.now(timezone.utc).isoformat()
+        aggregated_spend = 0.0
+        aggregated_impressions = 0
+        aggregated_clicks = 0
+        aggregated_conversions = 0
+        aggregated_revenue = 0.0
 
-        snapshot = {
+        for customer_id in customer_ids:
+            if self._is_production_mode():
+                real_metrics = self._fetch_production_metrics(customer_id=customer_id)
+                customer_snapshot: dict[str, float | int | str] = {
+                    "client_id": client_id,
+                    "platform": "google_ads",
+                    "spend": round(float(real_metrics["spend"]), 2),
+                    "impressions": int(real_metrics["impressions"]),
+                    "clicks": int(real_metrics["clicks"]),
+                    "conversions": int(real_metrics["conversions"]),
+                    "revenue": round(float(real_metrics["revenue"]), 2),
+                    "google_customer_id": str(real_metrics["google_customer_id"]),
+                    "synced_at": synced_at,
+                }
+            else:
+                spend = float(100 + client_id * 17)
+                impressions = 5000 + client_id * 110
+                clicks = 200 + client_id * 9
+                conversions = 5 + client_id
+                revenue = round(spend * 3.2, 2)
+                customer_snapshot = {
+                    "client_id": client_id,
+                    "platform": "google_ads",
+                    "spend": round(spend, 2),
+                    "impressions": impressions,
+                    "clicks": clicks,
+                    "conversions": conversions,
+                    "revenue": revenue,
+                    "google_customer_id": customer_id,
+                    "synced_at": synced_at,
+                }
+
+            aggregated_spend += float(customer_snapshot["spend"])
+            aggregated_impressions += int(customer_snapshot["impressions"])
+            aggregated_clicks += int(customer_snapshot["clicks"])
+            aggregated_conversions += int(customer_snapshot["conversions"])
+            aggregated_revenue += float(customer_snapshot["revenue"])
+            self._persist_performance_report(snapshot=customer_snapshot, client_id=client_id)
+
+        snapshot: dict[str, float | int | str] = {
             "client_id": client_id,
             "platform": "google_ads",
-            "spend": round(spend, 2),
-            "impressions": impressions,
-            "clicks": clicks,
-            "conversions": conversions,
-            "revenue": revenue,
-            "synced_at": datetime.now(timezone.utc).isoformat(),
+            "spend": round(aggregated_spend, 2),
+            "impressions": aggregated_impressions,
+            "clicks": aggregated_clicks,
+            "conversions": aggregated_conversions,
+            "revenue": round(aggregated_revenue, 2),
+            "google_customer_id": customer_ids[0],
+            "synced_customers_count": len(customer_ids),
+            "synced_at": synced_at,
         }
-
         google_snapshot_store.upsert_snapshot(payload=snapshot)
-        self._persist_performance_report(snapshot=snapshot, client_id=client_id)
         return snapshot
 
     def sync_customer_for_client(self, *, client_id: int, customer_id: str, days: int = 30) -> dict[str, float | int | str]:
