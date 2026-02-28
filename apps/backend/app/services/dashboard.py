@@ -156,17 +156,13 @@ class UnifiedDashboardService:
         }
         return normalized
 
-    def get_client_dashboard(self, client_id: int) -> dict[str, object]:
-        if not self._is_test_mode():
-            performance_reports_store.initialize_schema()
-            with self._connect() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
+    def _client_reports_query(self) -> str:
+        return """
                         WITH perf AS (
                             SELECT
                                 apr.platform,
                                 COALESCE(apr.client_id, mapped.client_id) AS resolved_client_id,
+                                apr.report_date,
                                 apr.spend,
                                 apr.impressions,
                                 apr.clicks,
@@ -189,9 +185,21 @@ class UnifiedDashboardService:
                                COALESCE(SUM(conversion_value), 0)
                         FROM perf
                         WHERE resolved_client_id = %s
+                          AND report_date BETWEEN %s AND %s
                         GROUP BY platform
-                        """,
-                        (client_id,),
+                        """
+
+    def get_client_dashboard(self, client_id: int, *, start_date: date | None = None, end_date: date | None = None) -> dict[str, object]:
+        resolved_end = end_date or date.today()
+        resolved_start = start_date or (resolved_end - timedelta(days=29))
+
+        if not self._is_test_mode():
+            performance_reports_store.initialize_schema()
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        self._client_reports_query(),
+                        (client_id, resolved_start, resolved_end),
                     )
                     rows = cur.fetchall()
 
@@ -365,7 +373,41 @@ class UnifiedDashboardService:
 
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(self._agency_reports_query(), (start_date, end_date))
+                cur.execute(
+                    """
+                    WITH perf AS (
+                        SELECT
+                            apr.report_date,
+                            COALESCE(apr.client_id, mapped.client_id) AS resolved_client_id,
+                            COALESCE(NULLIF(TRIM(mapped.account_currency), ''), 'RON') AS account_currency,
+                            apr.spend,
+                            apr.impressions,
+                            apr.clicks,
+                            apr.conversions,
+                            apr.conversion_value
+                        FROM ad_performance_reports apr
+                        LEFT JOIN LATERAL (
+                            SELECT m.client_id, m.account_currency
+                            FROM agency_account_client_mappings m
+                            WHERE m.platform = apr.platform AND m.account_id = apr.customer_id
+                            ORDER BY m.updated_at DESC, m.created_at DESC
+                            LIMIT 1
+                        ) mapped ON TRUE
+                        WHERE apr.report_date BETWEEN %s AND %s
+                    )
+                    SELECT
+                        report_date,
+                        resolved_client_id,
+                        account_currency,
+                        COALESCE(spend, 0),
+                        COALESCE(impressions, 0),
+                        COALESCE(clicks, 0),
+                        COALESCE(conversions, 0),
+                        COALESCE(conversion_value, 0)
+                    FROM perf
+                    """,
+                    (start_date, end_date),
+                )
                 rows = cur.fetchall()
 
         totals, spend_by_client_ron, spend_by_client_native, client_currency, row_count = self._aggregate_agency_rows(rows)

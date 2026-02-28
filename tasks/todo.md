@@ -157,29 +157,14 @@
 
 ---
 
-# TODO — Fix Total Spend RON în Agency View pentru toate conturile (multi-currency)
+# TODO — Calendar funcțional în Sub-account Dashboard (7/14/30/custom)
 
-- [x] Reproduc și identific exact de ce sumele USD/EUR rămân neconvertite în totalul agency.
-- [x] Aplic fix minim în agregarea agency astfel încât moneda pe rând să fie rezolvată corect pentru fiecare cont mapat (inclusiv diferențe de format account_id/customer_id).
-- [x] Adaug test de regresie pentru cazul mapping existent dar ID cu format diferit (ex: `123-456-7890` vs `1234567890`) ca să valideze conversia în RON.
-- [x] Rulez verificări backend țintite și confirm numeric totalul convertit.
-- [x] Completez Review cu root-cause + rezultat.
+- [x] Extind backend API `/dashboard/{client_id}` să accepte `start_date`/`end_date` și să filtreze agregările pe interval.
+- [x] Adaug calendar/presets în UI Sub-account Dashboard (7 zile, 14 zile, 30 zile, custom) și conectez fetch-ul la intervalul selectat.
+- [x] Rulez verificări backend/frontend și validez că schimbarea intervalului retrimite datele corecte.
+- [x] Capturez screenshot pentru modificarea UI și documentez review.
 
-## Review — Fix Total Spend RON în Agency View pentru toate conturile (multi-currency)
-- Root-cause: agregarea agency deriva moneda doar din `agency_account_client_mappings.account_currency` pe join strict `m.account_id = apr.customer_id`. Pentru Google Ads, unele mapping-uri pot exista cu account id formatat cu separatori (`123-456-7890`), iar rapoartele se salvează normalizat (`1234567890`), deci join-ul rata mapping-ul și fallback-ul devenea `RON` (fără conversie).
-- Fix: query-ul de agency folosește acum matching tolerant pentru Google (`regexp_replace(..., '[^0-9]', '', 'g')`) + fallback de monedă la `agency_clients.currency` când mapping-ul nu are `account_currency`.
-- Rezultat: rândurile USD/EUR sunt convertite la RON în totalul agency chiar când formatul ID diferă între mapping și raport, iar Total Spend RON reflectă suma unificată corectă.
-
----
-
-# TODO — Vercel author email mismatch (redeploy trigger)
-
-- [x] Confirm dacă ultimul commit are autor nealiniat cu userul GitHub conectat la Vercel.
-- [x] Configurez autorul Git local pe emailul GitHub al owner-ului și fac un commit nou pe `main` pentru retrigger deploy.
-- [x] Fac push pe `origin/main` și verific SHA/author.
-- [x] Documentez verificările de integrare Vercel-GitHub dacă eroarea persistă.
-
-## Review — Vercel author email mismatch (redeploy trigger)
-- Diagnostic: ultimul commit pe `main` era semnat `Codex <codex@openai.com>`, diferit de emailul principal din istoric (`32311373+texpress30@users.noreply.github.com`), ceea ce poate bloca integrarea Vercel când proiectul impune autor recunoscut.
-- Acțiune: am setat `git config user.name/user.email` la identitatea GitHub a owner-ului și am publicat un commit nou pe `main` cu acest autor pentru a retrigger-ui buildul.
-- Dacă persistă: în Vercel verificați Project Settings → Git (repository linked corect), Team Members/Permissions, și că userul GitHub al autorului are acces la proiectul Vercel.
+## Review — Calendar funcțional în Sub-account Dashboard (7/14/30/custom)
+- Am extins endpoint-ul backend sub-account dashboard cu `start_date`/`end_date` și validare (`start_date <= end_date`), iar agregarea din `ad_performance_reports` se face strict pe intervalul selectat.
+- În frontend sub-account dashboard am adăugat date picker identic ca experiență cu Agency View, incluzând preset-uri rapide (`Last 7 days`, `Last 14 days`, `Last 30 days`) și `Custom` cu calendar range.
+- La aplicarea intervalului, UI re-face request-ul la `/dashboard/{client_id}?start_date=...&end_date=...`, astfel cardurile/tabelul/platform breakdown reflectă exact perioada aleasă.
