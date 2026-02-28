@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.dependencies import enforce_action_scope, get_current_user
 from app.services.audit import audit_log_service
@@ -219,10 +219,16 @@ def google_ads_db_debug(user: AuthUser = Depends(get_current_user)) -> dict[str,
     return payload
 
 @router.post("/sync-now")
-def sync_google_ads_now(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+def sync_google_ads_now(
+    user: AuthUser = Depends(get_current_user),
+    client_id: int | None = Query(default=None),
+    days: int = Query(default=30, ge=1, le=90),
+) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
 
     mapped_accounts = client_registry_service.list_google_mapped_accounts()
+    if client_id is not None:
+        mapped_accounts = [item for item in mapped_accounts if int(item.get("client_id") or 0) == int(client_id)]
     mapped_accounts_count = len(mapped_accounts)
 
     if mapped_accounts_count == 0:
@@ -240,7 +246,7 @@ def sync_google_ads_now(user: AuthUser = Depends(get_current_user)) -> dict[str,
         raw_customer_id = str(item.get("customer_id") or "").strip()
         masked_customer_id = f"***{raw_customer_id[-4:]}" if len(raw_customer_id) >= 4 else "****"
         try:
-            snapshot = google_ads_service.sync_customer_for_client(client_id=client_id, customer_id=raw_customer_id)
+            snapshot = google_ads_service.sync_customer_for_client(client_id=client_id, customer_id=raw_customer_id, days=days)
             inserted_rows = int(snapshot.get("inserted_rows", 0) or 0)
             inserted_rows_total += inserted_rows
             attempts.append(
@@ -249,6 +255,7 @@ def sync_google_ads_now(user: AuthUser = Depends(get_current_user)) -> dict[str,
                     "customer_id_masked": masked_customer_id,
                     "status": "ok",
                     "inserted_rows": inserted_rows,
+                    "rows_in_db_last_30_days_for_customer": int(snapshot.get("rows_in_db_last_30_days_for_customer", 0) or 0),
                 }
             )
         except Exception as exc:  # noqa: BLE001
@@ -275,7 +282,8 @@ def sync_google_ads_now(user: AuthUser = Depends(get_current_user)) -> dict[str,
     attempted_accounts_count = len(attempts)
     sample_customer_ids = [item["customer_id_masked"] for item in attempts[:10]]
 
-    today_iso = datetime.utcnow().date().isoformat()
+    today = datetime.utcnow().date()
+    start = today - timedelta(days=int(days) - 1)
     payload = {
         "status": "ok" if failed_accounts_count == 0 else "partial",
         "mapped_accounts_count": mapped_accounts_count,
@@ -283,10 +291,12 @@ def sync_google_ads_now(user: AuthUser = Depends(get_current_user)) -> dict[str,
         "succeeded_accounts_count": succeeded_accounts_count,
         "failed_accounts_count": failed_accounts_count,
         "inserted_rows_total": inserted_rows_total,
-        "date_range": {"start": today_iso, "end": today_iso},
+        "date_range": {"start": start.isoformat(), "end": today.isoformat()},
         "sample_customer_ids": sample_customer_ids,
         "errors_summary": errors_summary,
         "attempts": attempts,
+        "client_id": client_id,
+        "days": int(days),
     }
 
     audit_log_service.log(
@@ -300,6 +310,8 @@ def sync_google_ads_now(user: AuthUser = Depends(get_current_user)) -> dict[str,
             "succeeded_accounts_count": succeeded_accounts_count,
             "failed_accounts_count": failed_accounts_count,
             "inserted_rows_total": inserted_rows_total,
+            "client_id": client_id,
+            "days": int(days),
         },
     )
 

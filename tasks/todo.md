@@ -152,3 +152,18 @@
 - `GET /integrations/google-ads/accounts` întoarce acum shape-ul cerut: `customer_id` normalizat, `name`, `is_manager`, `currency_code` (opțional), fără secrete.
 - Am adăugat endpoint-uri noi: `POST /agency/clients/{client_id}/integrations/google-ads/map` (validare format + accesibilitate + blocare MCC) și `GET /agency/clients/{client_id}/integrations/google-ads` (mapped/customer_id/updated_at).
 - `status` include acum `mapped_accounts_count` + `sample_customer_ids` mascate, iar `sync-now` citește mapping-urile reale din DB (`list_google_mapped_accounts`), astfel încât dacă există mapping-uri, `attempted_accounts_count` devine >0.
+
+---
+
+# TODO — E2E smoke sync-now per client + rows DB > 0
+
+- [x] Adaug query params `client_id` și `days` la `POST /integrations/google-ads/sync-now`.
+- [x] Rulez/persist metrici zilnice GAQL (`segments.date`, `impressions`, `clicks`, `cost_micros`) pentru clientul țintă.
+- [x] Păstrez `login-customer-id` pentru acces MCC și adaug count DB post-insert per customer (ultimele 30 zile).
+- [x] Rulez verificări și documentez rezultatul.
+
+## Review
+- `sync-now` acceptă acum `client_id` + `days` (1..90); când `client_id` este trimis, endpoint-ul sincronizează doar mapping-ul acelui client.
+- În producție, sync-ul rulează GAQL minim pe `LAST_30_DAYS` cu `segments.date`, `metrics.impressions`, `metrics.clicks`, `metrics.cost_micros`, agregă pe zi și persistă câte un rând/zi în `ad_performance_reports`.
+- Request-urile Google Ads păstrează `login-customer-id` setat la manager MCC (din `_required_manager_customer_id`), inclus în headers la `searchStream`.
+- După inserare, răspunsul include `rows_in_db_last_30_days_for_customer` calculat prin `SELECT COUNT(*)` pentru `platform=google_ads` + customer_id în ultimele 30 zile, astfel încât smoke-ul poate dovedi `inserted_rows_total > 0` și DB rows > 0.
