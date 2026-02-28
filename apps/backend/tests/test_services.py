@@ -1,5 +1,6 @@
 import os
 import unittest
+from decimal import Decimal
 
 from app.services.auth import AuthError, create_access_token, decode_access_token, validate_login_credentials
 from app.services.ai_assistant import ai_assistant_service
@@ -507,6 +508,35 @@ class ServiceTests(unittest.TestCase):
 
         self.assertEqual(snapshot["status"], "success")
         self.assertEqual(snapshot["attempts"], 3)
+
+
+    def test_dashboard_numeric_coercion_supports_decimal(self):
+        self.assertEqual(unified_dashboard_service._normalize_platform_metrics(
+            "google_ads",
+            {
+                "spend": Decimal("988.45"),
+                "impressions": Decimal("4363"),
+                "clicks": Decimal("376"),
+                "conversions": Decimal("0"),
+                "revenue": Decimal("0"),
+            },
+            client_id=95,
+        )["spend"], 988.45)
+
+        metrics = unified_dashboard_service._normalize_platform_metrics(
+            "google_ads",
+            {
+                "spend": Decimal("988.45"),
+                "impressions": Decimal("4363"),
+                "clicks": Decimal("376"),
+                "conversions": Decimal("0"),
+                "revenue": Decimal("0"),
+            },
+            client_id=95,
+        )
+
+        self.assertEqual(metrics["impressions"], 4363)
+        self.assertEqual(metrics["clicks"], 376)
 
     # Sprint 3 coverage (Meta + unified dashboard)
     def test_meta_ads_status_pending_when_placeholder(self):
