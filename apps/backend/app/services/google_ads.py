@@ -1081,18 +1081,23 @@ class GoogleAdsService:
 
         for customer_id in customer_ids:
             if self._is_production_mode():
-                real_metrics = self._fetch_production_metrics(customer_id=customer_id)
-                customer_snapshot: dict[str, float | int | str] = {
+                daily_payload = self._fetch_production_daily_metrics(customer_id=customer_id, days=30)
+                daily_rows = list(daily_payload.get("rows", []))
+                customer_snapshot = {
                     "client_id": client_id,
                     "platform": "google_ads",
-                    "spend": round(float(real_metrics["spend"]), 2),
-                    "impressions": int(real_metrics["impressions"]),
-                    "clicks": int(real_metrics["clicks"]),
-                    "conversions": int(real_metrics["conversions"]),
-                    "revenue": round(float(real_metrics["revenue"]), 2),
-                    "google_customer_id": str(real_metrics["google_customer_id"]),
+                    "spend": round(sum(float(item.get("spend", 0.0)) for item in daily_rows), 2),
+                    "impressions": sum(int(item.get("impressions", 0)) for item in daily_rows),
+                    "clicks": sum(int(item.get("clicks", 0)) for item in daily_rows),
+                    "conversions": 0,
+                    "revenue": 0.0,
+                    "google_customer_id": customer_id,
                     "synced_at": synced_at,
                 }
+                for row in daily_rows:
+                    payload_row = dict(row)
+                    payload_row["google_customer_id"] = customer_id
+                    self._persist_performance_report(snapshot=payload_row, client_id=client_id)
             else:
                 spend = float(100 + client_id * 17)
                 impressions = 5000 + client_id * 110
@@ -1110,13 +1115,13 @@ class GoogleAdsService:
                     "google_customer_id": customer_id,
                     "synced_at": synced_at,
                 }
+                self._persist_performance_report(snapshot=customer_snapshot, client_id=client_id)
 
             aggregated_spend += float(customer_snapshot["spend"])
             aggregated_impressions += int(customer_snapshot["impressions"])
             aggregated_clicks += int(customer_snapshot["clicks"])
             aggregated_conversions += int(customer_snapshot["conversions"])
             aggregated_revenue += float(customer_snapshot["revenue"])
-            self._persist_performance_report(snapshot=customer_snapshot, client_id=client_id)
 
         snapshot: dict[str, float | int | str] = {
             "client_id": client_id,

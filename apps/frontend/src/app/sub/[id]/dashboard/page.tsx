@@ -185,7 +185,14 @@ export default function SubDashboardPage() {
   function handlePresetClick(nextPreset: DatePresetKey) {
     setDraftPreset(nextPreset);
     if (nextPreset === "custom") return;
-    setDraftRange(rangeForPreset(nextPreset));
+
+    const nextRange = rangeForPreset(nextPreset);
+    setDraftRange(nextRange);
+    if (nextRange.from && nextRange.to) {
+      setAppliedPreset(nextPreset);
+      setAppliedRange(nextRange);
+      setOpenPicker(false);
+    }
   }
 
   function handleCancel() {

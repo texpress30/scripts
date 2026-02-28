@@ -160,7 +160,7 @@ class ServiceTests(unittest.TestCase):
 
 
 
-    def test_google_ads_sync_uses_production_metrics_when_mode_enabled(self):
+    def test_google_ads_sync_uses_production_daily_metrics_when_mode_enabled(self):
         os.environ["GOOGLE_ADS_MODE"] = "production"
         os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
         os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
@@ -170,26 +170,34 @@ class ServiceTests(unittest.TestCase):
         os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
         os.environ["GOOGLE_ADS_CUSTOMER_IDS_CSV"] = "1111111111,2222222222"
 
-        original = google_ads_service._fetch_production_metrics
+        original_fetch = google_ads_service._fetch_production_daily_metrics
+        original_persist = google_ads_service._persist_performance_report
+        persisted_report_dates: list[str] = []
         try:
-            google_ads_service._fetch_production_metrics = lambda customer_id: {
-                "spend": 300.5,
-                "impressions": 12000,
-                "clicks": 530,
-                "conversions": 44,
-                "revenue": 901.1,
-                "google_customer_id": customer_id,
+            google_ads_service._fetch_production_daily_metrics = lambda customer_id, days=30: {
+                "rows": [
+                    {"report_date": "2026-02-27", "spend": 100.0, "impressions": 1000, "clicks": 100, "conversions": 0, "revenue": 0.0},
+                    {"report_date": "2026-02-28", "spend": 200.5, "impressions": 11000, "clicks": 430, "conversions": 0, "revenue": 0.0},
+                ]
             }
+
+            def fake_persist(*, snapshot, client_id):
+                persisted_report_dates.append(str(snapshot.get("report_date") or ""))
+                return 1
+
+            google_ads_service._persist_performance_report = fake_persist
             snapshot = google_ads_service.sync_client(client_id=2)
         finally:
-            google_ads_service._fetch_production_metrics = original
+            google_ads_service._fetch_production_daily_metrics = original_fetch
+            google_ads_service._persist_performance_report = original_persist
 
         self.assertEqual(snapshot["google_customer_id"], "2222222222")
         self.assertEqual(snapshot["spend"], 300.5)
         self.assertEqual(snapshot["impressions"], 12000)
         self.assertEqual(snapshot["clicks"], 530)
-        self.assertEqual(snapshot["conversions"], 44)
-        self.assertEqual(snapshot["revenue"], 901.1)
+        self.assertEqual(snapshot["conversions"], 0)
+        self.assertEqual(snapshot["revenue"], 0.0)
+        self.assertEqual(sorted(persisted_report_dates), ["2026-02-27", "2026-02-28"])
 
 
     def test_google_ads_sync_aggregates_all_mapped_accounts_for_client(self):
