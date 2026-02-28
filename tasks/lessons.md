@@ -65,4 +65,3 @@
 - 2026-02-28: Dacă dashboard-ul are date-range picker dar valorile rămân constante, verifică întâi granularitatea datelor persistate (daily vs snapshot agregat 30d); filtrarea pe date nu poate funcționa corect peste snapshot-uri periodice.
 - 2026-02-28: Când introduci un unique index pe tabele deja populate, deduplicatează explicit datele istorice înainte de `CREATE UNIQUE INDEX`; altfel schema guard-ul poate produce 500 în request path.
 - 2026-02-28: Pentru dashboard-uri filtrate pe date în medii cu proxy/CDN, setează explicit `Cache-Control: no-store` pe endpoint-uri și folosește request key/nonce în frontend ca să elimini răspunsurile stale care maschează schimbarea intervalului.
-- 2026-02-28: Pentru cerințe de backfill istoric (de la o dată fixă), nu lăsa endpoint-ul doar pe `days`/LAST_30_DAYS; expune explicit `start_date`/`end_date` în API + GAQL `BETWEEN` ca să poți popula granular perioade lungi.
