@@ -62,3 +62,4 @@
 - 2026-02-28: Pentru sync pe client în platforme ads, nu folosi un singur account fallback (`LIMIT 1`) când modelul permite many-to-one; iterează toate mapping-urile clientului și persistă per account.
 - 2026-02-28: Pentru conversii FX critice în dashboard, nu folosi fallback `1.0` la outage provider; aplică fallback-uri de curs explicite pe monede comune și păstrează ranking-ul pe moneda normalizată (RON).
 - 2026-02-28: Pentru agregări dashboard bazate pe mapping account_id↔customer_id, normalizează identificatorii cross-source (ex. Google cu/ fără dash) direct în join-ul SQL; altfel moneda pe rând cade în fallback și totalurile RON devin incorecte.
+- 2026-02-28: Când deployment-ul Vercel semnalează author/email mismatch, publică un commit nou cu emailul GitHub asociat owner-ului repo (noreply inclus) și verifică explicit integrarea Vercel→Git permissions înainte de alte schimbări de cod.

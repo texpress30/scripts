@@ -169,3 +169,17 @@
 - Root-cause: agregarea agency deriva moneda doar din `agency_account_client_mappings.account_currency` pe join strict `m.account_id = apr.customer_id`. Pentru Google Ads, unele mapping-uri pot exista cu account id formatat cu separatori (`123-456-7890`), iar rapoartele se salvează normalizat (`1234567890`), deci join-ul rata mapping-ul și fallback-ul devenea `RON` (fără conversie).
 - Fix: query-ul de agency folosește acum matching tolerant pentru Google (`regexp_replace(..., '[^0-9]', '', 'g')`) + fallback de monedă la `agency_clients.currency` când mapping-ul nu are `account_currency`.
 - Rezultat: rândurile USD/EUR sunt convertite la RON în totalul agency chiar când formatul ID diferă între mapping și raport, iar Total Spend RON reflectă suma unificată corectă.
+
+---
+
+# TODO — Vercel author email mismatch (redeploy trigger)
+
+- [x] Confirm dacă ultimul commit are autor nealiniat cu userul GitHub conectat la Vercel.
+- [x] Configurez autorul Git local pe emailul GitHub al owner-ului și fac un commit nou pe `main` pentru retrigger deploy.
+- [x] Fac push pe `origin/main` și verific SHA/author.
+- [x] Documentez verificările de integrare Vercel-GitHub dacă eroarea persistă.
+
+## Review — Vercel author email mismatch (redeploy trigger)
+- Diagnostic: ultimul commit pe `main` era semnat `Codex <codex@openai.com>`, diferit de emailul principal din istoric (`32311373+texpress30@users.noreply.github.com`), ceea ce poate bloca integrarea Vercel când proiectul impune autor recunoscut.
+- Acțiune: am setat `git config user.name/user.email` la identitatea GitHub a owner-ului și am publicat un commit nou pe `main` cu acest autor pentru a retrigger-ui buildul.
+- Dacă persistă: în Vercel verificați Project Settings → Git (repository linked corect), Team Members/Permissions, și că userul GitHub al autorului are acces la proiectul Vercel.
