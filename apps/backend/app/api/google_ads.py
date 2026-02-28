@@ -219,7 +219,7 @@ def google_ads_db_debug(user: AuthUser = Depends(get_current_user)) -> dict[str,
     )
     return payload
 
-def _run_google_backfill_job(job_id: str, *, mapped_accounts: list[dict[str, object]], resolved_start: date, resolved_end: date, days: int, requested_client_id: int | None) -> None:
+def _run_google_backfill_job(job_id: str, *, mapped_accounts: list[dict[str, object]], resolved_start: date, resolved_end: date, days: int, chunk_days: int, requested_client_id: int | None) -> None:
     backfill_job_store.set_running(job_id)
     attempts: list[dict[str, object]] = []
     errors_summary: list[dict[str, str | int]] = []
@@ -236,6 +236,7 @@ def _run_google_backfill_job(job_id: str, *, mapped_accounts: list[dict[str, obj
                 days=days,
                 start_date=resolved_start,
                 end_date=resolved_end,
+                chunk_days=chunk_days,
             )
             inserted_rows = int(snapshot.get("inserted_rows", 0) or 0)
             inserted_rows_total += inserted_rows
@@ -285,7 +286,8 @@ def _run_google_backfill_job(job_id: str, *, mapped_accounts: list[dict[str, obj
         "errors_summary": errors_summary,
         "attempts": attempts,
         "client_id": requested_client_id,
-        "days": int((resolved_end - resolved_start).days + 1),
+        "days": int(days),
+        "chunk_days": int(chunk_days),
     }
     backfill_job_store.set_done(job_id, result=payload)
 
@@ -298,6 +300,7 @@ def sync_google_ads_now(
     end_date: date | None = Query(default=None),
     days: int = Query(default=30, ge=1, le=3660),
     async_mode: bool = Query(default=True),
+    chunk_days: int = Query(default=7, ge=1, le=31),
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
 
@@ -327,6 +330,7 @@ def sync_google_ads_now(
                 "client_id": requested_client_id,
                 "date_range": {"start": resolved_start.isoformat(), "end": resolved_end.isoformat()},
                 "mapped_accounts_count": len(mapped_accounts),
+                "chunk_days": int(chunk_days),
             }
         )
         background_tasks.add_task(
@@ -336,6 +340,7 @@ def sync_google_ads_now(
             resolved_start=resolved_start,
             resolved_end=resolved_end,
             days=max(1, (resolved_end - resolved_start).days + 1),
+            chunk_days=int(chunk_days),
             requested_client_id=requested_client_id,
         )
         return {
@@ -344,16 +349,18 @@ def sync_google_ads_now(
             "mapped_accounts_count": len(mapped_accounts),
             "date_range": {"start": resolved_start.isoformat(), "end": resolved_end.isoformat()},
             "client_id": requested_client_id,
+            "chunk_days": int(chunk_days),
         }
 
     # Synchronous fallback
-    job_id = backfill_job_store.create(payload={"platform": "google_ads"})
+    job_id = backfill_job_store.create(payload={"platform": "google_ads", "chunk_days": int(chunk_days)})
     _run_google_backfill_job(
         job_id,
         mapped_accounts=mapped_accounts,
         resolved_start=resolved_start,
         resolved_end=resolved_end,
         days=max(1, (resolved_end - resolved_start).days + 1),
+        chunk_days=int(chunk_days),
         requested_client_id=requested_client_id,
     )
     result = backfill_job_store.get(job_id) or {}
@@ -367,6 +374,7 @@ def sync_google_ads_now(
             "client_id": requested_client_id,
             "start_date": resolved_start.isoformat(),
             "end_date": resolved_end.isoformat(),
+            "chunk_days": int(chunk_days),
         },
     )
     return dict(result.get("result") or {"status": "error", "job_id": job_id})

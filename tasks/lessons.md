@@ -68,3 +68,4 @@
 - 2026-02-28: Pentru cerințe de backfill istoric (de la o dată fixă), nu lăsa endpoint-ul doar pe `days`/LAST_30_DAYS; expune explicit `start_date`/`end_date` în API + GAQL `BETWEEN` ca să poți popula granular perioade lungi.
 - 2026-02-28: Pentru refactor-uri multi-platform de sync, separă clar contractul de date (`DailyMetricRow`), chunk-runnerul și adapterul platformei; astfel extinzi Meta/TikTok fără a duplica logică de chunking/upsert/background.
 - 2026-02-28: Când mediul cere tool-ul `apply_patch`, folosește-l direct pentru patch-uri; nu îl rula prin `exec_command` pentru a evita avertismente și neconformități de workflow.
+- 2026-02-28: Pentru cerințe operaționale de tip backfill live, verifică de la început prezența env-urilor critice (`DATABASE_URL`, `APP_AUTH_SECRET`, `GOOGLE_ADS_*`) și raportează explicit blocajele de execuție înainte de promisiuni de rezultat numeric.

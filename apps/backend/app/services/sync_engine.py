@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
+import logging
 from threading import Lock
 from typing import Callable
 from uuid import uuid4
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -84,7 +88,15 @@ def enqueue_backfill(
     fetched_rows_total = 0
     upserted_rows_total = 0
 
-    for chunk_start, chunk_end in chunk_ranges:
+    for chunk_index, (chunk_start, chunk_end) in enumerate(chunk_ranges, start=1):
+        logger.info(
+            "Procesez chunk-ul %s/%s pentru contul %s (%s -> %s)",
+            chunk_index,
+            len(chunk_ranges),
+            account_id,
+            chunk_start.isoformat(),
+            chunk_end.isoformat(),
+        )
         try:
             raw_payload = fetch_chunk(account_id, chunk_start, chunk_end)
             normalized_rows = normalize_to_rows(raw_payload, account_id, client_id)

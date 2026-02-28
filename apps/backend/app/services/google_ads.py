@@ -1175,7 +1175,7 @@ class GoogleAdsService:
     def upsert_rows(self, rows: list[DailyMetricRow]) -> int:
         return performance_reports_store.upsert_rows(rows)
 
-    def sync_customer_for_client(self, *, client_id: int, customer_id: str, days: int = 30, start_date: date | None = None, end_date: date | None = None) -> dict[str, float | int | str]:
+    def sync_customer_for_client(self, *, client_id: int, customer_id: str, days: int = 30, start_date: date | None = None, end_date: date | None = None, chunk_days: int = 7) -> dict[str, float | int | str]:
         normalized_customer_id = self._normalize_customer_id(customer_id)
         if not self._is_valid_customer_id(normalized_customer_id):
             raise GoogleAdsIntegrationError(f"Invalid customer id mapping '{customer_id}'. Expected 10 digits.")
@@ -1200,7 +1200,7 @@ class GoogleAdsService:
                 client_id=client_id,
                 start=resolved_start,
                 end=resolved_end,
-                chunk_days=7,
+                chunk_days=max(1, min(int(chunk_days), 31)),
                 fetch_chunk=lambda account_id, chunk_start, chunk_end: self.fetch_chunk(account_id=account_id, chunk_start=chunk_start, chunk_end=chunk_end),
                 normalize_to_rows=lambda payload, account_id, cid: self.normalize_to_rows(payload=payload, account_id=account_id, client_id=cid),
                 upsert_rows=self.upsert_rows,
