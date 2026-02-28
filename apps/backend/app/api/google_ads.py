@@ -401,7 +401,7 @@ def sync_google_ads(client_id: int, user: AuthUser = Depends(get_current_user)) 
     except GoogleAdsIntegrationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Google Ads API unavailable") from exc
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Google Ads API unavailable: {str(exc)[:200]}") from exc
 
     audit_log_service.log(
         actor_email=user.email,

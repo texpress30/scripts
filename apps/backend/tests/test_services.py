@@ -223,6 +223,25 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(snapshot["google_customer_id"], "1111111111")
         self.assertEqual(sorted(persisted), ["1111111111", "2222222222"])
 
+    def test_google_ads_sync_wraps_unexpected_errors_with_customer_context(self):
+        original_ids = google_ads_service.get_recommended_customer_ids_for_client
+        original_persist = google_ads_service._persist_performance_report
+        try:
+            google_ads_service.get_recommended_customer_ids_for_client = lambda client_id: ["1111111111"]
+
+            def fake_persist(*, snapshot, client_id):
+                raise RuntimeError("db write failed")
+
+            google_ads_service._persist_performance_report = fake_persist
+            with self.assertRaises(GoogleAdsIntegrationError) as ctx:
+                google_ads_service.sync_client(client_id=2)
+        finally:
+            google_ads_service.get_recommended_customer_ids_for_client = original_ids
+            google_ads_service._persist_performance_report = original_persist
+
+        self.assertIn("Google Ads sync failed for customer", str(ctx.exception))
+        self.assertIn("db write failed", str(ctx.exception))
+
     def test_google_ads_list_accessible_customers_uses_manager_search_stream(self):
         os.environ["GOOGLE_ADS_MODE"] = "production"
         os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
