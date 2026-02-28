@@ -610,6 +610,12 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(metrics["clicks"], 376)
 
 
+    def test_client_dashboard_query_filters_by_date_range(self):
+        query = unified_dashboard_service._client_reports_query()
+
+        self.assertIn("WHERE resolved_client_id = %s", query)
+        self.assertIn("AND report_date BETWEEN %s AND %s", query)
+
     def test_agency_dashboard_rows_are_converted_to_ron_by_day_currency(self):
         original_rate = unified_dashboard_service._get_fx_rate_to_ron
         try:

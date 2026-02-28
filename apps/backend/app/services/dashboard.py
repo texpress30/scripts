@@ -156,17 +156,13 @@ class UnifiedDashboardService:
         }
         return normalized
 
-    def get_client_dashboard(self, client_id: int) -> dict[str, object]:
-        if not self._is_test_mode():
-            performance_reports_store.initialize_schema()
-            with self._connect() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
+    def _client_reports_query(self) -> str:
+        return """
                         WITH perf AS (
                             SELECT
                                 apr.platform,
                                 COALESCE(apr.client_id, mapped.client_id) AS resolved_client_id,
+                                apr.report_date,
                                 apr.spend,
                                 apr.impressions,
                                 apr.clicks,
@@ -189,9 +185,21 @@ class UnifiedDashboardService:
                                COALESCE(SUM(conversion_value), 0)
                         FROM perf
                         WHERE resolved_client_id = %s
+                          AND report_date BETWEEN %s AND %s
                         GROUP BY platform
-                        """,
-                        (client_id,),
+                        """
+
+    def get_client_dashboard(self, client_id: int, *, start_date: date | None = None, end_date: date | None = None) -> dict[str, object]:
+        resolved_end = end_date or date.today()
+        resolved_start = start_date or (resolved_end - timedelta(days=29))
+
+        if not self._is_test_mode():
+            performance_reports_store.initialize_schema()
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        self._client_reports_query(),
+                        (client_id, resolved_start, resolved_end),
                     )
                     rows = cur.fetchall()
 
