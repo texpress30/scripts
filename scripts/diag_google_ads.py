@@ -49,10 +49,13 @@ def main() -> int:
         f"impressions={impressions} clicks={clicks} cost_micros={cost_micros}"
     )
 
-    print(f"DB rows last 30 days: {int(diagnostics.get('db_rows_last_30_days', 0))}")
+    db_rows = int(diagnostics.get('rows_in_db_last_30_days', diagnostics.get('db_rows_last_30_days', 0)) or 0)
+    print(f"DB rows last 30 days: {db_rows}")
     print(f"Last sync at: {diagnostics.get('last_sync_at')}")
-    if diagnostics.get("last_error"):
-        print(f"Last error: {str(diagnostics['last_error'])[:400]}")
+    db_error = diagnostics.get("last_error")
+    print(f"DB diagnostics ok: {db_error is None}")
+    if db_error:
+        print(f"Last error: {str(db_error)[:400]}")
 
     print("[diag-json]")
     print(json.dumps(diagnostics, indent=2))

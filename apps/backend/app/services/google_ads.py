@@ -5,13 +5,19 @@ import json
 import logging
 import re
 import secrets
-from datetime import datetime, timezone, timedelta
+import os
+from datetime import datetime, timezone
 from urllib import error, parse, request
 
 try:
     from google.ads.googleads.client import GoogleAdsClient
 except Exception:  # noqa: BLE001
     GoogleAdsClient = None
+
+try:
+    import psycopg
+except Exception:  # noqa: BLE001
+    psycopg = None
 
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
@@ -276,35 +282,241 @@ class GoogleAdsService:
         return f"***{normalized[-4:]}"
 
     def _db_diagnostics_last_30_days(self) -> dict[str, object]:
-        settings = load_settings()
+        database_url = os.environ.get("DATABASE_URL") or load_settings().database_url
         try:
             if psycopg is None:
                 raise RuntimeError("psycopg not installed")
-            with psycopg.connect(settings.database_url) as conn:
+            with psycopg.connect(database_url) as conn:
                 with conn.cursor() as cur:
+                    cur.execute("SELECT to_regclass('public.ad_performance_reports')")
+                    table_exists = (cur.fetchone() or [None])[0] is not None
+                    if not table_exists:
+                        return {
+                            "db_rows_last_30_days": 0,
+                            "last_report_date": None,
+                            "last_sync_at": None,
+                            "db_error": "Tabela ad_performance_reports lipsește",
+                        }
+
                     cur.execute(
                         """
-                        SELECT COALESCE(COUNT(*), 0), MAX(report_date), MAX(synced_at)
-                        FROM ad_performance_reports
-                        WHERE platform = 'google_ads'
-                          AND report_date BETWEEN %s AND %s
-                        """,
-                        (datetime.now(timezone.utc).date() - timedelta(days=29), datetime.now(timezone.utc).date()),
+                        SELECT EXISTS (
+                            SELECT 1
+                            FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'ad_performance_reports'
+                              AND column_name = 'provider'
+                        )
+                        """
                     )
-                    row = cur.fetchone() or (0, None, None)
+                    has_provider = bool((cur.fetchone() or [False])[0])
+
+                    if has_provider:
+                        cur.execute(
+                            """
+                            SELECT COALESCE(COUNT(*), 0), MAX(synced_at)
+                            FROM ad_performance_reports
+                            WHERE provider = %s
+                              AND synced_at >= NOW() - INTERVAL '30 days'
+                            """,
+                            ("google",),
+                        )
+                    else:
+                        cur.execute(
+                            """
+                            SELECT COALESCE(COUNT(*), 0), MAX(synced_at)
+                            FROM ad_performance_reports
+                            WHERE platform = %s
+                              AND synced_at >= NOW() - INTERVAL '30 days'
+                            """,
+                            ("google_ads",),
+                        )
+                    row = cur.fetchone() or (0, None)
             return {
                 "db_rows_last_30_days": int(row[0] or 0),
-                "last_report_date": str(row[1]) if row[1] else None,
-                "last_sync_at": str(row[2]) if row[2] else None,
+                "last_report_date": None,
+                "last_sync_at": str(row[1]) if row[1] else None,
                 "db_error": None,
             }
         except Exception as exc:  # noqa: BLE001
+            message = str(exc)
+            lowered = message.lower()
+            if "does not exist" in lowered and "ad_performance_reports" in lowered:
+                message = "Tabela ad_performance_reports lipsește"
             return {
                 "db_rows_last_30_days": 0,
                 "last_report_date": None,
                 "last_sync_at": None,
-                "db_error": str(exc),
+                "db_error": message,
             }
+
+    def db_debug_summary(self) -> dict[str, object]:
+        database_url = os.environ.get("DATABASE_URL") or load_settings().database_url
+        result: dict[str, object] = {
+            "db_ok": False,
+            "table_exists": False,
+            "table": "ad_performance_reports",
+            "last_90_days": {
+                "count_total": 0,
+                "count_by_provider": [],
+                "count_by_platform": [],
+                "max_report_date": None,
+                "max_synced_at": None,
+            },
+            "other_relevant_tables": [],
+            "last_error": None,
+        }
+
+        try:
+            if psycopg is None:
+                raise RuntimeError("psycopg not installed")
+
+            with psycopg.connect(database_url) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT to_regclass('public.ad_performance_reports')")
+                    table_exists = (cur.fetchone() or [None])[0] is not None
+                    result["table_exists"] = bool(table_exists)
+
+                    if table_exists:
+                        cur.execute(
+                            """
+                            SELECT COALESCE(COUNT(*), 0), MAX(report_date), MAX(synced_at)
+                            FROM ad_performance_reports
+                            WHERE synced_at >= NOW() - INTERVAL '90 days'
+                            """
+                        )
+                        total_row = cur.fetchone() or (0, None, None)
+                        result["last_90_days"] = {
+                            "count_total": int(total_row[0] or 0),
+                            "count_by_provider": [],
+                            "count_by_platform": [],
+                            "max_report_date": str(total_row[1]) if total_row[1] else None,
+                            "max_synced_at": str(total_row[2]) if total_row[2] else None,
+                        }
+
+                        cur.execute(
+                            """
+                            SELECT EXISTS (
+                                SELECT 1
+                                FROM information_schema.columns
+                                WHERE table_schema='public' AND table_name='ad_performance_reports' AND column_name='provider'
+                            )
+                            """
+                        )
+                        has_provider = bool((cur.fetchone() or [False])[0])
+                        if has_provider:
+                            cur.execute(
+                                """
+                                SELECT provider, COUNT(*)
+                                FROM ad_performance_reports
+                                WHERE synced_at >= NOW() - INTERVAL '90 days'
+                                GROUP BY provider
+                                ORDER BY COUNT(*) DESC
+                                """
+                            )
+                            result["last_90_days"]["count_by_provider"] = [
+                                {"provider": str(row[0] or ""), "count": int(row[1] or 0)} for row in cur.fetchall() or []
+                            ]
+
+                        cur.execute(
+                            """
+                            SELECT EXISTS (
+                                SELECT 1
+                                FROM information_schema.columns
+                                WHERE table_schema='public' AND table_name='ad_performance_reports' AND column_name='platform'
+                            )
+                            """
+                        )
+                        has_platform = bool((cur.fetchone() or [False])[0])
+                        if has_platform:
+                            cur.execute(
+                                """
+                                SELECT platform, COUNT(*)
+                                FROM ad_performance_reports
+                                WHERE synced_at >= NOW() - INTERVAL '90 days'
+                                GROUP BY platform
+                                ORDER BY COUNT(*) DESC
+                                """
+                            )
+                            result["last_90_days"]["count_by_platform"] = [
+                                {"platform": str(row[0] or ""), "count": int(row[1] or 0)} for row in cur.fetchall() or []
+                            ]
+
+                    cur.execute(
+                        """
+                        SELECT table_name,
+                               MAX(CASE WHEN column_name='customer_id' THEN 1 ELSE 0 END) AS has_customer_id,
+                               MAX(CASE WHEN column_name='provider' THEN 1 ELSE 0 END) AS has_provider,
+                               MAX(CASE WHEN column_name='platform' THEN 1 ELSE 0 END) AS has_platform,
+                               MAX(CASE WHEN column_name='cost_micros' THEN 1 ELSE 0 END) AS has_cost_micros,
+                               MAX(CASE WHEN column_name='impressions' THEN 1 ELSE 0 END) AS has_impressions,
+                               MAX(CASE WHEN column_name='synced_at' THEN 1 ELSE 0 END) AS has_synced_at,
+                               MAX(CASE WHEN column_name='report_date' THEN 1 ELSE 0 END) AS has_report_date
+                        FROM information_schema.columns
+                        WHERE table_schema='public'
+                        GROUP BY table_name
+                        HAVING MAX(CASE WHEN column_name IN ('customer_id','provider','platform','cost_micros','impressions') THEN 1 ELSE 0 END) = 1
+                        ORDER BY table_name
+                        """
+                    )
+                    tables = cur.fetchall() or []
+                    extras: list[dict[str, object]] = []
+                    for row in tables:
+                        table_name = str(row[0])
+                        if table_name == "ad_performance_reports":
+                            continue
+                        has_synced_at = bool(row[6])
+                        has_report_date = bool(row[7])
+                        row_count = 0
+                        max_date = None
+                        max_synced_at = None
+                        if has_synced_at:
+                            cur.execute(
+                                psycopg.sql.SQL(
+                                    "SELECT COALESCE(COUNT(*), 0), MAX(synced_at) FROM {} WHERE synced_at >= NOW() - INTERVAL '90 days'"
+                                ).format(psycopg.sql.Identifier(table_name))
+                            )
+                            agg = cur.fetchone() or (0, None)
+                            row_count = int(agg[0] or 0)
+                            max_synced_at = str(agg[1]) if agg[1] else None
+                        elif has_report_date:
+                            cur.execute(
+                                psycopg.sql.SQL(
+                                    "SELECT COALESCE(COUNT(*), 0), MAX(report_date) FROM {} WHERE report_date >= CURRENT_DATE - INTERVAL '90 days'"
+                                ).format(psycopg.sql.Identifier(table_name))
+                            )
+                            agg = cur.fetchone() or (0, None)
+                            row_count = int(agg[0] or 0)
+                            max_date = str(agg[1]) if agg[1] else None
+                        else:
+                            cur.execute(
+                                psycopg.sql.SQL("SELECT COALESCE(COUNT(*), 0) FROM {}").format(
+                                    psycopg.sql.Identifier(table_name)
+                                )
+                            )
+                            agg = cur.fetchone() or (0,)
+                            row_count = int(agg[0] or 0)
+
+                        extras.append(
+                            {
+                                "table": table_name,
+                                "rows_last_90_days": row_count,
+                                "max_report_date": max_date,
+                                "max_synced_at": max_synced_at,
+                                "has_customer_id": bool(row[1]),
+                                "has_provider": bool(row[2]),
+                                "has_platform": bool(row[3]),
+                                "has_cost_micros": bool(row[4]),
+                                "has_impressions": bool(row[5]),
+                            }
+                        )
+
+                    result["other_relevant_tables"] = extras
+                    result["db_ok"] = True
+        except Exception as exc:  # noqa: BLE001
+            result["last_error"] = str(exc)
+
+        return result
 
     def run_diagnostics(self) -> dict[str, object]:
         base = self.production_diagnostics()
@@ -392,6 +604,7 @@ class GoogleAdsService:
             "accessible_customers_count": accessible_customers_count,
             "sample_metrics_last_30_days": sample_metrics_last_30_days,
             "db_rows_last_30_days": db_diag["db_rows_last_30_days"],
+            "rows_in_db_last_30_days": db_diag["db_rows_last_30_days"],
             "last_sync_at": db_diag["last_sync_at"],
             "last_error": last_error or db_diag.get("db_error"),
             "api_version": self._google_api_version(),
@@ -501,7 +714,7 @@ class GoogleAdsService:
             "persist_instruction": "Set GOOGLE_ADS_REFRESH_TOKEN in Railway using refresh_token from this response.",
         }
 
-    def list_accessible_customer_accounts(self) -> list[dict[str, str]]:
+    def list_accessible_customer_accounts(self) -> list[dict[str, object]]:
         if not self._is_production_mode():
             return []
 
@@ -519,7 +732,7 @@ class GoogleAdsService:
 
         api_version = self._google_api_version()
         query = (
-            "SELECT customer_client.id, customer_client.descriptive_name, customer_client.manager "
+            "SELECT customer_client.id, customer_client.descriptive_name, customer_client.manager, customer_client.currency_code "
             "FROM customer_client"
         )
 
@@ -567,7 +780,7 @@ class GoogleAdsService:
                     if isinstance(result_rows, list):
                         rows.extend([item for item in result_rows if isinstance(item, dict)])
 
-                account_items: list[dict[str, str]] = []
+                account_items: list[dict[str, object]] = []
                 for row in rows:
                     customer_client = row.get("customerClient", {})
                     if not isinstance(customer_client, dict):
@@ -576,12 +789,27 @@ class GoogleAdsService:
                     if not cid:
                         continue
                     descriptive_name = str(customer_client.get("descriptiveName", "")).strip() or cid
+                    is_manager = bool(customer_client.get("manager", False))
+                    currency_code_raw = customer_client.get("currencyCode")
+                    currency_code = str(currency_code_raw).strip() if currency_code_raw is not None else None
+                    if currency_code == "":
+                        currency_code = None
                     if any(item["id"] == cid for item in account_items):
                         continue
-                    account_items.append({"id": cid, "name": descriptive_name})
+                    account_items.append({
+                        "id": cid,
+                        "name": descriptive_name,
+                        "is_manager": is_manager,
+                        "currency_code": currency_code,
+                    })
 
                 if not any(item["id"] == manager_customer_id for item in account_items):
-                    account_items.insert(0, {"id": manager_customer_id, "name": manager_customer_id})
+                    account_items.insert(0, {
+                        "id": manager_customer_id,
+                        "name": manager_customer_id,
+                        "is_manager": True,
+                        "currency_code": None,
+                    })
                 logger.info(
                     "Google Ads manager discovery succeeded using operation=%s version=%s count=%s",
                     operation["name"],
@@ -607,7 +835,7 @@ class GoogleAdsService:
                 f"Last error: {last_error}"
             ) from last_error
 
-        return [{"id": manager_customer_id, "name": manager_customer_id}]
+        return [{"id": manager_customer_id, "name": manager_customer_id, "is_manager": True, "currency_code": None}]
 
     def list_accessible_customers(self) -> list[str]:
         return [item["id"] for item in self.list_accessible_customer_accounts()]
@@ -687,7 +915,7 @@ class GoogleAdsService:
         }
 
 
-    def _persist_performance_report(self, *, snapshot: dict[str, float | int | str], client_id: int) -> None:
+    def _persist_performance_report(self, *, snapshot: dict[str, float | int | str], client_id: int) -> int:
         customer_id = str(snapshot.get("google_customer_id") or self.get_recommended_customer_id_for_client(client_id) or f"client-{client_id}")
         performance_reports_store.write_daily_report(
             report_date=datetime.now(timezone.utc).date(),
@@ -700,6 +928,7 @@ class GoogleAdsService:
             conversions=float(snapshot.get("conversions", 0)),
             conversion_value=float(snapshot.get("revenue", 0.0)),
         )
+        return 1
 
     def sync_client(self, client_id: int) -> dict[str, float | int | str]:
         if self._is_production_mode():
@@ -750,6 +979,77 @@ class GoogleAdsService:
 
         google_snapshot_store.upsert_snapshot(payload=snapshot)
         self._persist_performance_report(snapshot=snapshot, client_id=client_id)
+        return snapshot
+
+    def sync_customer_for_client(self, *, client_id: int, customer_id: str) -> dict[str, float | int | str]:
+        normalized_customer_id = self._normalize_customer_id(customer_id)
+        if not self._is_valid_customer_id(normalized_customer_id):
+            raise GoogleAdsIntegrationError(f"Invalid customer id mapping '{customer_id}'. Expected 10 digits.")
+
+        logger.info(
+            "google_ads.sync_now customer_id=%s client_id=%s START",
+            normalized_customer_id,
+            client_id,
+        )
+
+        if self._is_production_mode():
+            real_metrics = self._fetch_production_metrics(customer_id=normalized_customer_id)
+            logger.info(
+                "google_ads.sync_now customer_id=%s client_id=%s GAQL ok spend=%s impressions=%s clicks=%s",
+                normalized_customer_id,
+                client_id,
+                real_metrics.get("spend", 0.0),
+                real_metrics.get("impressions", 0),
+                real_metrics.get("clicks", 0),
+            )
+            snapshot = {
+                "client_id": client_id,
+                "platform": "google_ads",
+                "spend": round(float(real_metrics["spend"]), 2),
+                "impressions": int(real_metrics["impressions"]),
+                "clicks": int(real_metrics["clicks"]),
+                "conversions": int(real_metrics["conversions"]),
+                "revenue": round(float(real_metrics["revenue"]), 2),
+                "google_customer_id": str(real_metrics["google_customer_id"]),
+                "synced_at": datetime.now(timezone.utc).isoformat(),
+            }
+        else:
+            spend = float(100 + client_id * 17)
+            impressions = 5000 + client_id * 110
+            clicks = 200 + client_id * 9
+            conversions = 5 + client_id
+            revenue = round(spend * 3.2, 2)
+            snapshot = {
+                "client_id": client_id,
+                "platform": "google_ads",
+                "spend": round(spend, 2),
+                "impressions": impressions,
+                "clicks": clicks,
+                "conversions": conversions,
+                "revenue": revenue,
+                "google_customer_id": normalized_customer_id,
+                "synced_at": datetime.now(timezone.utc).isoformat(),
+            }
+            logger.info(
+                "google_ads.sync_now customer_id=%s client_id=%s GAQL ok (mock mode)",
+                normalized_customer_id,
+                client_id,
+            )
+
+        google_snapshot_store.upsert_snapshot(payload=snapshot)
+        inserted_rows = self._persist_performance_report(snapshot=snapshot, client_id=client_id)
+        logger.info(
+            "google_ads.sync_now customer_id=%s client_id=%s INSERTED n_rows=%s",
+            normalized_customer_id,
+            client_id,
+            inserted_rows,
+        )
+        logger.info(
+            "google_ads.sync_now customer_id=%s client_id=%s DONE",
+            normalized_customer_id,
+            client_id,
+        )
+        snapshot["inserted_rows"] = inserted_rows
         return snapshot
 
     def get_metrics(self, client_id: int) -> dict[str, float | int | str | bool]:

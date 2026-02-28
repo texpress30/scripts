@@ -388,6 +388,73 @@ class ClientRegistryService:
             conn.commit()
         return deleted
 
+    def get_google_mapping_details_for_client(self, *, client_id: int) -> dict[str, object] | None:
+        if self._is_test_mode():
+            with self._lock:
+                mappings = self._memory_account_client_mappings.get("google_ads", {})
+                for account_id, mapped_client_ids in mappings.items():
+                    if client_id in mapped_client_ids:
+                        return {
+                            "customer_id": account_id,
+                            "updated_at": None,
+                        }
+                return None
+
+        with self._connect_or_raise() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT account_id, updated_at
+                    FROM agency_account_client_mappings
+                    WHERE platform = 'google_ads' AND client_id = %s
+                    ORDER BY updated_at DESC, created_at DESC
+                    LIMIT 1
+                    """,
+                    (client_id,),
+                )
+                row = cur.fetchone()
+        if row is None:
+            return None
+        return {
+            "customer_id": str(row[0]),
+            "updated_at": str(row[1]) if row[1] else None,
+        }
+
+    def list_google_mapped_accounts(self) -> list[dict[str, object]]:
+        if self._is_test_mode():
+            with self._lock:
+                mappings = self._memory_account_client_mappings.get("google_ads", {})
+                rows: list[dict[str, object]] = []
+                for account_id, client_ids in mappings.items():
+                    for client_id in sorted(client_ids):
+                        rows.append({
+                            "client_id": int(client_id),
+                            "customer_id": str(account_id),
+                            "updated_at": None,
+                        })
+                return rows
+
+        with self._connect_or_raise() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT client_id, account_id, updated_at
+                    FROM agency_account_client_mappings
+                    WHERE platform = 'google_ads'
+                    ORDER BY updated_at DESC, created_at DESC
+                    """
+                )
+                rows = cur.fetchall()
+
+        return [
+            {
+                "client_id": int(row[0]),
+                "customer_id": str(row[1]),
+                "updated_at": str(row[2]) if row[2] else None,
+            }
+            for row in rows
+        ]
+
     def get_google_customer_for_client(self, *, client_id: int) -> str | None:
         if self._is_test_mode():
             with self._lock:
