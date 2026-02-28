@@ -21,6 +21,7 @@ class ClientRecord:
     source: str = "manual"
     client_type: str = "lead"
     account_manager: str = ""
+    currency: str = "USD"
     client_logo_url: str = ""
     media_storage_bytes: int = 0
 
@@ -71,6 +72,7 @@ class ClientRegistryService:
                 cur.execute("ALTER TABLE agency_clients ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manual'")
                 cur.execute("ALTER TABLE agency_clients ADD COLUMN IF NOT EXISTS client_type TEXT NOT NULL DEFAULT 'lead'")
                 cur.execute("ALTER TABLE agency_clients ADD COLUMN IF NOT EXISTS account_manager TEXT NOT NULL DEFAULT ''")
+                cur.execute("ALTER TABLE agency_clients ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'USD'")
                 cur.execute("ALTER TABLE agency_clients ADD COLUMN IF NOT EXISTS client_logo_url TEXT NOT NULL DEFAULT ''")
                 cur.execute("ALTER TABLE agency_clients ADD COLUMN IF NOT EXISTS media_storage_bytes BIGINT NOT NULL DEFAULT 0")
                 cur.execute(
@@ -150,7 +152,7 @@ class ClientRegistryService:
 
         if self._is_test_mode():
             with self._lock:
-                record = ClientRecord(id=self._next_id, name=name, owner_email=owner_email, source="manual", client_type="lead", account_manager="", client_logo_url="", media_storage_bytes=0)
+                record = ClientRecord(id=self._next_id, name=name, owner_email=owner_email, source="manual", client_type="lead", account_manager="", currency="USD", client_logo_url="", media_storage_bytes=0)
                 self._next_id += 1
                 self._clients.append(record)
                 manual_count = len([c for c in self._clients if c.source == "manual"])
@@ -161,6 +163,7 @@ class ClientRegistryService:
                     "owner_email": record.owner_email,
                     "client_type": record.client_type,
                     "account_manager": record.account_manager,
+                    "currency": record.currency,
                     "google_customer_id": None,
                     "client_logo_url": "",
                     "media_storage_bytes": 0,
@@ -172,7 +175,7 @@ class ClientRegistryService:
                     """
                     INSERT INTO agency_clients (name, owner_email, source)
                     VALUES (%s, %s, 'manual')
-                    RETURNING id, name, owner_email, client_type, account_manager, client_logo_url, media_storage_bytes
+                    RETURNING id, name, owner_email, client_type, account_manager, currency, client_logo_url, media_storage_bytes
                     """,
                     (name, owner_email),
                 )
@@ -187,8 +190,9 @@ class ClientRegistryService:
             "owner_email": str(row[2]),
             "client_type": str(row[3]),
             "account_manager": str(row[4]),
-            "client_logo_url": str(row[5]),
-            "media_storage_bytes": int(row[6]),
+            "currency": str(row[5]),
+            "client_logo_url": str(row[6]),
+            "media_storage_bytes": int(row[7]),
             "google_customer_id": self.get_google_customer_for_client(client_id=client_id),
         }
 
@@ -207,6 +211,7 @@ class ClientRegistryService:
                     "owner_email": c.owner_email,
                     "client_type": c.client_type,
                     "account_manager": c.account_manager,
+                    "currency": c.currency,
                     "client_logo_url": c.client_logo_url,
                     "google_customer_id": next((aid for aid, client_ids in self._memory_account_client_mappings.get("google_ads", {}).items() if c.id in client_ids), None),
                     "media_storage_bytes": c.media_storage_bytes,
@@ -224,7 +229,7 @@ class ClientRegistryService:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT c.id, c.name, c.owner_email, c.client_type, c.account_manager, c.client_logo_url, c.media_storage_bytes,
+                    SELECT c.id, c.name, c.owner_email, c.client_type, c.account_manager, c.currency, c.client_logo_url, c.media_storage_bytes,
                            ROW_NUMBER() OVER (ORDER BY c.id ASC) AS display_id,
                            (
                               SELECT m.account_id
@@ -247,10 +252,11 @@ class ClientRegistryService:
                 "owner_email": str(row[2]),
                 "client_type": str(row[3]),
                 "account_manager": str(row[4]),
-                "client_logo_url": str(row[5]),
-                "display_id": int(row[7]),
-                "media_storage_bytes": int(row[6] or 0),
-                "google_customer_id": str(row[8]) if row[8] else None,
+                "currency": str(row[5]),
+                "client_logo_url": str(row[6]),
+                "display_id": int(row[8]),
+                "media_storage_bytes": int(row[7] or 0),
+                "google_customer_id": str(row[9]) if row[9] else None,
             }
             for row in rows
         ]
@@ -275,7 +281,7 @@ class ClientRegistryService:
                 client = next(c for c in self._clients if c.id == client_id)
                 per_platform = self._memory_account_profiles.setdefault(platform, {})
                 per_account = per_platform.setdefault(account_id, {})
-                per_account.setdefault(client_id, {"client_type": client.client_type, "account_manager": client.account_manager})
+                per_account.setdefault(client_id, {"client_type": client.client_type, "account_manager": client.account_manager, "account_currency": client.currency})
                 return {
                     "id": client.id,
                     "name": client.name,
@@ -300,18 +306,19 @@ class ClientRegistryService:
 
                 cur.execute(
                     """
-                    INSERT INTO agency_account_client_mappings (platform, account_id, client_id, client_type, account_manager)
+                    INSERT INTO agency_account_client_mappings (platform, account_id, client_id, client_type, account_manager, account_currency)
                     VALUES (
                         %s,
                         %s,
                         %s,
                         (SELECT client_type FROM agency_clients WHERE id = %s),
-                        (SELECT account_manager FROM agency_clients WHERE id = %s)
+                        (SELECT account_manager FROM agency_clients WHERE id = %s),
+                        (SELECT currency FROM agency_clients WHERE id = %s)
                     )
                     ON CONFLICT(platform, account_id, client_id)
                     DO UPDATE SET updated_at = NOW()
                     """,
-                    (platform, account_id, client_id, client_id, client_id),
+                    (platform, account_id, client_id, client_id, client_id, client_id),
                 )
                 if platform == "google_ads":
                     # Keep legacy column in sync (best effort; not used as source-of-truth).
@@ -580,7 +587,7 @@ class ClientRegistryService:
                             "name": info["name"],
                             "client_type": str(profile.get("client_type", "lead")),
                             "account_manager": str(profile.get("account_manager", "")),
-                            "account_currency": str(profile.get("account_currency", "USD")),
+                            "currency": str(profile.get("account_currency", "USD")),
                         })
                 return sorted(result, key=lambda item: item["id"])
 
@@ -598,7 +605,7 @@ class ClientRegistryService:
                     (platform, client_id),
                 )
                 rows = cur.fetchall()
-        return [{"id": str(row[0]), "name": str(row[1]), "client_type": str(row[2]) if row[2] else "lead", "account_manager": str(row[3]) if row[3] else "", "account_currency": str(row[4]) if row[4] else "USD"} for row in rows]
+        return [{"id": str(row[0]), "name": str(row[1]), "client_type": str(row[2]) if row[2] else "lead", "account_manager": str(row[3]) if row[3] else "", "currency": str(row[4]) if row[4] else "USD"} for row in rows]
 
     def get_last_import_at(self, *, platform: str) -> str | None:
         if self._is_test_mode():
@@ -705,7 +712,7 @@ class ClientRegistryService:
         name: str | None = None,
         client_type: str | None = None,
         account_manager: str | None = None,
-        account_currency: str | None = None,
+        currency: str | None = None,
         client_logo_url: str | None = None,
         platform: str | None = None,
         account_id: str | None = None,
@@ -719,9 +726,10 @@ class ClientRegistryService:
         if normalized_type is not None and normalized_type not in {"lead", "e-commerce", "programmatic"}:
             normalized_type = "lead"
         normalized_manager = account_manager.strip() if account_manager is not None else None
-        normalized_currency = account_currency.strip().upper() if account_currency is not None else None
-        if normalized_currency is not None and (len(normalized_currency) != 3 or not normalized_currency.isalpha()):
-            normalized_currency = "USD"
+        normalized_currency = currency.strip().upper() if currency is not None else None
+        if normalized_currency is not None:
+            if len(normalized_currency) != 3 or not normalized_currency.isalpha():
+                normalized_currency = "USD"
         normalized_logo = client_logo_url.strip() if client_logo_url is not None else None
 
         if self._is_test_mode():
@@ -735,6 +743,7 @@ class ClientRegistryService:
                             source=c.source,
                             client_type=normalized_type if normalized_type is not None else c.client_type,
                             account_manager=normalized_manager if normalized_manager is not None else c.account_manager,
+                            currency=normalized_currency if normalized_currency is not None else c.currency,
                             client_logo_url=normalized_logo if normalized_logo is not None else c.client_logo_url,
                         )
                         normalized_platform = platform.strip() if platform is not None else None
@@ -742,7 +751,7 @@ class ClientRegistryService:
                         if normalized_platform and normalized_account_id and (normalized_type is not None or normalized_manager is not None or normalized_currency is not None):
                             per_platform = self._memory_account_profiles.setdefault(normalized_platform, {})
                             per_account = per_platform.setdefault(normalized_account_id, {})
-                            profile = per_account.setdefault(client_id, {"client_type": c.client_type, "account_manager": c.account_manager, "account_currency": "USD"})
+                            profile = per_account.setdefault(client_id, {"client_type": c.client_type, "account_manager": c.account_manager, "account_currency": c.currency})
                             if normalized_type is not None:
                                 profile["client_type"] = normalized_type
                             if normalized_manager is not None:
@@ -783,6 +792,9 @@ class ClientRegistryService:
         if normalized_manager is not None:
             set_clauses.append("account_manager = %s")
             values.append(normalized_manager)
+        if normalized_currency is not None:
+            set_clauses.append("currency = %s")
+            values.append(normalized_currency)
         if normalized_logo is not None:
             set_clauses.append("client_logo_url = %s")
             values.append(normalized_logo)

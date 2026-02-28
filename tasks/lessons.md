@@ -53,5 +53,5 @@
 - 2026-02-27: Când dashboard-ul afișează 0 deși integrarea e "connected", validează explicit traseul end-to-end sync->persistență->agregare; status-ul token nu garantează existența datelor în tabelul de raportare.
 - 2026-02-27: Pentru incidente “connected dar 0 în dashboard”, adaugă obligatoriu diagnostic combinat OAuth+Google query+DB rows (last_30_days); fără acest trilateral check, cauza reală (ingestion vs agregare) rămâne ambiguă.
 - 2026-02-28: După commit pentru livrare, verifică explicit că branch-ul local este împins pe `origin` (nu doar commit local) și re-rulează `make_pr`; fără push, butonul/PR-ul poate lipsi chiar dacă rezumatul spune că PR-ul există.
-- 2026-02-28: Când utilizatorul cere corectarea monedei în dashboard, nu schimba doar formatter-ul global; adaugă setare editabilă per cont atașat (cu persistență în mapping) și propagă explicit moneda în payload-ul Sub-account.
-- 2026-02-28: Când utilizatorul semnalează că butonul Create PR nu e vizibil, rulează imediat din nou `make_pr` și confirmă explicit `git push origin <branch>`; raportează dacă remote e deja up-to-date ca dovadă de sincronizare.
+- 2026-02-28: Când utilizatorul cere branch fix de lucru (ex. `work`) și PR unic activ, nu crea branch-uri noi per task; menține toate schimbările pe branch-ul indicat și actualizează același PR până la confirmarea finală.
+- 2026-02-28: În Agency Clients, pentru câmpurile editabile pe rând (tip cont, responsabil, monedă), oferă controale de editare separate per câmp (creion individual), nu un singur toggle global pe rând.

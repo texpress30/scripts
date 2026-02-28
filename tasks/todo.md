@@ -34,21 +34,30 @@
 - Fix aplicat: `_to_float` și `_to_int` acceptă acum și `Decimal`, astfel metricele agregate din query-uri SQL sunt păstrate corect în payload-ul dashboard (sub-account + agency).
 - Verificare: compilare backend + smoke Python care validează explicit conversia `Decimal` pentru spend/impressions/clicks.
 
+---
+
+# TODO — Git workflow alignment pe branch fix `work`
+
+- [x] Revin local pe branch-ul `work` și setez tracking la `origin/work`.
+- [x] Confirm regula de lucru: fără branch-uri noi `codex/*`, folosim același PR #127 pentru iterații.
+- [x] Documentez în lessons regula pentru a evita repetarea deviației de branch workflow.
+
+## Review
+- Workspace-ul rulează acum pe `work` (tracking `origin/work`).
+- Fluxul viitor rămâne pe același branch + același PR #127, fără creare automată de branch-uri per task.
+
 
 ---
 
-# TODO — Monedă editabilă per cont și afișare în Sub-account
+# TODO — Agency Clients: monedă per cont + editare individuală pe câmp
 
-- [x] Extind modelul de profil cont-client cu `account_currency` în persistență (Postgres + memorie test).
-- [x] Extind endpoint-ul PATCH `/clients/display/{display_id}` ca să salveze moneda per `platform+account_id`.
-- [x] Extind payload-ul detaliilor clientului ca UI să primească `account_currency` pentru fiecare cont.
-- [x] Adaug în UI Agency Client Details câmp editabil (cu creion) pentru selecția monedei per cont.
-- [x] Fac Sub-account Dashboard să folosească moneda selectată și să formateze Spend/Revenue cu aceasta.
-- [x] Rulez verificări backend/frontend și documentez review.
+- [x] Confirm context/branch și traseul actual frontend/backend pentru editarea pe rând în Agency Clients.
+- [x] Extind backend-ul pentru câmp `currency` per account mapping (schema + payload update + response details).
+- [x] Actualizez UI Agency Client details cu 3 acțiuni separate (creion individual pentru tip cont, responsabil, monedă).
+- [x] Rulez verificări țintite (backend tests + frontend lint/type), apoi completez review.
 
-## Review — Monedă editabilă per cont și afișare în Sub-account
-- Root-cause: dashboard-ul Sub-account afișa sume doar cu simbol fix `$`, fără o preferință de monedă configurabilă per cont atașat.
-- Backend: am adăugat `account_currency` la mapping-ul `agency_account_client_mappings`, l-am expus în payload-ul conturilor atașate și l-am făcut editabil prin același PATCH profile endpoint.
-- Frontend Agency: în fiecare rând de cont atașat există acum câmp „Monedă” editabil din icon-ul creion (USD/EUR/RON/GBP/CAD/AUD).
-- Frontend Sub-account: dashboard-ul citește `currency` din API și formatează Spend/Revenue cu `Intl.NumberFormat` pe moneda selectată.
-- Observație: pentru clienții cu mai multe conturi Google atașate, moneda folosită în Sub-account este prima monedă validă disponibilă în mapping-urile Google ale clientului (fallback USD).
+
+## Review — Agency Clients: monedă per cont + editare individuală pe câmp
+- Backend: am adăugat `currency` la nivel de client și `account_currency` în `agency_account_client_mappings`, plus propagare în endpoint-ul `PATCH /clients/display/{display_id}` pentru update per cont (`platform` + `account_id`).
+- Frontend: în Agency Client details există acum câte un creion separat pentru fiecare câmp editabil de pe rând (tip client, responsabil, monedă), cu salvare individuală și feedback vizual per câmp.
+- Verificare: `python -m py_compile` pe fișierele modificate și `npx tsc --noEmit` pe frontend au trecut; `next lint` nu poate rula non-interactiv deoarece proiectul solicită inițializare ESLint interactivă.
