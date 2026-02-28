@@ -62,3 +62,4 @@
 - 2026-02-28: Pentru sync pe client în platforme ads, nu folosi un singur account fallback (`LIMIT 1`) când modelul permite many-to-one; iterează toate mapping-urile clientului și persistă per account.
 - 2026-02-28: Pentru conversii FX critice în dashboard, nu folosi fallback `1.0` la outage provider; aplică fallback-uri de curs explicite pe monede comune și păstrează ranking-ul pe moneda normalizată (RON).
 - 2026-02-28: Pentru cerințe de tip "calendar funcțional", nu livra doar componenta UI; extinde în același task endpoint-ul backend cu filtre `start_date`/`end_date` și leagă fetch-ul frontend la intervalul aplicat.
+- 2026-02-28: Dacă dashboard-ul are date-range picker dar valorile rămân constante, verifică întâi granularitatea datelor persistate (daily vs snapshot agregat 30d); filtrarea pe date nu poate funcționa corect peste snapshot-uri periodice.

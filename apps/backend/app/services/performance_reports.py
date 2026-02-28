@@ -44,7 +44,8 @@ class PerformanceReportsStore:
                         clicks BIGINT NOT NULL DEFAULT 0,
                         conversions NUMERIC(14,4) NOT NULL DEFAULT 0,
                         conversion_value NUMERIC(14,2) NOT NULL DEFAULT 0,
-                        synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                        synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        UNIQUE (report_date, platform, customer_id, client_id)
                     )
                     """
                 )
@@ -58,6 +59,12 @@ class PerformanceReportsStore:
                     """
                     CREATE INDEX IF NOT EXISTS idx_ad_performance_reports_customer
                     ON ad_performance_reports (platform, customer_id, report_date DESC)
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_ad_performance_reports_unique_daily_customer
+                    ON ad_performance_reports (report_date, platform, customer_id, client_id)
                     """
                 )
             conn.commit()
@@ -103,6 +110,14 @@ class PerformanceReportsStore:
                     INSERT INTO ad_performance_reports (
                         report_date, platform, customer_id, client_id, spend, impressions, clicks, conversions, conversion_value
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (report_date, platform, customer_id, client_id)
+                    DO UPDATE SET
+                        spend = EXCLUDED.spend,
+                        impressions = EXCLUDED.impressions,
+                        clicks = EXCLUDED.clicks,
+                        conversions = EXCLUDED.conversions,
+                        conversion_value = EXCLUDED.conversion_value,
+                        synced_at = NOW()
                     """,
                     (
                         report_date,
