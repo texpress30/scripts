@@ -965,7 +965,9 @@ class GoogleAdsService:
         if resolved_start > resolved_end:
             resolved_start, resolved_end = resolved_end, resolved_start
 
-        date_clause = f"segments.date BETWEEN '{resolved_start.isoformat()}' AND '{resolved_end.isoformat()}'"
+        start_literal = resolved_start.isoformat()
+        end_literal = resolved_end.isoformat()
+        date_clause = f"segments.date BETWEEN '{start_literal}' AND '{end_literal}'"
 
         primary_query = (
             "SELECT segments.date, metrics.impressions, metrics.clicks, metrics.cost_micros "
@@ -1002,9 +1004,7 @@ class GoogleAdsService:
         gaql_rows_fetched = primary_fetched if primary_fetched > 0 else fallback_fetched
         zero_data_message = None
         if gaql_rows_fetched == 0:
-            zero_data_message = (
-                f"Account has no data in selected range {resolved_start.isoformat()}..{resolved_end.isoformat()} or no permission"
-            )
+            zero_data_message = f"Account has no data in selected range {start_literal}..{end_literal} or no permission"
 
         return {
             "rows": rows,

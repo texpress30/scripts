@@ -264,7 +264,7 @@ class ServiceTests(unittest.TestCase):
                 return {"rows": [], "gaql_rows_fetched": 0}
 
             google_ads_service._fetch_gaql_daily_rows = fake_fetch_rows
-            google_ads_service._fetch_production_daily_metrics(
+            payload = google_ads_service._fetch_production_daily_metrics(
                 customer_id="1111111111",
                 start_date=date(2026, 1, 1),
                 end_date=date(2026, 1, 31),
@@ -278,6 +278,7 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(len(captured_queries), 2)
         self.assertIn("segments.date BETWEEN '2026-01-01' AND '2026-01-31'", captured_queries[0])
         self.assertIn("segments.date BETWEEN '2026-01-01' AND '2026-01-31'", captured_queries[1])
+        self.assertIn("2026-01-01..2026-01-31", str(payload.get("zero_data_message") or ""))
 
     def test_google_ads_list_accessible_customers_uses_manager_search_stream(self):
         os.environ["GOOGLE_ADS_MODE"] = "production"
