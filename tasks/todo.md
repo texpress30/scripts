@@ -52,3 +52,18 @@
 - Frontend Agency: în fiecare rând de cont atașat există acum câmp „Monedă” editabil din icon-ul creion (USD/EUR/RON/GBP/CAD/AUD).
 - Frontend Sub-account: dashboard-ul citește `currency` din API și formatează Spend/Revenue cu `Intl.NumberFormat` pe moneda selectată.
 - Observație: pentru clienții cu mai multe conturi Google atașate, moneda folosită în Sub-account este prima monedă validă disponibilă în mapping-urile Google ale clientului (fallback USD).
+
+
+---
+
+# TODO — Clarificare vizibilitate commit vs PR deschis
+
+- [x] Verific dacă commit-urile recente există deja pe `origin/main`.
+- [x] Creez un branch dedicat cu un diff minim pentru a avea PR vizibil în tab-ul Pull Requests.
+- [x] Fac push branch + rulez `make_pr` pentru deschiderea PR-ului.
+- [x] Documentez concluzia în review.
+
+## Review — Clarificare vizibilitate commit vs PR deschis
+- Confirmare: commit-urile `c592abc` și `42160aa` există deja pe `origin/main`, deci sunt livrate în branch-ul principal.
+- Motivul pentru care nu apar în ecranul din screenshot: pagina listată este „Open pull requests”, iar push direct pe `main` nu creează PR automat.
+- Acțiune: am creat branch dedicat cu un diff minim de documentare și am deschis PR prin `make_pr`, astfel să existe intrare vizibilă în tab-ul Pull Requests.
