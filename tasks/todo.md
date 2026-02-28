@@ -9,6 +9,16 @@
 - [x] Ajustez UI loading și Integration Health pentru câmpurile de diagnostic cerute.
 - [x] Rulez verificări (Python compile/tests, Google diag script, frontend build, screenshot), documentez Railway runbook, commit + PR.
 
+---
+
+# TODO — Fix afișare dashboard când datele există în `ad_performance_reports`
+
+- [x] Identific cauza exactă pentru „rows în DB > 0 dar dashboard = 0” pe sub-account + agency.
+- [x] Aplic fix minim, fără refactor mare, pe traseul de agregare dashboard.
+- [x] Adaug test de regresie pentru tipurile numerice venite din Postgres (Decimal/numeric).
+- [x] Rulez verificări țintite backend și confirm comportamentul după fix.
+- [x] Completez secțiunea review cu root-cause + rezultat.
+
 ## Review
 - Cauza principală: lanțul de date se rupea între „sync connected” și agregare dashboard; status-ul Google Ads era `connected`, dar nu exista persistență zilnică robustă în `ad_performance_reports` care să fie folosită consistent de agregare.
 - Am introdus `PerformanceReportsStore` și am conectat `google_ads_service.sync_client` să persiste la fiecare sync un raport zilnic (`spend/clicks/impressions/conversions/conversion_value`) în Postgres.
@@ -19,166 +29,7 @@
 - Frontend Agency Dashboard afișează detaliile Google în blocul Integration Health și păstrează loading state cu text `Se încarcă datele...`; date range este trimis în format `YYYY-MM-DD`.
 - Verificările reale au confirmat în mediul curent: OAuth nu poate rula fără refresh token setat și DB local nu e disponibil implicit (connection refused), dar diagnosticul returnează explicit aceste cauze și endpoint-urile sunt pregătite pentru Railway.
 
----
-
-# TODO — Verificare remote/fetch workspace nou
-
-- [x] Verific remotes configurate (`git remote -v`).
-- [x] Rulez fetch global cu prune (`git fetch --all --prune`).
-- [x] Documentez rezultatul verificării.
-
-## Review
-- Repository-ul local nu are niciun remote configurat momentan (nici `origin`).
-- `git fetch --all --prune` s-a executat cu succes, dar fără efect deoarece nu există remotes definite.
-
----
-
-# TODO — Reconfigurare origin + sync cu main
-
-- [x] Adaug remote `origin` cu URL-ul furnizat.
-- [x] Rulez `git fetch origin`.
-- [x] Rulez `git pull origin main`.
-- [x] Verific starea repo după sincronizare.
-
-## Review
-- `git remote add origin ...` a fost executat cu succes și remote-ul a fost configurat.
-- `git fetch origin` a adus referințele remote (inclusiv `origin/main`).
-- Primul `git pull origin main` a eșuat cu mesajul Git despre strategia de reconciliere pentru branch-uri divergente.
-- Am setat explicit `git config pull.rebase false` (local repo), apoi am rerulat `git pull origin main` și sincronizarea s-a finalizat cu merge (`ort`).
-- Starea finală arată branch local sincronizat cu modificările locale păstrate pentru commitul curent.
-
----
-
-# TODO — Bring commit 7bb0a45 into current workspace
-
-- [x] Rulez `git fetch --all` pentru actualizare istoric remote.
-- [x] Rulez `git cherry-pick 7bb0a45`.
-- [x] Dacă apar conflicte, le rezolv păstrând versiunea din commit-ul cherry-picked. (N/A: cherry-pick nu a pornit, commit inexistent local/remote)
-- [x] Verific fișierele actualizate și confirm starea finală.
-
-## Review
-- `git fetch --all` a rulat cu succes și a actualizat referințele remote disponibile.
-- `git cherry-pick 7bb0a45` a eșuat cu `fatal: bad revision '7bb0a45'` (hash-ul nu există în istoricul local după fetch).
-- Verificări suplimentare (`git log --all`, `git show 7bb0a45`, `git fetch origin 7bb0a45`) confirmă că obiectul nu este disponibil pe remote-ul curent.
-- Nu există fișiere de cod actualizate prin cherry-pick deoarece commit-ul cerut nu a putut fi rezolvat. Workspace-ul rămâne sincronizat cu remotes cunoscute.
-
----
-
-# TODO — Fix NameError `psycopg` în Google Ads diagnostics
-
-- [x] Identific fișierul/funcția unde se calculează `rows_in_db_last_30_days` și apare `name 'psycopg' is not defined`.
-- [x] Verific ce driver Postgres este standard în repo (psycopg vs psycopg2).
-- [x] Adaug importul lipsă și aliniez folosirea conexiunii DB cu convenția proiectului.
-- [x] Rulez verificări (minim compile / script diagnostic) și documentez rezultatul.
-
-## Review
-- Eroarea provine din `apps/backend/app/services/google_ads.py`, funcția `_db_diagnostics_last_30_days()`, care folosea `psycopg.connect(...)` fără import declarat pentru `psycopg`.
-- Driverul folosit în proiect este Psycopg 3 (`psycopg[binary]==3.2.1` în `apps/backend/requirements.txt`), iar majoritatea serviciilor backend folosesc deja pattern-ul `try: import psycopg ...`.
-- Am adăugat importul lipsă în `google_ads.py` și am păstrat conexiunea existentă `psycopg.connect(settings.database_url)` pentru consistență cu restul codului.
-- Verificări: compile pentru fișierul modificat + execuție controlată a `_db_diagnostics_last_30_days()` (cu `load_settings` monkeypatched) confirmă că nu mai apare `NameError`, iar funcția întoarce `db_error` de conectivitate când DB-ul este indisponibil.
-
----
-
-# TODO — Asigurare Psycopg 3 binary pentru Railway production
-
-- [x] Verific fișierul(ele) de dependențe backend.
-- [x] Mă asigur că `psycopg[binary]==3.2.1` este prezent.
-- [x] Verific configurația de build/deploy Railway (`railway.json`/`Dockerfile`/`nixpacks.toml`).
-- [x] Rulez verificări rapide și documentez rezultatul.
-
-## Review
-- Fișierul de dependențe backend este `apps/backend/requirements.txt`; am confirmat și păstrat `psycopg[binary]==3.2.1` și am adăugat comentariu explicit pentru contextul Railway production.
-- În repo există `apps/backend/Dockerfile` (nu există `railway.json` sau `nixpacks.toml`), iar build-ul instalează dependențele prin `RUN pip install --no-cache-dir -r requirements.txt` la deploy.
-- Verificările rapide (`python -m compileall` pe serviciul Google Ads și `git diff`) confirmă că schimbarea este minimă și fără impact logic.
-
----
-
-# TODO — Robust DB diagnostics + script Google Ads
-
-- [x] Ajustez `_db_diagnostics_last_30_days` pentru query pe ultimele 30 zile cu fallback robust la erori DB/tabel.
-- [x] Verific/ajustez endpoint-ul `/integrations/google-ads/diagnostics` să expună `oauth_ok`, `rows_in_db_last_30_days`, `last_sync_at`, `last_error`.
-- [x] Creez/actualizez `scripts/diag_google_ads.py` pentru verificare API + DB + rows.
-- [x] Update README cu pașii de rulare și variabilele de mediu necesare.
-- [x] Rulez verificări și documentez rezultatele.
-
-## Review
-- În `GoogleAdsService._db_diagnostics_last_30_days` conexiunea DB folosește `DATABASE_URL` din env (fallback `load_settings().database_url`), verifică existența tabelului și rulează query parametrizat pe ultimele 30 zile.
-- Query-ul folosește `provider = %s` dacă există coloana `provider`; fallback pe schema actuală `platform = %s` pentru compatibilitate, ambele filtrate cu `synced_at >= NOW() - INTERVAL '30 days'`.
-- Dacă tabela lipsește sau DB este indisponibilă, funcția întoarce `db_rows_last_30_days=0` și un `db_error` descriptiv, fără crash.
-- `run_diagnostics()` expune și aliasul `rows_in_db_last_30_days` pentru endpoint-ul `/integrations/google-ads/diagnostics`, împreună cu `oauth_ok`, `last_sync_at`, `last_error`.
-- Scriptul `scripts/diag_google_ads.py` a fost actualizat să afișeze explicit starea DB diagnostics și să citească noul câmp `rows_in_db_last_30_days`; README include acum secțiune dedicată de rulare + env vars.
-
----
-
-# TODO — DB debug agregat pentru Google Ads diagnostics
-
-- [x] Identific tabelele folosite de dashboard pentru metrici și traseul de citire.
-- [x] Adaug endpoint debug (`/integrations/google-ads/db-debug`) cu agregări sigure (count/max, fără rows brute).
-- [x] Adaug breakdown 90 zile (total, by provider, by platform, max date/synced_at) pentru tabela principală.
-- [x] Adaug scanare pentru alte tabele relevante (coloane `customer_id/platform/provider/cost_micros/impressions`) cu agregări.
-- [x] Rulez verificări și documentez rezultatul.
-
-## Review
-- Dashboard Agency citește metricile din `ad_performance_reports` prin `DashboardService` (agregări pe `report_date` + `platform`), iar pentru status Google se folosește `run_diagnostics()`.
-- Endpoint-ul nou `GET /integrations/google-ads/db-debug` întoarce `db_ok`, `table_exists`, agregări pe 90 zile pentru `ad_performance_reports` și `other_relevant_tables` (fără date sensibile brute).
-- Dacă `ad_performance_reports` este gol/lipsește, payload-ul indică explicit situația și expune tabele alternative cu același profil de coloane pentru troubleshooting ingestion.
-
----
-
-# TODO — Sync-now observabil pentru Google Ads
-
-- [x] Modific `POST /integrations/google-ads/sync-now` să returneze counters detaliați + date_range + sample customer_ids + error summary.
-- [x] Returnez 400 cu mesaj explicit când `mapped_accounts_count = 0`.
-- [x] Adaug logging clar per customer_id în fluxul de sync (START / GAQL ok / INSERTED n rows / DONE).
-- [x] Rulez verificări și documentez rezultatul.
-
-## Review
-- `sync-now` returnează acum un payload observabil cu `mapped/attempted/succeeded/failed`, `inserted_rows_total`, `date_range`, `sample_customer_ids` mascate și `errors_summary` sanitizat.
-- Dacă nu există conturi Google Ads mapate la niciun subaccount (`mapped_accounts_count=0`), endpoint-ul întoarce `400` cu mesajul exact cerut.
-- Fluxul de sync scrie loguri clare per customer_id în ordinea: `START`, `GAQL ok`, `INSERTED n_rows`, `DONE` (în `GoogleAdsService.sync_customer_for_client`).
-- Verificările locale (compile + smoke tests prin monkeypatch) confirmă comportamentul nou fără a necesita DB/API reale.
-
----
-
-# TODO — Mapping Google Ads per client + sync-now din DB mappings
-
-- [x] Verific structura actuală pentru mapping per client (tabele + servicii + endpoint-uri existente).
-- [x] Adaug endpoint-uri: listare conturi accesibile, setare mapping per client, citire mapping per client.
-- [x] Conectez `/integrations/google-ads/status` și `/integrations/google-ads/sync-now` la mapping-urile reale din DB.
-- [x] Rulez verificări și documentez rezultatul.
-
-## Review
-- Am identificat că persistența mapping-ului per client există deja în `agency_account_client_mappings` (`platform`, `account_id`, `client_id`, `updated_at`), deci nu a fost necesară o coloană nouă; am folosit acest model consistent pentru Google Ads mapping per subaccount.
-- `GET /integrations/google-ads/accounts` întoarce acum shape-ul cerut: `customer_id` normalizat, `name`, `is_manager`, `currency_code` (opțional), fără secrete.
-- Am adăugat endpoint-uri noi: `POST /agency/clients/{client_id}/integrations/google-ads/map` (validare format + accesibilitate + blocare MCC) și `GET /agency/clients/{client_id}/integrations/google-ads` (mapped/customer_id/updated_at).
-- `status` include acum `mapped_accounts_count` + `sample_customer_ids` mascate, iar `sync-now` citește mapping-urile reale din DB (`list_google_mapped_accounts`), astfel încât dacă există mapping-uri, `attempted_accounts_count` devine >0.
-
----
-
-# TODO — E2E smoke sync-now per client + rows DB > 0
-
-- [x] Adaug query params `client_id` și `days` la `POST /integrations/google-ads/sync-now`.
-- [x] Rulez/persist metrici zilnice GAQL (`segments.date`, `impressions`, `clicks`, `cost_micros`) pentru clientul țintă.
-- [x] Păstrez `login-customer-id` pentru acces MCC și adaug count DB post-insert per customer (ultimele 30 zile).
-- [x] Rulez verificări și documentez rezultatul.
-
-## Review
-- `sync-now` acceptă acum `client_id` + `days` (1..90); când `client_id` este trimis, endpoint-ul sincronizează doar mapping-ul acelui client.
-- În producție, sync-ul rulează GAQL minim pe `LAST_30_DAYS` cu `segments.date`, `metrics.impressions`, `metrics.clicks`, `metrics.cost_micros`, agregă pe zi și persistă câte un rând/zi în `ad_performance_reports`.
-- Request-urile Google Ads păstrează `login-customer-id` setat la manager MCC (din `_required_manager_customer_id`), inclus în headers la `searchStream`.
-- După inserare, răspunsul include `rows_in_db_last_30_days_for_customer` calculat prin `SELECT COUNT(*)` pentru `platform=google_ads` + customer_id în ultimele 30 zile, astfel încât smoke-ul poate dovedi `inserted_rows_total > 0` și DB rows > 0.
-
----
-
-# TODO — Explicare inserted_rows_total=0 în sync-now
-
-- [x] Adaug în response per customer: `gaql_rows_fetched`, `inserted_rows`, `db_rows_last_30_for_customer`, `reason_if_zero`.
-- [x] Adaug loguri explicite: `GAQL_ROWS=<n>`, `UPSERT_INSERTED=<n>`, `DB_ROWS_LAST30=<n>`.
-- [x] Dacă GAQL principal întoarce 0, rulez fallback minimal pe `campaign`; setez reason și mesaj clar când ambele sunt 0.
-- [x] Rulez verificări și documentez rezultatul.
-
-## Review
-- `sync-now` expune acum per customer în `attempts`: `gaql_rows_fetched`, `inserted_rows`, `db_rows_last_30_for_customer`, `reason_if_zero` (`GAQL_RETURNED_0`, `DB_INSERT_FAILED`, `DB_ROWS_FILTER_MISMATCH`).
-- În `GoogleAdsService.sync_customer_for_client` există loguri explicite pentru Railway: `GAQL_ROWS=<n>`, `UPSERT_INSERTED=<n>`, `DB_ROWS_LAST30=<n>`.
-- Dacă query-ul principal pe `customer` întoarce 0 rows, serviciul rulează automat query fallback minimal pe `campaign` (`segments.date`, `metrics.cost_micros`, `LAST_30_DAYS`); dacă și fallback-ul e 0, reason devine `GAQL_RETURNED_0` cu mesajul cerut despre lipsa datelor/permisiei.
-- Nu am modificat UI sau agregarea SQL de dashboard; schimbările sunt strict în endpoint/service pentru observabilitate și troubleshooting.
+## Review — Fix afișare dashboard când datele există în DB
+- Root-cause: agregările SQL întorc valori `numeric` din Postgres, iar conversia locală din `dashboard.py` accepta doar `(int, float)`. Valorile `Decimal` erau tratate ca nevalide și transformate în `0`, de aici dashboard cu zero chiar când DB avea date.
+- Fix aplicat: `_to_float` și `_to_int` acceptă acum și `Decimal`, astfel metricele agregate din query-uri SQL sunt păstrate corect în payload-ul dashboard (sub-account + agency).
+- Verificare: compilare backend + smoke Python care validează explicit conversia `Decimal` pentru spend/impressions/clicks.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 import logging
 
 from app.core.config import load_settings
@@ -19,11 +20,15 @@ except Exception:  # noqa: BLE001
 
 
 def _to_float(value: object) -> float:
-    return float(value) if isinstance(value, (int, float)) else 0.0
+    if isinstance(value, (int, float, Decimal)):
+        return float(value)
+    return 0.0
 
 
 def _to_int(value: object) -> int:
-    return int(value) if isinstance(value, (int, float)) else 0
+    if isinstance(value, (int, float, Decimal)):
+        return int(value)
+    return 0
 
 
 logger = logging.getLogger(__name__)
