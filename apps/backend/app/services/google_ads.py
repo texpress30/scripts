@@ -947,15 +947,31 @@ class GoogleAdsService:
             "gaql_rows_fetched": gaql_rows_fetched,
         }
 
-    def _fetch_production_daily_metrics(self, *, customer_id: str, days: int = 30) -> dict[str, object]:
+    def _fetch_production_daily_metrics(
+        self,
+        *,
+        customer_id: str,
+        days: int = 30,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> dict[str, object]:
         access_token = self._access_token_from_refresh()
         normalized_customer_id = self._normalize_customer_id(customer_id)
         login_customer_id = self._required_manager_customer_id()
-        window_days = max(1, min(int(days), 90))
+        window_days = max(1, min(int(days), 3660))
+
+        resolved_end = end_date or datetime.now(timezone.utc).date()
+        resolved_start = start_date or (resolved_end - timedelta(days=window_days - 1))
+        if resolved_start > resolved_end:
+            resolved_start, resolved_end = resolved_end, resolved_start
+
+        start_literal = resolved_start.isoformat()
+        end_literal = resolved_end.isoformat()
+        date_clause = f"segments.date BETWEEN '{start_literal}' AND '{end_literal}'"
 
         primary_query = (
             "SELECT segments.date, metrics.impressions, metrics.clicks, metrics.cost_micros "
-            "FROM customer WHERE segments.date DURING LAST_30_DAYS"
+            f"FROM customer WHERE {date_clause}"
         )
         primary_payload = self._fetch_gaql_daily_rows(
             customer_id=normalized_customer_id,
@@ -974,7 +990,7 @@ class GoogleAdsService:
             used_fallback = True
             fallback_query = (
                 "SELECT segments.date, metrics.cost_micros "
-                "FROM campaign WHERE segments.date DURING LAST_30_DAYS"
+                f"FROM campaign WHERE {date_clause}"
             )
             fallback_payload = self._fetch_gaql_daily_rows(
                 customer_id=normalized_customer_id,
@@ -985,20 +1001,18 @@ class GoogleAdsService:
             rows = list(fallback_payload.get("rows", []))
             fallback_fetched = int(fallback_payload.get("gaql_rows_fetched", 0) or 0)
 
-        if window_days < 30:
-            min_date = datetime.now(timezone.utc).date() - timedelta(days=window_days - 1)
-            rows = [item for item in rows if date.fromisoformat(str(item.get("report_date"))) >= min_date]
-
         gaql_rows_fetched = primary_fetched if primary_fetched > 0 else fallback_fetched
         zero_data_message = None
         if gaql_rows_fetched == 0:
-            zero_data_message = "Account has no data in last 30 days or no permission"
+            zero_data_message = f"Account has no data in selected range {start_literal}..{end_literal} or no permission"
 
         return {
             "rows": rows,
             "gaql_rows_fetched": gaql_rows_fetched,
             "used_fallback": used_fallback,
             "zero_data_message": zero_data_message,
+            "resolved_start_date": start_literal,
+            "resolved_end_date": end_literal,
         }
 
     def _fetch_production_metrics(self, *, customer_id: str) -> dict[str, float | int | str]:
@@ -1138,12 +1152,12 @@ class GoogleAdsService:
         google_snapshot_store.upsert_snapshot(payload=snapshot)
         return snapshot
 
-    def sync_customer_for_client(self, *, client_id: int, customer_id: str, days: int = 30) -> dict[str, float | int | str]:
+    def sync_customer_for_client(self, *, client_id: int, customer_id: str, days: int = 30, start_date: date | None = None, end_date: date | None = None) -> dict[str, float | int | str]:
         normalized_customer_id = self._normalize_customer_id(customer_id)
         if not self._is_valid_customer_id(normalized_customer_id):
             raise GoogleAdsIntegrationError(f"Invalid customer id mapping '{customer_id}'. Expected 10 digits.")
 
-        window_days = max(1, min(int(days), 90))
+        window_days = max(1, min(int(days), 3660))
         logger.info(
             "google_ads.sync_now customer_id=%s client_id=%s START",
             normalized_customer_id,
@@ -1155,8 +1169,10 @@ class GoogleAdsService:
         gaql_rows_fetched = 0
 
         if self._is_production_mode():
-            daily_payload = self._fetch_production_daily_metrics(customer_id=normalized_customer_id, days=window_days)
+            daily_payload = self._fetch_production_daily_metrics(customer_id=normalized_customer_id, days=window_days, start_date=start_date, end_date=end_date)
             daily_rows = list(daily_payload.get("rows", []))
+            resolved_start = str(daily_payload.get("resolved_start_date") or "")
+            resolved_end = str(daily_payload.get("resolved_end_date") or "")
             gaql_rows_fetched = int(daily_payload.get("gaql_rows_fetched", 0) or 0)
             if gaql_rows_fetched == 0:
                 reason_if_zero = "GAQL_RETURNED_0"
@@ -1260,6 +1276,9 @@ class GoogleAdsService:
             client_id,
         )
         snapshot["gaql_rows_fetched"] = gaql_rows_fetched
+        if self._is_production_mode():
+            snapshot["resolved_start_date"] = resolved_start
+            snapshot["resolved_end_date"] = resolved_end
         snapshot["inserted_rows"] = inserted_rows
         snapshot["db_rows_last_30_for_customer"] = db_rows_last_30
         snapshot["reason_if_zero"] = reason_if_zero
