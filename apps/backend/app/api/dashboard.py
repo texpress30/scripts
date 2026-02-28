@@ -1,6 +1,6 @@
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from app.api.dependencies import enforce_action_scope, get_current_user
 from app.services.audit import audit_log_service
@@ -15,6 +15,7 @@ def agency_dashboard_summary(
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
     user: AuthUser = Depends(get_current_user),
+    response: Response = None,
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="dashboard:view", scope="agency")
 
@@ -24,6 +25,9 @@ def agency_dashboard_summary(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="start_date must be <= end_date")
 
     metrics = unified_dashboard_service.get_agency_dashboard(start_date=resolved_start, end_date=resolved_end)
+    if response is not None:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
@@ -40,6 +44,7 @@ def client_dashboard(
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
     user: AuthUser = Depends(get_current_user),
+    response: Response = None,
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="dashboard:view", scope="subaccount")
 
@@ -53,6 +58,9 @@ def client_dashboard(
         start_date=resolved_start,
         end_date=resolved_end,
     )
+    if response is not None:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
