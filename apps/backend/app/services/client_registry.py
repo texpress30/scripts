@@ -818,7 +818,7 @@ class ClientRegistryService:
     def get_preferred_currency_for_client(self, *, client_id: int) -> str:
         accounts = self.list_client_platform_accounts(platform="google_ads", client_id=client_id)
         for account in accounts:
-            currency = str(account.get("account_currency") or "").upper()
+            currency = str(account.get("currency") or account.get("account_currency") or "").upper()
             if len(currency) == 3 and currency.isalpha():
                 return currency
         return "USD"
