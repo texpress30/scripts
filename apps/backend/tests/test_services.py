@@ -222,6 +222,29 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(snapshot["google_customer_id"], "1111111111")
         self.assertEqual(sorted(persisted), ["1111111111", "2222222222"])
 
+
+    def test_google_ads_sync_aggregates_all_mapped_accounts_for_client(self):
+        original_ids = google_ads_service.get_recommended_customer_ids_for_client
+        original_persist = google_ads_service._persist_performance_report
+        persisted: list[str] = []
+        try:
+            google_ads_service.get_recommended_customer_ids_for_client = lambda client_id: ["1111111111", "2222222222"]
+
+            def fake_persist(*, snapshot, client_id):
+                persisted.append(str(snapshot.get("google_customer_id") or ""))
+                return 1
+
+            google_ads_service._persist_performance_report = fake_persist
+            snapshot = google_ads_service.sync_client(client_id=2)
+        finally:
+            google_ads_service.get_recommended_customer_ids_for_client = original_ids
+            google_ads_service._persist_performance_report = original_persist
+
+        self.assertEqual(snapshot["synced_customers_count"], 2)
+        self.assertEqual(snapshot["spend"], round((100 + 2 * 17) * 2, 2))
+        self.assertEqual(snapshot["google_customer_id"], "1111111111")
+        self.assertEqual(sorted(persisted), ["1111111111", "2222222222"])
+
     def test_google_ads_list_accessible_customers_uses_manager_search_stream(self):
         os.environ["GOOGLE_ADS_MODE"] = "production"
         os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
