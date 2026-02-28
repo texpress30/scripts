@@ -610,6 +610,12 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(metrics["clicks"], 376)
 
 
+    def test_agency_dashboard_query_matches_google_ids_with_or_without_separators(self):
+        query = unified_dashboard_service._agency_reports_query()
+
+        self.assertIn("regexp_replace(m.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')", query)
+        self.assertIn("COALESCE(NULLIF(TRIM(mapped.account_currency), ''), NULLIF(TRIM(client.currency), ''), 'RON')", query)
+
     def test_agency_dashboard_rows_are_converted_to_ron_by_day_currency(self):
         original_rate = unified_dashboard_service._get_fx_rate_to_ron
         try:

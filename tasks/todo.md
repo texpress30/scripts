@@ -154,3 +154,18 @@
 - Root-cause: când providerul FX extern e indisponibil, conversia cădea pe `1.0`, deci sumele USD/EUR erau tratate greșit ca RON în Agency total.
 - Fix: fallback-ul valutar folosește rate implicite pe monede comune (USD/EUR/GBP etc.), astfel totalul Agency rămâne convertit în RON chiar și fără răspuns din provider.
 - Top clienți: ranking-ul rămâne pe `spend_ron` (comparabil), dar afișarea folosește suma + valuta nativă a clientului (ex. FBM în USD).
+
+---
+
+# TODO — Fix Total Spend RON în Agency View pentru toate conturile (multi-currency)
+
+- [x] Reproduc și identific exact de ce sumele USD/EUR rămân neconvertite în totalul agency.
+- [x] Aplic fix minim în agregarea agency astfel încât moneda pe rând să fie rezolvată corect pentru fiecare cont mapat (inclusiv diferențe de format account_id/customer_id).
+- [x] Adaug test de regresie pentru cazul mapping existent dar ID cu format diferit (ex: `123-456-7890` vs `1234567890`) ca să valideze conversia în RON.
+- [x] Rulez verificări backend țintite și confirm numeric totalul convertit.
+- [x] Completez Review cu root-cause + rezultat.
+
+## Review — Fix Total Spend RON în Agency View pentru toate conturile (multi-currency)
+- Root-cause: agregarea agency deriva moneda doar din `agency_account_client_mappings.account_currency` pe join strict `m.account_id = apr.customer_id`. Pentru Google Ads, unele mapping-uri pot exista cu account id formatat cu separatori (`123-456-7890`), iar rapoartele se salvează normalizat (`1234567890`), deci join-ul rata mapping-ul și fallback-ul devenea `RON` (fără conversie).
+- Fix: query-ul de agency folosește acum matching tolerant pentru Google (`regexp_replace(..., '[^0-9]', '', 'g')`) + fallback de monedă la `agency_clients.currency` când mapping-ul nu are `account_currency`.
+- Rezultat: rândurile USD/EUR sunt convertite la RON în totalul agency chiar când formatul ID diferă între mapping și raport, iar Total Spend RON reflectă suma unificată corectă.
