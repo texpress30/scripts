@@ -108,3 +108,18 @@
 - Fix backend: agregarea se face acum pe rânduri zilnice din `ad_performance_reports`, cu moneda preluată din mapping (`account_currency`) și conversie la RON per zi prin curs valutar (Frankfurter API) + fallback pe zile anterioare.
 - Fix frontend: card-urile monetare și Top clienți folosesc `summary.currency` (RON) pentru formatare, nu hardcodare `$`.
 - Rezultat: totalul Agency (spend/revenue) și ranking-ul Top clienți sunt comparabile, toate în RON.
+
+---
+
+# TODO — Sub-account Settings > Conturi: afișare conturi alocate per platformă
+
+- [x] Audit pagină existentă `subaccount/[id]/settings/accounts` și endpoint-uri reutilizabile pentru conturile clientului.
+- [x] Implement UI cu conturile alocate sub-account-ului curent, grupate pe platforme (fără dropdown de selectare client).
+- [x] Rulez verificări frontend + screenshot pentru schimbarea vizuală.
+- [x] Documentez review și lecția în `tasks/*`.
+
+
+## Review — Sub-account Settings > Conturi: afișare conturi alocate per platformă
+- Am înlocuit placeholder-ul din pagina de Conturi cu listarea efectivă a conturilor alocate sub-account-ului curent, grupate pe platforme (Google/Meta/TikTok/Pinterest/Snapchat), cu câmpuri informative similare Agency Clients (tip client, responsabil, monedă).
+- Nu există dropdown de selectare client pe această pagină; datele sunt strict pentru sub-account-ul din URL.
+- Implementarea reutilizează endpoint-urile existente (`/clients` + `/clients/display/{display_id}`), fără schimbări backend.
