@@ -59,3 +59,4 @@
 - 2026-02-28: Când backend-ul expune câmpuri denumite diferit între straturi (ex. `currency` vs `account_currency`), validează explicit contractul producer/consumer; un key mismatch poate păstra fallback-uri greșite (USD) deși datele sunt setate corect.
 - 2026-02-28: Pentru dashboard-uri agency multi-account, nu agrega sume monetare cross-account fără normalizare de monedă; convertește pe zi și pe cont în moneda de raportare (ex. RON) înainte de total/top rankings.
 - 2026-02-28: Pentru paginile Sub-account Settings cerute ca variantă Agency Clients-like, evită placeholder-ul și livrează direct listarea conturilor per platformă pentru sub-account-ul din URL, fără UI de re-atașare/selectare client.
+- 2026-02-28: Pentru sync pe client în platforme ads, nu folosi un singur account fallback (`LIMIT 1`) când modelul permite many-to-one; iterează toate mapping-urile clientului și persistă per account.

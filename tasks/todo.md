@@ -123,3 +123,18 @@
 - Am înlocuit placeholder-ul din pagina de Conturi cu listarea efectivă a conturilor alocate sub-account-ului curent, grupate pe platforme (Google/Meta/TikTok/Pinterest/Snapchat), cu câmpuri informative similare Agency Clients (tip client, responsabil, monedă).
 - Nu există dropdown de selectare client pe această pagină; datele sunt strict pentru sub-account-ul din URL.
 - Implementarea reutilizează endpoint-urile existente (`/clients` + `/clients/display/{display_id}`), fără schimbări backend.
+
+---
+
+# TODO — Sub-account dashboard să includă toate conturile asociate clientului
+
+- [x] Audit flow sync/ingest pentru conturi mapate client și identificare punct unde se procesează un singur cont.
+- [x] Refactor backend sync ca să ruleze pentru toate conturile asociate clientului (nu doar primul mapping).
+- [x] Confirm agregarea dashboard pe datele rezultate din toate conturile mapate.
+- [x] Rulez verificări țintite + screenshot și documentez review/lessons.
+
+
+## Review — Sub-account dashboard să includă toate conturile asociate clientului
+- Root-cause: `google_ads_service.sync_client` folosea un singur `customer_id` recomandat (primul mapping), deci la clienții cu zeci de conturi mapate erau ingestate date doar pentru un cont.
+- Fix: `sync_client` rezolvă acum lista completă de conturi mapate (`get_recommended_customer_ids_for_client`) și face sync + persistență pentru fiecare cont asociat clientului.
+- Rezultat: `ad_performance_reports` primește rânduri pentru toate conturile asociate clientului, iar dashboard-ul sub-account poate agrega corect pe întreg portofoliul clientului.
