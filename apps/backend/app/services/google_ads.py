@@ -854,6 +854,32 @@ class GoogleAdsService:
             return self._normalize_customer_id(configured[client_id - 1])
         return None
 
+    def get_recommended_customer_ids_for_client(self, client_id: int) -> list[str]:
+        if client_id <= 0:
+            return []
+
+        mapped_accounts = [
+            self._normalize_customer_id(str(item.get("customer_id") or ""))
+            for item in client_registry_service.list_google_mapped_accounts()
+            if int(item.get("client_id") or 0) == client_id
+        ]
+
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for item in mapped_accounts:
+            if not self._is_valid_customer_id(item):
+                continue
+            if item in seen:
+                continue
+            seen.add(item)
+            deduped.append(item)
+
+        if deduped:
+            return deduped
+
+        fallback = self.get_recommended_customer_id_for_client(client_id)
+        return [fallback] if fallback else []
+
     def _fetch_gaql_daily_rows(
         self,
         *,
@@ -921,15 +947,31 @@ class GoogleAdsService:
             "gaql_rows_fetched": gaql_rows_fetched,
         }
 
-    def _fetch_production_daily_metrics(self, *, customer_id: str, days: int = 30) -> dict[str, object]:
+    def _fetch_production_daily_metrics(
+        self,
+        *,
+        customer_id: str,
+        days: int = 30,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> dict[str, object]:
         access_token = self._access_token_from_refresh()
         normalized_customer_id = self._normalize_customer_id(customer_id)
         login_customer_id = self._required_manager_customer_id()
-        window_days = max(1, min(int(days), 90))
+        window_days = max(1, min(int(days), 3660))
+
+        resolved_end = end_date or datetime.now(timezone.utc).date()
+        resolved_start = start_date or (resolved_end - timedelta(days=window_days - 1))
+        if resolved_start > resolved_end:
+            resolved_start, resolved_end = resolved_end, resolved_start
+
+        start_literal = resolved_start.isoformat()
+        end_literal = resolved_end.isoformat()
+        date_clause = f"segments.date BETWEEN '{start_literal}' AND '{end_literal}'"
 
         primary_query = (
             "SELECT segments.date, metrics.impressions, metrics.clicks, metrics.cost_micros "
-            "FROM customer WHERE segments.date DURING LAST_30_DAYS"
+            f"FROM customer WHERE {date_clause}"
         )
         primary_payload = self._fetch_gaql_daily_rows(
             customer_id=normalized_customer_id,
@@ -948,7 +990,7 @@ class GoogleAdsService:
             used_fallback = True
             fallback_query = (
                 "SELECT segments.date, metrics.cost_micros "
-                "FROM campaign WHERE segments.date DURING LAST_30_DAYS"
+                f"FROM campaign WHERE {date_clause}"
             )
             fallback_payload = self._fetch_gaql_daily_rows(
                 customer_id=normalized_customer_id,
@@ -959,20 +1001,18 @@ class GoogleAdsService:
             rows = list(fallback_payload.get("rows", []))
             fallback_fetched = int(fallback_payload.get("gaql_rows_fetched", 0) or 0)
 
-        if window_days < 30:
-            min_date = datetime.now(timezone.utc).date() - timedelta(days=window_days - 1)
-            rows = [item for item in rows if date.fromisoformat(str(item.get("report_date"))) >= min_date]
-
         gaql_rows_fetched = primary_fetched if primary_fetched > 0 else fallback_fetched
         zero_data_message = None
         if gaql_rows_fetched == 0:
-            zero_data_message = "Account has no data in last 30 days or no permission"
+            zero_data_message = f"Account has no data in selected range {start_literal}..{end_literal} or no permission"
 
         return {
             "rows": rows,
             "gaql_rows_fetched": gaql_rows_fetched,
             "used_fallback": used_fallback,
             "zero_data_message": zero_data_message,
+            "resolved_start_date": start_literal,
+            "resolved_end_date": end_literal,
         }
 
     def _fetch_production_metrics(self, *, customer_id: str) -> dict[str, float | int | str]:
@@ -1036,62 +1076,88 @@ class GoogleAdsService:
             return 0
 
     def sync_client(self, client_id: int) -> dict[str, float | int | str]:
-        if self._is_production_mode():
-            customer_id = self.get_recommended_customer_id_for_client(client_id)
-            if not customer_id:
-                raise GoogleAdsIntegrationError(
-                    "No Google customer mapping for this client. Set GOOGLE_ADS_CUSTOMER_IDS_CSV ordered by local client ids or import accounts first."
-                )
-            if not self._is_valid_customer_id(customer_id):
-                raise GoogleAdsIntegrationError(f"Invalid customer id mapping '{customer_id}'. Expected 10 digits.")
-            real_metrics = self._fetch_production_metrics(customer_id=customer_id)
-            snapshot = {
-                "client_id": client_id,
-                "platform": "google_ads",
-                "spend": round(float(real_metrics["spend"]), 2),
-                "impressions": int(real_metrics["impressions"]),
-                "clicks": int(real_metrics["clicks"]),
-                "conversions": int(real_metrics["conversions"]),
-                "revenue": round(float(real_metrics["revenue"]), 2),
-                "google_customer_id": str(real_metrics["google_customer_id"]),
-                "synced_at": datetime.now(timezone.utc).isoformat(),
-            }
-            google_snapshot_store.upsert_snapshot(payload=snapshot)
-            self._persist_performance_report(snapshot=snapshot, client_id=client_id)
-            return snapshot
+        customer_ids = self.get_recommended_customer_ids_for_client(client_id)
+        if not customer_ids:
+            raise GoogleAdsIntegrationError(
+                "No Google customer mapping for this client. Set GOOGLE_ADS_CUSTOMER_IDS_CSV ordered by local client ids or import accounts first."
+            )
 
-        settings = load_settings()
-        token = settings.google_ads_token.strip()
-        if not token or token.startswith("your_"):
-            raise GoogleAdsIntegrationError("Google Ads token is missing or placeholder.")
+        invalid_ids = [item for item in customer_ids if not self._is_valid_customer_id(item)]
+        if invalid_ids:
+            raise GoogleAdsIntegrationError(f"Invalid customer id mapping '{invalid_ids[0]}'. Expected 10 digits.")
 
-        spend = float(100 + client_id * 17)
-        impressions = 5000 + client_id * 110
-        clicks = 200 + client_id * 9
-        conversions = 5 + client_id
-        revenue = round(spend * 3.2, 2)
+        synced_at = datetime.now(timezone.utc).isoformat()
+        aggregated_spend = 0.0
+        aggregated_impressions = 0
+        aggregated_clicks = 0
+        aggregated_conversions = 0
+        aggregated_revenue = 0.0
 
-        snapshot = {
+        for customer_id in customer_ids:
+            if self._is_production_mode():
+                daily_payload = self._fetch_production_daily_metrics(customer_id=customer_id, days=30)
+                daily_rows = list(daily_payload.get("rows", []))
+                customer_snapshot = {
+                    "client_id": client_id,
+                    "platform": "google_ads",
+                    "spend": round(sum(float(item.get("spend", 0.0)) for item in daily_rows), 2),
+                    "impressions": sum(int(item.get("impressions", 0)) for item in daily_rows),
+                    "clicks": sum(int(item.get("clicks", 0)) for item in daily_rows),
+                    "conversions": 0,
+                    "revenue": 0.0,
+                    "google_customer_id": customer_id,
+                    "synced_at": synced_at,
+                }
+                for row in daily_rows:
+                    payload_row = dict(row)
+                    payload_row["google_customer_id"] = customer_id
+                    self._persist_performance_report(snapshot=payload_row, client_id=client_id)
+            else:
+                spend = float(100 + client_id * 17)
+                impressions = 5000 + client_id * 110
+                clicks = 200 + client_id * 9
+                conversions = 5 + client_id
+                revenue = round(spend * 3.2, 2)
+                customer_snapshot = {
+                    "client_id": client_id,
+                    "platform": "google_ads",
+                    "spend": round(spend, 2),
+                    "impressions": impressions,
+                    "clicks": clicks,
+                    "conversions": conversions,
+                    "revenue": revenue,
+                    "google_customer_id": customer_id,
+                    "synced_at": synced_at,
+                }
+                self._persist_performance_report(snapshot=customer_snapshot, client_id=client_id)
+
+            aggregated_spend += float(customer_snapshot["spend"])
+            aggregated_impressions += int(customer_snapshot["impressions"])
+            aggregated_clicks += int(customer_snapshot["clicks"])
+            aggregated_conversions += int(customer_snapshot["conversions"])
+            aggregated_revenue += float(customer_snapshot["revenue"])
+
+        snapshot: dict[str, float | int | str] = {
             "client_id": client_id,
             "platform": "google_ads",
-            "spend": round(spend, 2),
-            "impressions": impressions,
-            "clicks": clicks,
-            "conversions": conversions,
-            "revenue": revenue,
-            "synced_at": datetime.now(timezone.utc).isoformat(),
+            "spend": round(aggregated_spend, 2),
+            "impressions": aggregated_impressions,
+            "clicks": aggregated_clicks,
+            "conversions": aggregated_conversions,
+            "revenue": round(aggregated_revenue, 2),
+            "google_customer_id": customer_ids[0],
+            "synced_customers_count": len(customer_ids),
+            "synced_at": synced_at,
         }
-
         google_snapshot_store.upsert_snapshot(payload=snapshot)
-        self._persist_performance_report(snapshot=snapshot, client_id=client_id)
         return snapshot
 
-    def sync_customer_for_client(self, *, client_id: int, customer_id: str, days: int = 30) -> dict[str, float | int | str]:
+    def sync_customer_for_client(self, *, client_id: int, customer_id: str, days: int = 30, start_date: date | None = None, end_date: date | None = None) -> dict[str, float | int | str]:
         normalized_customer_id = self._normalize_customer_id(customer_id)
         if not self._is_valid_customer_id(normalized_customer_id):
             raise GoogleAdsIntegrationError(f"Invalid customer id mapping '{customer_id}'. Expected 10 digits.")
 
-        window_days = max(1, min(int(days), 90))
+        window_days = max(1, min(int(days), 3660))
         logger.info(
             "google_ads.sync_now customer_id=%s client_id=%s START",
             normalized_customer_id,
@@ -1103,8 +1169,10 @@ class GoogleAdsService:
         gaql_rows_fetched = 0
 
         if self._is_production_mode():
-            daily_payload = self._fetch_production_daily_metrics(customer_id=normalized_customer_id, days=window_days)
+            daily_payload = self._fetch_production_daily_metrics(customer_id=normalized_customer_id, days=window_days, start_date=start_date, end_date=end_date)
             daily_rows = list(daily_payload.get("rows", []))
+            resolved_start = str(daily_payload.get("resolved_start_date") or "")
+            resolved_end = str(daily_payload.get("resolved_end_date") or "")
             gaql_rows_fetched = int(daily_payload.get("gaql_rows_fetched", 0) or 0)
             if gaql_rows_fetched == 0:
                 reason_if_zero = "GAQL_RETURNED_0"
@@ -1208,6 +1276,9 @@ class GoogleAdsService:
             client_id,
         )
         snapshot["gaql_rows_fetched"] = gaql_rows_fetched
+        if self._is_production_mode():
+            snapshot["resolved_start_date"] = resolved_start
+            snapshot["resolved_end_date"] = resolved_end
         snapshot["inserted_rows"] = inserted_rows
         snapshot["db_rows_last_30_for_customer"] = db_rows_last_30
         snapshot["reason_if_zero"] = reason_if_zero
