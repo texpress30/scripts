@@ -76,3 +76,18 @@
 - Cauza: în `agency/clients/[id]/page.tsx` rămăsese un bloc JSX duplicat care folosea variabile vechi/nedeclarate (`isEditingRow`, `saveRowIfChanged`, `savingRowId`, `draft.accountCurrency`).
 - Fix: am eliminat blocul duplicat și am păstrat doar implementarea activă bazată pe `editingRowFieldKey`, deja declarată în componentă.
 - Verificare: `npm run build` în `apps/frontend` trece complet (type-check + static generation).
+
+---
+
+# TODO — Sub-account să folosească moneda de referință per cont de promovare
+
+- [x] Audit traseu backend/frontend pentru moneda afișată în Sub-account Dashboard.
+- [x] Expun în payload-ul sub-account moneda de referință din mapping-ul contului de promovare (Agency Accounts).
+- [x] Afișez spend/revenue în frontend sub-account folosind moneda primită din backend.
+- [x] Rulez verificări (build/type) + screenshot și documentez review.
+
+
+## Review — Sub-account să folosească moneda de referință per cont de promovare
+- Root-cause: `get_preferred_currency_for_client` căuta cheia `account_currency`, dar `list_client_platform_accounts` returnează cheia `currency`; fallback-ul cădea mereu pe `USD`.
+- Fix: preferința de monedă citește acum `currency` (și păstrează fallback compatibil `account_currency`).
+- Rezultat: Sub-account Dashboard primește acum moneda corectă din mapping-ul contului de promovare setat în Agency Accounts.
