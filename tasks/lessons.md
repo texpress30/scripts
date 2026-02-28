@@ -55,3 +55,7 @@
 - 2026-02-28: După commit pentru livrare, verifică explicit că branch-ul local este împins pe `origin` (nu doar commit local) și re-rulează `make_pr`; fără push, butonul/PR-ul poate lipsi chiar dacă rezumatul spune că PR-ul există.
 - 2026-02-28: Când utilizatorul cere branch fix de lucru (ex. `work`) și PR unic activ, nu crea branch-uri noi per task; menține toate schimbările pe branch-ul indicat și actualizează același PR până la confirmarea finală.
 - 2026-02-28: În Agency Clients, pentru câmpurile editabile pe rând (tip cont, responsabil, monedă), oferă controale de editare separate per câmp (creion individual), nu un singur toggle global pe rând.
+- 2026-02-28: După refactor UI, verifică să nu rămână blocuri JSX duplicate cu variabile vechi; rulează obligatoriu `npm run build` ca să prinzi rapid erori TypeScript de tip "Cannot find name" înainte de push.
+- 2026-02-28: Când backend-ul expune câmpuri denumite diferit între straturi (ex. `currency` vs `account_currency`), validează explicit contractul producer/consumer; un key mismatch poate păstra fallback-uri greșite (USD) deși datele sunt setate corect.
+- 2026-02-28: Pentru dashboard-uri agency multi-account, nu agrega sume monetare cross-account fără normalizare de monedă; convertește pe zi și pe cont în moneda de raportare (ex. RON) înainte de total/top rankings.
+- 2026-02-28: Pentru paginile Sub-account Settings cerute ca variantă Agency Clients-like, evită placeholder-ul și livrează direct listarea conturilor per platformă pentru sub-account-ul din URL, fără UI de re-atașare/selectare client.
