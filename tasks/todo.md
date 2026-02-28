@@ -61,3 +61,80 @@
 - Backend: am adăugat `currency` la nivel de client și `account_currency` în `agency_account_client_mappings`, plus propagare în endpoint-ul `PATCH /clients/display/{display_id}` pentru update per cont (`platform` + `account_id`).
 - Frontend: în Agency Client details există acum câte un creion separat pentru fiecare câmp editabil de pe rând (tip client, responsabil, monedă), cu salvare individuală și feedback vizual per câmp.
 - Verificare: `python -m py_compile` pe fișierele modificate și `npx tsc --noEmit` pe frontend au trecut; `next lint` nu poate rula non-interactiv deoarece proiectul solicită inițializare ESLint interactivă.
+
+---
+
+# TODO — CRITICAL FRONTEND FIX: isEditingRow undefined on Vercel build
+
+- [x] Inspect Agency Client details page and identify undefined `isEditingRow` reference causing build failure.
+- [x] Apply minimal frontend fix by replacing undefined reference with declared row-editing state key check.
+- [x] Run `npm run build` in `apps/frontend` to validate Vercel-equivalent build.
+- [x] Commit with requested message and push to `origin/main`.
+
+
+## Review — CRITICAL FRONTEND FIX: isEditingRow undefined on Vercel build
+- Cauza: în `agency/clients/[id]/page.tsx` rămăsese un bloc JSX duplicat care folosea variabile vechi/nedeclarate (`isEditingRow`, `saveRowIfChanged`, `savingRowId`, `draft.accountCurrency`).
+- Fix: am eliminat blocul duplicat și am păstrat doar implementarea activă bazată pe `editingRowFieldKey`, deja declarată în componentă.
+- Verificare: `npm run build` în `apps/frontend` trece complet (type-check + static generation).
+
+---
+
+# TODO — Sub-account să folosească moneda de referință per cont de promovare
+
+- [x] Audit traseu backend/frontend pentru moneda afișată în Sub-account Dashboard.
+- [x] Expun în payload-ul sub-account moneda de referință din mapping-ul contului de promovare (Agency Accounts).
+- [x] Afișez spend/revenue în frontend sub-account folosind moneda primită din backend.
+- [x] Rulez verificări (build/type) + screenshot și documentez review.
+
+
+## Review — Sub-account să folosească moneda de referință per cont de promovare
+- Root-cause: `get_preferred_currency_for_client` căuta cheia `account_currency`, dar `list_client_platform_accounts` returnează cheia `currency`; fallback-ul cădea mereu pe `USD`.
+- Fix: preferința de monedă citește acum `currency` (și păstrează fallback compatibil `account_currency`).
+- Rezultat: Sub-account Dashboard primește acum moneda corectă din mapping-ul contului de promovare setat în Agency Accounts.
+
+
+---
+
+# TODO — Agency Dashboard agregat în RON cu conversie valutară pe zi
+
+- [x] Audit traseu Agency Dashboard pentru agregare spend/revenue și identificare sursă monedă per cont.
+- [x] Implement conversie la RON per zi (`report_date`) pentru conturile non-RON, folosind curs valutar zilnic și fallback sigur.
+- [x] Aplic conversia în totaluri Agency + Top clienți (după spend), păstrând metricele non-monetare neschimbate.
+- [x] Actualizez UI Agency Dashboard să afișeze valorile monetare în moneda returnată de backend (RON).
+- [x] Rulez verificări țintite + screenshot și documentez review.
+
+## Review — Agency Dashboard agregat în RON cu conversie valutară pe zi
+- Root-cause: Agency Dashboard însuma direct `spend`/`conversion_value` fără a ține cont de moneda contului mapat, deci totalul era incorect în scenarii multi-currency.
+- Fix backend: agregarea se face acum pe rânduri zilnice din `ad_performance_reports`, cu moneda preluată din mapping (`account_currency`) și conversie la RON per zi prin curs valutar (Frankfurter API) + fallback pe zile anterioare.
+- Fix frontend: card-urile monetare și Top clienți folosesc `summary.currency` (RON) pentru formatare, nu hardcodare `$`.
+- Rezultat: totalul Agency (spend/revenue) și ranking-ul Top clienți sunt comparabile, toate în RON.
+
+---
+
+# TODO — Sub-account Settings > Conturi: afișare conturi alocate per platformă
+
+- [x] Audit pagină existentă `subaccount/[id]/settings/accounts` și endpoint-uri reutilizabile pentru conturile clientului.
+- [x] Implement UI cu conturile alocate sub-account-ului curent, grupate pe platforme (fără dropdown de selectare client).
+- [x] Rulez verificări frontend + screenshot pentru schimbarea vizuală.
+- [x] Documentez review și lecția în `tasks/*`.
+
+
+## Review — Sub-account Settings > Conturi: afișare conturi alocate per platformă
+- Am înlocuit placeholder-ul din pagina de Conturi cu listarea efectivă a conturilor alocate sub-account-ului curent, grupate pe platforme (Google/Meta/TikTok/Pinterest/Snapchat), cu câmpuri informative similare Agency Clients (tip client, responsabil, monedă).
+- Nu există dropdown de selectare client pe această pagină; datele sunt strict pentru sub-account-ul din URL.
+- Implementarea reutilizează endpoint-urile existente (`/clients` + `/clients/display/{display_id}`), fără schimbări backend.
+
+---
+
+# TODO — Sub-account dashboard să includă toate conturile asociate clientului
+
+- [x] Audit flow sync/ingest pentru conturi mapate client și identificare punct unde se procesează un singur cont.
+- [x] Refactor backend sync ca să ruleze pentru toate conturile asociate clientului (nu doar primul mapping).
+- [x] Confirm agregarea dashboard pe datele rezultate din toate conturile mapate.
+- [x] Rulez verificări țintite + screenshot și documentez review/lessons.
+
+
+## Review — Sub-account dashboard să includă toate conturile asociate clientului
+- Root-cause: `google_ads_service.sync_client` folosea un singur `customer_id` recomandat (primul mapping), deci la clienții cu zeci de conturi mapate erau ingestate date doar pentru un cont.
+- Fix: `sync_client` rezolvă acum lista completă de conturi mapate (`get_recommended_customer_ids_for_client`) și face sync + persistență pentru fiecare cont asociat clientului.
+- Rezultat: `ad_performance_reports` primește rânduri pentru toate conturile asociate clientului, iar dashboard-ul sub-account poate agrega corect pe întreg portofoliul clientului.
