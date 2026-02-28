@@ -167,3 +167,18 @@
 - În producție, sync-ul rulează GAQL minim pe `LAST_30_DAYS` cu `segments.date`, `metrics.impressions`, `metrics.clicks`, `metrics.cost_micros`, agregă pe zi și persistă câte un rând/zi în `ad_performance_reports`.
 - Request-urile Google Ads păstrează `login-customer-id` setat la manager MCC (din `_required_manager_customer_id`), inclus în headers la `searchStream`.
 - După inserare, răspunsul include `rows_in_db_last_30_days_for_customer` calculat prin `SELECT COUNT(*)` pentru `platform=google_ads` + customer_id în ultimele 30 zile, astfel încât smoke-ul poate dovedi `inserted_rows_total > 0` și DB rows > 0.
+
+---
+
+# TODO — Explicare inserted_rows_total=0 în sync-now
+
+- [x] Adaug în response per customer: `gaql_rows_fetched`, `inserted_rows`, `db_rows_last_30_for_customer`, `reason_if_zero`.
+- [x] Adaug loguri explicite: `GAQL_ROWS=<n>`, `UPSERT_INSERTED=<n>`, `DB_ROWS_LAST30=<n>`.
+- [x] Dacă GAQL principal întoarce 0, rulez fallback minimal pe `campaign`; setez reason și mesaj clar când ambele sunt 0.
+- [x] Rulez verificări și documentez rezultatul.
+
+## Review
+- `sync-now` expune acum per customer în `attempts`: `gaql_rows_fetched`, `inserted_rows`, `db_rows_last_30_for_customer`, `reason_if_zero` (`GAQL_RETURNED_0`, `DB_INSERT_FAILED`, `DB_ROWS_FILTER_MISMATCH`).
+- În `GoogleAdsService.sync_customer_for_client` există loguri explicite pentru Railway: `GAQL_ROWS=<n>`, `UPSERT_INSERTED=<n>`, `DB_ROWS_LAST30=<n>`.
+- Dacă query-ul principal pe `customer` întoarce 0 rows, serviciul rulează automat query fallback minimal pe `campaign` (`segments.date`, `metrics.cost_micros`, `LAST_30_DAYS`); dacă și fallback-ul e 0, reason devine `GAQL_RETURNED_0` cu mesajul cerut despre lipsa datelor/permisiei.
+- Nu am modificat UI sau agregarea SQL de dashboard; schimbările sunt strict în endpoint/service pentru observabilitate și troubleshooting.

@@ -226,9 +226,10 @@ def sync_google_ads_now(
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
 
+    requested_client_id = client_id
     mapped_accounts = client_registry_service.list_google_mapped_accounts()
-    if client_id is not None:
-        mapped_accounts = [item for item in mapped_accounts if int(item.get("client_id") or 0) == int(client_id)]
+    if requested_client_id is not None:
+        mapped_accounts = [item for item in mapped_accounts if int(item.get("client_id") or 0) == int(requested_client_id)]
     mapped_accounts_count = len(mapped_accounts)
 
     if mapped_accounts_count == 0:
@@ -255,7 +256,9 @@ def sync_google_ads_now(
                     "customer_id_masked": masked_customer_id,
                     "status": "ok",
                     "inserted_rows": inserted_rows,
-                    "rows_in_db_last_30_days_for_customer": int(snapshot.get("rows_in_db_last_30_days_for_customer", 0) or 0),
+                    "gaql_rows_fetched": int(snapshot.get("gaql_rows_fetched", 0) or 0),
+                    "db_rows_last_30_for_customer": int(snapshot.get("db_rows_last_30_for_customer", 0) or 0),
+                    "reason_if_zero": snapshot.get("reason_if_zero"),
                 }
             )
         except Exception as exc:  # noqa: BLE001
@@ -266,7 +269,10 @@ def sync_google_ads_now(
                     "client_id": client_id,
                     "customer_id_masked": masked_customer_id,
                     "status": "error",
+                    "gaql_rows_fetched": 0,
                     "inserted_rows": 0,
+                    "db_rows_last_30_for_customer": 0,
+                    "reason_if_zero": "DB_INSERT_FAILED",
                 }
             )
             errors_summary.append(
@@ -295,7 +301,7 @@ def sync_google_ads_now(
         "sample_customer_ids": sample_customer_ids,
         "errors_summary": errors_summary,
         "attempts": attempts,
-        "client_id": client_id,
+        "client_id": requested_client_id,
         "days": int(days),
     }
 
@@ -310,7 +316,7 @@ def sync_google_ads_now(
             "succeeded_accounts_count": succeeded_accounts_count,
             "failed_accounts_count": failed_accounts_count,
             "inserted_rows_total": inserted_rows_total,
-            "client_id": client_id,
+            "client_id": requested_client_id,
             "days": int(days),
         },
     )

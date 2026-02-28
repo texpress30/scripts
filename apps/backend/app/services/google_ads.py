@@ -854,17 +854,17 @@ class GoogleAdsService:
             return self._normalize_customer_id(configured[client_id - 1])
         return None
 
-    def _fetch_production_daily_metrics(self, *, customer_id: str, days: int = 30) -> list[dict[str, float | int | str]]:
+    def _fetch_gaql_daily_rows(
+        self,
+        *,
+        customer_id: str,
+        query: str,
+        login_customer_id: str,
+        access_token: str,
+    ) -> dict[str, object]:
         settings = load_settings()
-        access_token = self._access_token_from_refresh()
         api_version = self._google_api_version()
         normalized_customer_id = self._normalize_customer_id(customer_id)
-        login_customer_id = self._required_manager_customer_id()
-        window_days = max(1, min(int(days), 90))
-        query = (
-            "SELECT segments.date, metrics.impressions, metrics.clicks, metrics.cost_micros "
-            "FROM customer WHERE segments.date DURING LAST_30_DAYS"
-        )
 
         response_payload = self._http_json(
             method="POST",
@@ -881,6 +881,7 @@ class GoogleAdsService:
             raise GoogleAdsIntegrationError("Invalid Google Ads searchStream response")
 
         per_day: dict[str, dict[str, float | int | str]] = {}
+        gaql_rows_fetched = 0
 
         for chunk in response_payload:
             if not isinstance(chunk, dict):
@@ -898,6 +899,7 @@ class GoogleAdsService:
                 report_date = str(segments.get("date", "")).strip()
                 if report_date == "":
                     continue
+                gaql_rows_fetched += 1
                 day_payload = per_day.setdefault(
                     report_date,
                     {
@@ -914,14 +916,68 @@ class GoogleAdsService:
                 day_payload["impressions"] = int(day_payload["impressions"]) + int(metrics.get("impressions", 0) or 0)
                 day_payload["clicks"] = int(day_payload["clicks"]) + int(metrics.get("clicks", 0) or 0)
 
-        rows = [per_day[key] for key in sorted(per_day.keys())]
+        return {
+            "rows": [per_day[key] for key in sorted(per_day.keys())],
+            "gaql_rows_fetched": gaql_rows_fetched,
+        }
+
+    def _fetch_production_daily_metrics(self, *, customer_id: str, days: int = 30) -> dict[str, object]:
+        access_token = self._access_token_from_refresh()
+        normalized_customer_id = self._normalize_customer_id(customer_id)
+        login_customer_id = self._required_manager_customer_id()
+        window_days = max(1, min(int(days), 90))
+
+        primary_query = (
+            "SELECT segments.date, metrics.impressions, metrics.clicks, metrics.cost_micros "
+            "FROM customer WHERE segments.date DURING LAST_30_DAYS"
+        )
+        primary_payload = self._fetch_gaql_daily_rows(
+            customer_id=normalized_customer_id,
+            query=primary_query,
+            login_customer_id=login_customer_id,
+            access_token=access_token,
+        )
+        primary_rows = list(primary_payload.get("rows", []))
+        primary_fetched = int(primary_payload.get("gaql_rows_fetched", 0) or 0)
+
+        used_fallback = False
+        fallback_fetched = 0
+        rows = primary_rows
+
+        if primary_fetched == 0:
+            used_fallback = True
+            fallback_query = (
+                "SELECT segments.date, metrics.cost_micros "
+                "FROM campaign WHERE segments.date DURING LAST_30_DAYS"
+            )
+            fallback_payload = self._fetch_gaql_daily_rows(
+                customer_id=normalized_customer_id,
+                query=fallback_query,
+                login_customer_id=login_customer_id,
+                access_token=access_token,
+            )
+            rows = list(fallback_payload.get("rows", []))
+            fallback_fetched = int(fallback_payload.get("gaql_rows_fetched", 0) or 0)
+
         if window_days < 30:
             min_date = datetime.now(timezone.utc).date() - timedelta(days=window_days - 1)
             rows = [item for item in rows if date.fromisoformat(str(item.get("report_date"))) >= min_date]
-        return rows
+
+        gaql_rows_fetched = primary_fetched if primary_fetched > 0 else fallback_fetched
+        zero_data_message = None
+        if gaql_rows_fetched == 0:
+            zero_data_message = "Account has no data in last 30 days or no permission"
+
+        return {
+            "rows": rows,
+            "gaql_rows_fetched": gaql_rows_fetched,
+            "used_fallback": used_fallback,
+            "zero_data_message": zero_data_message,
+        }
 
     def _fetch_production_metrics(self, *, customer_id: str) -> dict[str, float | int | str]:
-        rows = self._fetch_production_daily_metrics(customer_id=customer_id, days=30)
+        payload = self._fetch_production_daily_metrics(customer_id=customer_id, days=30)
+        rows = list(payload.get("rows", []))
         spend = sum(float(item.get("spend", 0.0)) for item in rows)
         impressions = sum(int(item.get("impressions", 0)) for item in rows)
         clicks = sum(int(item.get("clicks", 0)) for item in rows)
@@ -1042,9 +1098,18 @@ class GoogleAdsService:
             client_id,
         )
 
-        daily_rows: list[dict[str, float | int | str]] = []
+        reason_if_zero: str | None = None
+        zero_message: str | None = None
+        gaql_rows_fetched = 0
+
         if self._is_production_mode():
-            daily_rows = self._fetch_production_daily_metrics(customer_id=normalized_customer_id, days=window_days)
+            daily_payload = self._fetch_production_daily_metrics(customer_id=normalized_customer_id, days=window_days)
+            daily_rows = list(daily_payload.get("rows", []))
+            gaql_rows_fetched = int(daily_payload.get("gaql_rows_fetched", 0) or 0)
+            if gaql_rows_fetched == 0:
+                reason_if_zero = "GAQL_RETURNED_0"
+                zero_message = str(daily_payload.get("zero_data_message") or "Account has no data in last 30 days or no permission")
+
             total_spend = sum(float(item.get("spend", 0.0)) for item in daily_rows)
             total_impressions = sum(int(item.get("impressions", 0)) for item in daily_rows)
             total_clicks = sum(int(item.get("clicks", 0)) for item in daily_rows)
@@ -1068,11 +1133,13 @@ class GoogleAdsService:
                 "synced_at": datetime.now(timezone.utc).isoformat(),
             }
         else:
+            daily_rows = []
             spend = float(100 + client_id * 17)
             impressions = 5000 + client_id * 110
             clicks = 200 + client_id * 9
             conversions = 5 + client_id
             revenue = round(spend * 3.2, 2)
+            gaql_rows_fetched = 1
             snapshot = {
                 "client_id": client_id,
                 "platform": "google_ads",
@@ -1090,29 +1157,62 @@ class GoogleAdsService:
                 client_id,
             )
 
+        logger.info(
+            "google_ads.sync_now customer_id=%s client_id=%s GAQL_ROWS=%s",
+            normalized_customer_id,
+            client_id,
+            gaql_rows_fetched,
+        )
+
         google_snapshot_store.upsert_snapshot(payload=snapshot)
         inserted_rows = 0
-        if self._is_production_mode():
-            for row in daily_rows:
-                payload_row = dict(row)
-                payload_row["google_customer_id"] = normalized_customer_id
-                inserted_rows += self._persist_performance_report(snapshot=payload_row, client_id=client_id)
-        else:
-            inserted_rows = self._persist_performance_report(snapshot=snapshot, client_id=client_id)
+        try:
+            if self._is_production_mode():
+                for row in daily_rows:
+                    payload_row = dict(row)
+                    payload_row["google_customer_id"] = normalized_customer_id
+                    inserted_rows += self._persist_performance_report(snapshot=payload_row, client_id=client_id)
+            else:
+                inserted_rows = self._persist_performance_report(snapshot=snapshot, client_id=client_id)
+        except Exception as exc:  # noqa: BLE001
+            reason_if_zero = "DB_INSERT_FAILED"
+            zero_message = str(exc)[:300]
+            inserted_rows = 0
 
         logger.info(
-            "google_ads.sync_now customer_id=%s client_id=%s INSERTED n_rows=%s",
+            "google_ads.sync_now customer_id=%s client_id=%s UPSERT_INSERTED=%s",
             normalized_customer_id,
             client_id,
             inserted_rows,
         )
+
+        db_rows_last_30 = self._count_rows_last_30_days_for_customer(customer_id=normalized_customer_id)
+        logger.info(
+            "google_ads.sync_now customer_id=%s client_id=%s DB_ROWS_LAST30=%s",
+            normalized_customer_id,
+            client_id,
+            db_rows_last_30,
+        )
+
+        if reason_if_zero is None and gaql_rows_fetched > 0 and inserted_rows > 0 and db_rows_last_30 == 0:
+            reason_if_zero = "DB_ROWS_FILTER_MISMATCH"
+            zero_message = "Rows were inserted but DB last-30 filter returned 0"
+
+        if reason_if_zero is None and gaql_rows_fetched == 0:
+            reason_if_zero = "GAQL_RETURNED_0"
+            zero_message = zero_message or "Account has no data in last 30 days or no permission"
+
         logger.info(
             "google_ads.sync_now customer_id=%s client_id=%s DONE",
             normalized_customer_id,
             client_id,
         )
+        snapshot["gaql_rows_fetched"] = gaql_rows_fetched
         snapshot["inserted_rows"] = inserted_rows
-        snapshot["rows_in_db_last_30_days_for_customer"] = self._count_rows_last_30_days_for_customer(customer_id=normalized_customer_id)
+        snapshot["db_rows_last_30_for_customer"] = db_rows_last_30
+        snapshot["reason_if_zero"] = reason_if_zero
+        if zero_message:
+            snapshot["message"] = zero_message
         return snapshot
 
     def get_metrics(self, client_id: int) -> dict[str, float | int | str | bool]:
