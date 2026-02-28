@@ -1,4 +1,5 @@
 import os
+from datetime import date
 import unittest
 from decimal import Decimal
 
@@ -584,6 +585,30 @@ class ServiceTests(unittest.TestCase):
 
         self.assertEqual(metrics["impressions"], 4363)
         self.assertEqual(metrics["clicks"], 376)
+
+
+    def test_agency_dashboard_rows_are_converted_to_ron_by_day_currency(self):
+        original_rate = unified_dashboard_service._get_fx_rate_to_ron
+        try:
+            unified_dashboard_service._get_fx_rate_to_ron = lambda **kwargs: {"USD": 5.0, "EUR": 4.0, "RON": 1.0}.get(kwargs.get("currency_code"), 1.0)
+            totals, spend_by_client, row_count = unified_dashboard_service._aggregate_agency_rows(
+                [
+                    (date(2026, 2, 1), 10, "USD", 100.0, 1000, 100, 10, 50.0),
+                    (date(2026, 2, 1), 10, "RON", 200.0, 2000, 200, 20, 100.0),
+                    (date(2026, 2, 1), 11, "EUR", 50.0, 500, 50, 5, 25.0),
+                ]
+            )
+        finally:
+            unified_dashboard_service._get_fx_rate_to_ron = original_rate
+
+        self.assertEqual(row_count, 3)
+        self.assertEqual(round(float(totals["spend"]), 2), 900.0)
+        self.assertEqual(round(float(totals["revenue"]), 2), 450.0)
+        self.assertEqual(int(totals["impressions"]), 3500)
+        self.assertEqual(int(totals["clicks"]), 350)
+        self.assertEqual(int(totals["conversions"]), 35)
+        self.assertEqual(round(spend_by_client[10], 2), 700.0)
+        self.assertEqual(round(spend_by_client[11], 2), 200.0)
 
     # Sprint 3 coverage (Meta + unified dashboard)
     def test_meta_ads_status_pending_when_placeholder(self):
