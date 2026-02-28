@@ -61,3 +61,18 @@
 - Backend: am adăugat `currency` la nivel de client și `account_currency` în `agency_account_client_mappings`, plus propagare în endpoint-ul `PATCH /clients/display/{display_id}` pentru update per cont (`platform` + `account_id`).
 - Frontend: în Agency Client details există acum câte un creion separat pentru fiecare câmp editabil de pe rând (tip client, responsabil, monedă), cu salvare individuală și feedback vizual per câmp.
 - Verificare: `python -m py_compile` pe fișierele modificate și `npx tsc --noEmit` pe frontend au trecut; `next lint` nu poate rula non-interactiv deoarece proiectul solicită inițializare ESLint interactivă.
+
+---
+
+# TODO — CRITICAL FRONTEND FIX: isEditingRow undefined on Vercel build
+
+- [x] Inspect Agency Client details page and identify undefined `isEditingRow` reference causing build failure.
+- [x] Apply minimal frontend fix by replacing undefined reference with declared row-editing state key check.
+- [x] Run `npm run build` in `apps/frontend` to validate Vercel-equivalent build.
+- [x] Commit with requested message and push to `origin/main`.
+
+
+## Review — CRITICAL FRONTEND FIX: isEditingRow undefined on Vercel build
+- Cauza: în `agency/clients/[id]/page.tsx` rămăsese un bloc JSX duplicat care folosea variabile vechi/nedeclarate (`isEditingRow`, `saveRowIfChanged`, `savingRowId`, `draft.accountCurrency`).
+- Fix: am eliminat blocul duplicat și am păstrat doar implementarea activă bazată pe `editingRowFieldKey`, deja declarată în componentă.
+- Verificare: `npm run build` în `apps/frontend` trece complet (type-check + static generation).
