@@ -1323,10 +1323,12 @@ class ServiceTests(unittest.TestCase):
         original_create = meta_ads_api.backfill_job_store.create
         original_add_task = background_tasks.add_task
         original_mirror_create = meta_ads_api.sync_runs_store.create_sync_run
+        original_list_meta_accounts = meta_ads_api.client_registry_service.list_client_platform_accounts
 
         try:
             meta_ads_api.enforce_action_scope = lambda **kwargs: None
             meta_ads_api.backfill_job_store.create = lambda payload: "meta-job-1"
+            meta_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "act_1200"}]
             background_tasks.add_task = lambda func, *args, **kwargs: captured.update({"task": getattr(func, "__name__", "")})
             meta_ads_api.sync_runs_store.create_sync_run = lambda **kwargs: captured.update({"sync_run_payload": kwargs}) or {"job_id": kwargs.get("job_id")}
 
@@ -1341,6 +1343,7 @@ class ServiceTests(unittest.TestCase):
             meta_ads_api.backfill_job_store.create = original_create
             background_tasks.add_task = original_add_task
             meta_ads_api.sync_runs_store.create_sync_run = original_mirror_create
+            meta_ads_api.client_registry_service.list_client_platform_accounts = original_list_meta_accounts
 
         self.assertEqual(response.get("status"), "queued")
         self.assertEqual(response.get("job_id"), "meta-job-1")
@@ -1349,6 +1352,7 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(payload.get("platform"), "meta_ads")
         self.assertEqual(payload.get("status"), "queued")
         self.assertEqual(payload.get("client_id"), 96)
+        self.assertEqual(payload.get("account_id"), "act_1200")
 
     def test_meta_backfill_runner_updates_sync_runs_running_done_and_error(self):
         status_calls: list[dict[str, object]] = []
@@ -1360,6 +1364,7 @@ class ServiceTests(unittest.TestCase):
         original_sync_client = meta_ads_api.meta_ads_service.sync_client
         original_update_status = meta_ads_api.sync_runs_store.update_sync_run_status
         original_sync_state_upsert = meta_ads_api.sync_state_store.upsert_sync_state
+        original_list_meta_accounts = meta_ads_api.client_registry_service.list_client_platform_accounts
         try:
             meta_ads_api.backfill_job_store.set_running = lambda job_id: None
             meta_ads_api.backfill_job_store.set_done = lambda job_id, result: None
@@ -1367,6 +1372,7 @@ class ServiceTests(unittest.TestCase):
             meta_ads_api.meta_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
             meta_ads_api.sync_runs_store.update_sync_run_status = lambda **kwargs: status_calls.append(kwargs) or {"job_id": kwargs.get("job_id")}
             meta_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: sync_state_calls.append(kwargs) or {"account_id": kwargs.get("account_id")}
+            meta_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: ([{"id": "act_700"}] if int(kwargs.get("client_id") or 0) == 7 else [{"id": "act_800"}])
 
             meta_ads_api._run_meta_sync_job("meta-job-ok", client_id=7)
 
@@ -1382,6 +1388,7 @@ class ServiceTests(unittest.TestCase):
             meta_ads_api.meta_ads_service.sync_client = original_sync_client
             meta_ads_api.sync_runs_store.update_sync_run_status = original_update_status
             meta_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+            meta_ads_api.client_registry_service.list_client_platform_accounts = original_list_meta_accounts
 
         self.assertTrue(any(call.get("job_id") == "meta-job-ok" and call.get("status") == "running" for call in status_calls))
         self.assertTrue(any(call.get("job_id") == "meta-job-ok" and call.get("status") == "done" for call in status_calls))
@@ -1391,7 +1398,7 @@ class ServiceTests(unittest.TestCase):
         running_call = next((call for call in sync_state_calls if call.get("last_job_id") == "meta-job-ok" and call.get("last_status") == "running"), None)
         self.assertIsNotNone(running_call)
         self.assertEqual((running_call or {}).get("platform"), "meta_ads")
-        self.assertEqual((running_call or {}).get("account_id"), "7")
+        self.assertEqual((running_call or {}).get("account_id"), "act_700")
         self.assertEqual((running_call or {}).get("grain"), "account_daily")
         self.assertEqual((running_call or {}).get("error"), None)
 
@@ -1403,7 +1410,7 @@ class ServiceTests(unittest.TestCase):
 
         error_call = next((call for call in sync_state_calls if call.get("last_job_id") == "meta-job-fail" and call.get("last_status") == "error"), None)
         self.assertIsNotNone(error_call)
-        self.assertEqual((error_call or {}).get("account_id"), "8")
+        self.assertEqual((error_call or {}).get("account_id"), "act_800")
         self.assertTrue("meta down" in str((error_call or {}).get("error") or ""))
 
     def test_meta_sync_now_job_status_memory_first_and_db_fallback(self):
@@ -1478,6 +1485,7 @@ class ServiceTests(unittest.TestCase):
         original_sync_client = meta_ads_api.meta_ads_service.sync_client
         original_update_status = meta_ads_api.sync_runs_store.update_sync_run_status
         original_sync_state_upsert = meta_ads_api.sync_state_store.upsert_sync_state
+        original_list_meta_accounts = meta_ads_api.client_registry_service.list_client_platform_accounts
         try:
             meta_ads_api.backfill_job_store.set_running = lambda job_id: None
             meta_ads_api.backfill_job_store.set_done = lambda job_id, result: None
@@ -1485,6 +1493,7 @@ class ServiceTests(unittest.TestCase):
             meta_ads_api.meta_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
             meta_ads_api.sync_runs_store.update_sync_run_status = lambda **kwargs: status_calls.append(kwargs) or {"job_id": kwargs.get("job_id")}
             meta_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("sync_state unavailable"))
+            meta_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "act_9900"}]
 
             meta_ads_api._run_meta_sync_job("meta-job-state-fail", client_id=99)
         finally:
@@ -1494,9 +1503,46 @@ class ServiceTests(unittest.TestCase):
             meta_ads_api.meta_ads_service.sync_client = original_sync_client
             meta_ads_api.sync_runs_store.update_sync_run_status = original_update_status
             meta_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+            meta_ads_api.client_registry_service.list_client_platform_accounts = original_list_meta_accounts
 
         self.assertTrue(any(call.get("job_id") == "meta-job-state-fail" and call.get("status") == "running" for call in status_calls))
         self.assertTrue(any(call.get("job_id") == "meta-job-state-fail" and call.get("status") == "done" for call in status_calls))
+
+    def test_meta_sync_state_skips_when_real_account_id_is_missing(self):
+        status_calls: list[dict[str, object]] = []
+        sync_state_calls: list[dict[str, object]] = []
+
+        original_set_running = meta_ads_api.backfill_job_store.set_running
+        original_set_done = meta_ads_api.backfill_job_store.set_done
+        original_set_error = meta_ads_api.backfill_job_store.set_error
+        original_sync_client = meta_ads_api.meta_ads_service.sync_client
+        original_update_status = meta_ads_api.sync_runs_store.update_sync_run_status
+        original_sync_state_upsert = meta_ads_api.sync_state_store.upsert_sync_state
+        original_list_meta_accounts = meta_ads_api.client_registry_service.list_client_platform_accounts
+        try:
+            meta_ads_api.backfill_job_store.set_running = lambda job_id: None
+            meta_ads_api.backfill_job_store.set_done = lambda job_id, result: None
+            meta_ads_api.backfill_job_store.set_error = lambda job_id, error: None
+            meta_ads_api.meta_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
+            meta_ads_api.sync_runs_store.update_sync_run_status = lambda **kwargs: status_calls.append(kwargs) or {"job_id": kwargs.get("job_id")}
+            meta_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: sync_state_calls.append(kwargs) or {"account_id": kwargs.get("account_id")}
+            meta_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: []
+
+            meta_ads_api._run_meta_sync_job("meta-job-no-account", client_id=111)
+        finally:
+            meta_ads_api.backfill_job_store.set_running = original_set_running
+            meta_ads_api.backfill_job_store.set_done = original_set_done
+            meta_ads_api.backfill_job_store.set_error = original_set_error
+            meta_ads_api.meta_ads_service.sync_client = original_sync_client
+            meta_ads_api.sync_runs_store.update_sync_run_status = original_update_status
+            meta_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+            meta_ads_api.client_registry_service.list_client_platform_accounts = original_list_meta_accounts
+
+        self.assertEqual(sync_state_calls, [])
+        self.assertTrue(any(call.get("job_id") == "meta-job-no-account" and call.get("status") == "running" for call in status_calls))
+        done_call = next((call for call in status_calls if call.get("job_id") == "meta-job-no-account" and call.get("status") == "done"), None)
+        self.assertIsNotNone(done_call)
+        self.assertNotIn("account_id", (done_call or {}).get("metadata") or {})
 
     def test_google_sync_now_job_status_db_error_is_non_blocking(self):
         user = AuthUser(email="admin@example.com", role="agency_owner")

@@ -648,3 +648,19 @@
 - Valorile canonice folosite sunt `PLATFORM_META_ADS`, `SYNC_GRAIN_ACCOUNT_DAILY`, respectiv statusurile canonice `running/done/error`.
 - Endpoint-urile și status flow-ul Meta rămân neschimbate; patch-ul este local și tranzitoriu.
 
+---
+
+# TODO — Corecție identitate canonică Meta: account_id real (nu client_id)
+
+- [x] Identific sursa reală pentru Meta account id din mapping-ul existent per client.
+- [x] Înlocuiesc folosirea `client_id` ca `account_id` în wiring-ul Meta `sync_state`.
+- [x] Ajustez mirror-ul Meta `sync_runs` unde există câmp `account_id` ca să folosească ID real sau `None` defensiv.
+- [x] Mențin flow-ul și contractele endpoint neschimbate (patch local, fără refactor mare).
+- [x] Adaug teste focalizate pentru identitate canonică și branch defensiv când account id nu poate fi determinat.
+
+## Review — Corecție identitate canonică Meta
+- În `api/meta_ads.py` am introdus rezolvarea account id din `client_registry_service.list_client_platform_accounts(platform="meta_ads", client_id=...)`.
+- `sync_state` folosește acum doar `account_id` real Meta; nu mai folosește `client_id` ca substitut.
+- În branch-urile unde account id nu e determinabil (zero sau multiplu mapping / lookup failure), `sync_state` este omis best-effort, iar flow-ul jobului continuă.
+- `sync_runs` create primește `account_id` real când este determinabil; altfel rămâne `None` (defensiv), fără schimbări de endpoint.
+

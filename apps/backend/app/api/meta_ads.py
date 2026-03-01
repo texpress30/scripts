@@ -6,6 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, s
 from app.api.dependencies import enforce_action_scope, get_current_user
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
+from app.services.client_registry import client_registry_service
 from app.services.meta_ads import MetaAdsIntegrationError, meta_ads_service
 from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
 from app.services.sync_engine import backfill_job_store
@@ -39,14 +40,34 @@ def _log_best_effort_warning(
     )
 
 
-def _mirror_sync_run_create(*, job_id: str, status_value: str, client_id: int, date_start: date, date_end: date) -> None:
+def _resolve_meta_account_id(*, client_id: int, job_id: str | None = None) -> str | None:
+    try:
+        accounts = client_registry_service.list_client_platform_accounts(platform=PLATFORM_META_ADS, client_id=int(client_id))
+    except Exception as exc:  # noqa: BLE001
+        _log_best_effort_warning(operation="meta_account_lookup", error=exc, job_id=job_id, platform=PLATFORM_META_ADS)
+        return None
+
+    account_ids = [str(item.get("id") or "").strip() for item in accounts if isinstance(item, dict)]
+    account_ids = [item for item in account_ids if item != ""]
+    if len(account_ids) == 1:
+        return account_ids[0]
+
+    if len(account_ids) == 0:
+        logger.warning("meta_account_id_missing client_id=%s job_id=%s", int(client_id), job_id)
+        return None
+
+    logger.warning("meta_account_id_ambiguous client_id=%s job_id=%s account_count=%s", int(client_id), job_id, len(account_ids))
+    return None
+
+
+def _mirror_sync_run_create(*, job_id: str, status_value: str, client_id: int, date_start: date, date_end: date, account_id: str | None = None) -> None:
     try:
         sync_runs_store.create_sync_run(
             job_id=job_id,
             platform=PLATFORM_META_ADS,
             status=status_value,
             client_id=client_id,
-            account_id=None,
+            account_id=account_id,
             date_start=date_start,
             date_end=date_end,
             chunk_days=1,
@@ -106,29 +127,35 @@ def _mirror_meta_sync_state_upsert(
         )
 
 
-def _run_meta_sync_job(job_id: str, *, client_id: int) -> None:
+def _run_meta_sync_job(job_id: str, *, client_id: int, account_id: str | None = None) -> None:
     backfill_job_store.set_running(job_id)
     _mirror_sync_run_status(job_id=job_id, status_value=SYNC_STATUS_RUNNING, mark_started=True)
 
     today = datetime.utcnow().date()
     date_start = today - timedelta(days=30)
     date_end = today
-    meta_account_id = str(client_id)
+    meta_account_id = (str(account_id).strip() if account_id is not None else "") or _resolve_meta_account_id(client_id=int(client_id), job_id=job_id)
     sync_state_metadata = {
         "client_id": int(client_id),
         "date_start": date_start.isoformat(),
         "date_end": date_end.isoformat(),
         "job_type": "sync",
     }
-    _mirror_meta_sync_state_upsert(
-        job_id=job_id,
-        account_id=meta_account_id,
-        last_status=SYNC_STATUS_RUNNING,
-        last_attempted_at=datetime.utcnow(),
-        date_end=date_end,
-        error=None,
-        metadata=sync_state_metadata,
-    )
+    if meta_account_id is not None:
+        sync_state_metadata["account_id"] = meta_account_id
+
+    if meta_account_id is None:
+        logger.warning("meta_sync_state_skipped_missing_account_id job_id=%s client_id=%s", job_id, int(client_id))
+    if meta_account_id is not None:
+        _mirror_meta_sync_state_upsert(
+            job_id=job_id,
+            account_id=meta_account_id,
+            last_status=SYNC_STATUS_RUNNING,
+            last_attempted_at=datetime.utcnow(),
+            date_end=date_end,
+            error=None,
+            metadata=sync_state_metadata,
+        )
 
     try:
         snapshot = meta_ads_service.sync_client(client_id=client_id)
@@ -140,34 +167,39 @@ def _run_meta_sync_job(job_id: str, *, client_id: int) -> None:
             "result": snapshot,
         }
         backfill_job_store.set_done(job_id, result=payload)
-        _mirror_meta_sync_state_upsert(
-            job_id=job_id,
-            account_id=meta_account_id,
-            last_status=SYNC_STATUS_DONE,
-            last_attempted_at=success_now,
-            last_successful_at=success_now,
-            date_end=date_end,
-            error=None,
-            metadata=sync_state_metadata,
-        )
+        if meta_account_id is not None:
+            _mirror_meta_sync_state_upsert(
+                job_id=job_id,
+                account_id=meta_account_id,
+                last_status=SYNC_STATUS_DONE,
+                last_attempted_at=success_now,
+                last_successful_at=success_now,
+                date_end=date_end,
+                error=None,
+                metadata=sync_state_metadata,
+            )
+        done_metadata = {"client_id": int(client_id)}
+        if meta_account_id is not None:
+            done_metadata["account_id"] = meta_account_id
         _mirror_sync_run_status(
             job_id=job_id,
             status_value=SYNC_STATUS_DONE,
             mark_finished=True,
-            metadata={"client_id": int(client_id)},
+            metadata=done_metadata,
         )
     except Exception as exc:  # noqa: BLE001
         safe_error = str(exc)[:300]
         backfill_job_store.set_error(job_id, error=safe_error)
-        _mirror_meta_sync_state_upsert(
-            job_id=job_id,
-            account_id=meta_account_id,
-            last_status=SYNC_STATUS_ERROR,
-            last_attempted_at=datetime.utcnow(),
-            date_end=date_end,
-            error=safe_error,
-            metadata=sync_state_metadata,
-        )
+        if meta_account_id is not None:
+            _mirror_meta_sync_state_upsert(
+                job_id=job_id,
+                account_id=meta_account_id,
+                last_status=SYNC_STATUS_ERROR,
+                last_attempted_at=datetime.utcnow(),
+                date_end=date_end,
+                error=safe_error,
+                metadata=sync_state_metadata,
+            )
         _mirror_sync_run_status(job_id=job_id, status_value=SYNC_STATUS_ERROR, error=safe_error, mark_finished=True)
 
 
@@ -228,18 +260,21 @@ def sync_meta_ads_now(
 
     if async_mode:
         job_id = backfill_job_store.create(payload={"platform": PLATFORM_META_ADS, "client_id": int(client_id)})
-        background_tasks.add_task(_run_meta_sync_job, job_id, client_id=int(client_id))
+        meta_account_id = _resolve_meta_account_id(client_id=int(client_id), job_id=job_id)
+        background_tasks.add_task(_run_meta_sync_job, job_id, client_id=int(client_id), account_id=meta_account_id)
         _mirror_sync_run_create(
             job_id=job_id,
             status_value=SYNC_STATUS_QUEUED,
             client_id=int(client_id),
             date_start=date_start,
             date_end=date_end,
+            account_id=meta_account_id,
         )
         return {"status": SYNC_STATUS_QUEUED, "job_id": job_id, "client_id": int(client_id)}
 
     job_id = backfill_job_store.create(payload={"platform": PLATFORM_META_ADS, "client_id": int(client_id)})
-    _run_meta_sync_job(job_id, client_id=int(client_id))
+    meta_account_id = _resolve_meta_account_id(client_id=int(client_id), job_id=job_id)
+    _run_meta_sync_job(job_id, client_id=int(client_id), account_id=meta_account_id)
     payload = backfill_job_store.get(job_id) or {}
     result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
     if isinstance(result, dict) and len(result) > 0:

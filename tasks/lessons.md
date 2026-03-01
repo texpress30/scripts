@@ -92,3 +92,4 @@
 - 2026-03-01: În taskuri de cleanup final, extrage valorile canonice (platform/grain/status) în constante comune și uniformizează logging-ul best-effort, fără a modifica contractele publice sau fluxul logic.
 - 2026-03-01: La rollout incremental pe o platformă nouă (Meta), livrează întâi phase 1 minimal (sync_runs create+lifecycle+status fallback memory-first) și evită chunking/state suplimentar până există flow real pentru ele.
 - 2026-03-01: În rollout-uri Meta incrementale, pentru phase 2 adaugă sync_state strict local în `api/meta_ads.py` (running/done/error per cont) cu upsert best-effort non-blocking, fără refactor orchestration sau schimbări de endpoint.
+- 2026-03-01: În flow-uri multi-cont (Meta inclus), nu folosi niciodată `client_id` ca substitut pentru `account_id`; cheia canonică pentru `sync_state`/`sync_runs` trebuie alimentată doar cu platform account id real, iar la ambiguitate se sare best-effort fără write greșit.
