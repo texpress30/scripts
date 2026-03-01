@@ -324,3 +324,19 @@
 - `performance_reports_store` folosește acum consistent cheia canonical `(report_date, platform, customer_id)` pentru dedup și upsert.
 - `client_id` rămâne coloană payload: este inserat și actualizat în `DO UPDATE`, dar nu mai este în conflict target.
 - În test mode (`_memory_rows`) am aliniat comportamentul la upsert semantic pe aceeași cheie canonical, pentru a preveni duplicate în testele focalizate.
+
+---
+
+# TODO — Migrație SQL pentru cheia canonică `ad_performance_reports`
+
+- [x] Identific convenția de numerotare migrații și adaug următorul fișier (`0006_...`).
+- [x] Creez migrație idempotentă care aplică cheia canonică unică `(report_date, platform, customer_id)`.
+- [x] Elimin artefactele legacy de unicitate pe 4 coloane, dacă există.
+- [x] Adaug deduplicare pe cheia canonică înainte de creare index unic.
+- [x] Rulez verificări minime de consistență locală.
+
+## Review — Migrație SQL pentru cheia canonică `ad_performance_reports`
+- Migrația nouă `0006_ad_performance_reports_canonical_unique_key.sql` este defensivă: iese imediat dacă tabela nu există (`to_regclass(...) IS NULL`).
+- Refolosește aceeași logică de cleanup ca runtime DDL din `performance_reports.py`: `DROP INDEX IF EXISTS idx_ad_performance_reports_unique_daily_customer` + `DROP CONSTRAINT IF EXISTS ad_performance_reports_report_date_platform_customer_id_client_id_key`.
+- Rulează deduplicare deterministică pe cheia canonică `(report_date, platform, customer_id)` și apoi creează indexul unic canonic cu `IF NOT EXISTS`.
+- Nu au fost atinse endpoint-uri, servicii de business sau UI în acest task.
