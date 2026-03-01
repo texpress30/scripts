@@ -30,7 +30,8 @@ type AgencySummaryResponse = {
     revenue: number;
     roas: number;
   };
-  top_clients: Array<{ client_id: number; name: string; spend: number }>;
+  top_clients: Array<{ client_id: number; name: string; spend: number; currency?: string; spend_ron?: number }>;
+  currency?: string;
 };
 
 type DatePresetKey = "today" | "yesterday" | "last7" | "last30" | "month" | "custom";
@@ -68,6 +69,21 @@ function formatRangeLabel(preset: DatePresetKey, range: DateRange): string {
   const to = range.to ?? range.from ?? new Date();
   const presetLabel = PRESET_ITEMS.find((item) => item.key === preset)?.label ?? "Custom";
   return `${presetLabel}: ${format(from, "MMM d, yyyy")} - ${format(to, "MMM d, yyyy")}`;
+}
+
+
+function normalizeCurrencyCode(code: string | undefined): string {
+  const normalized = String(code ?? "RON").trim().toUpperCase();
+  if (normalized.length !== 3) return "RON";
+  return normalized;
+}
+
+function formatCurrency(value: number, currencyCode: string): string {
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: currencyCode,
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 function statusTone(status: string): string {
@@ -119,6 +135,8 @@ export default function AgencyDashboardPage() {
 
     void loadDashboard();
   }, [appliedFrom, appliedTo]);
+
+  const currencyCode = normalizeCurrencyCode(summary?.currency);
 
   const integrationSummary = useMemo(
     () => [
@@ -221,11 +239,11 @@ export default function AgencyDashboardPage() {
 
         <section className="grid grid-cols-1 gap-4 md:grid-cols-4 xl:grid-cols-7">
           <Card title="Clienți activi" value={summary?.active_clients.toLocaleString() ?? "0"} loading={loading} />
-          <Card title="Spend total" value={`$${(summary?.totals.spend ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`} loading={loading} />
+          <Card title="Spend total" value={formatCurrency(summary?.totals.spend ?? 0, currencyCode)} loading={loading} />
           <Card title="Impressions" value={(summary?.totals.impressions ?? 0).toLocaleString()} loading={loading} />
           <Card title="Clicks" value={(summary?.totals.clicks ?? 0).toLocaleString()} loading={loading} />
           <Card title="Conversii total" value={(summary?.totals.conversions ?? 0).toLocaleString()} loading={loading} />
-          <Card title="Revenue total" value={`$${(summary?.totals.revenue ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`} loading={loading} />
+          <Card title="Revenue total" value={formatCurrency(summary?.totals.revenue ?? 0, currencyCode)} loading={loading} />
           <Card title="ROAS agregat" value={(summary?.totals.roas ?? 0).toFixed(2)} loading={loading} />
         </section>
 
@@ -253,7 +271,7 @@ export default function AgencyDashboardPage() {
               {(summary?.top_clients ?? []).map((client) => (
                 <li key={client.client_id} className="flex items-center justify-between">
                   <span>{client.name}</span>
-                  <span className="text-slate-900">${client.spend.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                  <span className="text-slate-900">{formatCurrency(client.spend, normalizeCurrencyCode(client.currency ?? "RON"))}</span>
                 </li>
               ))}
               {!loading && (summary?.top_clients.length ?? 0) === 0 ? <li>Nu există clienți.</li> : null}
