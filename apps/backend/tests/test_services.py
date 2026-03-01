@@ -8,6 +8,7 @@ from fastapi import BackgroundTasks
 from app.services.auth import AuthError, AuthUser, create_access_token, decode_access_token, validate_login_credentials
 from app.api import google_ads as google_ads_api
 from app.api import meta_ads as meta_ads_api
+from app.api import tiktok_ads as tiktok_ads_api
 from app.services.ai_assistant import ai_assistant_service
 from app.services.insights import insights_service
 from app.services.dashboard import unified_dashboard_service
@@ -1563,6 +1564,177 @@ class ServiceTests(unittest.TestCase):
         done_call = next((call for call in status_calls if call.get("job_id") == "meta-job-no-account" and call.get("status") == "done"), None)
         self.assertIsNotNone(done_call)
         self.assertNotIn("account_id", (done_call or {}).get("metadata") or {})
+
+    def test_tiktok_ads_sync_now_async_mirrors_sync_run_create(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+        background_tasks = BackgroundTasks()
+        captured: dict[str, object] = {}
+
+        original_enforce = tiktok_ads_api.enforce_action_scope
+        original_create = tiktok_ads_api.backfill_job_store.create
+        original_add_task = background_tasks.add_task
+        original_mirror_create = tiktok_ads_api.sync_runs_store.create_sync_run
+        original_list_accounts = tiktok_ads_api.client_registry_service.list_client_platform_accounts
+        try:
+            tiktok_ads_api.enforce_action_scope = lambda **kwargs: None
+            tiktok_ads_api.backfill_job_store.create = lambda payload: "tt-job-1"
+            tiktok_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "tt-acc-1"}]
+            background_tasks.add_task = lambda func, *args, **kwargs: captured.update({"task": getattr(func, "__name__", "")})
+            tiktok_ads_api.sync_runs_store.create_sync_run = lambda **kwargs: captured.update({"sync_run_payload": kwargs}) or {"job_id": kwargs.get("job_id")}
+
+            response = tiktok_ads_api.sync_tiktok_ads_now(
+                background_tasks=background_tasks,
+                user=user,
+                client_id=77,
+                async_mode=True,
+            )
+        finally:
+            tiktok_ads_api.enforce_action_scope = original_enforce
+            tiktok_ads_api.backfill_job_store.create = original_create
+            background_tasks.add_task = original_add_task
+            tiktok_ads_api.sync_runs_store.create_sync_run = original_mirror_create
+            tiktok_ads_api.client_registry_service.list_client_platform_accounts = original_list_accounts
+
+        self.assertEqual(response.get("status"), "queued")
+        self.assertEqual(response.get("job_id"), "tt-job-1")
+        payload = captured.get("sync_run_payload") or {}
+        self.assertEqual(payload.get("platform"), "tiktok_ads")
+        self.assertEqual(payload.get("status"), "queued")
+        self.assertEqual(payload.get("client_id"), 77)
+        self.assertEqual(payload.get("account_id"), "tt-acc-1")
+
+    def test_tiktok_backfill_runner_updates_sync_runs_running_done_and_error(self):
+        status_calls: list[dict[str, object]] = []
+
+        original_set_running = tiktok_ads_api.backfill_job_store.set_running
+        original_set_done = tiktok_ads_api.backfill_job_store.set_done
+        original_set_error = tiktok_ads_api.backfill_job_store.set_error
+        original_sync_client = tiktok_ads_api.tiktok_ads_service.sync_client
+        original_update_status = tiktok_ads_api.sync_runs_store.update_sync_run_status
+        try:
+            tiktok_ads_api.backfill_job_store.set_running = lambda job_id: None
+            tiktok_ads_api.backfill_job_store.set_done = lambda job_id, result: None
+            tiktok_ads_api.backfill_job_store.set_error = lambda job_id, error: None
+            tiktok_ads_api.tiktok_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
+            tiktok_ads_api.sync_runs_store.update_sync_run_status = lambda **kwargs: status_calls.append(kwargs) or {"job_id": kwargs.get("job_id")}
+
+            tiktok_ads_api._run_tiktok_sync_job("tt-job-ok", client_id=11, account_id="tt-acc-ok")
+
+            def boom_sync(*args, **kwargs):
+                raise RuntimeError("tiktok down")
+
+            tiktok_ads_api.tiktok_ads_service.sync_client = boom_sync
+            tiktok_ads_api._run_tiktok_sync_job("tt-job-fail", client_id=12, account_id="tt-acc-fail")
+        finally:
+            tiktok_ads_api.backfill_job_store.set_running = original_set_running
+            tiktok_ads_api.backfill_job_store.set_done = original_set_done
+            tiktok_ads_api.backfill_job_store.set_error = original_set_error
+            tiktok_ads_api.tiktok_ads_service.sync_client = original_sync_client
+            tiktok_ads_api.sync_runs_store.update_sync_run_status = original_update_status
+
+        self.assertTrue(any(call.get("job_id") == "tt-job-ok" and call.get("status") == "running" for call in status_calls))
+        done_call = next((call for call in status_calls if call.get("job_id") == "tt-job-ok" and call.get("status") == "done"), None)
+        self.assertIsNotNone(done_call)
+        self.assertEqual(((done_call or {}).get("metadata") or {}).get("account_id"), "tt-acc-ok")
+        self.assertTrue(any(call.get("job_id") == "tt-job-fail" and call.get("status") == "error" for call in status_calls))
+
+    def test_tiktok_sync_now_job_status_memory_first_and_db_fallback(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+
+        original_enforce = tiktok_ads_api.enforce_action_scope
+        original_memory_get = tiktok_ads_api.backfill_job_store.get
+        original_db_get = tiktok_ads_api.sync_runs_store.get_sync_run
+        try:
+            tiktok_ads_api.enforce_action_scope = lambda **kwargs: None
+            tiktok_ads_api.backfill_job_store.get = lambda job_id: {"status": "running", "source": "memory"}
+            tiktok_ads_api.sync_runs_store.get_sync_run = lambda job_id: {"job_id": job_id, "status": "done"}
+            memory_response = tiktok_ads_api.sync_now_job_status("tt-memory", user=user)
+
+            tiktok_ads_api.backfill_job_store.get = lambda job_id: None
+            tiktok_ads_api.sync_runs_store.get_sync_run = lambda job_id: {
+                "job_id": job_id,
+                "platform": "tiktok_ads",
+                "status": "done",
+                "client_id": 77,
+                "account_id": "tt-acc-77",
+                "date_start": "2026-01-01",
+                "date_end": "2026-01-31",
+                "chunk_days": 1,
+                "created_at": "2026-03-01T00:00:01+00:00",
+                "updated_at": "2026-03-01T00:00:10+00:00",
+                "started_at": "2026-03-01T00:00:03+00:00",
+                "finished_at": "2026-03-01T00:00:09+00:00",
+                "error": None,
+                "metadata": {},
+            }
+            db_response = tiktok_ads_api.sync_now_job_status("tt-db", user=user)
+
+            tiktok_ads_api.sync_runs_store.get_sync_run = lambda job_id: None
+            with self.assertRaises(tiktok_ads_api.HTTPException) as ctx:
+                tiktok_ads_api.sync_now_job_status("tt-missing", user=user)
+        finally:
+            tiktok_ads_api.enforce_action_scope = original_enforce
+            tiktok_ads_api.backfill_job_store.get = original_memory_get
+            tiktok_ads_api.sync_runs_store.get_sync_run = original_db_get
+
+        self.assertEqual(memory_response.get("source"), "memory")
+        self.assertEqual(db_response.get("job_id"), "tt-db")
+        self.assertEqual(db_response.get("account_id"), "tt-acc-77")
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_tiktok_sync_now_job_status_db_error_is_non_blocking(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+
+        original_enforce = tiktok_ads_api.enforce_action_scope
+        original_memory_get = tiktok_ads_api.backfill_job_store.get
+        original_db_get = tiktok_ads_api.sync_runs_store.get_sync_run
+        try:
+            tiktok_ads_api.enforce_action_scope = lambda **kwargs: None
+            tiktok_ads_api.backfill_job_store.get = lambda job_id: None
+            tiktok_ads_api.sync_runs_store.get_sync_run = lambda job_id: (_ for _ in ()).throw(RuntimeError("db unavailable"))
+            with self.assertRaises(tiktok_ads_api.HTTPException) as ctx:
+                tiktok_ads_api.sync_now_job_status("tt-db-error", user=user)
+        finally:
+            tiktok_ads_api.enforce_action_scope = original_enforce
+            tiktok_ads_api.backfill_job_store.get = original_memory_get
+            tiktok_ads_api.sync_runs_store.get_sync_run = original_db_get
+
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_tiktok_sync_now_async_does_not_use_client_id_as_account_id_when_ambiguous(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+        background_tasks = BackgroundTasks()
+        captured: dict[str, object] = {}
+
+        original_enforce = tiktok_ads_api.enforce_action_scope
+        original_create = tiktok_ads_api.backfill_job_store.create
+        original_add_task = background_tasks.add_task
+        original_mirror_create = tiktok_ads_api.sync_runs_store.create_sync_run
+        original_list_accounts = tiktok_ads_api.client_registry_service.list_client_platform_accounts
+        try:
+            tiktok_ads_api.enforce_action_scope = lambda **kwargs: None
+            tiktok_ads_api.backfill_job_store.create = lambda payload: "tt-job-amb"
+            tiktok_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "tt-1"}, {"id": "tt-2"}]
+            background_tasks.add_task = lambda func, *args, **kwargs: captured.update({"task": getattr(func, "__name__", "")})
+            tiktok_ads_api.sync_runs_store.create_sync_run = lambda **kwargs: captured.update({"sync_run_payload": kwargs}) or {"job_id": kwargs.get("job_id")}
+
+            response = tiktok_ads_api.sync_tiktok_ads_now(
+                background_tasks=background_tasks,
+                user=user,
+                client_id=88,
+                async_mode=True,
+            )
+        finally:
+            tiktok_ads_api.enforce_action_scope = original_enforce
+            tiktok_ads_api.backfill_job_store.create = original_create
+            background_tasks.add_task = original_add_task
+            tiktok_ads_api.sync_runs_store.create_sync_run = original_mirror_create
+            tiktok_ads_api.client_registry_service.list_client_platform_accounts = original_list_accounts
+
+        self.assertEqual(response.get("status"), "queued")
+        payload = captured.get("sync_run_payload") or {}
+        self.assertIsNone(payload.get("account_id"))
+        self.assertNotEqual(payload.get("account_id"), "88")
 
     def test_google_sync_now_job_status_db_error_is_non_blocking(self):
         user = AuthUser(email="admin@example.com", role="agency_owner")

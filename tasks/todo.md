@@ -680,3 +680,20 @@
 - Pentru branch-uri fără account id determinabil sigur, update-ul operațional este omis defensiv cu warning; flow-ul jobului continuă.
 - Nu am schimbat endpoint-uri/status shapes și nu am atins Google/TikTok/sync_engine/meta_ads service.
 
+---
+
+# TODO — TikTok phase 1: sync_runs mirror + lifecycle + status DB fallback
+
+- [x] Adaug constantă canonică TikTok în `sync_constants.py` și refolosesc statusurile canonice existente.
+- [x] Adaug mirror create în `sync_runs` la `sync-now` async TikTok, best-effort/non-blocking.
+- [x] Adaug mirror lifecycle în runner-ul TikTok (`running`/`done`/`error`), best-effort/non-blocking.
+- [x] Adaug status flow memory-first + fallback DB (`sync_runs`) pentru jobul TikTok.
+- [x] Adaug teste backend focalizate pentru create/lifecycle/status fallback și branch defensiv pe account_id.
+
+## Review — TikTok phase 1
+- În `api/tiktok_ads.py` am introdus flow async `sync-now` cu job in-memory + mirror în `sync_runs` (create și lifecycle).
+- Status endpoint-ul jobului TikTok este memory-first și cade în DB (`sync_runs`) la memory miss; la DB miss/error păstrează `404` compatibil.
+- Identitatea canonică pentru TikTok folosește `account_id` real din mapping-ul client->platform account; nu folosește `client_id` ca substitut.
+- Dacă account id este nedeterminabil (zero/multiplu/eroare lookup), mirror-ul păstrează `account_id=None` defensiv și flow-ul continuă non-blocking.
+- Nu am introdus `sync_run_chunks` pentru TikTok în acest task.
+
