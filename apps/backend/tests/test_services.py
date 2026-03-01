@@ -1,4 +1,5 @@
 import os
+from datetime import date
 import unittest
 from decimal import Decimal
 
@@ -26,6 +27,7 @@ from app.services.rbac import AuthorizationError, require_action, require_permis
 from app.services.rules_engine import rules_engine_service
 from app.services.audit import audit_log_service
 from app.services.client_registry import client_registry_service
+from app.services.performance_reports import performance_reports_store
 
 
 class ServiceTests(unittest.TestCase):
@@ -119,6 +121,28 @@ class ServiceTests(unittest.TestCase):
         google_platform = next(item for item in updated["platforms"] if item["platform"] == "google_ads")
         self.assertEqual(google_platform["accounts"][0]["currency"], "RON")
 
+
+    def test_client_registry_preferred_currency_uses_account_mapping_currency(self):
+        created = client_registry_service.create_client(name="Currency Pref Client", owner_email="owner@example.com")
+        client_registry_service.upsert_platform_accounts(
+            platform="google_ads",
+            accounts=[{"id": "7777777777", "name": "Google Currency Ref"}],
+        )
+        client_registry_service.attach_platform_account_to_client(
+            platform="google_ads",
+            client_id=int(created["id"]),
+            account_id="7777777777",
+        )
+        client_registry_service.update_client_profile_by_display_id(
+            display_id=int(created["display_id"]),
+            platform="google_ads",
+            account_id="7777777777",
+            currency="eur",
+        )
+
+        preferred_currency = client_registry_service.get_preferred_currency_for_client(client_id=int(created["id"]))
+        self.assertEqual(preferred_currency, "EUR")
+
     # Sprint 2 coverage (Google)
     def test_google_ads_status_pending_when_placeholder(self):
         os.environ["GOOGLE_ADS_TOKEN"] = "your_google_ads_token"
@@ -137,7 +161,7 @@ class ServiceTests(unittest.TestCase):
 
 
 
-    def test_google_ads_sync_uses_production_metrics_when_mode_enabled(self):
+    def test_google_ads_sync_uses_production_daily_metrics_when_mode_enabled(self):
         os.environ["GOOGLE_ADS_MODE"] = "production"
         os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
         os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
@@ -147,26 +171,114 @@ class ServiceTests(unittest.TestCase):
         os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
         os.environ["GOOGLE_ADS_CUSTOMER_IDS_CSV"] = "1111111111,2222222222"
 
-        original = google_ads_service._fetch_production_metrics
+        original_fetch = google_ads_service._fetch_production_daily_metrics
+        original_persist = google_ads_service._persist_performance_report
+        persisted_report_dates: list[str] = []
         try:
-            google_ads_service._fetch_production_metrics = lambda customer_id: {
-                "spend": 300.5,
-                "impressions": 12000,
-                "clicks": 530,
-                "conversions": 44,
-                "revenue": 901.1,
-                "google_customer_id": customer_id,
+            google_ads_service._fetch_production_daily_metrics = lambda customer_id, days=30: {
+                "rows": [
+                    {"report_date": "2026-02-27", "spend": 100.0, "impressions": 1000, "clicks": 100, "conversions": 0, "revenue": 0.0},
+                    {"report_date": "2026-02-28", "spend": 200.5, "impressions": 11000, "clicks": 430, "conversions": 0, "revenue": 0.0},
+                ]
             }
+
+            def fake_persist(*, snapshot, client_id):
+                persisted_report_dates.append(str(snapshot.get("report_date") or ""))
+                return 1
+
+            google_ads_service._persist_performance_report = fake_persist
             snapshot = google_ads_service.sync_client(client_id=2)
         finally:
-            google_ads_service._fetch_production_metrics = original
+            google_ads_service._fetch_production_daily_metrics = original_fetch
+            google_ads_service._persist_performance_report = original_persist
 
         self.assertEqual(snapshot["google_customer_id"], "2222222222")
         self.assertEqual(snapshot["spend"], 300.5)
         self.assertEqual(snapshot["impressions"], 12000)
         self.assertEqual(snapshot["clicks"], 530)
-        self.assertEqual(snapshot["conversions"], 44)
-        self.assertEqual(snapshot["revenue"], 901.1)
+        self.assertEqual(snapshot["conversions"], 0)
+        self.assertEqual(snapshot["revenue"], 0.0)
+        self.assertEqual(sorted(persisted_report_dates), ["2026-02-27", "2026-02-28"])
+
+
+    def test_google_ads_sync_aggregates_all_mapped_accounts_for_client(self):
+        original_ids = google_ads_service.get_recommended_customer_ids_for_client
+        original_persist = google_ads_service._persist_performance_report
+        persisted: list[str] = []
+        try:
+            google_ads_service.get_recommended_customer_ids_for_client = lambda client_id: ["1111111111", "2222222222"]
+
+            def fake_persist(*, snapshot, client_id):
+                persisted.append(str(snapshot.get("google_customer_id") or ""))
+                return 1
+
+            google_ads_service._persist_performance_report = fake_persist
+            snapshot = google_ads_service.sync_client(client_id=2)
+        finally:
+            google_ads_service.get_recommended_customer_ids_for_client = original_ids
+            google_ads_service._persist_performance_report = original_persist
+
+        self.assertEqual(snapshot["synced_customers_count"], 2)
+        self.assertEqual(snapshot["spend"], round((100 + 2 * 17) * 2, 2))
+        self.assertEqual(snapshot["google_customer_id"], "1111111111")
+        self.assertEqual(sorted(persisted), ["1111111111", "2222222222"])
+
+    def test_google_ads_sync_wraps_unexpected_errors_with_customer_context(self):
+        original_ids = google_ads_service.get_recommended_customer_ids_for_client
+        original_persist = google_ads_service._persist_performance_report
+        try:
+            google_ads_service.get_recommended_customer_ids_for_client = lambda client_id: ["1111111111"]
+
+            def fake_persist(*, snapshot, client_id):
+                raise RuntimeError("db write failed")
+
+            google_ads_service._persist_performance_report = fake_persist
+            with self.assertRaises(GoogleAdsIntegrationError) as ctx:
+                google_ads_service.sync_client(client_id=2)
+        finally:
+            google_ads_service.get_recommended_customer_ids_for_client = original_ids
+            google_ads_service._persist_performance_report = original_persist
+
+        self.assertIn("Google Ads sync failed for customer", str(ctx.exception))
+        self.assertIn("db write failed", str(ctx.exception))
+
+    def test_google_ads_fetch_daily_metrics_uses_between_clause_for_explicit_range(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
+        os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
+        os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token"
+        os.environ["GOOGLE_ADS_MANAGER_CUSTOMER_ID"] = "1234567890"
+        os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://app.example.com/agency/integrations/google/callback"
+        os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
+
+        original_access_token = google_ads_service._access_token_from_refresh
+        original_required_manager = google_ads_service._required_manager_customer_id
+        original_fetch_rows = google_ads_service._fetch_gaql_daily_rows
+        captured_queries: list[str] = []
+        try:
+            google_ads_service._access_token_from_refresh = lambda: "ya29.token"
+            google_ads_service._required_manager_customer_id = lambda: "1234567890"
+
+            def fake_fetch_rows(*, customer_id, query, login_customer_id, access_token):
+                captured_queries.append(query)
+                return {"rows": [], "gaql_rows_fetched": 0}
+
+            google_ads_service._fetch_gaql_daily_rows = fake_fetch_rows
+            payload = google_ads_service._fetch_production_daily_metrics(
+                customer_id="1111111111",
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 1, 31),
+                days=31,
+            )
+        finally:
+            google_ads_service._access_token_from_refresh = original_access_token
+            google_ads_service._required_manager_customer_id = original_required_manager
+            google_ads_service._fetch_gaql_daily_rows = original_fetch_rows
+
+        self.assertEqual(len(captured_queries), 2)
+        self.assertIn("segments.date BETWEEN '2026-01-01' AND '2026-01-31'", captured_queries[0])
+        self.assertIn("segments.date BETWEEN '2026-01-01' AND '2026-01-31'", captured_queries[1])
+        self.assertIn("2026-01-01..2026-01-31", str(payload.get("zero_data_message") or ""))
 
     def test_google_ads_list_accessible_customers_uses_manager_search_stream(self):
         os.environ["GOOGLE_ADS_MODE"] = "production"
@@ -562,6 +674,123 @@ class ServiceTests(unittest.TestCase):
 
         self.assertEqual(metrics["impressions"], 4363)
         self.assertEqual(metrics["clicks"], 376)
+
+
+    def test_performance_reports_dedup_query_targets_daily_duplicate_keys(self):
+        query = performance_reports_store._deduplicate_reports_query()
+
+        self.assertIn("PARTITION BY report_date, platform, customer_id", query)
+        self.assertIn("DELETE FROM ad_performance_reports", query)
+        self.assertIn("ranked.rn > 1", query)
+
+    def test_performance_reports_upsert_uses_canonical_key_and_updates_client_id_payload(self):
+        performance_reports_store._memory_rows.clear()
+
+        performance_reports_store.write_daily_report(
+            report_date=date(2026, 2, 28),
+            platform="google_ads",
+            customer_id="1111111111",
+            client_id=10,
+            spend=100.0,
+            impressions=1000,
+            clicks=100,
+            conversions=10.0,
+            conversion_value=50.0,
+        )
+
+        performance_reports_store.write_daily_report(
+            report_date=date(2026, 2, 28),
+            platform="google_ads",
+            customer_id="1111111111",
+            client_id=20,
+            spend=200.0,
+            impressions=2000,
+            clicks=200,
+            conversions=20.0,
+            conversion_value=150.0,
+        )
+
+        self.assertEqual(len(performance_reports_store._memory_rows), 1)
+        row = performance_reports_store._memory_rows[0]
+        self.assertEqual(row["client_id"], 20)
+        self.assertEqual(float(row["spend"]), 200.0)
+        self.assertEqual(int(row["impressions"]), 2000)
+
+    def test_performance_reports_schema_validation_is_read_only_and_errors_when_missing(self):
+        os.environ["APP_ENV"] = "development"
+        performance_reports_store._schema_initialized = False
+
+        queries: list[str] = []
+
+        class _FakeCursor:
+            def execute(self, query, params=None):
+                queries.append(str(query).strip())
+
+            def fetchone(self):
+                return (None,)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_connect = performance_reports_store._connect
+        try:
+            performance_reports_store._connect = lambda: _FakeConn()
+            with self.assertRaises(RuntimeError) as ctx:
+                performance_reports_store.initialize_schema()
+        finally:
+            performance_reports_store._connect = original_connect
+            performance_reports_store._schema_initialized = False
+            os.environ["APP_ENV"] = "test"
+
+        self.assertIn("Database schema for ad_performance_reports is not ready; run DB migrations", str(ctx.exception))
+        self.assertEqual(len(queries), 1)
+        self.assertIn("SELECT to_regclass('public.ad_performance_reports')", queries[0])
+
+    def test_client_dashboard_query_filters_by_date_range(self):
+        query = unified_dashboard_service._client_reports_query()
+
+        self.assertIn("WHERE resolved_client_id = %s", query)
+        self.assertIn("AND report_date BETWEEN %s AND %s", query)
+
+    def test_agency_dashboard_rows_are_converted_to_ron_by_day_currency(self):
+        original_rate = unified_dashboard_service._get_fx_rate_to_ron
+        try:
+            unified_dashboard_service._get_fx_rate_to_ron = lambda **kwargs: {"USD": 5.0, "EUR": 4.0, "RON": 1.0}.get(kwargs.get("currency_code"), 1.0)
+            totals, spend_by_client_ron, spend_by_client_native, client_currency, row_count = unified_dashboard_service._aggregate_agency_rows(
+                [
+                    (date(2026, 2, 1), 10, "USD", 100.0, 1000, 100, 10, 50.0),
+                    (date(2026, 2, 1), 10, "RON", 200.0, 2000, 200, 20, 100.0),
+                    (date(2026, 2, 1), 11, "EUR", 50.0, 500, 50, 5, 25.0),
+                ]
+            )
+        finally:
+            unified_dashboard_service._get_fx_rate_to_ron = original_rate
+
+        self.assertEqual(row_count, 3)
+        self.assertEqual(round(float(totals["spend"]), 2), 900.0)
+        self.assertEqual(round(float(totals["revenue"]), 2), 450.0)
+        self.assertEqual(int(totals["impressions"]), 3500)
+        self.assertEqual(int(totals["clicks"]), 350)
+        self.assertEqual(int(totals["conversions"]), 35)
+        self.assertEqual(round(spend_by_client_ron[10], 2), 700.0)
+        self.assertEqual(round(spend_by_client_ron[11], 2), 200.0)
+        self.assertEqual(round(spend_by_client_native[10], 2), 300.0)
+        self.assertEqual(round(spend_by_client_native[11], 2), 50.0)
+        self.assertEqual(client_currency[10], "USD")
+        self.assertEqual(client_currency[11], "EUR")
 
     # Sprint 3 coverage (Meta + unified dashboard)
     def test_meta_ads_status_pending_when_placeholder(self):
