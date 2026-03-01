@@ -3,7 +3,10 @@ from datetime import date
 import unittest
 from decimal import Decimal
 
-from app.services.auth import AuthError, create_access_token, decode_access_token, validate_login_credentials
+from fastapi import BackgroundTasks
+
+from app.services.auth import AuthError, AuthUser, create_access_token, decode_access_token, validate_login_credentials
+from app.api import google_ads as google_ads_api
 from app.services.ai_assistant import ai_assistant_service
 from app.services.insights import insights_service
 from app.services.dashboard import unified_dashboard_service
@@ -796,6 +799,107 @@ class ServiceTests(unittest.TestCase):
             sync_runs_store._schema_initialized = False
 
         self.assertIn("Database schema for sync_runs is not ready; run DB migrations", str(ctx.exception))
+
+    def test_google_ads_sync_now_async_mirrors_sync_run_create(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+        background_tasks = BackgroundTasks()
+
+        original_enforce = google_ads_api.enforce_action_scope
+        original_list = google_ads_api.client_registry_service.list_google_mapped_accounts
+        original_create = google_ads_api.backfill_job_store.create
+        original_add_task = background_tasks.add_task
+        original_mirror_create = google_ads_api.sync_runs_store.create_sync_run
+        captured: dict[str, object] = {}
+
+        try:
+            google_ads_api.enforce_action_scope = lambda **kwargs: None
+            google_ads_api.client_registry_service.list_google_mapped_accounts = lambda: [{"client_id": 96, "customer_id": "1234567890"}]
+            google_ads_api.backfill_job_store.create = lambda payload: "job-xyz"
+
+            def fake_add_task(func, *args, **kwargs):
+                captured["task"] = {"func": getattr(func, "__name__", str(func)), "args": args, "kwargs": kwargs}
+
+            background_tasks.add_task = fake_add_task
+
+            def fake_create_sync_run(**kwargs):
+                captured["sync_run_payload"] = kwargs
+                return {"job_id": kwargs.get("job_id")}
+
+            google_ads_api.sync_runs_store.create_sync_run = fake_create_sync_run
+
+            response = google_ads_api.sync_google_ads_now(
+                background_tasks=background_tasks,
+                user=user,
+                client_id=96,
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 1, 31),
+                days=30,
+                async_mode=True,
+                chunk_days=14,
+            )
+        finally:
+            google_ads_api.enforce_action_scope = original_enforce
+            google_ads_api.client_registry_service.list_google_mapped_accounts = original_list
+            google_ads_api.backfill_job_store.create = original_create
+            background_tasks.add_task = original_add_task
+            google_ads_api.sync_runs_store.create_sync_run = original_mirror_create
+
+        self.assertEqual(response["status"], "queued")
+        self.assertEqual(response["job_id"], "job-xyz")
+        self.assertEqual(response["chunk_days"], 14)
+        self.assertEqual(captured["task"]["func"], "_run_google_backfill_job")
+
+        sync_run_payload = captured.get("sync_run_payload") or {}
+        self.assertEqual(sync_run_payload.get("job_id"), "job-xyz")
+        self.assertEqual(sync_run_payload.get("platform"), "google_ads")
+        self.assertEqual(sync_run_payload.get("status"), "queued")
+        self.assertEqual(sync_run_payload.get("client_id"), 96)
+        self.assertIsNone(sync_run_payload.get("account_id"))
+        self.assertEqual(str(sync_run_payload.get("date_start")), "2026-01-01")
+        self.assertEqual(str(sync_run_payload.get("date_end")), "2026-01-31")
+        self.assertEqual(sync_run_payload.get("chunk_days"), 14)
+        self.assertEqual((sync_run_payload.get("metadata") or {}).get("job_type"), "backfill")
+
+    def test_google_ads_sync_now_async_continues_when_sync_run_mirror_fails(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+        background_tasks = BackgroundTasks()
+
+        original_enforce = google_ads_api.enforce_action_scope
+        original_list = google_ads_api.client_registry_service.list_google_mapped_accounts
+        original_create = google_ads_api.backfill_job_store.create
+        original_add_task = background_tasks.add_task
+        original_mirror_create = google_ads_api.sync_runs_store.create_sync_run
+
+        try:
+            google_ads_api.enforce_action_scope = lambda **kwargs: None
+            google_ads_api.client_registry_service.list_google_mapped_accounts = lambda: [{"client_id": 96, "customer_id": "1234567890"}]
+            google_ads_api.backfill_job_store.create = lambda payload: "job-fallback"
+            background_tasks.add_task = lambda *args, **kwargs: None
+
+            def failing_create_sync_run(**kwargs):
+                raise RuntimeError("sync_runs unavailable")
+
+            google_ads_api.sync_runs_store.create_sync_run = failing_create_sync_run
+
+            response = google_ads_api.sync_google_ads_now(
+                background_tasks=background_tasks,
+                user=user,
+                client_id=96,
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 1, 31),
+                days=30,
+                async_mode=True,
+                chunk_days=7,
+            )
+        finally:
+            google_ads_api.enforce_action_scope = original_enforce
+            google_ads_api.client_registry_service.list_google_mapped_accounts = original_list
+            google_ads_api.backfill_job_store.create = original_create
+            background_tasks.add_task = original_add_task
+            google_ads_api.sync_runs_store.create_sync_run = original_mirror_create
+
+        self.assertEqual(response["status"], "queued")
+        self.assertEqual(response["job_id"], "job-fallback")
 
     def test_sync_runs_store_create_get_update_lifecycle(self):
         sync_runs_store._schema_initialized = False

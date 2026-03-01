@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta
+import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 
@@ -9,8 +10,10 @@ from app.services.client_registry import client_registry_service
 from app.services.google_ads import GoogleAdsIntegrationError, google_ads_service
 from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
 from app.services.sync_engine import backfill_job_store
+from app.services.sync_runs_store import sync_runs_store
 
 router = APIRouter(prefix="/integrations/google-ads", tags=["google-ads"])
+logger = logging.getLogger(__name__)
 
 
 def _mask_customer_id(customer_id: str) -> str:
@@ -18,6 +21,23 @@ def _mask_customer_id(customer_id: str) -> str:
     if len(normalized) < 4:
         return "****"
     return f"***{normalized[-4:]}"
+
+
+def _mirror_sync_run_create(*, job_id: str, platform: str, status: str, client_id: int | None, account_id: str | None, date_start: date, date_end: date, chunk_days: int, metadata: dict[str, object] | None = None) -> None:
+    try:
+        sync_runs_store.create_sync_run(
+            job_id=job_id,
+            platform=platform,
+            status=status,
+            client_id=client_id,
+            account_id=account_id,
+            date_start=date_start,
+            date_end=date_end,
+            chunk_days=chunk_days,
+            metadata=metadata or {},
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sync_runs mirror write failed for google_ads job_id=%s error=%s", job_id, str(exc)[:300])
 
 
 @router.get("/status")
@@ -342,6 +362,17 @@ def sync_google_ads_now(
             days=max(1, (resolved_end - resolved_start).days + 1),
             chunk_days=int(chunk_days),
             requested_client_id=requested_client_id,
+        )
+        _mirror_sync_run_create(
+            job_id=job_id,
+            platform="google_ads",
+            status="queued",
+            client_id=requested_client_id,
+            account_id=None,
+            date_start=resolved_start,
+            date_end=resolved_end,
+            chunk_days=int(chunk_days),
+            metadata={"job_type": "backfill", "source": "google_ads_api", "mapped_accounts_count": len(mapped_accounts)},
         )
         return {
             "status": "queued",

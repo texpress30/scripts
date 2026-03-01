@@ -388,3 +388,19 @@
   - `get_sync_run(job_id)` întoarce payload dict sau `None`.
   - `update_sync_run_status(...)` actualizează `status`, `updated_at`, și opțional `started_at`/`finished_at`/`error`/`metadata`.
 - Nu am făcut wiring în API/sync_engine în acest task (intenționat, conform cerinței).
+
+---
+
+# TODO — Wiring minim Google backfill job create -> `sync_runs` (best-effort mirror write)
+
+- [x] Identific punctul de creare job async în `api/google_ads.py`.
+- [x] Adaug mirror write în `sync_runs_store.create_sync_run(...)` la crearea jobului, fără a schimba flow-ul în memorie.
+- [x] Mențin response-ul endpoint-ului compatibil.
+- [x] Tratez erorile la mirror write ca non-blocking (warning + continuare flow).
+- [x] Adaug teste pentru success path + failure path la mirror write.
+
+## Review — Wiring minim Google backfill job create -> `sync_runs` (best-effort mirror write)
+- La `POST /integrations/google-ads/sync-now` pe branch-ul `async_mode=True`, după `job_id` create + `background_tasks.add_task(...)`, se face mirror write în `sync_runs` cu `status=queued`.
+- Se persistă: `job_id`, `platform=google_ads`, `client_id`, `account_id=None`, `date_start`, `date_end`, `chunk_days`, plus metadata minimă (`job_type`, `source`, `mapped_accounts_count`).
+- Dacă insert-ul în `sync_runs` eșuează, endpoint-ul nu se blochează: log warning și continuă să returneze același payload queued din flow-ul in-memory.
+- Nu am făcut wiring de read/status din DB și nu am atins alte platforme.
