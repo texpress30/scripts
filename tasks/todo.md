@@ -369,3 +369,22 @@
 - Am adăugat `apps/backend/db/migrations/0007_sync_runs.sql` în stilul migrațiilor existente, folosind `CREATE TABLE IF NOT EXISTS` + `CREATE INDEX IF NOT EXISTS` pentru idempotency.
 - Tabela `sync_runs` include schema exactă cerută, cu constrângeri simple și sigure: `date_end >= date_start` și `chunk_days > 0`.
 - Nu am schimbat codul aplicației (API/services/sync engine/dashboard/UI); taskul este strict de pregătire schemă DB.
+
+---
+
+# TODO — Implementare DB store pentru `sync_runs`
+
+- [x] Creez `apps/backend/app/services/sync_runs_store.py` cu acces SQL parametrizat (fără ORM, fără DDL runtime).
+- [x] Implementez metodele obligatorii: `create_sync_run`, `get_sync_run`, `update_sync_run_status`.
+- [x] Adaug validare read-only de schemă pentru `sync_runs` (`to_regclass`) cu eroare clară dacă migrațiile lipsesc.
+- [x] Adaug teste backend pentru create/get/update lifecycle și schema missing.
+- [x] Rulez teste țintite și verific că nu ating wiring-ul API/sync_engine.
+
+## Review — Implementare DB store pentru `sync_runs`
+- `SyncRunsStore` este DB-backed și folosește SQL parametrizat peste tabela `sync_runs`, fără DDL runtime.
+- Schema readiness este validată read-only (`SELECT to_regclass('public.sync_runs')`); dacă tabela lipsește, ridică: `Database schema for sync_runs is not ready; run DB migrations`.
+- Metodele cerute sunt livrate:
+  - `create_sync_run(...)` inserează job-ul și setează metadata implicit `{}`.
+  - `get_sync_run(job_id)` întoarce payload dict sau `None`.
+  - `update_sync_run_status(...)` actualizează `status`, `updated_at`, și opțional `started_at`/`finished_at`/`error`/`metadata`.
+- Nu am făcut wiring în API/sync_engine în acest task (intenționat, conform cerinței).

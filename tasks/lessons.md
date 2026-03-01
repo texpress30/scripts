@@ -76,3 +76,4 @@
 - 2026-02-28: După alinierea cheii canonice în runtime DDL, formalizează imediat aceeași regulă și în migrații SQL idempotente (inclusiv cleanup legacy + dedup înainte de unique index), ca să eviți drift între cod și schema live.
 - 2026-02-28: După ce schema e formalizată în migrații, evită runtime DDL în servicii; folosește validare read-only (`to_regclass`) și eroare explicită dacă migrațiile nu sunt aplicate.
 - 2026-02-28: Pentru pași incrementali de infrastructură (ex. persistarea joburilor de sync), livrează întâi o migrație SQL minimă și idempotentă, fără schimbări de business logic în același task.
+- 2026-02-28: Când introduci persistență nouă DB-backed (ex. `sync_runs`), livrează întâi store-ul cu contract CRUD minim + validare read-only de schemă și teste de lifecycle, fără wiring prematur în API/engine.

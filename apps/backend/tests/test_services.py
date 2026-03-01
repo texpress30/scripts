@@ -28,6 +28,7 @@ from app.services.rules_engine import rules_engine_service
 from app.services.audit import audit_log_service
 from app.services.client_registry import client_registry_service
 from app.services.performance_reports import performance_reports_store
+from app.services.sync_runs_store import sync_runs_store
 
 
 class ServiceTests(unittest.TestCase):
@@ -758,6 +759,198 @@ class ServiceTests(unittest.TestCase):
         self.assertIn("Database schema for ad_performance_reports is not ready; run DB migrations", str(ctx.exception))
         self.assertEqual(len(queries), 1)
         self.assertIn("SELECT to_regclass('public.ad_performance_reports')", queries[0])
+
+    def test_sync_runs_store_schema_missing_raises_clear_error(self):
+        sync_runs_store._schema_initialized = False
+
+        class _FakeCursor:
+            def execute(self, query, params=None):
+                return None
+
+            def fetchone(self):
+                return (None,)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_connect = sync_runs_store._connect
+        try:
+            sync_runs_store._connect = lambda: _FakeConn()
+            with self.assertRaises(RuntimeError) as ctx:
+                sync_runs_store.get_sync_run("missing")
+        finally:
+            sync_runs_store._connect = original_connect
+            sync_runs_store._schema_initialized = False
+
+        self.assertIn("Database schema for sync_runs is not ready; run DB migrations", str(ctx.exception))
+
+    def test_sync_runs_store_create_get_update_lifecycle(self):
+        sync_runs_store._schema_initialized = False
+        state: dict[str, dict[str, object]] = {}
+        tick = {"value": 0}
+
+        def _now() -> str:
+            tick["value"] += 1
+            return f"2026-03-01T00:00:{tick['value']:02d}+00:00"
+
+        class _FakeCursor:
+            _row: tuple[object, ...] | None
+
+            def __init__(self):
+                self._row = None
+
+            def execute(self, query, params=None):
+                sql = str(query)
+                if "SELECT to_regclass('public.sync_runs')" in sql:
+                    self._row = ("sync_runs",)
+                    return
+
+                if "INSERT INTO sync_runs" in sql:
+                    job_id, platform, status, client_id, account_id, date_start, date_end, chunk_days, metadata_json = params
+                    now_value = _now()
+                    state[str(job_id)] = {
+                        "job_id": str(job_id),
+                        "platform": str(platform),
+                        "status": str(status),
+                        "client_id": client_id,
+                        "account_id": account_id,
+                        "date_start": str(date_start),
+                        "date_end": str(date_end),
+                        "chunk_days": int(chunk_days),
+                        "created_at": now_value,
+                        "updated_at": now_value,
+                        "started_at": None,
+                        "finished_at": None,
+                        "error": None,
+                        "metadata": str(metadata_json),
+                    }
+                    return
+
+                if "UPDATE sync_runs" in sql:
+                    status, mark_started, mark_finished, error, metadata_json, job_id = params
+                    row = state.get(str(job_id))
+                    if row is None:
+                        return
+                    row["status"] = str(status)
+                    row["updated_at"] = _now()
+                    if bool(mark_started) and row.get("started_at") is None:
+                        row["started_at"] = _now()
+                    if bool(mark_finished):
+                        row["finished_at"] = _now()
+                    if error is not None:
+                        row["error"] = str(error)
+                    if metadata_json is not None:
+                        row["metadata"] = str(metadata_json)
+                    return
+
+                if "FROM sync_runs" in sql and "WHERE job_id = %s" in sql:
+                    row = state.get(str(params[0]))
+                    if row is None:
+                        self._row = None
+                    else:
+                        self._row = (
+                            row["job_id"],
+                            row["platform"],
+                            row["status"],
+                            row["client_id"],
+                            row["account_id"],
+                            row["date_start"],
+                            row["date_end"],
+                            row["chunk_days"],
+                            row["created_at"],
+                            row["updated_at"],
+                            row["started_at"],
+                            row["finished_at"],
+                            row["error"],
+                            row["metadata"],
+                        )
+                    return
+
+                raise AssertionError(f"Unexpected SQL: {sql}")
+
+            def fetchone(self):
+                return self._row
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def commit(self):
+                return None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_connect = sync_runs_store._connect
+        try:
+            sync_runs_store._connect = lambda: _FakeConn()
+
+            created = sync_runs_store.create_sync_run(
+                job_id="job-1",
+                platform="google_ads",
+                status="queued",
+                date_start=date(2026, 1, 1),
+                date_end=date(2026, 1, 7),
+                chunk_days=7,
+                client_id=96,
+                account_id="1234567890",
+                metadata={"source": "test"},
+            )
+            self.assertIsNotNone(created)
+            self.assertEqual(created["job_id"], "job-1")
+            self.assertEqual(created["status"], "queued")
+            self.assertEqual(created["metadata"], {"source": "test"})
+
+            fetched = sync_runs_store.get_sync_run("job-1")
+            self.assertEqual(fetched["job_id"], "job-1")
+            self.assertEqual(fetched["platform"], "google_ads")
+
+            updated_running = sync_runs_store.update_sync_run_status(
+                job_id="job-1",
+                status="running",
+                mark_started=True,
+            )
+            self.assertEqual(updated_running["status"], "running")
+            self.assertIsNotNone(updated_running["started_at"])
+            updated_at_running = updated_running["updated_at"]
+
+            updated_done = sync_runs_store.update_sync_run_status(
+                job_id="job-1",
+                status="error",
+                mark_finished=True,
+                error="boom",
+                metadata={"step": "chunk-2"},
+            )
+            self.assertEqual(updated_done["status"], "error")
+            self.assertEqual(updated_done["error"], "boom")
+            self.assertEqual(updated_done["metadata"], {"step": "chunk-2"})
+            self.assertIsNotNone(updated_done["finished_at"])
+            self.assertNotEqual(updated_at_running, updated_done["updated_at"])
+        finally:
+            sync_runs_store._connect = original_connect
+            sync_runs_store._schema_initialized = False
 
     def test_client_dashboard_query_filters_by_date_range(self):
         query = unified_dashboard_service._client_reports_query()
