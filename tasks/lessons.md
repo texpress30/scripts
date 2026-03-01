@@ -105,3 +105,5 @@
 - 2026-03-01: Pentru Pinterest phase 2 incremental, adaugă `sync_state` strict local în runner-ul async, best-effort/non-blocking, cu `account_id` rezolvat canonic și skip defensiv la ambiguitate (fără fallback la `client_id`).
 
 - 2026-03-01: La restaurări de paritate cross-platform, tratează patch-ul ca additive: păstrează wiring-ul nou valid (ex. `sync_state`) și reintrodu punctual piesele lipsă (`sync_runs` create/lifecycle/status fallback) fără regresii de scope.
+
+- 2026-03-01: Pentru metadata operațională Pinterest, folosește strict helperul `update_platform_account_operational_metadata` și valori de cont reale (status/currency/timezone), fără a scrie statusuri de job (`running/done/error`) în `agency_platform_accounts.status`.

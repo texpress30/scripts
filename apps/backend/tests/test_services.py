@@ -1360,6 +1360,8 @@ class ServiceTests(unittest.TestCase):
         status_calls: list[dict[str, object]] = []
         sync_state_calls: list[dict[str, object]] = []
         sync_run_status_calls: list[dict[str, object]] = []
+        operational_calls: list[dict[str, object]] = []
+        operational_calls: list[dict[str, object]] = []
         op_calls: list[dict[str, object]] = []
         operational_calls: list[dict[str, object]] = []
 
@@ -1950,6 +1952,7 @@ class ServiceTests(unittest.TestCase):
         captured_calls: list[tuple[str, dict[str, object]]] = []
         sync_state_calls: list[dict[str, object]] = []
         sync_run_status_calls: list[dict[str, object]] = []
+        operational_calls: list[dict[str, object]] = []
 
         original_set_running = pinterest_ads_api.backfill_job_store.set_running
         original_set_done = pinterest_ads_api.backfill_job_store.set_done
@@ -1957,6 +1960,7 @@ class ServiceTests(unittest.TestCase):
         original_sync_client = pinterest_ads_api.pinterest_ads_service.sync_client
         original_sync_state_upsert = pinterest_ads_api.sync_state_store.upsert_sync_state
         original_sync_runs_update = pinterest_ads_api.sync_runs_store.update_sync_run_status
+        original_operational_update = pinterest_ads_api.client_registry_service.update_platform_account_operational_metadata
         original_list_accounts = pinterest_ads_api.client_registry_service.list_client_platform_accounts
         try:
             pinterest_ads_api.backfill_job_store.set_running = lambda job_id: captured_calls.append(("running", {"job_id": job_id}))
@@ -1964,7 +1968,8 @@ class ServiceTests(unittest.TestCase):
             pinterest_ads_api.backfill_job_store.set_error = lambda job_id, error: captured_calls.append(("error", {"job_id": job_id, "error": error}))
             pinterest_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: sync_state_calls.append(kwargs) or {"ok": True}
             pinterest_ads_api.sync_runs_store.update_sync_run_status = lambda **kwargs: sync_run_status_calls.append(kwargs) or {"ok": True}
-            pinterest_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "pin-acc-21"}] if int(kwargs.get("client_id") or 0) == 21 else [{"id": "pin-acc-22"}]
+            pinterest_ads_api.client_registry_service.update_platform_account_operational_metadata = lambda **kwargs: operational_calls.append(kwargs) or {"ok": True}
+            pinterest_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "pin-acc-21", "status": "active", "currency_code": "usd", "account_timezone": "UTC"}] if int(kwargs.get("client_id") or 0) == 21 else [{"id": "pin-acc-22", "status": "active", "currency_code": "eur", "account_timezone": "Europe/Berlin"}]
 
             pinterest_ads_api.pinterest_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
             pinterest_ads_api._run_pinterest_sync_job("pin-job-ok", client_id=21)
@@ -1981,6 +1986,7 @@ class ServiceTests(unittest.TestCase):
             pinterest_ads_api.pinterest_ads_service.sync_client = original_sync_client
             pinterest_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
             pinterest_ads_api.sync_runs_store.update_sync_run_status = original_sync_runs_update
+            pinterest_ads_api.client_registry_service.update_platform_account_operational_metadata = original_operational_update
             pinterest_ads_api.client_registry_service.list_client_platform_accounts = original_list_accounts
 
         running_calls = [payload for event, payload in captured_calls if event == "running"]
@@ -2020,6 +2026,16 @@ class ServiceTests(unittest.TestCase):
         self.assertTrue(any(call.get("job_id") == "pin-job-ok" and call.get("status") == "done" and call.get("mark_finished") is True for call in sync_run_status_calls))
         self.assertTrue(any(call.get("job_id") == "pin-job-fail" and call.get("status") == "error" and call.get("mark_finished") is True for call in sync_run_status_calls))
 
+        start_operational = next((call for call in operational_calls if call.get("account_id") == "pin-acc-21" and call.get("last_synced_at") is None), None)
+        success_operational = next((call for call in operational_calls if call.get("account_id") == "pin-acc-21" and call.get("last_synced_at") is not None), None)
+        self.assertIsNotNone(start_operational)
+        self.assertIsNotNone(success_operational)
+        self.assertEqual((start_operational or {}).get("platform"), "pinterest_ads")
+        self.assertEqual((start_operational or {}).get("status"), "active")
+        self.assertEqual((start_operational or {}).get("currency_code"), "USD")
+        self.assertEqual((start_operational or {}).get("account_timezone"), "UTC")
+        self.assertIsNotNone((start_operational or {}).get("sync_start_date"))
+
     def test_pinterest_sync_state_upsert_failure_is_non_blocking(self):
         captured_calls: list[tuple[str, dict[str, object]]] = []
 
@@ -2028,6 +2044,7 @@ class ServiceTests(unittest.TestCase):
         original_sync_client = pinterest_ads_api.pinterest_ads_service.sync_client
         original_sync_state_upsert = pinterest_ads_api.sync_state_store.upsert_sync_state
         original_sync_runs_update = pinterest_ads_api.sync_runs_store.update_sync_run_status
+        original_operational_update = pinterest_ads_api.client_registry_service.update_platform_account_operational_metadata
         original_list_accounts = pinterest_ads_api.client_registry_service.list_client_platform_accounts
         try:
             pinterest_ads_api.backfill_job_store.set_running = lambda job_id: captured_calls.append(("running", {"job_id": job_id}))
@@ -2035,6 +2052,7 @@ class ServiceTests(unittest.TestCase):
             pinterest_ads_api.pinterest_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
             pinterest_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("db unavailable"))
             pinterest_ads_api.sync_runs_store.update_sync_run_status = lambda **kwargs: {"ok": True}
+            pinterest_ads_api.client_registry_service.update_platform_account_operational_metadata = lambda **kwargs: {"ok": True}
             pinterest_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "pin-acc-7"}]
 
             pinterest_ads_api._run_pinterest_sync_job("pin-job-state-fail", client_id=7)
@@ -2044,6 +2062,7 @@ class ServiceTests(unittest.TestCase):
             pinterest_ads_api.pinterest_ads_service.sync_client = original_sync_client
             pinterest_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
             pinterest_ads_api.sync_runs_store.update_sync_run_status = original_sync_runs_update
+            pinterest_ads_api.client_registry_service.update_platform_account_operational_metadata = original_operational_update
             pinterest_ads_api.client_registry_service.list_client_platform_accounts = original_list_accounts
 
         self.assertTrue(any(event == "running" and payload.get("job_id") == "pin-job-state-fail" for event, payload in captured_calls))
@@ -2055,6 +2074,7 @@ class ServiceTests(unittest.TestCase):
         original_sync_client = pinterest_ads_api.pinterest_ads_service.sync_client
         original_sync_state_upsert = pinterest_ads_api.sync_state_store.upsert_sync_state
         original_sync_runs_update = pinterest_ads_api.sync_runs_store.update_sync_run_status
+        original_operational_update = pinterest_ads_api.client_registry_service.update_platform_account_operational_metadata
         original_list_accounts = pinterest_ads_api.client_registry_service.list_client_platform_accounts
         try:
             pinterest_ads_api.backfill_job_store.set_running = lambda job_id: None
@@ -2064,6 +2084,7 @@ class ServiceTests(unittest.TestCase):
             sync_state_calls: list[dict[str, object]] = []
             pinterest_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: sync_state_calls.append(kwargs) or {"ok": True}
             pinterest_ads_api.sync_runs_store.update_sync_run_status = lambda **kwargs: {"ok": True}
+            pinterest_ads_api.client_registry_service.update_platform_account_operational_metadata = lambda **kwargs: {"ok": True}
             pinterest_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "pin-a"}, {"id": "pin-b"}]
 
             pinterest_ads_api._run_pinterest_sync_job("pin-job-amb", client_id=99)
@@ -2073,9 +2094,73 @@ class ServiceTests(unittest.TestCase):
             pinterest_ads_api.pinterest_ads_service.sync_client = original_sync_client
             pinterest_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
             pinterest_ads_api.sync_runs_store.update_sync_run_status = original_sync_runs_update
+            pinterest_ads_api.client_registry_service.update_platform_account_operational_metadata = original_operational_update
             pinterest_ads_api.client_registry_service.list_client_platform_accounts = original_list_accounts
 
         self.assertEqual(sync_state_calls, [])
+
+    def test_pinterest_operational_metadata_update_failure_is_non_blocking(self):
+        captured_calls: list[tuple[str, dict[str, object]]] = []
+
+        original_set_running = pinterest_ads_api.backfill_job_store.set_running
+        original_set_done = pinterest_ads_api.backfill_job_store.set_done
+        original_sync_client = pinterest_ads_api.pinterest_ads_service.sync_client
+        original_sync_state_upsert = pinterest_ads_api.sync_state_store.upsert_sync_state
+        original_sync_runs_update = pinterest_ads_api.sync_runs_store.update_sync_run_status
+        original_operational_update = pinterest_ads_api.client_registry_service.update_platform_account_operational_metadata
+        original_list_accounts = pinterest_ads_api.client_registry_service.list_client_platform_accounts
+        try:
+            pinterest_ads_api.backfill_job_store.set_running = lambda job_id: captured_calls.append(("running", {"job_id": job_id}))
+            pinterest_ads_api.backfill_job_store.set_done = lambda job_id, result: captured_calls.append(("done", {"job_id": job_id, "result": result}))
+            pinterest_ads_api.pinterest_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
+            pinterest_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: {"ok": True}
+            pinterest_ads_api.sync_runs_store.update_sync_run_status = lambda **kwargs: {"ok": True}
+            pinterest_ads_api.client_registry_service.update_platform_account_operational_metadata = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("operational metadata unavailable"))
+            pinterest_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "pin-acc-7", "status": "active", "currency_code": "usd", "account_timezone": "UTC"}]
+
+            pinterest_ads_api._run_pinterest_sync_job("pin-job-op-fail", client_id=7)
+        finally:
+            pinterest_ads_api.backfill_job_store.set_running = original_set_running
+            pinterest_ads_api.backfill_job_store.set_done = original_set_done
+            pinterest_ads_api.pinterest_ads_service.sync_client = original_sync_client
+            pinterest_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+            pinterest_ads_api.sync_runs_store.update_sync_run_status = original_sync_runs_update
+            pinterest_ads_api.client_registry_service.update_platform_account_operational_metadata = original_operational_update
+            pinterest_ads_api.client_registry_service.list_client_platform_accounts = original_list_accounts
+
+        self.assertTrue(any(event == "running" and payload.get("job_id") == "pin-job-op-fail" for event, payload in captured_calls))
+        self.assertTrue(any(event == "done" and payload.get("job_id") == "pin-job-op-fail" for event, payload in captured_calls))
+
+    def test_pinterest_operational_metadata_skips_when_account_id_is_ambiguous(self):
+        original_set_running = pinterest_ads_api.backfill_job_store.set_running
+        original_set_done = pinterest_ads_api.backfill_job_store.set_done
+        original_sync_client = pinterest_ads_api.pinterest_ads_service.sync_client
+        original_sync_state_upsert = pinterest_ads_api.sync_state_store.upsert_sync_state
+        original_sync_runs_update = pinterest_ads_api.sync_runs_store.update_sync_run_status
+        original_operational_update = pinterest_ads_api.client_registry_service.update_platform_account_operational_metadata
+        original_list_accounts = pinterest_ads_api.client_registry_service.list_client_platform_accounts
+        try:
+            pinterest_ads_api.backfill_job_store.set_running = lambda job_id: None
+            pinterest_ads_api.backfill_job_store.set_done = lambda job_id, result: None
+            pinterest_ads_api.pinterest_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
+            pinterest_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: {"ok": True}
+            pinterest_ads_api.sync_runs_store.update_sync_run_status = lambda **kwargs: {"ok": True}
+
+            operational_calls: list[dict[str, object]] = []
+            pinterest_ads_api.client_registry_service.update_platform_account_operational_metadata = lambda **kwargs: operational_calls.append(kwargs) or {"ok": True}
+            pinterest_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "pin-a"}, {"id": "pin-b"}]
+
+            pinterest_ads_api._run_pinterest_sync_job("pin-job-amb-op", client_id=99)
+        finally:
+            pinterest_ads_api.backfill_job_store.set_running = original_set_running
+            pinterest_ads_api.backfill_job_store.set_done = original_set_done
+            pinterest_ads_api.pinterest_ads_service.sync_client = original_sync_client
+            pinterest_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+            pinterest_ads_api.sync_runs_store.update_sync_run_status = original_sync_runs_update
+            pinterest_ads_api.client_registry_service.update_platform_account_operational_metadata = original_operational_update
+            pinterest_ads_api.client_registry_service.list_client_platform_accounts = original_list_accounts
+
+        self.assertEqual(operational_calls, [])
 
     def test_pinterest_sync_now_job_status_memory_first_and_db_fallback(self):
         user = AuthUser(email="admin@example.com", role="agency_owner")

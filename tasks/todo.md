@@ -811,3 +811,21 @@
 - Pentru schema `sync_runs` pe Pinterest simplu folosesc fereastră sintetică minimă: `date_start=date_end=utc_today`, `chunk_days=1`.
 - `sync_state` a rămas activ și best-effort în runner, în paralel cu sync_runs.
 - Nu am introdus `sync_run_chunks` pentru Pinterest.
+
+
+---
+
+# TODO — Pinterest phase 2 (part 2): operational metadata mirror
+
+- [x] Adaug helper local best-effort pentru update metadata operațională în `agency_platform_accounts` prin helperul existent din `client_registry`.
+- [x] Fac update operațional la start procesare cont Pinterest (`sync_start_date` + câmpuri de cont disponibile sigur: status/currency/timezone).
+- [x] Fac update operațional la succes cont (`last_synced_at`) păstrând câmpurile de cont disponibile.
+- [x] Păstrez comportamentul non-blocking la eșec update operațional.
+- [x] Păstrez identitatea canonică: fără fallback `client_id` -> `account_id`; skip defensiv pe ambiguitate/lipsă.
+- [x] Actualizez testele Pinterest focalizate pentru start/succes, eșec non-blocking și skip defensiv.
+
+## Review — Pinterest phase 2 (part 2)
+- Runner-ul async Pinterest actualizează acum metadata operațională prin `update_platform_account_operational_metadata(...)` în fazele start și success.
+- `agency_platform_accounts.status` este tratat ca status de cont (din mapping), nu ca status de sync-job.
+- La ambiguitate/lipsă `account_id` sau la eroare DB, update-ul operațional este omis/logat și flow-ul continuă.
+- Endpoint-urile publice și shape-urile de răspuns au rămas neschimbate; `sync_runs` + `sync_state` rămân active.

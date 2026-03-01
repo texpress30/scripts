@@ -39,6 +39,77 @@ def _resolve_pinterest_account_id(*, client_id: int, job_id: str | None = None) 
     return None
 
 
+def _resolve_pinterest_account_metadata(*, client_id: int, job_id: str | None = None) -> dict[str, object]:
+    try:
+        accounts = client_registry_service.list_client_platform_accounts(platform=PLATFORM_PINTEREST_ADS, client_id=int(client_id))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("pinterest_operational_metadata_lookup_failed client_id=%s job_id=%s error=%s", int(client_id), job_id, str(exc)[:300])
+        return {"account_id": None}
+
+    rows = [item for item in accounts if isinstance(item, dict)]
+    account_ids = [str(item.get("id") or "").strip() for item in rows]
+    account_ids = [item for item in account_ids if item != ""]
+    if len(account_ids) != 1:
+        if len(account_ids) == 0:
+            logger.warning("pinterest_operational_metadata_account_id_missing client_id=%s job_id=%s", int(client_id), job_id)
+        else:
+            logger.warning("pinterest_operational_metadata_account_id_ambiguous client_id=%s job_id=%s account_count=%s", int(client_id), job_id, len(account_ids))
+        return {"account_id": None}
+
+    selected = rows[0]
+    metadata: dict[str, object] = {"account_id": account_ids[0]}
+
+    status_value = selected.get("status")
+    if isinstance(status_value, str) and status_value.strip() != "":
+        metadata["status"] = status_value.strip()
+
+    currency_candidates = (selected.get("currency_code"), selected.get("currency"))
+    for currency_value in currency_candidates:
+        if isinstance(currency_value, str) and currency_value.strip() != "":
+            metadata["currency_code"] = currency_value.strip().upper()
+            break
+
+    timezone_candidates = (selected.get("account_timezone"), selected.get("timezone"))
+    for tz_value in timezone_candidates:
+        if isinstance(tz_value, str) and tz_value.strip() != "":
+            metadata["account_timezone"] = tz_value.strip()
+            break
+
+    return metadata
+
+
+def _mirror_pinterest_platform_account_operational_metadata(*, client_id: int, account_id: str | None, date_start: str, job_id: str, phase: str, include_last_synced_at: bool = False, account_status: str | None = None, currency_code: str | None = None, account_timezone: str | None = None) -> None:
+    if account_id is None:
+        logger.warning("pinterest_operational_metadata_skip_missing_account_id client_id=%s job_id=%s phase=%s", int(client_id), job_id, phase)
+        return
+
+    payload: dict[str, object] = {
+        "platform": PLATFORM_PINTEREST_ADS,
+        "account_id": str(account_id),
+        "sync_start_date": datetime.fromisoformat(date_start).date(),
+    }
+    if isinstance(account_status, str) and account_status.strip() != "":
+        payload["status"] = account_status.strip()
+    if isinstance(currency_code, str) and currency_code.strip() != "":
+        payload["currency_code"] = currency_code.strip().upper()
+    if isinstance(account_timezone, str) and account_timezone.strip() != "":
+        payload["account_timezone"] = account_timezone.strip()
+    if include_last_synced_at:
+        payload["last_synced_at"] = datetime.utcnow()
+
+    try:
+        client_registry_service.update_platform_account_operational_metadata(**payload)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "pinterest_operational_metadata_update_failed platform=%s account_id=%s job_id=%s phase=%s error=%s",
+            PLATFORM_PINTEREST_ADS,
+            account_id,
+            job_id,
+            phase,
+            str(exc)[:300],
+        )
+
+
 def _mirror_pinterest_sync_state_upsert(*, account_id: str | None, job_id: str, status_value: str, client_id: int, date_start: str, date_end: str, error: str | None = None, include_success: bool = False) -> None:
     if account_id is None:
         logger.warning("pinterest_sync_state_skip_missing_account_id client_id=%s job_id=%s status=%s", int(client_id), job_id, status_value)
@@ -139,7 +210,22 @@ def _run_pinterest_sync_job(job_id: str, *, client_id: int) -> None:
     _mirror_sync_run_status(job_id=job_id, status_value=SYNC_STATUS_RUNNING, mark_started=True)
     date_end = datetime.utcnow().date().isoformat()
     date_start = (datetime.utcnow().date() - timedelta(days=30)).isoformat()
-    account_id = _resolve_pinterest_account_id(client_id=int(client_id), job_id=job_id)
+    account_metadata = _resolve_pinterest_account_metadata(client_id=int(client_id), job_id=job_id)
+    account_id = account_metadata.get("account_id") if isinstance(account_metadata.get("account_id"), str) else None
+    account_status = account_metadata.get("status") if isinstance(account_metadata.get("status"), str) else None
+    currency_code = account_metadata.get("currency_code") if isinstance(account_metadata.get("currency_code"), str) else None
+    account_timezone = account_metadata.get("account_timezone") if isinstance(account_metadata.get("account_timezone"), str) else None
+    _mirror_pinterest_platform_account_operational_metadata(
+        client_id=int(client_id),
+        account_id=account_id,
+        date_start=date_start,
+        job_id=job_id,
+        phase="start",
+        include_last_synced_at=False,
+        account_status=account_status,
+        currency_code=currency_code,
+        account_timezone=account_timezone,
+    )
     _mirror_pinterest_sync_state_upsert(
         account_id=account_id,
         job_id=job_id,
@@ -162,6 +248,17 @@ def _run_pinterest_sync_job(job_id: str, *, client_id: int) -> None:
         }
         backfill_job_store.set_done(job_id, result=payload)
         _mirror_sync_run_status(job_id=job_id, status_value=SYNC_STATUS_DONE, mark_finished=True)
+        _mirror_pinterest_platform_account_operational_metadata(
+            client_id=int(client_id),
+            account_id=account_id,
+            date_start=date_start,
+            job_id=job_id,
+            phase="success",
+            include_last_synced_at=True,
+            account_status=account_status,
+            currency_code=currency_code,
+            account_timezone=account_timezone,
+        )
         _mirror_pinterest_sync_state_upsert(
             account_id=account_id,
             job_id=job_id,
