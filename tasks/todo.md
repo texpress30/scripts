@@ -437,3 +437,20 @@
 - La memory miss, endpoint-ul încearcă best-effort citirea din `sync_runs`; dacă găsește rândul, întoarce payload compatibil cu contractul curent.
 - Dacă fallback-ul DB eșuează, endpoint-ul rămâne defensiv: log warning și păstrează comportamentul existent `404 job not found`.
 - Patch-ul este limitat la API Google + teste backend, fără impact pe alte platforme sau pe `sync_engine`.
+
+---
+
+# TODO — Migrație SQL pentru persistența chunk-urilor de sync (`sync_run_chunks`)
+
+- [x] Identific următorul număr disponibil de migrație în `apps/backend/db/migrations`.
+- [x] Creez migrația nouă doar în folderul de migrații, fără schimbări de cod aplicație.
+- [x] Adaug tabela `sync_run_chunks` cu coloanele cerute, FK spre `sync_runs(job_id)`, constrângeri simple și indexurile minime.
+- [x] Mențin migrația idempotentă și în stilul SQL existent în repo.
+- [x] Verific local scope-ul modificărilor (doar migrație + task tracking) și pregătesc commit.
+
+## Review — Migrație SQL pentru persistența chunk-urilor de sync (`sync_run_chunks`)
+- Am folosit următorul număr disponibil și am creat `apps/backend/db/migrations/0008_sync_run_chunks.sql`.
+- Migrația adaugă strict tabela `sync_run_chunks` cu schema cerută, FK către `sync_runs(job_id)` cu `ON DELETE CASCADE`, constrângerile simple (`date_end >= date_start`, `chunk_index >= 0`) și unicitatea `(job_id, chunk_index)`.
+- Am adăugat doar indexurile minime cerute: `(job_id, chunk_index)` și `(job_id, status)`.
+- Nu am făcut wiring în API/runner/services și nu am modificat codul aplicației.
+
