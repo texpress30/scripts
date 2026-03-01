@@ -1,6 +1,7 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 
 from app.api.dependencies import enforce_action_scope, get_current_user
 from app.services.audit import audit_log_service
@@ -8,8 +9,11 @@ from app.services.auth import AuthUser
 from app.services.client_registry import client_registry_service
 from app.services.google_ads import GoogleAdsIntegrationError, google_ads_service
 from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
+from app.services.sync_engine import backfill_job_store
+from app.services.sync_runs_store import sync_runs_store
 
 router = APIRouter(prefix="/integrations/google-ads", tags=["google-ads"])
+logger = logging.getLogger(__name__)
 
 
 def _mask_customer_id(customer_id: str) -> str:
@@ -17,6 +21,37 @@ def _mask_customer_id(customer_id: str) -> str:
     if len(normalized) < 4:
         return "****"
     return f"***{normalized[-4:]}"
+
+
+def _mirror_sync_run_create(*, job_id: str, platform: str, status: str, client_id: int | None, account_id: str | None, date_start: date, date_end: date, chunk_days: int, metadata: dict[str, object] | None = None) -> None:
+    try:
+        sync_runs_store.create_sync_run(
+            job_id=job_id,
+            platform=platform,
+            status=status,
+            client_id=client_id,
+            account_id=account_id,
+            date_start=date_start,
+            date_end=date_end,
+            chunk_days=chunk_days,
+            metadata=metadata or {},
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sync_runs mirror write failed for google_ads job_id=%s error=%s", job_id, str(exc)[:300])
+
+
+def _mirror_sync_run_status(*, job_id: str, status: str, error: str | None = None, mark_started: bool = False, mark_finished: bool = False, metadata: dict[str, object] | None = None) -> None:
+    try:
+        sync_runs_store.update_sync_run_status(
+            job_id=job_id,
+            status=status,
+            error=error,
+            mark_started=mark_started,
+            mark_finished=mark_finished,
+            metadata=metadata,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sync_runs mirror status update failed for google_ads job_id=%s status=%s error=%s", job_id, status, str(exc)[:300])
 
 
 @router.get("/status")
@@ -218,11 +253,108 @@ def google_ads_db_debug(user: AuthUser = Depends(get_current_user)) -> dict[str,
     )
     return payload
 
+def _run_google_backfill_job(job_id: str, *, mapped_accounts: list[dict[str, object]], resolved_start: date, resolved_end: date, days: int, chunk_days: int, requested_client_id: int | None) -> None:
+    backfill_job_store.set_running(job_id)
+    _mirror_sync_run_status(job_id=job_id, status="running", mark_started=True)
+
+    attempts: list[dict[str, object]] = []
+    errors_summary: list[dict[str, str | int]] = []
+    inserted_rows_total = 0
+
+    try:
+        for item in mapped_accounts:
+            client_id = int(item.get("client_id") or 0)
+            raw_customer_id = str(item.get("customer_id") or "").strip()
+            masked_customer_id = f"***{raw_customer_id[-4:]}" if len(raw_customer_id) >= 4 else "****"
+            try:
+                snapshot = google_ads_service.sync_customer_for_client(
+                    client_id=client_id,
+                    customer_id=raw_customer_id,
+                    days=days,
+                    start_date=resolved_start,
+                    end_date=resolved_end,
+                    chunk_days=chunk_days,
+                )
+                inserted_rows = int(snapshot.get("inserted_rows", 0) or 0)
+                inserted_rows_total += inserted_rows
+                attempts.append(
+                    {
+                        "client_id": client_id,
+                        "customer_id_masked": masked_customer_id,
+                        "status": "ok",
+                        "inserted_rows": inserted_rows,
+                        "gaql_rows_fetched": int(snapshot.get("gaql_rows_fetched", 0) or 0),
+                        "db_rows_last_30_for_customer": int(snapshot.get("db_rows_last_30_for_customer", 0) or 0),
+                        "reason_if_zero": snapshot.get("reason_if_zero"),
+                    }
+                )
+            except Exception as exc:  # noqa: BLE001
+                safe_message = str(exc).replace(raw_customer_id, "***")[:300]
+                attempts.append(
+                    {
+                        "client_id": client_id,
+                        "customer_id_masked": masked_customer_id,
+                        "status": "error",
+                        "gaql_rows_fetched": 0,
+                        "inserted_rows": 0,
+                        "db_rows_last_30_for_customer": 0,
+                        "reason_if_zero": "DB_INSERT_FAILED",
+                    }
+                )
+                errors_summary.append(
+                    {
+                        "client_id": client_id,
+                        "customer_id_masked": masked_customer_id,
+                        "error": safe_message,
+                    }
+                )
+
+        succeeded_accounts_count = len([item for item in attempts if item["status"] == "ok"])
+        failed_accounts_count = len([item for item in attempts if item["status"] == "error"])
+        payload = {
+            "status": "ok" if failed_accounts_count == 0 else "partial",
+            "mapped_accounts_count": len(mapped_accounts),
+            "attempted_accounts_count": len(attempts),
+            "succeeded_accounts_count": succeeded_accounts_count,
+            "failed_accounts_count": failed_accounts_count,
+            "inserted_rows_total": inserted_rows_total,
+            "date_range": {"start": resolved_start.isoformat(), "end": resolved_end.isoformat()},
+            "sample_customer_ids": [item["customer_id_masked"] for item in attempts[:10]],
+            "errors_summary": errors_summary,
+            "attempts": attempts,
+            "client_id": requested_client_id,
+            "days": int(days),
+            "chunk_days": int(chunk_days),
+        }
+        backfill_job_store.set_done(job_id, result=payload)
+        _mirror_sync_run_status(
+            job_id=job_id,
+            status="done",
+            mark_finished=True,
+            metadata={
+                "mapped_accounts_count": len(mapped_accounts),
+                "successful_accounts": succeeded_accounts_count,
+                "failed_accounts": failed_accounts_count,
+                "days": int(days),
+                "chunk_days": int(chunk_days),
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        safe_error = str(exc)[:300]
+        backfill_job_store.set_error(job_id, error=safe_error)
+        _mirror_sync_run_status(job_id=job_id, status="error", error=safe_error, mark_finished=True)
+
+
 @router.post("/sync-now")
 def sync_google_ads_now(
+    background_tasks: BackgroundTasks,
     user: AuthUser = Depends(get_current_user),
     client_id: int | None = Query(default=None),
-    days: int = Query(default=30, ge=1, le=90),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    days: int = Query(default=30, ge=1, le=3660),
+    async_mode: bool = Query(default=True),
+    chunk_days: int = Query(default=7, ge=1, le=31),
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
 
@@ -230,98 +362,135 @@ def sync_google_ads_now(
     mapped_accounts = client_registry_service.list_google_mapped_accounts()
     if requested_client_id is not None:
         mapped_accounts = [item for item in mapped_accounts if int(item.get("client_id") or 0) == int(requested_client_id)]
-    mapped_accounts_count = len(mapped_accounts)
 
-    if mapped_accounts_count == 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No mapped Google Ads customer IDs for any subaccount",
+    yesterday = datetime.utcnow().date() - timedelta(days=1)
+    resolved_end = end_date or yesterday
+    if start_date is not None:
+        resolved_start = start_date
+    elif end_date is not None:
+        resolved_start = resolved_end - timedelta(days=int(days) - 1)
+    else:
+        resolved_start = date(2026, 1, 1)
+    if resolved_start > resolved_end:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="start_date must be <= end_date")
+
+    if len(mapped_accounts) == 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No mapped Google Ads customer IDs for any subaccount")
+
+    if async_mode:
+        job_id = backfill_job_store.create(
+            payload={
+                "platform": "google_ads",
+                "client_id": requested_client_id,
+                "date_range": {"start": resolved_start.isoformat(), "end": resolved_end.isoformat()},
+                "mapped_accounts_count": len(mapped_accounts),
+                "chunk_days": int(chunk_days),
+            }
         )
+        background_tasks.add_task(
+            _run_google_backfill_job,
+            job_id,
+            mapped_accounts=mapped_accounts,
+            resolved_start=resolved_start,
+            resolved_end=resolved_end,
+            days=max(1, (resolved_end - resolved_start).days + 1),
+            chunk_days=int(chunk_days),
+            requested_client_id=requested_client_id,
+        )
+        _mirror_sync_run_create(
+            job_id=job_id,
+            platform="google_ads",
+            status="queued",
+            client_id=requested_client_id,
+            account_id=None,
+            date_start=resolved_start,
+            date_end=resolved_end,
+            chunk_days=int(chunk_days),
+            metadata={"job_type": "backfill", "source": "google_ads_api", "mapped_accounts_count": len(mapped_accounts)},
+        )
+        return {
+            "status": "queued",
+            "job_id": job_id,
+            "mapped_accounts_count": len(mapped_accounts),
+            "date_range": {"start": resolved_start.isoformat(), "end": resolved_end.isoformat()},
+            "client_id": requested_client_id,
+            "chunk_days": int(chunk_days),
+        }
 
-    attempts: list[dict[str, object]] = []
-    errors_summary: list[dict[str, str | int]] = []
-    inserted_rows_total = 0
-
-    for item in mapped_accounts:
-        client_id = int(item.get("client_id") or 0)
-        raw_customer_id = str(item.get("customer_id") or "").strip()
-        masked_customer_id = f"***{raw_customer_id[-4:]}" if len(raw_customer_id) >= 4 else "****"
-        try:
-            snapshot = google_ads_service.sync_customer_for_client(client_id=client_id, customer_id=raw_customer_id, days=days)
-            inserted_rows = int(snapshot.get("inserted_rows", 0) or 0)
-            inserted_rows_total += inserted_rows
-            attempts.append(
-                {
-                    "client_id": client_id,
-                    "customer_id_masked": masked_customer_id,
-                    "status": "ok",
-                    "inserted_rows": inserted_rows,
-                    "gaql_rows_fetched": int(snapshot.get("gaql_rows_fetched", 0) or 0),
-                    "db_rows_last_30_for_customer": int(snapshot.get("db_rows_last_30_for_customer", 0) or 0),
-                    "reason_if_zero": snapshot.get("reason_if_zero"),
-                }
-            )
-        except Exception as exc:  # noqa: BLE001
-            message = str(exc)
-            safe_message = message.replace(raw_customer_id, "***")[:300]
-            attempts.append(
-                {
-                    "client_id": client_id,
-                    "customer_id_masked": masked_customer_id,
-                    "status": "error",
-                    "gaql_rows_fetched": 0,
-                    "inserted_rows": 0,
-                    "db_rows_last_30_for_customer": 0,
-                    "reason_if_zero": "DB_INSERT_FAILED",
-                }
-            )
-            errors_summary.append(
-                {
-                    "client_id": client_id,
-                    "customer_id_masked": masked_customer_id,
-                    "error": safe_message,
-                }
-            )
-
-    succeeded_accounts_count = len([item for item in attempts if item["status"] == "ok"])
-    failed_accounts_count = len([item for item in attempts if item["status"] == "error"])
-    attempted_accounts_count = len(attempts)
-    sample_customer_ids = [item["customer_id_masked"] for item in attempts[:10]]
-
-    today = datetime.utcnow().date()
-    start = today - timedelta(days=int(days) - 1)
-    payload = {
-        "status": "ok" if failed_accounts_count == 0 else "partial",
-        "mapped_accounts_count": mapped_accounts_count,
-        "attempted_accounts_count": attempted_accounts_count,
-        "succeeded_accounts_count": succeeded_accounts_count,
-        "failed_accounts_count": failed_accounts_count,
-        "inserted_rows_total": inserted_rows_total,
-        "date_range": {"start": start.isoformat(), "end": today.isoformat()},
-        "sample_customer_ids": sample_customer_ids,
-        "errors_summary": errors_summary,
-        "attempts": attempts,
-        "client_id": requested_client_id,
-        "days": int(days),
-    }
-
+    # Synchronous fallback
+    job_id = backfill_job_store.create(payload={"platform": "google_ads", "chunk_days": int(chunk_days)})
+    _run_google_backfill_job(
+        job_id,
+        mapped_accounts=mapped_accounts,
+        resolved_start=resolved_start,
+        resolved_end=resolved_end,
+        days=max(1, (resolved_end - resolved_start).days + 1),
+        chunk_days=int(chunk_days),
+        requested_client_id=requested_client_id,
+    )
+    result = backfill_job_store.get(job_id) or {}
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
         action="google_ads.sync_now",
         resource="integration:google_ads",
         details={
-            "mapped_accounts_count": mapped_accounts_count,
-            "attempted_accounts_count": attempted_accounts_count,
-            "succeeded_accounts_count": succeeded_accounts_count,
-            "failed_accounts_count": failed_accounts_count,
-            "inserted_rows_total": inserted_rows_total,
+            "mapped_accounts_count": len(mapped_accounts),
             "client_id": requested_client_id,
-            "days": int(days),
+            "start_date": resolved_start.isoformat(),
+            "end_date": resolved_end.isoformat(),
+            "chunk_days": int(chunk_days),
         },
     )
+    return dict(result.get("result") or {"status": "error", "job_id": job_id})
+
+
+def _map_sync_run_to_job_status_payload(sync_run: dict[str, object]) -> dict[str, object]:
+    metadata = sync_run.get("metadata") if isinstance(sync_run.get("metadata"), dict) else {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    payload: dict[str, object] = {
+        "job_id": str(sync_run.get("job_id") or ""),
+        "status": str(sync_run.get("status") or "queued"),
+        "created_at": sync_run.get("created_at"),
+        "started_at": sync_run.get("started_at"),
+        "finished_at": sync_run.get("finished_at"),
+        "error": sync_run.get("error"),
+        "metadata": metadata,
+    }
+
+    for field in ("platform", "client_id", "account_id", "date_start", "date_end", "chunk_days"):
+        value = sync_run.get(field)
+        if value is not None:
+            payload[field] = value
+
+    for field in ("date_range", "mapped_accounts_count", "chunk_days", "platform", "client_id"):
+        value = metadata.get(field)
+        if value is not None and field not in payload:
+            payload[field] = value
 
     return payload
+
+
+@router.get("/sync-now/jobs/{job_id}")
+def sync_now_job_status(job_id: str, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+    payload = backfill_job_store.get(job_id)
+    if payload is not None:
+        return payload
+
+    try:
+        sync_run = sync_runs_store.get_sync_run(job_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sync_runs fallback read failed for google_ads job_id=%s error=%s", job_id, str(exc)[:300])
+        sync_run = None
+
+    if sync_run is not None:
+        return _map_sync_run_to_job_status_payload(sync_run)
+
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+
 @router.post("/{client_id}/sync")
 def sync_google_ads(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, float | int | str]:
     try:
@@ -335,7 +504,7 @@ def sync_google_ads(client_id: int, user: AuthUser = Depends(get_current_user)) 
     except GoogleAdsIntegrationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Google Ads API unavailable") from exc
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Google Ads API unavailable: {str(exc)[:200]}") from exc
 
     audit_log_service.log(
         actor_email=user.email,
