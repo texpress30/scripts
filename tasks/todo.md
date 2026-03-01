@@ -454,3 +454,22 @@
 - Am adăugat doar indexurile minime cerute: `(job_id, chunk_index)` și `(job_id, status)`.
 - Nu am făcut wiring în API/runner/services și nu am modificat codul aplicației.
 
+
+---
+
+# TODO — Implementare store DB-backed pentru `sync_run_chunks` (fără wiring)
+
+- [x] Creez `apps/backend/app/services/sync_run_chunks_store.py` în stilul store-urilor existente (SQL parametrizat, fără ORM/DDL runtime).
+- [x] Implementez API-ul minim: `create_sync_run_chunk`, `list_sync_run_chunks`, `update_sync_run_chunk_status`.
+- [x] Adaug validare read-only de schemă pentru `sync_run_chunks` cu eroare clară dacă migrația nu este aplicată.
+- [x] Adaug teste backend pentru create/list/update + ordering + started/finished/error/updated_at + schema missing.
+- [x] Verific local că nu există wiring în API/runner și păstrez patch-ul minimal.
+
+## Review — Implementare store DB-backed pentru `sync_run_chunks` (fără wiring)
+- Am adăugat `SyncRunChunksStore` în fișier nou, cu SQL parametrizat și validare read-only de schemă (`to_regclass`) fără DDL runtime.
+- Store-ul expune API-ul cerut: `create_sync_run_chunk`, `list_sync_run_chunks`, `update_sync_run_chunk_status`.
+- `list_sync_run_chunks(job_id)` întoarce chunk-urile ordonate crescător după `chunk_index`.
+- Update-ul setează mereu `updated_at = NOW()` și suportă `mark_started`, `mark_finished`, `error`, `metadata`.
+- Am adăugat teste unitare backend cu fake DB pentru schema-missing + lifecycle create/list/update (ordering, timestamps, error, metadata).
+- Nu am făcut wiring în API/runner; schimbările sunt strict în stratul service + teste.
+

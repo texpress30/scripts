@@ -32,6 +32,7 @@ from app.services.audit import audit_log_service
 from app.services.client_registry import client_registry_service
 from app.services.performance_reports import performance_reports_store
 from app.services.sync_runs_store import sync_runs_store
+from app.services.sync_run_chunks_store import sync_run_chunks_store
 
 
 class ServiceTests(unittest.TestCase):
@@ -1139,6 +1140,221 @@ class ServiceTests(unittest.TestCase):
 
         self.assertEqual(len(done_calls), 1)
         self.assertEqual(done_calls[0].get("status"), "ok")
+
+    def test_sync_run_chunks_store_schema_missing_raises_clear_error(self):
+        sync_run_chunks_store._schema_initialized = False
+
+        class _FakeCursor:
+            def execute(self, query, params=None):
+                return None
+
+            def fetchone(self):
+                return (None,)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_connect = sync_run_chunks_store._connect
+        try:
+            sync_run_chunks_store._connect = lambda: _FakeConn()
+            with self.assertRaises(RuntimeError) as ctx:
+                sync_run_chunks_store.list_sync_run_chunks("missing")
+        finally:
+            sync_run_chunks_store._connect = original_connect
+            sync_run_chunks_store._schema_initialized = False
+
+        self.assertIn("Database schema for sync_run_chunks is not ready; run DB migrations", str(ctx.exception))
+
+    def test_sync_run_chunks_store_create_list_update_lifecycle(self):
+        sync_run_chunks_store._schema_initialized = False
+        state: dict[tuple[str, int], dict[str, object]] = {}
+        next_id = {"value": 0}
+        tick = {"value": 0}
+
+        def _now() -> str:
+            tick["value"] += 1
+            return f"2026-03-01T00:00:{tick['value']:02d}+00:00"
+
+        class _FakeCursor:
+            _row: tuple[object, ...] | None
+            _rows: list[tuple[object, ...]]
+
+            def __init__(self):
+                self._row = None
+                self._rows = []
+
+            def execute(self, query, params=None):
+                sql = str(query)
+
+                if "SELECT to_regclass('public.sync_run_chunks')" in sql:
+                    self._row = ("sync_run_chunks",)
+                    return
+
+                if "INSERT INTO sync_run_chunks" in sql:
+                    job_id, chunk_index, status, date_start, date_end, metadata_json = params
+                    key = (str(job_id), int(chunk_index))
+                    next_id["value"] += 1
+                    now_value = _now()
+                    state[key] = {
+                        "id": int(next_id["value"]),
+                        "job_id": str(job_id),
+                        "chunk_index": int(chunk_index),
+                        "status": str(status),
+                        "date_start": str(date_start),
+                        "date_end": str(date_end),
+                        "created_at": now_value,
+                        "updated_at": now_value,
+                        "started_at": None,
+                        "finished_at": None,
+                        "error": None,
+                        "metadata": str(metadata_json),
+                    }
+                    return
+
+                if "UPDATE sync_run_chunks" in sql:
+                    status, mark_started, mark_finished, error, metadata_json, job_id, chunk_index = params
+                    key = (str(job_id), int(chunk_index))
+                    row = state.get(key)
+                    if row is None:
+                        return
+                    row["status"] = str(status)
+                    row["updated_at"] = _now()
+                    if bool(mark_started) and row.get("started_at") is None:
+                        row["started_at"] = row["updated_at"]
+                    if bool(mark_finished):
+                        row["finished_at"] = row["updated_at"]
+                    if error is not None:
+                        row["error"] = str(error)
+                    if metadata_json is not None:
+                        row["metadata"] = str(metadata_json)
+                    return
+
+                if "FROM sync_run_chunks" in sql and "ORDER BY chunk_index ASC" in sql:
+                    job_id = str(params[0])
+                    rows = [
+                        (
+                            row["id"],
+                            row["job_id"],
+                            row["chunk_index"],
+                            row["status"],
+                            row["date_start"],
+                            row["date_end"],
+                            row["created_at"],
+                            row["updated_at"],
+                            row["started_at"],
+                            row["finished_at"],
+                            row["error"],
+                            row["metadata"],
+                        )
+                        for row in sorted(state.values(), key=lambda item: int(item["chunk_index"]))
+                        if str(row["job_id"]) == job_id
+                    ]
+                    self._rows = rows
+                    return
+
+                raise AssertionError(f"Unexpected SQL: {sql}")
+
+            def fetchone(self):
+                return self._row
+
+            def fetchall(self):
+                return list(self._rows)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def commit(self):
+                return None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_connect = sync_run_chunks_store._connect
+        try:
+            sync_run_chunks_store._connect = lambda: _FakeConn()
+
+            created_2 = sync_run_chunks_store.create_sync_run_chunk(
+                job_id="job-1",
+                chunk_index=2,
+                status="queued",
+                date_start=date(2026, 1, 15),
+                date_end=date(2026, 1, 21),
+            )
+            created_0 = sync_run_chunks_store.create_sync_run_chunk(
+                job_id="job-1",
+                chunk_index=0,
+                status="queued",
+                date_start=date(2026, 1, 1),
+                date_end=date(2026, 1, 7),
+                metadata={"range": "first"},
+            )
+
+            chunks_before = sync_run_chunks_store.list_sync_run_chunks("job-1")
+
+            started = sync_run_chunks_store.update_sync_run_chunk_status(
+                job_id="job-1",
+                chunk_index=0,
+                status="running",
+                mark_started=True,
+            )
+            finished = sync_run_chunks_store.update_sync_run_chunk_status(
+                job_id="job-1",
+                chunk_index=0,
+                status="done",
+                mark_finished=True,
+                error="chunk done",
+                metadata={"rows": 10},
+            )
+            chunks_after = sync_run_chunks_store.list_sync_run_chunks("job-1")
+        finally:
+            sync_run_chunks_store._connect = original_connect
+            sync_run_chunks_store._schema_initialized = False
+
+        self.assertIsNotNone(created_2)
+        self.assertIsNotNone(created_0)
+        self.assertEqual(created_2["job_id"], "job-1")
+        self.assertEqual(created_2["chunk_index"], 2)
+        self.assertEqual(created_2["status"], "queued")
+        self.assertEqual(created_2["metadata"], {})
+
+        self.assertEqual([item["chunk_index"] for item in chunks_before], [0, 2])
+        self.assertEqual(chunks_before[0]["metadata"].get("range"), "first")
+
+        self.assertEqual(started["status"], "running")
+        self.assertIsNotNone(started["started_at"])
+
+        self.assertEqual(finished["status"], "done")
+        self.assertIsNotNone(finished["finished_at"])
+        self.assertEqual(finished["error"], "chunk done")
+        self.assertEqual((finished.get("metadata") or {}).get("rows"), 10)
+        self.assertNotEqual(started["updated_at"], finished["updated_at"])
+
+        first_chunk = next(item for item in chunks_after if int(item["chunk_index"]) == 0)
+        self.assertEqual(first_chunk["status"], "done")
+        self.assertEqual(first_chunk["error"], "chunk done")
 
     def test_sync_runs_store_create_get_update_lifecycle(self):
         sync_runs_store._schema_initialized = False
