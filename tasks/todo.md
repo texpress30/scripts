@@ -776,3 +776,21 @@
 - `api/pinterest_ads.py` folosește acum doar `backfill_job_store` pentru `sync-now` și status job.
 - Runner-ul async Pinterest setează `running`, apoi `done` cu `result` sau `error` cu mesaj trunchiat.
 - Nu există `sync_runs`/`sync_state`/`sync_run_chunks`/fallback DB în acest pas.
+
+
+---
+
+# TODO — Pinterest phase 2 (part 1): sync_state wiring minimal
+
+- [x] Adaug helper local best-effort pentru upsert în `sync_state` în flow-ul async Pinterest.
+- [x] Adaug upsert `running` la start de procesare cont Pinterest.
+- [x] Adaug upsert `done` cu `last_successful_at` + `last_successful_date` la succes.
+- [x] Adaug upsert `error` cu mesaj trunchiat la eroare.
+- [x] Păstrez regula canonică: fără fallback `client_id` -> `account_id`; la ambiguitate/lipsă se omite upsert-ul.
+- [x] Actualizez teste focalizate pentru start/succes/eroare, non-blocking la eșec DB și skip defensiv.
+
+## Review — Pinterest phase 2 (part 1)
+- În `api/pinterest_ads.py` am adăugat wiring local minimal pentru `sync_state_store.upsert_sync_state` (best-effort, non-blocking).
+- Start/succes/eroare sunt scrise cu valorile canonice (`platform=pinterest_ads`, `grain=account_daily`, `status` running/done/error).
+- Dacă `account_id` nu e determinabil sigur, upsert-ul este omis și flow-ul continuă.
+- Endpoint-urile publice Pinterest (`sync-now`, status job, `/{client_id}/sync`) nu și-au schimbat shape-ul.
