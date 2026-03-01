@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { format, startOfMonth, subDays } from "date-fns";
+import { DayPicker, type DateRange } from "react-day-picker";
+import "react-day-picker/dist/style.css";
+
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -50,10 +54,47 @@ type NormalizedMetrics = {
   isSynced: boolean;
 };
 
+type DatePresetKey = "today" | "yesterday" | "last7" | "last14" | "last30" | "month" | "custom";
+
+const PRESET_ITEMS: Array<{ key: DatePresetKey; label: string }> = [
+  { key: "today", label: "Today" },
+  { key: "yesterday", label: "Yesterday" },
+  { key: "last7", label: "Last 7 days" },
+  { key: "last14", label: "Last 14 days" },
+  { key: "last30", label: "Last 30 days" },
+  { key: "month", label: "This month" },
+  { key: "custom", label: "Custom" },
+];
+
+function toIso(value: Date): string {
+  return format(value, "yyyy-MM-dd");
+}
+
+function rangeForPreset(preset: DatePresetKey): DateRange {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (preset === "today") return { from: today, to: today };
+  if (preset === "yesterday") {
+    const y = subDays(today, 1);
+    return { from: y, to: y };
+  }
+  if (preset === "last7") return { from: subDays(today, 6), to: today };
+  if (preset === "last14") return { from: subDays(today, 13), to: today };
+  if (preset === "last30") return { from: subDays(today, 29), to: today };
+  if (preset === "month") return { from: startOfMonth(today), to: today };
+  return { from: subDays(today, 29), to: today };
+}
+
+function formatRangeLabel(preset: DatePresetKey, range: DateRange): string {
+  const from = range.from ?? new Date();
+  const to = range.to ?? range.from ?? new Date();
+  const presetLabel = PRESET_ITEMS.find((item) => item.key === preset)?.label ?? "Custom";
+  return `${presetLabel}: ${format(from, "MMM d, yyyy")} - ${format(to, "MMM d, yyyy")}`;
+}
+
 function safeNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
-
 
 function normalizeCurrencyCode(value: string | undefined): string {
   const code = (value ?? "USD").toUpperCase();
@@ -88,11 +129,24 @@ export default function SubDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<"google" | "meta" | "tiktok" | "pinterest" | "snapchat" | null>(null);
 
+  const initialRange = rangeForPreset("last30");
+  const [openPicker, setOpenPicker] = useState(false);
+  const [appliedPreset, setAppliedPreset] = useState<DatePresetKey>("last30");
+  const [appliedRange, setAppliedRange] = useState<DateRange>(initialRange);
+  const [draftPreset, setDraftPreset] = useState<DatePresetKey>("last30");
+  const [draftRange, setDraftRange] = useState<DateRange>(initialRange);
+
+  const appliedFrom = appliedRange.from ?? subDays(new Date(), 29);
+  const appliedTo = appliedRange.to ?? appliedFrom;
+
   async function load() {
     setLoading(true);
     setError("");
     try {
-      const result = await apiRequest<DashboardResponse>(`/dashboard/${clientId}`);
+      const rangeNonce = `${toIso(appliedFrom)}_${toIso(appliedTo)}_${Date.now()}`;
+      const result = await apiRequest<DashboardResponse>(
+        `/dashboard/${clientId}?start_date=${toIso(appliedFrom)}&end_date=${toIso(appliedTo)}&_=${encodeURIComponent(rangeNonce)}`
+      );
       setData(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Nu pot încărca dashboard-ul clientului");
@@ -103,7 +157,8 @@ export default function SubDashboardPage() {
 
   useEffect(() => {
     if (Number.isFinite(clientId)) void load();
-  }, [clientId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId, appliedFrom, appliedTo]);
 
   async function sync(channel: "google" | "meta" | "tiktok" | "pinterest" | "snapchat") {
     setBusy(channel);
@@ -128,6 +183,34 @@ export default function SubDashboardPage() {
     }
   }
 
+  function handlePresetClick(nextPreset: DatePresetKey) {
+    setDraftPreset(nextPreset);
+    if (nextPreset === "custom") return;
+
+    const nextRange = rangeForPreset(nextPreset);
+    setDraftRange(nextRange);
+    if (nextRange.from && nextRange.to) {
+      setAppliedPreset(nextPreset);
+      setAppliedRange(nextRange);
+      setOpenPicker(false);
+    }
+  }
+
+  function handleCancel() {
+    setDraftPreset(appliedPreset);
+    setDraftRange(appliedRange);
+    setOpenPicker(false);
+  }
+
+  function handleUpdate() {
+    if (!draftRange.from || !draftRange.to) return;
+    setAppliedPreset(draftPreset);
+    setAppliedRange({ from: draftRange.from, to: draftRange.to });
+    setOpenPicker(false);
+  }
+
+  const label = formatRangeLabel(appliedPreset, appliedRange);
+
   const currencyCode = normalizeCurrencyCode(data?.currency);
   const totals = normalizeMetrics(data?.totals);
   const google = normalizeMetrics(data?.platforms.google_ads);
@@ -145,6 +228,62 @@ export default function SubDashboardPage() {
           <Link href={`/sub/${clientId}/creative`} className="text-indigo-600 hover:underline">Creative</Link>
           <Link href={`/sub/${clientId}/recommendations`} className="text-indigo-600 hover:underline">Recommendations</Link>
         </div>
+
+        <section className="relative mb-4 flex justify-end">
+          <button
+            onClick={() => setOpenPicker((prev) => !prev)}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            {label}
+          </button>
+
+          {openPicker ? (
+            <div className="absolute right-0 top-12 z-50 flex w-[820px] gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-xl">
+              <div className="w-48 border-r border-slate-200 pr-3">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Presets</p>
+                <div className="space-y-1">
+                  {PRESET_ITEMS.map((item) => (
+                    <button
+                      key={item.key}
+                      onClick={() => handlePresetClick(item.key)}
+                      className={`w-full rounded-md px-2 py-2 text-left text-sm ${
+                        draftPreset === item.key ? "bg-indigo-50 font-medium text-indigo-700" : "text-slate-700 hover:bg-slate-100"
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex-1">
+                <DayPicker
+                  mode="range"
+                  numberOfMonths={2}
+                  selected={draftRange}
+                  onSelect={(range) => {
+                    setDraftPreset("custom");
+                    setDraftRange(range ?? { from: undefined, to: undefined });
+                  }}
+                  defaultMonth={draftRange.from}
+                />
+
+                <div className="mt-3 flex justify-end gap-2 border-t border-slate-200 pt-3">
+                  <button onClick={handleCancel} className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleUpdate}
+                    disabled={!draftRange.from || !draftRange.to}
+                    className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Update
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </section>
 
         {error ? <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
 
