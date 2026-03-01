@@ -1,7 +1,7 @@
 import logging
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 
 from app.api.dependencies import enforce_action_scope, get_current_user
 from app.services.audit import audit_log_service
@@ -9,9 +9,29 @@ from app.services.auth import AuthUser
 from app.services.pinterest_ads import PinterestAdsIntegrationError, pinterest_ads_service
 from app.services.pinterest_observability import pinterest_sync_metrics
 from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
+from app.services.sync_engine import backfill_job_store
+from app.services.sync_constants import PLATFORM_PINTEREST_ADS, SYNC_STATUS_DONE, SYNC_STATUS_ERROR, SYNC_STATUS_QUEUED
 
 router = APIRouter(prefix="/integrations/pinterest-ads", tags=["pinterest-ads"])
 logger = logging.getLogger("app.pinterest_ads")
+
+
+def _run_pinterest_sync_job(job_id: str, *, client_id: int) -> None:
+    backfill_job_store.set_running(job_id)
+
+    try:
+        snapshot = pinterest_ads_service.sync_client(client_id=client_id)
+        payload = {
+            "status": SYNC_STATUS_DONE,
+            "job_id": job_id,
+            "client_id": int(client_id),
+            "platform": PLATFORM_PINTEREST_ADS,
+            "result": snapshot,
+        }
+        backfill_job_store.set_done(job_id, result=payload)
+    except Exception as exc:  # noqa: BLE001
+        safe_error = str(exc)[:300]
+        backfill_job_store.set_error(job_id, error=safe_error)
 
 
 @router.get("/status")
@@ -31,6 +51,33 @@ def pinterest_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str
         details={"status": status_payload["status"]},
     )
     return status_payload
+
+
+@router.post("/sync-now")
+def sync_pinterest_ads_now(
+    background_tasks: BackgroundTasks,
+    user: AuthUser = Depends(get_current_user),
+    client_id: int = Query(..., ge=1),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+
+    job_id = backfill_job_store.create(payload={"platform": PLATFORM_PINTEREST_ADS, "client_id": int(client_id)})
+    background_tasks.add_task(_run_pinterest_sync_job, job_id, client_id=int(client_id))
+    return {
+        "status": SYNC_STATUS_QUEUED,
+        "job_id": job_id,
+        "client_id": int(client_id),
+        "platform": PLATFORM_PINTEREST_ADS,
+    }
+
+
+@router.get("/sync-now/jobs/{job_id}")
+def sync_now_job_status(job_id: str, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:pinterest:status", scope="agency")
+    payload = backfill_job_store.get(job_id)
+    if payload is not None:
+        return payload
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
 
 
 @router.post("/{client_id}/sync")
