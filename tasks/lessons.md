@@ -103,3 +103,5 @@
 - 2026-03-01: Când cerința spune "prerequisite minimal memory-only", nu extinde implementarea cu mirroring DB (`sync_runs`) sau fallback DB; livrează strict capabilitatea minimă cerută și validează explicit limita de scope.
 
 - 2026-03-01: Pentru Pinterest phase 2 incremental, adaugă `sync_state` strict local în runner-ul async, best-effort/non-blocking, cu `account_id` rezolvat canonic și skip defensiv la ambiguitate (fără fallback la `client_id`).
+
+- 2026-03-01: La restaurări de paritate cross-platform, tratează patch-ul ca additive: păstrează wiring-ul nou valid (ex. `sync_state`) și reintrodu punctual piesele lipsă (`sync_runs` create/lifecycle/status fallback) fără regresii de scope.

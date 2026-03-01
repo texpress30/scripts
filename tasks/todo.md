@@ -794,3 +794,20 @@
 - Start/succes/eroare sunt scrise cu valorile canonice (`platform=pinterest_ads`, `grain=account_daily`, `status` running/done/error).
 - Dacă `account_id` nu e determinabil sigur, upsert-ul este omis și flow-ul continuă.
 - Endpoint-urile publice Pinterest (`sync-now`, status job, `/{client_id}/sync`) nu și-au schimbat shape-ul.
+
+
+---
+
+# TODO — Pinterest restore phase 1 parity (sync_runs) + keep sync_state
+
+- [x] Reintroduc mirror `sync_runs` la create pentru `POST /integrations/pinterest-ads/sync-now` (queued, platform, client_id, account_id canonic/None, date_start/end, chunk_days=1).
+- [x] Reintroduc lifecycle mirror `sync_runs` în runner-ul async Pinterest (running/done/error), best-effort non-blocking.
+- [x] Reintroduc status flow memory-first + fallback DB (`sync_runs`) pentru `GET /integrations/pinterest-ads/sync-now/jobs/{job_id}`.
+- [x] Păstrez wiring-ul existent `sync_state` best-effort și regula canonică de identitate (`account_id` real, fără fallback la `client_id`).
+- [x] Actualizez teste focalizate Pinterest pentru create mirror, lifecycle mirror, status fallback și branch defensiv pe `account_id`.
+
+## Review — Pinterest restore phase 1 parity
+- `api/pinterest_ads.py` are din nou mirror `sync_runs` la create + lifecycle și status fallback DB, păstrând flow-ul async actual.
+- Pentru schema `sync_runs` pe Pinterest simplu folosesc fereastră sintetică minimă: `date_start=date_end=utc_today`, `chunk_days=1`.
+- `sync_state` a rămas activ și best-effort în runner, în paralel cu sync_runs.
+- Nu am introdus `sync_run_chunks` pentru Pinterest.
