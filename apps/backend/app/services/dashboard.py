@@ -294,6 +294,48 @@ class UnifiedDashboardService:
             ),
         }
 
+    def _agency_reports_query(self) -> str:
+        return """
+                    WITH perf AS (
+                        SELECT
+                            apr.report_date,
+                            COALESCE(apr.client_id, mapped.client_id) AS resolved_client_id,
+                            COALESCE(NULLIF(TRIM(mapped.account_currency), ''), NULLIF(TRIM(client.currency), ''), 'RON') AS account_currency,
+                            apr.spend,
+                            apr.impressions,
+                            apr.clicks,
+                            apr.conversions,
+                            apr.conversion_value
+                        FROM ad_performance_reports apr
+                        LEFT JOIN LATERAL (
+                            SELECT m.client_id, m.account_currency
+                            FROM agency_account_client_mappings m
+                            WHERE m.platform = apr.platform
+                              AND (
+                                  m.account_id = apr.customer_id
+                                  OR (
+                                      apr.platform = 'google_ads'
+                                      AND regexp_replace(m.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                                  )
+                              )
+                            ORDER BY m.updated_at DESC, m.created_at DESC
+                            LIMIT 1
+                        ) mapped ON TRUE
+                        LEFT JOIN agency_clients client ON client.id = COALESCE(apr.client_id, mapped.client_id)
+                        WHERE apr.report_date BETWEEN %s AND %s
+                    )
+                    SELECT
+                        report_date,
+                        resolved_client_id,
+                        account_currency,
+                        COALESCE(spend, 0),
+                        COALESCE(impressions, 0),
+                        COALESCE(clicks, 0),
+                        COALESCE(conversions, 0),
+                        COALESCE(conversion_value, 0)
+                    FROM perf
+                    """
+
     def get_agency_dashboard(self, *, start_date: date, end_date: date) -> dict[str, object]:
         if self._is_test_mode():
             clients = client_registry_service.list_clients()
