@@ -901,6 +901,118 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(response["status"], "queued")
         self.assertEqual(response["job_id"], "job-fallback")
 
+    def test_google_sync_now_job_status_prefers_memory_store(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+        db_calls: list[str] = []
+
+        original_enforce = google_ads_api.enforce_action_scope
+        original_memory_get = google_ads_api.backfill_job_store.get
+        original_db_get = google_ads_api.sync_runs_store.get_sync_run
+        try:
+            google_ads_api.enforce_action_scope = lambda **kwargs: None
+            google_ads_api.backfill_job_store.get = lambda job_id: {"status": "running", "platform": "google_ads", "source": "memory"}
+
+            def db_get(job_id: str):
+                db_calls.append(job_id)
+                return {"job_id": job_id}
+
+            google_ads_api.sync_runs_store.get_sync_run = db_get
+            response = google_ads_api.sync_now_job_status("job-memory", user=user)
+        finally:
+            google_ads_api.enforce_action_scope = original_enforce
+            google_ads_api.backfill_job_store.get = original_memory_get
+            google_ads_api.sync_runs_store.get_sync_run = original_db_get
+
+        self.assertEqual(response.get("status"), "running")
+        self.assertEqual(response.get("source"), "memory")
+        self.assertEqual(db_calls, [])
+
+    def test_google_sync_now_job_status_falls_back_to_sync_runs_store(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+
+        original_enforce = google_ads_api.enforce_action_scope
+        original_memory_get = google_ads_api.backfill_job_store.get
+        original_db_get = google_ads_api.sync_runs_store.get_sync_run
+        try:
+            google_ads_api.enforce_action_scope = lambda **kwargs: None
+            google_ads_api.backfill_job_store.get = lambda job_id: None
+            google_ads_api.sync_runs_store.get_sync_run = lambda job_id: {
+                "job_id": job_id,
+                "platform": "google_ads",
+                "status": "done",
+                "client_id": 96,
+                "account_id": None,
+                "date_start": "2026-01-01",
+                "date_end": "2026-01-31",
+                "chunk_days": 7,
+                "created_at": "2026-03-01T00:00:01+00:00",
+                "updated_at": "2026-03-01T00:00:10+00:00",
+                "started_at": "2026-03-01T00:00:03+00:00",
+                "finished_at": "2026-03-01T00:00:09+00:00",
+                "error": None,
+                "metadata": {"mapped_accounts_count": 3},
+            }
+
+            response = google_ads_api.sync_now_job_status("job-db", user=user)
+        finally:
+            google_ads_api.enforce_action_scope = original_enforce
+            google_ads_api.backfill_job_store.get = original_memory_get
+            google_ads_api.sync_runs_store.get_sync_run = original_db_get
+
+        self.assertEqual(response.get("job_id"), "job-db")
+        self.assertEqual(response.get("status"), "done")
+        self.assertEqual(response.get("created_at"), "2026-03-01T00:00:01+00:00")
+        self.assertEqual(response.get("started_at"), "2026-03-01T00:00:03+00:00")
+        self.assertEqual(response.get("finished_at"), "2026-03-01T00:00:09+00:00")
+        self.assertIsNone(response.get("error"))
+        self.assertEqual((response.get("metadata") or {}).get("mapped_accounts_count"), 3)
+
+    def test_google_sync_now_job_status_not_found_when_missing_in_memory_and_db(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+
+        original_enforce = google_ads_api.enforce_action_scope
+        original_memory_get = google_ads_api.backfill_job_store.get
+        original_db_get = google_ads_api.sync_runs_store.get_sync_run
+        try:
+            google_ads_api.enforce_action_scope = lambda **kwargs: None
+            google_ads_api.backfill_job_store.get = lambda job_id: None
+            google_ads_api.sync_runs_store.get_sync_run = lambda job_id: None
+
+            with self.assertRaises(google_ads_api.HTTPException) as ctx:
+                google_ads_api.sync_now_job_status("job-missing", user=user)
+        finally:
+            google_ads_api.enforce_action_scope = original_enforce
+            google_ads_api.backfill_job_store.get = original_memory_get
+            google_ads_api.sync_runs_store.get_sync_run = original_db_get
+
+        self.assertEqual(ctx.exception.status_code, 404)
+        self.assertEqual(str(ctx.exception.detail), "job not found")
+
+    def test_google_sync_now_job_status_db_error_is_non_blocking(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+
+        original_enforce = google_ads_api.enforce_action_scope
+        original_memory_get = google_ads_api.backfill_job_store.get
+        original_db_get = google_ads_api.sync_runs_store.get_sync_run
+        try:
+            google_ads_api.enforce_action_scope = lambda **kwargs: None
+            google_ads_api.backfill_job_store.get = lambda job_id: None
+
+            def failing_db_get(job_id: str):
+                raise RuntimeError("db unavailable")
+
+            google_ads_api.sync_runs_store.get_sync_run = failing_db_get
+
+            with self.assertRaises(google_ads_api.HTTPException) as ctx:
+                google_ads_api.sync_now_job_status("job-db-error", user=user)
+        finally:
+            google_ads_api.enforce_action_scope = original_enforce
+            google_ads_api.backfill_job_store.get = original_memory_get
+            google_ads_api.sync_runs_store.get_sync_run = original_db_get
+
+        self.assertEqual(ctx.exception.status_code, 404)
+        self.assertEqual(str(ctx.exception.detail), "job not found")
+
     def test_google_backfill_runner_updates_sync_runs_running_and_done(self):
         status_calls: list[dict[str, object]] = []
 

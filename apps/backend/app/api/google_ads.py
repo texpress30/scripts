@@ -445,6 +445,31 @@ def sync_google_ads_now(
     return dict(result.get("result") or {"status": "error", "job_id": job_id})
 
 
+def _map_sync_run_to_job_status_payload(sync_run: dict[str, object]) -> dict[str, object]:
+    metadata = sync_run.get("metadata") if isinstance(sync_run.get("metadata"), dict) else {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    payload: dict[str, object] = {
+        "job_id": str(sync_run.get("job_id") or ""),
+        "status": str(sync_run.get("status") or "queued"),
+        "created_at": sync_run.get("created_at"),
+        "started_at": sync_run.get("started_at"),
+        "finished_at": sync_run.get("finished_at"),
+        "error": sync_run.get("error"),
+        "metadata": metadata,
+    }
+
+    for field in ("platform", "client_id", "account_id", "date_start", "date_end", "chunk_days"):
+        value = sync_run.get(field)
+        if value is not None:
+            payload[field] = value
+
+    for field in ("date_range", "mapped_accounts_count", "chunk_days", "platform", "client_id"):
+        value = metadata.get(field)
+        if value is not None and field not in payload:
+            payload[field] = value
+
 @router.get("/sync-now/jobs/{job_id}")
 def sync_now_job_status(job_id: str, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="integrations:status", scope="agency")
@@ -452,6 +477,25 @@ def sync_now_job_status(job_id: str, user: AuthUser = Depends(get_current_user))
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
     return payload
+
+
+@router.get("/sync-now/jobs/{job_id}")
+def sync_now_job_status(job_id: str, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+    payload = backfill_job_store.get(job_id)
+    if payload is not None:
+        return payload
+
+    try:
+        sync_run = sync_runs_store.get_sync_run(job_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sync_runs fallback read failed for google_ads job_id=%s error=%s", job_id, str(exc)[:300])
+        sync_run = None
+
+    if sync_run is not None:
+        return _map_sync_run_to_job_status_payload(sync_run)
+
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
 
 @router.post("/{client_id}/sync")
 def sync_google_ads(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, float | int | str]:

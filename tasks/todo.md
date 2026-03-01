@@ -421,3 +421,19 @@
 - La final cu succes, după `backfill_job_store.set_done(...)`, se face mirror `status=done, mark_finished=True` + metadata compactă (`mapped_accounts_count`, `successful_accounts`, `failed_accounts`, `days`, `chunk_days`).
 - La excepții neprevăzute în runner, se setează `backfill_job_store.set_error(...)` și mirror `status=error, error=<safe>, mark_finished=True`.
 - Dacă write/update în `sync_runs` eșuează, se loghează warning și jobul continuă pe flow-ul în memorie fără schimbări de response/status endpoint.
+
+---
+
+# TODO — Fallback DB pentru endpoint-ul status job Google (memory first)
+
+- [x] Confirm endpoint-ul existent `GET /integrations/google-ads/sync-now/jobs/{job_id}` și contractul curent (memory store).
+- [x] Adaug fallback la `sync_runs_store.get_sync_run(job_id)` doar când memory store întoarce miss.
+- [x] Mapez payload-ul din `sync_runs` la shape compatibil endpoint (status + timestamps + metadata + câmpuri utile existente).
+- [x] Tratez erorile DB non-blocking (warning + comportament not found neschimbat).
+- [x] Adaug teste focalizate pentru: memory hit, memory miss + DB hit, memory miss + DB miss, memory miss + DB error.
+
+## Review — Fallback DB pentru endpoint-ul status job Google (memory first)
+- Endpoint-ul de status păstrează prioritatea strictă pe memory store; pe hit returnează exact payload-ul in-memory, fără acces DB.
+- La memory miss, endpoint-ul încearcă best-effort citirea din `sync_runs`; dacă găsește rândul, întoarce payload compatibil cu contractul curent.
+- Dacă fallback-ul DB eșuează, endpoint-ul rămâne defensiv: log warning și păstrează comportamentul existent `404 job not found`.
+- Patch-ul este limitat la API Google + teste backend, fără impact pe alte platforme sau pe `sync_engine`.
