@@ -290,6 +290,41 @@ def google_ads_db_debug(user: AuthUser = Depends(get_current_user)) -> dict[str,
     )
     return payload
 
+def _mirror_platform_account_operational_metadata(
+    *,
+    platform: str,
+    account_id: str,
+    status: str | None = None,
+    currency_code: str | None = None,
+    account_timezone: str | None = None,
+    sync_start_date: date | None = None,
+    last_synced_at: datetime | None = None,
+) -> None:
+    payload: dict[str, object] = {
+        "platform": platform,
+        "account_id": account_id,
+        "sync_start_date": sync_start_date,
+    }
+    if status is not None and status.strip() != "":
+        payload["status"] = status.strip()
+    if currency_code is not None and currency_code.strip() != "":
+        payload["currency_code"] = currency_code.strip().upper()
+    if account_timezone is not None and account_timezone.strip() != "":
+        payload["account_timezone"] = account_timezone.strip()
+    if last_synced_at is not None:
+        payload["last_synced_at"] = last_synced_at
+
+    try:
+        client_registry_service.update_platform_account_operational_metadata(**payload)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "agency_platform_accounts operational metadata mirror failed for platform=%s account_id=%s error=%s",
+            platform,
+            account_id,
+            str(exc)[:300],
+        )
+
+
 def _mirror_sync_state_upsert(
     *,
     platform: str,
@@ -341,6 +376,17 @@ def _run_google_backfill_job(job_id: str, *, mapped_accounts: list[dict[str, obj
             raw_customer_id = str(item.get("customer_id") or "").strip()
             masked_customer_id = f"***{raw_customer_id[-4:]}" if len(raw_customer_id) >= 4 else "****"
             attempt_now = datetime.utcnow()
+            account_status = str(item.get("status") or "").strip() or None
+            account_currency_code = str(item.get("currency_code") or "").strip() or None
+            account_timezone = str(item.get("account_timezone") or "").strip() or None
+            _mirror_platform_account_operational_metadata(
+                platform="google_ads",
+                account_id=raw_customer_id,
+                status=account_status,
+                currency_code=account_currency_code,
+                account_timezone=account_timezone,
+                sync_start_date=resolved_start,
+            )
             sync_state_metadata = {
                 "client_id": client_id,
                 "date_start": resolved_start.isoformat(),
@@ -381,6 +427,15 @@ def _run_google_backfill_job(job_id: str, *, mapped_accounts: list[dict[str, obj
                     }
                 )
                 success_now = datetime.utcnow()
+                _mirror_platform_account_operational_metadata(
+                    platform="google_ads",
+                    account_id=raw_customer_id,
+                    status=account_status,
+                    currency_code=account_currency_code,
+                    account_timezone=account_timezone,
+                    sync_start_date=resolved_start,
+                    last_synced_at=success_now,
+                )
                 _mirror_sync_state_upsert(
                     platform="google_ads",
                     account_id=raw_customer_id,

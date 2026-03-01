@@ -1338,6 +1338,119 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 404)
         self.assertEqual(str(ctx.exception.detail), "job not found")
 
+    def test_google_backfill_runner_updates_platform_account_operational_metadata_start_and_success(self):
+        metadata_calls: list[dict[str, object]] = []
+
+        original_set_running = google_ads_api.backfill_job_store.set_running
+        original_set_done = google_ads_api.backfill_job_store.set_done
+        original_sync_customer = google_ads_api.google_ads_service.sync_customer_for_client
+        original_mirror_status = google_ads_api._mirror_sync_run_status
+        original_sync_state_upsert = google_ads_api.sync_state_store.upsert_sync_state
+        original_operational_update = google_ads_api.client_registry_service.update_platform_account_operational_metadata
+        try:
+            google_ads_api.backfill_job_store.set_running = lambda job_id: None
+            google_ads_api.backfill_job_store.set_done = lambda job_id, result: None
+            google_ads_api.google_ads_service.sync_customer_for_client = lambda **kwargs: {
+                "inserted_rows": 3,
+                "gaql_rows_fetched": 5,
+                "db_rows_last_30_for_customer": 3,
+                "reason_if_zero": None,
+            }
+            google_ads_api._mirror_sync_run_status = lambda **kwargs: None
+            google_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: {"ok": True}
+            google_ads_api.client_registry_service.update_platform_account_operational_metadata = lambda **kwargs: metadata_calls.append(kwargs) or {
+                "platform": kwargs.get("platform"),
+                "account_id": kwargs.get("account_id"),
+            }
+
+            google_ads_api._run_google_backfill_job(
+                "job-meta-ok",
+                mapped_accounts=[
+                    {
+                        "client_id": 96,
+                        "customer_id": "1234567890",
+                        "status": "active",
+                        "currency_code": "eur",
+                        "account_timezone": "Europe/Bucharest",
+                    }
+                ],
+                resolved_start=date(2026, 1, 1),
+                resolved_end=date(2026, 1, 31),
+                days=31,
+                chunk_days=7,
+                requested_client_id=96,
+            )
+        finally:
+            google_ads_api.backfill_job_store.set_running = original_set_running
+            google_ads_api.backfill_job_store.set_done = original_set_done
+            google_ads_api.google_ads_service.sync_customer_for_client = original_sync_customer
+            google_ads_api._mirror_sync_run_status = original_mirror_status
+            google_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+            google_ads_api.client_registry_service.update_platform_account_operational_metadata = original_operational_update
+
+        self.assertEqual(len(metadata_calls), 2)
+        start_call = metadata_calls[0]
+        success_call = metadata_calls[1]
+
+        self.assertEqual(start_call.get("platform"), "google_ads")
+        self.assertEqual(start_call.get("account_id"), "1234567890")
+        self.assertEqual(start_call.get("status"), "active")
+        self.assertEqual(start_call.get("currency_code"), "EUR")
+        self.assertEqual(start_call.get("account_timezone"), "Europe/Bucharest")
+        self.assertEqual(str(start_call.get("sync_start_date")), "2026-01-01")
+        self.assertIsNone(start_call.get("last_synced_at"))
+
+        self.assertEqual(success_call.get("platform"), "google_ads")
+        self.assertEqual(success_call.get("account_id"), "1234567890")
+        self.assertEqual(str(success_call.get("sync_start_date")), "2026-01-01")
+        self.assertIsNotNone(success_call.get("last_synced_at"))
+
+    def test_google_backfill_runner_operational_metadata_update_failure_is_non_blocking(self):
+        done_calls: list[dict[str, object]] = []
+
+        original_set_running = google_ads_api.backfill_job_store.set_running
+        original_set_done = google_ads_api.backfill_job_store.set_done
+        original_sync_customer = google_ads_api.google_ads_service.sync_customer_for_client
+        original_mirror_status = google_ads_api._mirror_sync_run_status
+        original_sync_state_upsert = google_ads_api.sync_state_store.upsert_sync_state
+        original_operational_update = google_ads_api.client_registry_service.update_platform_account_operational_metadata
+        try:
+            google_ads_api.backfill_job_store.set_running = lambda job_id: None
+            google_ads_api.backfill_job_store.set_done = lambda job_id, result: done_calls.append(result)
+            google_ads_api.google_ads_service.sync_customer_for_client = lambda **kwargs: {
+                "inserted_rows": 1,
+                "gaql_rows_fetched": 1,
+                "db_rows_last_30_for_customer": 1,
+                "reason_if_zero": None,
+            }
+            google_ads_api._mirror_sync_run_status = lambda **kwargs: None
+            google_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: {"ok": True}
+
+            def failing_operational_update(**kwargs):
+                raise RuntimeError("operational metadata unavailable")
+
+            google_ads_api.client_registry_service.update_platform_account_operational_metadata = failing_operational_update
+
+            google_ads_api._run_google_backfill_job(
+                "job-meta-fail",
+                mapped_accounts=[{"client_id": 96, "customer_id": "1234567890"}],
+                resolved_start=date(2026, 1, 1),
+                resolved_end=date(2026, 1, 31),
+                days=31,
+                chunk_days=7,
+                requested_client_id=96,
+            )
+        finally:
+            google_ads_api.backfill_job_store.set_running = original_set_running
+            google_ads_api.backfill_job_store.set_done = original_set_done
+            google_ads_api.google_ads_service.sync_customer_for_client = original_sync_customer
+            google_ads_api._mirror_sync_run_status = original_mirror_status
+            google_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+            google_ads_api.client_registry_service.update_platform_account_operational_metadata = original_operational_update
+
+        self.assertEqual(len(done_calls), 1)
+        self.assertEqual(done_calls[0].get("status"), "ok")
+
     def test_google_backfill_runner_updates_sync_state_running_and_done_per_account(self):
         sync_state_calls: list[dict[str, object]] = []
 

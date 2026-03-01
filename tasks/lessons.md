@@ -88,3 +88,4 @@
 - 2026-03-01: Pentru wiring incremental per-cont în runner, adaugă mirror state best-effort în punctele naturale (start/success/error) și validează explicit că excepțiile DB nu afectează fluxul principal.
 - 2026-03-01: Pentru taskuri strict de migrație metadata pe tabele existente, livrează doar ALTER TABLE + indexuri minime idempotente, fără wiring sau update de date în același pas.
 - 2026-03-01: Pentru extinderi operaționale pe tabele existente din client_registry, folosește helper de update parțial cu sentință explicită (doar câmpurile furnizate), schema-check read-only și fără DDL runtime/wiring prematur.
+- 2026-03-01: Pentru wiring gradual între sync flow și agency_platform_accounts, actualizează metadata operațională strict best-effort în puncte simple (start/success), fără să reutilizezi coloana status ca job-state.

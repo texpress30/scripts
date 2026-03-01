@@ -580,3 +580,22 @@
 - Nu există DDL runtime în noul helper și nu am făcut wiring în API/runner.
 - Testele acoperă update complet, update pe subset (fără suprascrieri), cont inexistent și schema missing error.
 
+
+---
+
+# TODO — Wiring metadata operațională `agency_platform_accounts` în flow-ul Google (best-effort)
+
+- [x] Adaug helper local best-effort în `api/google_ads.py` care apelează `client_registry_service.update_platform_account_operational_metadata(...)`.
+- [x] Apelez update-ul la începutul procesării per cont cu câmpuri disponibile (`platform`, `account_id`, opțional `status/currency_code/account_timezone`, plus `sync_start_date`).
+- [x] Apelez update-ul la succes per cont pentru `last_synced_at` (și `sync_start_date` dacă rămâne în același apel simplu).
+- [x] Tratez erorile non-blocking (warning + flow continuă).
+- [x] Adaug teste backend pentru apelurile corecte și non-blocking la eșec, fără schimbare de response shape.
+
+## Review — Wiring metadata operațională `agency_platform_accounts` în flow-ul Google (best-effort)
+- În `_run_google_backfill_job` am adăugat update best-effort către `client_registry_service.update_platform_account_operational_metadata(...)` pentru contul curent.
+- La începutul procesării contului: se trimite `(platform, account_id)` + `sync_start_date` și, doar dacă sunt disponibile, `status`, `currency_code`, `account_timezone`.
+- La succesul contului: se face update best-effort pentru `last_synced_at=now()` (și `sync_start_date`, plus câmpurile disponibile de metadata account).
+- Nu folosesc `agency_platform_accounts.status` pentru job state; statusul de sync rămâne în `sync_state`/`sync_runs`.
+- Eșecurile de update metadata sunt non-blocking: warning în log, fără a opri contul/jobul Google.
+- Am adăugat teste focalizate pentru apelurile de început+succes și pentru non-blocking la eroare de update metadata.
+
