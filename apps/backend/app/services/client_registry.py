@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from threading import Lock
 import os
 
@@ -11,6 +11,9 @@ try:
     import psycopg
 except Exception:  # noqa: BLE001
     psycopg = None
+
+
+_UNSET = object()
 
 
 @dataclass
@@ -35,6 +38,7 @@ class ClientRegistryService:
         self._memory_last_import_at: dict[str, str] = {}
         self._memory_account_client_mappings: dict[str, dict[str, set[int]]] = {}
         self._memory_account_profiles: dict[str, dict[str, dict[int, dict[str, str]]]] = {}
+        self._operational_metadata_schema_initialized = False
 
     def _is_test_mode(self) -> bool:
         # Use in-memory registry only while running pytest to avoid accidental data loss in deployed environments.
@@ -49,6 +53,39 @@ class ClientRegistryService:
     def _connect_or_raise(self):
         conn = self._connect()
         return conn
+
+    def _ensure_agency_platform_accounts_operational_metadata_schema(self) -> None:
+        if self._is_test_mode():
+            return
+
+        if self._operational_metadata_schema_initialized:
+            return
+
+        with self._lock:
+            if self._operational_metadata_schema_initialized:
+                return
+
+            with self._connect_or_raise() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT to_regclass('public.agency_platform_accounts')")
+                    table_row = cur.fetchone() or (None,)
+                    if table_row[0] is None:
+                        raise RuntimeError("Database schema for agency_platform_accounts operational metadata is not ready; run DB migrations")
+
+                    cur.execute(
+                        """
+                        SELECT COUNT(*)
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'agency_platform_accounts'
+                          AND column_name IN ('status', 'currency_code', 'account_timezone', 'sync_start_date', 'last_synced_at')
+                        """
+                    )
+                    columns_row = cur.fetchone() or (0,)
+                    if int(columns_row[0] or 0) < 5:
+                        raise RuntimeError("Database schema for agency_platform_accounts operational metadata is not ready; run DB migrations")
+
+            self._operational_metadata_schema_initialized = True
 
     def _ensure_schema(self) -> None:
         if self._is_test_mode():
@@ -568,6 +605,103 @@ class ClientRegistryService:
             }
             for row in rows
         ]
+
+    def update_platform_account_operational_metadata(
+        self,
+        *,
+        platform: str,
+        account_id: str,
+        status: str | None | object = _UNSET,
+        currency_code: str | None | object = _UNSET,
+        account_timezone: str | None | object = _UNSET,
+        sync_start_date: date | None | object = _UNSET,
+        last_synced_at: datetime | None | object = _UNSET,
+    ) -> dict[str, object] | None:
+        normalized_platform = platform.strip()
+        normalized_account_id = account_id.strip()
+
+        if self._is_test_mode():
+            with self._lock:
+                items = self._memory_platform_accounts.get(normalized_platform, {})
+                existing = items.get(normalized_account_id)
+                if existing is None:
+                    return None
+                if status is not _UNSET:
+                    existing["status"] = None if status is None else str(status)
+                if currency_code is not _UNSET:
+                    existing["currency_code"] = None if currency_code is None else str(currency_code)
+                if account_timezone is not _UNSET:
+                    existing["account_timezone"] = None if account_timezone is None else str(account_timezone)
+                if sync_start_date is not _UNSET:
+                    existing["sync_start_date"] = None if sync_start_date is None else str(sync_start_date)
+                if last_synced_at is not _UNSET:
+                    existing["last_synced_at"] = None if last_synced_at is None else str(last_synced_at)
+                return {
+                    "platform": normalized_platform,
+                    "account_id": normalized_account_id,
+                    "status": existing.get("status"),
+                    "currency_code": existing.get("currency_code"),
+                    "account_timezone": existing.get("account_timezone"),
+                    "sync_start_date": existing.get("sync_start_date"),
+                    "last_synced_at": existing.get("last_synced_at"),
+                }
+
+        self._ensure_agency_platform_accounts_operational_metadata_schema()
+
+        updates: list[str] = []
+        params: list[object] = []
+        if status is not _UNSET:
+            updates.append("status = %s")
+            params.append(status)
+        if currency_code is not _UNSET:
+            updates.append("currency_code = %s")
+            params.append(currency_code)
+        if account_timezone is not _UNSET:
+            updates.append("account_timezone = %s")
+            params.append(account_timezone)
+        if sync_start_date is not _UNSET:
+            updates.append("sync_start_date = %s")
+            params.append(sync_start_date)
+        if last_synced_at is not _UNSET:
+            updates.append("last_synced_at = %s")
+            params.append(last_synced_at)
+
+        with self._connect_or_raise() as conn:
+            with conn.cursor() as cur:
+                if len(updates) > 0:
+                    cur.execute(
+                        f"""
+                        UPDATE agency_platform_accounts
+                        SET {', '.join(updates)}
+                        WHERE platform = %s AND account_id = %s
+                        """,
+                        (*params, normalized_platform, normalized_account_id),
+                    )
+                    if cur.rowcount <= 0:
+                        conn.commit()
+                        return None
+                cur.execute(
+                    """
+                    SELECT platform, account_id, status, currency_code, account_timezone, sync_start_date, last_synced_at
+                    FROM agency_platform_accounts
+                    WHERE platform = %s AND account_id = %s
+                    """,
+                    (normalized_platform, normalized_account_id),
+                )
+                row = cur.fetchone()
+            conn.commit()
+
+        if row is None:
+            return None
+        return {
+            "platform": str(row[0]),
+            "account_id": str(row[1]),
+            "status": str(row[2]) if row[2] is not None else None,
+            "currency_code": str(row[3]) if row[3] is not None else None,
+            "account_timezone": str(row[4]) if row[4] is not None else None,
+            "sync_start_date": str(row[5]) if row[5] is not None else None,
+            "last_synced_at": str(row[6]) if row[6] is not None else None,
+        }
 
     def list_client_platform_accounts(self, *, platform: str, client_id: int) -> list[dict[str, str]]:
         if self._is_test_mode():

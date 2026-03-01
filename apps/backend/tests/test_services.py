@@ -149,6 +149,193 @@ class ServiceTests(unittest.TestCase):
         preferred_currency = client_registry_service.get_preferred_currency_for_client(client_id=int(created["id"]))
         self.assertEqual(preferred_currency, "EUR")
 
+    def test_client_registry_update_platform_account_operational_metadata_updates_existing_row(self):
+        client_registry_service._operational_metadata_schema_initialized = False
+        state: dict[tuple[str, str], dict[str, object]] = {
+            ("google_ads", "1234567890"): {
+                "platform": "google_ads",
+                "account_id": "1234567890",
+                "status": "queued",
+                "currency_code": "USD",
+                "account_timezone": "UTC",
+                "sync_start_date": None,
+                "last_synced_at": None,
+            }
+        }
+
+        class _FakeCursor:
+            _row: tuple[object, ...] | None
+            rowcount: int
+
+            def __init__(self):
+                self._row = None
+                self.rowcount = 0
+
+            def execute(self, query, params=None):
+                sql = str(query)
+                self.rowcount = 0
+
+                if "SELECT to_regclass('public.agency_platform_accounts')" in sql:
+                    self._row = ("agency_platform_accounts",)
+                    return
+
+                if "FROM information_schema.columns" in sql and "agency_platform_accounts" in sql:
+                    self._row = (5,)
+                    return
+
+                if "UPDATE agency_platform_accounts" in sql and "WHERE platform = %s AND account_id = %s" in sql:
+                    platform = str(params[-2])
+                    account_id = str(params[-1])
+                    record = state.get((platform, account_id))
+                    if record is None:
+                        self.rowcount = 0
+                        return
+
+                    assignments = str(sql).split("SET", 1)[1].split("WHERE", 1)[0]
+                    column_names = [part.strip().split("=", 1)[0].strip() for part in assignments.split(",") if "=" in part]
+                    values = list(params[:-2])
+                    for column_name, value in zip(column_names, values):
+                        record[column_name] = value
+                    self.rowcount = 1
+                    return
+
+                if "SELECT platform, account_id, status, currency_code, account_timezone, sync_start_date, last_synced_at" in sql:
+                    platform = str(params[0])
+                    account_id = str(params[1])
+                    record = state.get((platform, account_id))
+                    if record is None:
+                        self._row = None
+                    else:
+                        self._row = (
+                            record["platform"],
+                            record["account_id"],
+                            record["status"],
+                            record["currency_code"],
+                            record["account_timezone"],
+                            record["sync_start_date"],
+                            record["last_synced_at"],
+                        )
+                    return
+
+                raise AssertionError(f"Unexpected SQL: {sql}")
+
+            def fetchone(self):
+                return self._row
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def commit(self):
+                return None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_is_test_mode = client_registry_service._is_test_mode
+        original_connect = client_registry_service._connect_or_raise
+        try:
+            client_registry_service._is_test_mode = lambda: False
+            client_registry_service._connect_or_raise = lambda: _FakeConn()
+
+            updated_full = client_registry_service.update_platform_account_operational_metadata(
+                platform="google_ads",
+                account_id="1234567890",
+                status="running",
+                currency_code="RON",
+                account_timezone="Europe/Bucharest",
+                sync_start_date=date(2026, 1, 1),
+                last_synced_at=datetime.fromisoformat("2026-03-01T00:00:01+00:00"),
+            )
+            updated_subset = client_registry_service.update_platform_account_operational_metadata(
+                platform="google_ads",
+                account_id="1234567890",
+                status="done",
+            )
+            missing = client_registry_service.update_platform_account_operational_metadata(
+                platform="google_ads",
+                account_id="does-not-exist",
+                status="done",
+            )
+        finally:
+            client_registry_service._is_test_mode = original_is_test_mode
+            client_registry_service._connect_or_raise = original_connect
+            client_registry_service._operational_metadata_schema_initialized = False
+
+        self.assertIsNotNone(updated_full)
+        assert updated_full is not None
+        self.assertEqual(updated_full.get("status"), "running")
+        self.assertEqual(updated_full.get("currency_code"), "RON")
+        self.assertEqual(updated_full.get("account_timezone"), "Europe/Bucharest")
+        self.assertEqual(updated_full.get("sync_start_date"), "2026-01-01")
+        self.assertEqual(updated_full.get("last_synced_at"), "2026-03-01 00:00:01+00:00")
+
+        self.assertIsNotNone(updated_subset)
+        assert updated_subset is not None
+        self.assertEqual(updated_subset.get("status"), "done")
+        self.assertEqual(updated_subset.get("currency_code"), "RON")
+        self.assertEqual(updated_subset.get("account_timezone"), "Europe/Bucharest")
+        self.assertEqual(updated_subset.get("sync_start_date"), "2026-01-01")
+        self.assertEqual(updated_subset.get("last_synced_at"), "2026-03-01 00:00:01+00:00")
+
+        self.assertIsNone(missing)
+
+    def test_client_registry_operational_metadata_schema_missing_raises_clear_error(self):
+        client_registry_service._operational_metadata_schema_initialized = False
+
+        class _FakeCursor:
+            def execute(self, query, params=None):
+                return None
+
+            def fetchone(self):
+                return (None,)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_is_test_mode = client_registry_service._is_test_mode
+        original_connect = client_registry_service._connect_or_raise
+        try:
+            client_registry_service._is_test_mode = lambda: False
+            client_registry_service._connect_or_raise = lambda: _FakeConn()
+            with self.assertRaises(RuntimeError) as ctx:
+                client_registry_service.update_platform_account_operational_metadata(
+                    platform="google_ads",
+                    account_id="1234567890",
+                    status="running",
+                )
+        finally:
+            client_registry_service._is_test_mode = original_is_test_mode
+            client_registry_service._connect_or_raise = original_connect
+            client_registry_service._operational_metadata_schema_initialized = False
+
+        self.assertIn(
+            "Database schema for agency_platform_accounts operational metadata is not ready; run DB migrations",
+            str(ctx.exception),
+        )
+
     # Sprint 2 coverage (Google)
     def test_google_ads_status_pending_when_placeholder(self):
         os.environ["GOOGLE_ADS_TOKEN"] = "your_google_ads_token"

@@ -644,6 +644,16 @@ def _map_sync_run_to_job_status_payload(sync_run: dict[str, object]) -> dict[str
         if value is not None and field not in payload:
             payload[field] = value
 
+    for field in ("platform", "client_id", "account_id", "date_start", "date_end", "chunk_days"):
+        value = sync_run.get(field)
+        if value is not None:
+            payload[field] = value
+
+    for field in ("date_range", "mapped_accounts_count", "chunk_days", "platform", "client_id"):
+        value = metadata.get(field)
+        if value is not None and field not in payload:
+            payload[field] = value
+
 
 def _attach_job_chunks_payload(*, job_id: str, payload: dict[str, object]) -> dict[str, object]:
     enriched = dict(payload)

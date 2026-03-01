@@ -562,3 +562,21 @@
 - Am adăugat indexurile idempotente: `idx_agency_platform_accounts_platform_status` pe `(platform, status)` și `idx_agency_platform_accounts_last_synced_at` pe `(last_synced_at)`.
 - Nu am făcut backfill, rename/drop, DDL pe alte tabele sau wiring în servicii/API.
 
+
+---
+
+# TODO — Helper update metadata operațională în client_registry (fără wiring)
+
+- [x] Creez `apps/backend/app/services/client_registry.py` în stilul existent cu helper de update metadata operațională pentru `agency_platform_accounts`.
+- [x] Implementez metoda `update_platform_account_operational_metadata(...)` cu update parțial pe câmpurile furnizate explicit și identificare pe `(platform, account_id)`.
+- [x] Adaug validare clară pentru schema/coloanele operaționale (fără DDL runtime), cu mesaj explicit dacă migrațiile lipsesc.
+- [x] Adaug teste backend pentru: update existent, subset update fără suprascrieri, cont inexistent -> None, schema missing -> eroare clară.
+- [x] Verific local că nu există wiring în API/runner și păstrez patch-ul minimal.
+
+## Review — Helper update metadata operațională în client_registry (fără wiring)
+- În `ClientRegistryService` am adăugat metoda `update_platform_account_operational_metadata(...)` pentru update SQL parametrizat pe `agency_platform_accounts`, identificat prin `(platform, account_id)`.
+- Metoda actualizează doar câmpurile furnizate explicit (`status`, `currency_code`, `account_timezone`, `sync_start_date`, `last_synced_at`) și returnează rândul actualizat sau `None` dacă nu există rândul.
+- Am introdus validare read-only pentru schema operațională (`to_regclass` + verificare coloane în `information_schema`) și mesaj clar când migrațiile lipsesc.
+- Nu există DDL runtime în noul helper și nu am făcut wiring în API/runner.
+- Testele acoperă update complet, update pe subset (fără suprascrieri), cont inexistent și schema missing error.
+
