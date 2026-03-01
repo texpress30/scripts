@@ -12,6 +12,7 @@ from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
 from app.services.sync_engine import backfill_job_store
 from app.services.sync_run_chunks_store import sync_run_chunks_store
 from app.services.sync_runs_store import sync_runs_store
+from app.services.sync_state_store import sync_state_store
 
 router = APIRouter(prefix="/integrations/google-ads", tags=["google-ads"])
 logger = logging.getLogger(__name__)
@@ -289,6 +290,43 @@ def google_ads_db_debug(user: AuthUser = Depends(get_current_user)) -> dict[str,
     )
     return payload
 
+def _mirror_sync_state_upsert(
+    *,
+    platform: str,
+    account_id: str,
+    grain: str,
+    last_status: str,
+    last_job_id: str,
+    last_attempted_at: datetime,
+    last_successful_at: datetime | None = None,
+    last_successful_date: date | None = None,
+    error: str | None = None,
+    metadata: dict[str, object] | None = None,
+) -> None:
+    try:
+        sync_state_store.upsert_sync_state(
+            platform=platform,
+            account_id=account_id,
+            grain=grain,
+            last_status=last_status,
+            last_job_id=last_job_id,
+            last_attempted_at=last_attempted_at,
+            last_successful_at=last_successful_at,
+            last_successful_date=last_successful_date,
+            error=error,
+            metadata=metadata or {},
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "sync_state mirror upsert failed for platform=%s account_id=%s grain=%s status=%s error=%s",
+            platform,
+            account_id,
+            grain,
+            last_status,
+            str(exc)[:300],
+        )
+
+
 def _run_google_backfill_job(job_id: str, *, mapped_accounts: list[dict[str, object]], resolved_start: date, resolved_end: date, days: int, chunk_days: int, requested_client_id: int | None) -> None:
     backfill_job_store.set_running(job_id)
     _mirror_sync_run_status(job_id=job_id, status="running", mark_started=True)
@@ -302,6 +340,24 @@ def _run_google_backfill_job(job_id: str, *, mapped_accounts: list[dict[str, obj
             client_id = int(item.get("client_id") or 0)
             raw_customer_id = str(item.get("customer_id") or "").strip()
             masked_customer_id = f"***{raw_customer_id[-4:]}" if len(raw_customer_id) >= 4 else "****"
+            attempt_now = datetime.utcnow()
+            sync_state_metadata = {
+                "client_id": client_id,
+                "date_start": resolved_start.isoformat(),
+                "date_end": resolved_end.isoformat(),
+                "chunk_days": int(chunk_days),
+                "job_type": "backfill",
+            }
+            _mirror_sync_state_upsert(
+                platform="google_ads",
+                account_id=raw_customer_id,
+                grain="account_daily",
+                last_status="running",
+                last_job_id=job_id,
+                last_attempted_at=attempt_now,
+                error=None,
+                metadata=sync_state_metadata,
+            )
             try:
                 snapshot = google_ads_service.sync_customer_for_client(
                     client_id=client_id,
@@ -324,6 +380,19 @@ def _run_google_backfill_job(job_id: str, *, mapped_accounts: list[dict[str, obj
                         "reason_if_zero": snapshot.get("reason_if_zero"),
                     }
                 )
+                success_now = datetime.utcnow()
+                _mirror_sync_state_upsert(
+                    platform="google_ads",
+                    account_id=raw_customer_id,
+                    grain="account_daily",
+                    last_status="done",
+                    last_job_id=job_id,
+                    last_attempted_at=success_now,
+                    last_successful_at=success_now,
+                    last_successful_date=resolved_end,
+                    error=None,
+                    metadata=sync_state_metadata,
+                )
             except Exception as exc:  # noqa: BLE001
                 safe_message = str(exc).replace(raw_customer_id, "***")[:300]
                 attempts.append(
@@ -343,6 +412,16 @@ def _run_google_backfill_job(job_id: str, *, mapped_accounts: list[dict[str, obj
                         "customer_id_masked": masked_customer_id,
                         "error": safe_message,
                     }
+                )
+                _mirror_sync_state_upsert(
+                    platform="google_ads",
+                    account_id=raw_customer_id,
+                    grain="account_daily",
+                    last_status="error",
+                    last_job_id=job_id,
+                    last_attempted_at=datetime.utcnow(),
+                    error=safe_message,
+                    metadata=sync_state_metadata,
                 )
 
         succeeded_accounts_count = len([item for item in attempts if item["status"] == "ok"])

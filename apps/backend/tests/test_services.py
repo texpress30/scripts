@@ -1151,6 +1151,111 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 404)
         self.assertEqual(str(ctx.exception.detail), "job not found")
 
+    def test_google_backfill_runner_updates_sync_state_running_and_done_per_account(self):
+        sync_state_calls: list[dict[str, object]] = []
+
+        original_set_running = google_ads_api.backfill_job_store.set_running
+        original_set_done = google_ads_api.backfill_job_store.set_done
+        original_sync_customer = google_ads_api.google_ads_service.sync_customer_for_client
+        original_mirror_status = google_ads_api._mirror_sync_run_status
+        original_sync_state_upsert = google_ads_api.sync_state_store.upsert_sync_state
+        try:
+            google_ads_api.backfill_job_store.set_running = lambda job_id: None
+            google_ads_api.backfill_job_store.set_done = lambda job_id, result: None
+            google_ads_api.google_ads_service.sync_customer_for_client = lambda **kwargs: {
+                "inserted_rows": 3,
+                "gaql_rows_fetched": 5,
+                "db_rows_last_30_for_customer": 3,
+                "reason_if_zero": None,
+            }
+            google_ads_api._mirror_sync_run_status = lambda **kwargs: None
+            google_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: sync_state_calls.append(kwargs) or {
+                "platform": kwargs.get("platform"),
+                "account_id": kwargs.get("account_id"),
+                "grain": kwargs.get("grain"),
+            }
+
+            google_ads_api._run_google_backfill_job(
+                "job-state-ok",
+                mapped_accounts=[{"client_id": 96, "customer_id": "1234567890"}],
+                resolved_start=date(2026, 1, 1),
+                resolved_end=date(2026, 1, 31),
+                days=31,
+                chunk_days=7,
+                requested_client_id=96,
+            )
+        finally:
+            google_ads_api.backfill_job_store.set_running = original_set_running
+            google_ads_api.backfill_job_store.set_done = original_set_done
+            google_ads_api.google_ads_service.sync_customer_for_client = original_sync_customer
+            google_ads_api._mirror_sync_run_status = original_mirror_status
+            google_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+
+        self.assertGreaterEqual(len(sync_state_calls), 2)
+        first_call = sync_state_calls[0]
+        last_call = sync_state_calls[-1]
+        self.assertEqual(first_call.get("last_status"), "running")
+        self.assertEqual(first_call.get("last_job_id"), "job-state-ok")
+        self.assertEqual(first_call.get("account_id"), "1234567890")
+        self.assertEqual(first_call.get("grain"), "account_daily")
+        self.assertIsNone(first_call.get("error"))
+
+        self.assertEqual(last_call.get("last_status"), "done")
+        self.assertEqual(last_call.get("last_job_id"), "job-state-ok")
+        self.assertEqual(str(last_call.get("last_successful_date")), "2026-01-31")
+        self.assertIsNotNone(last_call.get("last_successful_at"))
+        self.assertIsNone(last_call.get("error"))
+
+    def test_google_backfill_runner_updates_sync_state_error_and_non_blocking_when_sync_state_fails(self):
+        sync_state_calls: list[dict[str, object]] = []
+        done_calls: list[dict[str, object]] = []
+
+        original_set_running = google_ads_api.backfill_job_store.set_running
+        original_set_done = google_ads_api.backfill_job_store.set_done
+        original_sync_customer = google_ads_api.google_ads_service.sync_customer_for_client
+        original_mirror_status = google_ads_api._mirror_sync_run_status
+        original_sync_state_upsert = google_ads_api.sync_state_store.upsert_sync_state
+        try:
+            google_ads_api.backfill_job_store.set_running = lambda job_id: None
+            google_ads_api.backfill_job_store.set_done = lambda job_id, result: done_calls.append(result)
+
+            def failing_sync_customer(**kwargs):
+                raise RuntimeError("google down")
+
+            google_ads_api.google_ads_service.sync_customer_for_client = failing_sync_customer
+            google_ads_api._mirror_sync_run_status = lambda **kwargs: None
+
+            def flaky_sync_state_upsert(**kwargs):
+                sync_state_calls.append(kwargs)
+                if str(kwargs.get("last_status")) == "running":
+                    raise RuntimeError("sync_state unavailable")
+                return {"platform": kwargs.get("platform")}
+
+            google_ads_api.sync_state_store.upsert_sync_state = flaky_sync_state_upsert
+
+            google_ads_api._run_google_backfill_job(
+                "job-state-error",
+                mapped_accounts=[{"client_id": 96, "customer_id": "1234567890"}],
+                resolved_start=date(2026, 1, 1),
+                resolved_end=date(2026, 1, 31),
+                days=31,
+                chunk_days=7,
+                requested_client_id=96,
+            )
+        finally:
+            google_ads_api.backfill_job_store.set_running = original_set_running
+            google_ads_api.backfill_job_store.set_done = original_set_done
+            google_ads_api.google_ads_service.sync_customer_for_client = original_sync_customer
+            google_ads_api._mirror_sync_run_status = original_mirror_status
+            google_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+
+        self.assertGreaterEqual(len(sync_state_calls), 2)
+        self.assertEqual(sync_state_calls[0].get("last_status"), "running")
+        self.assertEqual(sync_state_calls[-1].get("last_status"), "error")
+        self.assertIn("google down", str(sync_state_calls[-1].get("error") or ""))
+        self.assertEqual(len(done_calls), 1)
+        self.assertIn("errors_summary", done_calls[0])
+
     def test_google_backfill_runner_updates_sync_runs_running_and_done(self):
         status_calls: list[dict[str, object]] = []
 

@@ -527,3 +527,38 @@
 - Am adăugat teste unitare backend pentru schema-missing + get-none + create/update lifecycle (fără duplicate, cu `updated_at` schimbat la update).
 - Nu am făcut wiring în API/runner; schimbările sunt strict în stratul service + teste.
 
+
+---
+
+# TODO — Wiring minim `sync_state` în flow-ul Google per cont (best-effort)
+
+- [x] Identific punctul din `_run_google_backfill_job` unde începe procesarea fiecărui cont și unde există outcome success/error.
+- [x] Adaug helper local best-effort pentru `sync_state_store.upsert_sync_state(...)` cu warning non-blocking la eroare.
+- [x] Scriu upsert `running` la start per cont și upsert `done`/`error` pe outcome per cont, fără schimbare de response contract.
+- [x] Adaug teste backend focalizate pentru apelurile `running`/`done`/`error` și pentru cazul în care upsert-ul `sync_state` eșuează.
+- [x] Verific scope-ul (fără wiring în alte platforme/API endpoint-uri) și păstrez patch-ul minimal.
+
+## Review — Wiring minim `sync_state` în flow-ul Google per cont (best-effort)
+- În `api/google_ads.py`, în `_run_google_backfill_job`, am adăugat mirror write în `sync_state` la nivel per cont, fără a schimba flow-ul existent al jobului.
+- La start per cont se scrie `last_status=running`, `last_job_id`, `last_attempted_at`, `error=None`, cu grain `account_daily` și metadata compactă (`client_id`, `date_start`, `date_end`, `chunk_days`, `job_type`).
+- La succes per cont se scrie `last_status=done`, `last_job_id`, `last_attempted_at`, `last_successful_at`, `last_successful_date=resolved_end`, `error=None`.
+- La eșec per cont se scrie `last_status=error`, `last_job_id`, `last_attempted_at`, `error=<safe_message>`.
+- Scrierea `sync_state` este best-effort/non-blocking: orice excepție este logată ca warning și nu oprește sincronizarea contului/jobului.
+- Am adăugat teste focalizate pentru secvența running->done și running->error + non-blocking când upsert-ul `sync_state` eșuează.
+
+
+---
+
+# TODO — Migrație SQL pentru metadata operațională în `agency_platform_accounts`
+
+- [x] Identific următorul număr disponibil pentru migrație în `apps/backend/db/migrations`.
+- [x] Creez migrația nouă care face doar ALTER TABLE pe `agency_platform_accounts` cu coloanele operaționale cerute.
+- [x] Adaug index minim pe `(platform, status)` și opțional pe `last_synced_at` într-un stil idempotent.
+- [x] Verific local scope-ul modificărilor (doar migrație + task tracking), fără schimbări în codul aplicației.
+
+## Review — Migrație metadata operațională pentru `agency_platform_accounts`
+- Am creat `apps/backend/db/migrations/0010_agency_platform_accounts_operational_metadata.sql` cu `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` pentru cele 5 coloane cerute.
+- Coloanele adăugate sunt: `status`, `currency_code`, `account_timezone`, `sync_start_date`, `last_synced_at`.
+- Am adăugat indexurile idempotente: `idx_agency_platform_accounts_platform_status` pe `(platform, status)` și `idx_agency_platform_accounts_last_synced_at` pe `(last_synced_at)`.
+- Nu am făcut backfill, rename/drop, DDL pe alte tabele sau wiring în servicii/API.
+
