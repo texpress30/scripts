@@ -555,6 +555,22 @@ def _map_sync_run_to_job_status_payload(sync_run: dict[str, object]) -> dict[str
         if value is not None and field not in payload:
             payload[field] = value
 
+    for field in ("date_range", "mapped_accounts_count", "chunk_days", "platform", "client_id"):
+        value = metadata.get(field)
+        if value is not None and field not in payload:
+            payload[field] = value
+
+    for field in ("date_range", "mapped_accounts_count", "chunk_days", "platform", "client_id"):
+        value = metadata.get(field)
+        if value is not None and field not in payload:
+            payload[field] = value
+
+@router.get("/sync-now/jobs/{job_id}")
+def sync_now_job_status(job_id: str, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+    payload = backfill_job_store.get(job_id)
+    if payload is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
     return payload
 
 
