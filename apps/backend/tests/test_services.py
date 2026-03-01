@@ -10,6 +10,7 @@ from app.api import google_ads as google_ads_api
 from app.api import meta_ads as meta_ads_api
 from app.api import tiktok_ads as tiktok_ads_api
 from app.api import pinterest_ads as pinterest_ads_api
+from app.api import snapchat_ads as snapchat_ads_api
 from app.services.ai_assistant import ai_assistant_service
 from app.services.insights import insights_service
 from app.services.dashboard import unified_dashboard_service
@@ -2220,6 +2221,123 @@ class ServiceTests(unittest.TestCase):
             pinterest_ads_api.sync_runs_store.get_sync_run = original_db_get
 
         self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_snapchat_ads_sync_now_returns_queued_job_payload(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+        background_tasks = BackgroundTasks()
+        captured: dict[str, object] = {}
+
+        original_enforce = snapchat_ads_api.enforce_action_scope
+        original_create = snapchat_ads_api.backfill_job_store.create
+        original_add_task = background_tasks.add_task
+        try:
+            snapchat_ads_api.enforce_action_scope = lambda **kwargs: None
+            snapchat_ads_api.backfill_job_store.create = lambda payload: "sc-job-1"
+            background_tasks.add_task = lambda func, *args, **kwargs: captured.update({"task": getattr(func, "__name__", "")})
+
+            response = snapchat_ads_api.sync_snapchat_ads_now(
+                background_tasks=background_tasks,
+                user=user,
+                client_id=77,
+            )
+        finally:
+            snapchat_ads_api.enforce_action_scope = original_enforce
+            snapchat_ads_api.backfill_job_store.create = original_create
+            background_tasks.add_task = original_add_task
+
+        self.assertEqual(response.get("status"), "queued")
+        self.assertEqual(response.get("job_id"), "sc-job-1")
+        self.assertEqual(response.get("client_id"), 77)
+        self.assertEqual(response.get("platform"), "snapchat_ads")
+        self.assertEqual(captured.get("task"), "_run_snapchat_sync_job")
+
+    def test_snapchat_backfill_runner_updates_memory_job_success_and_error(self):
+        captured_calls: list[tuple[str, dict[str, object]]] = []
+
+        original_set_running = snapchat_ads_api.backfill_job_store.set_running
+        original_set_done = snapchat_ads_api.backfill_job_store.set_done
+        original_set_error = snapchat_ads_api.backfill_job_store.set_error
+        original_sync_client = snapchat_ads_api.snapchat_ads_service.sync_client
+        try:
+            snapchat_ads_api.backfill_job_store.set_running = lambda job_id: captured_calls.append(("running", {"job_id": job_id}))
+            snapchat_ads_api.backfill_job_store.set_done = lambda job_id, result: captured_calls.append(("done", {"job_id": job_id, "result": result}))
+            snapchat_ads_api.backfill_job_store.set_error = lambda job_id, error: captured_calls.append(("error", {"job_id": job_id, "error": error}))
+
+            snapchat_ads_api.snapchat_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
+            snapchat_ads_api._run_snapchat_sync_job("sc-job-ok", client_id=31)
+
+            def failing_sync(*args, **kwargs):
+                raise RuntimeError("x" * 400)
+
+            snapchat_ads_api.snapchat_ads_service.sync_client = failing_sync
+            snapchat_ads_api._run_snapchat_sync_job("sc-job-fail", client_id=32)
+        finally:
+            snapchat_ads_api.backfill_job_store.set_running = original_set_running
+            snapchat_ads_api.backfill_job_store.set_done = original_set_done
+            snapchat_ads_api.backfill_job_store.set_error = original_set_error
+            snapchat_ads_api.snapchat_ads_service.sync_client = original_sync_client
+
+        running_calls = [payload for event, payload in captured_calls if event == "running"]
+        done_calls = [payload for event, payload in captured_calls if event == "done"]
+        error_calls = [payload for event, payload in captured_calls if event == "error"]
+
+        self.assertTrue(any(call.get("job_id") == "sc-job-ok" for call in running_calls))
+        self.assertTrue(any(call.get("job_id") == "sc-job-fail" for call in running_calls))
+        done_result = done_calls[0].get("result") if isinstance(done_calls[0].get("result"), dict) else {}
+        self.assertEqual(done_result.get("status"), "done")
+        self.assertEqual(done_result.get("platform"), "snapchat_ads")
+        self.assertEqual(done_result.get("client_id"), 31)
+        self.assertEqual(done_result.get("result"), {"status": "ok", "client_id": 31})
+        self.assertEqual(len(str(error_calls[0].get("error") or "")), 300)
+
+    def test_snapchat_sync_now_job_status_memory_only(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+
+        original_enforce = snapchat_ads_api.enforce_action_scope
+        original_memory_get = snapchat_ads_api.backfill_job_store.get
+        try:
+            snapchat_ads_api.enforce_action_scope = lambda **kwargs: None
+            snapchat_ads_api.backfill_job_store.get = lambda job_id: {"job_id": job_id, "status": "running"} if job_id == "sc-job" else None
+
+            existing = snapchat_ads_api.sync_now_job_status("sc-job", user=user)
+            with self.assertRaises(snapchat_ads_api.HTTPException) as ctx:
+                snapchat_ads_api.sync_now_job_status("missing", user=user)
+        finally:
+            snapchat_ads_api.enforce_action_scope = original_enforce
+            snapchat_ads_api.backfill_job_store.get = original_memory_get
+
+        self.assertEqual(existing.get("job_id"), "sc-job")
+        self.assertEqual(existing.get("status"), "running")
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_snapchat_legacy_sync_endpoint_still_calls_service(self):
+        user = AuthUser(email="owner@example.com", role="agency_owner")
+
+        original_enforce = snapchat_ads_api.enforce_action_scope
+        original_rate_check = snapchat_ads_api.rate_limiter_service.check
+        original_sync_client = snapchat_ads_api.snapchat_ads_service.sync_client
+        original_audit_log = snapchat_ads_api.audit_log_service.log
+        original_metrics_increment = snapchat_ads_api.snapchat_sync_metrics.increment
+        original_metrics_snapshot = snapchat_ads_api.snapchat_sync_metrics.snapshot
+        try:
+            snapchat_ads_api.enforce_action_scope = lambda **kwargs: None
+            snapchat_ads_api.rate_limiter_service.check = lambda *args, **kwargs: None
+            snapchat_ads_api.snapchat_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id, "attempts": 1}
+            snapchat_ads_api.audit_log_service.log = lambda **kwargs: None
+            snapchat_ads_api.snapchat_sync_metrics.increment = lambda *args, **kwargs: None
+            snapchat_ads_api.snapchat_sync_metrics.snapshot = lambda: {"sync_succeeded": 1}
+
+            response = snapchat_ads_api.sync_snapchat_ads(client_id=56, user=user)
+        finally:
+            snapchat_ads_api.enforce_action_scope = original_enforce
+            snapchat_ads_api.rate_limiter_service.check = original_rate_check
+            snapchat_ads_api.snapchat_ads_service.sync_client = original_sync_client
+            snapchat_ads_api.audit_log_service.log = original_audit_log
+            snapchat_ads_api.snapchat_sync_metrics.increment = original_metrics_increment
+            snapchat_ads_api.snapchat_sync_metrics.snapshot = original_metrics_snapshot
+
+        self.assertEqual(response.get("status"), "ok")
+        self.assertEqual(response.get("client_id"), 56)
 
     def test_pinterest_legacy_sync_endpoint_still_calls_service(self):
         user = AuthUser(email="owner@example.com", role="agency_owner")

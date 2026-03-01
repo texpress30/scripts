@@ -107,3 +107,5 @@
 - 2026-03-01: La restaurări de paritate cross-platform, tratează patch-ul ca additive: păstrează wiring-ul nou valid (ex. `sync_state`) și reintrodu punctual piesele lipsă (`sync_runs` create/lifecycle/status fallback) fără regresii de scope.
 
 - 2026-03-01: Pentru metadata operațională Pinterest, folosește strict helperul `update_platform_account_operational_metadata` și valori de cont reale (status/currency/timezone), fără a scrie statusuri de job (`running/done/error`) în `agency_platform_accounts.status`.
+
+- 2026-03-01: Pentru prerequisite-uri async pe platforme noi (ex. Snapchat), respectă strict scope-ul memory-only (fără `sync_runs`/`sync_state`/fallback DB) până la taskul de paritate dedicat.

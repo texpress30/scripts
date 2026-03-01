@@ -829,3 +829,19 @@
 - `agency_platform_accounts.status` este tratat ca status de cont (din mapping), nu ca status de sync-job.
 - La ambiguitate/lipsă `account_id` sau la eroare DB, update-ul operațional este omis/logat și flow-ul continuă.
 - Endpoint-urile publice și shape-urile de răspuns au rămas neschimbate; `sync_runs` + `sync_state` rămân active.
+
+
+---
+
+# TODO — Snapchat async prerequisite (memory-only)
+
+- [x] Adaug endpoint `POST /integrations/snapchat-ads/sync-now` memory-only (job create + background task + queued payload).
+- [x] Adaug runner local `_run_snapchat_sync_job` pentru lifecycle în memory store (running/done/error).
+- [x] Adaug endpoint `GET /integrations/snapchat-ads/sync-now/jobs/{job_id}` strict memory-backed.
+- [x] Păstrez endpoint-ul legacy `POST /integrations/snapchat-ads/{client_id}/sync` neschimbat.
+- [x] Adaug teste focalizate pentru create/runner/status/legacy compatibility.
+
+## Review — Snapchat async prerequisite
+- `api/snapchat_ads.py` are acum flow async minim cu memory store, fără mirror DB.
+- Status-ul jobului Snapchat este memory-only (`backfill_job_store`) și păstrează `404` la miss.
+- Nu există `sync_runs` / `sync_state` / `sync_run_chunks` / fallback DB în acest task.
