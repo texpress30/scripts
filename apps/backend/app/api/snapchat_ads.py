@@ -1,7 +1,7 @@
 import logging
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 
 from app.api.dependencies import enforce_action_scope, get_current_user
 from app.services.audit import audit_log_service
@@ -9,9 +9,55 @@ from app.services.auth import AuthUser
 from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
 from app.services.snapchat_ads import SnapchatAdsIntegrationError, snapchat_ads_service
 from app.services.snapchat_observability import snapchat_sync_metrics
+from app.services.sync_engine import backfill_job_store
 
 router = APIRouter(prefix="/integrations/snapchat-ads", tags=["snapchat-ads"])
 logger = logging.getLogger("app.snapchat_ads")
+
+
+def _run_snapchat_sync_job(job_id: str, *, client_id: int) -> None:
+    backfill_job_store.set_running(job_id)
+
+    try:
+        snapshot = snapchat_ads_service.sync_client(client_id=client_id)
+        payload = {
+            "status": "done",
+            "job_id": job_id,
+            "client_id": int(client_id),
+            "platform": "snapchat_ads",
+            "result": snapshot,
+        }
+        backfill_job_store.set_done(job_id, result=payload)
+    except Exception as exc:  # noqa: BLE001
+        safe_error = str(exc)[:300]
+        backfill_job_store.set_error(job_id, error=safe_error)
+
+
+@router.post("/sync-now")
+def sync_snapchat_ads_now(
+    background_tasks: BackgroundTasks,
+    user: AuthUser = Depends(get_current_user),
+    client_id: int = Query(..., ge=1),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+
+    job_id = backfill_job_store.create(payload={"platform": "snapchat_ads", "client_id": int(client_id)})
+    background_tasks.add_task(_run_snapchat_sync_job, job_id, client_id=int(client_id))
+    return {
+        "status": "queued",
+        "job_id": job_id,
+        "client_id": int(client_id),
+        "platform": "snapchat_ads",
+    }
+
+
+@router.get("/sync-now/jobs/{job_id}")
+def sync_now_job_status(job_id: str, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:snapchat:status", scope="agency")
+    payload = backfill_job_store.get(job_id)
+    if payload is not None:
+        return payload
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
 
 
 @router.get("/status")
