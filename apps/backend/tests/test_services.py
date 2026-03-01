@@ -921,13 +921,14 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(response["status"], "queued")
         self.assertEqual(response["job_id"], "job-fallback")
 
-    def test_google_sync_now_job_status_prefers_memory_store(self):
+    def test_google_sync_now_job_status_memory_hit_enriches_with_chunks(self):
         user = AuthUser(email="admin@example.com", role="agency_owner")
         db_calls: list[str] = []
 
         original_enforce = google_ads_api.enforce_action_scope
         original_memory_get = google_ads_api.backfill_job_store.get
         original_db_get = google_ads_api.sync_runs_store.get_sync_run
+        original_chunk_list = google_ads_api.sync_run_chunks_store.list_sync_run_chunks
         try:
             google_ads_api.enforce_action_scope = lambda **kwargs: None
             google_ads_api.backfill_job_store.get = lambda job_id: {"status": "running", "platform": "google_ads", "source": "memory"}
@@ -937,22 +938,79 @@ class ServiceTests(unittest.TestCase):
                 return {"job_id": job_id}
 
             google_ads_api.sync_runs_store.get_sync_run = db_get
+            google_ads_api.sync_run_chunks_store.list_sync_run_chunks = lambda job_id: [
+                {
+                    "chunk_index": 0,
+                    "status": "queued",
+                    "date_start": "2026-01-01",
+                    "date_end": "2026-01-07",
+                    "started_at": None,
+                    "finished_at": None,
+                    "error": None,
+                    "metadata": {"chunk_days": 7},
+                },
+                {
+                    "chunk_index": 1,
+                    "status": "done",
+                    "date_start": "2026-01-08",
+                    "date_end": "2026-01-14",
+                    "started_at": "2026-03-01T00:00:01+00:00",
+                    "finished_at": "2026-03-01T00:00:05+00:00",
+                    "error": None,
+                    "metadata": {},
+                },
+            ]
+
             response = google_ads_api.sync_now_job_status("job-memory", user=user)
         finally:
             google_ads_api.enforce_action_scope = original_enforce
             google_ads_api.backfill_job_store.get = original_memory_get
             google_ads_api.sync_runs_store.get_sync_run = original_db_get
+            google_ads_api.sync_run_chunks_store.list_sync_run_chunks = original_chunk_list
 
         self.assertEqual(response.get("status"), "running")
         self.assertEqual(response.get("source"), "memory")
         self.assertEqual(db_calls, [])
+        self.assertEqual((response.get("chunk_summary") or {}).get("total"), 2)
+        self.assertEqual((response.get("chunk_summary") or {}).get("queued"), 1)
+        self.assertEqual((response.get("chunk_summary") or {}).get("done"), 1)
+        self.assertEqual(len(response.get("chunks") or []), 2)
 
-    def test_google_sync_now_job_status_falls_back_to_sync_runs_store(self):
+    def test_google_sync_now_job_status_memory_hit_chunks_error_is_non_blocking(self):
         user = AuthUser(email="admin@example.com", role="agency_owner")
 
         original_enforce = google_ads_api.enforce_action_scope
         original_memory_get = google_ads_api.backfill_job_store.get
         original_db_get = google_ads_api.sync_runs_store.get_sync_run
+        original_chunk_list = google_ads_api.sync_run_chunks_store.list_sync_run_chunks
+        try:
+            google_ads_api.enforce_action_scope = lambda **kwargs: None
+            google_ads_api.backfill_job_store.get = lambda job_id: {"status": "running", "platform": "google_ads", "source": "memory"}
+            google_ads_api.sync_runs_store.get_sync_run = lambda job_id: {"job_id": job_id}
+
+            def failing_chunk_list(job_id: str):
+                raise RuntimeError("chunk db unavailable")
+
+            google_ads_api.sync_run_chunks_store.list_sync_run_chunks = failing_chunk_list
+            response = google_ads_api.sync_now_job_status("job-memory", user=user)
+        finally:
+            google_ads_api.enforce_action_scope = original_enforce
+            google_ads_api.backfill_job_store.get = original_memory_get
+            google_ads_api.sync_runs_store.get_sync_run = original_db_get
+            google_ads_api.sync_run_chunks_store.list_sync_run_chunks = original_chunk_list
+
+        self.assertEqual(response.get("status"), "running")
+        self.assertEqual(response.get("source"), "memory")
+        self.assertNotIn("chunk_summary", response)
+        self.assertNotIn("chunks", response)
+
+    def test_google_sync_now_job_status_falls_back_to_sync_runs_store_and_enriches_chunks(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+
+        original_enforce = google_ads_api.enforce_action_scope
+        original_memory_get = google_ads_api.backfill_job_store.get
+        original_db_get = google_ads_api.sync_runs_store.get_sync_run
+        original_chunk_list = google_ads_api.sync_run_chunks_store.list_sync_run_chunks
         try:
             google_ads_api.enforce_action_scope = lambda **kwargs: None
             google_ads_api.backfill_job_store.get = lambda job_id: None
@@ -972,12 +1030,25 @@ class ServiceTests(unittest.TestCase):
                 "error": None,
                 "metadata": {"mapped_accounts_count": 3},
             }
+            google_ads_api.sync_run_chunks_store.list_sync_run_chunks = lambda job_id: [
+                {
+                    "chunk_index": 0,
+                    "status": "done",
+                    "date_start": "2026-01-01",
+                    "date_end": "2026-01-07",
+                    "started_at": "2026-03-01T00:00:01+00:00",
+                    "finished_at": "2026-03-01T00:00:05+00:00",
+                    "error": None,
+                    "metadata": {"rows": 7},
+                }
+            ]
 
             response = google_ads_api.sync_now_job_status("job-db", user=user)
         finally:
             google_ads_api.enforce_action_scope = original_enforce
             google_ads_api.backfill_job_store.get = original_memory_get
             google_ads_api.sync_runs_store.get_sync_run = original_db_get
+            google_ads_api.sync_run_chunks_store.list_sync_run_chunks = original_chunk_list
 
         self.assertEqual(response.get("job_id"), "job-db")
         self.assertEqual(response.get("status"), "done")
@@ -986,6 +1057,52 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(response.get("finished_at"), "2026-03-01T00:00:09+00:00")
         self.assertIsNone(response.get("error"))
         self.assertEqual((response.get("metadata") or {}).get("mapped_accounts_count"), 3)
+        self.assertEqual((response.get("chunk_summary") or {}).get("total"), 1)
+        self.assertEqual((response.get("chunk_summary") or {}).get("done"), 1)
+        self.assertEqual(len(response.get("chunks") or []), 1)
+
+    def test_google_sync_now_job_status_fallback_db_hit_chunks_error_is_non_blocking(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+
+        original_enforce = google_ads_api.enforce_action_scope
+        original_memory_get = google_ads_api.backfill_job_store.get
+        original_db_get = google_ads_api.sync_runs_store.get_sync_run
+        original_chunk_list = google_ads_api.sync_run_chunks_store.list_sync_run_chunks
+        try:
+            google_ads_api.enforce_action_scope = lambda **kwargs: None
+            google_ads_api.backfill_job_store.get = lambda job_id: None
+            google_ads_api.sync_runs_store.get_sync_run = lambda job_id: {
+                "job_id": job_id,
+                "platform": "google_ads",
+                "status": "running",
+                "client_id": 96,
+                "account_id": None,
+                "date_start": "2026-01-01",
+                "date_end": "2026-01-31",
+                "chunk_days": 7,
+                "created_at": "2026-03-01T00:00:01+00:00",
+                "updated_at": "2026-03-01T00:00:10+00:00",
+                "started_at": "2026-03-01T00:00:03+00:00",
+                "finished_at": None,
+                "error": None,
+                "metadata": {},
+            }
+
+            def failing_chunk_list(job_id: str):
+                raise RuntimeError("chunk read failure")
+
+            google_ads_api.sync_run_chunks_store.list_sync_run_chunks = failing_chunk_list
+            response = google_ads_api.sync_now_job_status("job-db-chunk-error", user=user)
+        finally:
+            google_ads_api.enforce_action_scope = original_enforce
+            google_ads_api.backfill_job_store.get = original_memory_get
+            google_ads_api.sync_runs_store.get_sync_run = original_db_get
+            google_ads_api.sync_run_chunks_store.list_sync_run_chunks = original_chunk_list
+
+        self.assertEqual(response.get("job_id"), "job-db-chunk-error")
+        self.assertEqual(response.get("status"), "running")
+        self.assertNotIn("chunk_summary", response)
+        self.assertNotIn("chunks", response)
 
     def test_google_sync_now_job_status_not_found_when_missing_in_memory_and_db(self):
         user = AuthUser(email="admin@example.com", role="agency_owner")

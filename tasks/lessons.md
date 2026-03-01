@@ -83,3 +83,4 @@
 - 2026-03-01: Pentru pași DB-first incrementali, livrează întâi migrația SQL idempotentă minimă (tabelă + FK + constrângeri + indexuri) fără wiring în API/runner până la task-ul dedicat.
 - 2026-03-01: Când un task cere explicit store DB-backed nou, livrează implementarea completă (fișier service + metode concrete + teste de lifecycle), nu doar migrația de schemă.
 - 2026-03-01: După ce există tabela + store pentru chunk-uri, următorul pas incremental corect este mirror write best-effort la create job (plan de chunk-uri date-range), fără să atingi runner-ul sau endpoint-ul de status.
+- 2026-03-01: Pentru extinderi de status endpoint în migrare graduală, păstrează contractul de bază și adaugă câmpuri additive best-effort (ex. chunk_summary/chunks), fără a face endpoint-ul fragil la erori DB secundare.

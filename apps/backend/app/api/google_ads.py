@@ -489,6 +489,47 @@ def sync_google_ads_now(
     return dict(result.get("result") or {"status": "error", "job_id": job_id})
 
 
+def _build_chunk_summary(chunks: list[dict[str, object]]) -> dict[str, int]:
+    summary = {"total": len(chunks), "queued": 0, "running": 0, "done": 0, "error": 0}
+    for item in chunks:
+        status_value = str(item.get("status") or "").strip().lower()
+        if status_value in summary:
+            summary[status_value] += 1
+    return summary
+
+
+def _to_chunk_status_payload(chunks: list[dict[str, object]]) -> list[dict[str, object]]:
+    payload: list[dict[str, object]] = []
+    for item in chunks:
+        payload.append(
+            {
+                "chunk_index": int(item.get("chunk_index") or 0),
+                "status": str(item.get("status") or "queued"),
+                "date_start": item.get("date_start"),
+                "date_end": item.get("date_end"),
+                "started_at": item.get("started_at"),
+                "finished_at": item.get("finished_at"),
+                "error": item.get("error"),
+                "metadata": item.get("metadata") if isinstance(item.get("metadata"), dict) else {},
+            }
+        )
+    return payload
+
+
+def _attach_job_chunks_payload(*, job_id: str, payload: dict[str, object]) -> dict[str, object]:
+    enriched = dict(payload)
+    try:
+        chunks = sync_run_chunks_store.list_sync_run_chunks(job_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sync_run_chunks read failed for google_ads job_id=%s error=%s", job_id, str(exc)[:300])
+        return enriched
+
+    chunk_items = _to_chunk_status_payload(chunks)
+    enriched["chunk_summary"] = _build_chunk_summary(chunk_items)
+    enriched["chunks"] = chunk_items
+    return enriched
+
+
 def _map_sync_run_to_job_status_payload(sync_run: dict[str, object]) -> dict[str, object]:
     metadata = sync_run.get("metadata") if isinstance(sync_run.get("metadata"), dict) else {}
     if not isinstance(metadata, dict):
@@ -519,6 +560,11 @@ def _map_sync_run_to_job_status_payload(sync_run: dict[str, object]) -> dict[str
         if value is not None and field not in payload:
             payload[field] = value
 
+    for field in ("date_range", "mapped_accounts_count", "chunk_days", "platform", "client_id"):
+        value = metadata.get(field)
+        if value is not None and field not in payload:
+            payload[field] = value
+
 @router.get("/sync-now/jobs/{job_id}")
 def sync_now_job_status(job_id: str, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="integrations:status", scope="agency")
@@ -533,7 +579,7 @@ def sync_now_job_status(job_id: str, user: AuthUser = Depends(get_current_user))
     enforce_action_scope(user=user, action="integrations:status", scope="agency")
     payload = backfill_job_store.get(job_id)
     if payload is not None:
-        return payload
+        return _attach_job_chunks_payload(job_id=job_id, payload=payload)
 
     try:
         sync_run = sync_runs_store.get_sync_run(job_id)
@@ -542,7 +588,8 @@ def sync_now_job_status(job_id: str, user: AuthUser = Depends(get_current_user))
         sync_run = None
 
     if sync_run is not None:
-        return _map_sync_run_to_job_status_payload(sync_run)
+        mapped_payload = _map_sync_run_to_job_status_payload(sync_run)
+        return _attach_job_chunks_payload(job_id=job_id, payload=mapped_payload)
 
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
 

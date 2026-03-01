@@ -490,3 +490,21 @@
 - [x] Păstrez response-ul endpoint-ului și flow-ul in-memory compatibile cu implementarea existentă.
 - [x] Adaug teste backend focalizate pentru success path și failure path la mirror write în `sync_run_chunks`.
 
+
+---
+
+# TODO — Extindere status job Google cu chunk_summary/chunks din `sync_run_chunks` (additive, best-effort)
+
+- [x] Identific endpoint-ul curent `GET /integrations/google-ads/sync-now/jobs/{job_id}` și păstrez fluxul memory-first + fallback `sync_runs`.
+- [x] Adaug citirea best-effort a chunk-urilor din `sync_run_chunks_store.list_sync_run_chunks(job_id)` fără a rupe payload-ul existent.
+- [x] Adaug helper mic local pentru `chunk_summary` (total/queued/running/done/error) și shape minim pentru `chunks`.
+- [x] Tratez erorile de citire chunk-uri non-blocking (warning + payload principal neschimbat).
+- [x] Adaug teste focalizate pentru scenariile memory hit + chunks hit/error, memory miss + sync_runs hit + chunks hit, memory miss + sync_runs miss.
+
+## Review — Extindere status job Google cu chunk_summary/chunks din `sync_run_chunks`
+- Endpoint-ul de status rămâne memory-first, apoi fallback pe `sync_runs` la memory miss; nu s-a schimbat fluxul principal.
+- Am adăugat îmbogățire additive best-effort: `chunk_summary` și `chunks` obținute din `sync_run_chunks_store.list_sync_run_chunks(job_id)`.
+- `chunk_summary` include minim: `total`, `queued`, `running`, `done`, `error`; `chunks` include minim: `chunk_index`, `status`, `date_start`, `date_end`, `started_at`, `finished_at`, `error`, `metadata`.
+- La eroare de citire chunk-uri, endpoint-ul nu cade: log warning și returnează payload-ul principal neschimbat.
+- Au fost adăugate teste pentru scenariile cerute (memory hit + chunks hit/error, fallback DB + chunks hit/error, DB miss 404).
+
