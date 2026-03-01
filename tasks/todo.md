@@ -355,3 +355,17 @@
 - `_ensure_schema()` nu mai execută DDL; acum rulează strict un `SELECT to_regclass('public.ad_performance_reports')`.
 - Dacă schema/tabela lipsește, serviciul ridică eroare clară: `Database schema for ad_performance_reports is not ready; run DB migrations`.
 - Comportamentul de upsert a rămas intact: `ON CONFLICT (report_date, platform, customer_id)` cu `client_id` payload updatabil.
+
+---
+
+# TODO — Migrație SQL pentru persistența joburilor de sync (`sync_runs`)
+
+- [x] Identific următorul număr disponibil de migrație (`0007`).
+- [x] Creez tabela `sync_runs` cu schema cerută (coloane, default-uri, checks).
+- [x] Adaug indexurile minime: `status` și `(platform, created_at)`.
+- [x] Verific local consistența SQL și confirm scope strict pe `db/migrations`.
+
+## Review — Migrație SQL pentru persistența joburilor de sync (`sync_runs`)
+- Am adăugat `apps/backend/db/migrations/0007_sync_runs.sql` în stilul migrațiilor existente, folosind `CREATE TABLE IF NOT EXISTS` + `CREATE INDEX IF NOT EXISTS` pentru idempotency.
+- Tabela `sync_runs` include schema exactă cerută, cu constrângeri simple și sigure: `date_end >= date_start` și `chunk_days > 0`.
+- Nu am schimbat codul aplicației (API/services/sync engine/dashboard/UI); taskul este strict de pregătire schemă DB.

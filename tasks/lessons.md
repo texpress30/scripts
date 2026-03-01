@@ -75,3 +75,4 @@
 - 2026-02-28: Pentru tabele daily fact cu denormalizări (`client_id`), separă clar cheia canonical de conflict de câmpurile payload; `ON CONFLICT` trebuie să urmeze exact cheia canonical și testele trebuie să verifice explicit că payload-ul se actualizează fără duplicate.
 - 2026-02-28: După alinierea cheii canonice în runtime DDL, formalizează imediat aceeași regulă și în migrații SQL idempotente (inclusiv cleanup legacy + dedup înainte de unique index), ca să eviți drift între cod și schema live.
 - 2026-02-28: După ce schema e formalizată în migrații, evită runtime DDL în servicii; folosește validare read-only (`to_regclass`) și eroare explicită dacă migrațiile nu sunt aplicate.
+- 2026-02-28: Pentru pași incrementali de infrastructură (ex. persistarea joburilor de sync), livrează întâi o migrație SQL minimă și idempotentă, fără schimbări de business logic în același task.
