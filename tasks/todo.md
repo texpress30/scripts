@@ -697,3 +697,19 @@
 - Dacă account id este nedeterminabil (zero/multiplu/eroare lookup), mirror-ul păstrează `account_id=None` defensiv și flow-ul continuă non-blocking.
 - Nu am introdus `sync_run_chunks` pentru TikTok în acest task.
 
+---
+
+# TODO — TikTok phase 2 (part 1): sync_state mirror per account (best-effort)
+
+- [x] Adaug helper local best-effort pentru `sync_state_store.upsert_sync_state(...)` în flow-ul TikTok async.
+- [x] Fac upsert `sync_state` la start/succes/eroare per cont TikTok cu valori canonice.
+- [x] Păstrez identitatea canonică (`account_id` real) și omit defensiv upsert când `account_id` lipsește.
+- [x] Mențin endpoint-urile și status flow-ul TikTok neschimbate.
+- [x] Adaug teste focalizate pentru lifecycle sync_state și non-blocking la eșec de upsert.
+
+## Review — TikTok phase 2 (part 1)
+- În `api/tiktok_ads.py` am introdus `_mirror_tiktok_sync_state_upsert(...)` (best-effort) și l-am conectat în runner la `running`/`done`/`error`.
+- Upsert-ul folosește `platform=tiktok_ads`, `grain=account_daily`, `last_job_id`, `last_attempted_at`, respectiv `last_successful_at/date_end` doar la succes.
+- Dacă `account_id` nu este disponibil sigur, sync_state se omite defensiv (warning) și jobul continuă normal.
+- Nu am modificat endpoint-uri publice, status fallback sau alte platforme și nu am introdus `sync_run_chunks` pentru TikTok.
+

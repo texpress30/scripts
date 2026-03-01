@@ -95,3 +95,4 @@
 - 2026-03-01: În flow-uri multi-cont (Meta inclus), nu folosi niciodată `client_id` ca substitut pentru `account_id`; cheia canonică pentru `sync_state`/`sync_runs` trebuie alimentată doar cu platform account id real, iar la ambiguitate se sare best-effort fără write greșit.
 - 2026-03-01: Pentru metadata operațională în `agency_platform_accounts`, scrie doar valori de cont (status/currency/timezone/sync_start_date/last_synced_at) cu `account_id` real al platformei; nu folosi statusuri de job și păstrează update-ul strict best-effort.
 - 2026-03-01: La rollout phase 1 pentru platformă nouă (TikTok), pornește minim cu `sync_runs` mirror (create+lifecycle) și status memory-first cu fallback DB, fără chunking/state suplimentar până există flow real.
+- 2026-03-01: În TikTok phase 2 incremental, adaugă `sync_state` strict local în runner (running/done/error) cu upsert best-effort; dacă `account_id` nu e determinabil sigur, omite write-ul în loc să folosești `client_id`.

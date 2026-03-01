@@ -10,8 +10,9 @@ from app.services.auth import AuthUser
 from app.services.client_registry import client_registry_service
 from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
 from app.services.sync_engine import backfill_job_store
+from app.services.sync_state_store import sync_state_store
 from app.services.sync_runs_store import sync_runs_store
-from app.services.sync_constants import PLATFORM_TIKTOK_ADS, SYNC_STATUS_DONE, SYNC_STATUS_ERROR, SYNC_STATUS_QUEUED, SYNC_STATUS_RUNNING
+from app.services.sync_constants import PLATFORM_TIKTOK_ADS, SYNC_GRAIN_ACCOUNT_DAILY, SYNC_STATUS_DONE, SYNC_STATUS_ERROR, SYNC_STATUS_QUEUED, SYNC_STATUS_RUNNING
 from app.services.tiktok_ads import TikTokAdsIntegrationError, tiktok_ads_service
 from app.services.tiktok_observability import tiktok_sync_metrics
 
@@ -89,12 +90,71 @@ def _mirror_sync_run_status(*, job_id: str, status_value: str, error: str | None
         _log_best_effort_warning(operation="sync_runs_status", error=exc, job_id=job_id, status_value=status_value, platform=PLATFORM_TIKTOK_ADS)
 
 
+def _mirror_tiktok_sync_state_upsert(
+    *,
+    job_id: str,
+    account_id: str,
+    last_status: str,
+    last_attempted_at: datetime,
+    date_end: date,
+    error: str | None = None,
+    last_successful_at: datetime | None = None,
+    metadata: dict[str, object] | None = None,
+) -> None:
+    try:
+        sync_state_store.upsert_sync_state(
+            platform=PLATFORM_TIKTOK_ADS,
+            account_id=account_id,
+            grain=SYNC_GRAIN_ACCOUNT_DAILY,
+            last_status=last_status,
+            last_job_id=job_id,
+            last_attempted_at=last_attempted_at,
+            last_successful_at=last_successful_at,
+            last_successful_date=date_end if last_successful_at is not None else None,
+            error=error,
+            metadata=metadata or {},
+        )
+    except Exception as exc:  # noqa: BLE001
+        _log_best_effort_warning(
+            operation="sync_state_upsert",
+            error=exc,
+            job_id=job_id,
+            status_value=last_status,
+            platform=PLATFORM_TIKTOK_ADS,
+            account_id=account_id,
+        )
+
+
 def _run_tiktok_sync_job(job_id: str, *, client_id: int, account_id: str | None = None) -> None:
     backfill_job_store.set_running(job_id)
     _mirror_sync_run_status(job_id=job_id, status_value=SYNC_STATUS_RUNNING, mark_started=True)
 
+    today = datetime.utcnow().date()
+    date_start = today - timedelta(days=30)
+    date_end = today
+    sync_state_metadata = {
+        "client_id": int(client_id),
+        "date_start": date_start.isoformat(),
+        "date_end": date_end.isoformat(),
+        "job_type": "sync",
+    }
+
+    if account_id is None:
+        logger.warning("tiktok_sync_state_skipped_missing_account_id job_id=%s client_id=%s", job_id, int(client_id))
+    else:
+        _mirror_tiktok_sync_state_upsert(
+            job_id=job_id,
+            account_id=account_id,
+            last_status=SYNC_STATUS_RUNNING,
+            last_attempted_at=datetime.utcnow(),
+            date_end=date_end,
+            error=None,
+            metadata=sync_state_metadata,
+        )
+
     try:
         snapshot = tiktok_ads_service.sync_client(client_id=client_id)
+        success_now = datetime.utcnow()
         payload = {
             "status": SYNC_STATUS_DONE,
             "job_id": job_id,
@@ -105,6 +165,16 @@ def _run_tiktok_sync_job(job_id: str, *, client_id: int, account_id: str | None 
         done_metadata: dict[str, object] = {"client_id": int(client_id)}
         if account_id is not None:
             done_metadata["account_id"] = account_id
+            _mirror_tiktok_sync_state_upsert(
+                job_id=job_id,
+                account_id=account_id,
+                last_status=SYNC_STATUS_DONE,
+                last_attempted_at=success_now,
+                last_successful_at=success_now,
+                date_end=date_end,
+                error=None,
+                metadata=sync_state_metadata,
+            )
         _mirror_sync_run_status(
             job_id=job_id,
             status_value=SYNC_STATUS_DONE,
@@ -114,6 +184,16 @@ def _run_tiktok_sync_job(job_id: str, *, client_id: int, account_id: str | None 
     except Exception as exc:  # noqa: BLE001
         safe_error = str(exc)[:300]
         backfill_job_store.set_error(job_id, error=safe_error)
+        if account_id is not None:
+            _mirror_tiktok_sync_state_upsert(
+                job_id=job_id,
+                account_id=account_id,
+                last_status=SYNC_STATUS_ERROR,
+                last_attempted_at=datetime.utcnow(),
+                date_end=date_end,
+                error=safe_error,
+                metadata=sync_state_metadata,
+            )
         _mirror_sync_run_status(job_id=job_id, status_value=SYNC_STATUS_ERROR, error=safe_error, mark_finished=True)
 
 
