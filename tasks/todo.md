@@ -546,3 +546,19 @@
 - Scrierea `sync_state` este best-effort/non-blocking: orice excepție este logată ca warning și nu oprește sincronizarea contului/jobului.
 - Am adăugat teste focalizate pentru secvența running->done și running->error + non-blocking când upsert-ul `sync_state` eșuează.
 
+
+---
+
+# TODO — Migrație SQL pentru metadata operațională în `agency_platform_accounts`
+
+- [x] Identific următorul număr disponibil pentru migrație în `apps/backend/db/migrations`.
+- [x] Creez migrația nouă care face doar ALTER TABLE pe `agency_platform_accounts` cu coloanele operaționale cerute.
+- [x] Adaug index minim pe `(platform, status)` și opțional pe `last_synced_at` într-un stil idempotent.
+- [x] Verific local scope-ul modificărilor (doar migrație + task tracking), fără schimbări în codul aplicației.
+
+## Review — Migrație metadata operațională pentru `agency_platform_accounts`
+- Am creat `apps/backend/db/migrations/0010_agency_platform_accounts_operational_metadata.sql` cu `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` pentru cele 5 coloane cerute.
+- Coloanele adăugate sunt: `status`, `currency_code`, `account_timezone`, `sync_start_date`, `last_synced_at`.
+- Am adăugat indexurile idempotente: `idx_agency_platform_accounts_platform_status` pe `(platform, status)` și `idx_agency_platform_accounts_last_synced_at` pe `(last_synced_at)`.
+- Nu am făcut backfill, rename/drop, DDL pe alte tabele sau wiring în servicii/API.
+
