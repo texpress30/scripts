@@ -679,9 +679,42 @@ class ServiceTests(unittest.TestCase):
     def test_performance_reports_dedup_query_targets_daily_duplicate_keys(self):
         query = performance_reports_store._deduplicate_reports_query()
 
-        self.assertIn("PARTITION BY report_date, platform, customer_id, client_id", query)
+        self.assertIn("PARTITION BY report_date, platform, customer_id", query)
         self.assertIn("DELETE FROM ad_performance_reports", query)
         self.assertIn("ranked.rn > 1", query)
+
+    def test_performance_reports_upsert_uses_canonical_key_and_updates_client_id_payload(self):
+        performance_reports_store._memory_rows.clear()
+
+        performance_reports_store.write_daily_report(
+            report_date=date(2026, 2, 28),
+            platform="google_ads",
+            customer_id="1111111111",
+            client_id=10,
+            spend=100.0,
+            impressions=1000,
+            clicks=100,
+            conversions=10.0,
+            conversion_value=50.0,
+        )
+
+        performance_reports_store.write_daily_report(
+            report_date=date(2026, 2, 28),
+            platform="google_ads",
+            customer_id="1111111111",
+            client_id=20,
+            spend=200.0,
+            impressions=2000,
+            clicks=200,
+            conversions=20.0,
+            conversion_value=150.0,
+        )
+
+        self.assertEqual(len(performance_reports_store._memory_rows), 1)
+        row = performance_reports_store._memory_rows[0]
+        self.assertEqual(row["client_id"], 20)
+        self.assertEqual(float(row["spend"]), 200.0)
+        self.assertEqual(int(row["impressions"]), 2000)
 
     def test_client_dashboard_query_filters_by_date_range(self):
         query = unified_dashboard_service._client_reports_query()
