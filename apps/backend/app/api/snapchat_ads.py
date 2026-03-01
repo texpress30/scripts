@@ -1,36 +1,119 @@
 import logging
 import time
+from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 
 from app.api.dependencies import enforce_action_scope, get_current_user
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
+from app.services.client_registry import client_registry_service
 from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
 from app.services.snapchat_ads import SnapchatAdsIntegrationError, snapchat_ads_service
 from app.services.snapchat_observability import snapchat_sync_metrics
+from app.services.sync_constants import PLATFORM_SNAPCHAT_ADS, SYNC_STATUS_DONE, SYNC_STATUS_ERROR, SYNC_STATUS_QUEUED, SYNC_STATUS_RUNNING
 from app.services.sync_engine import backfill_job_store
+from app.services.sync_runs_store import sync_runs_store
 
 router = APIRouter(prefix="/integrations/snapchat-ads", tags=["snapchat-ads"])
 logger = logging.getLogger("app.snapchat_ads")
 
 
+def _resolve_snapchat_account_id(*, client_id: int, job_id: str | None = None) -> str | None:
+    try:
+        accounts = client_registry_service.list_client_platform_accounts(platform=PLATFORM_SNAPCHAT_ADS, client_id=int(client_id))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("snapchat_account_lookup_failed client_id=%s job_id=%s error=%s", int(client_id), job_id, str(exc)[:300])
+        return None
+
+    account_ids = [str(item.get("id") or "").strip() for item in accounts if isinstance(item, dict)]
+    account_ids = [item for item in account_ids if item != ""]
+    if len(account_ids) == 1:
+        return account_ids[0]
+    if len(account_ids) == 0:
+        logger.warning("snapchat_account_id_missing client_id=%s job_id=%s", int(client_id), job_id)
+        return None
+
+    logger.warning("snapchat_account_id_ambiguous client_id=%s job_id=%s account_count=%s", int(client_id), job_id, len(account_ids))
+    return None
+
+
+def _mirror_sync_run_create(*, job_id: str, client_id: int, account_id: str | None, date_start_iso: str, date_end_iso: str) -> None:
+    try:
+        sync_runs_store.create_sync_run(
+            job_id=job_id,
+            platform=PLATFORM_SNAPCHAT_ADS,
+            status=SYNC_STATUS_QUEUED,
+            client_id=int(client_id),
+            account_id=account_id,
+            date_start=datetime.fromisoformat(date_start_iso).date(),
+            date_end=datetime.fromisoformat(date_end_iso).date(),
+            chunk_days=1,
+            metadata={"job_type": "sync", "source": "snapchat_ads_api"},
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "snapchat_sync_runs_create_failed platform=%s account_id=%s job_id=%s status=%s error=%s",
+            PLATFORM_SNAPCHAT_ADS,
+            account_id,
+            job_id,
+            SYNC_STATUS_QUEUED,
+            str(exc)[:300],
+        )
+
+
+def _mirror_sync_run_status(*, job_id: str, status_value: str, error: str | None = None, mark_started: bool = False, mark_finished: bool = False) -> None:
+    try:
+        sync_runs_store.update_sync_run_status(
+            job_id=job_id,
+            status=status_value,
+            error=error,
+            mark_started=mark_started,
+            mark_finished=mark_finished,
+            metadata=None,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "snapchat_sync_runs_status_failed platform=%s job_id=%s status=%s error=%s",
+            PLATFORM_SNAPCHAT_ADS,
+            job_id,
+            status_value,
+            str(exc)[:300],
+        )
+
+
+def _map_sync_run_to_job_status_payload(sync_run: dict[str, object]) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "job_id": str(sync_run.get("job_id") or ""),
+        "status": str(sync_run.get("status") or SYNC_STATUS_QUEUED),
+        "platform": sync_run.get("platform") or PLATFORM_SNAPCHAT_ADS,
+    }
+    for field in ("client_id", "account_id", "date_start", "date_end", "chunk_days", "created_at", "started_at", "finished_at", "error", "metadata"):
+        value = sync_run.get(field)
+        if value is not None:
+            payload[field] = value
+    return payload
+
+
 def _run_snapchat_sync_job(job_id: str, *, client_id: int) -> None:
     backfill_job_store.set_running(job_id)
+    _mirror_sync_run_status(job_id=job_id, status_value=SYNC_STATUS_RUNNING, mark_started=True)
 
     try:
         snapshot = snapchat_ads_service.sync_client(client_id=client_id)
         payload = {
-            "status": "done",
+            "status": SYNC_STATUS_DONE,
             "job_id": job_id,
             "client_id": int(client_id),
-            "platform": "snapchat_ads",
+            "platform": PLATFORM_SNAPCHAT_ADS,
             "result": snapshot,
         }
         backfill_job_store.set_done(job_id, result=payload)
+        _mirror_sync_run_status(job_id=job_id, status_value=SYNC_STATUS_DONE, mark_finished=True)
     except Exception as exc:  # noqa: BLE001
         safe_error = str(exc)[:300]
         backfill_job_store.set_error(job_id, error=safe_error)
+        _mirror_sync_run_status(job_id=job_id, status_value=SYNC_STATUS_ERROR, error=safe_error, mark_finished=True)
 
 
 @router.post("/sync-now")
@@ -41,13 +124,22 @@ def sync_snapchat_ads_now(
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
 
-    job_id = backfill_job_store.create(payload={"platform": "snapchat_ads", "client_id": int(client_id)})
+    today_iso = datetime.utcnow().date().isoformat()
+    job_id = backfill_job_store.create(payload={"platform": PLATFORM_SNAPCHAT_ADS, "client_id": int(client_id)})
+    snapchat_account_id = _resolve_snapchat_account_id(client_id=int(client_id), job_id=job_id)
+    _mirror_sync_run_create(
+        job_id=job_id,
+        client_id=int(client_id),
+        account_id=snapchat_account_id,
+        date_start_iso=today_iso,
+        date_end_iso=today_iso,
+    )
     background_tasks.add_task(_run_snapchat_sync_job, job_id, client_id=int(client_id))
     return {
-        "status": "queued",
+        "status": SYNC_STATUS_QUEUED,
         "job_id": job_id,
         "client_id": int(client_id),
-        "platform": "snapchat_ads",
+        "platform": PLATFORM_SNAPCHAT_ADS,
     }
 
 
@@ -57,6 +149,16 @@ def sync_now_job_status(job_id: str, user: AuthUser = Depends(get_current_user))
     payload = backfill_job_store.get(job_id)
     if payload is not None:
         return payload
+
+    try:
+        sync_run = sync_runs_store.get_sync_run(job_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("snapchat_sync_runs_read_failed platform=%s job_id=%s error=%s", PLATFORM_SNAPCHAT_ADS, job_id, str(exc)[:300])
+        sync_run = None
+
+    if sync_run is not None:
+        return _map_sync_run_to_job_status_payload(sync_run)
+
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
 
 

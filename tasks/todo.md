@@ -845,3 +845,21 @@
 - `api/snapchat_ads.py` are acum flow async minim cu memory store, fără mirror DB.
 - Status-ul jobului Snapchat este memory-only (`backfill_job_store`) și păstrează `404` la miss.
 - Nu există `sync_runs` / `sync_state` / `sync_run_chunks` / fallback DB în acest task.
+
+
+---
+
+# TODO — Snapchat phase 1 real: sync_runs parity + DB fallback status
+
+- [x] Reintroduc mirror `sync_runs` la create pentru `POST /integrations/snapchat-ads/sync-now` (queued + platform/client/account/date_start/date_end/chunk_days).
+- [x] Reintroduc lifecycle mirror `sync_runs` în runner-ul async Snapchat (`running`/`done`/`error`), best-effort non-blocking.
+- [x] Reintroduc status flow memory-first + fallback DB (`sync_runs`) pentru `GET /integrations/snapchat-ads/sync-now/jobs/{job_id}`.
+- [x] Păstrez flow-ul async memory-backed existent și endpoint-ul legacy neschimbate.
+- [x] Mențin identitatea canonică: `account_id` real Snapchat sau `None` defensiv, fără fallback la `client_id`.
+- [x] Actualizez teste focalizate pentru create/lifecycle/status fallback și branch defensiv pe `account_id`.
+
+## Review — Snapchat phase 1 real
+- `api/snapchat_ads.py` păstrează flow-ul async curent și adaugă mirror `sync_runs` la create + lifecycle.
+- Status endpoint-ul Snapchat este memory-first și cade în `sync_runs` la memory miss.
+- Pentru schema `sync_runs` folosesc fereastră sintetică minimă: `date_start=date_end=utc_today`, `chunk_days=1`.
+- Nu am introdus `sync_state` sau `sync_run_chunks` pentru Snapchat în acest task.
