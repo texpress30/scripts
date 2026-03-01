@@ -40,24 +40,75 @@ def _log_best_effort_warning(
     )
 
 
-def _resolve_meta_account_id(*, client_id: int, job_id: str | None = None) -> str | None:
+def _resolve_meta_account_context(*, client_id: int, job_id: str | None = None) -> dict[str, str] | None:
     try:
         accounts = client_registry_service.list_client_platform_accounts(platform=PLATFORM_META_ADS, client_id=int(client_id))
     except Exception as exc:  # noqa: BLE001
         _log_best_effort_warning(operation="meta_account_lookup", error=exc, job_id=job_id, platform=PLATFORM_META_ADS)
         return None
 
-    account_ids = [str(item.get("id") or "").strip() for item in accounts if isinstance(item, dict)]
-    account_ids = [item for item in account_ids if item != ""]
-    if len(account_ids) == 1:
-        return account_ids[0]
+    valid_accounts = [item for item in accounts if isinstance(item, dict) and str(item.get("id") or "").strip() != ""]
+    if len(valid_accounts) == 1:
+        item = valid_accounts[0]
+        context: dict[str, str] = {"account_id": str(item.get("id") or "").strip()}
+        raw_status = str(item.get("status") or "").strip()
+        if raw_status != "":
+            context["status"] = raw_status
+        raw_currency = str(item.get("currency_code") or item.get("currency") or "").strip().upper()
+        if raw_currency != "":
+            context["currency_code"] = raw_currency
+        raw_timezone = str(item.get("account_timezone") or "").strip()
+        if raw_timezone != "":
+            context["account_timezone"] = raw_timezone
+        return context
 
-    if len(account_ids) == 0:
+    if len(valid_accounts) == 0:
         logger.warning("meta_account_id_missing client_id=%s job_id=%s", int(client_id), job_id)
         return None
 
-    logger.warning("meta_account_id_ambiguous client_id=%s job_id=%s account_count=%s", int(client_id), job_id, len(account_ids))
+    logger.warning("meta_account_id_ambiguous client_id=%s job_id=%s account_count=%s", int(client_id), job_id, len(valid_accounts))
     return None
+
+
+def _mirror_meta_platform_account_operational_metadata(
+    *,
+    job_id: str,
+    account_context: dict[str, str] | None,
+    sync_start_date: date,
+    last_synced_at: datetime | None = None,
+) -> None:
+    account_id = str((account_context or {}).get("account_id") or "").strip()
+    if account_id == "":
+        logger.warning("meta_operational_metadata_skipped_missing_account_id job_id=%s", job_id)
+        return
+
+    payload: dict[str, object] = {
+        "platform": PLATFORM_META_ADS,
+        "account_id": account_id,
+        "sync_start_date": sync_start_date,
+    }
+    raw_status = str((account_context or {}).get("status") or "").strip()
+    if raw_status != "":
+        payload["status"] = raw_status
+    raw_currency = str((account_context or {}).get("currency_code") or "").strip().upper()
+    if raw_currency != "":
+        payload["currency_code"] = raw_currency
+    raw_timezone = str((account_context or {}).get("account_timezone") or "").strip()
+    if raw_timezone != "":
+        payload["account_timezone"] = raw_timezone
+    if last_synced_at is not None:
+        payload["last_synced_at"] = last_synced_at
+
+    try:
+        client_registry_service.update_platform_account_operational_metadata(**payload)
+    except Exception as exc:  # noqa: BLE001
+        _log_best_effort_warning(
+            operation="platform_account_metadata_update",
+            error=exc,
+            job_id=job_id,
+            platform=PLATFORM_META_ADS,
+            account_id=account_id,
+        )
 
 
 def _mirror_sync_run_create(*, job_id: str, status_value: str, client_id: int, date_start: date, date_end: date, account_id: str | None = None) -> None:
@@ -127,14 +178,15 @@ def _mirror_meta_sync_state_upsert(
         )
 
 
-def _run_meta_sync_job(job_id: str, *, client_id: int, account_id: str | None = None) -> None:
+def _run_meta_sync_job(job_id: str, *, client_id: int, account_context: dict[str, str] | None = None) -> None:
     backfill_job_store.set_running(job_id)
     _mirror_sync_run_status(job_id=job_id, status_value=SYNC_STATUS_RUNNING, mark_started=True)
 
     today = datetime.utcnow().date()
     date_start = today - timedelta(days=30)
     date_end = today
-    meta_account_id = (str(account_id).strip() if account_id is not None else "") or _resolve_meta_account_id(client_id=int(client_id), job_id=job_id)
+    resolved_account_context = account_context or _resolve_meta_account_context(client_id=int(client_id), job_id=job_id)
+    meta_account_id = str((resolved_account_context or {}).get("account_id") or "").strip() or None
     sync_state_metadata = {
         "client_id": int(client_id),
         "date_start": date_start.isoformat(),
@@ -146,6 +198,11 @@ def _run_meta_sync_job(job_id: str, *, client_id: int, account_id: str | None = 
 
     if meta_account_id is None:
         logger.warning("meta_sync_state_skipped_missing_account_id job_id=%s client_id=%s", job_id, int(client_id))
+    _mirror_meta_platform_account_operational_metadata(
+        job_id=job_id,
+        account_context=resolved_account_context,
+        sync_start_date=date_start,
+    )
     if meta_account_id is not None:
         _mirror_meta_sync_state_upsert(
             job_id=job_id,
@@ -178,6 +235,12 @@ def _run_meta_sync_job(job_id: str, *, client_id: int, account_id: str | None = 
                 error=None,
                 metadata=sync_state_metadata,
             )
+        _mirror_meta_platform_account_operational_metadata(
+            job_id=job_id,
+            account_context=resolved_account_context,
+            sync_start_date=date_start,
+            last_synced_at=success_now,
+        )
         done_metadata = {"client_id": int(client_id)}
         if meta_account_id is not None:
             done_metadata["account_id"] = meta_account_id
@@ -260,8 +323,9 @@ def sync_meta_ads_now(
 
     if async_mode:
         job_id = backfill_job_store.create(payload={"platform": PLATFORM_META_ADS, "client_id": int(client_id)})
-        meta_account_id = _resolve_meta_account_id(client_id=int(client_id), job_id=job_id)
-        background_tasks.add_task(_run_meta_sync_job, job_id, client_id=int(client_id), account_id=meta_account_id)
+        account_context = _resolve_meta_account_context(client_id=int(client_id), job_id=job_id)
+        meta_account_id = str((account_context or {}).get("account_id") or "").strip() or None
+        background_tasks.add_task(_run_meta_sync_job, job_id, client_id=int(client_id), account_context=account_context)
         _mirror_sync_run_create(
             job_id=job_id,
             status_value=SYNC_STATUS_QUEUED,
@@ -273,8 +337,8 @@ def sync_meta_ads_now(
         return {"status": SYNC_STATUS_QUEUED, "job_id": job_id, "client_id": int(client_id)}
 
     job_id = backfill_job_store.create(payload={"platform": PLATFORM_META_ADS, "client_id": int(client_id)})
-    meta_account_id = _resolve_meta_account_id(client_id=int(client_id), job_id=job_id)
-    _run_meta_sync_job(job_id, client_id=int(client_id), account_id=meta_account_id)
+    account_context = _resolve_meta_account_context(client_id=int(client_id), job_id=job_id)
+    _run_meta_sync_job(job_id, client_id=int(client_id), account_context=account_context)
     payload = backfill_job_store.get(job_id) or {}
     result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
     if isinstance(result, dict) and len(result) > 0:

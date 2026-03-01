@@ -664,3 +664,19 @@
 - În branch-urile unde account id nu e determinabil (zero sau multiplu mapping / lookup failure), `sync_state` este omis best-effort, iar flow-ul jobului continuă.
 - `sync_runs` create primește `account_id` real când este determinabil; altfel rămâne `None` (defensiv), fără schimbări de endpoint.
 
+---
+
+# TODO — Meta phase 2 (part 2): metadata operațională agency_platform_accounts (best-effort)
+
+- [x] Refolosesc helperul existent `update_platform_account_operational_metadata(...)` fără SQL nou în API.
+- [x] Fac wiring local în `api/meta_ads.py` pentru update metadata operațională la start și la succes per cont Meta.
+- [x] Folosesc identitatea canonică Meta (`account_id` real), fără fallback greșit la `client_id`.
+- [x] Păstrez non-blocking/best-effort la eșecuri de update metadata.
+- [x] Adaug teste focalizate pentru update start/succes, skip defensiv și non-blocking la eroare.
+
+## Review — Meta phase 2 (part 2)
+- În `api/meta_ads.py` am introdus helper local best-effort pentru metadata operațională și l-am legat la începutul procesării contului + la succes (`last_synced_at`).
+- Update-ul folosește exclusiv `platform=meta_ads` și `account_id` real rezolvat din mapping-ul contului Meta per client.
+- Pentru branch-uri fără account id determinabil sigur, update-ul operațional este omis defensiv cu warning; flow-ul jobului continuă.
+- Nu am schimbat endpoint-uri/status shapes și nu am atins Google/TikTok/sync_engine/meta_ads service.
+
