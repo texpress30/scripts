@@ -1,5 +1,5 @@
 import os
-from datetime import date
+from datetime import date, datetime
 import unittest
 from decimal import Decimal
 
@@ -32,6 +32,7 @@ from app.services.audit import audit_log_service
 from app.services.client_registry import client_registry_service
 from app.services.performance_reports import performance_reports_store
 from app.services.sync_runs_store import sync_runs_store
+from app.services.sync_state_store import sync_state_store
 from app.services.sync_run_chunks_store import sync_run_chunks_store
 
 
@@ -1491,6 +1492,211 @@ class ServiceTests(unittest.TestCase):
         first_chunk = next(item for item in chunks_after if int(item["chunk_index"]) == 0)
         self.assertEqual(first_chunk["status"], "done")
         self.assertEqual(first_chunk["error"], "chunk done")
+
+    def test_sync_state_store_schema_missing_raises_clear_error(self):
+        sync_state_store._schema_initialized = False
+
+        class _FakeCursor:
+            def execute(self, query, params=None):
+                return None
+
+            def fetchone(self):
+                return (None,)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_connect = sync_state_store._connect
+        try:
+            sync_state_store._connect = lambda: _FakeConn()
+            with self.assertRaises(RuntimeError) as ctx:
+                sync_state_store.get_sync_state("google_ads", "123", "daily")
+        finally:
+            sync_state_store._connect = original_connect
+            sync_state_store._schema_initialized = False
+
+        self.assertIn("Database schema for sync_state is not ready; run DB migrations", str(ctx.exception))
+
+    def test_sync_state_store_get_and_upsert_lifecycle(self):
+        sync_state_store._schema_initialized = False
+        state: dict[tuple[str, str, str], dict[str, object]] = {}
+        tick = {"value": 0}
+
+        def _now() -> str:
+            tick["value"] += 1
+            return f"2026-03-01T00:00:{tick['value']:02d}+00:00"
+
+        class _FakeCursor:
+            _row: tuple[object, ...] | None
+
+            def __init__(self):
+                self._row = None
+
+            def execute(self, query, params=None):
+                sql = str(query)
+
+                if "SELECT to_regclass('public.sync_state')" in sql:
+                    self._row = ("sync_state",)
+                    return
+
+                if "INSERT INTO sync_state" in sql and "ON CONFLICT (platform, account_id, grain)" in sql:
+                    (
+                        platform,
+                        account_id,
+                        grain,
+                        last_status,
+                        last_job_id,
+                        last_attempted_at,
+                        last_successful_at,
+                        last_successful_date,
+                        error,
+                        metadata_json,
+                    ) = params
+                    key = (str(platform), str(account_id), str(grain))
+                    existing = state.get(key)
+                    if existing is None:
+                        now_value = _now()
+                        state[key] = {
+                            "platform": str(platform),
+                            "account_id": str(account_id),
+                            "grain": str(grain),
+                            "last_status": last_status,
+                            "last_job_id": last_job_id,
+                            "last_attempted_at": str(last_attempted_at) if last_attempted_at is not None else None,
+                            "last_successful_at": str(last_successful_at) if last_successful_at is not None else None,
+                            "last_successful_date": str(last_successful_date) if last_successful_date is not None else None,
+                            "error": error,
+                            "metadata": str(metadata_json),
+                            "created_at": now_value,
+                            "updated_at": now_value,
+                        }
+                    else:
+                        existing["last_status"] = last_status
+                        existing["last_job_id"] = last_job_id
+                        existing["last_attempted_at"] = str(last_attempted_at) if last_attempted_at is not None else None
+                        existing["last_successful_at"] = str(last_successful_at) if last_successful_at is not None else None
+                        existing["last_successful_date"] = str(last_successful_date) if last_successful_date is not None else None
+                        existing["error"] = error
+                        existing["metadata"] = str(metadata_json)
+                        existing["updated_at"] = _now()
+                    return
+
+                if "FROM sync_state" in sql and "WHERE platform = %s AND account_id = %s AND grain = %s" in sql:
+                    key = (str(params[0]), str(params[1]), str(params[2]))
+                    row = state.get(key)
+                    if row is None:
+                        self._row = None
+                    else:
+                        self._row = (
+                            row["platform"],
+                            row["account_id"],
+                            row["grain"],
+                            row["last_status"],
+                            row["last_job_id"],
+                            row["last_attempted_at"],
+                            row["last_successful_at"],
+                            row["last_successful_date"],
+                            row["error"],
+                            row["metadata"],
+                            row["created_at"],
+                            row["updated_at"],
+                        )
+                    return
+
+                raise AssertionError(f"Unexpected SQL: {sql}")
+
+            def fetchone(self):
+                return self._row
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def commit(self):
+                return None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_connect = sync_state_store._connect
+        try:
+            sync_state_store._connect = lambda: _FakeConn()
+
+            missing = sync_state_store.get_sync_state("google_ads", "123", "daily")
+
+            created = sync_state_store.upsert_sync_state(
+                platform="google_ads",
+                account_id="123",
+                grain="daily",
+                last_status="running",
+                last_job_id="job-1",
+                error="temporary failure",
+                metadata={"chunk_days": 7},
+            )
+            updated = sync_state_store.upsert_sync_state(
+                platform="google_ads",
+                account_id="123",
+                grain="daily",
+                last_status="done",
+                last_job_id="job-2",
+                last_attempted_at=datetime.fromisoformat("2026-03-01T00:00:10+00:00"),
+                last_successful_at=datetime.fromisoformat("2026-03-01T00:00:12+00:00"),
+                last_successful_date=date(2026, 2, 28),
+                error=None,
+                metadata={"rows": 42},
+            )
+            fetched = sync_state_store.get_sync_state("google_ads", "123", "daily")
+        finally:
+            sync_state_store._connect = original_connect
+            sync_state_store._schema_initialized = False
+
+        self.assertIsNone(missing)
+
+        self.assertIsNotNone(created)
+        self.assertEqual(created.get("platform"), "google_ads")
+        self.assertEqual(created.get("account_id"), "123")
+        self.assertEqual(created.get("grain"), "daily")
+        self.assertEqual(created.get("last_status"), "running")
+        self.assertEqual(created.get("last_job_id"), "job-1")
+        self.assertEqual(created.get("error"), "temporary failure")
+        self.assertEqual((created.get("metadata") or {}).get("chunk_days"), 7)
+
+        self.assertIsNotNone(updated)
+        self.assertEqual(updated.get("last_status"), "done")
+        self.assertEqual(updated.get("last_job_id"), "job-2")
+        self.assertEqual(updated.get("last_successful_date"), "2026-02-28")
+        self.assertEqual(updated.get("last_successful_at"), "2026-03-01 00:00:12+00:00")
+        self.assertIsNone(updated.get("error"))
+        self.assertEqual((updated.get("metadata") or {}).get("rows"), 42)
+        self.assertNotEqual(created.get("updated_at"), updated.get("updated_at"))
+
+        self.assertEqual(len(state), 1)
+        self.assertIsNotNone(fetched)
+        assert fetched is not None
+        self.assertEqual(fetched.get("last_status"), "done")
+        self.assertIsNone(fetched.get("error"))
 
     def test_sync_runs_store_create_get_update_lifecycle(self):
         sync_runs_store._schema_initialized = False

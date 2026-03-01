@@ -508,3 +508,22 @@
 - La eroare de citire chunk-uri, endpoint-ul nu cade: log warning și returnează payload-ul principal neschimbat.
 - Au fost adăugate teste pentru scenariile cerute (memory hit + chunks hit/error, fallback DB + chunks hit/error, DB miss 404).
 
+
+---
+
+# TODO — Implementare store DB-backed pentru `sync_state` (fără wiring)
+
+- [x] Creez `apps/backend/app/services/sync_state_store.py` în stilul store-urilor existente (SQL parametrizat, fără ORM/DDL runtime).
+- [x] Implementez API-ul minim: `get_sync_state(platform, account_id, grain)` și `upsert_sync_state(...)`.
+- [x] Adaug validare read-only de schemă pentru `sync_state` cu eroare clară când migrația nu e aplicată.
+- [x] Adaug teste backend pentru get-none, create/update upsert, persistență câmpuri și `updated_at` la update.
+- [x] Verific că nu există wiring în API/runner și păstrez patch-ul minimal.
+
+## Review — Implementare store DB-backed pentru `sync_state` (fără wiring)
+- Am adăugat `SyncStateStore` în fișier nou, cu SQL parametrizat și validare read-only de schemă (`to_regclass`) fără DDL runtime.
+- Store-ul expune API-ul minim cerut: `get_sync_state(...)` și `upsert_sync_state(...)`.
+- `upsert_sync_state` folosește `ON CONFLICT (platform, account_id, grain) DO UPDATE`, actualizează `updated_at = NOW()` și permite update repetat pentru aceeași cheie canonică.
+- `error` poate fi setat la `NULL` la update (curățare eroare), iar `last_successful_at`/`last_successful_date` sunt persistate explicit când sunt furnizate.
+- Am adăugat teste unitare backend pentru schema-missing + get-none + create/update lifecycle (fără duplicate, cu `updated_at` schimbat la update).
+- Nu am făcut wiring în API/runner; schimbările sunt strict în stratul service + teste.
+
