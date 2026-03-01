@@ -713,3 +713,19 @@
 - Dacă `account_id` nu este disponibil sigur, sync_state se omite defensiv (warning) și jobul continuă normal.
 - Nu am modificat endpoint-uri publice, status fallback sau alte platforme și nu am introdus `sync_run_chunks` pentru TikTok.
 
+---
+
+# TODO — TikTok phase 2 (part 2): metadata operațională agency_platform_accounts (best-effort)
+
+- [x] Refolosesc helperul existent `update_platform_account_operational_metadata(...)` în flow-ul TikTok, fără SQL nou.
+- [x] Adaug wiring local în runner-ul TikTok pentru update metadata operațională la start și la succes.
+- [x] Păstrez identitatea canonică (`account_id` real TikTok), fără fallback greșit la `client_id`.
+- [x] Mențin best-effort/non-blocking la eșecuri de update metadata.
+- [x] Extind teste focalizate pentru update start/succes, skip defensiv și non-blocking la eroare.
+
+## Review — TikTok phase 2 (part 2)
+- În `api/tiktok_ads.py` am adăugat helper local `_mirror_tiktok_platform_account_operational_metadata(...)` și l-am apelat la începutul procesării contului și la succes (`last_synced_at`).
+- Valorile trimise sunt `platform=tiktok_ads`, `account_id` real, `sync_start_date` și opțional (`status`, `currency_code`, `account_timezone`) doar când sunt disponibile sigur.
+- Dacă `account_id` lipsește, update-ul operațional este omis defensiv cu warning; dacă update-ul aruncă eroare, flow-ul jobului continuă.
+- Nu am schimbat endpoint-uri/status flow și nu am modificat sync_runs/sync_state contracts sau alte platforme.
+

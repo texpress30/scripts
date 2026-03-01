@@ -125,6 +125,77 @@ def _mirror_tiktok_sync_state_upsert(
         )
 
 
+def _resolve_tiktok_account_operational_context(*, client_id: int, account_id: str, job_id: str) -> dict[str, str]:
+    payload: dict[str, str] = {"account_id": account_id}
+    try:
+        accounts = client_registry_service.list_client_platform_accounts(platform=PLATFORM_TIKTOK_ADS, client_id=int(client_id))
+    except Exception as exc:  # noqa: BLE001
+        _log_best_effort_warning(operation="tiktok_account_metadata_lookup", error=exc, job_id=job_id, platform=PLATFORM_TIKTOK_ADS, account_id=account_id)
+        return payload
+
+    matched = None
+    for item in accounts:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("id") or "").strip() == account_id:
+            matched = item
+            break
+    if matched is None:
+        return payload
+
+    raw_status = str(matched.get("status") or "").strip()
+    if raw_status != "":
+        payload["status"] = raw_status
+    raw_currency = str(matched.get("currency_code") or matched.get("currency") or "").strip().upper()
+    if raw_currency != "":
+        payload["currency_code"] = raw_currency
+    raw_timezone = str(matched.get("account_timezone") or "").strip()
+    if raw_timezone != "":
+        payload["account_timezone"] = raw_timezone
+    return payload
+
+
+def _mirror_tiktok_platform_account_operational_metadata(
+    *,
+    job_id: str,
+    account_context: dict[str, str] | None,
+    sync_start_date: date,
+    last_synced_at: datetime | None = None,
+) -> None:
+    account_id = str((account_context or {}).get("account_id") or "").strip()
+    if account_id == "":
+        logger.warning("tiktok_operational_metadata_skipped_missing_account_id job_id=%s", job_id)
+        return
+
+    update_payload: dict[str, object] = {
+        "platform": PLATFORM_TIKTOK_ADS,
+        "account_id": account_id,
+        "sync_start_date": sync_start_date,
+    }
+    raw_status = str((account_context or {}).get("status") or "").strip()
+    if raw_status != "":
+        update_payload["status"] = raw_status
+    raw_currency = str((account_context or {}).get("currency_code") or "").strip().upper()
+    if raw_currency != "":
+        update_payload["currency_code"] = raw_currency
+    raw_timezone = str((account_context or {}).get("account_timezone") or "").strip()
+    if raw_timezone != "":
+        update_payload["account_timezone"] = raw_timezone
+    if last_synced_at is not None:
+        update_payload["last_synced_at"] = last_synced_at
+
+    try:
+        client_registry_service.update_platform_account_operational_metadata(**update_payload)
+    except Exception as exc:  # noqa: BLE001
+        _log_best_effort_warning(
+            operation="platform_account_metadata_update",
+            error=exc,
+            job_id=job_id,
+            platform=PLATFORM_TIKTOK_ADS,
+            account_id=account_id,
+        )
+
+
 def _run_tiktok_sync_job(job_id: str, *, client_id: int, account_id: str | None = None) -> None:
     backfill_job_store.set_running(job_id)
     _mirror_sync_run_status(job_id=job_id, status_value=SYNC_STATUS_RUNNING, mark_started=True)
@@ -138,6 +209,13 @@ def _run_tiktok_sync_job(job_id: str, *, client_id: int, account_id: str | None 
         "date_end": date_end.isoformat(),
         "job_type": "sync",
     }
+
+    account_context = _resolve_tiktok_account_operational_context(client_id=int(client_id), account_id=account_id, job_id=job_id) if account_id is not None else None
+    _mirror_tiktok_platform_account_operational_metadata(
+        job_id=job_id,
+        account_context=account_context,
+        sync_start_date=date_start,
+    )
 
     if account_id is None:
         logger.warning("tiktok_sync_state_skipped_missing_account_id job_id=%s client_id=%s", job_id, int(client_id))
@@ -175,6 +253,12 @@ def _run_tiktok_sync_job(job_id: str, *, client_id: int, account_id: str | None 
                 error=None,
                 metadata=sync_state_metadata,
             )
+        _mirror_tiktok_platform_account_operational_metadata(
+            job_id=job_id,
+            account_context=account_context,
+            sync_start_date=date_start,
+            last_synced_at=success_now,
+        )
         _mirror_sync_run_status(
             job_id=job_id,
             status_value=SYNC_STATUS_DONE,

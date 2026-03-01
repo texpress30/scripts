@@ -1358,6 +1358,7 @@ class ServiceTests(unittest.TestCase):
     def test_meta_backfill_runner_updates_sync_runs_running_done_and_error(self):
         status_calls: list[dict[str, object]] = []
         sync_state_calls: list[dict[str, object]] = []
+        op_calls: list[dict[str, object]] = []
         operational_calls: list[dict[str, object]] = []
 
         original_set_running = meta_ads_api.backfill_job_store.set_running
@@ -1560,6 +1561,7 @@ class ServiceTests(unittest.TestCase):
 
         self.assertEqual(sync_state_calls, [])
         self.assertEqual(op_calls, [])
+        self.assertEqual(op_calls, [])
         self.assertTrue(any(call.get("job_id") == "meta-job-no-account" and call.get("status") == "running" for call in status_calls))
         done_call = next((call for call in status_calls if call.get("job_id") == "meta-job-no-account" and call.get("status") == "done"), None)
         self.assertIsNotNone(done_call)
@@ -1603,9 +1605,10 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(payload.get("client_id"), 77)
         self.assertEqual(payload.get("account_id"), "tt-acc-1")
 
-    def test_tiktok_backfill_runner_updates_sync_runs_running_done_and_error(self):
+    def test_tiktok_backfill_runner_updates_sync_runs_sync_state_and_operational_metadata(self):
         status_calls: list[dict[str, object]] = []
         sync_state_calls: list[dict[str, object]] = []
+        operational_calls: list[dict[str, object]] = []
 
         original_set_running = tiktok_ads_api.backfill_job_store.set_running
         original_set_done = tiktok_ads_api.backfill_job_store.set_done
@@ -1613,6 +1616,8 @@ class ServiceTests(unittest.TestCase):
         original_sync_client = tiktok_ads_api.tiktok_ads_service.sync_client
         original_update_status = tiktok_ads_api.sync_runs_store.update_sync_run_status
         original_sync_state_upsert = tiktok_ads_api.sync_state_store.upsert_sync_state
+        original_list_accounts = tiktok_ads_api.client_registry_service.list_client_platform_accounts
+        original_operational_update = tiktok_ads_api.client_registry_service.update_platform_account_operational_metadata
         try:
             tiktok_ads_api.backfill_job_store.set_running = lambda job_id: None
             tiktok_ads_api.backfill_job_store.set_done = lambda job_id, result: None
@@ -1620,6 +1625,8 @@ class ServiceTests(unittest.TestCase):
             tiktok_ads_api.tiktok_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
             tiktok_ads_api.sync_runs_store.update_sync_run_status = lambda **kwargs: status_calls.append(kwargs) or {"job_id": kwargs.get("job_id")}
             tiktok_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: sync_state_calls.append(kwargs) or {"account_id": kwargs.get("account_id")}
+            tiktok_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: ([{"id": "tt-acc-ok", "currency": "eur"}] if int(kwargs.get("client_id") or 0) == 11 else [{"id": "tt-acc-fail"}])
+            tiktok_ads_api.client_registry_service.update_platform_account_operational_metadata = lambda **kwargs: operational_calls.append(kwargs) or kwargs
 
             tiktok_ads_api._run_tiktok_sync_job("tt-job-ok", client_id=11, account_id="tt-acc-ok")
 
@@ -1635,6 +1642,8 @@ class ServiceTests(unittest.TestCase):
             tiktok_ads_api.tiktok_ads_service.sync_client = original_sync_client
             tiktok_ads_api.sync_runs_store.update_sync_run_status = original_update_status
             tiktok_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+            tiktok_ads_api.client_registry_service.list_client_platform_accounts = original_list_accounts
+            tiktok_ads_api.client_registry_service.update_platform_account_operational_metadata = original_operational_update
 
         self.assertTrue(any(call.get("job_id") == "tt-job-ok" and call.get("status") == "running" for call in status_calls))
         done_call = next((call for call in status_calls if call.get("job_id") == "tt-job-ok" and call.get("status") == "done"), None)
@@ -1658,6 +1667,14 @@ class ServiceTests(unittest.TestCase):
         self.assertIsNotNone(error_state_call)
         self.assertEqual((error_state_call or {}).get("account_id"), "tt-acc-fail")
         self.assertTrue("tiktok down" in str((error_state_call or {}).get("error") or ""))
+
+        start_op_call = next((call for call in operational_calls if call.get("account_id") == "tt-acc-ok" and call.get("sync_start_date") is not None and call.get("last_synced_at") is None), None)
+        self.assertIsNotNone(start_op_call)
+        self.assertEqual((start_op_call or {}).get("platform"), "tiktok_ads")
+        self.assertEqual((start_op_call or {}).get("currency_code"), "EUR")
+
+        success_op_call = next((call for call in operational_calls if call.get("account_id") == "tt-acc-ok" and call.get("last_synced_at") is not None), None)
+        self.assertIsNotNone(success_op_call)
 
     def test_tiktok_sync_now_job_status_memory_first_and_db_fallback(self):
         user = AuthUser(email="admin@example.com", role="agency_owner")
@@ -1731,6 +1748,7 @@ class ServiceTests(unittest.TestCase):
         original_sync_client = tiktok_ads_api.tiktok_ads_service.sync_client
         original_update_status = tiktok_ads_api.sync_runs_store.update_sync_run_status
         original_sync_state_upsert = tiktok_ads_api.sync_state_store.upsert_sync_state
+        original_operational_update = tiktok_ads_api.client_registry_service.update_platform_account_operational_metadata
         try:
             tiktok_ads_api.backfill_job_store.set_running = lambda job_id: None
             tiktok_ads_api.backfill_job_store.set_done = lambda job_id, result: None
@@ -1738,6 +1756,7 @@ class ServiceTests(unittest.TestCase):
             tiktok_ads_api.tiktok_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
             tiktok_ads_api.sync_runs_store.update_sync_run_status = lambda **kwargs: status_calls.append(kwargs) or {"job_id": kwargs.get("job_id")}
             tiktok_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("sync_state unavailable"))
+            tiktok_ads_api.client_registry_service.update_platform_account_operational_metadata = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("operational metadata unavailable"))
 
             tiktok_ads_api._run_tiktok_sync_job("tt-job-state-fail", client_id=33, account_id="tt-acc-33")
         finally:
@@ -1747,6 +1766,7 @@ class ServiceTests(unittest.TestCase):
             tiktok_ads_api.tiktok_ads_service.sync_client = original_sync_client
             tiktok_ads_api.sync_runs_store.update_sync_run_status = original_update_status
             tiktok_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+            tiktok_ads_api.client_registry_service.update_platform_account_operational_metadata = original_operational_update
 
         self.assertTrue(any(call.get("job_id") == "tt-job-state-fail" and call.get("status") == "running" for call in status_calls))
         self.assertTrue(any(call.get("job_id") == "tt-job-state-fail" and call.get("status") == "done" for call in status_calls))
@@ -1754,6 +1774,7 @@ class ServiceTests(unittest.TestCase):
     def test_tiktok_sync_state_skips_when_account_id_missing(self):
         status_calls: list[dict[str, object]] = []
         sync_state_calls: list[dict[str, object]] = []
+        op_calls: list[dict[str, object]] = []
 
         original_set_running = tiktok_ads_api.backfill_job_store.set_running
         original_set_done = tiktok_ads_api.backfill_job_store.set_done
@@ -1761,6 +1782,7 @@ class ServiceTests(unittest.TestCase):
         original_sync_client = tiktok_ads_api.tiktok_ads_service.sync_client
         original_update_status = tiktok_ads_api.sync_runs_store.update_sync_run_status
         original_sync_state_upsert = tiktok_ads_api.sync_state_store.upsert_sync_state
+        original_operational_update = tiktok_ads_api.client_registry_service.update_platform_account_operational_metadata
         try:
             tiktok_ads_api.backfill_job_store.set_running = lambda job_id: None
             tiktok_ads_api.backfill_job_store.set_done = lambda job_id, result: None
@@ -1768,6 +1790,7 @@ class ServiceTests(unittest.TestCase):
             tiktok_ads_api.tiktok_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
             tiktok_ads_api.sync_runs_store.update_sync_run_status = lambda **kwargs: status_calls.append(kwargs) or {"job_id": kwargs.get("job_id")}
             tiktok_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: sync_state_calls.append(kwargs) or {"account_id": kwargs.get("account_id")}
+            tiktok_ads_api.client_registry_service.update_platform_account_operational_metadata = lambda **kwargs: op_calls.append(kwargs) or kwargs
 
             tiktok_ads_api._run_tiktok_sync_job("tt-job-no-account", client_id=44, account_id=None)
         finally:
@@ -1777,8 +1800,10 @@ class ServiceTests(unittest.TestCase):
             tiktok_ads_api.tiktok_ads_service.sync_client = original_sync_client
             tiktok_ads_api.sync_runs_store.update_sync_run_status = original_update_status
             tiktok_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+            tiktok_ads_api.client_registry_service.update_platform_account_operational_metadata = original_operational_update
 
         self.assertEqual(sync_state_calls, [])
+        self.assertEqual(op_calls, [])
         self.assertTrue(any(call.get("job_id") == "tt-job-no-account" and call.get("status") == "running" for call in status_calls))
         done_call = next((call for call in status_calls if call.get("job_id") == "tt-job-no-account" and call.get("status") == "done"), None)
         self.assertIsNotNone(done_call)
