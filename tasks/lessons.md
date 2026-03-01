@@ -111,3 +111,5 @@
 - 2026-03-01: Pentru prerequisite-uri async pe platforme noi (ex. Snapchat), respectă strict scope-ul memory-only (fără `sync_runs`/`sync_state`/fallback DB) până la taskul de paritate dedicat.
 
 - 2026-03-01: După prerequisite async memory-only pe o platformă, phase 1 real trebuie să reintroducă incremental doar `sync_runs` (create+lifecycle+status DB fallback), păstrând flow-ul existent și fără a adăuga `sync_state`/`sync_run_chunks` prematur.
+
+- 2026-03-01: În Snapchat phase 2 (part 1), adaugă `sync_state` strict local în runner (running/done/error) best-effort și păstrează convenția de fereastră sintetică `utc_today` fără fallback `client_id`->`account_id`.

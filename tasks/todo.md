@@ -863,3 +863,21 @@
 - Status endpoint-ul Snapchat este memory-first și cade în `sync_runs` la memory miss.
 - Pentru schema `sync_runs` folosesc fereastră sintetică minimă: `date_start=date_end=utc_today`, `chunk_days=1`.
 - Nu am introdus `sync_state` sau `sync_run_chunks` pentru Snapchat în acest task.
+
+
+---
+
+# TODO — Snapchat phase 2 (part 1): sync_state wiring minimal
+
+- [x] Adaug helper local best-effort pentru upsert în `sync_state` în runner-ul async Snapchat.
+- [x] Adaug upsert `running` la start procesare cont Snapchat.
+- [x] Adaug upsert `done` la succes (cu `last_successful_at` + `last_successful_date`).
+- [x] Adaug upsert `error` la eșec cu mesaj sigur/trunchiat.
+- [x] Păstrez identitatea canonică (`account_id` real Snapchat; la ambiguitate/lipsă omit upsert, fără fallback la `client_id`).
+- [x] Actualizez teste focalizate pentru start/succes/eroare, non-blocking la eșec DB și skip defensiv.
+
+## Review — Snapchat phase 2 (part 1)
+- `api/snapchat_ads.py` păstrează flow-ul async + `sync_runs` actual și adaugă local mirror `sync_state` best-effort.
+- `sync_state` este actualizat în runner la `running` / `done` / `error` cu valori canonice.
+- Pentru fereastra operațională sintetică se folosește `date_start=date_end=utc_today` și `last_successful_date=date_end` pe succes.
+- Nu am introdus `sync_run_chunks` și nu am schimbat shape-ul endpoint-urilor publice.
