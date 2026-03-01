@@ -99,3 +99,7 @@
 - 2026-03-01: În TikTok phase 2 (metadata operațională), actualizează `agency_platform_accounts` doar cu date de cont (status/currency/timezone/sync_start_date/last_synced_at) prin helperul existent și strict best-effort, fără să atingi statusurile de sync.
 - 2026-03-01: La cleanup final cross-platform, preferă alinierea locală a contextului de warning (operation/platform/job_id/account_id) și verificări țintite pentru constante/absența chunking-ului, fără refactor comun mare.
 - 2026-03-01: La rollout phase 1 pe Pinterest, păstrează patch-ul minim: `sync_runs` create+lifecycle și status memory-first cu fallback DB, fără `sync_run_chunks` dacă flow-ul nu are chunking real.
+
+- 2026-03-01: Când cerința spune "prerequisite minimal memory-only", nu extinde implementarea cu mirroring DB (`sync_runs`) sau fallback DB; livrează strict capabilitatea minimă cerută și validează explicit limita de scope.
+
+- 2026-03-01: Pentru Pinterest phase 2 incremental, adaugă `sync_state` strict local în runner-ul async, best-effort/non-blocking, cu `account_id` rezolvat canonic și skip defensiv la ambiguitate (fără fallback la `client_id`).

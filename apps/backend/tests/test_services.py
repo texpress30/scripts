@@ -1861,7 +1861,7 @@ class ServiceTests(unittest.TestCase):
         self.assertFalse(hasattr(meta_ads_api, "sync_run_chunks_store"))
         self.assertFalse(hasattr(tiktok_ads_api, "sync_run_chunks_store"))
 
-    def test_pinterest_ads_sync_now_async_mirrors_sync_run_create(self):
+    def test_pinterest_ads_sync_now_returns_queued_job_payload(self):
         user = AuthUser(email="admin@example.com", role="agency_owner")
         background_tasks = BackgroundTasks()
         captured: dict[str, object] = {}
@@ -1869,168 +1869,199 @@ class ServiceTests(unittest.TestCase):
         original_enforce = pinterest_ads_api.enforce_action_scope
         original_create = pinterest_ads_api.backfill_job_store.create
         original_add_task = background_tasks.add_task
-        original_mirror_create = pinterest_ads_api.sync_runs_store.create_sync_run
-        original_list_accounts = pinterest_ads_api.client_registry_service.list_client_platform_accounts
         try:
             pinterest_ads_api.enforce_action_scope = lambda **kwargs: None
             pinterest_ads_api.backfill_job_store.create = lambda payload: "pin-job-1"
-            pinterest_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "pin-acc-1"}]
-            background_tasks.add_task = lambda func, *args, **kwargs: captured.update({"task": getattr(func, "__name__", "")})
-            pinterest_ads_api.sync_runs_store.create_sync_run = lambda **kwargs: captured.update({"sync_run_payload": kwargs}) or {"job_id": kwargs.get("job_id")}
+            background_tasks.add_task = lambda func, *args, **kwargs: captured.update(
+                {
+                    "task": getattr(func, "__name__", ""),
+                    "task_args": args,
+                    "task_kwargs": kwargs,
+                }
+            )
 
             response = pinterest_ads_api.sync_pinterest_ads_now(
                 background_tasks=background_tasks,
                 user=user,
                 client_id=66,
-                async_mode=True,
             )
         finally:
             pinterest_ads_api.enforce_action_scope = original_enforce
             pinterest_ads_api.backfill_job_store.create = original_create
             background_tasks.add_task = original_add_task
-            pinterest_ads_api.sync_runs_store.create_sync_run = original_mirror_create
-            pinterest_ads_api.client_registry_service.list_client_platform_accounts = original_list_accounts
 
         self.assertEqual(response.get("status"), "queued")
         self.assertEqual(response.get("job_id"), "pin-job-1")
-        payload = captured.get("sync_run_payload") or {}
-        self.assertEqual(payload.get("platform"), "pinterest_ads")
-        self.assertEqual(payload.get("status"), "queued")
-        self.assertEqual(payload.get("client_id"), 66)
-        self.assertEqual(payload.get("account_id"), "pin-acc-1")
+        self.assertEqual(response.get("client_id"), 66)
+        self.assertEqual(response.get("platform"), "pinterest_ads")
+        self.assertEqual(captured.get("task"), "_run_pinterest_sync_job")
 
-    def test_pinterest_backfill_runner_updates_sync_runs_running_done_and_error(self):
-        status_calls: list[dict[str, object]] = []
+    def test_pinterest_backfill_runner_updates_memory_job_success_and_error(self):
+        captured_calls: list[tuple[str, dict[str, object]]] = []
+        sync_state_calls: list[dict[str, object]] = []
 
         original_set_running = pinterest_ads_api.backfill_job_store.set_running
         original_set_done = pinterest_ads_api.backfill_job_store.set_done
         original_set_error = pinterest_ads_api.backfill_job_store.set_error
         original_sync_client = pinterest_ads_api.pinterest_ads_service.sync_client
-        original_update_status = pinterest_ads_api.sync_runs_store.update_sync_run_status
+        original_sync_state_upsert = pinterest_ads_api.sync_state_store.upsert_sync_state
+        original_list_accounts = pinterest_ads_api.client_registry_service.list_client_platform_accounts
         try:
-            pinterest_ads_api.backfill_job_store.set_running = lambda job_id: None
-            pinterest_ads_api.backfill_job_store.set_done = lambda job_id, result: None
-            pinterest_ads_api.backfill_job_store.set_error = lambda job_id, error: None
+            pinterest_ads_api.backfill_job_store.set_running = lambda job_id: captured_calls.append(("running", {"job_id": job_id}))
+            pinterest_ads_api.backfill_job_store.set_done = lambda job_id, result: captured_calls.append(("done", {"job_id": job_id, "result": result}))
+            pinterest_ads_api.backfill_job_store.set_error = lambda job_id, error: captured_calls.append(("error", {"job_id": job_id, "error": error}))
+            pinterest_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: sync_state_calls.append(kwargs) or {"ok": True}
+            pinterest_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "pin-acc-21"}] if int(kwargs.get("client_id") or 0) == 21 else [{"id": "pin-acc-22"}]
+
             pinterest_ads_api.pinterest_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
-            pinterest_ads_api.sync_runs_store.update_sync_run_status = lambda **kwargs: status_calls.append(kwargs) or {"job_id": kwargs.get("job_id")}
+            pinterest_ads_api._run_pinterest_sync_job("pin-job-ok", client_id=21)
 
-            pinterest_ads_api._run_pinterest_sync_job("pin-job-ok", client_id=21, account_id="pin-acc-ok")
+            def failing_sync(*args, **kwargs):
+                raise RuntimeError("x" * 400)
 
-            def boom_sync(*args, **kwargs):
-                raise RuntimeError("pinterest down")
-
-            pinterest_ads_api.pinterest_ads_service.sync_client = boom_sync
-            pinterest_ads_api._run_pinterest_sync_job("pin-job-fail", client_id=22, account_id="pin-acc-fail")
+            pinterest_ads_api.pinterest_ads_service.sync_client = failing_sync
+            pinterest_ads_api._run_pinterest_sync_job("pin-job-fail", client_id=22)
         finally:
             pinterest_ads_api.backfill_job_store.set_running = original_set_running
             pinterest_ads_api.backfill_job_store.set_done = original_set_done
             pinterest_ads_api.backfill_job_store.set_error = original_set_error
             pinterest_ads_api.pinterest_ads_service.sync_client = original_sync_client
-            pinterest_ads_api.sync_runs_store.update_sync_run_status = original_update_status
-
-        self.assertTrue(any(call.get("job_id") == "pin-job-ok" and call.get("status") == "running" for call in status_calls))
-        done_call = next((call for call in status_calls if call.get("job_id") == "pin-job-ok" and call.get("status") == "done"), None)
-        self.assertIsNotNone(done_call)
-        self.assertEqual(((done_call or {}).get("metadata") or {}).get("account_id"), "pin-acc-ok")
-        self.assertTrue(any(call.get("job_id") == "pin-job-fail" and call.get("status") == "error" for call in status_calls))
-
-    def test_pinterest_sync_now_job_status_memory_first_and_db_fallback(self):
-        user = AuthUser(email="admin@example.com", role="agency_owner")
-
-        original_enforce = pinterest_ads_api.enforce_action_scope
-        original_memory_get = pinterest_ads_api.backfill_job_store.get
-        original_db_get = pinterest_ads_api.sync_runs_store.get_sync_run
-        try:
-            pinterest_ads_api.enforce_action_scope = lambda **kwargs: None
-            pinterest_ads_api.backfill_job_store.get = lambda job_id: {"status": "running", "source": "memory"}
-            pinterest_ads_api.sync_runs_store.get_sync_run = lambda job_id: {"job_id": job_id, "status": "done"}
-            memory_response = pinterest_ads_api.sync_now_job_status("pin-memory", user=user)
-
-            pinterest_ads_api.backfill_job_store.get = lambda job_id: None
-            pinterest_ads_api.sync_runs_store.get_sync_run = lambda job_id: {
-                "job_id": job_id,
-                "platform": "pinterest_ads",
-                "status": "done",
-                "client_id": 66,
-                "account_id": "pin-acc-66",
-                "date_start": "2026-01-01",
-                "date_end": "2026-01-31",
-                "chunk_days": 1,
-                "created_at": "2026-03-01T00:00:01+00:00",
-                "updated_at": "2026-03-01T00:00:10+00:00",
-                "started_at": "2026-03-01T00:00:03+00:00",
-                "finished_at": "2026-03-01T00:00:09+00:00",
-                "error": None,
-                "metadata": {},
-            }
-            db_response = pinterest_ads_api.sync_now_job_status("pin-db", user=user)
-
-            pinterest_ads_api.sync_runs_store.get_sync_run = lambda job_id: None
-            with self.assertRaises(pinterest_ads_api.HTTPException) as ctx:
-                pinterest_ads_api.sync_now_job_status("pin-missing", user=user)
-        finally:
-            pinterest_ads_api.enforce_action_scope = original_enforce
-            pinterest_ads_api.backfill_job_store.get = original_memory_get
-            pinterest_ads_api.sync_runs_store.get_sync_run = original_db_get
-
-        self.assertEqual(memory_response.get("source"), "memory")
-        self.assertEqual(db_response.get("job_id"), "pin-db")
-        self.assertEqual(db_response.get("account_id"), "pin-acc-66")
-        self.assertEqual(ctx.exception.status_code, 404)
-
-    def test_pinterest_sync_now_job_status_db_error_is_non_blocking(self):
-        user = AuthUser(email="admin@example.com", role="agency_owner")
-
-        original_enforce = pinterest_ads_api.enforce_action_scope
-        original_memory_get = pinterest_ads_api.backfill_job_store.get
-        original_db_get = pinterest_ads_api.sync_runs_store.get_sync_run
-        try:
-            pinterest_ads_api.enforce_action_scope = lambda **kwargs: None
-            pinterest_ads_api.backfill_job_store.get = lambda job_id: None
-            pinterest_ads_api.sync_runs_store.get_sync_run = lambda job_id: (_ for _ in ()).throw(RuntimeError("db unavailable"))
-            with self.assertRaises(pinterest_ads_api.HTTPException) as ctx:
-                pinterest_ads_api.sync_now_job_status("pin-db-error", user=user)
-        finally:
-            pinterest_ads_api.enforce_action_scope = original_enforce
-            pinterest_ads_api.backfill_job_store.get = original_memory_get
-            pinterest_ads_api.sync_runs_store.get_sync_run = original_db_get
-
-        self.assertEqual(ctx.exception.status_code, 404)
-
-    def test_pinterest_sync_now_async_does_not_use_client_id_as_account_id_when_ambiguous(self):
-        user = AuthUser(email="admin@example.com", role="agency_owner")
-        background_tasks = BackgroundTasks()
-        captured: dict[str, object] = {}
-
-        original_enforce = pinterest_ads_api.enforce_action_scope
-        original_create = pinterest_ads_api.backfill_job_store.create
-        original_add_task = background_tasks.add_task
-        original_mirror_create = pinterest_ads_api.sync_runs_store.create_sync_run
-        original_list_accounts = pinterest_ads_api.client_registry_service.list_client_platform_accounts
-        try:
-            pinterest_ads_api.enforce_action_scope = lambda **kwargs: None
-            pinterest_ads_api.backfill_job_store.create = lambda payload: "pin-job-amb"
-            pinterest_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "pin-1"}, {"id": "pin-2"}]
-            background_tasks.add_task = lambda func, *args, **kwargs: captured.update({"task": getattr(func, "__name__", "")})
-            pinterest_ads_api.sync_runs_store.create_sync_run = lambda **kwargs: captured.update({"sync_run_payload": kwargs}) or {"job_id": kwargs.get("job_id")}
-
-            response = pinterest_ads_api.sync_pinterest_ads_now(
-                background_tasks=background_tasks,
-                user=user,
-                client_id=99,
-                async_mode=True,
-            )
-        finally:
-            pinterest_ads_api.enforce_action_scope = original_enforce
-            pinterest_ads_api.backfill_job_store.create = original_create
-            background_tasks.add_task = original_add_task
-            pinterest_ads_api.sync_runs_store.create_sync_run = original_mirror_create
+            pinterest_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
             pinterest_ads_api.client_registry_service.list_client_platform_accounts = original_list_accounts
 
-        self.assertEqual(response.get("status"), "queued")
-        payload = captured.get("sync_run_payload") or {}
-        self.assertIsNone(payload.get("account_id"))
-        self.assertNotEqual(payload.get("account_id"), "99")
+        running_calls = [payload for event, payload in captured_calls if event == "running"]
+        done_calls = [payload for event, payload in captured_calls if event == "done"]
+        error_calls = [payload for event, payload in captured_calls if event == "error"]
+
+        self.assertTrue(any(call.get("job_id") == "pin-job-ok" for call in running_calls))
+        self.assertTrue(any(call.get("job_id") == "pin-job-fail" for call in running_calls))
+        self.assertEqual(done_calls[0].get("job_id"), "pin-job-ok")
+        done_result = done_calls[0].get("result") if isinstance(done_calls[0].get("result"), dict) else {}
+        self.assertEqual(done_result.get("status"), "done")
+        self.assertEqual(done_result.get("platform"), "pinterest_ads")
+        self.assertEqual(done_result.get("client_id"), 21)
+        self.assertEqual(done_result.get("result"), {"status": "ok", "client_id": 21})
+        self.assertEqual(error_calls[0].get("job_id"), "pin-job-fail")
+        self.assertEqual(len(str(error_calls[0].get("error") or "")), 300)
+
+        running_state_ok = next((call for call in sync_state_calls if call.get("last_job_id") == "pin-job-ok" and call.get("last_status") == "running"), None)
+        done_state_ok = next((call for call in sync_state_calls if call.get("last_job_id") == "pin-job-ok" and call.get("last_status") == "done"), None)
+        running_state_fail = next((call for call in sync_state_calls if call.get("last_job_id") == "pin-job-fail" and call.get("last_status") == "running"), None)
+        error_state_fail = next((call for call in sync_state_calls if call.get("last_job_id") == "pin-job-fail" and call.get("last_status") == "error"), None)
+        self.assertIsNotNone(running_state_ok)
+        self.assertIsNotNone(done_state_ok)
+        self.assertIsNotNone(running_state_fail)
+        self.assertIsNotNone(error_state_fail)
+        self.assertEqual((running_state_ok or {}).get("account_id"), "pin-acc-21")
+        self.assertEqual((done_state_ok or {}).get("account_id"), "pin-acc-21")
+        self.assertEqual((error_state_fail or {}).get("account_id"), "pin-acc-22")
+        self.assertEqual((running_state_ok or {}).get("grain"), "account_daily")
+        self.assertIsNone((done_state_ok or {}).get("error"))
+        self.assertIsNotNone((done_state_ok or {}).get("last_successful_at"))
+        self.assertIsNotNone((done_state_ok or {}).get("last_successful_date"))
+        self.assertTrue(str((done_state_ok or {}).get("last_successful_date")).count("-") == 2)
+        self.assertTrue(len(str((error_state_fail or {}).get("error") or "")) == 300)
+
+    def test_pinterest_sync_state_upsert_failure_is_non_blocking(self):
+        captured_calls: list[tuple[str, dict[str, object]]] = []
+
+        original_set_running = pinterest_ads_api.backfill_job_store.set_running
+        original_set_done = pinterest_ads_api.backfill_job_store.set_done
+        original_sync_client = pinterest_ads_api.pinterest_ads_service.sync_client
+        original_sync_state_upsert = pinterest_ads_api.sync_state_store.upsert_sync_state
+        original_list_accounts = pinterest_ads_api.client_registry_service.list_client_platform_accounts
+        try:
+            pinterest_ads_api.backfill_job_store.set_running = lambda job_id: captured_calls.append(("running", {"job_id": job_id}))
+            pinterest_ads_api.backfill_job_store.set_done = lambda job_id, result: captured_calls.append(("done", {"job_id": job_id, "result": result}))
+            pinterest_ads_api.pinterest_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
+            pinterest_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("db unavailable"))
+            pinterest_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "pin-acc-7"}]
+
+            pinterest_ads_api._run_pinterest_sync_job("pin-job-state-fail", client_id=7)
+        finally:
+            pinterest_ads_api.backfill_job_store.set_running = original_set_running
+            pinterest_ads_api.backfill_job_store.set_done = original_set_done
+            pinterest_ads_api.pinterest_ads_service.sync_client = original_sync_client
+            pinterest_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+            pinterest_ads_api.client_registry_service.list_client_platform_accounts = original_list_accounts
+
+        self.assertTrue(any(event == "running" and payload.get("job_id") == "pin-job-state-fail" for event, payload in captured_calls))
+        self.assertTrue(any(event == "done" and payload.get("job_id") == "pin-job-state-fail" for event, payload in captured_calls))
+
+    def test_pinterest_sync_state_skips_upsert_when_account_id_is_ambiguous(self):
+        original_set_running = pinterest_ads_api.backfill_job_store.set_running
+        original_set_done = pinterest_ads_api.backfill_job_store.set_done
+        original_sync_client = pinterest_ads_api.pinterest_ads_service.sync_client
+        original_sync_state_upsert = pinterest_ads_api.sync_state_store.upsert_sync_state
+        original_list_accounts = pinterest_ads_api.client_registry_service.list_client_platform_accounts
+        try:
+            pinterest_ads_api.backfill_job_store.set_running = lambda job_id: None
+            pinterest_ads_api.backfill_job_store.set_done = lambda job_id, result: None
+            pinterest_ads_api.pinterest_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
+
+            sync_state_calls: list[dict[str, object]] = []
+            pinterest_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: sync_state_calls.append(kwargs) or {"ok": True}
+            pinterest_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "pin-a"}, {"id": "pin-b"}]
+
+            pinterest_ads_api._run_pinterest_sync_job("pin-job-amb", client_id=99)
+        finally:
+            pinterest_ads_api.backfill_job_store.set_running = original_set_running
+            pinterest_ads_api.backfill_job_store.set_done = original_set_done
+            pinterest_ads_api.pinterest_ads_service.sync_client = original_sync_client
+            pinterest_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+            pinterest_ads_api.client_registry_service.list_client_platform_accounts = original_list_accounts
+
+        self.assertEqual(sync_state_calls, [])
+
+    def test_pinterest_sync_now_job_status_memory_only(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+
+        original_enforce = pinterest_ads_api.enforce_action_scope
+        original_memory_get = pinterest_ads_api.backfill_job_store.get
+        try:
+            pinterest_ads_api.enforce_action_scope = lambda **kwargs: None
+            pinterest_ads_api.backfill_job_store.get = lambda job_id: {"job_id": job_id, "status": "running"} if job_id == "pin-job" else None
+
+            existing = pinterest_ads_api.sync_now_job_status("pin-job", user=user)
+
+            with self.assertRaises(pinterest_ads_api.HTTPException) as ctx:
+                pinterest_ads_api.sync_now_job_status("missing", user=user)
+        finally:
+            pinterest_ads_api.enforce_action_scope = original_enforce
+            pinterest_ads_api.backfill_job_store.get = original_memory_get
+
+        self.assertEqual(existing.get("job_id"), "pin-job")
+        self.assertEqual(existing.get("status"), "running")
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_pinterest_legacy_sync_endpoint_still_calls_service(self):
+        user = AuthUser(email="owner@example.com", role="agency_owner")
+
+        original_enforce = pinterest_ads_api.enforce_action_scope
+        original_rate_check = pinterest_ads_api.rate_limiter_service.check
+        original_sync_client = pinterest_ads_api.pinterest_ads_service.sync_client
+        original_audit_log = pinterest_ads_api.audit_log_service.log
+        original_metrics_increment = pinterest_ads_api.pinterest_sync_metrics.increment
+        original_metrics_snapshot = pinterest_ads_api.pinterest_sync_metrics.snapshot
+        try:
+            pinterest_ads_api.enforce_action_scope = lambda **kwargs: None
+            pinterest_ads_api.rate_limiter_service.check = lambda *args, **kwargs: None
+            pinterest_ads_api.pinterest_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id, "attempts": 1}
+            pinterest_ads_api.audit_log_service.log = lambda **kwargs: None
+            pinterest_ads_api.pinterest_sync_metrics.increment = lambda *args, **kwargs: None
+            pinterest_ads_api.pinterest_sync_metrics.snapshot = lambda: {"sync_succeeded": 1}
+
+            response = pinterest_ads_api.sync_pinterest_ads(client_id=55, user=user)
+        finally:
+            pinterest_ads_api.enforce_action_scope = original_enforce
+            pinterest_ads_api.rate_limiter_service.check = original_rate_check
+            pinterest_ads_api.pinterest_ads_service.sync_client = original_sync_client
+            pinterest_ads_api.audit_log_service.log = original_audit_log
+            pinterest_ads_api.pinterest_sync_metrics.increment = original_metrics_increment
+            pinterest_ads_api.pinterest_sync_metrics.snapshot = original_metrics_snapshot
+
+        self.assertEqual(response.get("status"), "ok")
+        self.assertEqual(response.get("client_id"), 55)
 
     def test_google_sync_now_job_status_db_error_is_non_blocking(self):
         user = AuthUser(email="admin@example.com", role="agency_owner")
