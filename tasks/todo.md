@@ -632,3 +632,19 @@
 - Toate operațiile DB mirror/read sunt best-effort cu warning și fără blocarea flow-ului principal Meta.
 - Nu am introdus `sync_run_chunks` pentru Meta în acest task (flow-ul Meta implementat aici nu are chunking date-range separat).
 
+---
+
+# TODO — Meta phase 2 (part 1): sync_state mirror per account (best-effort)
+
+- [x] Identific punctul minim din runner-ul Meta async pentru wiring per account fără refactor mare.
+- [x] Adaug helper local best-effort pentru `sync_state_store.upsert_sync_state(...)` în `api/meta_ads.py`.
+- [x] Fac upsert `sync_state` la start/succes/eroare per cont Meta cu constante canonice (platform/grain/status).
+- [x] Mențin comportamentul endpoint-urilor neschimbat (fără response shape changes).
+- [x] Adaug teste backend focalizate pentru running/done/error și pentru non-blocking la eșec de upsert `sync_state`.
+
+## Review — Meta phase 2 (part 1)
+- În `api/meta_ads.py` am adăugat `_mirror_meta_sync_state_upsert(...)` și l-am conectat în runner-ul Meta la start (`running`), succes (`done`) și eroare (`error`) per cont.
+- Upsert-urile în `sync_state` sunt strict best-effort: la excepții se loghează warning cu context minim și flow-ul jobului continuă.
+- Valorile canonice folosite sunt `PLATFORM_META_ADS`, `SYNC_GRAIN_ACCOUNT_DAILY`, respectiv statusurile canonice `running/done/error`.
+- Endpoint-urile și status flow-ul Meta rămân neschimbate; patch-ul este local și tranzitoriu.
+

@@ -1352,18 +1352,21 @@ class ServiceTests(unittest.TestCase):
 
     def test_meta_backfill_runner_updates_sync_runs_running_done_and_error(self):
         status_calls: list[dict[str, object]] = []
+        sync_state_calls: list[dict[str, object]] = []
 
         original_set_running = meta_ads_api.backfill_job_store.set_running
         original_set_done = meta_ads_api.backfill_job_store.set_done
         original_set_error = meta_ads_api.backfill_job_store.set_error
         original_sync_client = meta_ads_api.meta_ads_service.sync_client
         original_update_status = meta_ads_api.sync_runs_store.update_sync_run_status
+        original_sync_state_upsert = meta_ads_api.sync_state_store.upsert_sync_state
         try:
             meta_ads_api.backfill_job_store.set_running = lambda job_id: None
             meta_ads_api.backfill_job_store.set_done = lambda job_id, result: None
             meta_ads_api.backfill_job_store.set_error = lambda job_id, error: None
             meta_ads_api.meta_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
             meta_ads_api.sync_runs_store.update_sync_run_status = lambda **kwargs: status_calls.append(kwargs) or {"job_id": kwargs.get("job_id")}
+            meta_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: sync_state_calls.append(kwargs) or {"account_id": kwargs.get("account_id")}
 
             meta_ads_api._run_meta_sync_job("meta-job-ok", client_id=7)
 
@@ -1378,11 +1381,30 @@ class ServiceTests(unittest.TestCase):
             meta_ads_api.backfill_job_store.set_error = original_set_error
             meta_ads_api.meta_ads_service.sync_client = original_sync_client
             meta_ads_api.sync_runs_store.update_sync_run_status = original_update_status
+            meta_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
 
         self.assertTrue(any(call.get("job_id") == "meta-job-ok" and call.get("status") == "running" for call in status_calls))
         self.assertTrue(any(call.get("job_id") == "meta-job-ok" and call.get("status") == "done" for call in status_calls))
         self.assertTrue(any(call.get("job_id") == "meta-job-fail" and call.get("status") == "running" for call in status_calls))
         self.assertTrue(any(call.get("job_id") == "meta-job-fail" and call.get("status") == "error" for call in status_calls))
+
+        running_call = next((call for call in sync_state_calls if call.get("last_job_id") == "meta-job-ok" and call.get("last_status") == "running"), None)
+        self.assertIsNotNone(running_call)
+        self.assertEqual((running_call or {}).get("platform"), "meta_ads")
+        self.assertEqual((running_call or {}).get("account_id"), "7")
+        self.assertEqual((running_call or {}).get("grain"), "account_daily")
+        self.assertEqual((running_call or {}).get("error"), None)
+
+        done_call = next((call for call in sync_state_calls if call.get("last_job_id") == "meta-job-ok" and call.get("last_status") == "done"), None)
+        self.assertIsNotNone(done_call)
+        self.assertIsNotNone((done_call or {}).get("last_successful_at"))
+        self.assertIsNotNone((done_call or {}).get("last_successful_date"))
+        self.assertEqual((done_call or {}).get("error"), None)
+
+        error_call = next((call for call in sync_state_calls if call.get("last_job_id") == "meta-job-fail" and call.get("last_status") == "error"), None)
+        self.assertIsNotNone(error_call)
+        self.assertEqual((error_call or {}).get("account_id"), "8")
+        self.assertTrue("meta down" in str((error_call or {}).get("error") or ""))
 
     def test_meta_sync_now_job_status_memory_first_and_db_fallback(self):
         user = AuthUser(email="admin@example.com", role="agency_owner")
@@ -1446,6 +1468,35 @@ class ServiceTests(unittest.TestCase):
             meta_ads_api.sync_runs_store.get_sync_run = original_db_get
 
         self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_meta_sync_state_upsert_failures_are_non_blocking(self):
+        status_calls: list[dict[str, object]] = []
+
+        original_set_running = meta_ads_api.backfill_job_store.set_running
+        original_set_done = meta_ads_api.backfill_job_store.set_done
+        original_set_error = meta_ads_api.backfill_job_store.set_error
+        original_sync_client = meta_ads_api.meta_ads_service.sync_client
+        original_update_status = meta_ads_api.sync_runs_store.update_sync_run_status
+        original_sync_state_upsert = meta_ads_api.sync_state_store.upsert_sync_state
+        try:
+            meta_ads_api.backfill_job_store.set_running = lambda job_id: None
+            meta_ads_api.backfill_job_store.set_done = lambda job_id, result: None
+            meta_ads_api.backfill_job_store.set_error = lambda job_id, error: None
+            meta_ads_api.meta_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
+            meta_ads_api.sync_runs_store.update_sync_run_status = lambda **kwargs: status_calls.append(kwargs) or {"job_id": kwargs.get("job_id")}
+            meta_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("sync_state unavailable"))
+
+            meta_ads_api._run_meta_sync_job("meta-job-state-fail", client_id=99)
+        finally:
+            meta_ads_api.backfill_job_store.set_running = original_set_running
+            meta_ads_api.backfill_job_store.set_done = original_set_done
+            meta_ads_api.backfill_job_store.set_error = original_set_error
+            meta_ads_api.meta_ads_service.sync_client = original_sync_client
+            meta_ads_api.sync_runs_store.update_sync_run_status = original_update_status
+            meta_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+
+        self.assertTrue(any(call.get("job_id") == "meta-job-state-fail" and call.get("status") == "running" for call in status_calls))
+        self.assertTrue(any(call.get("job_id") == "meta-job-state-fail" and call.get("status") == "done" for call in status_calls))
 
     def test_google_sync_now_job_status_db_error_is_non_blocking(self):
         user = AuthUser(email="admin@example.com", role="agency_owner")

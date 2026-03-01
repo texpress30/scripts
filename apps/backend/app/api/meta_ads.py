@@ -9,19 +9,32 @@ from app.services.auth import AuthUser
 from app.services.meta_ads import MetaAdsIntegrationError, meta_ads_service
 from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
 from app.services.sync_engine import backfill_job_store
+from app.services.sync_state_store import sync_state_store
 from app.services.sync_runs_store import sync_runs_store
-from app.services.sync_constants import PLATFORM_META_ADS, SYNC_STATUS_DONE, SYNC_STATUS_ERROR, SYNC_STATUS_QUEUED, SYNC_STATUS_RUNNING
+from app.services.sync_constants import PLATFORM_META_ADS, SYNC_GRAIN_ACCOUNT_DAILY, SYNC_STATUS_DONE, SYNC_STATUS_ERROR, SYNC_STATUS_QUEUED, SYNC_STATUS_RUNNING
 
 router = APIRouter(prefix="/integrations/meta-ads", tags=["meta-ads"])
 logger = logging.getLogger(__name__)
 
 
-def _log_best_effort_warning(*, operation: str, error: Exception, job_id: str | None = None, status_value: str | None = None) -> None:
+def _log_best_effort_warning(
+    *,
+    operation: str,
+    error: Exception,
+    job_id: str | None = None,
+    status_value: str | None = None,
+    platform: str | None = None,
+    account_id: str | None = None,
+    grain: str | None = None,
+) -> None:
     logger.warning(
-        "best_effort_op_failed operation=%s job_id=%s status=%s error=%s",
+        "best_effort_op_failed operation=%s job_id=%s status=%s platform=%s account_id=%s grain=%s error=%s",
         operation,
         job_id,
         status_value,
+        platform,
+        account_id,
+        grain,
         str(error)[:300],
     )
 
@@ -57,12 +70,69 @@ def _mirror_sync_run_status(*, job_id: str, status_value: str, error: str | None
         _log_best_effort_warning(operation="sync_runs_status", error=exc, job_id=job_id, status_value=status_value)
 
 
+def _mirror_meta_sync_state_upsert(
+    *,
+    job_id: str,
+    account_id: str,
+    last_status: str,
+    last_attempted_at: datetime,
+    date_end: date,
+    error: str | None = None,
+    last_successful_at: datetime | None = None,
+    metadata: dict[str, object] | None = None,
+) -> None:
+    try:
+        sync_state_store.upsert_sync_state(
+            platform=PLATFORM_META_ADS,
+            account_id=account_id,
+            grain=SYNC_GRAIN_ACCOUNT_DAILY,
+            last_status=last_status,
+            last_job_id=job_id,
+            last_attempted_at=last_attempted_at,
+            last_successful_at=last_successful_at,
+            last_successful_date=date_end if last_successful_at is not None else None,
+            error=error,
+            metadata=metadata or {},
+        )
+    except Exception as exc:  # noqa: BLE001
+        _log_best_effort_warning(
+            operation="sync_state_upsert",
+            error=exc,
+            job_id=job_id,
+            status_value=last_status,
+            platform=PLATFORM_META_ADS,
+            account_id=account_id,
+            grain=SYNC_GRAIN_ACCOUNT_DAILY,
+        )
+
+
 def _run_meta_sync_job(job_id: str, *, client_id: int) -> None:
     backfill_job_store.set_running(job_id)
     _mirror_sync_run_status(job_id=job_id, status_value=SYNC_STATUS_RUNNING, mark_started=True)
 
+    today = datetime.utcnow().date()
+    date_start = today - timedelta(days=30)
+    date_end = today
+    meta_account_id = str(client_id)
+    sync_state_metadata = {
+        "client_id": int(client_id),
+        "date_start": date_start.isoformat(),
+        "date_end": date_end.isoformat(),
+        "job_type": "sync",
+    }
+    _mirror_meta_sync_state_upsert(
+        job_id=job_id,
+        account_id=meta_account_id,
+        last_status=SYNC_STATUS_RUNNING,
+        last_attempted_at=datetime.utcnow(),
+        date_end=date_end,
+        error=None,
+        metadata=sync_state_metadata,
+    )
+
     try:
         snapshot = meta_ads_service.sync_client(client_id=client_id)
+        success_now = datetime.utcnow()
         payload = {
             "status": SYNC_STATUS_DONE,
             "job_id": job_id,
@@ -70,6 +140,16 @@ def _run_meta_sync_job(job_id: str, *, client_id: int) -> None:
             "result": snapshot,
         }
         backfill_job_store.set_done(job_id, result=payload)
+        _mirror_meta_sync_state_upsert(
+            job_id=job_id,
+            account_id=meta_account_id,
+            last_status=SYNC_STATUS_DONE,
+            last_attempted_at=success_now,
+            last_successful_at=success_now,
+            date_end=date_end,
+            error=None,
+            metadata=sync_state_metadata,
+        )
         _mirror_sync_run_status(
             job_id=job_id,
             status_value=SYNC_STATUS_DONE,
@@ -79,6 +159,15 @@ def _run_meta_sync_job(job_id: str, *, client_id: int) -> None:
     except Exception as exc:  # noqa: BLE001
         safe_error = str(exc)[:300]
         backfill_job_store.set_error(job_id, error=safe_error)
+        _mirror_meta_sync_state_upsert(
+            job_id=job_id,
+            account_id=meta_account_id,
+            last_status=SYNC_STATUS_ERROR,
+            last_attempted_at=datetime.utcnow(),
+            date_end=date_end,
+            error=safe_error,
+            metadata=sync_state_metadata,
+        )
         _mirror_sync_run_status(job_id=job_id, status_value=SYNC_STATUS_ERROR, error=safe_error, mark_finished=True)
 
 
