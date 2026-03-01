@@ -599,3 +599,19 @@
 - Eșecurile de update metadata sunt non-blocking: warning în log, fără a opri contul/jobul Google.
 - Am adăugat teste focalizate pentru apelurile de început+succes și pentru non-blocking la eroare de update metadata.
 
+
+---
+
+# TODO — Standardizare valori canonice + cleanup logging best-effort în flow-ul Google
+
+- [x] Introduc constante canonice comune pentru platform/grain/statusuri într-un loc unic și mic.
+- [x] Înlocuiesc string-urile repetitive din `api/google_ads.py` cu constantele canonice, fără schimbare de semantică.
+- [x] Unific warning-urile best-effort printr-un helper comun de logging cu context consistent.
+- [x] Rulez teste backend focalizate pentru flow-urile Google relevante (create job, runner success/error, status fallback/chunks) și verific că behavior-ul rămâne neschimbat.
+
+## Review — Standardizare valori canonice + cleanup logging best-effort în flow-ul Google
+- Am adăugat `apps/backend/app/services/sync_constants.py` cu valori canonice pentru `google_ads`, `account_daily` și statusurile `queued/running/done/error`.
+- În `apps/backend/app/api/google_ads.py` am înlocuit literal-ele repetitive pentru platform/grain/status în flow-ul job create, runner, sync_state, sync_run_chunks și status fallback mapping.
+- Am introdus helperul `_log_best_effort_warning(...)` și l-am folosit consecvent în toate path-urile best-effort (`sync_runs_create`, `sync_runs_status`, `sync_run_chunks_create`, `sync_state_upsert`, `platform_account_metadata_update`, read fallback-uri).
+- Nu am schimbat endpoint-uri publice, response shapes sau ordinea logicii jobului; patch-ul este cleanup + standardization only.
+

@@ -89,3 +89,4 @@
 - 2026-03-01: Pentru taskuri strict de migrație metadata pe tabele existente, livrează doar ALTER TABLE + indexuri minime idempotente, fără wiring sau update de date în același pas.
 - 2026-03-01: Pentru extinderi operaționale pe tabele existente din client_registry, folosește helper de update parțial cu sentință explicită (doar câmpurile furnizate), schema-check read-only și fără DDL runtime/wiring prematur.
 - 2026-03-01: Pentru wiring gradual între sync flow și agency_platform_accounts, actualizează metadata operațională strict best-effort în puncte simple (start/success), fără să reutilizezi coloana status ca job-state.
+- 2026-03-01: În taskuri de cleanup final, extrage valorile canonice (platform/grain/status) în constante comune și uniformizează logging-ul best-effort, fără a modifica contractele publice sau fluxul logic.

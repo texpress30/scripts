@@ -13,9 +13,22 @@ from app.services.sync_engine import backfill_job_store
 from app.services.sync_run_chunks_store import sync_run_chunks_store
 from app.services.sync_runs_store import sync_runs_store
 from app.services.sync_state_store import sync_state_store
+from app.services.sync_constants import PLATFORM_GOOGLE_ADS, SYNC_GRAIN_ACCOUNT_DAILY, SYNC_STATUS_DONE, SYNC_STATUS_ERROR, SYNC_STATUS_QUEUED, SYNC_STATUS_RUNNING
 
 router = APIRouter(prefix="/integrations/google-ads", tags=["google-ads"])
 logger = logging.getLogger(__name__)
+
+
+def _log_best_effort_warning(*, operation: str, error: Exception, job_id: str | None = None, account_id: str | None = None, status_value: str | None = None, grain: str | None = None) -> None:
+    logger.warning(
+        "best_effort_op_failed operation=%s job_id=%s account_id=%s status=%s grain=%s error=%s",
+        operation,
+        job_id,
+        account_id,
+        status_value,
+        grain,
+        str(error)[:300],
+    )
 
 
 def _mask_customer_id(customer_id: str) -> str:
@@ -39,7 +52,7 @@ def _mirror_sync_run_create(*, job_id: str, platform: str, status: str, client_i
             metadata=metadata or {},
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("sync_runs mirror write failed for google_ads job_id=%s error=%s", job_id, str(exc)[:300])
+        _log_best_effort_warning(operation="sync_runs_create", error=exc, job_id=job_id)
 
 
 def _mirror_sync_run_status(*, job_id: str, status: str, error: str | None = None, mark_started: bool = False, mark_finished: bool = False, metadata: dict[str, object] | None = None) -> None:
@@ -53,7 +66,7 @@ def _mirror_sync_run_status(*, job_id: str, status: str, error: str | None = Non
             metadata=metadata,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("sync_runs mirror status update failed for google_ads job_id=%s status=%s error=%s", job_id, status, str(exc)[:300])
+        _log_best_effort_warning(operation="sync_runs_status", error=exc, job_id=job_id, status_value=status)
 
 
 def _build_job_date_chunks(*, date_start: date, date_end: date, chunk_days: int) -> list[tuple[int, date, date]]:
@@ -78,7 +91,7 @@ def _mirror_sync_run_chunks_create(*, job_id: str, date_start: date, date_end: d
             sync_run_chunks_store.create_sync_run_chunk(
                 job_id=job_id,
                 chunk_index=int(chunk_index),
-                status="queued",
+                status=SYNC_STATUS_QUEUED,
                 date_start=chunk_start,
                 date_end=chunk_end,
                 metadata={
@@ -88,7 +101,7 @@ def _mirror_sync_run_chunks_create(*, job_id: str, date_start: date, date_end: d
                 },
             )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("sync_run_chunks mirror write failed for google_ads job_id=%s error=%s", job_id, str(exc)[:300])
+        _log_best_effort_warning(operation="sync_run_chunks_create", error=exc, job_id=job_id)
 
 
 @router.get("/status")
@@ -100,9 +113,9 @@ def google_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, o
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
     status_payload = google_ads_service.integration_status()
-    google_accounts = client_registry_service.list_platform_accounts(platform="google_ads")
+    google_accounts = client_registry_service.list_platform_accounts(platform=PLATFORM_GOOGLE_ADS)
     status_payload["connected_accounts_count"] = len(google_accounts)
-    status_payload["last_import_at"] = client_registry_service.get_last_import_at(platform="google_ads")
+    status_payload["last_import_at"] = client_registry_service.get_last_import_at(platform=PLATFORM_GOOGLE_ADS)
 
     diagnostics = google_ads_service.run_diagnostics()
     mapped_accounts = client_registry_service.list_google_mapped_accounts()
@@ -206,7 +219,7 @@ def import_google_accounts(user: AuthUser = Depends(get_current_user)) -> dict[s
 
     imported_accounts = [{"id": item["id"], "name": item["name"]} for item in accounts]
 
-    client_registry_service.upsert_platform_accounts(platform="google_ads", accounts=imported_accounts)
+    client_registry_service.upsert_platform_accounts(platform=PLATFORM_GOOGLE_ADS, accounts=imported_accounts)
 
     audit_log_service.log(
         actor_email=user.email,
@@ -221,7 +234,7 @@ def import_google_accounts(user: AuthUser = Depends(get_current_user)) -> dict[s
         "accessible_customers": [item["id"] for item in imported_accounts],
         "imported_accounts": imported_accounts,
         "imported_count": len(imported_accounts),
-        "last_import_at": client_registry_service.get_last_import_at(platform="google_ads"),
+        "last_import_at": client_registry_service.get_last_import_at(platform=PLATFORM_GOOGLE_ADS),
     }
 
 
@@ -234,7 +247,7 @@ def refresh_google_account_names(user: AuthUser = Depends(get_current_user)) -> 
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     refreshed_accounts = [{"id": item["id"], "name": item["name"]} for item in accounts]
-    client_registry_service.upsert_platform_accounts(platform="google_ads", accounts=refreshed_accounts)
+    client_registry_service.upsert_platform_accounts(platform=PLATFORM_GOOGLE_ADS, accounts=refreshed_accounts)
 
     audit_log_service.log(
         actor_email=user.email,
@@ -247,7 +260,7 @@ def refresh_google_account_names(user: AuthUser = Depends(get_current_user)) -> 
         "status": "ok",
         "refreshed_count": len(refreshed_accounts),
         "items": refreshed_accounts,
-        "last_import_at": client_registry_service.get_last_import_at(platform="google_ads"),
+        "last_import_at": client_registry_service.get_last_import_at(platform=PLATFORM_GOOGLE_ADS),
     }
 
 
@@ -317,12 +330,7 @@ def _mirror_platform_account_operational_metadata(
     try:
         client_registry_service.update_platform_account_operational_metadata(**payload)
     except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "agency_platform_accounts operational metadata mirror failed for platform=%s account_id=%s error=%s",
-            platform,
-            account_id,
-            str(exc)[:300],
-        )
+        _log_best_effort_warning(operation="platform_account_metadata_update", error=exc, account_id=account_id)
 
 
 def _mirror_sync_state_upsert(
@@ -352,19 +360,12 @@ def _mirror_sync_state_upsert(
             metadata=metadata or {},
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "sync_state mirror upsert failed for platform=%s account_id=%s grain=%s status=%s error=%s",
-            platform,
-            account_id,
-            grain,
-            last_status,
-            str(exc)[:300],
-        )
+        _log_best_effort_warning(operation="sync_state_upsert", error=exc, account_id=account_id, status_value=last_status, grain=grain)
 
 
 def _run_google_backfill_job(job_id: str, *, mapped_accounts: list[dict[str, object]], resolved_start: date, resolved_end: date, days: int, chunk_days: int, requested_client_id: int | None) -> None:
     backfill_job_store.set_running(job_id)
-    _mirror_sync_run_status(job_id=job_id, status="running", mark_started=True)
+    _mirror_sync_run_status(job_id=job_id, status=SYNC_STATUS_RUNNING, mark_started=True)
 
     attempts: list[dict[str, object]] = []
     errors_summary: list[dict[str, str | int]] = []
@@ -380,7 +381,7 @@ def _run_google_backfill_job(job_id: str, *, mapped_accounts: list[dict[str, obj
             account_currency_code = str(item.get("currency_code") or "").strip() or None
             account_timezone = str(item.get("account_timezone") or "").strip() or None
             _mirror_platform_account_operational_metadata(
-                platform="google_ads",
+                platform=PLATFORM_GOOGLE_ADS,
                 account_id=raw_customer_id,
                 status=account_status,
                 currency_code=account_currency_code,
@@ -395,10 +396,10 @@ def _run_google_backfill_job(job_id: str, *, mapped_accounts: list[dict[str, obj
                 "job_type": "backfill",
             }
             _mirror_sync_state_upsert(
-                platform="google_ads",
+                platform=PLATFORM_GOOGLE_ADS,
                 account_id=raw_customer_id,
-                grain="account_daily",
-                last_status="running",
+                grain=SYNC_GRAIN_ACCOUNT_DAILY,
+                last_status=SYNC_STATUS_RUNNING,
                 last_job_id=job_id,
                 last_attempted_at=attempt_now,
                 error=None,
@@ -428,7 +429,7 @@ def _run_google_backfill_job(job_id: str, *, mapped_accounts: list[dict[str, obj
                 )
                 success_now = datetime.utcnow()
                 _mirror_platform_account_operational_metadata(
-                    platform="google_ads",
+                    platform=PLATFORM_GOOGLE_ADS,
                     account_id=raw_customer_id,
                     status=account_status,
                     currency_code=account_currency_code,
@@ -437,10 +438,10 @@ def _run_google_backfill_job(job_id: str, *, mapped_accounts: list[dict[str, obj
                     last_synced_at=success_now,
                 )
                 _mirror_sync_state_upsert(
-                    platform="google_ads",
+                    platform=PLATFORM_GOOGLE_ADS,
                     account_id=raw_customer_id,
-                    grain="account_daily",
-                    last_status="done",
+                    grain=SYNC_GRAIN_ACCOUNT_DAILY,
+                    last_status=SYNC_STATUS_DONE,
                     last_job_id=job_id,
                     last_attempted_at=success_now,
                     last_successful_at=success_now,
@@ -454,7 +455,7 @@ def _run_google_backfill_job(job_id: str, *, mapped_accounts: list[dict[str, obj
                     {
                         "client_id": client_id,
                         "customer_id_masked": masked_customer_id,
-                        "status": "error",
+                        "status": SYNC_STATUS_ERROR,
                         "gaql_rows_fetched": 0,
                         "inserted_rows": 0,
                         "db_rows_last_30_for_customer": 0,
@@ -469,10 +470,10 @@ def _run_google_backfill_job(job_id: str, *, mapped_accounts: list[dict[str, obj
                     }
                 )
                 _mirror_sync_state_upsert(
-                    platform="google_ads",
+                    platform=PLATFORM_GOOGLE_ADS,
                     account_id=raw_customer_id,
-                    grain="account_daily",
-                    last_status="error",
+                    grain=SYNC_GRAIN_ACCOUNT_DAILY,
+                    last_status=SYNC_STATUS_ERROR,
                     last_job_id=job_id,
                     last_attempted_at=datetime.utcnow(),
                     error=safe_message,
@@ -499,7 +500,7 @@ def _run_google_backfill_job(job_id: str, *, mapped_accounts: list[dict[str, obj
         backfill_job_store.set_done(job_id, result=payload)
         _mirror_sync_run_status(
             job_id=job_id,
-            status="done",
+            status=SYNC_STATUS_DONE,
             mark_finished=True,
             metadata={
                 "mapped_accounts_count": len(mapped_accounts),
@@ -512,7 +513,7 @@ def _run_google_backfill_job(job_id: str, *, mapped_accounts: list[dict[str, obj
     except Exception as exc:  # noqa: BLE001
         safe_error = str(exc)[:300]
         backfill_job_store.set_error(job_id, error=safe_error)
-        _mirror_sync_run_status(job_id=job_id, status="error", error=safe_error, mark_finished=True)
+        _mirror_sync_run_status(job_id=job_id, status=SYNC_STATUS_ERROR, error=safe_error, mark_finished=True)
 
 
 @router.post("/sync-now")
@@ -550,7 +551,7 @@ def sync_google_ads_now(
     if async_mode:
         job_id = backfill_job_store.create(
             payload={
-                "platform": "google_ads",
+                "platform": PLATFORM_GOOGLE_ADS,
                 "client_id": requested_client_id,
                 "date_range": {"start": resolved_start.isoformat(), "end": resolved_end.isoformat()},
                 "mapped_accounts_count": len(mapped_accounts),
@@ -569,8 +570,8 @@ def sync_google_ads_now(
         )
         _mirror_sync_run_create(
             job_id=job_id,
-            platform="google_ads",
-            status="queued",
+            platform=PLATFORM_GOOGLE_ADS,
+            status=SYNC_STATUS_QUEUED,
             client_id=requested_client_id,
             account_id=None,
             date_start=resolved_start,
@@ -587,7 +588,7 @@ def sync_google_ads_now(
             total_days=max(1, (resolved_end - resolved_start).days + 1),
         )
         return {
-            "status": "queued",
+            "status": SYNC_STATUS_QUEUED,
             "job_id": job_id,
             "mapped_accounts_count": len(mapped_accounts),
             "date_range": {"start": resolved_start.isoformat(), "end": resolved_end.isoformat()},
@@ -596,7 +597,7 @@ def sync_google_ads_now(
         }
 
     # Synchronous fallback
-    job_id = backfill_job_store.create(payload={"platform": "google_ads", "chunk_days": int(chunk_days)})
+    job_id = backfill_job_store.create(payload={"platform": PLATFORM_GOOGLE_ADS, "chunk_days": int(chunk_days)})
     _run_google_backfill_job(
         job_id,
         mapped_accounts=mapped_accounts,
@@ -620,11 +621,11 @@ def sync_google_ads_now(
             "chunk_days": int(chunk_days),
         },
     )
-    return dict(result.get("result") or {"status": "error", "job_id": job_id})
+    return dict(result.get("result") or {"status": SYNC_STATUS_ERROR, "job_id": job_id})
 
 
 def _build_chunk_summary(chunks: list[dict[str, object]]) -> dict[str, int]:
-    summary = {"total": len(chunks), "queued": 0, "running": 0, "done": 0, "error": 0}
+    summary = {"total": len(chunks), SYNC_STATUS_QUEUED: 0, SYNC_STATUS_RUNNING: 0, SYNC_STATUS_DONE: 0, SYNC_STATUS_ERROR: 0}
     for item in chunks:
         status_value = str(item.get("status") or "").strip().lower()
         if status_value in summary:
@@ -638,7 +639,7 @@ def _to_chunk_status_payload(chunks: list[dict[str, object]]) -> list[dict[str, 
         payload.append(
             {
                 "chunk_index": int(item.get("chunk_index") or 0),
-                "status": str(item.get("status") or "queued"),
+                "status": str(item.get("status") or SYNC_STATUS_QUEUED),
                 "date_start": item.get("date_start"),
                 "date_end": item.get("date_end"),
                 "started_at": item.get("started_at"),
@@ -655,7 +656,7 @@ def _attach_job_chunks_payload(*, job_id: str, payload: dict[str, object]) -> di
     try:
         chunks = sync_run_chunks_store.list_sync_run_chunks(job_id)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("sync_run_chunks read failed for google_ads job_id=%s error=%s", job_id, str(exc)[:300])
+        _log_best_effort_warning(operation="sync_run_chunks_read", error=exc, job_id=job_id)
         return enriched
 
     chunk_items = _to_chunk_status_payload(chunks)
@@ -671,13 +672,23 @@ def _map_sync_run_to_job_status_payload(sync_run: dict[str, object]) -> dict[str
 
     payload: dict[str, object] = {
         "job_id": str(sync_run.get("job_id") or ""),
-        "status": str(sync_run.get("status") or "queued"),
+        "status": str(sync_run.get("status") or SYNC_STATUS_QUEUED),
         "created_at": sync_run.get("created_at"),
         "started_at": sync_run.get("started_at"),
         "finished_at": sync_run.get("finished_at"),
         "error": sync_run.get("error"),
         "metadata": metadata,
     }
+
+    for field in ("platform", "client_id", "account_id", "date_start", "date_end", "chunk_days"):
+        value = sync_run.get(field)
+        if value is not None:
+            payload[field] = value
+
+    for field in ("date_range", "mapped_accounts_count", "chunk_days", "platform", "client_id"):
+        value = metadata.get(field)
+        if value is not None and field not in payload:
+            payload[field] = value
 
     for field in ("platform", "client_id", "account_id", "date_start", "date_end", "chunk_days"):
         value = sync_run.get(field)
@@ -778,7 +789,7 @@ def sync_now_job_status(job_id: str, user: AuthUser = Depends(get_current_user))
     try:
         sync_run = sync_runs_store.get_sync_run(job_id)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("sync_runs fallback read failed for google_ads job_id=%s error=%s", job_id, str(exc)[:300])
+        _log_best_effort_warning(operation="sync_runs_read", error=exc, job_id=job_id)
         sync_run = None
 
     if sync_run is not None:
