@@ -801,7 +801,7 @@ class ServiceTests(unittest.TestCase):
 
         self.assertIn("Database schema for sync_runs is not ready; run DB migrations", str(ctx.exception))
 
-    def test_google_ads_sync_now_async_mirrors_sync_run_create(self):
+    def test_google_ads_sync_now_async_mirrors_sync_run_create_and_planned_chunks(self):
         user = AuthUser(email="admin@example.com", role="agency_owner")
         background_tasks = BackgroundTasks()
 
@@ -810,7 +810,8 @@ class ServiceTests(unittest.TestCase):
         original_create = google_ads_api.backfill_job_store.create
         original_add_task = background_tasks.add_task
         original_mirror_create = google_ads_api.sync_runs_store.create_sync_run
-        captured: dict[str, object] = {}
+        original_chunk_create = google_ads_api.sync_run_chunks_store.create_sync_run_chunk
+        captured: dict[str, object] = {"chunk_payloads": []}
 
         try:
             google_ads_api.enforce_action_scope = lambda **kwargs: None
@@ -826,7 +827,14 @@ class ServiceTests(unittest.TestCase):
                 captured["sync_run_payload"] = kwargs
                 return {"job_id": kwargs.get("job_id")}
 
+            def fake_create_sync_chunk(**kwargs):
+                payloads = captured.get("chunk_payloads")
+                assert isinstance(payloads, list)
+                payloads.append(kwargs)
+                return {"job_id": kwargs.get("job_id"), "chunk_index": kwargs.get("chunk_index")}
+
             google_ads_api.sync_runs_store.create_sync_run = fake_create_sync_run
+            google_ads_api.sync_run_chunks_store.create_sync_run_chunk = fake_create_sync_chunk
 
             response = google_ads_api.sync_google_ads_now(
                 background_tasks=background_tasks,
@@ -844,6 +852,7 @@ class ServiceTests(unittest.TestCase):
             google_ads_api.backfill_job_store.create = original_create
             background_tasks.add_task = original_add_task
             google_ads_api.sync_runs_store.create_sync_run = original_mirror_create
+            google_ads_api.sync_run_chunks_store.create_sync_run_chunk = original_chunk_create
 
         self.assertEqual(response["status"], "queued")
         self.assertEqual(response["job_id"], "job-xyz")
@@ -861,7 +870,14 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(sync_run_payload.get("chunk_days"), 14)
         self.assertEqual((sync_run_payload.get("metadata") or {}).get("job_type"), "backfill")
 
-    def test_google_ads_sync_now_async_continues_when_sync_run_mirror_fails(self):
+        chunk_payloads = captured.get("chunk_payloads") or []
+        self.assertEqual(len(chunk_payloads), 3)
+        self.assertEqual([int(item.get("chunk_index", -1)) for item in chunk_payloads], [0, 1, 2])
+        self.assertEqual([str(item.get("date_start")) for item in chunk_payloads], ["2026-01-01", "2026-01-15", "2026-01-29"])
+        self.assertEqual([str(item.get("date_end")) for item in chunk_payloads], ["2026-01-14", "2026-01-28", "2026-01-31"])
+        self.assertTrue(all(str(item.get("status")) == "queued" for item in chunk_payloads))
+
+    def test_google_ads_sync_now_async_continues_when_sync_run_chunk_mirror_fails(self):
         user = AuthUser(email="admin@example.com", role="agency_owner")
         background_tasks = BackgroundTasks()
 
@@ -870,17 +886,19 @@ class ServiceTests(unittest.TestCase):
         original_create = google_ads_api.backfill_job_store.create
         original_add_task = background_tasks.add_task
         original_mirror_create = google_ads_api.sync_runs_store.create_sync_run
+        original_chunk_create = google_ads_api.sync_run_chunks_store.create_sync_run_chunk
 
         try:
             google_ads_api.enforce_action_scope = lambda **kwargs: None
             google_ads_api.client_registry_service.list_google_mapped_accounts = lambda: [{"client_id": 96, "customer_id": "1234567890"}]
             google_ads_api.backfill_job_store.create = lambda payload: "job-fallback"
             background_tasks.add_task = lambda *args, **kwargs: None
+            google_ads_api.sync_runs_store.create_sync_run = lambda **kwargs: {"job_id": kwargs.get("job_id")}
 
-            def failing_create_sync_run(**kwargs):
-                raise RuntimeError("sync_runs unavailable")
+            def failing_create_sync_chunk(**kwargs):
+                raise RuntimeError("sync_run_chunks unavailable")
 
-            google_ads_api.sync_runs_store.create_sync_run = failing_create_sync_run
+            google_ads_api.sync_run_chunks_store.create_sync_run_chunk = failing_create_sync_chunk
 
             response = google_ads_api.sync_google_ads_now(
                 background_tasks=background_tasks,
@@ -898,6 +916,7 @@ class ServiceTests(unittest.TestCase):
             google_ads_api.backfill_job_store.create = original_create
             background_tasks.add_task = original_add_task
             google_ads_api.sync_runs_store.create_sync_run = original_mirror_create
+            google_ads_api.sync_run_chunks_store.create_sync_run_chunk = original_chunk_create
 
         self.assertEqual(response["status"], "queued")
         self.assertEqual(response["job_id"], "job-fallback")

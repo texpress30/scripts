@@ -473,3 +473,20 @@
 - Am adăugat teste unitare backend cu fake DB pentru schema-missing + lifecycle create/list/update (ordering, timestamps, error, metadata).
 - Nu am făcut wiring în API/runner; schimbările sunt strict în stratul service + teste.
 
+## Review — Persistare chunk-uri planificate la crearea jobului Google
+- În `api/google_ads.py` am adăugat helper local pentru planificarea chunk-urilor de date ale jobului (`_build_job_date_chunks`) cu intervale consecutive, ordonate, indexate de la 0.
+- În branch-ul `async_mode=True` din `sync_google_ads_now`, după crearea jobului și mirror-ul existent în `sync_runs`, persist chunk-urile planificate în `sync_run_chunks` cu `status=queued`.
+- Persistența chunk-urilor este best-effort/non-blocking: la eroare se loghează warning și flow-ul in-memory + response-ul endpoint-ului rămân neschimbate.
+- Am adăugat teste backend focalizate pentru: succes (chunk-uri create cu index/ordine/status corecte) și eșec write `sync_run_chunks` (jobul rămâne queued).
+- Nu am făcut wiring în runner/status endpoint și nu am atins alte platforme.
+
+---
+
+# TODO — Persistare chunk-uri planificate la crearea jobului Google
+
+- [x] Identific punctul de creare job Google async unde există `job_id`, `date_start`, `date_end`, `chunk_days`.
+- [x] Adaug helper local pentru planul de chunk-uri (intervale consecutive, ordonate crescător, indexate de la 0).
+- [x] Persist chunk-urile în `sync_run_chunks` cu `status=queued` în flow-ul de creare job, best-effort/non-blocking.
+- [x] Păstrez response-ul endpoint-ului și flow-ul in-memory compatibile cu implementarea existentă.
+- [x] Adaug teste backend focalizate pentru success path și failure path la mirror write în `sync_run_chunks`.
+

@@ -10,6 +10,7 @@ from app.services.client_registry import client_registry_service
 from app.services.google_ads import GoogleAdsIntegrationError, google_ads_service
 from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
 from app.services.sync_engine import backfill_job_store
+from app.services.sync_run_chunks_store import sync_run_chunks_store
 from app.services.sync_runs_store import sync_runs_store
 
 router = APIRouter(prefix="/integrations/google-ads", tags=["google-ads"])
@@ -52,6 +53,41 @@ def _mirror_sync_run_status(*, job_id: str, status: str, error: str | None = Non
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("sync_runs mirror status update failed for google_ads job_id=%s status=%s error=%s", job_id, status, str(exc)[:300])
+
+
+def _build_job_date_chunks(*, date_start: date, date_end: date, chunk_days: int) -> list[tuple[int, date, date]]:
+    if chunk_days <= 0:
+        chunk_days = 7
+
+    chunks: list[tuple[int, date, date]] = []
+    cursor = date_start
+    chunk_index = 0
+    while cursor <= date_end:
+        chunk_end = min(date_end, cursor + timedelta(days=int(chunk_days) - 1))
+        chunks.append((chunk_index, cursor, chunk_end))
+        cursor = chunk_end + timedelta(days=1)
+        chunk_index += 1
+    return chunks
+
+
+def _mirror_sync_run_chunks_create(*, job_id: str, date_start: date, date_end: date, chunk_days: int, mapped_accounts_count: int, total_days: int) -> None:
+    try:
+        planned_chunks = _build_job_date_chunks(date_start=date_start, date_end=date_end, chunk_days=int(chunk_days))
+        for chunk_index, chunk_start, chunk_end in planned_chunks:
+            sync_run_chunks_store.create_sync_run_chunk(
+                job_id=job_id,
+                chunk_index=int(chunk_index),
+                status="queued",
+                date_start=chunk_start,
+                date_end=chunk_end,
+                metadata={
+                    "days": int(total_days),
+                    "chunk_days": int(chunk_days),
+                    "mapped_accounts_count": int(mapped_accounts_count),
+                },
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sync_run_chunks mirror write failed for google_ads job_id=%s error=%s", job_id, str(exc)[:300])
 
 
 @router.get("/status")
@@ -408,6 +444,14 @@ def sync_google_ads_now(
             chunk_days=int(chunk_days),
             metadata={"job_type": "backfill", "source": "google_ads_api", "mapped_accounts_count": len(mapped_accounts)},
         )
+        _mirror_sync_run_chunks_create(
+            job_id=job_id,
+            date_start=resolved_start,
+            date_end=resolved_end,
+            chunk_days=int(chunk_days),
+            mapped_accounts_count=len(mapped_accounts),
+            total_days=max(1, (resolved_end - resolved_start).days + 1),
+        )
         return {
             "status": "queued",
             "job_id": job_id,
@@ -463,6 +507,11 @@ def _map_sync_run_to_job_status_payload(sync_run: dict[str, object]) -> dict[str
     for field in ("platform", "client_id", "account_id", "date_start", "date_end", "chunk_days"):
         value = sync_run.get(field)
         if value is not None:
+            payload[field] = value
+
+    for field in ("date_range", "mapped_accounts_count", "chunk_days", "platform", "client_id"):
+        value = metadata.get(field)
+        if value is not None and field not in payload:
             payload[field] = value
 
     for field in ("date_range", "mapped_accounts_count", "chunk_days", "platform", "client_id"):

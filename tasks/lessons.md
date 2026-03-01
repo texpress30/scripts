@@ -82,3 +82,4 @@
 - 2026-03-01: Pentru migrare incrementală a status joburilor, păstrează endpoint-ul memory-first și adaugă fallback DB doar la memory miss, cu handling defensiv (warning + comportament not-found neschimbat) când DB-ul cade.
 - 2026-03-01: Pentru pași DB-first incrementali, livrează întâi migrația SQL idempotentă minimă (tabelă + FK + constrângeri + indexuri) fără wiring în API/runner până la task-ul dedicat.
 - 2026-03-01: Când un task cere explicit store DB-backed nou, livrează implementarea completă (fișier service + metode concrete + teste de lifecycle), nu doar migrația de schemă.
+- 2026-03-01: După ce există tabela + store pentru chunk-uri, următorul pas incremental corect este mirror write best-effort la create job (plan de chunk-uri date-range), fără să atingi runner-ul sau endpoint-ul de status.
