@@ -745,3 +745,20 @@
 - Am adăugat teste de audit cross-platform pentru constante canonice și pentru absența wiring-ului `sync_run_chunks` în Meta/TikTok.
 - Nu am schimbat contractele endpoint-urilor publice și nu am introdus refactor major.
 
+---
+
+# TODO — Pinterest phase 1: sync_runs mirror + lifecycle + status DB fallback
+
+- [x] Adaug constantă canonică Pinterest în `sync_constants.py` folosind valoarea deja canonică din repo (`pinterest_ads`).
+- [x] Adaug mirror create în `sync_runs` la `sync-now` async Pinterest, best-effort/non-blocking.
+- [x] Adaug mirror lifecycle în runner-ul Pinterest (`running`/`done`/`error`), best-effort/non-blocking.
+- [x] Adaug status flow memory-first + fallback DB (`sync_runs`) pentru jobul Pinterest.
+- [x] Adaug teste backend focalizate pentru create/lifecycle/status fallback și branch defensiv pe `account_id`.
+
+## Review — Pinterest phase 1
+- În `api/pinterest_ads.py` am introdus flow async `sync-now` cu job in-memory și mirror în `sync_runs` (create + lifecycle).
+- Status endpoint-ul de job Pinterest este memory-first și cade în DB (`sync_runs`) la memory miss; la DB miss/error păstrează `404`.
+- Identitatea canonică folosește `account_id` real din mapping-ul client->platform account; `client_id` nu e folosit ca substitut.
+- În branch-uri nedeterminabile (0/multiple/lookup error), `account_id` rămâne `None` defensiv pentru mirror, cu warning non-blocking.
+- Nu am introdus `sync_run_chunks` pentru Pinterest în acest task.
+
