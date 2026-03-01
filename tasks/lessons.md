@@ -97,3 +97,4 @@
 - 2026-03-01: La rollout phase 1 pentru platformă nouă (TikTok), pornește minim cu `sync_runs` mirror (create+lifecycle) și status memory-first cu fallback DB, fără chunking/state suplimentar până există flow real.
 - 2026-03-01: În TikTok phase 2 incremental, adaugă `sync_state` strict local în runner (running/done/error) cu upsert best-effort; dacă `account_id` nu e determinabil sigur, omite write-ul în loc să folosești `client_id`.
 - 2026-03-01: În TikTok phase 2 (metadata operațională), actualizează `agency_platform_accounts` doar cu date de cont (status/currency/timezone/sync_start_date/last_synced_at) prin helperul existent și strict best-effort, fără să atingi statusurile de sync.
+- 2026-03-01: La cleanup final cross-platform, preferă alinierea locală a contextului de warning (operation/platform/job_id/account_id) și verificări țintite pentru constante/absența chunking-ului, fără refactor comun mare.

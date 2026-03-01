@@ -19,11 +19,12 @@ router = APIRouter(prefix="/integrations/google-ads", tags=["google-ads"])
 logger = logging.getLogger(__name__)
 
 
-def _log_best_effort_warning(*, operation: str, error: Exception, job_id: str | None = None, account_id: str | None = None, status_value: str | None = None, grain: str | None = None) -> None:
+def _log_best_effort_warning(*, operation: str, error: Exception, job_id: str | None = None, account_id: str | None = None, status_value: str | None = None, grain: str | None = None, platform: str | None = None) -> None:
     logger.warning(
-        "best_effort_op_failed operation=%s job_id=%s account_id=%s status=%s grain=%s error=%s",
+        "best_effort_op_failed operation=%s job_id=%s platform=%s account_id=%s status=%s grain=%s error=%s",
         operation,
         job_id,
+        platform,
         account_id,
         status_value,
         grain,
@@ -52,7 +53,7 @@ def _mirror_sync_run_create(*, job_id: str, platform: str, status: str, client_i
             metadata=metadata or {},
         )
     except Exception as exc:  # noqa: BLE001
-        _log_best_effort_warning(operation="sync_runs_create", error=exc, job_id=job_id)
+        _log_best_effort_warning(operation="sync_runs_create", error=exc, job_id=job_id, platform=PLATFORM_GOOGLE_ADS)
 
 
 def _mirror_sync_run_status(*, job_id: str, status: str, error: str | None = None, mark_started: bool = False, mark_finished: bool = False, metadata: dict[str, object] | None = None) -> None:
@@ -66,7 +67,7 @@ def _mirror_sync_run_status(*, job_id: str, status: str, error: str | None = Non
             metadata=metadata,
         )
     except Exception as exc:  # noqa: BLE001
-        _log_best_effort_warning(operation="sync_runs_status", error=exc, job_id=job_id, status_value=status)
+        _log_best_effort_warning(operation="sync_runs_status", error=exc, job_id=job_id, status_value=status, platform=PLATFORM_GOOGLE_ADS)
 
 
 def _build_job_date_chunks(*, date_start: date, date_end: date, chunk_days: int) -> list[tuple[int, date, date]]:
@@ -101,7 +102,7 @@ def _mirror_sync_run_chunks_create(*, job_id: str, date_start: date, date_end: d
                 },
             )
     except Exception as exc:  # noqa: BLE001
-        _log_best_effort_warning(operation="sync_run_chunks_create", error=exc, job_id=job_id)
+        _log_best_effort_warning(operation="sync_run_chunks_create", error=exc, job_id=job_id, platform=PLATFORM_GOOGLE_ADS)
 
 
 @router.get("/status")
@@ -330,7 +331,7 @@ def _mirror_platform_account_operational_metadata(
     try:
         client_registry_service.update_platform_account_operational_metadata(**payload)
     except Exception as exc:  # noqa: BLE001
-        _log_best_effort_warning(operation="platform_account_metadata_update", error=exc, account_id=account_id)
+        _log_best_effort_warning(operation="platform_account_metadata_update", error=exc, account_id=account_id, platform=PLATFORM_GOOGLE_ADS)
 
 
 def _mirror_sync_state_upsert(
@@ -360,7 +361,7 @@ def _mirror_sync_state_upsert(
             metadata=metadata or {},
         )
     except Exception as exc:  # noqa: BLE001
-        _log_best_effort_warning(operation="sync_state_upsert", error=exc, account_id=account_id, status_value=last_status, grain=grain)
+        _log_best_effort_warning(operation="sync_state_upsert", error=exc, account_id=account_id, status_value=last_status, grain=grain, platform=platform)
 
 
 def _run_google_backfill_job(job_id: str, *, mapped_accounts: list[dict[str, object]], resolved_start: date, resolved_end: date, days: int, chunk_days: int, requested_client_id: int | None) -> None:
@@ -656,7 +657,7 @@ def _attach_job_chunks_payload(*, job_id: str, payload: dict[str, object]) -> di
     try:
         chunks = sync_run_chunks_store.list_sync_run_chunks(job_id)
     except Exception as exc:  # noqa: BLE001
-        _log_best_effort_warning(operation="sync_run_chunks_read", error=exc, job_id=job_id)
+        _log_best_effort_warning(operation="sync_run_chunks_read", error=exc, job_id=job_id, platform=PLATFORM_GOOGLE_ADS)
         return enriched
 
     chunk_items = _to_chunk_status_payload(chunks)
@@ -839,7 +840,7 @@ def sync_now_job_status(job_id: str, user: AuthUser = Depends(get_current_user))
     try:
         sync_run = sync_runs_store.get_sync_run(job_id)
     except Exception as exc:  # noqa: BLE001
-        _log_best_effort_warning(operation="sync_runs_read", error=exc, job_id=job_id)
+        _log_best_effort_warning(operation="sync_runs_read", error=exc, job_id=job_id, platform=PLATFORM_GOOGLE_ADS)
         sync_run = None
 
     if sync_run is not None:

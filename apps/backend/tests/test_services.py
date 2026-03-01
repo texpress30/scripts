@@ -1844,6 +1844,22 @@ class ServiceTests(unittest.TestCase):
         self.assertIsNone(payload.get("account_id"))
         self.assertNotEqual(payload.get("account_id"), "88")
 
+    def test_cross_platform_sync_constants_are_canonical(self):
+        self.assertEqual(getattr(google_ads_api, "PLATFORM_GOOGLE_ADS", None), "google_ads")
+        self.assertEqual(getattr(meta_ads_api, "PLATFORM_META_ADS", None), "meta_ads")
+        self.assertEqual(getattr(tiktok_ads_api, "PLATFORM_TIKTOK_ADS", None), "tiktok_ads")
+        self.assertEqual(getattr(google_ads_api, "SYNC_GRAIN_ACCOUNT_DAILY", None), "account_daily")
+        self.assertEqual(getattr(meta_ads_api, "SYNC_GRAIN_ACCOUNT_DAILY", None), "account_daily")
+        self.assertEqual(getattr(tiktok_ads_api, "SYNC_GRAIN_ACCOUNT_DAILY", None), "account_daily")
+        self.assertEqual(getattr(google_ads_api, "SYNC_STATUS_QUEUED", None), "queued")
+        self.assertEqual(getattr(meta_ads_api, "SYNC_STATUS_RUNNING", None), "running")
+        self.assertEqual(getattr(tiktok_ads_api, "SYNC_STATUS_DONE", None), "done")
+        self.assertEqual(getattr(tiktok_ads_api, "SYNC_STATUS_ERROR", None), "error")
+
+    def test_meta_and_tiktok_do_not_wire_sync_run_chunks(self):
+        self.assertFalse(hasattr(meta_ads_api, "sync_run_chunks_store"))
+        self.assertFalse(hasattr(tiktok_ads_api, "sync_run_chunks_store"))
+
     def test_google_sync_now_job_status_db_error_is_non_blocking(self):
         user = AuthUser(email="admin@example.com", role="agency_owner")
 

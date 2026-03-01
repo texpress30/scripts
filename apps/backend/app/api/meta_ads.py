@@ -125,7 +125,7 @@ def _mirror_sync_run_create(*, job_id: str, status_value: str, client_id: int, d
             metadata={"job_type": "sync", "source": "meta_ads_api"},
         )
     except Exception as exc:  # noqa: BLE001
-        _log_best_effort_warning(operation="sync_runs_create", error=exc, job_id=job_id, status_value=status_value)
+        _log_best_effort_warning(operation="sync_runs_create", error=exc, job_id=job_id, status_value=status_value, platform=PLATFORM_META_ADS, account_id=account_id)
 
 
 def _mirror_sync_run_status(*, job_id: str, status_value: str, error: str | None = None, mark_started: bool = False, mark_finished: bool = False, metadata: dict[str, object] | None = None) -> None:
@@ -139,7 +139,7 @@ def _mirror_sync_run_status(*, job_id: str, status_value: str, error: str | None
             metadata=metadata,
         )
     except Exception as exc:  # noqa: BLE001
-        _log_best_effort_warning(operation="sync_runs_status", error=exc, job_id=job_id, status_value=status_value)
+        _log_best_effort_warning(operation="sync_runs_status", error=exc, job_id=job_id, status_value=status_value, platform=PLATFORM_META_ADS)
 
 
 def _mirror_meta_sync_state_upsert(
@@ -356,7 +356,7 @@ def sync_now_job_status(job_id: str, user: AuthUser = Depends(get_current_user))
     try:
         sync_run = sync_runs_store.get_sync_run(job_id)
     except Exception as exc:  # noqa: BLE001
-        _log_best_effort_warning(operation="sync_runs_read", error=exc, job_id=job_id)
+        _log_best_effort_warning(operation="sync_runs_read", error=exc, job_id=job_id, platform=PLATFORM_META_ADS)
         sync_run = None
 
     if sync_run is not None:

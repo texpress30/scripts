@@ -729,3 +729,19 @@
 - Dacă `account_id` lipsește, update-ul operațional este omis defensiv cu warning; dacă update-ul aruncă eroare, flow-ul jobului continuă.
 - Nu am schimbat endpoint-uri/status flow și nu am modificat sync_runs/sync_state contracts sau alte platforme.
 
+---
+
+# TODO — Final cross-platform audit/cleanup (Google/Meta/TikTok)
+
+- [x] Auditez constantele canonice și înlocuiesc drift-uri mici în API-urile Google/Meta/TikTok fără refactor mare.
+- [x] Verific identitatea canonică (`account_id` real) pentru sync_runs/sync_state/metadata operațională și corectez punctual orice drift.
+- [x] Uniformizez warning-urile best-effort cu context minim consistent (operation, platform, job_id/account_id unde există).
+- [x] Verific explicit că Meta/TikTok nu introduc `sync_run_chunks` în flow-urile curente.
+- [x] Rulez teste backend focalizate cross-platform pentru creare/lifecycle/status fallback + audit checks.
+
+## Review — Final cross-platform audit/cleanup
+- În `api/google_ads.py` și `api/meta_ads.py` am făcut cleanup mic al warning-urilor best-effort pentru a include context minim consistent de platformă.
+- Am verificat că flow-urile Meta/TikTok păstrează identitatea canonică (`account_id` real, fără fallback la `client_id`) și comportamentul non-blocking.
+- Am adăugat teste de audit cross-platform pentru constante canonice și pentru absența wiring-ului `sync_run_chunks` în Meta/TikTok.
+- Nu am schimbat contractele endpoint-urilor publice și nu am introdus refactor major.
+
