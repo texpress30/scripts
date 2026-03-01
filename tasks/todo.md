@@ -615,3 +615,20 @@
 - Am introdus helperul `_log_best_effort_warning(...)` și l-am folosit consecvent în toate path-urile best-effort (`sync_runs_create`, `sync_runs_status`, `sync_run_chunks_create`, `sync_state_upsert`, `platform_account_metadata_update`, read fallback-uri).
 - Nu am schimbat endpoint-uri publice, response shapes sau ordinea logicii jobului; patch-ul este cleanup + standardization only.
 
+
+---
+
+# TODO — Rollout Meta phase 1: sync_runs mirror + lifecycle + status DB fallback
+
+- [x] Adaug constante canonice Meta în `sync_constants.py` (dacă lipsesc) și refolosesc statusurile canonice existente.
+- [x] Adaug mirror create în `sync_runs` la crearea jobului Meta async, best-effort/non-blocking.
+- [x] Adaug mirror lifecycle în runner-ul Meta (`running`/`done`/`error`), best-effort/non-blocking.
+- [x] Adaug status flow memory-first + fallback DB (`sync_runs`) pentru jobul Meta.
+- [x] Adaug teste backend focalizate pentru create/lifecycle/status fallback și DB error non-blocking.
+
+## Review — Rollout Meta phase 1
+- În `api/meta_ads.py` am introdus flow async minimal `sync-now` cu job_id in-memory și mirror în `sync_runs` (create + lifecycle).
+- Status flow-ul jobului Meta este memory-first și cade în DB (`sync_runs`) la memory miss; la DB miss/error păstrează comportament compatibil (`404`).
+- Toate operațiile DB mirror/read sunt best-effort cu warning și fără blocarea flow-ului principal Meta.
+- Nu am introdus `sync_run_chunks` pentru Meta în acest task (flow-ul Meta implementat aici nu are chunking date-range separat).
+

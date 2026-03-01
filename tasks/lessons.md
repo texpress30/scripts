@@ -90,3 +90,4 @@
 - 2026-03-01: Pentru extinderi operaționale pe tabele existente din client_registry, folosește helper de update parțial cu sentință explicită (doar câmpurile furnizate), schema-check read-only și fără DDL runtime/wiring prematur.
 - 2026-03-01: Pentru wiring gradual între sync flow și agency_platform_accounts, actualizează metadata operațională strict best-effort în puncte simple (start/success), fără să reutilizezi coloana status ca job-state.
 - 2026-03-01: În taskuri de cleanup final, extrage valorile canonice (platform/grain/status) în constante comune și uniformizează logging-ul best-effort, fără a modifica contractele publice sau fluxul logic.
+- 2026-03-01: La rollout incremental pe o platformă nouă (Meta), livrează întâi phase 1 minimal (sync_runs create+lifecycle+status fallback memory-first) și evită chunking/state suplimentar până există flow real pentru ele.

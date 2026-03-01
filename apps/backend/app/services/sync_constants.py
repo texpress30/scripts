@@ -1,4 +1,5 @@
 PLATFORM_GOOGLE_ADS = "google_ads"
+PLATFORM_META_ADS = "meta_ads"
 
 SYNC_GRAIN_ACCOUNT_DAILY = "account_daily"
 

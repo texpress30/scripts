@@ -7,6 +7,7 @@ from fastapi import BackgroundTasks
 
 from app.services.auth import AuthError, AuthUser, create_access_token, decode_access_token, validate_login_credentials
 from app.api import google_ads as google_ads_api
+from app.api import meta_ads as meta_ads_api
 from app.services.ai_assistant import ai_assistant_service
 from app.services.insights import insights_service
 from app.services.dashboard import unified_dashboard_service
@@ -1312,6 +1313,139 @@ class ServiceTests(unittest.TestCase):
 
         self.assertEqual(ctx.exception.status_code, 404)
         self.assertEqual(str(ctx.exception.detail), "job not found")
+
+    def test_meta_ads_sync_now_async_mirrors_sync_run_create(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+        background_tasks = BackgroundTasks()
+        captured: dict[str, object] = {}
+
+        original_enforce = meta_ads_api.enforce_action_scope
+        original_create = meta_ads_api.backfill_job_store.create
+        original_add_task = background_tasks.add_task
+        original_mirror_create = meta_ads_api.sync_runs_store.create_sync_run
+
+        try:
+            meta_ads_api.enforce_action_scope = lambda **kwargs: None
+            meta_ads_api.backfill_job_store.create = lambda payload: "meta-job-1"
+            background_tasks.add_task = lambda func, *args, **kwargs: captured.update({"task": getattr(func, "__name__", "")})
+            meta_ads_api.sync_runs_store.create_sync_run = lambda **kwargs: captured.update({"sync_run_payload": kwargs}) or {"job_id": kwargs.get("job_id")}
+
+            response = meta_ads_api.sync_meta_ads_now(
+                background_tasks=background_tasks,
+                user=user,
+                client_id=96,
+                async_mode=True,
+            )
+        finally:
+            meta_ads_api.enforce_action_scope = original_enforce
+            meta_ads_api.backfill_job_store.create = original_create
+            background_tasks.add_task = original_add_task
+            meta_ads_api.sync_runs_store.create_sync_run = original_mirror_create
+
+        self.assertEqual(response.get("status"), "queued")
+        self.assertEqual(response.get("job_id"), "meta-job-1")
+        payload = captured.get("sync_run_payload") or {}
+        self.assertEqual(payload.get("job_id"), "meta-job-1")
+        self.assertEqual(payload.get("platform"), "meta_ads")
+        self.assertEqual(payload.get("status"), "queued")
+        self.assertEqual(payload.get("client_id"), 96)
+
+    def test_meta_backfill_runner_updates_sync_runs_running_done_and_error(self):
+        status_calls: list[dict[str, object]] = []
+
+        original_set_running = meta_ads_api.backfill_job_store.set_running
+        original_set_done = meta_ads_api.backfill_job_store.set_done
+        original_set_error = meta_ads_api.backfill_job_store.set_error
+        original_sync_client = meta_ads_api.meta_ads_service.sync_client
+        original_update_status = meta_ads_api.sync_runs_store.update_sync_run_status
+        try:
+            meta_ads_api.backfill_job_store.set_running = lambda job_id: None
+            meta_ads_api.backfill_job_store.set_done = lambda job_id, result: None
+            meta_ads_api.backfill_job_store.set_error = lambda job_id, error: None
+            meta_ads_api.meta_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
+            meta_ads_api.sync_runs_store.update_sync_run_status = lambda **kwargs: status_calls.append(kwargs) or {"job_id": kwargs.get("job_id")}
+
+            meta_ads_api._run_meta_sync_job("meta-job-ok", client_id=7)
+
+            def boom_sync(*args, **kwargs):
+                raise RuntimeError("meta down")
+
+            meta_ads_api.meta_ads_service.sync_client = boom_sync
+            meta_ads_api._run_meta_sync_job("meta-job-fail", client_id=8)
+        finally:
+            meta_ads_api.backfill_job_store.set_running = original_set_running
+            meta_ads_api.backfill_job_store.set_done = original_set_done
+            meta_ads_api.backfill_job_store.set_error = original_set_error
+            meta_ads_api.meta_ads_service.sync_client = original_sync_client
+            meta_ads_api.sync_runs_store.update_sync_run_status = original_update_status
+
+        self.assertTrue(any(call.get("job_id") == "meta-job-ok" and call.get("status") == "running" for call in status_calls))
+        self.assertTrue(any(call.get("job_id") == "meta-job-ok" and call.get("status") == "done" for call in status_calls))
+        self.assertTrue(any(call.get("job_id") == "meta-job-fail" and call.get("status") == "running" for call in status_calls))
+        self.assertTrue(any(call.get("job_id") == "meta-job-fail" and call.get("status") == "error" for call in status_calls))
+
+    def test_meta_sync_now_job_status_memory_first_and_db_fallback(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+
+        original_enforce = meta_ads_api.enforce_action_scope
+        original_memory_get = meta_ads_api.backfill_job_store.get
+        original_db_get = meta_ads_api.sync_runs_store.get_sync_run
+        try:
+            meta_ads_api.enforce_action_scope = lambda **kwargs: None
+            meta_ads_api.backfill_job_store.get = lambda job_id: {"status": "running", "source": "memory"}
+            meta_ads_api.sync_runs_store.get_sync_run = lambda job_id: {"job_id": job_id, "status": "done"}
+            memory_response = meta_ads_api.sync_now_job_status("meta-memory", user=user)
+
+            meta_ads_api.backfill_job_store.get = lambda job_id: None
+            meta_ads_api.sync_runs_store.get_sync_run = lambda job_id: {
+                "job_id": job_id,
+                "platform": "meta_ads",
+                "status": "done",
+                "client_id": 10,
+                "account_id": None,
+                "date_start": "2026-01-01",
+                "date_end": "2026-01-31",
+                "chunk_days": 1,
+                "created_at": "2026-03-01T00:00:01+00:00",
+                "updated_at": "2026-03-01T00:00:10+00:00",
+                "started_at": "2026-03-01T00:00:03+00:00",
+                "finished_at": "2026-03-01T00:00:09+00:00",
+                "error": None,
+                "metadata": {},
+            }
+            db_response = meta_ads_api.sync_now_job_status("meta-db", user=user)
+
+            meta_ads_api.sync_runs_store.get_sync_run = lambda job_id: None
+            with self.assertRaises(meta_ads_api.HTTPException) as ctx:
+                meta_ads_api.sync_now_job_status("meta-missing", user=user)
+        finally:
+            meta_ads_api.enforce_action_scope = original_enforce
+            meta_ads_api.backfill_job_store.get = original_memory_get
+            meta_ads_api.sync_runs_store.get_sync_run = original_db_get
+
+        self.assertEqual(memory_response.get("source"), "memory")
+        self.assertEqual(db_response.get("job_id"), "meta-db")
+        self.assertEqual(db_response.get("status"), "done")
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_meta_sync_now_job_status_db_error_is_non_blocking(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+
+        original_enforce = meta_ads_api.enforce_action_scope
+        original_memory_get = meta_ads_api.backfill_job_store.get
+        original_db_get = meta_ads_api.sync_runs_store.get_sync_run
+        try:
+            meta_ads_api.enforce_action_scope = lambda **kwargs: None
+            meta_ads_api.backfill_job_store.get = lambda job_id: None
+            meta_ads_api.sync_runs_store.get_sync_run = lambda job_id: (_ for _ in ()).throw(RuntimeError("db unavailable"))
+            with self.assertRaises(meta_ads_api.HTTPException) as ctx:
+                meta_ads_api.sync_now_job_status("meta-db-error", user=user)
+        finally:
+            meta_ads_api.enforce_action_scope = original_enforce
+            meta_ads_api.backfill_job_store.get = original_memory_get
+            meta_ads_api.sync_runs_store.get_sync_run = original_db_get
+
+        self.assertEqual(ctx.exception.status_code, 404)
 
     def test_google_sync_now_job_status_db_error_is_non_blocking(self):
         user = AuthUser(email="admin@example.com", role="agency_owner")

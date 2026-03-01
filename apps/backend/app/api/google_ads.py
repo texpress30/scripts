@@ -690,6 +690,46 @@ def _map_sync_run_to_job_status_payload(sync_run: dict[str, object]) -> dict[str
         if value is not None and field not in payload:
             payload[field] = value
 
+
+def _attach_job_chunks_payload(*, job_id: str, payload: dict[str, object]) -> dict[str, object]:
+    enriched = dict(payload)
+    try:
+        chunks = sync_run_chunks_store.list_sync_run_chunks(job_id)
+    except Exception as exc:  # noqa: BLE001
+        _log_best_effort_warning(operation="sync_run_chunks_read", error=exc, job_id=job_id)
+        return enriched
+
+    chunk_items = _to_chunk_status_payload(chunks)
+    enriched["chunk_summary"] = _build_chunk_summary(chunk_items)
+    enriched["chunks"] = chunk_items
+    return enriched
+
+
+def _map_sync_run_to_job_status_payload(sync_run: dict[str, object]) -> dict[str, object]:
+    metadata = sync_run.get("metadata") if isinstance(sync_run.get("metadata"), dict) else {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    payload: dict[str, object] = {
+        "job_id": str(sync_run.get("job_id") or ""),
+        "status": str(sync_run.get("status") or SYNC_STATUS_QUEUED),
+        "created_at": sync_run.get("created_at"),
+        "started_at": sync_run.get("started_at"),
+        "finished_at": sync_run.get("finished_at"),
+        "error": sync_run.get("error"),
+        "metadata": metadata,
+    }
+
+    for field in ("platform", "client_id", "account_id", "date_start", "date_end", "chunk_days"):
+        value = sync_run.get(field)
+        if value is not None:
+            payload[field] = value
+
+    for field in ("date_range", "mapped_accounts_count", "chunk_days", "platform", "client_id"):
+        value = metadata.get(field)
+        if value is not None and field not in payload:
+            payload[field] = value
+
     for field in ("platform", "client_id", "account_id", "date_start", "date_end", "chunk_days"):
         value = sync_run.get(field)
         if value is not None:
