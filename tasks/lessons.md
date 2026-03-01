@@ -78,3 +78,4 @@
 - 2026-02-28: Pentru pași incrementali de infrastructură (ex. persistarea joburilor de sync), livrează întâi o migrație SQL minimă și idempotentă, fără schimbări de business logic în același task.
 - 2026-02-28: Când introduci persistență nouă DB-backed (ex. `sync_runs`), livrează întâi store-ul cu contract CRUD minim + validare read-only de schemă și teste de lifecycle, fără wiring prematur în API/engine.
 - 2026-02-28: Pentru tranziții in-memory -> DB la orchestration jobs, introdu mai întâi mirror write best-effort (non-blocking) în punctul de create, cu teste pentru success/failure, înainte de a schimba sursa de adevăr pentru status.
+- 2026-02-28: La mirror lifecycle updates (running/done/error), păstrează write-ul DB strict best-effort și poziționează-l lângă tranzițiile in-memory corespunzătoare; astfel migrarea graduală nu destabilizează flow-ul existent.

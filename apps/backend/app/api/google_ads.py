@@ -40,6 +40,20 @@ def _mirror_sync_run_create(*, job_id: str, platform: str, status: str, client_i
         logger.warning("sync_runs mirror write failed for google_ads job_id=%s error=%s", job_id, str(exc)[:300])
 
 
+def _mirror_sync_run_status(*, job_id: str, status: str, error: str | None = None, mark_started: bool = False, mark_finished: bool = False, metadata: dict[str, object] | None = None) -> None:
+    try:
+        sync_runs_store.update_sync_run_status(
+            job_id=job_id,
+            status=status,
+            error=error,
+            mark_started=mark_started,
+            mark_finished=mark_finished,
+            metadata=metadata,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sync_runs mirror status update failed for google_ads job_id=%s status=%s error=%s", job_id, status, str(exc)[:300])
+
+
 @router.get("/status")
 def google_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
@@ -241,75 +255,95 @@ def google_ads_db_debug(user: AuthUser = Depends(get_current_user)) -> dict[str,
 
 def _run_google_backfill_job(job_id: str, *, mapped_accounts: list[dict[str, object]], resolved_start: date, resolved_end: date, days: int, chunk_days: int, requested_client_id: int | None) -> None:
     backfill_job_store.set_running(job_id)
+    _mirror_sync_run_status(job_id=job_id, status="running", mark_started=True)
+
     attempts: list[dict[str, object]] = []
     errors_summary: list[dict[str, str | int]] = []
     inserted_rows_total = 0
 
-    for item in mapped_accounts:
-        client_id = int(item.get("client_id") or 0)
-        raw_customer_id = str(item.get("customer_id") or "").strip()
-        masked_customer_id = f"***{raw_customer_id[-4:]}" if len(raw_customer_id) >= 4 else "****"
-        try:
-            snapshot = google_ads_service.sync_customer_for_client(
-                client_id=client_id,
-                customer_id=raw_customer_id,
-                days=days,
-                start_date=resolved_start,
-                end_date=resolved_end,
-                chunk_days=chunk_days,
-            )
-            inserted_rows = int(snapshot.get("inserted_rows", 0) or 0)
-            inserted_rows_total += inserted_rows
-            attempts.append(
-                {
-                    "client_id": client_id,
-                    "customer_id_masked": masked_customer_id,
-                    "status": "ok",
-                    "inserted_rows": inserted_rows,
-                    "gaql_rows_fetched": int(snapshot.get("gaql_rows_fetched", 0) or 0),
-                    "db_rows_last_30_for_customer": int(snapshot.get("db_rows_last_30_for_customer", 0) or 0),
-                    "reason_if_zero": snapshot.get("reason_if_zero"),
-                }
-            )
-        except Exception as exc:  # noqa: BLE001
-            safe_message = str(exc).replace(raw_customer_id, "***")[:300]
-            attempts.append(
-                {
-                    "client_id": client_id,
-                    "customer_id_masked": masked_customer_id,
-                    "status": "error",
-                    "gaql_rows_fetched": 0,
-                    "inserted_rows": 0,
-                    "db_rows_last_30_for_customer": 0,
-                    "reason_if_zero": "DB_INSERT_FAILED",
-                }
-            )
-            errors_summary.append(
-                {
-                    "client_id": client_id,
-                    "customer_id_masked": masked_customer_id,
-                    "error": safe_message,
-                }
-            )
+    try:
+        for item in mapped_accounts:
+            client_id = int(item.get("client_id") or 0)
+            raw_customer_id = str(item.get("customer_id") or "").strip()
+            masked_customer_id = f"***{raw_customer_id[-4:]}" if len(raw_customer_id) >= 4 else "****"
+            try:
+                snapshot = google_ads_service.sync_customer_for_client(
+                    client_id=client_id,
+                    customer_id=raw_customer_id,
+                    days=days,
+                    start_date=resolved_start,
+                    end_date=resolved_end,
+                    chunk_days=chunk_days,
+                )
+                inserted_rows = int(snapshot.get("inserted_rows", 0) or 0)
+                inserted_rows_total += inserted_rows
+                attempts.append(
+                    {
+                        "client_id": client_id,
+                        "customer_id_masked": masked_customer_id,
+                        "status": "ok",
+                        "inserted_rows": inserted_rows,
+                        "gaql_rows_fetched": int(snapshot.get("gaql_rows_fetched", 0) or 0),
+                        "db_rows_last_30_for_customer": int(snapshot.get("db_rows_last_30_for_customer", 0) or 0),
+                        "reason_if_zero": snapshot.get("reason_if_zero"),
+                    }
+                )
+            except Exception as exc:  # noqa: BLE001
+                safe_message = str(exc).replace(raw_customer_id, "***")[:300]
+                attempts.append(
+                    {
+                        "client_id": client_id,
+                        "customer_id_masked": masked_customer_id,
+                        "status": "error",
+                        "gaql_rows_fetched": 0,
+                        "inserted_rows": 0,
+                        "db_rows_last_30_for_customer": 0,
+                        "reason_if_zero": "DB_INSERT_FAILED",
+                    }
+                )
+                errors_summary.append(
+                    {
+                        "client_id": client_id,
+                        "customer_id_masked": masked_customer_id,
+                        "error": safe_message,
+                    }
+                )
 
-    succeeded_accounts_count = len([item for item in attempts if item["status"] == "ok"])
-    failed_accounts_count = len([item for item in attempts if item["status"] == "error"])
-    payload = {
-        "status": "ok" if failed_accounts_count == 0 else "partial",
-        "mapped_accounts_count": len(mapped_accounts),
-        "attempted_accounts_count": len(attempts),
-        "succeeded_accounts_count": succeeded_accounts_count,
-        "failed_accounts_count": failed_accounts_count,
-        "inserted_rows_total": inserted_rows_total,
-        "date_range": {"start": resolved_start.isoformat(), "end": resolved_end.isoformat()},
-        "sample_customer_ids": [item["customer_id_masked"] for item in attempts[:10]],
-        "errors_summary": errors_summary,
-        "attempts": attempts,
-        "client_id": requested_client_id,
-        "days": int(days),
-        "chunk_days": int(chunk_days),
-    }
-    backfill_job_store.set_done(job_id, result=payload)
+        succeeded_accounts_count = len([item for item in attempts if item["status"] == "ok"])
+        failed_accounts_count = len([item for item in attempts if item["status"] == "error"])
+        payload = {
+            "status": "ok" if failed_accounts_count == 0 else "partial",
+            "mapped_accounts_count": len(mapped_accounts),
+            "attempted_accounts_count": len(attempts),
+            "succeeded_accounts_count": succeeded_accounts_count,
+            "failed_accounts_count": failed_accounts_count,
+            "inserted_rows_total": inserted_rows_total,
+            "date_range": {"start": resolved_start.isoformat(), "end": resolved_end.isoformat()},
+            "sample_customer_ids": [item["customer_id_masked"] for item in attempts[:10]],
+            "errors_summary": errors_summary,
+            "attempts": attempts,
+            "client_id": requested_client_id,
+            "days": int(days),
+            "chunk_days": int(chunk_days),
+        }
+        backfill_job_store.set_done(job_id, result=payload)
+        _mirror_sync_run_status(
+            job_id=job_id,
+            status="done",
+            mark_finished=True,
+            metadata={
+                "mapped_accounts_count": len(mapped_accounts),
+                "successful_accounts": succeeded_accounts_count,
+                "failed_accounts": failed_accounts_count,
+                "days": int(days),
+                "chunk_days": int(chunk_days),
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        safe_error = str(exc)[:300]
+        backfill_job_store.set_error(job_id, error=safe_error)
+        _mirror_sync_run_status(job_id=job_id, status="error", error=safe_error, mark_finished=True)
+
 
 @router.post("/sync-now")
 def sync_google_ads_now(

@@ -404,3 +404,20 @@
 - Se persistă: `job_id`, `platform=google_ads`, `client_id`, `account_id=None`, `date_start`, `date_end`, `chunk_days`, plus metadata minimă (`job_type`, `source`, `mapped_accounts_count`).
 - Dacă insert-ul în `sync_runs` eșuează, endpoint-ul nu se blochează: log warning și continuă să returneze același payload queued din flow-ul in-memory.
 - Nu am făcut wiring de read/status din DB și nu am atins alte platforme.
+
+---
+
+# TODO — Mirror lifecycle status Google async jobs în `sync_runs` (running/done/error)
+
+- [x] Identific runner-ul background Google din `api/google_ads.py`.
+- [x] Adaug mirror update `running` + `mark_started=True` la începutul execuției.
+- [x] Adaug mirror update `done` + `mark_finished=True` la finalul cu succes.
+- [x] Adaug mirror update `error` + `error` + `mark_finished=True` pe eșec runner.
+- [x] Păstrez flow-ul in-memory ca sursă de adevăr și tratez mirror DB ca best-effort (non-blocking).
+- [x] Adaug teste focalizate pentru running/done/error + fallback la eșec mirror.
+
+## Review — Mirror lifecycle status Google async jobs în `sync_runs` (running/done/error)
+- În `_run_google_backfill_job`, după `backfill_job_store.set_running(job_id)` se face mirror `status=running, mark_started=True`.
+- La final cu succes, după `backfill_job_store.set_done(...)`, se face mirror `status=done, mark_finished=True` + metadata compactă (`mapped_accounts_count`, `successful_accounts`, `failed_accounts`, `days`, `chunk_days`).
+- La excepții neprevăzute în runner, se setează `backfill_job_store.set_error(...)` și mirror `status=error, error=<safe>, mark_finished=True`.
+- Dacă write/update în `sync_runs` eșuează, se loghează warning și jobul continuă pe flow-ul în memorie fără schimbări de response/status endpoint.
