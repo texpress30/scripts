@@ -1,8 +1,14 @@
 import os
+from datetime import date, datetime
 import unittest
 from decimal import Decimal
 
-from app.services.auth import AuthError, create_access_token, decode_access_token, validate_login_credentials
+from fastapi import BackgroundTasks
+
+from app.services.auth import AuthError, AuthUser, create_access_token, decode_access_token, validate_login_credentials
+from app.api import google_ads as google_ads_api
+from app.api import meta_ads as meta_ads_api
+from app.api import tiktok_ads as tiktok_ads_api
 from app.services.ai_assistant import ai_assistant_service
 from app.services.insights import insights_service
 from app.services.dashboard import unified_dashboard_service
@@ -26,6 +32,10 @@ from app.services.rbac import AuthorizationError, require_action, require_permis
 from app.services.rules_engine import rules_engine_service
 from app.services.audit import audit_log_service
 from app.services.client_registry import client_registry_service
+from app.services.performance_reports import performance_reports_store
+from app.services.sync_runs_store import sync_runs_store
+from app.services.sync_state_store import sync_state_store
+from app.services.sync_run_chunks_store import sync_run_chunks_store
 
 
 class ServiceTests(unittest.TestCase):
@@ -119,6 +129,215 @@ class ServiceTests(unittest.TestCase):
         google_platform = next(item for item in updated["platforms"] if item["platform"] == "google_ads")
         self.assertEqual(google_platform["accounts"][0]["currency"], "RON")
 
+
+    def test_client_registry_preferred_currency_uses_account_mapping_currency(self):
+        created = client_registry_service.create_client(name="Currency Pref Client", owner_email="owner@example.com")
+        client_registry_service.upsert_platform_accounts(
+            platform="google_ads",
+            accounts=[{"id": "7777777777", "name": "Google Currency Ref"}],
+        )
+        client_registry_service.attach_platform_account_to_client(
+            platform="google_ads",
+            client_id=int(created["id"]),
+            account_id="7777777777",
+        )
+        client_registry_service.update_client_profile_by_display_id(
+            display_id=int(created["display_id"]),
+            platform="google_ads",
+            account_id="7777777777",
+            currency="eur",
+        )
+
+        preferred_currency = client_registry_service.get_preferred_currency_for_client(client_id=int(created["id"]))
+        self.assertEqual(preferred_currency, "EUR")
+
+    def test_client_registry_update_platform_account_operational_metadata_updates_existing_row(self):
+        client_registry_service._operational_metadata_schema_initialized = False
+        state: dict[tuple[str, str], dict[str, object]] = {
+            ("google_ads", "1234567890"): {
+                "platform": "google_ads",
+                "account_id": "1234567890",
+                "status": "queued",
+                "currency_code": "USD",
+                "account_timezone": "UTC",
+                "sync_start_date": None,
+                "last_synced_at": None,
+            }
+        }
+
+        class _FakeCursor:
+            _row: tuple[object, ...] | None
+            rowcount: int
+
+            def __init__(self):
+                self._row = None
+                self.rowcount = 0
+
+            def execute(self, query, params=None):
+                sql = str(query)
+                self.rowcount = 0
+
+                if "SELECT to_regclass('public.agency_platform_accounts')" in sql:
+                    self._row = ("agency_platform_accounts",)
+                    return
+
+                if "FROM information_schema.columns" in sql and "agency_platform_accounts" in sql:
+                    self._row = (5,)
+                    return
+
+                if "UPDATE agency_platform_accounts" in sql and "WHERE platform = %s AND account_id = %s" in sql:
+                    platform = str(params[-2])
+                    account_id = str(params[-1])
+                    record = state.get((platform, account_id))
+                    if record is None:
+                        self.rowcount = 0
+                        return
+
+                    assignments = str(sql).split("SET", 1)[1].split("WHERE", 1)[0]
+                    column_names = [part.strip().split("=", 1)[0].strip() for part in assignments.split(",") if "=" in part]
+                    values = list(params[:-2])
+                    for column_name, value in zip(column_names, values):
+                        record[column_name] = value
+                    self.rowcount = 1
+                    return
+
+                if "SELECT platform, account_id, status, currency_code, account_timezone, sync_start_date, last_synced_at" in sql:
+                    platform = str(params[0])
+                    account_id = str(params[1])
+                    record = state.get((platform, account_id))
+                    if record is None:
+                        self._row = None
+                    else:
+                        self._row = (
+                            record["platform"],
+                            record["account_id"],
+                            record["status"],
+                            record["currency_code"],
+                            record["account_timezone"],
+                            record["sync_start_date"],
+                            record["last_synced_at"],
+                        )
+                    return
+
+                raise AssertionError(f"Unexpected SQL: {sql}")
+
+            def fetchone(self):
+                return self._row
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def commit(self):
+                return None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_is_test_mode = client_registry_service._is_test_mode
+        original_connect = client_registry_service._connect_or_raise
+        try:
+            client_registry_service._is_test_mode = lambda: False
+            client_registry_service._connect_or_raise = lambda: _FakeConn()
+
+            updated_full = client_registry_service.update_platform_account_operational_metadata(
+                platform="google_ads",
+                account_id="1234567890",
+                status="running",
+                currency_code="RON",
+                account_timezone="Europe/Bucharest",
+                sync_start_date=date(2026, 1, 1),
+                last_synced_at=datetime.fromisoformat("2026-03-01T00:00:01+00:00"),
+            )
+            updated_subset = client_registry_service.update_platform_account_operational_metadata(
+                platform="google_ads",
+                account_id="1234567890",
+                status="done",
+            )
+            missing = client_registry_service.update_platform_account_operational_metadata(
+                platform="google_ads",
+                account_id="does-not-exist",
+                status="done",
+            )
+        finally:
+            client_registry_service._is_test_mode = original_is_test_mode
+            client_registry_service._connect_or_raise = original_connect
+            client_registry_service._operational_metadata_schema_initialized = False
+
+        self.assertIsNotNone(updated_full)
+        assert updated_full is not None
+        self.assertEqual(updated_full.get("status"), "running")
+        self.assertEqual(updated_full.get("currency_code"), "RON")
+        self.assertEqual(updated_full.get("account_timezone"), "Europe/Bucharest")
+        self.assertEqual(updated_full.get("sync_start_date"), "2026-01-01")
+        self.assertEqual(updated_full.get("last_synced_at"), "2026-03-01 00:00:01+00:00")
+
+        self.assertIsNotNone(updated_subset)
+        assert updated_subset is not None
+        self.assertEqual(updated_subset.get("status"), "done")
+        self.assertEqual(updated_subset.get("currency_code"), "RON")
+        self.assertEqual(updated_subset.get("account_timezone"), "Europe/Bucharest")
+        self.assertEqual(updated_subset.get("sync_start_date"), "2026-01-01")
+        self.assertEqual(updated_subset.get("last_synced_at"), "2026-03-01 00:00:01+00:00")
+
+        self.assertIsNone(missing)
+
+    def test_client_registry_operational_metadata_schema_missing_raises_clear_error(self):
+        client_registry_service._operational_metadata_schema_initialized = False
+
+        class _FakeCursor:
+            def execute(self, query, params=None):
+                return None
+
+            def fetchone(self):
+                return (None,)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_is_test_mode = client_registry_service._is_test_mode
+        original_connect = client_registry_service._connect_or_raise
+        try:
+            client_registry_service._is_test_mode = lambda: False
+            client_registry_service._connect_or_raise = lambda: _FakeConn()
+            with self.assertRaises(RuntimeError) as ctx:
+                client_registry_service.update_platform_account_operational_metadata(
+                    platform="google_ads",
+                    account_id="1234567890",
+                    status="running",
+                )
+        finally:
+            client_registry_service._is_test_mode = original_is_test_mode
+            client_registry_service._connect_or_raise = original_connect
+            client_registry_service._operational_metadata_schema_initialized = False
+
+        self.assertIn(
+            "Database schema for agency_platform_accounts operational metadata is not ready; run DB migrations",
+            str(ctx.exception),
+        )
+
     # Sprint 2 coverage (Google)
     def test_google_ads_status_pending_when_placeholder(self):
         os.environ["GOOGLE_ADS_TOKEN"] = "your_google_ads_token"
@@ -137,7 +356,7 @@ class ServiceTests(unittest.TestCase):
 
 
 
-    def test_google_ads_sync_uses_production_metrics_when_mode_enabled(self):
+    def test_google_ads_sync_uses_production_daily_metrics_when_mode_enabled(self):
         os.environ["GOOGLE_ADS_MODE"] = "production"
         os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
         os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
@@ -147,26 +366,114 @@ class ServiceTests(unittest.TestCase):
         os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
         os.environ["GOOGLE_ADS_CUSTOMER_IDS_CSV"] = "1111111111,2222222222"
 
-        original = google_ads_service._fetch_production_metrics
+        original_fetch = google_ads_service._fetch_production_daily_metrics
+        original_persist = google_ads_service._persist_performance_report
+        persisted_report_dates: list[str] = []
         try:
-            google_ads_service._fetch_production_metrics = lambda customer_id: {
-                "spend": 300.5,
-                "impressions": 12000,
-                "clicks": 530,
-                "conversions": 44,
-                "revenue": 901.1,
-                "google_customer_id": customer_id,
+            google_ads_service._fetch_production_daily_metrics = lambda customer_id, days=30: {
+                "rows": [
+                    {"report_date": "2026-02-27", "spend": 100.0, "impressions": 1000, "clicks": 100, "conversions": 0, "revenue": 0.0},
+                    {"report_date": "2026-02-28", "spend": 200.5, "impressions": 11000, "clicks": 430, "conversions": 0, "revenue": 0.0},
+                ]
             }
+
+            def fake_persist(*, snapshot, client_id):
+                persisted_report_dates.append(str(snapshot.get("report_date") or ""))
+                return 1
+
+            google_ads_service._persist_performance_report = fake_persist
             snapshot = google_ads_service.sync_client(client_id=2)
         finally:
-            google_ads_service._fetch_production_metrics = original
+            google_ads_service._fetch_production_daily_metrics = original_fetch
+            google_ads_service._persist_performance_report = original_persist
 
         self.assertEqual(snapshot["google_customer_id"], "2222222222")
         self.assertEqual(snapshot["spend"], 300.5)
         self.assertEqual(snapshot["impressions"], 12000)
         self.assertEqual(snapshot["clicks"], 530)
-        self.assertEqual(snapshot["conversions"], 44)
-        self.assertEqual(snapshot["revenue"], 901.1)
+        self.assertEqual(snapshot["conversions"], 0)
+        self.assertEqual(snapshot["revenue"], 0.0)
+        self.assertEqual(sorted(persisted_report_dates), ["2026-02-27", "2026-02-28"])
+
+
+    def test_google_ads_sync_aggregates_all_mapped_accounts_for_client(self):
+        original_ids = google_ads_service.get_recommended_customer_ids_for_client
+        original_persist = google_ads_service._persist_performance_report
+        persisted: list[str] = []
+        try:
+            google_ads_service.get_recommended_customer_ids_for_client = lambda client_id: ["1111111111", "2222222222"]
+
+            def fake_persist(*, snapshot, client_id):
+                persisted.append(str(snapshot.get("google_customer_id") or ""))
+                return 1
+
+            google_ads_service._persist_performance_report = fake_persist
+            snapshot = google_ads_service.sync_client(client_id=2)
+        finally:
+            google_ads_service.get_recommended_customer_ids_for_client = original_ids
+            google_ads_service._persist_performance_report = original_persist
+
+        self.assertEqual(snapshot["synced_customers_count"], 2)
+        self.assertEqual(snapshot["spend"], round((100 + 2 * 17) * 2, 2))
+        self.assertEqual(snapshot["google_customer_id"], "1111111111")
+        self.assertEqual(sorted(persisted), ["1111111111", "2222222222"])
+
+    def test_google_ads_sync_wraps_unexpected_errors_with_customer_context(self):
+        original_ids = google_ads_service.get_recommended_customer_ids_for_client
+        original_persist = google_ads_service._persist_performance_report
+        try:
+            google_ads_service.get_recommended_customer_ids_for_client = lambda client_id: ["1111111111"]
+
+            def fake_persist(*, snapshot, client_id):
+                raise RuntimeError("db write failed")
+
+            google_ads_service._persist_performance_report = fake_persist
+            with self.assertRaises(GoogleAdsIntegrationError) as ctx:
+                google_ads_service.sync_client(client_id=2)
+        finally:
+            google_ads_service.get_recommended_customer_ids_for_client = original_ids
+            google_ads_service._persist_performance_report = original_persist
+
+        self.assertIn("Google Ads sync failed for customer", str(ctx.exception))
+        self.assertIn("db write failed", str(ctx.exception))
+
+    def test_google_ads_fetch_daily_metrics_uses_between_clause_for_explicit_range(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+        os.environ["GOOGLE_ADS_CLIENT_ID"] = "client-id"
+        os.environ["GOOGLE_ADS_CLIENT_SECRET"] = "client-secret"
+        os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"] = "dev-token"
+        os.environ["GOOGLE_ADS_MANAGER_CUSTOMER_ID"] = "1234567890"
+        os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://app.example.com/agency/integrations/google/callback"
+        os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
+
+        original_access_token = google_ads_service._access_token_from_refresh
+        original_required_manager = google_ads_service._required_manager_customer_id
+        original_fetch_rows = google_ads_service._fetch_gaql_daily_rows
+        captured_queries: list[str] = []
+        try:
+            google_ads_service._access_token_from_refresh = lambda: "ya29.token"
+            google_ads_service._required_manager_customer_id = lambda: "1234567890"
+
+            def fake_fetch_rows(*, customer_id, query, login_customer_id, access_token):
+                captured_queries.append(query)
+                return {"rows": [], "gaql_rows_fetched": 0}
+
+            google_ads_service._fetch_gaql_daily_rows = fake_fetch_rows
+            payload = google_ads_service._fetch_production_daily_metrics(
+                customer_id="1111111111",
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 1, 31),
+                days=31,
+            )
+        finally:
+            google_ads_service._access_token_from_refresh = original_access_token
+            google_ads_service._required_manager_customer_id = original_required_manager
+            google_ads_service._fetch_gaql_daily_rows = original_fetch_rows
+
+        self.assertEqual(len(captured_queries), 2)
+        self.assertIn("segments.date BETWEEN '2026-01-01' AND '2026-01-31'", captured_queries[0])
+        self.assertIn("segments.date BETWEEN '2026-01-01' AND '2026-01-31'", captured_queries[1])
+        self.assertIn("2026-01-01..2026-01-31", str(payload.get("zero_data_message") or ""))
 
     def test_google_ads_list_accessible_customers_uses_manager_search_stream(self):
         os.environ["GOOGLE_ADS_MODE"] = "production"
@@ -562,6 +869,1850 @@ class ServiceTests(unittest.TestCase):
 
         self.assertEqual(metrics["impressions"], 4363)
         self.assertEqual(metrics["clicks"], 376)
+
+
+    def test_performance_reports_dedup_query_targets_daily_duplicate_keys(self):
+        query = performance_reports_store._deduplicate_reports_query()
+
+        self.assertIn("PARTITION BY report_date, platform, customer_id", query)
+        self.assertIn("DELETE FROM ad_performance_reports", query)
+        self.assertIn("ranked.rn > 1", query)
+
+    def test_performance_reports_upsert_uses_canonical_key_and_updates_client_id_payload(self):
+        performance_reports_store._memory_rows.clear()
+
+        performance_reports_store.write_daily_report(
+            report_date=date(2026, 2, 28),
+            platform="google_ads",
+            customer_id="1111111111",
+            client_id=10,
+            spend=100.0,
+            impressions=1000,
+            clicks=100,
+            conversions=10.0,
+            conversion_value=50.0,
+        )
+
+        performance_reports_store.write_daily_report(
+            report_date=date(2026, 2, 28),
+            platform="google_ads",
+            customer_id="1111111111",
+            client_id=20,
+            spend=200.0,
+            impressions=2000,
+            clicks=200,
+            conversions=20.0,
+            conversion_value=150.0,
+        )
+
+        self.assertEqual(len(performance_reports_store._memory_rows), 1)
+        row = performance_reports_store._memory_rows[0]
+        self.assertEqual(row["client_id"], 20)
+        self.assertEqual(float(row["spend"]), 200.0)
+        self.assertEqual(int(row["impressions"]), 2000)
+
+    def test_performance_reports_schema_validation_is_read_only_and_errors_when_missing(self):
+        os.environ["APP_ENV"] = "development"
+        performance_reports_store._schema_initialized = False
+
+        queries: list[str] = []
+
+        class _FakeCursor:
+            def execute(self, query, params=None):
+                queries.append(str(query).strip())
+
+            def fetchone(self):
+                return (None,)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_connect = performance_reports_store._connect
+        try:
+            performance_reports_store._connect = lambda: _FakeConn()
+            with self.assertRaises(RuntimeError) as ctx:
+                performance_reports_store.initialize_schema()
+        finally:
+            performance_reports_store._connect = original_connect
+            performance_reports_store._schema_initialized = False
+            os.environ["APP_ENV"] = "test"
+
+        self.assertIn("Database schema for ad_performance_reports is not ready; run DB migrations", str(ctx.exception))
+        self.assertEqual(len(queries), 1)
+        self.assertIn("SELECT to_regclass('public.ad_performance_reports')", queries[0])
+
+    def test_sync_runs_store_schema_missing_raises_clear_error(self):
+        sync_runs_store._schema_initialized = False
+
+        class _FakeCursor:
+            def execute(self, query, params=None):
+                return None
+
+            def fetchone(self):
+                return (None,)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_connect = sync_runs_store._connect
+        try:
+            sync_runs_store._connect = lambda: _FakeConn()
+            with self.assertRaises(RuntimeError) as ctx:
+                sync_runs_store.get_sync_run("missing")
+        finally:
+            sync_runs_store._connect = original_connect
+            sync_runs_store._schema_initialized = False
+
+        self.assertIn("Database schema for sync_runs is not ready; run DB migrations", str(ctx.exception))
+
+    def test_google_ads_sync_now_async_mirrors_sync_run_create_and_planned_chunks(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+        background_tasks = BackgroundTasks()
+
+        original_enforce = google_ads_api.enforce_action_scope
+        original_list = google_ads_api.client_registry_service.list_google_mapped_accounts
+        original_create = google_ads_api.backfill_job_store.create
+        original_add_task = background_tasks.add_task
+        original_mirror_create = google_ads_api.sync_runs_store.create_sync_run
+        original_chunk_create = google_ads_api.sync_run_chunks_store.create_sync_run_chunk
+        captured: dict[str, object] = {"chunk_payloads": []}
+
+        try:
+            google_ads_api.enforce_action_scope = lambda **kwargs: None
+            google_ads_api.client_registry_service.list_google_mapped_accounts = lambda: [{"client_id": 96, "customer_id": "1234567890"}]
+            google_ads_api.backfill_job_store.create = lambda payload: "job-xyz"
+
+            def fake_add_task(func, *args, **kwargs):
+                captured["task"] = {"func": getattr(func, "__name__", str(func)), "args": args, "kwargs": kwargs}
+
+            background_tasks.add_task = fake_add_task
+
+            def fake_create_sync_run(**kwargs):
+                captured["sync_run_payload"] = kwargs
+                return {"job_id": kwargs.get("job_id")}
+
+            def fake_create_sync_chunk(**kwargs):
+                payloads = captured.get("chunk_payloads")
+                assert isinstance(payloads, list)
+                payloads.append(kwargs)
+                return {"job_id": kwargs.get("job_id"), "chunk_index": kwargs.get("chunk_index")}
+
+            google_ads_api.sync_runs_store.create_sync_run = fake_create_sync_run
+            google_ads_api.sync_run_chunks_store.create_sync_run_chunk = fake_create_sync_chunk
+
+            response = google_ads_api.sync_google_ads_now(
+                background_tasks=background_tasks,
+                user=user,
+                client_id=96,
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 1, 31),
+                days=30,
+                async_mode=True,
+                chunk_days=14,
+            )
+        finally:
+            google_ads_api.enforce_action_scope = original_enforce
+            google_ads_api.client_registry_service.list_google_mapped_accounts = original_list
+            google_ads_api.backfill_job_store.create = original_create
+            background_tasks.add_task = original_add_task
+            google_ads_api.sync_runs_store.create_sync_run = original_mirror_create
+            google_ads_api.sync_run_chunks_store.create_sync_run_chunk = original_chunk_create
+
+        self.assertEqual(response["status"], "queued")
+        self.assertEqual(response["job_id"], "job-xyz")
+        self.assertEqual(response["chunk_days"], 14)
+        self.assertEqual(captured["task"]["func"], "_run_google_backfill_job")
+
+        sync_run_payload = captured.get("sync_run_payload") or {}
+        self.assertEqual(sync_run_payload.get("job_id"), "job-xyz")
+        self.assertEqual(sync_run_payload.get("platform"), "google_ads")
+        self.assertEqual(sync_run_payload.get("status"), "queued")
+        self.assertEqual(sync_run_payload.get("client_id"), 96)
+        self.assertIsNone(sync_run_payload.get("account_id"))
+        self.assertEqual(str(sync_run_payload.get("date_start")), "2026-01-01")
+        self.assertEqual(str(sync_run_payload.get("date_end")), "2026-01-31")
+        self.assertEqual(sync_run_payload.get("chunk_days"), 14)
+        self.assertEqual((sync_run_payload.get("metadata") or {}).get("job_type"), "backfill")
+
+        chunk_payloads = captured.get("chunk_payloads") or []
+        self.assertEqual(len(chunk_payloads), 3)
+        self.assertEqual([int(item.get("chunk_index", -1)) for item in chunk_payloads], [0, 1, 2])
+        self.assertEqual([str(item.get("date_start")) for item in chunk_payloads], ["2026-01-01", "2026-01-15", "2026-01-29"])
+        self.assertEqual([str(item.get("date_end")) for item in chunk_payloads], ["2026-01-14", "2026-01-28", "2026-01-31"])
+        self.assertTrue(all(str(item.get("status")) == "queued" for item in chunk_payloads))
+
+    def test_google_ads_sync_now_async_continues_when_sync_run_chunk_mirror_fails(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+        background_tasks = BackgroundTasks()
+
+        original_enforce = google_ads_api.enforce_action_scope
+        original_list = google_ads_api.client_registry_service.list_google_mapped_accounts
+        original_create = google_ads_api.backfill_job_store.create
+        original_add_task = background_tasks.add_task
+        original_mirror_create = google_ads_api.sync_runs_store.create_sync_run
+        original_chunk_create = google_ads_api.sync_run_chunks_store.create_sync_run_chunk
+
+        try:
+            google_ads_api.enforce_action_scope = lambda **kwargs: None
+            google_ads_api.client_registry_service.list_google_mapped_accounts = lambda: [{"client_id": 96, "customer_id": "1234567890"}]
+            google_ads_api.backfill_job_store.create = lambda payload: "job-fallback"
+            background_tasks.add_task = lambda *args, **kwargs: None
+            google_ads_api.sync_runs_store.create_sync_run = lambda **kwargs: {"job_id": kwargs.get("job_id")}
+
+            def failing_create_sync_chunk(**kwargs):
+                raise RuntimeError("sync_run_chunks unavailable")
+
+            google_ads_api.sync_run_chunks_store.create_sync_run_chunk = failing_create_sync_chunk
+
+            response = google_ads_api.sync_google_ads_now(
+                background_tasks=background_tasks,
+                user=user,
+                client_id=96,
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 1, 31),
+                days=30,
+                async_mode=True,
+                chunk_days=7,
+            )
+        finally:
+            google_ads_api.enforce_action_scope = original_enforce
+            google_ads_api.client_registry_service.list_google_mapped_accounts = original_list
+            google_ads_api.backfill_job_store.create = original_create
+            background_tasks.add_task = original_add_task
+            google_ads_api.sync_runs_store.create_sync_run = original_mirror_create
+            google_ads_api.sync_run_chunks_store.create_sync_run_chunk = original_chunk_create
+
+        self.assertEqual(response["status"], "queued")
+        self.assertEqual(response["job_id"], "job-fallback")
+
+    def test_google_sync_now_job_status_memory_hit_enriches_with_chunks(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+        db_calls: list[str] = []
+
+        original_enforce = google_ads_api.enforce_action_scope
+        original_memory_get = google_ads_api.backfill_job_store.get
+        original_db_get = google_ads_api.sync_runs_store.get_sync_run
+        original_chunk_list = google_ads_api.sync_run_chunks_store.list_sync_run_chunks
+        try:
+            google_ads_api.enforce_action_scope = lambda **kwargs: None
+            google_ads_api.backfill_job_store.get = lambda job_id: {"status": "running", "platform": "google_ads", "source": "memory"}
+
+            def db_get(job_id: str):
+                db_calls.append(job_id)
+                return {"job_id": job_id}
+
+            google_ads_api.sync_runs_store.get_sync_run = db_get
+            google_ads_api.sync_run_chunks_store.list_sync_run_chunks = lambda job_id: [
+                {
+                    "chunk_index": 0,
+                    "status": "queued",
+                    "date_start": "2026-01-01",
+                    "date_end": "2026-01-07",
+                    "started_at": None,
+                    "finished_at": None,
+                    "error": None,
+                    "metadata": {"chunk_days": 7},
+                },
+                {
+                    "chunk_index": 1,
+                    "status": "done",
+                    "date_start": "2026-01-08",
+                    "date_end": "2026-01-14",
+                    "started_at": "2026-03-01T00:00:01+00:00",
+                    "finished_at": "2026-03-01T00:00:05+00:00",
+                    "error": None,
+                    "metadata": {},
+                },
+            ]
+
+            response = google_ads_api.sync_now_job_status("job-memory", user=user)
+        finally:
+            google_ads_api.enforce_action_scope = original_enforce
+            google_ads_api.backfill_job_store.get = original_memory_get
+            google_ads_api.sync_runs_store.get_sync_run = original_db_get
+            google_ads_api.sync_run_chunks_store.list_sync_run_chunks = original_chunk_list
+
+        self.assertEqual(response.get("status"), "running")
+        self.assertEqual(response.get("source"), "memory")
+        self.assertEqual(db_calls, [])
+        self.assertEqual((response.get("chunk_summary") or {}).get("total"), 2)
+        self.assertEqual((response.get("chunk_summary") or {}).get("queued"), 1)
+        self.assertEqual((response.get("chunk_summary") or {}).get("done"), 1)
+        self.assertEqual(len(response.get("chunks") or []), 2)
+
+    def test_google_sync_now_job_status_memory_hit_chunks_error_is_non_blocking(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+
+        original_enforce = google_ads_api.enforce_action_scope
+        original_memory_get = google_ads_api.backfill_job_store.get
+        original_db_get = google_ads_api.sync_runs_store.get_sync_run
+        original_chunk_list = google_ads_api.sync_run_chunks_store.list_sync_run_chunks
+        try:
+            google_ads_api.enforce_action_scope = lambda **kwargs: None
+            google_ads_api.backfill_job_store.get = lambda job_id: {"status": "running", "platform": "google_ads", "source": "memory"}
+            google_ads_api.sync_runs_store.get_sync_run = lambda job_id: {"job_id": job_id}
+
+            def failing_chunk_list(job_id: str):
+                raise RuntimeError("chunk db unavailable")
+
+            google_ads_api.sync_run_chunks_store.list_sync_run_chunks = failing_chunk_list
+            response = google_ads_api.sync_now_job_status("job-memory", user=user)
+        finally:
+            google_ads_api.enforce_action_scope = original_enforce
+            google_ads_api.backfill_job_store.get = original_memory_get
+            google_ads_api.sync_runs_store.get_sync_run = original_db_get
+            google_ads_api.sync_run_chunks_store.list_sync_run_chunks = original_chunk_list
+
+        self.assertEqual(response.get("status"), "running")
+        self.assertEqual(response.get("source"), "memory")
+        self.assertNotIn("chunk_summary", response)
+        self.assertNotIn("chunks", response)
+
+    def test_google_sync_now_job_status_falls_back_to_sync_runs_store_and_enriches_chunks(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+
+        original_enforce = google_ads_api.enforce_action_scope
+        original_memory_get = google_ads_api.backfill_job_store.get
+        original_db_get = google_ads_api.sync_runs_store.get_sync_run
+        original_chunk_list = google_ads_api.sync_run_chunks_store.list_sync_run_chunks
+        try:
+            google_ads_api.enforce_action_scope = lambda **kwargs: None
+            google_ads_api.backfill_job_store.get = lambda job_id: None
+            google_ads_api.sync_runs_store.get_sync_run = lambda job_id: {
+                "job_id": job_id,
+                "platform": "google_ads",
+                "status": "done",
+                "client_id": 96,
+                "account_id": None,
+                "date_start": "2026-01-01",
+                "date_end": "2026-01-31",
+                "chunk_days": 7,
+                "created_at": "2026-03-01T00:00:01+00:00",
+                "updated_at": "2026-03-01T00:00:10+00:00",
+                "started_at": "2026-03-01T00:00:03+00:00",
+                "finished_at": "2026-03-01T00:00:09+00:00",
+                "error": None,
+                "metadata": {"mapped_accounts_count": 3},
+            }
+            google_ads_api.sync_run_chunks_store.list_sync_run_chunks = lambda job_id: [
+                {
+                    "chunk_index": 0,
+                    "status": "done",
+                    "date_start": "2026-01-01",
+                    "date_end": "2026-01-07",
+                    "started_at": "2026-03-01T00:00:01+00:00",
+                    "finished_at": "2026-03-01T00:00:05+00:00",
+                    "error": None,
+                    "metadata": {"rows": 7},
+                }
+            ]
+
+            response = google_ads_api.sync_now_job_status("job-db", user=user)
+        finally:
+            google_ads_api.enforce_action_scope = original_enforce
+            google_ads_api.backfill_job_store.get = original_memory_get
+            google_ads_api.sync_runs_store.get_sync_run = original_db_get
+            google_ads_api.sync_run_chunks_store.list_sync_run_chunks = original_chunk_list
+
+        self.assertEqual(response.get("job_id"), "job-db")
+        self.assertEqual(response.get("status"), "done")
+        self.assertEqual(response.get("created_at"), "2026-03-01T00:00:01+00:00")
+        self.assertEqual(response.get("started_at"), "2026-03-01T00:00:03+00:00")
+        self.assertEqual(response.get("finished_at"), "2026-03-01T00:00:09+00:00")
+        self.assertIsNone(response.get("error"))
+        self.assertEqual((response.get("metadata") or {}).get("mapped_accounts_count"), 3)
+        self.assertEqual((response.get("chunk_summary") or {}).get("total"), 1)
+        self.assertEqual((response.get("chunk_summary") or {}).get("done"), 1)
+        self.assertEqual(len(response.get("chunks") or []), 1)
+
+    def test_google_sync_now_job_status_fallback_db_hit_chunks_error_is_non_blocking(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+
+        original_enforce = google_ads_api.enforce_action_scope
+        original_memory_get = google_ads_api.backfill_job_store.get
+        original_db_get = google_ads_api.sync_runs_store.get_sync_run
+        original_chunk_list = google_ads_api.sync_run_chunks_store.list_sync_run_chunks
+        try:
+            google_ads_api.enforce_action_scope = lambda **kwargs: None
+            google_ads_api.backfill_job_store.get = lambda job_id: None
+            google_ads_api.sync_runs_store.get_sync_run = lambda job_id: {
+                "job_id": job_id,
+                "platform": "google_ads",
+                "status": "running",
+                "client_id": 96,
+                "account_id": None,
+                "date_start": "2026-01-01",
+                "date_end": "2026-01-31",
+                "chunk_days": 7,
+                "created_at": "2026-03-01T00:00:01+00:00",
+                "updated_at": "2026-03-01T00:00:10+00:00",
+                "started_at": "2026-03-01T00:00:03+00:00",
+                "finished_at": None,
+                "error": None,
+                "metadata": {},
+            }
+
+            def failing_chunk_list(job_id: str):
+                raise RuntimeError("chunk read failure")
+
+            google_ads_api.sync_run_chunks_store.list_sync_run_chunks = failing_chunk_list
+            response = google_ads_api.sync_now_job_status("job-db-chunk-error", user=user)
+        finally:
+            google_ads_api.enforce_action_scope = original_enforce
+            google_ads_api.backfill_job_store.get = original_memory_get
+            google_ads_api.sync_runs_store.get_sync_run = original_db_get
+            google_ads_api.sync_run_chunks_store.list_sync_run_chunks = original_chunk_list
+
+        self.assertEqual(response.get("job_id"), "job-db-chunk-error")
+        self.assertEqual(response.get("status"), "running")
+        self.assertNotIn("chunk_summary", response)
+        self.assertNotIn("chunks", response)
+
+    def test_google_sync_now_job_status_not_found_when_missing_in_memory_and_db(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+
+        original_enforce = google_ads_api.enforce_action_scope
+        original_memory_get = google_ads_api.backfill_job_store.get
+        original_db_get = google_ads_api.sync_runs_store.get_sync_run
+        try:
+            google_ads_api.enforce_action_scope = lambda **kwargs: None
+            google_ads_api.backfill_job_store.get = lambda job_id: None
+            google_ads_api.sync_runs_store.get_sync_run = lambda job_id: None
+
+            with self.assertRaises(google_ads_api.HTTPException) as ctx:
+                google_ads_api.sync_now_job_status("job-missing", user=user)
+        finally:
+            google_ads_api.enforce_action_scope = original_enforce
+            google_ads_api.backfill_job_store.get = original_memory_get
+            google_ads_api.sync_runs_store.get_sync_run = original_db_get
+
+        self.assertEqual(ctx.exception.status_code, 404)
+        self.assertEqual(str(ctx.exception.detail), "job not found")
+
+    def test_meta_ads_sync_now_async_mirrors_sync_run_create(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+        background_tasks = BackgroundTasks()
+        captured: dict[str, object] = {}
+
+        original_enforce = meta_ads_api.enforce_action_scope
+        original_create = meta_ads_api.backfill_job_store.create
+        original_add_task = background_tasks.add_task
+        original_mirror_create = meta_ads_api.sync_runs_store.create_sync_run
+        original_list_meta_accounts = meta_ads_api.client_registry_service.list_client_platform_accounts
+
+        try:
+            meta_ads_api.enforce_action_scope = lambda **kwargs: None
+            meta_ads_api.backfill_job_store.create = lambda payload: "meta-job-1"
+            meta_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "act_1200"}]
+            background_tasks.add_task = lambda func, *args, **kwargs: captured.update({"task": getattr(func, "__name__", "")})
+            meta_ads_api.sync_runs_store.create_sync_run = lambda **kwargs: captured.update({"sync_run_payload": kwargs}) or {"job_id": kwargs.get("job_id")}
+
+            response = meta_ads_api.sync_meta_ads_now(
+                background_tasks=background_tasks,
+                user=user,
+                client_id=96,
+                async_mode=True,
+            )
+        finally:
+            meta_ads_api.enforce_action_scope = original_enforce
+            meta_ads_api.backfill_job_store.create = original_create
+            background_tasks.add_task = original_add_task
+            meta_ads_api.sync_runs_store.create_sync_run = original_mirror_create
+            meta_ads_api.client_registry_service.list_client_platform_accounts = original_list_meta_accounts
+
+        self.assertEqual(response.get("status"), "queued")
+        self.assertEqual(response.get("job_id"), "meta-job-1")
+        payload = captured.get("sync_run_payload") or {}
+        self.assertEqual(payload.get("job_id"), "meta-job-1")
+        self.assertEqual(payload.get("platform"), "meta_ads")
+        self.assertEqual(payload.get("status"), "queued")
+        self.assertEqual(payload.get("client_id"), 96)
+        self.assertEqual(payload.get("account_id"), "act_1200")
+
+    def test_meta_backfill_runner_updates_sync_runs_running_done_and_error(self):
+        status_calls: list[dict[str, object]] = []
+        sync_state_calls: list[dict[str, object]] = []
+        operational_calls: list[dict[str, object]] = []
+
+        original_set_running = meta_ads_api.backfill_job_store.set_running
+        original_set_done = meta_ads_api.backfill_job_store.set_done
+        original_set_error = meta_ads_api.backfill_job_store.set_error
+        original_sync_client = meta_ads_api.meta_ads_service.sync_client
+        original_update_status = meta_ads_api.sync_runs_store.update_sync_run_status
+        original_sync_state_upsert = meta_ads_api.sync_state_store.upsert_sync_state
+        original_list_meta_accounts = meta_ads_api.client_registry_service.list_client_platform_accounts
+        original_operational_update = meta_ads_api.client_registry_service.update_platform_account_operational_metadata
+        try:
+            meta_ads_api.backfill_job_store.set_running = lambda job_id: None
+            meta_ads_api.backfill_job_store.set_done = lambda job_id, result: None
+            meta_ads_api.backfill_job_store.set_error = lambda job_id, error: None
+            meta_ads_api.meta_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
+            meta_ads_api.sync_runs_store.update_sync_run_status = lambda **kwargs: status_calls.append(kwargs) or {"job_id": kwargs.get("job_id")}
+            meta_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: sync_state_calls.append(kwargs) or {"account_id": kwargs.get("account_id")}
+            meta_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: ([{"id": "act_700", "currency": "eur"}] if int(kwargs.get("client_id") or 0) == 7 else [{"id": "act_800"}])
+            meta_ads_api.client_registry_service.update_platform_account_operational_metadata = lambda **kwargs: operational_calls.append(kwargs) or kwargs
+
+            meta_ads_api._run_meta_sync_job("meta-job-ok", client_id=7)
+
+            def boom_sync(*args, **kwargs):
+                raise RuntimeError("meta down")
+
+            meta_ads_api.meta_ads_service.sync_client = boom_sync
+            meta_ads_api._run_meta_sync_job("meta-job-fail", client_id=8)
+        finally:
+            meta_ads_api.backfill_job_store.set_running = original_set_running
+            meta_ads_api.backfill_job_store.set_done = original_set_done
+            meta_ads_api.backfill_job_store.set_error = original_set_error
+            meta_ads_api.meta_ads_service.sync_client = original_sync_client
+            meta_ads_api.sync_runs_store.update_sync_run_status = original_update_status
+            meta_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+            meta_ads_api.client_registry_service.list_client_platform_accounts = original_list_meta_accounts
+            meta_ads_api.client_registry_service.update_platform_account_operational_metadata = original_operational_update
+
+        self.assertTrue(any(call.get("job_id") == "meta-job-ok" and call.get("status") == "running" for call in status_calls))
+        self.assertTrue(any(call.get("job_id") == "meta-job-ok" and call.get("status") == "done" for call in status_calls))
+        self.assertTrue(any(call.get("job_id") == "meta-job-fail" and call.get("status") == "running" for call in status_calls))
+        self.assertTrue(any(call.get("job_id") == "meta-job-fail" and call.get("status") == "error" for call in status_calls))
+
+        running_call = next((call for call in sync_state_calls if call.get("last_job_id") == "meta-job-ok" and call.get("last_status") == "running"), None)
+        self.assertIsNotNone(running_call)
+        self.assertEqual((running_call or {}).get("platform"), "meta_ads")
+        self.assertEqual((running_call or {}).get("account_id"), "act_700")
+        self.assertEqual((running_call or {}).get("grain"), "account_daily")
+        self.assertEqual((running_call or {}).get("error"), None)
+
+        done_call = next((call for call in sync_state_calls if call.get("last_job_id") == "meta-job-ok" and call.get("last_status") == "done"), None)
+        self.assertIsNotNone(done_call)
+        self.assertIsNotNone((done_call or {}).get("last_successful_at"))
+        self.assertIsNotNone((done_call or {}).get("last_successful_date"))
+        self.assertEqual((done_call or {}).get("error"), None)
+
+        error_call = next((call for call in sync_state_calls if call.get("last_job_id") == "meta-job-fail" and call.get("last_status") == "error"), None)
+        self.assertIsNotNone(error_call)
+        self.assertEqual((error_call or {}).get("account_id"), "act_800")
+        self.assertTrue("meta down" in str((error_call or {}).get("error") or ""))
+
+        start_op_call = next((call for call in operational_calls if call.get("account_id") == "act_700" and call.get("sync_start_date") is not None and call.get("last_synced_at") is None), None)
+        self.assertIsNotNone(start_op_call)
+        self.assertEqual((start_op_call or {}).get("platform"), "meta_ads")
+        self.assertEqual((start_op_call or {}).get("currency_code"), "EUR")
+
+        success_op_call = next((call for call in operational_calls if call.get("account_id") == "act_700" and call.get("last_synced_at") is not None), None)
+        self.assertIsNotNone(success_op_call)
+
+    def test_meta_sync_now_job_status_memory_first_and_db_fallback(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+
+        original_enforce = meta_ads_api.enforce_action_scope
+        original_memory_get = meta_ads_api.backfill_job_store.get
+        original_db_get = meta_ads_api.sync_runs_store.get_sync_run
+        try:
+            meta_ads_api.enforce_action_scope = lambda **kwargs: None
+            meta_ads_api.backfill_job_store.get = lambda job_id: {"status": "running", "source": "memory"}
+            meta_ads_api.sync_runs_store.get_sync_run = lambda job_id: {"job_id": job_id, "status": "done"}
+            memory_response = meta_ads_api.sync_now_job_status("meta-memory", user=user)
+
+            meta_ads_api.backfill_job_store.get = lambda job_id: None
+            meta_ads_api.sync_runs_store.get_sync_run = lambda job_id: {
+                "job_id": job_id,
+                "platform": "meta_ads",
+                "status": "done",
+                "client_id": 10,
+                "account_id": None,
+                "date_start": "2026-01-01",
+                "date_end": "2026-01-31",
+                "chunk_days": 1,
+                "created_at": "2026-03-01T00:00:01+00:00",
+                "updated_at": "2026-03-01T00:00:10+00:00",
+                "started_at": "2026-03-01T00:00:03+00:00",
+                "finished_at": "2026-03-01T00:00:09+00:00",
+                "error": None,
+                "metadata": {},
+            }
+            db_response = meta_ads_api.sync_now_job_status("meta-db", user=user)
+
+            meta_ads_api.sync_runs_store.get_sync_run = lambda job_id: None
+            with self.assertRaises(meta_ads_api.HTTPException) as ctx:
+                meta_ads_api.sync_now_job_status("meta-missing", user=user)
+        finally:
+            meta_ads_api.enforce_action_scope = original_enforce
+            meta_ads_api.backfill_job_store.get = original_memory_get
+            meta_ads_api.sync_runs_store.get_sync_run = original_db_get
+
+        self.assertEqual(memory_response.get("source"), "memory")
+        self.assertEqual(db_response.get("job_id"), "meta-db")
+        self.assertEqual(db_response.get("status"), "done")
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_meta_sync_now_job_status_db_error_is_non_blocking(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+
+        original_enforce = meta_ads_api.enforce_action_scope
+        original_memory_get = meta_ads_api.backfill_job_store.get
+        original_db_get = meta_ads_api.sync_runs_store.get_sync_run
+        try:
+            meta_ads_api.enforce_action_scope = lambda **kwargs: None
+            meta_ads_api.backfill_job_store.get = lambda job_id: None
+            meta_ads_api.sync_runs_store.get_sync_run = lambda job_id: (_ for _ in ()).throw(RuntimeError("db unavailable"))
+            with self.assertRaises(meta_ads_api.HTTPException) as ctx:
+                meta_ads_api.sync_now_job_status("meta-db-error", user=user)
+        finally:
+            meta_ads_api.enforce_action_scope = original_enforce
+            meta_ads_api.backfill_job_store.get = original_memory_get
+            meta_ads_api.sync_runs_store.get_sync_run = original_db_get
+
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_meta_sync_state_upsert_failures_are_non_blocking(self):
+        status_calls: list[dict[str, object]] = []
+
+        original_set_running = meta_ads_api.backfill_job_store.set_running
+        original_set_done = meta_ads_api.backfill_job_store.set_done
+        original_set_error = meta_ads_api.backfill_job_store.set_error
+        original_sync_client = meta_ads_api.meta_ads_service.sync_client
+        original_update_status = meta_ads_api.sync_runs_store.update_sync_run_status
+        original_sync_state_upsert = meta_ads_api.sync_state_store.upsert_sync_state
+        original_list_meta_accounts = meta_ads_api.client_registry_service.list_client_platform_accounts
+        original_operational_update = meta_ads_api.client_registry_service.update_platform_account_operational_metadata
+        try:
+            meta_ads_api.backfill_job_store.set_running = lambda job_id: None
+            meta_ads_api.backfill_job_store.set_done = lambda job_id, result: None
+            meta_ads_api.backfill_job_store.set_error = lambda job_id, error: None
+            meta_ads_api.meta_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
+            meta_ads_api.sync_runs_store.update_sync_run_status = lambda **kwargs: status_calls.append(kwargs) or {"job_id": kwargs.get("job_id")}
+            meta_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("sync_state unavailable"))
+            meta_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "act_9900"}]
+            meta_ads_api.client_registry_service.update_platform_account_operational_metadata = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("operational metadata unavailable"))
+
+            meta_ads_api._run_meta_sync_job("meta-job-state-fail", client_id=99)
+        finally:
+            meta_ads_api.backfill_job_store.set_running = original_set_running
+            meta_ads_api.backfill_job_store.set_done = original_set_done
+            meta_ads_api.backfill_job_store.set_error = original_set_error
+            meta_ads_api.meta_ads_service.sync_client = original_sync_client
+            meta_ads_api.sync_runs_store.update_sync_run_status = original_update_status
+            meta_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+            meta_ads_api.client_registry_service.list_client_platform_accounts = original_list_meta_accounts
+            meta_ads_api.client_registry_service.update_platform_account_operational_metadata = original_operational_update
+
+        self.assertTrue(any(call.get("job_id") == "meta-job-state-fail" and call.get("status") == "running" for call in status_calls))
+        self.assertTrue(any(call.get("job_id") == "meta-job-state-fail" and call.get("status") == "done" for call in status_calls))
+
+    def test_meta_sync_state_skips_when_real_account_id_is_missing(self):
+        status_calls: list[dict[str, object]] = []
+        sync_state_calls: list[dict[str, object]] = []
+        op_calls: list[dict[str, object]] = []
+
+        original_set_running = meta_ads_api.backfill_job_store.set_running
+        original_set_done = meta_ads_api.backfill_job_store.set_done
+        original_set_error = meta_ads_api.backfill_job_store.set_error
+        original_sync_client = meta_ads_api.meta_ads_service.sync_client
+        original_update_status = meta_ads_api.sync_runs_store.update_sync_run_status
+        original_sync_state_upsert = meta_ads_api.sync_state_store.upsert_sync_state
+        original_list_meta_accounts = meta_ads_api.client_registry_service.list_client_platform_accounts
+        original_operational_update = meta_ads_api.client_registry_service.update_platform_account_operational_metadata
+        try:
+            meta_ads_api.backfill_job_store.set_running = lambda job_id: None
+            meta_ads_api.backfill_job_store.set_done = lambda job_id, result: None
+            meta_ads_api.backfill_job_store.set_error = lambda job_id, error: None
+            meta_ads_api.meta_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
+            meta_ads_api.sync_runs_store.update_sync_run_status = lambda **kwargs: status_calls.append(kwargs) or {"job_id": kwargs.get("job_id")}
+            meta_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: sync_state_calls.append(kwargs) or {"account_id": kwargs.get("account_id")}
+            meta_ads_api.client_registry_service.update_platform_account_operational_metadata = lambda **kwargs: op_calls.append(kwargs) or kwargs
+            meta_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: []
+
+            meta_ads_api._run_meta_sync_job("meta-job-no-account", client_id=111)
+        finally:
+            meta_ads_api.backfill_job_store.set_running = original_set_running
+            meta_ads_api.backfill_job_store.set_done = original_set_done
+            meta_ads_api.backfill_job_store.set_error = original_set_error
+            meta_ads_api.meta_ads_service.sync_client = original_sync_client
+            meta_ads_api.sync_runs_store.update_sync_run_status = original_update_status
+            meta_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+            meta_ads_api.client_registry_service.list_client_platform_accounts = original_list_meta_accounts
+            meta_ads_api.client_registry_service.update_platform_account_operational_metadata = original_operational_update
+
+        self.assertEqual(sync_state_calls, [])
+        self.assertEqual(op_calls, [])
+        self.assertTrue(any(call.get("job_id") == "meta-job-no-account" and call.get("status") == "running" for call in status_calls))
+        done_call = next((call for call in status_calls if call.get("job_id") == "meta-job-no-account" and call.get("status") == "done"), None)
+        self.assertIsNotNone(done_call)
+        self.assertNotIn("account_id", (done_call or {}).get("metadata") or {})
+
+    def test_tiktok_ads_sync_now_async_mirrors_sync_run_create(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+        background_tasks = BackgroundTasks()
+        captured: dict[str, object] = {}
+
+        original_enforce = tiktok_ads_api.enforce_action_scope
+        original_create = tiktok_ads_api.backfill_job_store.create
+        original_add_task = background_tasks.add_task
+        original_mirror_create = tiktok_ads_api.sync_runs_store.create_sync_run
+        original_list_accounts = tiktok_ads_api.client_registry_service.list_client_platform_accounts
+        try:
+            tiktok_ads_api.enforce_action_scope = lambda **kwargs: None
+            tiktok_ads_api.backfill_job_store.create = lambda payload: "tt-job-1"
+            tiktok_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "tt-acc-1"}]
+            background_tasks.add_task = lambda func, *args, **kwargs: captured.update({"task": getattr(func, "__name__", "")})
+            tiktok_ads_api.sync_runs_store.create_sync_run = lambda **kwargs: captured.update({"sync_run_payload": kwargs}) or {"job_id": kwargs.get("job_id")}
+
+            response = tiktok_ads_api.sync_tiktok_ads_now(
+                background_tasks=background_tasks,
+                user=user,
+                client_id=77,
+                async_mode=True,
+            )
+        finally:
+            tiktok_ads_api.enforce_action_scope = original_enforce
+            tiktok_ads_api.backfill_job_store.create = original_create
+            background_tasks.add_task = original_add_task
+            tiktok_ads_api.sync_runs_store.create_sync_run = original_mirror_create
+            tiktok_ads_api.client_registry_service.list_client_platform_accounts = original_list_accounts
+
+        self.assertEqual(response.get("status"), "queued")
+        self.assertEqual(response.get("job_id"), "tt-job-1")
+        payload = captured.get("sync_run_payload") or {}
+        self.assertEqual(payload.get("platform"), "tiktok_ads")
+        self.assertEqual(payload.get("status"), "queued")
+        self.assertEqual(payload.get("client_id"), 77)
+        self.assertEqual(payload.get("account_id"), "tt-acc-1")
+
+    def test_tiktok_backfill_runner_updates_sync_runs_running_done_and_error(self):
+        status_calls: list[dict[str, object]] = []
+
+        original_set_running = tiktok_ads_api.backfill_job_store.set_running
+        original_set_done = tiktok_ads_api.backfill_job_store.set_done
+        original_set_error = tiktok_ads_api.backfill_job_store.set_error
+        original_sync_client = tiktok_ads_api.tiktok_ads_service.sync_client
+        original_update_status = tiktok_ads_api.sync_runs_store.update_sync_run_status
+        try:
+            tiktok_ads_api.backfill_job_store.set_running = lambda job_id: None
+            tiktok_ads_api.backfill_job_store.set_done = lambda job_id, result: None
+            tiktok_ads_api.backfill_job_store.set_error = lambda job_id, error: None
+            tiktok_ads_api.tiktok_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
+            tiktok_ads_api.sync_runs_store.update_sync_run_status = lambda **kwargs: status_calls.append(kwargs) or {"job_id": kwargs.get("job_id")}
+
+            tiktok_ads_api._run_tiktok_sync_job("tt-job-ok", client_id=11, account_id="tt-acc-ok")
+
+            def boom_sync(*args, **kwargs):
+                raise RuntimeError("tiktok down")
+
+            tiktok_ads_api.tiktok_ads_service.sync_client = boom_sync
+            tiktok_ads_api._run_tiktok_sync_job("tt-job-fail", client_id=12, account_id="tt-acc-fail")
+        finally:
+            tiktok_ads_api.backfill_job_store.set_running = original_set_running
+            tiktok_ads_api.backfill_job_store.set_done = original_set_done
+            tiktok_ads_api.backfill_job_store.set_error = original_set_error
+            tiktok_ads_api.tiktok_ads_service.sync_client = original_sync_client
+            tiktok_ads_api.sync_runs_store.update_sync_run_status = original_update_status
+
+        self.assertTrue(any(call.get("job_id") == "tt-job-ok" and call.get("status") == "running" for call in status_calls))
+        done_call = next((call for call in status_calls if call.get("job_id") == "tt-job-ok" and call.get("status") == "done"), None)
+        self.assertIsNotNone(done_call)
+        self.assertEqual(((done_call or {}).get("metadata") or {}).get("account_id"), "tt-acc-ok")
+        self.assertTrue(any(call.get("job_id") == "tt-job-fail" and call.get("status") == "error" for call in status_calls))
+
+    def test_tiktok_sync_now_job_status_memory_first_and_db_fallback(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+
+        original_enforce = tiktok_ads_api.enforce_action_scope
+        original_memory_get = tiktok_ads_api.backfill_job_store.get
+        original_db_get = tiktok_ads_api.sync_runs_store.get_sync_run
+        try:
+            tiktok_ads_api.enforce_action_scope = lambda **kwargs: None
+            tiktok_ads_api.backfill_job_store.get = lambda job_id: {"status": "running", "source": "memory"}
+            tiktok_ads_api.sync_runs_store.get_sync_run = lambda job_id: {"job_id": job_id, "status": "done"}
+            memory_response = tiktok_ads_api.sync_now_job_status("tt-memory", user=user)
+
+            tiktok_ads_api.backfill_job_store.get = lambda job_id: None
+            tiktok_ads_api.sync_runs_store.get_sync_run = lambda job_id: {
+                "job_id": job_id,
+                "platform": "tiktok_ads",
+                "status": "done",
+                "client_id": 77,
+                "account_id": "tt-acc-77",
+                "date_start": "2026-01-01",
+                "date_end": "2026-01-31",
+                "chunk_days": 1,
+                "created_at": "2026-03-01T00:00:01+00:00",
+                "updated_at": "2026-03-01T00:00:10+00:00",
+                "started_at": "2026-03-01T00:00:03+00:00",
+                "finished_at": "2026-03-01T00:00:09+00:00",
+                "error": None,
+                "metadata": {},
+            }
+            db_response = tiktok_ads_api.sync_now_job_status("tt-db", user=user)
+
+            tiktok_ads_api.sync_runs_store.get_sync_run = lambda job_id: None
+            with self.assertRaises(tiktok_ads_api.HTTPException) as ctx:
+                tiktok_ads_api.sync_now_job_status("tt-missing", user=user)
+        finally:
+            tiktok_ads_api.enforce_action_scope = original_enforce
+            tiktok_ads_api.backfill_job_store.get = original_memory_get
+            tiktok_ads_api.sync_runs_store.get_sync_run = original_db_get
+
+        self.assertEqual(memory_response.get("source"), "memory")
+        self.assertEqual(db_response.get("job_id"), "tt-db")
+        self.assertEqual(db_response.get("account_id"), "tt-acc-77")
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_tiktok_sync_now_job_status_db_error_is_non_blocking(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+
+        original_enforce = tiktok_ads_api.enforce_action_scope
+        original_memory_get = tiktok_ads_api.backfill_job_store.get
+        original_db_get = tiktok_ads_api.sync_runs_store.get_sync_run
+        try:
+            tiktok_ads_api.enforce_action_scope = lambda **kwargs: None
+            tiktok_ads_api.backfill_job_store.get = lambda job_id: None
+            tiktok_ads_api.sync_runs_store.get_sync_run = lambda job_id: (_ for _ in ()).throw(RuntimeError("db unavailable"))
+            with self.assertRaises(tiktok_ads_api.HTTPException) as ctx:
+                tiktok_ads_api.sync_now_job_status("tt-db-error", user=user)
+        finally:
+            tiktok_ads_api.enforce_action_scope = original_enforce
+            tiktok_ads_api.backfill_job_store.get = original_memory_get
+            tiktok_ads_api.sync_runs_store.get_sync_run = original_db_get
+
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_tiktok_sync_now_async_does_not_use_client_id_as_account_id_when_ambiguous(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+        background_tasks = BackgroundTasks()
+        captured: dict[str, object] = {}
+
+        original_enforce = tiktok_ads_api.enforce_action_scope
+        original_create = tiktok_ads_api.backfill_job_store.create
+        original_add_task = background_tasks.add_task
+        original_mirror_create = tiktok_ads_api.sync_runs_store.create_sync_run
+        original_list_accounts = tiktok_ads_api.client_registry_service.list_client_platform_accounts
+        try:
+            tiktok_ads_api.enforce_action_scope = lambda **kwargs: None
+            tiktok_ads_api.backfill_job_store.create = lambda payload: "tt-job-amb"
+            tiktok_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "tt-1"}, {"id": "tt-2"}]
+            background_tasks.add_task = lambda func, *args, **kwargs: captured.update({"task": getattr(func, "__name__", "")})
+            tiktok_ads_api.sync_runs_store.create_sync_run = lambda **kwargs: captured.update({"sync_run_payload": kwargs}) or {"job_id": kwargs.get("job_id")}
+
+            response = tiktok_ads_api.sync_tiktok_ads_now(
+                background_tasks=background_tasks,
+                user=user,
+                client_id=88,
+                async_mode=True,
+            )
+        finally:
+            tiktok_ads_api.enforce_action_scope = original_enforce
+            tiktok_ads_api.backfill_job_store.create = original_create
+            background_tasks.add_task = original_add_task
+            tiktok_ads_api.sync_runs_store.create_sync_run = original_mirror_create
+            tiktok_ads_api.client_registry_service.list_client_platform_accounts = original_list_accounts
+
+        self.assertEqual(response.get("status"), "queued")
+        payload = captured.get("sync_run_payload") or {}
+        self.assertIsNone(payload.get("account_id"))
+        self.assertNotEqual(payload.get("account_id"), "88")
+
+    def test_google_sync_now_job_status_db_error_is_non_blocking(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+
+        original_enforce = google_ads_api.enforce_action_scope
+        original_memory_get = google_ads_api.backfill_job_store.get
+        original_db_get = google_ads_api.sync_runs_store.get_sync_run
+        try:
+            google_ads_api.enforce_action_scope = lambda **kwargs: None
+            google_ads_api.backfill_job_store.get = lambda job_id: None
+
+            def failing_db_get(job_id: str):
+                raise RuntimeError("db unavailable")
+
+            google_ads_api.sync_runs_store.get_sync_run = failing_db_get
+
+            with self.assertRaises(google_ads_api.HTTPException) as ctx:
+                google_ads_api.sync_now_job_status("job-db-error", user=user)
+        finally:
+            google_ads_api.enforce_action_scope = original_enforce
+            google_ads_api.backfill_job_store.get = original_memory_get
+            google_ads_api.sync_runs_store.get_sync_run = original_db_get
+
+        self.assertEqual(ctx.exception.status_code, 404)
+        self.assertEqual(str(ctx.exception.detail), "job not found")
+
+    def test_google_backfill_runner_updates_platform_account_operational_metadata_start_and_success(self):
+        metadata_calls: list[dict[str, object]] = []
+
+        original_set_running = google_ads_api.backfill_job_store.set_running
+        original_set_done = google_ads_api.backfill_job_store.set_done
+        original_sync_customer = google_ads_api.google_ads_service.sync_customer_for_client
+        original_mirror_status = google_ads_api._mirror_sync_run_status
+        original_sync_state_upsert = google_ads_api.sync_state_store.upsert_sync_state
+        original_operational_update = google_ads_api.client_registry_service.update_platform_account_operational_metadata
+        try:
+            google_ads_api.backfill_job_store.set_running = lambda job_id: None
+            google_ads_api.backfill_job_store.set_done = lambda job_id, result: None
+            google_ads_api.google_ads_service.sync_customer_for_client = lambda **kwargs: {
+                "inserted_rows": 3,
+                "gaql_rows_fetched": 5,
+                "db_rows_last_30_for_customer": 3,
+                "reason_if_zero": None,
+            }
+            google_ads_api._mirror_sync_run_status = lambda **kwargs: None
+            google_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: {"ok": True}
+            google_ads_api.client_registry_service.update_platform_account_operational_metadata = lambda **kwargs: metadata_calls.append(kwargs) or {
+                "platform": kwargs.get("platform"),
+                "account_id": kwargs.get("account_id"),
+            }
+
+            google_ads_api._run_google_backfill_job(
+                "job-meta-ok",
+                mapped_accounts=[
+                    {
+                        "client_id": 96,
+                        "customer_id": "1234567890",
+                        "status": "active",
+                        "currency_code": "eur",
+                        "account_timezone": "Europe/Bucharest",
+                    }
+                ],
+                resolved_start=date(2026, 1, 1),
+                resolved_end=date(2026, 1, 31),
+                days=31,
+                chunk_days=7,
+                requested_client_id=96,
+            )
+        finally:
+            google_ads_api.backfill_job_store.set_running = original_set_running
+            google_ads_api.backfill_job_store.set_done = original_set_done
+            google_ads_api.google_ads_service.sync_customer_for_client = original_sync_customer
+            google_ads_api._mirror_sync_run_status = original_mirror_status
+            google_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+            google_ads_api.client_registry_service.update_platform_account_operational_metadata = original_operational_update
+
+        self.assertEqual(len(metadata_calls), 2)
+        start_call = metadata_calls[0]
+        success_call = metadata_calls[1]
+
+        self.assertEqual(start_call.get("platform"), "google_ads")
+        self.assertEqual(start_call.get("account_id"), "1234567890")
+        self.assertEqual(start_call.get("status"), "active")
+        self.assertEqual(start_call.get("currency_code"), "EUR")
+        self.assertEqual(start_call.get("account_timezone"), "Europe/Bucharest")
+        self.assertEqual(str(start_call.get("sync_start_date")), "2026-01-01")
+        self.assertIsNone(start_call.get("last_synced_at"))
+
+        self.assertEqual(success_call.get("platform"), "google_ads")
+        self.assertEqual(success_call.get("account_id"), "1234567890")
+        self.assertEqual(str(success_call.get("sync_start_date")), "2026-01-01")
+        self.assertIsNotNone(success_call.get("last_synced_at"))
+
+    def test_google_backfill_runner_operational_metadata_update_failure_is_non_blocking(self):
+        done_calls: list[dict[str, object]] = []
+
+        original_set_running = google_ads_api.backfill_job_store.set_running
+        original_set_done = google_ads_api.backfill_job_store.set_done
+        original_sync_customer = google_ads_api.google_ads_service.sync_customer_for_client
+        original_mirror_status = google_ads_api._mirror_sync_run_status
+        original_sync_state_upsert = google_ads_api.sync_state_store.upsert_sync_state
+        original_operational_update = google_ads_api.client_registry_service.update_platform_account_operational_metadata
+        try:
+            google_ads_api.backfill_job_store.set_running = lambda job_id: None
+            google_ads_api.backfill_job_store.set_done = lambda job_id, result: done_calls.append(result)
+            google_ads_api.google_ads_service.sync_customer_for_client = lambda **kwargs: {
+                "inserted_rows": 1,
+                "gaql_rows_fetched": 1,
+                "db_rows_last_30_for_customer": 1,
+                "reason_if_zero": None,
+            }
+            google_ads_api._mirror_sync_run_status = lambda **kwargs: None
+            google_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: {"ok": True}
+
+            def failing_operational_update(**kwargs):
+                raise RuntimeError("operational metadata unavailable")
+
+            google_ads_api.client_registry_service.update_platform_account_operational_metadata = failing_operational_update
+
+            google_ads_api._run_google_backfill_job(
+                "job-meta-fail",
+                mapped_accounts=[{"client_id": 96, "customer_id": "1234567890"}],
+                resolved_start=date(2026, 1, 1),
+                resolved_end=date(2026, 1, 31),
+                days=31,
+                chunk_days=7,
+                requested_client_id=96,
+            )
+        finally:
+            google_ads_api.backfill_job_store.set_running = original_set_running
+            google_ads_api.backfill_job_store.set_done = original_set_done
+            google_ads_api.google_ads_service.sync_customer_for_client = original_sync_customer
+            google_ads_api._mirror_sync_run_status = original_mirror_status
+            google_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+            google_ads_api.client_registry_service.update_platform_account_operational_metadata = original_operational_update
+
+        self.assertEqual(len(done_calls), 1)
+        self.assertEqual(done_calls[0].get("status"), "ok")
+
+    def test_google_backfill_runner_updates_sync_state_running_and_done_per_account(self):
+        sync_state_calls: list[dict[str, object]] = []
+
+        original_set_running = google_ads_api.backfill_job_store.set_running
+        original_set_done = google_ads_api.backfill_job_store.set_done
+        original_sync_customer = google_ads_api.google_ads_service.sync_customer_for_client
+        original_mirror_status = google_ads_api._mirror_sync_run_status
+        original_sync_state_upsert = google_ads_api.sync_state_store.upsert_sync_state
+        try:
+            google_ads_api.backfill_job_store.set_running = lambda job_id: None
+            google_ads_api.backfill_job_store.set_done = lambda job_id, result: None
+            google_ads_api.google_ads_service.sync_customer_for_client = lambda **kwargs: {
+                "inserted_rows": 3,
+                "gaql_rows_fetched": 5,
+                "db_rows_last_30_for_customer": 3,
+                "reason_if_zero": None,
+            }
+            google_ads_api._mirror_sync_run_status = lambda **kwargs: None
+            google_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: sync_state_calls.append(kwargs) or {
+                "platform": kwargs.get("platform"),
+                "account_id": kwargs.get("account_id"),
+                "grain": kwargs.get("grain"),
+            }
+
+            google_ads_api._run_google_backfill_job(
+                "job-state-ok",
+                mapped_accounts=[{"client_id": 96, "customer_id": "1234567890"}],
+                resolved_start=date(2026, 1, 1),
+                resolved_end=date(2026, 1, 31),
+                days=31,
+                chunk_days=7,
+                requested_client_id=96,
+            )
+        finally:
+            google_ads_api.backfill_job_store.set_running = original_set_running
+            google_ads_api.backfill_job_store.set_done = original_set_done
+            google_ads_api.google_ads_service.sync_customer_for_client = original_sync_customer
+            google_ads_api._mirror_sync_run_status = original_mirror_status
+            google_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+
+        self.assertGreaterEqual(len(sync_state_calls), 2)
+        first_call = sync_state_calls[0]
+        last_call = sync_state_calls[-1]
+        self.assertEqual(first_call.get("last_status"), "running")
+        self.assertEqual(first_call.get("last_job_id"), "job-state-ok")
+        self.assertEqual(first_call.get("account_id"), "1234567890")
+        self.assertEqual(first_call.get("grain"), "account_daily")
+        self.assertIsNone(first_call.get("error"))
+
+        self.assertEqual(last_call.get("last_status"), "done")
+        self.assertEqual(last_call.get("last_job_id"), "job-state-ok")
+        self.assertEqual(str(last_call.get("last_successful_date")), "2026-01-31")
+        self.assertIsNotNone(last_call.get("last_successful_at"))
+        self.assertIsNone(last_call.get("error"))
+
+    def test_google_backfill_runner_updates_sync_state_error_and_non_blocking_when_sync_state_fails(self):
+        sync_state_calls: list[dict[str, object]] = []
+        done_calls: list[dict[str, object]] = []
+
+        original_set_running = google_ads_api.backfill_job_store.set_running
+        original_set_done = google_ads_api.backfill_job_store.set_done
+        original_sync_customer = google_ads_api.google_ads_service.sync_customer_for_client
+        original_mirror_status = google_ads_api._mirror_sync_run_status
+        original_sync_state_upsert = google_ads_api.sync_state_store.upsert_sync_state
+        try:
+            google_ads_api.backfill_job_store.set_running = lambda job_id: None
+            google_ads_api.backfill_job_store.set_done = lambda job_id, result: done_calls.append(result)
+
+            def failing_sync_customer(**kwargs):
+                raise RuntimeError("google down")
+
+            google_ads_api.google_ads_service.sync_customer_for_client = failing_sync_customer
+            google_ads_api._mirror_sync_run_status = lambda **kwargs: None
+
+            def flaky_sync_state_upsert(**kwargs):
+                sync_state_calls.append(kwargs)
+                if str(kwargs.get("last_status")) == "running":
+                    raise RuntimeError("sync_state unavailable")
+                return {"platform": kwargs.get("platform")}
+
+            google_ads_api.sync_state_store.upsert_sync_state = flaky_sync_state_upsert
+
+            google_ads_api._run_google_backfill_job(
+                "job-state-error",
+                mapped_accounts=[{"client_id": 96, "customer_id": "1234567890"}],
+                resolved_start=date(2026, 1, 1),
+                resolved_end=date(2026, 1, 31),
+                days=31,
+                chunk_days=7,
+                requested_client_id=96,
+            )
+        finally:
+            google_ads_api.backfill_job_store.set_running = original_set_running
+            google_ads_api.backfill_job_store.set_done = original_set_done
+            google_ads_api.google_ads_service.sync_customer_for_client = original_sync_customer
+            google_ads_api._mirror_sync_run_status = original_mirror_status
+            google_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+
+        self.assertGreaterEqual(len(sync_state_calls), 2)
+        self.assertEqual(sync_state_calls[0].get("last_status"), "running")
+        self.assertEqual(sync_state_calls[-1].get("last_status"), "error")
+        self.assertIn("google down", str(sync_state_calls[-1].get("error") or ""))
+        self.assertEqual(len(done_calls), 1)
+        self.assertIn("errors_summary", done_calls[0])
+
+    def test_google_backfill_runner_updates_sync_runs_running_and_done(self):
+        status_calls: list[dict[str, object]] = []
+
+        original_set_running = google_ads_api.backfill_job_store.set_running
+        original_set_done = google_ads_api.backfill_job_store.set_done
+        original_sync_customer = google_ads_api.google_ads_service.sync_customer_for_client
+        original_mirror_status = google_ads_api._mirror_sync_run_status
+        try:
+            google_ads_api.backfill_job_store.set_running = lambda job_id: None
+            google_ads_api.backfill_job_store.set_done = lambda job_id, result: None
+            google_ads_api.google_ads_service.sync_customer_for_client = lambda **kwargs: {
+                "inserted_rows": 3,
+                "gaql_rows_fetched": 5,
+                "db_rows_last_30_for_customer": 3,
+                "reason_if_zero": None,
+            }
+            google_ads_api._mirror_sync_run_status = lambda **kwargs: status_calls.append(kwargs)
+
+            google_ads_api._run_google_backfill_job(
+                "job-1",
+                mapped_accounts=[{"client_id": 96, "customer_id": "1234567890"}],
+                resolved_start=date(2026, 1, 1),
+                resolved_end=date(2026, 1, 31),
+                days=31,
+                chunk_days=7,
+                requested_client_id=96,
+            )
+        finally:
+            google_ads_api.backfill_job_store.set_running = original_set_running
+            google_ads_api.backfill_job_store.set_done = original_set_done
+            google_ads_api.google_ads_service.sync_customer_for_client = original_sync_customer
+            google_ads_api._mirror_sync_run_status = original_mirror_status
+
+        self.assertGreaterEqual(len(status_calls), 2)
+        self.assertEqual(status_calls[0].get("status"), "running")
+        self.assertTrue(status_calls[0].get("mark_started"))
+        self.assertEqual(status_calls[-1].get("status"), "done")
+        self.assertTrue(status_calls[-1].get("mark_finished"))
+
+    def test_google_backfill_runner_updates_sync_runs_error_when_runner_fails(self):
+        status_calls: list[dict[str, object]] = []
+        errors: list[str] = []
+
+        original_set_running = google_ads_api.backfill_job_store.set_running
+        original_set_error = google_ads_api.backfill_job_store.set_error
+        original_set_done = google_ads_api.backfill_job_store.set_done
+        original_sync_customer = google_ads_api.google_ads_service.sync_customer_for_client
+        original_mirror_status = google_ads_api._mirror_sync_run_status
+        try:
+            google_ads_api.backfill_job_store.set_running = lambda job_id: None
+            google_ads_api.backfill_job_store.set_error = lambda job_id, error: errors.append(str(error))
+
+            def boom_set_done(job_id, result):
+                raise RuntimeError("explode")
+
+            google_ads_api.backfill_job_store.set_done = boom_set_done
+            google_ads_api.google_ads_service.sync_customer_for_client = lambda **kwargs: {
+                "inserted_rows": 1,
+                "gaql_rows_fetched": 1,
+                "db_rows_last_30_for_customer": 1,
+                "reason_if_zero": None,
+            }
+            google_ads_api._mirror_sync_run_status = lambda **kwargs: status_calls.append(kwargs)
+
+            google_ads_api._run_google_backfill_job(
+                "job-2",
+                mapped_accounts=[{"client_id": 96, "customer_id": "1234567890"}],
+                resolved_start=date(2026, 1, 1),
+                resolved_end=date(2026, 1, 31),
+                days=31,
+                chunk_days=7,
+                requested_client_id=96,
+            )
+        finally:
+            google_ads_api.backfill_job_store.set_running = original_set_running
+            google_ads_api.backfill_job_store.set_error = original_set_error
+            google_ads_api.backfill_job_store.set_done = original_set_done
+            google_ads_api.google_ads_service.sync_customer_for_client = original_sync_customer
+            google_ads_api._mirror_sync_run_status = original_mirror_status
+
+        self.assertGreaterEqual(len(status_calls), 2)
+        self.assertEqual(status_calls[0].get("status"), "running")
+        self.assertEqual(status_calls[-1].get("status"), "error")
+        self.assertTrue(status_calls[-1].get("mark_finished"))
+        self.assertIn("explode", str(status_calls[-1].get("error") or ""))
+        self.assertTrue(any("explode" in item for item in errors))
+
+    def test_google_backfill_runner_continues_when_sync_runs_status_mirror_fails(self):
+        done_calls: list[dict[str, object]] = []
+
+        original_set_running = google_ads_api.backfill_job_store.set_running
+        original_set_done = google_ads_api.backfill_job_store.set_done
+        original_sync_customer = google_ads_api.google_ads_service.sync_customer_for_client
+        original_update_status = google_ads_api.sync_runs_store.update_sync_run_status
+        try:
+            google_ads_api.backfill_job_store.set_running = lambda job_id: None
+            google_ads_api.backfill_job_store.set_done = lambda job_id, result: done_calls.append(result)
+            google_ads_api.google_ads_service.sync_customer_for_client = lambda **kwargs: {
+                "inserted_rows": 1,
+                "gaql_rows_fetched": 1,
+                "db_rows_last_30_for_customer": 1,
+                "reason_if_zero": None,
+            }
+
+            def flaky_update(**kwargs):
+                raise RuntimeError("mirror down")
+
+            google_ads_api.sync_runs_store.update_sync_run_status = flaky_update
+
+            google_ads_api._run_google_backfill_job(
+                "job-3",
+                mapped_accounts=[{"client_id": 96, "customer_id": "1234567890"}],
+                resolved_start=date(2026, 1, 1),
+                resolved_end=date(2026, 1, 31),
+                days=31,
+                chunk_days=7,
+                requested_client_id=96,
+            )
+        finally:
+            google_ads_api.backfill_job_store.set_running = original_set_running
+            google_ads_api.backfill_job_store.set_done = original_set_done
+            google_ads_api.google_ads_service.sync_customer_for_client = original_sync_customer
+            google_ads_api.sync_runs_store.update_sync_run_status = original_update_status
+
+        self.assertEqual(len(done_calls), 1)
+        self.assertEqual(done_calls[0].get("status"), "ok")
+
+    def test_sync_run_chunks_store_schema_missing_raises_clear_error(self):
+        sync_run_chunks_store._schema_initialized = False
+
+        class _FakeCursor:
+            def execute(self, query, params=None):
+                return None
+
+            def fetchone(self):
+                return (None,)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_connect = sync_run_chunks_store._connect
+        try:
+            sync_run_chunks_store._connect = lambda: _FakeConn()
+            with self.assertRaises(RuntimeError) as ctx:
+                sync_run_chunks_store.list_sync_run_chunks("missing")
+        finally:
+            sync_run_chunks_store._connect = original_connect
+            sync_run_chunks_store._schema_initialized = False
+
+        self.assertIn("Database schema for sync_run_chunks is not ready; run DB migrations", str(ctx.exception))
+
+    def test_sync_run_chunks_store_create_list_update_lifecycle(self):
+        sync_run_chunks_store._schema_initialized = False
+        state: dict[tuple[str, int], dict[str, object]] = {}
+        next_id = {"value": 0}
+        tick = {"value": 0}
+
+        def _now() -> str:
+            tick["value"] += 1
+            return f"2026-03-01T00:00:{tick['value']:02d}+00:00"
+
+        class _FakeCursor:
+            _row: tuple[object, ...] | None
+            _rows: list[tuple[object, ...]]
+
+            def __init__(self):
+                self._row = None
+                self._rows = []
+
+            def execute(self, query, params=None):
+                sql = str(query)
+
+                if "SELECT to_regclass('public.sync_run_chunks')" in sql:
+                    self._row = ("sync_run_chunks",)
+                    return
+
+                if "INSERT INTO sync_run_chunks" in sql:
+                    job_id, chunk_index, status, date_start, date_end, metadata_json = params
+                    key = (str(job_id), int(chunk_index))
+                    next_id["value"] += 1
+                    now_value = _now()
+                    state[key] = {
+                        "id": int(next_id["value"]),
+                        "job_id": str(job_id),
+                        "chunk_index": int(chunk_index),
+                        "status": str(status),
+                        "date_start": str(date_start),
+                        "date_end": str(date_end),
+                        "created_at": now_value,
+                        "updated_at": now_value,
+                        "started_at": None,
+                        "finished_at": None,
+                        "error": None,
+                        "metadata": str(metadata_json),
+                    }
+                    return
+
+                if "UPDATE sync_run_chunks" in sql:
+                    status, mark_started, mark_finished, error, metadata_json, job_id, chunk_index = params
+                    key = (str(job_id), int(chunk_index))
+                    row = state.get(key)
+                    if row is None:
+                        return
+                    row["status"] = str(status)
+                    row["updated_at"] = _now()
+                    if bool(mark_started) and row.get("started_at") is None:
+                        row["started_at"] = row["updated_at"]
+                    if bool(mark_finished):
+                        row["finished_at"] = row["updated_at"]
+                    if error is not None:
+                        row["error"] = str(error)
+                    if metadata_json is not None:
+                        row["metadata"] = str(metadata_json)
+                    return
+
+                if "FROM sync_run_chunks" in sql and "ORDER BY chunk_index ASC" in sql:
+                    job_id = str(params[0])
+                    rows = [
+                        (
+                            row["id"],
+                            row["job_id"],
+                            row["chunk_index"],
+                            row["status"],
+                            row["date_start"],
+                            row["date_end"],
+                            row["created_at"],
+                            row["updated_at"],
+                            row["started_at"],
+                            row["finished_at"],
+                            row["error"],
+                            row["metadata"],
+                        )
+                        for row in sorted(state.values(), key=lambda item: int(item["chunk_index"]))
+                        if str(row["job_id"]) == job_id
+                    ]
+                    self._rows = rows
+                    return
+
+                raise AssertionError(f"Unexpected SQL: {sql}")
+
+            def fetchone(self):
+                return self._row
+
+            def fetchall(self):
+                return list(self._rows)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def commit(self):
+                return None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_connect = sync_run_chunks_store._connect
+        try:
+            sync_run_chunks_store._connect = lambda: _FakeConn()
+
+            created_2 = sync_run_chunks_store.create_sync_run_chunk(
+                job_id="job-1",
+                chunk_index=2,
+                status="queued",
+                date_start=date(2026, 1, 15),
+                date_end=date(2026, 1, 21),
+            )
+            created_0 = sync_run_chunks_store.create_sync_run_chunk(
+                job_id="job-1",
+                chunk_index=0,
+                status="queued",
+                date_start=date(2026, 1, 1),
+                date_end=date(2026, 1, 7),
+                metadata={"range": "first"},
+            )
+
+            chunks_before = sync_run_chunks_store.list_sync_run_chunks("job-1")
+
+            started = sync_run_chunks_store.update_sync_run_chunk_status(
+                job_id="job-1",
+                chunk_index=0,
+                status="running",
+                mark_started=True,
+            )
+            finished = sync_run_chunks_store.update_sync_run_chunk_status(
+                job_id="job-1",
+                chunk_index=0,
+                status="done",
+                mark_finished=True,
+                error="chunk done",
+                metadata={"rows": 10},
+            )
+            chunks_after = sync_run_chunks_store.list_sync_run_chunks("job-1")
+        finally:
+            sync_run_chunks_store._connect = original_connect
+            sync_run_chunks_store._schema_initialized = False
+
+        self.assertIsNotNone(created_2)
+        self.assertIsNotNone(created_0)
+        self.assertEqual(created_2["job_id"], "job-1")
+        self.assertEqual(created_2["chunk_index"], 2)
+        self.assertEqual(created_2["status"], "queued")
+        self.assertEqual(created_2["metadata"], {})
+
+        self.assertEqual([item["chunk_index"] for item in chunks_before], [0, 2])
+        self.assertEqual(chunks_before[0]["metadata"].get("range"), "first")
+
+        self.assertEqual(started["status"], "running")
+        self.assertIsNotNone(started["started_at"])
+
+        self.assertEqual(finished["status"], "done")
+        self.assertIsNotNone(finished["finished_at"])
+        self.assertEqual(finished["error"], "chunk done")
+        self.assertEqual((finished.get("metadata") or {}).get("rows"), 10)
+        self.assertNotEqual(started["updated_at"], finished["updated_at"])
+
+        first_chunk = next(item for item in chunks_after if int(item["chunk_index"]) == 0)
+        self.assertEqual(first_chunk["status"], "done")
+        self.assertEqual(first_chunk["error"], "chunk done")
+
+    def test_sync_state_store_schema_missing_raises_clear_error(self):
+        sync_state_store._schema_initialized = False
+
+        class _FakeCursor:
+            def execute(self, query, params=None):
+                return None
+
+            def fetchone(self):
+                return (None,)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_connect = sync_state_store._connect
+        try:
+            sync_state_store._connect = lambda: _FakeConn()
+            with self.assertRaises(RuntimeError) as ctx:
+                sync_state_store.get_sync_state("google_ads", "123", "daily")
+        finally:
+            sync_state_store._connect = original_connect
+            sync_state_store._schema_initialized = False
+
+        self.assertIn("Database schema for sync_state is not ready; run DB migrations", str(ctx.exception))
+
+    def test_sync_state_store_get_and_upsert_lifecycle(self):
+        sync_state_store._schema_initialized = False
+        state: dict[tuple[str, str, str], dict[str, object]] = {}
+        tick = {"value": 0}
+
+        def _now() -> str:
+            tick["value"] += 1
+            return f"2026-03-01T00:00:{tick['value']:02d}+00:00"
+
+        class _FakeCursor:
+            _row: tuple[object, ...] | None
+
+            def __init__(self):
+                self._row = None
+
+            def execute(self, query, params=None):
+                sql = str(query)
+
+                if "SELECT to_regclass('public.sync_state')" in sql:
+                    self._row = ("sync_state",)
+                    return
+
+                if "INSERT INTO sync_state" in sql and "ON CONFLICT (platform, account_id, grain)" in sql:
+                    (
+                        platform,
+                        account_id,
+                        grain,
+                        last_status,
+                        last_job_id,
+                        last_attempted_at,
+                        last_successful_at,
+                        last_successful_date,
+                        error,
+                        metadata_json,
+                    ) = params
+                    key = (str(platform), str(account_id), str(grain))
+                    existing = state.get(key)
+                    if existing is None:
+                        now_value = _now()
+                        state[key] = {
+                            "platform": str(platform),
+                            "account_id": str(account_id),
+                            "grain": str(grain),
+                            "last_status": last_status,
+                            "last_job_id": last_job_id,
+                            "last_attempted_at": str(last_attempted_at) if last_attempted_at is not None else None,
+                            "last_successful_at": str(last_successful_at) if last_successful_at is not None else None,
+                            "last_successful_date": str(last_successful_date) if last_successful_date is not None else None,
+                            "error": error,
+                            "metadata": str(metadata_json),
+                            "created_at": now_value,
+                            "updated_at": now_value,
+                        }
+                    else:
+                        existing["last_status"] = last_status
+                        existing["last_job_id"] = last_job_id
+                        existing["last_attempted_at"] = str(last_attempted_at) if last_attempted_at is not None else None
+                        existing["last_successful_at"] = str(last_successful_at) if last_successful_at is not None else None
+                        existing["last_successful_date"] = str(last_successful_date) if last_successful_date is not None else None
+                        existing["error"] = error
+                        existing["metadata"] = str(metadata_json)
+                        existing["updated_at"] = _now()
+                    return
+
+                if "FROM sync_state" in sql and "WHERE platform = %s AND account_id = %s AND grain = %s" in sql:
+                    key = (str(params[0]), str(params[1]), str(params[2]))
+                    row = state.get(key)
+                    if row is None:
+                        self._row = None
+                    else:
+                        self._row = (
+                            row["platform"],
+                            row["account_id"],
+                            row["grain"],
+                            row["last_status"],
+                            row["last_job_id"],
+                            row["last_attempted_at"],
+                            row["last_successful_at"],
+                            row["last_successful_date"],
+                            row["error"],
+                            row["metadata"],
+                            row["created_at"],
+                            row["updated_at"],
+                        )
+                    return
+
+                raise AssertionError(f"Unexpected SQL: {sql}")
+
+            def fetchone(self):
+                return self._row
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def commit(self):
+                return None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_connect = sync_state_store._connect
+        try:
+            sync_state_store._connect = lambda: _FakeConn()
+
+            missing = sync_state_store.get_sync_state("google_ads", "123", "daily")
+
+            created = sync_state_store.upsert_sync_state(
+                platform="google_ads",
+                account_id="123",
+                grain="daily",
+                last_status="running",
+                last_job_id="job-1",
+                error="temporary failure",
+                metadata={"chunk_days": 7},
+            )
+            updated = sync_state_store.upsert_sync_state(
+                platform="google_ads",
+                account_id="123",
+                grain="daily",
+                last_status="done",
+                last_job_id="job-2",
+                last_attempted_at=datetime.fromisoformat("2026-03-01T00:00:10+00:00"),
+                last_successful_at=datetime.fromisoformat("2026-03-01T00:00:12+00:00"),
+                last_successful_date=date(2026, 2, 28),
+                error=None,
+                metadata={"rows": 42},
+            )
+            fetched = sync_state_store.get_sync_state("google_ads", "123", "daily")
+        finally:
+            sync_state_store._connect = original_connect
+            sync_state_store._schema_initialized = False
+
+        self.assertIsNone(missing)
+
+        self.assertIsNotNone(created)
+        self.assertEqual(created.get("platform"), "google_ads")
+        self.assertEqual(created.get("account_id"), "123")
+        self.assertEqual(created.get("grain"), "daily")
+        self.assertEqual(created.get("last_status"), "running")
+        self.assertEqual(created.get("last_job_id"), "job-1")
+        self.assertEqual(created.get("error"), "temporary failure")
+        self.assertEqual((created.get("metadata") or {}).get("chunk_days"), 7)
+
+        self.assertIsNotNone(updated)
+        self.assertEqual(updated.get("last_status"), "done")
+        self.assertEqual(updated.get("last_job_id"), "job-2")
+        self.assertEqual(updated.get("last_successful_date"), "2026-02-28")
+        self.assertEqual(updated.get("last_successful_at"), "2026-03-01 00:00:12+00:00")
+        self.assertIsNone(updated.get("error"))
+        self.assertEqual((updated.get("metadata") or {}).get("rows"), 42)
+        self.assertNotEqual(created.get("updated_at"), updated.get("updated_at"))
+
+        self.assertEqual(len(state), 1)
+        self.assertIsNotNone(fetched)
+        assert fetched is not None
+        self.assertEqual(fetched.get("last_status"), "done")
+        self.assertIsNone(fetched.get("error"))
+
+    def test_sync_runs_store_create_get_update_lifecycle(self):
+        sync_runs_store._schema_initialized = False
+        state: dict[str, dict[str, object]] = {}
+        tick = {"value": 0}
+
+        def _now() -> str:
+            tick["value"] += 1
+            return f"2026-03-01T00:00:{tick['value']:02d}+00:00"
+
+        class _FakeCursor:
+            _row: tuple[object, ...] | None
+
+            def __init__(self):
+                self._row = None
+
+            def execute(self, query, params=None):
+                sql = str(query)
+                if "SELECT to_regclass('public.sync_runs')" in sql:
+                    self._row = ("sync_runs",)
+                    return
+
+                if "INSERT INTO sync_runs" in sql:
+                    job_id, platform, status, client_id, account_id, date_start, date_end, chunk_days, metadata_json = params
+                    now_value = _now()
+                    state[str(job_id)] = {
+                        "job_id": str(job_id),
+                        "platform": str(platform),
+                        "status": str(status),
+                        "client_id": client_id,
+                        "account_id": account_id,
+                        "date_start": str(date_start),
+                        "date_end": str(date_end),
+                        "chunk_days": int(chunk_days),
+                        "created_at": now_value,
+                        "updated_at": now_value,
+                        "started_at": None,
+                        "finished_at": None,
+                        "error": None,
+                        "metadata": str(metadata_json),
+                    }
+                    return
+
+                if "UPDATE sync_runs" in sql:
+                    status, mark_started, mark_finished, error, metadata_json, job_id = params
+                    row = state.get(str(job_id))
+                    if row is None:
+                        return
+                    row["status"] = str(status)
+                    row["updated_at"] = _now()
+                    if bool(mark_started) and row.get("started_at") is None:
+                        row["started_at"] = _now()
+                    if bool(mark_finished):
+                        row["finished_at"] = _now()
+                    if error is not None:
+                        row["error"] = str(error)
+                    if metadata_json is not None:
+                        row["metadata"] = str(metadata_json)
+                    return
+
+                if "FROM sync_runs" in sql and "WHERE job_id = %s" in sql:
+                    row = state.get(str(params[0]))
+                    if row is None:
+                        self._row = None
+                    else:
+                        self._row = (
+                            row["job_id"],
+                            row["platform"],
+                            row["status"],
+                            row["client_id"],
+                            row["account_id"],
+                            row["date_start"],
+                            row["date_end"],
+                            row["chunk_days"],
+                            row["created_at"],
+                            row["updated_at"],
+                            row["started_at"],
+                            row["finished_at"],
+                            row["error"],
+                            row["metadata"],
+                        )
+                    return
+
+                raise AssertionError(f"Unexpected SQL: {sql}")
+
+            def fetchone(self):
+                return self._row
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def commit(self):
+                return None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_connect = sync_runs_store._connect
+        try:
+            sync_runs_store._connect = lambda: _FakeConn()
+
+            created = sync_runs_store.create_sync_run(
+                job_id="job-1",
+                platform="google_ads",
+                status="queued",
+                date_start=date(2026, 1, 1),
+                date_end=date(2026, 1, 7),
+                chunk_days=7,
+                client_id=96,
+                account_id="1234567890",
+                metadata={"source": "test"},
+            )
+            self.assertIsNotNone(created)
+            self.assertEqual(created["job_id"], "job-1")
+            self.assertEqual(created["status"], "queued")
+            self.assertEqual(created["metadata"], {"source": "test"})
+
+            fetched = sync_runs_store.get_sync_run("job-1")
+            self.assertEqual(fetched["job_id"], "job-1")
+            self.assertEqual(fetched["platform"], "google_ads")
+
+            updated_running = sync_runs_store.update_sync_run_status(
+                job_id="job-1",
+                status="running",
+                mark_started=True,
+            )
+            self.assertEqual(updated_running["status"], "running")
+            self.assertIsNotNone(updated_running["started_at"])
+            updated_at_running = updated_running["updated_at"]
+
+            updated_done = sync_runs_store.update_sync_run_status(
+                job_id="job-1",
+                status="error",
+                mark_finished=True,
+                error="boom",
+                metadata={"step": "chunk-2"},
+            )
+            self.assertEqual(updated_done["status"], "error")
+            self.assertEqual(updated_done["error"], "boom")
+            self.assertEqual(updated_done["metadata"], {"step": "chunk-2"})
+            self.assertIsNotNone(updated_done["finished_at"])
+            self.assertNotEqual(updated_at_running, updated_done["updated_at"])
+        finally:
+            sync_runs_store._connect = original_connect
+            sync_runs_store._schema_initialized = False
+
+    def test_client_dashboard_query_filters_by_date_range(self):
+        query = unified_dashboard_service._client_reports_query()
+
+        self.assertIn("WHERE resolved_client_id = %s", query)
+        self.assertIn("AND report_date BETWEEN %s AND %s", query)
+
+    def test_agency_dashboard_rows_are_converted_to_ron_by_day_currency(self):
+        original_rate = unified_dashboard_service._get_fx_rate_to_ron
+        try:
+            unified_dashboard_service._get_fx_rate_to_ron = lambda **kwargs: {"USD": 5.0, "EUR": 4.0, "RON": 1.0}.get(kwargs.get("currency_code"), 1.0)
+            totals, spend_by_client_ron, spend_by_client_native, client_currency, row_count = unified_dashboard_service._aggregate_agency_rows(
+                [
+                    (date(2026, 2, 1), 10, "USD", 100.0, 1000, 100, 10, 50.0),
+                    (date(2026, 2, 1), 10, "RON", 200.0, 2000, 200, 20, 100.0),
+                    (date(2026, 2, 1), 11, "EUR", 50.0, 500, 50, 5, 25.0),
+                ]
+            )
+        finally:
+            unified_dashboard_service._get_fx_rate_to_ron = original_rate
+
+        self.assertEqual(row_count, 3)
+        self.assertEqual(round(float(totals["spend"]), 2), 900.0)
+        self.assertEqual(round(float(totals["revenue"]), 2), 450.0)
+        self.assertEqual(int(totals["impressions"]), 3500)
+        self.assertEqual(int(totals["clicks"]), 350)
+        self.assertEqual(int(totals["conversions"]), 35)
+        self.assertEqual(round(spend_by_client_ron[10], 2), 700.0)
+        self.assertEqual(round(spend_by_client_ron[11], 2), 200.0)
+        self.assertEqual(round(spend_by_client_native[10], 2), 300.0)
+        self.assertEqual(round(spend_by_client_native[11], 2), 50.0)
+        self.assertEqual(client_currency[10], "USD")
+        self.assertEqual(client_currency[11], "EUR")
 
     # Sprint 3 coverage (Meta + unified dashboard)
     def test_meta_ads_status_pending_when_placeholder(self):
