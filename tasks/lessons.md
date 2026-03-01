@@ -113,3 +113,5 @@
 - 2026-03-01: După prerequisite async memory-only pe o platformă, phase 1 real trebuie să reintroducă incremental doar `sync_runs` (create+lifecycle+status DB fallback), păstrând flow-ul existent și fără a adăuga `sync_state`/`sync_run_chunks` prematur.
 
 - 2026-03-01: În Snapchat phase 2 (part 1), adaugă `sync_state` strict local în runner (running/done/error) best-effort și păstrează convenția de fereastră sintetică `utc_today` fără fallback `client_id`->`account_id`.
+
+- 2026-03-01: Pentru metadata operațională Snapchat, folosește strict helperul `update_platform_account_operational_metadata` și valori de cont reale (status/currency/timezone), fără a scrie statusuri de job (`running/done/error`) în `agency_platform_accounts.status`.

@@ -2304,6 +2304,7 @@ class ServiceTests(unittest.TestCase):
         captured_calls: list[tuple[str, dict[str, object]]] = []
         sync_run_status_calls: list[dict[str, object]] = []
         sync_state_calls: list[dict[str, object]] = []
+        operational_calls: list[dict[str, object]] = []
 
         original_set_running = snapchat_ads_api.backfill_job_store.set_running
         original_set_done = snapchat_ads_api.backfill_job_store.set_done
@@ -2311,6 +2312,7 @@ class ServiceTests(unittest.TestCase):
         original_sync_client = snapchat_ads_api.snapchat_ads_service.sync_client
         original_sync_runs_update = snapchat_ads_api.sync_runs_store.update_sync_run_status
         original_sync_state_upsert = snapchat_ads_api.sync_state_store.upsert_sync_state
+        original_operational_update = snapchat_ads_api.client_registry_service.update_platform_account_operational_metadata
         original_list_accounts = snapchat_ads_api.client_registry_service.list_client_platform_accounts
         try:
             snapchat_ads_api.backfill_job_store.set_running = lambda job_id: captured_calls.append(("running", {"job_id": job_id}))
@@ -2318,7 +2320,8 @@ class ServiceTests(unittest.TestCase):
             snapchat_ads_api.backfill_job_store.set_error = lambda job_id, error: captured_calls.append(("error", {"job_id": job_id, "error": error}))
             snapchat_ads_api.sync_runs_store.update_sync_run_status = lambda **kwargs: sync_run_status_calls.append(kwargs) or {"ok": True}
             snapchat_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: sync_state_calls.append(kwargs) or {"ok": True}
-            snapchat_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "sc-acc-31"}] if int(kwargs.get("client_id") or 0) == 31 else [{"id": "sc-acc-32"}]
+            snapchat_ads_api.client_registry_service.update_platform_account_operational_metadata = lambda **kwargs: operational_calls.append(kwargs) or {"ok": True}
+            snapchat_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "sc-acc-31", "status": "active", "currency_code": "usd", "account_timezone": "UTC"}] if int(kwargs.get("client_id") or 0) == 31 else [{"id": "sc-acc-32", "status": "active", "currency_code": "eur", "account_timezone": "Europe/Berlin"}]
 
             snapchat_ads_api.snapchat_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
             snapchat_ads_api._run_snapchat_sync_job("sc-job-ok", client_id=31)
@@ -2335,6 +2338,7 @@ class ServiceTests(unittest.TestCase):
             snapchat_ads_api.snapchat_ads_service.sync_client = original_sync_client
             snapchat_ads_api.sync_runs_store.update_sync_run_status = original_sync_runs_update
             snapchat_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+            snapchat_ads_api.client_registry_service.update_platform_account_operational_metadata = original_operational_update
             snapchat_ads_api.client_registry_service.list_client_platform_accounts = original_list_accounts
 
         running_calls = [payload for event, payload in captured_calls if event == "running"]
@@ -2368,6 +2372,16 @@ class ServiceTests(unittest.TestCase):
         self.assertIsNotNone((done_state_ok or {}).get("last_successful_date"))
         self.assertTrue(str((done_state_ok or {}).get("last_successful_date")).count("-") == 2)
         self.assertEqual(len(str((error_state_fail or {}).get("error") or "")), 300)
+
+        start_operational = next((call for call in operational_calls if call.get("account_id") == "sc-acc-31" and call.get("last_synced_at") is None), None)
+        success_operational = next((call for call in operational_calls if call.get("account_id") == "sc-acc-31" and call.get("last_synced_at") is not None), None)
+        self.assertIsNotNone(start_operational)
+        self.assertIsNotNone(success_operational)
+        self.assertEqual((start_operational or {}).get("platform"), "snapchat_ads")
+        self.assertEqual((start_operational or {}).get("status"), "active")
+        self.assertEqual((start_operational or {}).get("currency_code"), "USD")
+        self.assertEqual((start_operational or {}).get("account_timezone"), "UTC")
+        self.assertIsNotNone((start_operational or {}).get("sync_start_date"))
 
     def test_snapchat_sync_state_upsert_failure_is_non_blocking(self):
         captured_calls: list[tuple[str, dict[str, object]]] = []
@@ -2424,6 +2438,69 @@ class ServiceTests(unittest.TestCase):
             snapchat_ads_api.client_registry_service.list_client_platform_accounts = original_list_accounts
 
         self.assertEqual(sync_state_calls, [])
+
+    def test_snapchat_operational_metadata_update_failure_is_non_blocking(self):
+        captured_calls: list[tuple[str, dict[str, object]]] = []
+
+        original_set_running = snapchat_ads_api.backfill_job_store.set_running
+        original_set_done = snapchat_ads_api.backfill_job_store.set_done
+        original_sync_client = snapchat_ads_api.snapchat_ads_service.sync_client
+        original_sync_runs_update = snapchat_ads_api.sync_runs_store.update_sync_run_status
+        original_sync_state_upsert = snapchat_ads_api.sync_state_store.upsert_sync_state
+        original_operational_update = snapchat_ads_api.client_registry_service.update_platform_account_operational_metadata
+        original_list_accounts = snapchat_ads_api.client_registry_service.list_client_platform_accounts
+        try:
+            snapchat_ads_api.backfill_job_store.set_running = lambda job_id: captured_calls.append(("running", {"job_id": job_id}))
+            snapchat_ads_api.backfill_job_store.set_done = lambda job_id, result: captured_calls.append(("done", {"job_id": job_id, "result": result}))
+            snapchat_ads_api.snapchat_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
+            snapchat_ads_api.sync_runs_store.update_sync_run_status = lambda **kwargs: {"ok": True}
+            snapchat_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: {"ok": True}
+            snapchat_ads_api.client_registry_service.update_platform_account_operational_metadata = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("operational metadata unavailable"))
+            snapchat_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "sc-acc-7", "status": "active", "currency_code": "usd", "account_timezone": "UTC"}]
+
+            snapchat_ads_api._run_snapchat_sync_job("sc-job-op-fail", client_id=7)
+        finally:
+            snapchat_ads_api.backfill_job_store.set_running = original_set_running
+            snapchat_ads_api.backfill_job_store.set_done = original_set_done
+            snapchat_ads_api.snapchat_ads_service.sync_client = original_sync_client
+            snapchat_ads_api.sync_runs_store.update_sync_run_status = original_sync_runs_update
+            snapchat_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+            snapchat_ads_api.client_registry_service.update_platform_account_operational_metadata = original_operational_update
+            snapchat_ads_api.client_registry_service.list_client_platform_accounts = original_list_accounts
+
+        self.assertTrue(any(event == "running" and payload.get("job_id") == "sc-job-op-fail" for event, payload in captured_calls))
+        self.assertTrue(any(event == "done" and payload.get("job_id") == "sc-job-op-fail" for event, payload in captured_calls))
+
+    def test_snapchat_operational_metadata_skips_when_account_id_is_ambiguous(self):
+        original_set_running = snapchat_ads_api.backfill_job_store.set_running
+        original_set_done = snapchat_ads_api.backfill_job_store.set_done
+        original_sync_client = snapchat_ads_api.snapchat_ads_service.sync_client
+        original_sync_runs_update = snapchat_ads_api.sync_runs_store.update_sync_run_status
+        original_sync_state_upsert = snapchat_ads_api.sync_state_store.upsert_sync_state
+        original_operational_update = snapchat_ads_api.client_registry_service.update_platform_account_operational_metadata
+        original_list_accounts = snapchat_ads_api.client_registry_service.list_client_platform_accounts
+        try:
+            snapchat_ads_api.backfill_job_store.set_running = lambda job_id: None
+            snapchat_ads_api.backfill_job_store.set_done = lambda job_id, result: None
+            snapchat_ads_api.snapchat_ads_service.sync_client = lambda client_id: {"status": "ok", "client_id": client_id}
+            snapchat_ads_api.sync_runs_store.update_sync_run_status = lambda **kwargs: {"ok": True}
+            snapchat_ads_api.sync_state_store.upsert_sync_state = lambda **kwargs: {"ok": True}
+
+            operational_calls: list[dict[str, object]] = []
+            snapchat_ads_api.client_registry_service.update_platform_account_operational_metadata = lambda **kwargs: operational_calls.append(kwargs) or {"ok": True}
+            snapchat_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "sc-a"}, {"id": "sc-b"}]
+
+            snapchat_ads_api._run_snapchat_sync_job("sc-job-amb-op", client_id=99)
+        finally:
+            snapchat_ads_api.backfill_job_store.set_running = original_set_running
+            snapchat_ads_api.backfill_job_store.set_done = original_set_done
+            snapchat_ads_api.snapchat_ads_service.sync_client = original_sync_client
+            snapchat_ads_api.sync_runs_store.update_sync_run_status = original_sync_runs_update
+            snapchat_ads_api.sync_state_store.upsert_sync_state = original_sync_state_upsert
+            snapchat_ads_api.client_registry_service.update_platform_account_operational_metadata = original_operational_update
+            snapchat_ads_api.client_registry_service.list_client_platform_accounts = original_list_accounts
+
+        self.assertEqual(operational_calls, [])
 
     def test_snapchat_sync_now_job_status_memory_first_and_db_fallback(self):
         user = AuthUser(email="admin@example.com", role="agency_owner")
