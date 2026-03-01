@@ -716,6 +716,49 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(float(row["spend"]), 200.0)
         self.assertEqual(int(row["impressions"]), 2000)
 
+    def test_performance_reports_schema_validation_is_read_only_and_errors_when_missing(self):
+        os.environ["APP_ENV"] = "development"
+        performance_reports_store._schema_initialized = False
+
+        queries: list[str] = []
+
+        class _FakeCursor:
+            def execute(self, query, params=None):
+                queries.append(str(query).strip())
+
+            def fetchone(self):
+                return (None,)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_connect = performance_reports_store._connect
+        try:
+            performance_reports_store._connect = lambda: _FakeConn()
+            with self.assertRaises(RuntimeError) as ctx:
+                performance_reports_store.initialize_schema()
+        finally:
+            performance_reports_store._connect = original_connect
+            performance_reports_store._schema_initialized = False
+            os.environ["APP_ENV"] = "test"
+
+        self.assertIn("Database schema for ad_performance_reports is not ready; run DB migrations", str(ctx.exception))
+        self.assertEqual(len(queries), 1)
+        self.assertIn("SELECT to_regclass('public.ad_performance_reports')", queries[0])
+
     def test_client_dashboard_query_filters_by_date_range(self):
         query = unified_dashboard_service._client_reports_query()
 

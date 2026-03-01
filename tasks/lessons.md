@@ -74,3 +74,4 @@
 - 2026-02-28: Pentru bug-uri NameError pe variabile de interval (ex. `start_literal`), definește explicit literal-ele imediat după normalizarea date-range și reutilizează-le peste query + mesaje; evită apeluri duplicate inline care pot diverge între branch-uri.
 - 2026-02-28: Pentru tabele daily fact cu denormalizări (`client_id`), separă clar cheia canonical de conflict de câmpurile payload; `ON CONFLICT` trebuie să urmeze exact cheia canonical și testele trebuie să verifice explicit că payload-ul se actualizează fără duplicate.
 - 2026-02-28: După alinierea cheii canonice în runtime DDL, formalizează imediat aceeași regulă și în migrații SQL idempotente (inclusiv cleanup legacy + dedup înainte de unique index), ca să eviți drift între cod și schema live.
+- 2026-02-28: După ce schema e formalizată în migrații, evită runtime DDL în servicii; folosește validare read-only (`to_regclass`) și eroare explicită dacă migrațiile nu sunt aplicate.

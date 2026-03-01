@@ -340,3 +340,18 @@
 - Refolosește aceeași logică de cleanup ca runtime DDL din `performance_reports.py`: `DROP INDEX IF EXISTS idx_ad_performance_reports_unique_daily_customer` + `DROP CONSTRAINT IF EXISTS ad_performance_reports_report_date_platform_customer_id_client_id_key`.
 - Rulează deduplicare deterministică pe cheia canonică `(report_date, platform, customer_id)` și apoi creează indexul unic canonic cu `IF NOT EXISTS`.
 - Nu au fost atinse endpoint-uri, servicii de business sau UI în acest task.
+
+---
+
+# TODO — Eliminare DDL runtime din `performance_reports.py` + validare read-only
+
+- [x] Elimin DDL runtime (`CREATE/ALTER/DROP INDEX`) din path-ul de inițializare schema.
+- [x] Înlocuiesc bootstrap-ul cu validare read-only pentru existența `ad_performance_reports`.
+- [x] Păstrez upsert-ul neschimbat pe cheia canonică `ON CONFLICT (report_date, platform, customer_id)`.
+- [x] Adaug test focalizat pentru schema missing + verificare că nu rulează DDL.
+- [x] Rulez teste țintite backend.
+
+## Review — Eliminare DDL runtime din `performance_reports.py` + validare read-only
+- `_ensure_schema()` nu mai execută DDL; acum rulează strict un `SELECT to_regclass('public.ad_performance_reports')`.
+- Dacă schema/tabela lipsește, serviciul ridică eroare clară: `Database schema for ad_performance_reports is not ready; run DB migrations`.
+- Comportamentul de upsert a rămas intact: `ON CONFLICT (report_date, platform, customer_id)` cu `client_id` payload updatabil.

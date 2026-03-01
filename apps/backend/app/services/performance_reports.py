@@ -56,51 +56,10 @@ class PerformanceReportsStore:
 
             with self._connect() as conn:
                 with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        CREATE TABLE IF NOT EXISTS ad_performance_reports (
-                            id BIGSERIAL PRIMARY KEY,
-                            report_date DATE NOT NULL,
-                            platform TEXT NOT NULL,
-                            customer_id TEXT NOT NULL,
-                            client_id INTEGER NULL,
-                            spend NUMERIC(14,2) NOT NULL DEFAULT 0,
-                            impressions BIGINT NOT NULL DEFAULT 0,
-                            clicks BIGINT NOT NULL DEFAULT 0,
-                            conversions NUMERIC(14,4) NOT NULL DEFAULT 0,
-                            conversion_value NUMERIC(14,2) NOT NULL DEFAULT 0,
-                            synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                            UNIQUE (report_date, platform, customer_id)
-                        )
-                        """
-                    )
-                    cur.execute(
-                        """
-                        CREATE INDEX IF NOT EXISTS idx_ad_performance_reports_date_platform
-                        ON ad_performance_reports (report_date DESC, platform)
-                        """
-                    )
-                    cur.execute(
-                        """
-                        CREATE INDEX IF NOT EXISTS idx_ad_performance_reports_customer
-                        ON ad_performance_reports (platform, customer_id, report_date DESC)
-                        """
-                    )
-                    cur.execute("DROP INDEX IF EXISTS idx_ad_performance_reports_unique_daily_customer")
-                    cur.execute(
-                        """
-                        ALTER TABLE ad_performance_reports
-                        DROP CONSTRAINT IF EXISTS ad_performance_reports_report_date_platform_customer_id_client_id_key
-                        """
-                    )
-                    cur.execute(self._deduplicate_reports_query())
-                    cur.execute(
-                        """
-                        CREATE UNIQUE INDEX IF NOT EXISTS idx_ad_performance_reports_unique_daily_customer
-                        ON ad_performance_reports (report_date, platform, customer_id)
-                        """
-                    )
-                conn.commit()
+                    cur.execute("SELECT to_regclass('public.ad_performance_reports')")
+                    row = cur.fetchone() or (None,)
+                    if row[0] is None:
+                        raise RuntimeError("Database schema for ad_performance_reports is not ready; run DB migrations")
 
             self._schema_initialized = True
 
