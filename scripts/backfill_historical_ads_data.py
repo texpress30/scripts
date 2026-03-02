@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Operational historical ads backfill runner.
 
+This script is the dedicated path for large historical ranges.
+UI Google Sync is intentionally rolling-only (last 30 days).
+
 Usage examples:
   PYTHONPATH=apps/backend python scripts/backfill_historical_ads_data.py --platform google_ads --client-id 123 --mode dry-run
   PYTHONPATH=apps/backend python scripts/backfill_historical_ads_data.py --platform all --all-clients --mode apply --chunk-days 7
@@ -58,7 +61,7 @@ def _default_yesterday() -> date:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Backfill historical ads platform data into ad_performance_reports")
+    parser = argparse.ArgumentParser(description="Historical ads backfill into ad_performance_reports (UI sync stays rolling 30 days)")
     parser.add_argument("--platform", choices=[*SUPPORTED_PLATFORMS, "all"], required=True)
     parser.add_argument("--client-id", type=int, help="Run only for one client id")
     parser.add_argument("--all-clients", action="store_true", help="Run for all clients")
@@ -236,6 +239,8 @@ def run_backfill(args: argparse.Namespace) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     os.environ.setdefault("APP_AUTH_SECRET", "backfill-historical-ads-data")
     args = parse_args(argv)
+
+    print("note: UI Google Sync endpoint runs rolling_30d only; use this script for historical backfill ranges.")
 
     print(
         json.dumps(

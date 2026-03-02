@@ -18,6 +18,43 @@ from app.services.sync_constants import PLATFORM_GOOGLE_ADS, SYNC_GRAIN_ACCOUNT_
 router = APIRouter(prefix="/integrations/google-ads", tags=["google-ads"])
 logger = logging.getLogger(__name__)
 
+UI_ROLLING_SYNC_DAYS = 30
+UI_ROLLING_SYNC_CHUNK_DAYS = 7
+
+
+def _resolve_ui_rolling_window(*, client_id: int | None, start_date: date | None, end_date: date | None, days: int, chunk_days: int) -> tuple[date, date, int]:
+    effective_end = datetime.utcnow().date() - timedelta(days=1)
+    effective_start = effective_end - timedelta(days=UI_ROLLING_SYNC_DAYS - 1)
+    ignored_inputs: dict[str, object] = {}
+    if start_date is not None:
+        ignored_inputs["start_date"] = start_date.isoformat()
+    if end_date is not None:
+        ignored_inputs["end_date"] = end_date.isoformat()
+    if int(days) != UI_ROLLING_SYNC_DAYS:
+        ignored_inputs["days"] = int(days)
+    if int(chunk_days) != UI_ROLLING_SYNC_CHUNK_DAYS:
+        ignored_inputs["chunk_days"] = int(chunk_days)
+
+    if ignored_inputs:
+        logger.warning(
+            "google_ads.sync_now ui_rolling_mode ignoring_request_range client_id=%s mode=rolling_30d effective_start_date=%s effective_end_date=%s chunk_days=%s ignored=%s",
+            client_id,
+            effective_start.isoformat(),
+            effective_end.isoformat(),
+            UI_ROLLING_SYNC_CHUNK_DAYS,
+            ignored_inputs,
+        )
+    else:
+        logger.info(
+            "google_ads.sync_now ui_rolling_mode client_id=%s mode=rolling_30d effective_start_date=%s effective_end_date=%s chunk_days=%s",
+            client_id,
+            effective_start.isoformat(),
+            effective_end.isoformat(),
+            UI_ROLLING_SYNC_CHUNK_DAYS,
+        )
+
+    return effective_start, effective_end, UI_ROLLING_SYNC_CHUNK_DAYS
+
 
 def _log_best_effort_warning(*, operation: str, error: Exception, job_id: str | None = None, account_id: str | None = None, status_value: str | None = None, grain: str | None = None, platform: str | None = None) -> None:
     logger.warning(
@@ -535,16 +572,13 @@ def sync_google_ads_now(
     if requested_client_id is not None:
         mapped_accounts = [item for item in mapped_accounts if int(item.get("client_id") or 0) == int(requested_client_id)]
 
-    yesterday = datetime.utcnow().date() - timedelta(days=1)
-    resolved_end = end_date or yesterday
-    if start_date is not None:
-        resolved_start = start_date
-    elif end_date is not None:
-        resolved_start = resolved_end - timedelta(days=int(days) - 1)
-    else:
-        resolved_start = date(2026, 1, 1)
-    if resolved_start > resolved_end:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="start_date must be <= end_date")
+    resolved_start, resolved_end, effective_chunk_days = _resolve_ui_rolling_window(
+        client_id=requested_client_id,
+        start_date=start_date,
+        end_date=end_date,
+        days=int(days),
+        chunk_days=int(chunk_days),
+    )
 
     if len(mapped_accounts) == 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No mapped Google Ads customer IDs for any subaccount")
@@ -556,7 +590,10 @@ def sync_google_ads_now(
                 "client_id": requested_client_id,
                 "date_range": {"start": resolved_start.isoformat(), "end": resolved_end.isoformat()},
                 "mapped_accounts_count": len(mapped_accounts),
-                "chunk_days": int(chunk_days),
+                "chunk_days": int(effective_chunk_days),
+                "mode": "rolling_30d",
+                "effective_start_date": resolved_start.isoformat(),
+                "effective_end_date": resolved_end.isoformat(),
             }
         )
         background_tasks.add_task(
@@ -566,7 +603,7 @@ def sync_google_ads_now(
             resolved_start=resolved_start,
             resolved_end=resolved_end,
             days=max(1, (resolved_end - resolved_start).days + 1),
-            chunk_days=int(chunk_days),
+            chunk_days=int(effective_chunk_days),
             requested_client_id=requested_client_id,
         )
         _mirror_sync_run_create(
@@ -577,14 +614,14 @@ def sync_google_ads_now(
             account_id=None,
             date_start=resolved_start,
             date_end=resolved_end,
-            chunk_days=int(chunk_days),
-            metadata={"job_type": "backfill", "source": "google_ads_api", "mapped_accounts_count": len(mapped_accounts)},
+            chunk_days=int(effective_chunk_days),
+            metadata={"job_type": "rolling_sync", "mode": "rolling_30d", "source": "google_ads_api", "mapped_accounts_count": len(mapped_accounts)},
         )
         _mirror_sync_run_chunks_create(
             job_id=job_id,
             date_start=resolved_start,
             date_end=resolved_end,
-            chunk_days=int(chunk_days),
+            chunk_days=int(effective_chunk_days),
             mapped_accounts_count=len(mapped_accounts),
             total_days=max(1, (resolved_end - resolved_start).days + 1),
         )
@@ -594,11 +631,14 @@ def sync_google_ads_now(
             "mapped_accounts_count": len(mapped_accounts),
             "date_range": {"start": resolved_start.isoformat(), "end": resolved_end.isoformat()},
             "client_id": requested_client_id,
-            "chunk_days": int(chunk_days),
+            "chunk_days": int(effective_chunk_days),
+            "mode": "rolling_30d",
+            "effective_start_date": resolved_start.isoformat(),
+            "effective_end_date": resolved_end.isoformat(),
         }
 
     # Synchronous fallback
-    job_id = backfill_job_store.create(payload={"platform": PLATFORM_GOOGLE_ADS, "chunk_days": int(chunk_days)})
+    job_id = backfill_job_store.create(payload={"platform": PLATFORM_GOOGLE_ADS, "chunk_days": int(effective_chunk_days)})
     _run_google_backfill_job(
         job_id,
         mapped_accounts=mapped_accounts,
@@ -619,10 +659,17 @@ def sync_google_ads_now(
             "client_id": requested_client_id,
             "start_date": resolved_start.isoformat(),
             "end_date": resolved_end.isoformat(),
-            "chunk_days": int(chunk_days),
+            "chunk_days": int(effective_chunk_days),
+            "mode": "rolling_30d",
+            "effective_start_date": resolved_start.isoformat(),
+            "effective_end_date": resolved_end.isoformat(),
         },
     )
-    return dict(result.get("result") or {"status": SYNC_STATUS_ERROR, "job_id": job_id})
+    payload = dict(result.get("result") or {"status": SYNC_STATUS_ERROR, "job_id": job_id})
+    payload.setdefault("mode", "rolling_30d")
+    payload.setdefault("effective_start_date", resolved_start.isoformat())
+    payload.setdefault("effective_end_date", resolved_end.isoformat())
+    return payload
 
 
 def _build_chunk_summary(chunks: list[dict[str, object]]) -> dict[str, int]:

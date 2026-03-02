@@ -1,5 +1,5 @@
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import unittest
 from decimal import Decimal
 
@@ -1248,7 +1248,15 @@ class ServiceTests(unittest.TestCase):
 
         self.assertEqual(response["status"], "queued")
         self.assertEqual(response["job_id"], "job-xyz")
-        self.assertEqual(response["chunk_days"], 14)
+        expected_end = datetime.utcnow().date() - timedelta(days=1)
+        expected_start = expected_end - timedelta(days=29)
+
+        self.assertEqual(response["chunk_days"], 7)
+        self.assertEqual(response["mode"], "rolling_30d")
+        self.assertEqual(response["effective_start_date"], expected_start.isoformat())
+        self.assertEqual(response["effective_end_date"], expected_end.isoformat())
+        self.assertEqual(response["date_range"]["start"], expected_start.isoformat())
+        self.assertEqual(response["date_range"]["end"], expected_end.isoformat())
         self.assertEqual(captured["task"]["func"], "_run_google_backfill_job")
 
         sync_run_payload = captured.get("sync_run_payload") or {}
@@ -1257,16 +1265,29 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(sync_run_payload.get("status"), "queued")
         self.assertEqual(sync_run_payload.get("client_id"), 96)
         self.assertIsNone(sync_run_payload.get("account_id"))
-        self.assertEqual(str(sync_run_payload.get("date_start")), "2026-01-01")
-        self.assertEqual(str(sync_run_payload.get("date_end")), "2026-01-31")
-        self.assertEqual(sync_run_payload.get("chunk_days"), 14)
-        self.assertEqual((sync_run_payload.get("metadata") or {}).get("job_type"), "backfill")
+        self.assertEqual(str(sync_run_payload.get("date_start")), expected_start.isoformat())
+        self.assertEqual(str(sync_run_payload.get("date_end")), expected_end.isoformat())
+        self.assertEqual(sync_run_payload.get("chunk_days"), 7)
+        self.assertEqual((sync_run_payload.get("metadata") or {}).get("job_type"), "rolling_sync")
+        self.assertEqual((sync_run_payload.get("metadata") or {}).get("mode"), "rolling_30d")
 
         chunk_payloads = captured.get("chunk_payloads") or []
-        self.assertEqual(len(chunk_payloads), 3)
-        self.assertEqual([int(item.get("chunk_index", -1)) for item in chunk_payloads], [0, 1, 2])
-        self.assertEqual([str(item.get("date_start")) for item in chunk_payloads], ["2026-01-01", "2026-01-15", "2026-01-29"])
-        self.assertEqual([str(item.get("date_end")) for item in chunk_payloads], ["2026-01-14", "2026-01-28", "2026-01-31"])
+        self.assertEqual(len(chunk_payloads), 5)
+        self.assertEqual([int(item.get("chunk_index", -1)) for item in chunk_payloads], [0, 1, 2, 3, 4])
+        self.assertEqual([str(item.get("date_start")) for item in chunk_payloads], [
+            expected_start.isoformat(),
+            (expected_start + timedelta(days=7)).isoformat(),
+            (expected_start + timedelta(days=14)).isoformat(),
+            (expected_start + timedelta(days=21)).isoformat(),
+            (expected_start + timedelta(days=28)).isoformat(),
+        ])
+        self.assertEqual([str(item.get("date_end")) for item in chunk_payloads], [
+            (expected_start + timedelta(days=6)).isoformat(),
+            (expected_start + timedelta(days=13)).isoformat(),
+            (expected_start + timedelta(days=20)).isoformat(),
+            (expected_start + timedelta(days=27)).isoformat(),
+            expected_end.isoformat(),
+        ])
         self.assertTrue(all(str(item.get("status")) == "queued" for item in chunk_payloads))
 
     def test_google_ads_sync_now_async_continues_when_sync_run_chunk_mirror_fails(self):
@@ -1310,8 +1331,13 @@ class ServiceTests(unittest.TestCase):
             google_ads_api.sync_runs_store.create_sync_run = original_mirror_create
             google_ads_api.sync_run_chunks_store.create_sync_run_chunk = original_chunk_create
 
+        expected_end = datetime.utcnow().date() - timedelta(days=1)
+        expected_start = expected_end - timedelta(days=29)
         self.assertEqual(response["status"], "queued")
         self.assertEqual(response["job_id"], "job-fallback")
+        self.assertEqual(response["mode"], "rolling_30d")
+        self.assertEqual(response["effective_start_date"], expected_start.isoformat())
+        self.assertEqual(response["effective_end_date"], expected_end.isoformat())
 
     def test_google_sync_now_job_status_memory_hit_enriches_with_chunks(self):
         user = AuthUser(email="admin@example.com", role="agency_owner")

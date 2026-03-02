@@ -1033,3 +1033,12 @@
 
 ### Review
 - Implemented focused script-only operational capability without schema/dashboard/frontend changes.
+
+## 2026-03-02 Google UI rolling sync decoupling
+- [x] Force /integrations/google-ads/sync-now to rolling 30-day window independent of requested date range.
+- [x] Add additive response fields for rolling mode and effective dates.
+- [x] Keep historical explicit range behavior in operational script and clarify usage messaging.
+- [x] Update/extend backend tests for rolling behavior + non-breaking response shape.
+
+### Review
+- UI sync now ignores request date range and always runs rolling_30d with chunk_days=7; historical ranges stay in script path.

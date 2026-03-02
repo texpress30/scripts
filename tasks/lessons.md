@@ -131,3 +131,5 @@
 - 2026-03-02: Când se cer metrici business derivați, adaugă layer de formule separat și păstrează-l strict additive-only în dashboard payload, fără modificări de schemă și fără metrici ce cer inputuri inexistente.
 
 - When user says previous solution was unsatisfactory, add a focused regression test file for the new operational path before finalizing.
+
+- When adding guard-rail defaults, update existing endpoint tests to assert ignored inputs and effective values, not previous passthrough params.
