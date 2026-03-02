@@ -899,3 +899,18 @@
 - `agency_platform_accounts.status` este tratat ca status de cont (din mapping), nu ca status de sync-job.
 - La ambiguitate/lipsă `account_id` sau la eroare DB, update-ul operațional este omis/logat și flow-ul continuă.
 - Endpoint-urile publice și shape-urile de răspuns au rămas neschimbate; `sync_runs` + `sync_state` rămân active.
+
+
+# TODO — ad_performance_reports native extra_metrics wiring
+
+- [x] Adaug migrarea DB pentru coloana `extra_metrics` în `ad_performance_reports` (JSONB, default `{}`).
+- [x] Extind `PerformanceReportsStore` să persiste `extra_metrics` și să mențină compatibilitatea în test mode/memory mode.
+- [x] Mapez metricile native în `extra_metrics` pentru Google/Meta/TikTok și persist nativ `conversions` + `conversion_value`.
+- [x] Adaug teste țintite pentru payload-ul `extra_metrics` + maparea Google conversions/value și rulez verificări.
+
+## Review
+- Migrare nouă `0011` adaugă coloana `extra_metrics` JSONB (default `{}`) peste `ad_performance_reports`.
+- `PerformanceReportsStore` persistă și actualizează acum `extra_metrics` atât în memorie (test mode), cât și în Postgres (`INSERT ... ON CONFLICT`).
+- Google GAQL aduce acum `metrics.conversions` + `metrics.conversions_value`; valorile sunt agregate zilnic și păstrate atât în câmpurile canonice (`conversions`/`conversion_value`), cât și în `extra_metrics.google_ads`.
+- Sync-urile Meta/TikTok scriu acum și în `ad_performance_reports`, cu mapare nativă minimă în `extra_metrics` per provider.
+- Testele țintite pentru `performance_reports` și parser-ul GAQL Google au trecut.

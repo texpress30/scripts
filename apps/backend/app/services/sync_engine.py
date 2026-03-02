@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 import logging
 from threading import Lock
@@ -22,6 +22,7 @@ class DailyMetricRow:
     clicks: int
     conversions: float
     revenue: float
+    extra_metrics: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass

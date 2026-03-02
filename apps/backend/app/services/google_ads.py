@@ -933,14 +933,33 @@ class GoogleAdsService:
                         "spend": 0.0,
                         "impressions": 0,
                         "clicks": 0,
-                        "conversions": 0,
+                        "conversions": 0.0,
                         "revenue": 0.0,
                         "google_customer_id": normalized_customer_id,
+                        "extra_metrics": {
+                            "google_ads": {
+                                "cost_micros": 0,
+                                "all_conversions": 0.0,
+                                "all_conversions_value": 0.0,
+                            }
+                        },
                     },
                 )
-                day_payload["spend"] = round(float(day_payload["spend"]) + (float(metrics.get("costMicros", 0.0)) / 1_000_000.0), 2)
+                raw_cost_micros = int(metrics.get("costMicros", 0) or 0)
+                raw_conversions = float(metrics.get("conversions", 0.0) or 0.0)
+                raw_conversions_value = float(metrics.get("conversionsValue", 0.0) or 0.0)
+                day_payload["spend"] = round(float(day_payload["spend"]) + (raw_cost_micros / 1_000_000.0), 2)
                 day_payload["impressions"] = int(day_payload["impressions"]) + int(metrics.get("impressions", 0) or 0)
                 day_payload["clicks"] = int(day_payload["clicks"]) + int(metrics.get("clicks", 0) or 0)
+                day_payload["conversions"] = float(day_payload["conversions"]) + raw_conversions
+                day_payload["revenue"] = round(float(day_payload["revenue"]) + raw_conversions_value, 2)
+                extra_metrics = day_payload.get("extra_metrics")
+                if isinstance(extra_metrics, dict):
+                    google_metrics = extra_metrics.get("google_ads")
+                    if isinstance(google_metrics, dict):
+                        google_metrics["cost_micros"] = int(google_metrics.get("cost_micros", 0) or 0) + raw_cost_micros
+                        google_metrics["all_conversions"] = float(google_metrics.get("all_conversions", 0.0) or 0.0) + raw_conversions
+                        google_metrics["all_conversions_value"] = round(float(google_metrics.get("all_conversions_value", 0.0) or 0.0) + raw_conversions_value, 2)
 
         return {
             "rows": [per_day[key] for key in sorted(per_day.keys())],
@@ -970,7 +989,7 @@ class GoogleAdsService:
         date_clause = f"segments.date BETWEEN '{start_literal}' AND '{end_literal}'"
 
         primary_query = (
-            "SELECT segments.date, metrics.impressions, metrics.clicks, metrics.cost_micros "
+            "SELECT segments.date, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.conversions_value "
             f"FROM customer WHERE {date_clause}"
         )
         primary_payload = self._fetch_gaql_daily_rows(
@@ -1022,12 +1041,14 @@ class GoogleAdsService:
         impressions = sum(int(item.get("impressions", 0)) for item in rows)
         clicks = sum(int(item.get("clicks", 0)) for item in rows)
         normalized_customer_id = self._normalize_customer_id(customer_id)
+        conversions = sum(float(item.get("conversions", 0.0) or 0.0) for item in rows)
+        revenue = sum(float(item.get("revenue", 0.0) or 0.0) for item in rows)
         return {
             "spend": round(spend, 2),
             "impressions": impressions,
             "clicks": clicks,
-            "conversions": 0,
-            "revenue": 0.0,
+            "conversions": round(conversions, 4),
+            "revenue": round(revenue, 2),
             "google_customer_id": normalized_customer_id,
         }
 
@@ -1049,6 +1070,7 @@ class GoogleAdsService:
             clicks=int(snapshot.get("clicks", 0)),
             conversions=float(snapshot.get("conversions", 0)),
             conversion_value=float(snapshot.get("revenue", 0.0)),
+            extra_metrics=dict(snapshot.get("extra_metrics", {})) if isinstance(snapshot.get("extra_metrics"), dict) else None,
         )
         return 1
 
@@ -1183,6 +1205,7 @@ class GoogleAdsService:
                     clicks=int(item.get("clicks", 0) or 0),
                     conversions=float(item.get("conversions", 0) or 0.0),
                     revenue=float(item.get("revenue", 0.0) or 0.0),
+                    extra_metrics=dict(item.get("extra_metrics", {})) if isinstance(item.get("extra_metrics"), dict) else {},
                 )
             )
         return rows

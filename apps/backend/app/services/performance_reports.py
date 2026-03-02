@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+import json
 from threading import Lock
 import os
 
@@ -80,6 +81,7 @@ class PerformanceReportsStore:
                 clicks=int(row.clicks),
                 conversions=float(row.conversions),
                 conversion_value=float(row.revenue),
+                extra_metrics=dict(row.extra_metrics),
             )
         return len(rows)
 
@@ -95,8 +97,10 @@ class PerformanceReportsStore:
         clicks: int,
         conversions: float,
         conversion_value: float,
+        extra_metrics: dict[str, object] | None = None,
     ) -> None:
         self._ensure_schema()
+        normalized_extra_metrics = dict(extra_metrics or {})
         payload = {
             "report_date": report_date.isoformat(),
             "platform": platform,
@@ -107,6 +111,7 @@ class PerformanceReportsStore:
             "clicks": int(clicks),
             "conversions": float(conversions),
             "conversion_value": float(conversion_value),
+            "extra_metrics": normalized_extra_metrics,
         }
 
         if self._is_test_mode():
@@ -132,8 +137,8 @@ class PerformanceReportsStore:
                 cur.execute(
                     """
                     INSERT INTO ad_performance_reports (
-                        report_date, platform, customer_id, client_id, spend, impressions, clicks, conversions, conversion_value
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        report_date, platform, customer_id, client_id, spend, impressions, clicks, conversions, conversion_value, extra_metrics
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
                     ON CONFLICT (report_date, platform, customer_id)
                     DO UPDATE SET
                         spend = EXCLUDED.spend,
@@ -141,6 +146,7 @@ class PerformanceReportsStore:
                         clicks = EXCLUDED.clicks,
                         conversions = EXCLUDED.conversions,
                         conversion_value = EXCLUDED.conversion_value,
+                        extra_metrics = EXCLUDED.extra_metrics,
                         client_id = EXCLUDED.client_id,
                         synced_at = NOW()
                     """,
@@ -154,6 +160,7 @@ class PerformanceReportsStore:
                         int(clicks),
                         float(conversions),
                         float(conversion_value),
+                        json.dumps(normalized_extra_metrics),
                     ),
                 )
             conn.commit()

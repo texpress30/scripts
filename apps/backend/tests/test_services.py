@@ -873,6 +873,51 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(metrics["clicks"], 376)
 
 
+
+    def test_google_fetch_gaql_daily_rows_maps_conversions_and_conversion_value(self):
+        original_http_json = google_ads_service._http_json
+        try:
+            google_ads_service._http_json = lambda **kwargs: [
+                {
+                    "results": [
+                        {
+                            "segments": {"date": "2026-03-01"},
+                            "metrics": {
+                                "costMicros": 1500000,
+                                "impressions": 100,
+                                "clicks": 10,
+                                "conversions": 2.5,
+                                "conversionsValue": 33.75,
+                            },
+                        },
+                        {
+                            "segments": {"date": "2026-03-01"},
+                            "metrics": {
+                                "costMicros": 500000,
+                                "impressions": 40,
+                                "clicks": 3,
+                                "conversions": 1.0,
+                                "conversionsValue": 11.25,
+                            },
+                        },
+                    ]
+                }
+            ]
+            payload = google_ads_service._fetch_gaql_daily_rows(
+                customer_id="1234567890",
+                query="SELECT ...",
+                login_customer_id="1234567890",
+                access_token="token",
+            )
+        finally:
+            google_ads_service._http_json = original_http_json
+
+        rows = payload["rows"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(float(rows[0]["conversions"]), 3.5)
+        self.assertEqual(float(rows[0]["revenue"]), 45.0)
+        self.assertEqual(int(rows[0]["extra_metrics"]["google_ads"]["cost_micros"]), 2000000)
+
     def test_performance_reports_dedup_query_targets_daily_duplicate_keys(self):
         query = performance_reports_store._deduplicate_reports_query()
 
@@ -912,6 +957,41 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(row["client_id"], 20)
         self.assertEqual(float(row["spend"]), 200.0)
         self.assertEqual(int(row["impressions"]), 2000)
+        self.assertEqual(row["extra_metrics"], {})
+
+
+    def test_performance_reports_upsert_overwrites_extra_metrics_on_conflict(self):
+        performance_reports_store._memory_rows.clear()
+
+        performance_reports_store.write_daily_report(
+            report_date=date(2026, 3, 1),
+            platform="meta_ads",
+            customer_id="client-44",
+            client_id=44,
+            spend=120.0,
+            impressions=1500,
+            clicks=90,
+            conversions=11.0,
+            conversion_value=260.0,
+            extra_metrics={"meta_ads": {"inline_link_clicks": 90}},
+        )
+
+        performance_reports_store.write_daily_report(
+            report_date=date(2026, 3, 1),
+            platform="meta_ads",
+            customer_id="client-44",
+            client_id=44,
+            spend=180.0,
+            impressions=2000,
+            clicks=120,
+            conversions=14.0,
+            conversion_value=330.0,
+            extra_metrics={"meta_ads": {"inline_link_clicks": 120, "purchase_roas_value": 330.0}},
+        )
+
+        self.assertEqual(len(performance_reports_store._memory_rows), 1)
+        row = performance_reports_store._memory_rows[0]
+        self.assertEqual(row["extra_metrics"], {"meta_ads": {"inline_link_clicks": 120, "purchase_roas_value": 330.0}})
 
     def test_performance_reports_schema_validation_is_read_only_and_errors_when_missing(self):
         os.environ["APP_ENV"] = "development"
