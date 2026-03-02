@@ -960,3 +960,19 @@
 - Comportament acoperit: create + update pe aceeași cheie unică fără duplicate, câmpuri opționale updatabile la `None`, `source` implicit `manual`, `metadata` implicit `{}`.
 - Am adăugat teste lifecycle dedicate în `test_services.py` și au trecut.
 - Nu am făcut wiring în dashboard/API în acest task.
+
+
+# TODO — client_business_inputs import service validat (day/week), fără wiring API/dashboard
+
+- [x] Creez `client_business_inputs_import_service.py` cu normalize/validate/import pentru rânduri raw (day + week).
+- [x] Implementez normalizare robustă pentru date/numerice/stringuri goale + default-uri (`source`, `metadata`, `period_end` pentru day).
+- [x] Implementez validare explicită pentru regulile de perioadă și grain.
+- [x] Implementez bulk import care continuă la erori și întoarce rezultat structurat (`processed/succeeded/failed/errors`).
+- [x] Adaug teste backend pentru normalize/validate/import + comportament upsert pe cheie unică, apoi rulez verificările.
+
+## Review
+- Am adăugat `client_business_inputs_import_service.py` cu funcții concrete de `normalize`, `validate` și `import` bulk, reutilizând store-ul existent fără SQL duplicat.
+- Normalizarea acoperă stringuri goale -> `None`, `period_grain` lowercase, date parse din text ISO, conversii numerice robuste, `period_end=period_start` pentru `day` când lipsește, `source` implicit `manual`, `metadata` implicit `{}`.
+- Validarea verifică `client_id`, `period_start`, `period_end`, grain permis (`day|week`), range (`period_end >= period_start`) și regula day (`period_start == period_end`).
+- Importul bulk continuă la erori, returnează `processed/succeeded/failed/rows/errors`, și lasă store-ul să rezolve upsert pe cheia unică.
+- Testele țintite pentru normalize/validate/import + store lifecycle au trecut; nu există wiring nou în dashboard/API.

@@ -41,6 +41,11 @@ from app.services.sync_runs_store import sync_runs_store
 from app.services.sync_state_store import sync_state_store
 from app.services.sync_run_chunks_store import sync_run_chunks_store
 from app.services.client_business_inputs_store import client_business_inputs_store
+from app.services.client_business_inputs_import_service import (
+    import_client_business_inputs,
+    normalize_client_business_input_row,
+    validate_client_business_input_row,
+)
 
 
 class ServiceTests(unittest.TestCase):
@@ -3392,6 +3397,150 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(first_chunk["status"], "done")
         self.assertEqual(first_chunk["error"], "chunk done")
 
+
+
+    def test_client_business_inputs_import_normalize_row_defaults_and_types(self):
+        row = normalize_client_business_input_row(
+            {
+                "client_id": "21",
+                "period_start": "2026-03-05",
+                "period_end": "",
+                "period_grain": " DAY ",
+                "applicants": "10",
+                "approved_applicants": "2.0",
+                "actual_revenue": "1234.56",
+                "target_revenue": "2000",
+                "cogs": "300.5",
+                "taxes": "100",
+                "gross_profit": "834.06",
+                "contribution_profit": "700.00",
+                "notes": "",
+                "source": "",
+                "metadata": "",
+            }
+        )
+
+        self.assertEqual(row["client_id"], 21)
+        self.assertEqual(row["period_grain"], "day")
+        self.assertEqual(row["period_start"], date(2026, 3, 5))
+        self.assertEqual(row["period_end"], date(2026, 3, 5))
+        self.assertEqual(row["applicants"], 10)
+        self.assertEqual(row["approved_applicants"], 2)
+        self.assertEqual(row["actual_revenue"], 1234.56)
+        self.assertEqual(row["target_revenue"], 2000.0)
+        self.assertEqual(row["cogs"], 300.5)
+        self.assertEqual(row["taxes"], 100.0)
+        self.assertEqual(row["gross_profit"], 834.06)
+        self.assertEqual(row["contribution_profit"], 700.0)
+        self.assertIsNone(row["notes"])
+        self.assertEqual(row["source"], "manual")
+        self.assertEqual(row["metadata"], {})
+
+    def test_client_business_inputs_import_validate_accepts_day_and_week(self):
+        day_row = normalize_client_business_input_row(
+            {
+                "client_id": 11,
+                "period_start": "2026-03-07",
+                "period_grain": "day",
+            }
+        )
+        validate_client_business_input_row(day_row)
+
+        week_row = normalize_client_business_input_row(
+            {
+                "client_id": 11,
+                "period_start": "2026-03-03",
+                "period_end": "2026-03-09",
+                "period_grain": "week",
+            }
+        )
+        validate_client_business_input_row(week_row)
+
+    def test_client_business_inputs_import_validate_rejects_invalid_shapes(self):
+        with self.assertRaises(ValueError):
+            validate_client_business_input_row(
+                normalize_client_business_input_row(
+                    {
+                        "client_id": 11,
+                        "period_start": "2026-03-01",
+                        "period_end": "2026-03-02",
+                        "period_grain": "day",
+                    }
+                )
+            )
+
+        with self.assertRaises(ValueError):
+            validate_client_business_input_row(
+                normalize_client_business_input_row(
+                    {
+                        "client_id": 11,
+                        "period_start": "2026-03-10",
+                        "period_end": "2026-03-09",
+                        "period_grain": "week",
+                    }
+                )
+            )
+
+        with self.assertRaises(ValueError):
+            validate_client_business_input_row(
+                normalize_client_business_input_row(
+                    {
+                        "client_id": 11,
+                        "period_start": "2026-03-01",
+                        "period_end": "2026-03-01",
+                        "period_grain": "month",
+                    }
+                )
+            )
+
+    def test_client_business_inputs_import_bulk_continues_on_errors_and_upserts(self):
+        saved: dict[tuple[int, date, date, str], dict[str, object]] = {}
+
+        def _fake_upsert(**kwargs):
+            key = (int(kwargs["client_id"]), kwargs["period_start"], kwargs["period_end"], str(kwargs["period_grain"]))
+            current = dict(saved.get(key, {}))
+            current.update(kwargs)
+            current["id"] = current.get("id", len(saved) + 1)
+            saved[key] = current
+            return dict(current)
+
+        original_upsert = client_business_inputs_store.upsert_client_business_input
+        try:
+            client_business_inputs_store.upsert_client_business_input = _fake_upsert
+            result = import_client_business_inputs(
+                [
+                    {
+                        "client_id": "31",
+                        "period_start": "2026-03-01",
+                        "period_grain": "day",
+                        "applicants": "10",
+                    },
+                    {
+                        "client_id": "31",
+                        "period_start": "2026-03-01",
+                        "period_grain": "day",
+                        "applicants": "11",
+                    },
+                    {
+                        "client_id": "31",
+                        "period_start": "2026-03-10",
+                        "period_end": "2026-03-09",
+                        "period_grain": "week",
+                    },
+                ]
+            )
+        finally:
+            client_business_inputs_store.upsert_client_business_input = original_upsert
+
+        self.assertEqual(result["processed"], 3)
+        self.assertEqual(result["succeeded"], 2)
+        self.assertEqual(result["failed"], 1)
+        self.assertEqual(len(result["errors"]), 1)
+        self.assertEqual(int(result["errors"][0]["row_index"]), 2)
+        self.assertEqual(len(saved), 1)
+
+        key = (31, date(2026, 3, 1), date(2026, 3, 1), "day")
+        self.assertEqual(saved[key]["applicants"], 11)
 
     def test_client_business_inputs_store_schema_missing_raises_clear_error(self):
         client_business_inputs_store._schema_initialized = False

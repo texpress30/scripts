@@ -121,3 +121,5 @@
 - 2026-03-02: Când cerința este migration-only pe DB, limitează patch-ul strict la `db/migrations` (plus task docs), fără wiring prematur în services/API/dashboard.
 
 - 2026-03-02: Când utilizatorul cere explicit un store DB-backed nou, livrează fișier de service cu metode concrete (`get/upsert/list`) + teste lifecycle; nu te opri la migrare.
+
+- 2026-03-02: După ce există store DB-backed, următorul pas de ingestie trebuie să fie un import service separat (normalize+validate+bulk upsert), fără wiring prematur în API/dashboard.
