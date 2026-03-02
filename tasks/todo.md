@@ -1024,3 +1024,12 @@
 - Payload-ul client dashboard rămâne compatibil și adaugă doar `business_derived_metrics` (additive-only), păstrând `business_inputs`, metricii ads existenți și structura anterioară.
 - Denominatorii lipsă/zero returnează `None` (fără zero-uri inventate, fără excepții).
 - Testele țintite pentru formule, catalog, payload și compatibilitate au trecut.
+
+## 2026-03-02 Historical backfill CLI
+- [x] Review existing sync/backfill capabilities and platform support boundaries.
+- [x] Implement operational CLI script for historical ads backfill (google full support, explicit skips elsewhere).
+- [x] Add focused tests for CLI parsing, dry-run/apply behavior, platform skip rules, and summary output.
+- [x] Run targeted backend tests.
+
+### Review
+- Implemented focused script-only operational capability without schema/dashboard/frontend changes.
