@@ -247,6 +247,8 @@ class UnifiedDashboardService:
             "taxes": 0.0,
             "gross_profit": 0.0,
             "contribution_profit": 0.0,
+            "sales_count": 0,
+            "new_customers": 0,
         }
         for row in rows:
             applicants = row.get("applicants")
@@ -257,6 +259,8 @@ class UnifiedDashboardService:
             taxes = row.get("taxes")
             gross_profit = row.get("gross_profit")
             contribution_profit = row.get("contribution_profit")
+            sales_count = row.get("sales_count")
+            new_customers = row.get("new_customers")
 
             if isinstance(applicants, (int, float, Decimal)):
                 totals["applicants"] = int(totals["applicants"]) + int(applicants)
@@ -274,6 +278,10 @@ class UnifiedDashboardService:
                 totals["gross_profit"] = float(totals["gross_profit"]) + float(gross_profit)
             if isinstance(contribution_profit, (int, float, Decimal)):
                 totals["contribution_profit"] = float(totals["contribution_profit"]) + float(contribution_profit)
+            if isinstance(sales_count, (int, float, Decimal)):
+                totals["sales_count"] = int(totals["sales_count"]) + int(sales_count)
+            if isinstance(new_customers, (int, float, Decimal)):
+                totals["new_customers"] = int(totals["new_customers"]) + int(new_customers)
 
         return totals
 
@@ -306,6 +314,8 @@ class UnifiedDashboardService:
             taxes=business_inputs_totals.get("taxes"),
             gross_profit=business_inputs_totals.get("gross_profit"),
             contribution_profit=business_inputs_totals.get("contribution_profit"),
+            sales_count=business_inputs_totals.get("sales_count"),
+            new_customers=business_inputs_totals.get("new_customers"),
         )
 
     def get_client_dashboard(self, client_id: int, *, start_date: date | None = None, end_date: date | None = None, business_period_grain: str = "day") -> dict[str, object]:

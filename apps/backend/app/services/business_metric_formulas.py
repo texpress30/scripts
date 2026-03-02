@@ -12,15 +12,18 @@ BUSINESS_DERIVED_METRICS_IMPLEMENTED: tuple[str, ...] = (
     "total_cogs_and_taxes",
     "target_attainment",
     "revenue_gap",
+    "aov",
+    "cost_per_sale",
+    "applicants_per_sale",
+    "approved_applicants_per_sale",
+    "approval_rate",
+    "gross_profit_per_sale",
+    "contribution_profit_per_sale",
+    "ncac",
 )
 
 BUSINESS_DERIVED_METRICS_DEFERRED: tuple[str, ...] = (
-    "aov",
-    "ncac",
-    "applicants_per_sale",
-    "approved_applicants_per_sale",
-    "sales_count",
-    "new_customers",
+    "cvr_lpv_to_sale",
     "new_net",
 )
 
@@ -60,6 +63,8 @@ def build_business_derived_metrics(
     taxes: Any,
     gross_profit: Any,
     contribution_profit: Any,
+    sales_count: Any,
+    new_customers: Any,
 ) -> dict[str, float | None]:
     spend_v = _to_number(total_spend)
     actual_revenue_v = _to_number(actual_revenue)
@@ -70,6 +75,8 @@ def build_business_derived_metrics(
     taxes_v = _to_number(taxes)
     gross_profit_v = _to_number(gross_profit)
     contribution_profit_v = _to_number(contribution_profit)
+    sales_count_v = _to_number(sales_count)
+    new_customers_v = _to_number(new_customers)
 
     revenue_gap = None
     if target_revenue_v is not None and actual_revenue_v is not None:
@@ -85,4 +92,12 @@ def build_business_derived_metrics(
         "total_cogs_and_taxes": safe_add(cogs_v, taxes_v),
         "target_attainment": safe_divide(actual_revenue_v, target_revenue_v),
         "revenue_gap": revenue_gap,
+        "aov": safe_divide(actual_revenue_v, sales_count_v),
+        "cost_per_sale": safe_divide(spend_v, sales_count_v),
+        "applicants_per_sale": safe_divide(applicants_v, sales_count_v),
+        "approved_applicants_per_sale": safe_divide(approved_applicants_v, sales_count_v),
+        "approval_rate": safe_divide(approved_applicants_v, applicants_v),
+        "gross_profit_per_sale": safe_divide(gross_profit_v, sales_count_v),
+        "contribution_profit_per_sale": safe_divide(contribution_profit_v, sales_count_v),
+        "ncac": safe_divide(spend_v, new_customers_v),
     }

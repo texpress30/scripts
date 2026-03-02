@@ -3420,6 +3420,8 @@ class ServiceTests(unittest.TestCase):
             taxes=150.0,
             gross_profit=1000.0,
             contribution_profit=800.0,
+            sales_count=20,
+            new_customers=10,
         )
         self.assertEqual(derived["mer"], 2.5)
         self.assertEqual(derived["cost_per_applicant"], 10.0)
@@ -3430,6 +3432,14 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(derived["total_cogs_and_taxes"], 850.0)
         self.assertEqual(derived["target_attainment"], 0.8333333333333334)
         self.assertEqual(derived["revenue_gap"], 500.0)
+        self.assertEqual(derived["aov"], 125.0)
+        self.assertEqual(derived["cost_per_sale"], 50.0)
+        self.assertEqual(derived["applicants_per_sale"], 5.0)
+        self.assertEqual(derived["approved_applicants_per_sale"], 1.0)
+        self.assertEqual(derived["approval_rate"], 0.2)
+        self.assertEqual(derived["gross_profit_per_sale"], 50.0)
+        self.assertEqual(derived["contribution_profit_per_sale"], 40.0)
+        self.assertEqual(derived["ncac"], 100.0)
 
     def test_business_metric_formulas_return_none_for_missing_denominators(self):
         derived = build_business_derived_metrics(
@@ -3442,6 +3452,8 @@ class ServiceTests(unittest.TestCase):
             taxes=None,
             gross_profit=100.0,
             contribution_profit=20.0,
+            sales_count=0,
+            new_customers=0,
         )
         self.assertIsNone(derived["mer"])
         self.assertIsNone(derived["cost_per_applicant"])
@@ -3452,14 +3464,22 @@ class ServiceTests(unittest.TestCase):
         self.assertIsNone(derived["target_attainment"])
         self.assertIsNone(derived["revenue_gap"])
         self.assertIsNone(derived["total_cogs_and_taxes"])
+        self.assertIsNone(derived["aov"])
+        self.assertIsNone(derived["cost_per_sale"])
+        self.assertIsNone(derived["applicants_per_sale"])
+        self.assertIsNone(derived["approved_applicants_per_sale"])
+        self.assertIsNone(derived["gross_profit_per_sale"])
+        self.assertIsNone(derived["contribution_profit_per_sale"])
+        self.assertIsNone(derived["ncac"])
 
     def test_business_metric_catalog_marks_deferred_metrics(self):
         self.assertIn("mer", BUSINESS_DERIVED_METRICS_IMPLEMENTED)
         self.assertIn("cost_per_applicant", BUSINESS_DERIVED_METRICS_IMPLEMENTED)
-        self.assertIn("aov", BUSINESS_DERIVED_METRICS_DEFERRED)
-        self.assertIn("ncac", BUSINESS_DERIVED_METRICS_DEFERRED)
-        self.assertIn("applicants_per_sale", BUSINESS_DERIVED_METRICS_DEFERRED)
-        self.assertIn("approved_applicants_per_sale", BUSINESS_DERIVED_METRICS_DEFERRED)
+        self.assertIn("aov", BUSINESS_DERIVED_METRICS_IMPLEMENTED)
+        self.assertIn("ncac", BUSINESS_DERIVED_METRICS_IMPLEMENTED)
+        self.assertIn("applicants_per_sale", BUSINESS_DERIVED_METRICS_IMPLEMENTED)
+        self.assertIn("approved_applicants_per_sale", BUSINESS_DERIVED_METRICS_IMPLEMENTED)
+        self.assertIn("cvr_lpv_to_sale", BUSINESS_DERIVED_METRICS_DEFERRED)
 
     def test_dashboard_client_endpoint_propagates_business_period_grain(self):
         original_get = dashboard_api.unified_dashboard_service.get_client_dashboard
@@ -3560,6 +3580,8 @@ class ServiceTests(unittest.TestCase):
                     "taxes": 100.0,
                     "gross_profit": 600.0,
                     "contribution_profit": 500.0,
+                    "sales_count": 5,
+                    "new_customers": 3,
                     "notes": None,
                     "source": "manual",
                     "metadata": {},
@@ -3576,6 +3598,8 @@ class ServiceTests(unittest.TestCase):
                     "taxes": 50.0,
                     "gross_profit": None,
                     "contribution_profit": 150.0,
+                    "sales_count": 0,
+                    "new_customers": 1,
                     "notes": None,
                     "source": "sheet",
                     "metadata": {},
@@ -3598,12 +3622,14 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(business_inputs["totals"]["taxes"], 150.0)
         self.assertEqual(business_inputs["totals"]["gross_profit"], 600.0)
         self.assertEqual(business_inputs["totals"]["contribution_profit"], 650.0)
+        self.assertEqual(business_inputs["totals"]["sales_count"], 5)
+        self.assertEqual(business_inputs["totals"]["new_customers"], 4)
         self.assertIn("conversions", dashboard["totals"])
         self.assertIn("business_derived_metrics", dashboard)
         self.assertIn("mer", dashboard["business_derived_metrics"])
         self.assertIn("cost_per_applicant", dashboard["business_derived_metrics"])
-        self.assertNotIn("aov", dashboard["business_derived_metrics"])
-        self.assertNotIn("ncac", dashboard["business_derived_metrics"])
+        self.assertIn("aov", dashboard["business_derived_metrics"])
+        self.assertIn("ncac", dashboard["business_derived_metrics"])
 
     def test_client_dashboard_business_inputs_week_grain_filters_only_week(self):
         calls: list[dict[str, object]] = []
@@ -3624,6 +3650,8 @@ class ServiceTests(unittest.TestCase):
                         "taxes": 300.0,
                         "gross_profit": 1800.0,
                         "contribution_profit": 1500.0,
+                        "sales_count": 12,
+                        "new_customers": 4,
                         "notes": None,
                         "source": "manual",
                         "metadata": {},
@@ -3667,6 +3695,8 @@ class ServiceTests(unittest.TestCase):
                 "taxes": "100",
                 "gross_profit": "834.06",
                 "contribution_profit": "700.00",
+                "sales_count": "15",
+                "new_customers": "6",
                 "notes": "",
                 "source": "",
                 "metadata": "",
@@ -3685,6 +3715,8 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(row["taxes"], 100.0)
         self.assertEqual(row["gross_profit"], 834.06)
         self.assertEqual(row["contribution_profit"], 700.0)
+        self.assertEqual(row["sales_count"], 15)
+        self.assertEqual(row["new_customers"], 6)
         self.assertIsNone(row["notes"])
         self.assertEqual(row["source"], "manual")
         self.assertEqual(row["metadata"], {})
@@ -3746,6 +3778,19 @@ class ServiceTests(unittest.TestCase):
                 )
             )
 
+        with self.assertRaises(ValueError):
+            validate_client_business_input_row(
+                normalize_client_business_input_row(
+                    {
+                        "client_id": 11,
+                        "period_start": "2026-03-01",
+                        "period_end": "2026-03-01",
+                        "period_grain": "day",
+                        "sales_count": "-1",
+                    }
+                )
+            )
+
     def test_client_business_inputs_import_bulk_continues_on_errors_and_upserts(self):
         saved: dict[tuple[int, date, date, str], dict[str, object]] = {}
 
@@ -3767,12 +3812,16 @@ class ServiceTests(unittest.TestCase):
                         "period_start": "2026-03-01",
                         "period_grain": "day",
                         "applicants": "10",
+                        "sales_count": "4",
+                        "new_customers": "2",
                     },
                     {
                         "client_id": "31",
                         "period_start": "2026-03-01",
                         "period_grain": "day",
                         "applicants": "11",
+                        "sales_count": "5",
+                        "new_customers": "3",
                     },
                     {
                         "client_id": "31",
@@ -3794,6 +3843,8 @@ class ServiceTests(unittest.TestCase):
 
         key = (31, date(2026, 3, 1), date(2026, 3, 1), "day")
         self.assertEqual(saved[key]["applicants"], 11)
+        self.assertEqual(saved[key]["sales_count"], 5)
+        self.assertEqual(saved[key]["new_customers"], 3)
 
     def test_client_business_inputs_store_schema_missing_raises_clear_error(self):
         client_business_inputs_store._schema_initialized = False
@@ -3859,6 +3910,8 @@ class ServiceTests(unittest.TestCase):
                 row.get("taxes"),
                 row.get("gross_profit"),
                 row.get("contribution_profit"),
+                row.get("sales_count"),
+                row.get("new_customers"),
                 row.get("notes"),
                 row.get("source"),
                 row.get("metadata"),
@@ -3907,9 +3960,11 @@ class ServiceTests(unittest.TestCase):
                             "taxes": args[9],
                             "gross_profit": args[10],
                             "contribution_profit": args[11],
-                            "notes": args[12],
-                            "source": args[13],
-                            "metadata": args[14],
+                            "sales_count": args[12],
+                            "new_customers": args[13],
+                            "notes": args[14],
+                            "source": args[15],
+                            "metadata": args[16],
                             "created_at": now_ts,
                             "updated_at": now_ts,
                         }
@@ -3926,9 +3981,11 @@ class ServiceTests(unittest.TestCase):
                                 "taxes": args[9],
                                 "gross_profit": args[10],
                                 "contribution_profit": args[11],
-                                "notes": args[12],
-                                "source": args[13],
-                                "metadata": args[14],
+                                "sales_count": args[12],
+                                "new_customers": args[13],
+                                "notes": args[14],
+                                "source": args[15],
+                                "metadata": args[16],
                                 "updated_at": now_ts,
                             }
                         )
@@ -4011,6 +4068,8 @@ class ServiceTests(unittest.TestCase):
                 taxes=100.0,
                 gross_profit=800.5,
                 contribution_profit=700.0,
+                sales_count=9,
+                new_customers=4,
                 notes="initial",
                 source="manual",
                 metadata={"origin": "sheet"},
@@ -4024,6 +4083,8 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(created["taxes"], 100.0)
             self.assertEqual(created["gross_profit"], 800.5)
             self.assertEqual(created["contribution_profit"], 700.0)
+            self.assertEqual(created["sales_count"], 9)
+            self.assertEqual(created["new_customers"], 4)
             self.assertEqual(created["notes"], "initial")
             self.assertEqual(created["source"], "manual")
             self.assertEqual(created["metadata"], {"origin": "sheet"})
@@ -4042,6 +4103,8 @@ class ServiceTests(unittest.TestCase):
                 taxes=90.0,
                 gross_profit=None,
                 contribution_profit=760.0,
+                sales_count=None,
+                new_customers=5,
                 notes=None,
                 source=None,
                 metadata=None,
@@ -4055,6 +4118,8 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(updated["taxes"], 90.0)
             self.assertIsNone(updated["gross_profit"])
             self.assertEqual(updated["contribution_profit"], 760.0)
+            self.assertIsNone(updated["sales_count"])
+            self.assertEqual(updated["new_customers"], 5)
             self.assertIsNone(updated["notes"])
             self.assertEqual(updated["source"], "manual")
             self.assertEqual(updated["metadata"], {})

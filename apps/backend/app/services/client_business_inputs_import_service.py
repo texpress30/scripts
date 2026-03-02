@@ -107,6 +107,8 @@ def normalize_client_business_input_row(
         "taxes": _parse_float(row.get("taxes")),
         "gross_profit": _parse_float(row.get("gross_profit")),
         "contribution_profit": _parse_float(row.get("contribution_profit")),
+        "sales_count": _parse_int(row.get("sales_count")),
+        "new_customers": _parse_int(row.get("new_customers")),
         "notes": _empty_to_none(row.get("notes")),
         "source": source,
         "metadata": _parse_metadata(row.get("metadata")),
@@ -132,6 +134,15 @@ def validate_client_business_input_row(row: dict[str, object]) -> None:
         raise ClientBusinessInputValidationError("period_end must be greater than or equal to period_start")
     if period_grain == "day" and period_start != period_end:
         raise ClientBusinessInputValidationError("for day period_grain, period_start must be equal to period_end")
+
+    sales_count = row.get("sales_count")
+    new_customers = row.get("new_customers")
+    if sales_count is not None:
+        if not isinstance(sales_count, int) or sales_count < 0:
+            raise ClientBusinessInputValidationError("sales_count must be >= 0 when provided")
+    if new_customers is not None:
+        if not isinstance(new_customers, int) or new_customers < 0:
+            raise ClientBusinessInputValidationError("new_customers must be >= 0 when provided")
 
 
 def import_client_business_inputs(

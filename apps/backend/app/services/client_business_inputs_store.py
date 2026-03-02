@@ -72,11 +72,13 @@ class ClientBusinessInputsStore:
             "taxes": float(row[10]) if row[10] is not None else None,
             "gross_profit": float(row[11]) if row[11] is not None else None,
             "contribution_profit": float(row[12]) if row[12] is not None else None,
-            "notes": str(row[13]) if row[13] is not None else None,
-            "source": str(row[14]),
-            "metadata": self._normalize_metadata(row[15]),
-            "created_at": str(row[16]) if row[16] is not None else None,
-            "updated_at": str(row[17]) if row[17] is not None else None,
+            "sales_count": int(row[13]) if row[13] is not None else None,
+            "new_customers": int(row[14]) if row[14] is not None else None,
+            "notes": str(row[15]) if row[15] is not None else None,
+            "source": str(row[16]),
+            "metadata": self._normalize_metadata(row[17]),
+            "created_at": str(row[18]) if row[18] is not None else None,
+            "updated_at": str(row[19]) if row[19] is not None else None,
         }
 
     def get_client_business_input(self, client_id: int, period_start: date, period_end: date, period_grain: str) -> dict[str, object] | None:
@@ -99,6 +101,8 @@ class ClientBusinessInputsStore:
                         taxes,
                         gross_profit,
                         contribution_profit,
+                        sales_count,
+                        new_customers,
                         notes,
                         source,
                         metadata,
@@ -130,6 +134,8 @@ class ClientBusinessInputsStore:
         taxes: float | None = None,
         gross_profit: float | None = None,
         contribution_profit: float | None = None,
+        sales_count: int | None = None,
+        new_customers: int | None = None,
         notes: str | None = None,
         source: str | None = None,
         metadata: dict[str, object] | None = None,
@@ -155,11 +161,13 @@ class ClientBusinessInputsStore:
                         taxes,
                         gross_profit,
                         contribution_profit,
+                        sales_count,
+                        new_customers,
                         notes,
                         source,
                         metadata
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb
                     )
                     ON CONFLICT (client_id, period_start, period_end, period_grain)
                     DO UPDATE SET
@@ -171,6 +179,8 @@ class ClientBusinessInputsStore:
                         taxes = EXCLUDED.taxes,
                         gross_profit = EXCLUDED.gross_profit,
                         contribution_profit = EXCLUDED.contribution_profit,
+                        sales_count = EXCLUDED.sales_count,
+                        new_customers = EXCLUDED.new_customers,
                         notes = EXCLUDED.notes,
                         source = EXCLUDED.source,
                         metadata = EXCLUDED.metadata,
@@ -189,6 +199,8 @@ class ClientBusinessInputsStore:
                         taxes,
                         gross_profit,
                         contribution_profit,
+                        sales_count,
+                        new_customers,
                         notes,
                         resolved_source,
                         json.dumps(metadata_payload),
@@ -246,6 +258,8 @@ class ClientBusinessInputsStore:
                         taxes,
                         gross_profit,
                         contribution_profit,
+                        sales_count,
+                        new_customers,
                         notes,
                         source,
                         metadata,
