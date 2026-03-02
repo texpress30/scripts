@@ -944,3 +944,19 @@
 - Migrarea include constrângerile cerute: range (`period_end >= period_start`), `period_grain IN ('day', 'week')` și consistență pentru day (`period_start = period_end`).
 - Am adăugat regula de unicitate pe `(client_id, period_start, period_end, period_grain)` și indexurile minime: `client_id`, `(period_grain, period_start)`, plus `(client_id, period_start DESC)` opțional.
 - Nu am făcut modificări în `services`, `api`, `dashboard`, `frontend` sau formule în acest task; patch-ul este migration-only (plus task docs).
+
+
+# TODO — client_business_inputs_store DB-backed (fără wiring dashboard/API)
+
+- [x] Creez `client_business_inputs_store.py` cu schema guard read-only pentru `client_business_inputs`.
+- [x] Implementez metodele `get_client_business_input`, `upsert_client_business_input`, `list_client_business_inputs` cu SQL parametrizat + ON CONFLICT update.
+- [x] Asigur comportamentul pentru câmpuri opționale (inclusiv clear la `None`), `source` implicit `manual` și `metadata` implicit `{}`.
+- [x] Adaug teste backend lifecycle (schema missing, get none, upsert create/update fără duplicate, list day/week + filtre + ordering).
+- [x] Rulez verificări țintite și documentez clar că NU există wiring în dashboard/API în acest task.
+
+## Review
+- Am adăugat `client_business_inputs_store.py` cu schema guard read-only (`to_regclass`) și eroare clară dacă tabela lipsește.
+- Metodele implementate: `get_client_business_input`, `upsert_client_business_input` (ON CONFLICT + `updated_at = NOW()`), `list_client_business_inputs` cu filtrare de tip overlap pentru interval.
+- Comportament acoperit: create + update pe aceeași cheie unică fără duplicate, câmpuri opționale updatabile la `None`, `source` implicit `manual`, `metadata` implicit `{}`.
+- Am adăugat teste lifecycle dedicate în `test_services.py` și au trecut.
+- Nu am făcut wiring în dashboard/API în acest task.

@@ -40,6 +40,7 @@ from app.services.report_metric_formulas import build_derived_metrics
 from app.services.sync_runs_store import sync_runs_store
 from app.services.sync_state_store import sync_state_store
 from app.services.sync_run_chunks_store import sync_run_chunks_store
+from app.services.client_business_inputs_store import client_business_inputs_store
 
 
 class ServiceTests(unittest.TestCase):
@@ -3390,6 +3391,317 @@ class ServiceTests(unittest.TestCase):
         first_chunk = next(item for item in chunks_after if int(item["chunk_index"]) == 0)
         self.assertEqual(first_chunk["status"], "done")
         self.assertEqual(first_chunk["error"], "chunk done")
+
+
+    def test_client_business_inputs_store_schema_missing_raises_clear_error(self):
+        client_business_inputs_store._schema_initialized = False
+
+        class _FakeCursor:
+            def execute(self, query, params=None):
+                return None
+
+            def fetchone(self):
+                return (None,)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_connect = client_business_inputs_store._connect
+        try:
+            client_business_inputs_store._connect = lambda: _FakeConn()
+            with self.assertRaises(RuntimeError) as ctx:
+                client_business_inputs_store.initialize_schema()
+        finally:
+            client_business_inputs_store._connect = original_connect
+            client_business_inputs_store._schema_initialized = False
+
+        self.assertIn("Database schema for client_business_inputs is not ready; run DB migrations", str(ctx.exception))
+
+    def test_client_business_inputs_store_get_upsert_list_lifecycle(self):
+        client_business_inputs_store._schema_initialized = False
+
+        rows_by_key: dict[tuple[int, str, str, str], dict[str, object]] = {}
+        next_id = 1
+        tick = 0
+
+        def _ts() -> str:
+            nonlocal tick
+            tick += 1
+            return f"2026-03-01T00:00:{tick:02d}+00:00"
+
+        def _row_tuple(row: dict[str, object]) -> tuple[object, ...]:
+            return (
+                row["id"],
+                row["client_id"],
+                row["period_start"],
+                row["period_end"],
+                row["period_grain"],
+                row.get("applicants"),
+                row.get("approved_applicants"),
+                row.get("actual_revenue"),
+                row.get("target_revenue"),
+                row.get("cogs"),
+                row.get("taxes"),
+                row.get("gross_profit"),
+                row.get("contribution_profit"),
+                row.get("notes"),
+                row.get("source"),
+                row.get("metadata"),
+                row.get("created_at"),
+                row.get("updated_at"),
+            )
+
+        class _FakeCursor:
+            def __init__(self):
+                self._one = None
+                self._all = []
+
+            def execute(self, query, params=None):
+                nonlocal next_id
+                sql = " ".join(str(query).split()).lower()
+                args = tuple(params or ())
+
+                if "to_regclass('public.client_business_inputs')" in sql:
+                    self._one = ("client_business_inputs",)
+                    self._all = []
+                    return
+
+                if "from client_business_inputs" in sql and "where client_id = %s and period_start = %s and period_end = %s and period_grain = %s" in sql:
+                    key = (int(args[0]), str(args[1]), str(args[2]), str(args[3]))
+                    row = rows_by_key.get(key)
+                    self._one = _row_tuple(row) if row is not None else None
+                    self._all = []
+                    return
+
+                if "insert into client_business_inputs" in sql:
+                    key = (int(args[0]), str(args[1]), str(args[2]), str(args[3]))
+                    created = rows_by_key.get(key)
+                    now_ts = _ts()
+                    if created is None:
+                        row = {
+                            "id": next_id,
+                            "client_id": int(args[0]),
+                            "period_start": str(args[1]),
+                            "period_end": str(args[2]),
+                            "period_grain": str(args[3]),
+                            "applicants": args[4],
+                            "approved_applicants": args[5],
+                            "actual_revenue": args[6],
+                            "target_revenue": args[7],
+                            "cogs": args[8],
+                            "taxes": args[9],
+                            "gross_profit": args[10],
+                            "contribution_profit": args[11],
+                            "notes": args[12],
+                            "source": args[13],
+                            "metadata": args[14],
+                            "created_at": now_ts,
+                            "updated_at": now_ts,
+                        }
+                        rows_by_key[key] = row
+                        next_id += 1
+                    else:
+                        created.update(
+                            {
+                                "applicants": args[4],
+                                "approved_applicants": args[5],
+                                "actual_revenue": args[6],
+                                "target_revenue": args[7],
+                                "cogs": args[8],
+                                "taxes": args[9],
+                                "gross_profit": args[10],
+                                "contribution_profit": args[11],
+                                "notes": args[12],
+                                "source": args[13],
+                                "metadata": args[14],
+                                "updated_at": now_ts,
+                            }
+                        )
+                    self._one = None
+                    self._all = []
+                    return
+
+                if "from client_business_inputs" in sql and "order by period_start asc, period_end asc" in sql:
+                    client_id = int(args[0])
+                    period_grain = str(args[1])
+                    date_from = args[2] if len(args) >= 3 else None
+                    date_to = args[3] if len(args) >= 4 else None
+
+                    def _keep(row: dict[str, object]) -> bool:
+                        if int(row["client_id"]) != client_id or str(row["period_grain"]) != period_grain:
+                            return False
+                        row_start = date.fromisoformat(str(row["period_start"]))
+                        row_end = date.fromisoformat(str(row["period_end"]))
+                        if date_from is not None and row_end < date_from:
+                            return False
+                        if date_to is not None and row_start > date_to:
+                            return False
+                        return True
+
+                    selected = [_row_tuple(r) for r in rows_by_key.values() if _keep(r)]
+                    selected.sort(key=lambda r: (str(r[2]), str(r[3])))
+                    self._all = selected
+                    self._one = None
+                    return
+
+                raise AssertionError(f"Unexpected SQL: {query}")
+
+            def fetchone(self):
+                return self._one
+
+            def fetchall(self):
+                return list(self._all)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def commit(self):
+                return None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_connect = client_business_inputs_store._connect
+        try:
+            client_business_inputs_store._connect = lambda: _FakeConn()
+
+            missing = client_business_inputs_store.get_client_business_input(
+                11,
+                date(2026, 3, 1),
+                date(2026, 3, 1),
+                "day",
+            )
+            self.assertIsNone(missing)
+
+            created = client_business_inputs_store.upsert_client_business_input(
+                client_id=11,
+                period_start=date(2026, 3, 1),
+                period_end=date(2026, 3, 1),
+                period_grain="day",
+                applicants=100,
+                approved_applicants=10,
+                actual_revenue=1200.5,
+                target_revenue=2000.0,
+                cogs=300.0,
+                taxes=100.0,
+                gross_profit=800.5,
+                contribution_profit=700.0,
+                notes="initial",
+                source="manual",
+                metadata={"origin": "sheet"},
+            )
+            self.assertIsNotNone(created)
+            self.assertEqual(created["applicants"], 100)
+            self.assertEqual(created["approved_applicants"], 10)
+            self.assertEqual(created["actual_revenue"], 1200.5)
+            self.assertEqual(created["target_revenue"], 2000.0)
+            self.assertEqual(created["cogs"], 300.0)
+            self.assertEqual(created["taxes"], 100.0)
+            self.assertEqual(created["gross_profit"], 800.5)
+            self.assertEqual(created["contribution_profit"], 700.0)
+            self.assertEqual(created["notes"], "initial")
+            self.assertEqual(created["source"], "manual")
+            self.assertEqual(created["metadata"], {"origin": "sheet"})
+            first_updated_at = str(created["updated_at"])
+
+            updated = client_business_inputs_store.upsert_client_business_input(
+                client_id=11,
+                period_start=date(2026, 3, 1),
+                period_end=date(2026, 3, 1),
+                period_grain="day",
+                applicants=120,
+                approved_applicants=15,
+                actual_revenue=None,
+                target_revenue=2500.0,
+                cogs=None,
+                taxes=90.0,
+                gross_profit=None,
+                contribution_profit=760.0,
+                notes=None,
+                source=None,
+                metadata=None,
+            )
+            self.assertIsNotNone(updated)
+            self.assertEqual(updated["applicants"], 120)
+            self.assertEqual(updated["approved_applicants"], 15)
+            self.assertIsNone(updated["actual_revenue"])
+            self.assertEqual(updated["target_revenue"], 2500.0)
+            self.assertIsNone(updated["cogs"])
+            self.assertEqual(updated["taxes"], 90.0)
+            self.assertIsNone(updated["gross_profit"])
+            self.assertEqual(updated["contribution_profit"], 760.0)
+            self.assertIsNone(updated["notes"])
+            self.assertEqual(updated["source"], "manual")
+            self.assertEqual(updated["metadata"], {})
+            self.assertNotEqual(first_updated_at, str(updated["updated_at"]))
+
+            self.assertEqual(len(rows_by_key), 1)
+
+            client_business_inputs_store.upsert_client_business_input(
+                client_id=11,
+                period_start=date(2026, 3, 3),
+                period_end=date(2026, 3, 9),
+                period_grain="week",
+                applicants=330,
+            )
+            client_business_inputs_store.upsert_client_business_input(
+                client_id=11,
+                period_start=date(2026, 3, 10),
+                period_end=date(2026, 3, 16),
+                period_grain="week",
+                applicants=440,
+            )
+
+            week_rows = client_business_inputs_store.list_client_business_inputs(
+                client_id=11,
+                period_grain="week",
+            )
+            self.assertEqual(len(week_rows), 2)
+            self.assertEqual(week_rows[0]["period_start"], "2026-03-03")
+            self.assertEqual(week_rows[1]["period_start"], "2026-03-10")
+
+            week_filtered = client_business_inputs_store.list_client_business_inputs(
+                client_id=11,
+                period_grain="week",
+                date_from=date(2026, 3, 8),
+                date_to=date(2026, 3, 12),
+            )
+            self.assertEqual(len(week_filtered), 2)
+
+            day_rows = client_business_inputs_store.list_client_business_inputs(
+                client_id=11,
+                period_grain="day",
+                date_from=date(2026, 3, 1),
+                date_to=date(2026, 3, 1),
+            )
+            self.assertEqual(len(day_rows), 1)
+            self.assertEqual(day_rows[0]["period_grain"], "day")
+        finally:
+            client_business_inputs_store._connect = original_connect
+            client_business_inputs_store._schema_initialized = False
 
     def test_sync_state_store_schema_missing_raises_clear_error(self):
         sync_state_store._schema_initialized = False

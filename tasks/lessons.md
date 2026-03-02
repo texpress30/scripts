@@ -119,3 +119,5 @@
 - 2026-03-02: Când utilizatorul cere explicit separarea metricilor native/derived/manual, implementează un formula layer dedicat la read-time și exclude explicit metricii business/manual din catalog și payload.
 
 - 2026-03-02: Când cerința este migration-only pe DB, limitează patch-ul strict la `db/migrations` (plus task docs), fără wiring prematur în services/API/dashboard.
+
+- 2026-03-02: Când utilizatorul cere explicit un store DB-backed nou, livrează fișier de service cu metode concrete (`get/upsert/list`) + teste lifecycle; nu te opri la migrare.
