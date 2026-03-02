@@ -1051,3 +1051,12 @@
 
 ### Review
 - Historical script no longer uses rolling_30d execution path; it calls explicit-range service path with chunked backfill.
+
+## 2026-03-02 Railway server-side historical launcher
+- [x] Add internal/admin Google historical backfill start endpoint with queued job response.
+- [x] Add server-side background runner + status endpoint for historical jobs.
+- [x] Update local script to support HTTP transport (launcher/poller) and keep local transport optional.
+- [x] Add tests for endpoint queue/status, background historical path usage, and script HTTP polling.
+
+### Review
+- Historical Google backfill can now be initiated from laptop via HTTP while execution runs server-side in backend environment.

@@ -1391,6 +1391,104 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(response["effective_start_date"], expected_start.isoformat())
         self.assertEqual(response["effective_end_date"], expected_end.isoformat())
 
+    def test_google_historical_backfill_start_queues_background_job(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+        background_tasks = BackgroundTasks()
+
+        original_enforce = google_ads_api.enforce_action_scope
+        original_add_task = background_tasks.add_task
+        try:
+            google_ads_api.enforce_action_scope = lambda **kwargs: None
+            captured: dict[str, object] = {}
+
+            def fake_add_task(func, *args, **kwargs):
+                captured["func"] = getattr(func, "__name__", str(func))
+                captured["kwargs"] = kwargs
+
+            background_tasks.add_task = fake_add_task
+
+            payload = google_ads_api.start_google_historical_backfill(
+                client_id=77,
+                background_tasks=background_tasks,
+                user=user,
+                start_date=date(2024, 9, 1),
+                end_date=date(2024, 9, 21),
+                chunk_days=7,
+                continue_on_error=True,
+                account_ids="1234567890,0987654321",
+            )
+        finally:
+            google_ads_api.enforce_action_scope = original_enforce
+            background_tasks.add_task = original_add_task
+
+        self.assertEqual(payload["status"], "queued")
+        self.assertEqual(payload["mode"], "historical_range")
+        self.assertEqual(payload["client_id"], 77)
+        self.assertEqual(payload["chunk_days"], 7)
+        self.assertEqual(captured.get("func"), "_run_google_historical_backfill_job")
+
+    def test_google_historical_backfill_runner_uses_historical_service_path(self):
+        original_list_accounts = google_ads_api.client_registry_service.list_client_platform_accounts
+        original_historical = google_ads_api.google_ads_service.sync_customer_for_client_historical_range
+        original_update = google_ads_api._update_historical_job
+        job_updates: list[dict[str, object]] = []
+        calls: list[dict[str, object]] = []
+        try:
+            google_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "1234567890"}, {"id": "0987654321"}]
+
+            def fake_historical(**kwargs):
+                calls.append(dict(kwargs))
+                return {"planned_chunks": 3, "executed_chunks": 3, "empty_chunks": 1, "failed_chunks": 0, "rows_upserted": 9}
+
+            google_ads_api.google_ads_service.sync_customer_for_client_historical_range = fake_historical
+            google_ads_api._update_historical_job = lambda job_id, **updates: job_updates.append(dict(updates))
+
+            google_ads_api._run_google_historical_backfill_job(
+                job_id="ghb-x",
+                client_id=11,
+                start_date=date(2024, 9, 1),
+                end_date=date(2024, 9, 21),
+                chunk_days=7,
+                continue_on_error=False,
+                account_ids=[],
+            )
+        finally:
+            google_ads_api.client_registry_service.list_client_platform_accounts = original_list_accounts
+            google_ads_api.google_ads_service.sync_customer_for_client_historical_range = original_historical
+            google_ads_api._update_historical_job = original_update
+
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(all("start_date" in call and "end_date" in call for call in calls))
+        self.assertTrue(any(update.get("status") == "done" for update in job_updates))
+
+    def test_google_historical_backfill_status_endpoint_returns_payload(self):
+        user = AuthUser(email="admin@example.com", role="agency_owner")
+        original_enforce = google_ads_api.enforce_action_scope
+        original_get = google_ads_api._get_historical_job
+        try:
+            google_ads_api.enforce_action_scope = lambda **kwargs: None
+            google_ads_api._get_historical_job = lambda job_id: {
+                "job_id": job_id,
+                "client_id": 77,
+                "status": "running",
+                "mode": "historical_range",
+                "processed_accounts": 1,
+                "planned_chunks": 2,
+                "executed_chunks": 1,
+                "empty_chunks": 0,
+                "failed_chunks": 0,
+                "rows_upserted": 5,
+                "errors": [],
+            }
+            payload = google_ads_api.get_google_historical_backfill_status(client_id=77, job_id="ghb-1", user=user)
+        finally:
+            google_ads_api.enforce_action_scope = original_enforce
+            google_ads_api._get_historical_job = original_get
+
+        self.assertEqual(payload["job_id"], "ghb-1")
+        self.assertEqual(payload["status"], "running")
+        self.assertEqual(payload["mode"], "historical_range")
+
     def test_google_sync_now_job_status_memory_hit_enriches_with_chunks(self):
         user = AuthUser(email="admin@example.com", role="agency_owner")
         db_calls: list[str] = []

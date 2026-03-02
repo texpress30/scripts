@@ -1,5 +1,6 @@
 from datetime import date, datetime, timedelta
 import logging
+from threading import Lock
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 
@@ -20,6 +21,134 @@ logger = logging.getLogger(__name__)
 
 UI_ROLLING_SYNC_DAYS = 30
 UI_ROLLING_SYNC_CHUNK_DAYS = 7
+
+
+_HISTORICAL_JOBS_LOCK = Lock()
+_HISTORICAL_JOBS: dict[str, dict[str, object]] = {}
+
+
+def _create_historical_job(*, client_id: int, start_date: date, end_date: date, chunk_days: int, account_ids: list[str], continue_on_error: bool) -> str:
+    job_id = f"ghb-{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}"
+    with _HISTORICAL_JOBS_LOCK:
+        _HISTORICAL_JOBS[job_id] = {
+            "job_id": job_id,
+            "client_id": int(client_id),
+            "status": SYNC_STATUS_QUEUED,
+            "mode": "historical_range",
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "chunk_days": int(chunk_days),
+            "requested_account_ids": list(account_ids),
+            "continue_on_error": bool(continue_on_error),
+            "processed_accounts": 0,
+            "planned_chunks": 0,
+            "executed_chunks": 0,
+            "empty_chunks": 0,
+            "failed_chunks": 0,
+            "rows_upserted": 0,
+            "errors": [],
+            "created_at": datetime.utcnow().isoformat(),
+            "started_at": None,
+            "finished_at": None,
+        }
+    return job_id
+
+
+def _update_historical_job(job_id: str, **updates: object) -> None:
+    with _HISTORICAL_JOBS_LOCK:
+        current = _HISTORICAL_JOBS.get(job_id)
+        if current is None:
+            return
+        current.update(updates)
+
+
+def _get_historical_job(job_id: str) -> dict[str, object] | None:
+    with _HISTORICAL_JOBS_LOCK:
+        payload = _HISTORICAL_JOBS.get(job_id)
+        return dict(payload) if payload is not None else None
+
+
+def _run_google_historical_backfill_job(
+    *,
+    job_id: str,
+    client_id: int,
+    start_date: date,
+    end_date: date,
+    chunk_days: int,
+    continue_on_error: bool,
+    account_ids: list[str],
+) -> None:
+    _update_historical_job(job_id, status=SYNC_STATUS_RUNNING, started_at=datetime.utcnow().isoformat())
+
+    mapped_accounts = client_registry_service.list_client_platform_accounts(platform=PLATFORM_GOOGLE_ADS, client_id=client_id)
+    resolved_accounts = [str(item.get("id") or "").strip() for item in mapped_accounts if str(item.get("id") or "").strip() != ""]
+    if account_ids:
+        allow = set(account_ids)
+        resolved_accounts = [aid for aid in resolved_accounts if aid in allow]
+
+    processed_accounts = 0
+    planned_chunks = 0
+    executed_chunks = 0
+    empty_chunks = 0
+    failed_chunks = 0
+    rows_upserted = 0
+    errors: list[str] = []
+
+    for account_id in resolved_accounts:
+        try:
+            payload = google_ads_service.sync_customer_for_client_historical_range(
+                client_id=client_id,
+                customer_id=account_id,
+                start_date=start_date,
+                end_date=end_date,
+                chunk_days=chunk_days,
+            )
+            processed_accounts += 1
+            planned_chunks += int(payload.get("planned_chunks", 0) or 0)
+            executed_chunks += int(payload.get("executed_chunks", 0) or 0)
+            empty_chunks += int(payload.get("empty_chunks", 0) or 0)
+            failed_chunks += int(payload.get("failed_chunks", 0) or 0)
+            rows_upserted += int(payload.get("rows_upserted", 0) or 0)
+        except Exception as exc:  # noqa: BLE001
+            msg = f"account_id={account_id} {str(exc)[:300]}"
+            errors.append(msg)
+            failed_chunks += 1
+            logger.warning(
+                "google_ads.historical_backfill job_id=%s client_id=%s mode=historical_range account_id=%s error=%s",
+                job_id,
+                client_id,
+                account_id,
+                str(exc)[:300],
+            )
+            if not continue_on_error:
+                _update_historical_job(
+                    job_id,
+                    status=SYNC_STATUS_ERROR,
+                    processed_accounts=int(processed_accounts),
+                    planned_chunks=int(planned_chunks),
+                    executed_chunks=int(executed_chunks),
+                    empty_chunks=int(empty_chunks),
+                    failed_chunks=int(failed_chunks),
+                    rows_upserted=int(rows_upserted),
+                    errors=errors,
+                    finished_at=datetime.utcnow().isoformat(),
+                )
+                return
+
+    final_status = SYNC_STATUS_DONE if len(errors) == 0 else "partial"
+    _update_historical_job(
+        job_id,
+        status=final_status,
+        processed_accounts=int(processed_accounts),
+        planned_chunks=int(planned_chunks),
+        executed_chunks=int(executed_chunks),
+        empty_chunks=int(empty_chunks),
+        failed_chunks=int(failed_chunks),
+        rows_upserted=int(rows_upserted),
+        errors=errors,
+        finished_at=datetime.utcnow().isoformat(),
+    )
+
 
 
 def _resolve_ui_rolling_window(*, client_id: int | None, start_date: date | None, end_date: date | None, days: int, chunk_days: int) -> tuple[date, date, int]:
@@ -738,32 +867,6 @@ def _map_sync_run_to_job_status_payload(sync_run: dict[str, object]) -> dict[str
         if value is not None and field not in payload:
             payload[field] = value
 
-    for field in ("platform", "client_id", "account_id", "date_start", "date_end", "chunk_days"):
-        value = sync_run.get(field)
-        if value is not None:
-            payload[field] = value
-
-    for field in ("date_range", "mapped_accounts_count", "chunk_days", "platform", "client_id"):
-        value = metadata.get(field)
-        if value is not None and field not in payload:
-            payload[field] = value
-
-    for field in ("date_range", "mapped_accounts_count", "chunk_days", "platform", "client_id"):
-        value = metadata.get(field)
-        if value is not None and field not in payload:
-            payload[field] = value
-
-    for field in ("date_range", "mapped_accounts_count", "chunk_days", "platform", "client_id"):
-        value = metadata.get(field)
-        if value is not None and field not in payload:
-            payload[field] = value
-
-@router.get("/sync-now/jobs/{job_id}")
-def sync_now_job_status(job_id: str, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
-    enforce_action_scope(user=user, action="integrations:status", scope="agency")
-    payload = backfill_job_store.get(job_id)
-    if payload is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
     return payload
 
 
@@ -785,6 +888,61 @@ def sync_now_job_status(job_id: str, user: AuthUser = Depends(get_current_user))
         return _attach_job_chunks_payload(job_id=job_id, payload=mapped_payload)
 
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+
+
+
+@router.post("/clients/{client_id}/historical-backfill")
+def start_google_historical_backfill(
+    client_id: int,
+    background_tasks: BackgroundTasks,
+    user: AuthUser = Depends(get_current_user),
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    chunk_days: int = Query(default=7, ge=1, le=31),
+    continue_on_error: bool = Query(default=False),
+    account_ids: str | None = Query(default=None, description="Comma separated Google account ids"),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    if start_date > end_date:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="start_date must be <= end_date")
+
+    requested_accounts = [item.strip() for item in str(account_ids or "").split(",") if item.strip() != ""]
+    job_id = _create_historical_job(
+        client_id=client_id,
+        start_date=start_date,
+        end_date=end_date,
+        chunk_days=int(chunk_days),
+        account_ids=requested_accounts,
+        continue_on_error=bool(continue_on_error),
+    )
+    background_tasks.add_task(
+        _run_google_historical_backfill_job,
+        job_id=job_id,
+        client_id=int(client_id),
+        start_date=start_date,
+        end_date=end_date,
+        chunk_days=int(chunk_days),
+        continue_on_error=bool(continue_on_error),
+        account_ids=requested_accounts,
+    )
+    return {
+        "job_id": job_id,
+        "status": SYNC_STATUS_QUEUED,
+        "mode": "historical_range",
+        "client_id": int(client_id),
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "chunk_days": int(chunk_days),
+    }
+
+
+@router.get("/clients/{client_id}/historical-backfill/jobs/{job_id}")
+def get_google_historical_backfill_status(client_id: int, job_id: str, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+    payload = _get_historical_job(job_id)
+    if payload is None or int(payload.get("client_id") or 0) != int(client_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="historical backfill job not found")
+    return payload
 
 @router.post("/{client_id}/sync")
 def sync_google_ads(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, float | int | str]:

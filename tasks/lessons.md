@@ -135,3 +135,5 @@
 - When adding guard-rail defaults, update existing endpoint tests to assert ignored inputs and effective values, not previous passthrough params.
 
 - If script reports rows_upserted from service payload, verify field names align and add tests for aggregate chunk counters.
+
+- For Railway/private DB topologies, move heavy backfill execution to server-side endpoints; keep local scripts as HTTP launchers with polling.

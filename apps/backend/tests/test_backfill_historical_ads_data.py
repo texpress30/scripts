@@ -28,6 +28,11 @@ def _args(**kwargs):
         "continue_on_error": False,
         "max_clients": None,
         "max_accounts": None,
+        "transport": "local",
+        "base_url": None,
+        "auth_token": None,
+        "poll_interval": 5.0,
+        "poll_timeout": 7200,
     }
     base.update(kwargs)
     return SimpleNamespace(**base)
@@ -35,7 +40,7 @@ def _args(**kwargs):
 
 def test_parse_args_requires_client_scope():
     try:
-        backfill_script.parse_args(["--platform", "google_ads", "--mode", "dry-run"])
+        backfill_script.parse_args(["--platform", "google_ads", "--mode", "dry-run", "--transport", "local"])
         assert False, "expected SystemExit"
     except SystemExit as exc:
         assert int(exc.code) == 2
@@ -48,6 +53,8 @@ def test_parse_args_validates_date_and_chunk():
             "google_ads",
             "--client-id",
             "11",
+            "--transport",
+            "local",
             "--start-date",
             "2024-10-10",
             "--end-date",
@@ -63,6 +70,8 @@ def test_parse_args_validates_date_and_chunk():
             "google_ads",
             "--client-id",
             "11",
+            "--transport",
+            "local",
             "--chunk-days",
             "0",
         ])
@@ -159,3 +168,44 @@ def test_summary_contains_expected_counters(monkeypatch):
     assert summary["failed"] == 1
     assert summary["skipped"] == 1
     assert summary["errors"] == ["boom"]
+
+
+def test_http_transport_starts_and_polls(monkeypatch):
+    calls: list[tuple[str, str]] = []
+
+    def fake_http_json(*, method: str, url: str, token: str, payload=None):
+        calls.append((method, url))
+        if method.upper() == "POST":
+            return {"job_id": "ghb-1", "status": "queued"}
+        return {
+            "job_id": "ghb-1",
+            "status": "done",
+            "processed_accounts": 2,
+            "planned_chunks": 4,
+            "executed_chunks": 4,
+            "empty_chunks": 1,
+            "failed_chunks": 0,
+            "rows_upserted": 33,
+            "errors": [],
+        }
+
+    monkeypatch.setattr(backfill_script, "_http_json", fake_http_json)
+
+    summary = backfill_script.run_backfill_http(
+        _args(
+            transport="http",
+            client_id=77,
+            platform="google_ads",
+            base_url="https://api.example.com",
+            auth_token="token",
+            poll_interval=0.01,
+            poll_timeout=5,
+        )
+    )
+
+    assert summary["status"] == "done"
+    assert len(calls) >= 2
+    assert calls[0][0] == "POST"
+    assert "/historical-backfill" in calls[0][1]
+    assert calls[1][0] == "GET"
+    assert "/historical-backfill/jobs/ghb-1" in calls[1][1]

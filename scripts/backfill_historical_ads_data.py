@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from urllib import parse, request, error
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 BACKEND_DIR = ROOT_DIR / "apps" / "backend"
@@ -76,6 +77,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--continue-on-error", action="store_true")
     parser.add_argument("--max-clients", type=int)
     parser.add_argument("--max-accounts", type=int)
+    parser.add_argument("--transport", choices=["http", "local"], default="http")
+    parser.add_argument("--base-url", default=os.getenv("BACKFILL_API_BASE_URL"))
+    parser.add_argument("--auth-token", default=os.getenv("BACKFILL_API_TOKEN"))
+    parser.add_argument("--poll-interval", type=float, default=5.0)
+    parser.add_argument("--poll-timeout", type=int, default=7200)
     return parser
 
 
@@ -95,6 +101,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--max-accounts must be a positive integer")
     if args.start_date > args.end_date:
         parser.error("--start-date must be <= --end-date")
+    if str(args.transport) == "http":
+        if str(args.platform) not in ("google_ads",):
+            parser.error("--transport http currently supports only --platform google_ads")
+        if args.client_id is None:
+            parser.error("--transport http requires --client-id")
+        if not str(args.base_url or "").strip():
+            parser.error("--base-url (or BACKFILL_API_BASE_URL) is required for --transport http")
+        if not str(args.auth_token or "").strip():
+            parser.error("--auth-token (or BACKFILL_API_TOKEN) is required for --transport http")
     return args
 
 
@@ -198,6 +213,54 @@ def _run_google_backfill_for_client(*, client_id: int, start_date: date, end_dat
     return items
 
 
+
+
+def _http_json(*, method: str, url: str, token: str, payload: dict[str, object] | None = None) -> dict[str, object]:
+    data = None
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+    req = request.Request(url=url, method=method.upper(), data=data)
+    req.add_header("Authorization", f"Bearer {token}")
+    req.add_header("Content-Type", "application/json")
+    try:
+        with request.urlopen(req, timeout=60) as resp:  # noqa: S310
+            body = resp.read().decode("utf-8")
+            return json.loads(body) if body.strip() else {}
+    except error.HTTPError as exc:
+        body = exc.read().decode("utf-8") if exc.fp is not None else ""
+        raise RuntimeError(f"HTTP {exc.code}: {body[:300]}") from exc
+
+
+def run_backfill_http(args: argparse.Namespace) -> dict[str, Any]:
+    base_url = str(args.base_url).rstrip("/")
+    token = str(args.auth_token)
+    params = {
+        "start_date": args.start_date.isoformat(),
+        "end_date": args.end_date.isoformat(),
+        "chunk_days": int(args.chunk_days),
+        "continue_on_error": str(bool(args.continue_on_error)).lower(),
+    }
+    start_url = f"{base_url}/integrations/google-ads/clients/{int(args.client_id)}/historical-backfill?{parse.urlencode(params)}"
+    start_payload = _http_json(method="POST", url=start_url, token=token)
+    job_id = str(start_payload.get("job_id") or "").strip()
+    if job_id == "":
+        raise RuntimeError("historical backfill start endpoint did not return job_id")
+
+    status_url = f"{base_url}/integrations/google-ads/clients/{int(args.client_id)}/historical-backfill/jobs/{job_id}"
+    deadline = datetime.now(timezone.utc).timestamp() + int(args.poll_timeout)
+    poll_interval = max(1.0, float(args.poll_interval))
+
+    while True:
+        payload = _http_json(method="GET", url=status_url, token=token)
+        state = str(payload.get("status") or "").lower()
+        if state in ("done", "error", "partial"):
+            return payload
+        if datetime.now(timezone.utc).timestamp() >= deadline:
+            raise RuntimeError(f"poll timeout exceeded for job_id={job_id}")
+        import time
+
+        time.sleep(poll_interval)
+
 def run_backfill(args: argparse.Namespace) -> dict[str, Any]:
     platforms = _resolve_platforms(str(args.platform))
     clients = _resolve_clients(client_id=args.client_id, all_clients=bool(args.all_clients), max_clients=args.max_clients)
@@ -265,19 +328,22 @@ def main(argv: list[str] | None = None) -> int:
                 "client_id": args.client_id,
                 "all_clients": bool(args.all_clients),
                 "continue_on_error": bool(args.continue_on_error),
+                "transport": args.transport,
             },
             indent=2,
         )
     )
 
     try:
-        summary = run_backfill(args)
+        summary = run_backfill_http(args) if str(args.transport) == "http" else run_backfill(args)
     except Exception as exc:  # noqa: BLE001
         print(f"error: {str(exc)[:500]}")
         return 1
 
     print("[backfill-summary]")
     print(json.dumps(summary, indent=2))
+    if str(args.transport) == "http":
+        return 0 if str(summary.get("status") or "").lower() == "done" else 1
     return 0 if int(summary.get("failed", 0)) == 0 else 1
 
 
