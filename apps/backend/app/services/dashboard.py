@@ -1,11 +1,17 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
+import json
 from decimal import Decimal
 import logging
 
+import requests
+
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
+from app.services.business_metric_formulas import build_business_derived_metrics
+from app.services.client_business_inputs_store import client_business_inputs_store
+from app.services.report_metric_formulas import build_derived_metrics
 from app.services.google_ads import google_ads_service
 from app.services.meta_ads import meta_ads_service
 from app.services.performance_reports import performance_reports_store
@@ -35,6 +41,9 @@ logger = logging.getLogger(__name__)
 
 
 class UnifiedDashboardService:
+    def __init__(self) -> None:
+        self._fx_cache: dict[tuple[str, str], float] = {}
+
     def _is_test_mode(self) -> bool:
         return load_settings().app_env == "test"
 
@@ -44,40 +53,140 @@ class UnifiedDashboardService:
             raise RuntimeError("psycopg is required for dashboard Postgres queries")
         return psycopg.connect(settings.database_url)
 
+    def _normalize_currency_code(self, value: object, *, fallback: str = "RON") -> str:
+        code = str(value or "").strip().upper()
+        if len(code) == 3 and code.isalpha():
+            return code
+        return fallback
+
+    def _fallback_fx_rate_to_ron(self, *, currency_code: str) -> float:
+        defaults = {
+            "USD": 4.318394,
+            "EUR": 4.97,
+            "GBP": 5.82,
+            "CHF": 5.12,
+            "CAD": 3.2,
+            "AUD": 2.85,
+        }
+        return float(defaults.get(currency_code, 1.0))
+
+    def _get_fx_rate_to_ron(self, *, currency_code: str, rate_date: date) -> float:
+        normalized_currency = self._normalize_currency_code(currency_code, fallback="RON")
+        if normalized_currency == "RON":
+            return 1.0
+
+        cache_key = (rate_date.isoformat(), normalized_currency)
+        cached = self._fx_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        for day_offset in range(0, 7):
+            target_date = rate_date - timedelta(days=day_offset)
+            url = f"https://api.frankfurter.app/{target_date.isoformat()}"
+            try:
+                response = requests.get(url, params={"from": normalized_currency, "to": "RON"}, timeout=6)
+                response.raise_for_status()
+                payload = response.json() if response.content else {}
+                rates = payload.get("rates", {}) if isinstance(payload, dict) else {}
+                value = rates.get("RON")
+                if isinstance(value, (int, float)) and float(value) > 0:
+                    rate = float(value)
+                    self._fx_cache[cache_key] = rate
+                    return rate
+            except Exception:  # noqa: BLE001
+                continue
+
+        fallback_rate = self._fallback_fx_rate_to_ron(currency_code=normalized_currency)
+        logger.warning(
+            "agency_dashboard_fx_fallback",
+            extra={"currency": normalized_currency, "date": rate_date.isoformat(), "fallback_rate": fallback_rate},
+        )
+        self._fx_cache[cache_key] = fallback_rate
+        return fallback_rate
+
+    def _aggregate_agency_rows(self, rows: list[tuple[object, object, object, object, object, object, object, object]]) -> tuple[dict[str, float | int], dict[int, float], dict[int, float], dict[int, str], int]:
+        totals: dict[str, float | int] = {"spend": 0.0, "impressions": 0, "clicks": 0, "conversions": 0, "revenue": 0.0}
+        spend_by_client_ron: dict[int, float] = {}
+        spend_by_client_native: dict[int, float] = {}
+        client_currency_votes: dict[int, dict[str, int]] = {}
+
+        for row in rows:
+            report_date = row[0] if isinstance(row[0], date) else date.today()
+            resolved_client_id = _to_int(row[1])
+            currency = self._normalize_currency_code(row[2], fallback="RON")
+            spend = _to_float(row[3])
+            impressions = _to_int(row[4])
+            clicks = _to_int(row[5])
+            conversions = _to_int(row[6])
+            revenue = _to_float(row[7])
+
+            rate = self._get_fx_rate_to_ron(currency_code=currency, rate_date=report_date)
+            spend_ron = spend * rate
+            revenue_ron = revenue * rate
+
+            totals["spend"] = float(totals["spend"]) + spend_ron
+            totals["impressions"] = int(totals["impressions"]) + impressions
+            totals["clicks"] = int(totals["clicks"]) + clicks
+            totals["conversions"] = int(totals["conversions"]) + conversions
+            totals["revenue"] = float(totals["revenue"]) + revenue_ron
+
+            if resolved_client_id > 0:
+                spend_by_client_ron[resolved_client_id] = spend_by_client_ron.get(resolved_client_id, 0.0) + spend_ron
+                spend_by_client_native[resolved_client_id] = spend_by_client_native.get(resolved_client_id, 0.0) + spend
+                votes = client_currency_votes.setdefault(resolved_client_id, {})
+                votes[currency] = votes.get(currency, 0) + 1
+
+        client_currency: dict[int, str] = {}
+        for client_id, votes in client_currency_votes.items():
+            client_currency[client_id] = sorted(votes.items(), key=lambda item: item[1], reverse=True)[0][0]
+
+        return totals, spend_by_client_ron, spend_by_client_native, client_currency, len(rows)
+
     def _normalize_platform_metrics(self, platform: str, metrics: dict[str, object], client_id: int) -> dict[str, object]:
         spend = round(_to_float(metrics.get("spend")), 2)
-        revenue = round(_to_float(metrics.get("revenue")), 2)
+        conversion_value = round(_to_float(metrics.get("conversion_value", metrics.get("revenue"))), 2)
+        extra_metrics = metrics.get("extra_metrics") if isinstance(metrics.get("extra_metrics"), dict) else {}
+        conversions = _to_float(metrics.get("conversions"))
+
         normalized: dict[str, object] = {
             "client_id": _to_int(metrics.get("client_id")) or client_id,
             "platform": platform,
             "spend": spend,
             "impressions": _to_int(metrics.get("impressions")),
             "clicks": _to_int(metrics.get("clicks")),
-            "conversions": _to_int(metrics.get("conversions")),
-            "revenue": revenue,
-            "roas": round(revenue / spend, 2) if spend > 0 else 0.0,
+            "conversions": conversions,
+            "conversion_value": conversion_value,
+            "revenue": conversion_value,
+            "roas": round(conversion_value / spend, 2) if spend > 0 else 0.0,
+            "extra_metrics": extra_metrics,
+            "derived_metrics": build_derived_metrics(
+                platform=platform,
+                spend=spend,
+                impressions=_to_int(metrics.get("impressions")),
+                clicks=_to_int(metrics.get("clicks")),
+                conversions=conversions,
+                conversion_value=conversion_value,
+                extra_metrics=extra_metrics,
+            ),
             "is_synced": bool(metrics.get("is_synced")),
             "synced_at": str(metrics.get("synced_at") or ""),
             "attempts": _to_int(metrics.get("attempts")),
         }
         return normalized
 
-    def get_client_dashboard(self, client_id: int) -> dict[str, object]:
-        if not self._is_test_mode():
-            performance_reports_store.initialize_schema()
-            with self._connect() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
+    def _client_reports_query(self) -> str:
+        return """
                         WITH perf AS (
                             SELECT
                                 apr.platform,
                                 COALESCE(apr.client_id, mapped.client_id) AS resolved_client_id,
+                                apr.report_date,
                                 apr.spend,
                                 apr.impressions,
                                 apr.clicks,
                                 apr.conversions,
-                                apr.conversion_value
+                                apr.conversion_value,
+                                COALESCE(apr.extra_metrics, '{}'::jsonb) AS extra_metrics
                             FROM ad_performance_reports apr
                             LEFT JOIN LATERAL (
                                 SELECT m.client_id
@@ -87,30 +196,166 @@ class UnifiedDashboardService:
                                 LIMIT 1
                             ) mapped ON TRUE
                         )
-                        SELECT platform,
-                               COALESCE(SUM(spend), 0),
-                               COALESCE(SUM(impressions), 0),
-                               COALESCE(SUM(clicks), 0),
-                               COALESCE(SUM(conversions), 0),
-                               COALESCE(SUM(conversion_value), 0)
+                        SELECT
+                            platform,
+                            COALESCE(spend, 0),
+                            COALESCE(impressions, 0),
+                            COALESCE(clicks, 0),
+                            COALESCE(conversions, 0),
+                            COALESCE(conversion_value, 0),
+                            extra_metrics
                         FROM perf
                         WHERE resolved_client_id = %s
-                        GROUP BY platform
-                        """,
-                        (client_id,),
+                          AND report_date BETWEEN %s AND %s
+                        """
+
+
+    def _coerce_extra_metrics(self, value: object) -> dict[str, object]:
+        if isinstance(value, dict):
+            return dict(value)
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:  # noqa: BLE001
+                return {}
+        return {}
+
+    def _merge_extra_metrics(self, base: dict[str, object], incoming: dict[str, object]) -> dict[str, object]:
+        merged = dict(base)
+        for key, incoming_value in incoming.items():
+            base_value = merged.get(key)
+            if isinstance(base_value, dict) and isinstance(incoming_value, dict):
+                merged[key] = self._merge_extra_metrics(base_value, incoming_value)
+            elif isinstance(base_value, (int, float, Decimal)) and isinstance(incoming_value, (int, float, Decimal)):
+                merged[key] = float(base_value) + float(incoming_value)
+            elif key not in merged:
+                merged[key] = incoming_value
+            else:
+                merged[key] = incoming_value
+        return merged
+
+
+    def _business_inputs_totals(self, rows: list[dict[str, object]]) -> dict[str, float | int]:
+        totals: dict[str, float | int] = {
+            "applicants": 0,
+            "approved_applicants": 0,
+            "actual_revenue": 0.0,
+            "target_revenue": 0.0,
+            "cogs": 0.0,
+            "taxes": 0.0,
+            "gross_profit": 0.0,
+            "contribution_profit": 0.0,
+            "sales_count": 0,
+            "new_customers": 0,
+        }
+        for row in rows:
+            applicants = row.get("applicants")
+            approved_applicants = row.get("approved_applicants")
+            actual_revenue = row.get("actual_revenue")
+            target_revenue = row.get("target_revenue")
+            cogs = row.get("cogs")
+            taxes = row.get("taxes")
+            gross_profit = row.get("gross_profit")
+            contribution_profit = row.get("contribution_profit")
+            sales_count = row.get("sales_count")
+            new_customers = row.get("new_customers")
+
+            if isinstance(applicants, (int, float, Decimal)):
+                totals["applicants"] = int(totals["applicants"]) + int(applicants)
+            if isinstance(approved_applicants, (int, float, Decimal)):
+                totals["approved_applicants"] = int(totals["approved_applicants"]) + int(approved_applicants)
+            if isinstance(actual_revenue, (int, float, Decimal)):
+                totals["actual_revenue"] = float(totals["actual_revenue"]) + float(actual_revenue)
+            if isinstance(target_revenue, (int, float, Decimal)):
+                totals["target_revenue"] = float(totals["target_revenue"]) + float(target_revenue)
+            if isinstance(cogs, (int, float, Decimal)):
+                totals["cogs"] = float(totals["cogs"]) + float(cogs)
+            if isinstance(taxes, (int, float, Decimal)):
+                totals["taxes"] = float(totals["taxes"]) + float(taxes)
+            if isinstance(gross_profit, (int, float, Decimal)):
+                totals["gross_profit"] = float(totals["gross_profit"]) + float(gross_profit)
+            if isinstance(contribution_profit, (int, float, Decimal)):
+                totals["contribution_profit"] = float(totals["contribution_profit"]) + float(contribution_profit)
+            if isinstance(sales_count, (int, float, Decimal)):
+                totals["sales_count"] = int(totals["sales_count"]) + int(sales_count)
+            if isinstance(new_customers, (int, float, Decimal)):
+                totals["new_customers"] = int(totals["new_customers"]) + int(new_customers)
+
+        return totals
+
+    def _build_business_inputs_payload(self, *, client_id: int, period_grain: str, start_date: date, end_date: date) -> dict[str, object]:
+        resolved_grain = "week" if str(period_grain).strip().lower() == "week" else "day"
+        try:
+            rows = client_business_inputs_store.list_client_business_inputs(
+                client_id=client_id,
+                period_grain=resolved_grain,
+                date_from=start_date,
+                date_to=end_date,
+            )
+        except Exception:  # noqa: BLE001
+            rows = []
+        return {
+            "period_grain": resolved_grain,
+            "rows": rows,
+            "totals": self._business_inputs_totals(rows),
+        }
+
+
+    def _build_business_derived_metrics_payload(self, *, total_spend: float, business_inputs_totals: dict[str, object]) -> dict[str, float | None]:
+        return build_business_derived_metrics(
+            total_spend=total_spend,
+            actual_revenue=business_inputs_totals.get("actual_revenue"),
+            target_revenue=business_inputs_totals.get("target_revenue"),
+            applicants=business_inputs_totals.get("applicants"),
+            approved_applicants=business_inputs_totals.get("approved_applicants"),
+            cogs=business_inputs_totals.get("cogs"),
+            taxes=business_inputs_totals.get("taxes"),
+            gross_profit=business_inputs_totals.get("gross_profit"),
+            contribution_profit=business_inputs_totals.get("contribution_profit"),
+            sales_count=business_inputs_totals.get("sales_count"),
+            new_customers=business_inputs_totals.get("new_customers"),
+        )
+
+    def get_client_dashboard(self, client_id: int, *, start_date: date | None = None, end_date: date | None = None, business_period_grain: str = "day") -> dict[str, object]:
+        resolved_end = end_date or date.today()
+        resolved_start = start_date or (resolved_end - timedelta(days=29))
+
+        if not self._is_test_mode():
+            performance_reports_store.initialize_schema()
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        self._client_reports_query(),
+                        (client_id, resolved_start, resolved_end),
                     )
                     rows = cur.fetchall()
 
-            platform_totals = {
-                str(row[0]): {
-                    "spend": _to_float(row[1]),
-                    "impressions": _to_int(row[2]),
-                    "clicks": _to_int(row[3]),
-                    "conversions": _to_int(row[4]),
-                    "revenue": _to_float(row[5]),
-                }
-                for row in rows
-            }
+            platform_totals: dict[str, dict[str, object]] = {}
+            for row in rows:
+                platform = str(row[0])
+                current = platform_totals.setdefault(
+                    platform,
+                    {
+                        "spend": 0.0,
+                        "impressions": 0,
+                        "clicks": 0,
+                        "conversions": 0.0,
+                        "conversion_value": 0.0,
+                        "extra_metrics": {},
+                    },
+                )
+                current["spend"] = _to_float(current.get("spend")) + _to_float(row[1])
+                current["impressions"] = _to_int(current.get("impressions")) + _to_int(row[2])
+                current["clicks"] = _to_int(current.get("clicks")) + _to_int(row[3])
+                current["conversions"] = _to_float(current.get("conversions")) + _to_float(row[4])
+                current["conversion_value"] = _to_float(current.get("conversion_value")) + _to_float(row[5])
+                incoming_extra = self._coerce_extra_metrics(row[6])
+                current["extra_metrics"] = self._merge_extra_metrics(
+                    current.get("extra_metrics") if isinstance(current.get("extra_metrics"), dict) else {},
+                    incoming_extra,
+                )
 
             def platform_metrics(name: str) -> dict[str, object]:
                 return self._normalize_platform_metrics(name, {"client_id": client_id, **platform_totals.get(name, {})}, client_id)
@@ -165,6 +410,17 @@ class UnifiedDashboardService:
 
         preferred_currency = client_registry_service.get_preferred_currency_for_client(client_id=client_id)
 
+        business_inputs_payload = self._build_business_inputs_payload(
+            client_id=client_id,
+            period_grain=business_period_grain,
+            start_date=resolved_start,
+            end_date=resolved_end,
+        )
+        business_derived_metrics = self._build_business_derived_metrics_payload(
+            total_spend=total_spend,
+            business_inputs_totals=business_inputs_payload.get("totals") if isinstance(business_inputs_payload.get("totals"), dict) else {},
+        )
+
         return {
             "client_id": client_id,
             "currency": preferred_currency,
@@ -190,6 +446,8 @@ class UnifiedDashboardService:
                 or pinterest_metrics.get("is_synced")
                 or snapchat_metrics.get("is_synced")
             ),
+            "business_inputs": business_inputs_payload,
+            "business_derived_metrics": business_derived_metrics,
         }
 
     def get_agency_dashboard(self, *, start_date: date, end_date: date) -> dict[str, object]:
@@ -207,7 +465,7 @@ class UnifiedDashboardService:
                 totals["clicks"] += _to_int(mt.get("clicks"))
                 totals["conversions"] += _to_int(mt.get("conversions"))
                 totals["revenue"] += _to_float(mt.get("revenue"))
-                top_clients.append({"client_id": cid, "name": str(client.get("name") or f"Client {cid}"), "spend": round(spend, 2)})
+                top_clients.append({"client_id": cid, "name": str(client.get("name") or f"Client {cid}"), "spend": round(spend, 2), "currency": "RON", "spend_ron": round(spend, 2)})
 
             top_clients.sort(key=lambda item: float(item["spend"]), reverse=True)
             return {
@@ -222,6 +480,7 @@ class UnifiedDashboardService:
                     "roas": round(float(totals["revenue"]) / float(totals["spend"]), 2) if float(totals["spend"]) > 0 else 0.0,
                 },
                 "top_clients": top_clients[:5],
+                "currency": "RON",
             }
 
         performance_reports_store.initialize_schema()
@@ -232,9 +491,9 @@ class UnifiedDashboardService:
                     """
                     WITH perf AS (
                         SELECT
-                            apr.platform,
-                            apr.customer_id,
+                            apr.report_date,
                             COALESCE(apr.client_id, mapped.client_id) AS resolved_client_id,
+                            COALESCE(NULLIF(TRIM(mapped.account_currency), ''), 'RON') AS account_currency,
                             apr.spend,
                             apr.impressions,
                             apr.clicks,
@@ -242,7 +501,7 @@ class UnifiedDashboardService:
                             apr.conversion_value
                         FROM ad_performance_reports apr
                         LEFT JOIN LATERAL (
-                            SELECT m.client_id
+                            SELECT m.client_id, m.account_currency
                             FROM agency_account_client_mappings m
                             WHERE m.platform = apr.platform AND m.account_id = apr.customer_id
                             ORDER BY m.updated_at DESC, m.created_at DESC
@@ -251,50 +510,45 @@ class UnifiedDashboardService:
                         WHERE apr.report_date BETWEEN %s AND %s
                     )
                     SELECT
-                        COALESCE(SUM(spend), 0),
-                        COALESCE(SUM(impressions), 0),
-                        COALESCE(SUM(clicks), 0),
-                        COALESCE(SUM(conversions), 0),
-                        COALESCE(SUM(conversion_value), 0),
-                        COUNT(*)
+                        report_date,
+                        resolved_client_id,
+                        account_currency,
+                        COALESCE(spend, 0),
+                        COALESCE(impressions, 0),
+                        COALESCE(clicks, 0),
+                        COALESCE(conversions, 0),
+                        COALESCE(conversion_value, 0)
                     FROM perf
                     """,
                     (start_date, end_date),
                 )
-                totals_row = cur.fetchone() or (0, 0, 0, 0, 0, 0)
+                rows = cur.fetchall()
 
-                cur.execute(
-                    """
-                    WITH perf AS (
-                        SELECT
-                            COALESCE(apr.client_id, mapped.client_id) AS resolved_client_id,
-                            apr.spend
-                        FROM ad_performance_reports apr
-                        LEFT JOIN LATERAL (
-                            SELECT m.client_id
-                            FROM agency_account_client_mappings m
-                            WHERE m.platform = apr.platform AND m.account_id = apr.customer_id
-                            ORDER BY m.updated_at DESC, m.created_at DESC
-                            LIMIT 1
-                        ) mapped ON TRUE
-                        WHERE apr.report_date BETWEEN %s AND %s
-                    )
-                    SELECT c.id, c.name, COALESCE(SUM(perf.spend), 0) AS total_spend
-                    FROM agency_clients c
-                    JOIN perf ON perf.resolved_client_id = c.id
-                    WHERE c.source = 'manual'
-                    GROUP BY c.id, c.name
-                    ORDER BY total_spend DESC, c.id ASC
-                    LIMIT 5
-                    """,
-                    (start_date, end_date),
-                )
-                top_rows = cur.fetchall()
+        totals, spend_by_client_ron, spend_by_client_native, client_currency, row_count = self._aggregate_agency_rows(rows)
 
-                cur.execute("SELECT COUNT(*) FROM agency_clients WHERE source = 'manual'")
-                active_clients = int((cur.fetchone() or [0])[0])
+        manual_clients = client_registry_service.list_clients()
+        active_clients = len(manual_clients)
+        client_names = {int(item["id"]): str(item.get("name") or f"Client {item['id']}") for item in manual_clients}
 
-        if _to_int(totals_row[5]) == 0:
+        top_clients: list[dict[str, object]] = []
+        for client_id, spend_ron in sorted(spend_by_client_ron.items(), key=lambda item: item[1], reverse=True):
+            if client_id not in client_names:
+                continue
+            preferred_currency = client_currency.get(client_id, "RON")
+            display_spend = spend_by_client_native.get(client_id, 0.0) if preferred_currency != "RON" else spend_ron
+            top_clients.append(
+                {
+                    "client_id": client_id,
+                    "name": client_names[client_id],
+                    "spend": round(display_spend, 2),
+                    "currency": preferred_currency,
+                    "spend_ron": round(spend_ron, 2),
+                }
+            )
+            if len(top_clients) >= 5:
+                break
+
+        if row_count == 0:
             logger.warning(
                 "agency_dashboard_empty_result",
                 extra={"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
@@ -305,27 +559,26 @@ class UnifiedDashboardService:
                 extra={
                     "start_date": start_date.isoformat(),
                     "end_date": end_date.isoformat(),
-                    "rows": _to_int(totals_row[5]),
-                    "top_clients": len(top_rows),
+                    "rows": row_count,
+                    "top_clients": len(top_clients),
                 },
             )
 
-        total_spend = _to_float(totals_row[0])
-        total_revenue = _to_float(totals_row[4])
+        total_spend = float(totals["spend"])
+        total_revenue = float(totals["revenue"])
         return {
             "date_range": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
             "active_clients": active_clients,
+            "currency": "RON",
             "totals": {
                 "spend": round(total_spend, 2),
-                "impressions": _to_int(totals_row[1]),
-                "clicks": _to_int(totals_row[2]),
-                "conversions": _to_int(totals_row[3]),
+                "impressions": int(totals["impressions"]),
+                "clicks": int(totals["clicks"]),
+                "conversions": int(totals["conversions"]),
                 "revenue": round(total_revenue, 2),
                 "roas": round(total_revenue / total_spend, 2) if total_spend > 0 else 0.0,
             },
-            "top_clients": [
-                {"client_id": int(row[0]), "name": str(row[1]), "spend": round(_to_float(row[2]), 2)} for row in top_rows
-            ],
+            "top_clients": top_clients,
         }
 
 
