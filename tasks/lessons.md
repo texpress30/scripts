@@ -123,3 +123,5 @@
 - 2026-03-02: Când utilizatorul cere explicit un store DB-backed nou, livrează fișier de service cu metode concrete (`get/upsert/list`) + teste lifecycle; nu te opri la migrare.
 
 - 2026-03-02: După ce există store DB-backed, următorul pas de ingestie trebuie să fie un import service separat (normalize+validate+bulk upsert), fără wiring prematur în API/dashboard.
+
+- 2026-03-02: După import service validat pentru business inputs, următorul increment minim este endpoint intern/admin de bulk import care propagă `default_client_id` din path și nu permite import accidental cross-client.

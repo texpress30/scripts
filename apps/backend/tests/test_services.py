@@ -11,6 +11,7 @@ from app.api import meta_ads as meta_ads_api
 from app.api import tiktok_ads as tiktok_ads_api
 from app.api import pinterest_ads as pinterest_ads_api
 from app.api import snapchat_ads as snapchat_ads_api
+from app.api import clients as clients_api
 from app.services.ai_assistant import ai_assistant_service
 from app.services.insights import insights_service
 from app.services.dashboard import unified_dashboard_service
@@ -3398,6 +3399,66 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(first_chunk["error"], "chunk done")
 
 
+
+
+    def test_clients_business_inputs_import_endpoint_uses_path_client_id_and_defaults(self):
+        calls: list[dict[str, object]] = []
+        original_import = clients_api.client_business_inputs_import_service.import_client_business_inputs
+        try:
+            def _fake_import(rows, **kwargs):
+                calls.append({"rows": rows, **kwargs})
+                return {"processed": 2, "succeeded": 2, "failed": 0, "errors": [], "rows": [{"id": 1}]}
+
+            clients_api.client_business_inputs_import_service.import_client_business_inputs = _fake_import
+
+            payload = clients_api.BusinessInputsImportRequest(
+                period_grain="week",
+                source="sheet",
+                rows=[
+                    {"client_id": 999, "period_start": "2026-03-03", "period_end": "2026-03-09", "applicants": "10"},
+                    {"period_start": "2026-03-10", "period_end": "2026-03-16", "applicants": "12"},
+                ],
+            )
+            user = AuthUser(email="owner@example.com", role="agency_admin")
+            result = clients_api.import_client_business_inputs(client_id=77, payload=payload, user=user)
+        finally:
+            clients_api.client_business_inputs_import_service.import_client_business_inputs = original_import
+
+        self.assertEqual(result["processed"], 2)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["default_client_id"], 77)
+        self.assertEqual(calls[0]["default_period_grain"], "week")
+        self.assertEqual(calls[0]["default_source"], "sheet")
+        self.assertEqual(calls[0]["rows"][0]["client_id"], 77)
+        self.assertEqual(calls[0]["rows"][1]["client_id"], 77)
+
+    def test_clients_business_inputs_import_endpoint_returns_partial_failures(self):
+        original_import = clients_api.client_business_inputs_import_service.import_client_business_inputs
+        try:
+            clients_api.client_business_inputs_import_service.import_client_business_inputs = lambda rows, **kwargs: {
+                "processed": 3,
+                "succeeded": 2,
+                "failed": 1,
+                "errors": [{"row_index": 1, "message": "invalid"}],
+                "rows": [{"id": 1}, {"id": 2}],
+            }
+
+            payload = clients_api.BusinessInputsImportRequest(
+                rows=[
+                    {"period_start": "2026-03-01", "period_grain": "day"},
+                    {"period_start": "2026-03-02", "period_grain": "day"},
+                    {"period_start": "2026-03-03", "period_grain": "day"},
+                ]
+            )
+            user = AuthUser(email="owner@example.com", role="agency_admin")
+            result = clients_api.import_client_business_inputs(client_id=22, payload=payload, user=user)
+        finally:
+            clients_api.client_business_inputs_import_service.import_client_business_inputs = original_import
+
+        self.assertEqual(result["processed"], 3)
+        self.assertEqual(result["succeeded"], 2)
+        self.assertEqual(result["failed"], 1)
+        self.assertEqual(result["errors"][0]["row_index"], 1)
 
     def test_client_business_inputs_import_normalize_row_defaults_and_types(self):
         row = normalize_client_business_input_row(

@@ -976,3 +976,19 @@
 - Validarea verifică `client_id`, `period_start`, `period_end`, grain permis (`day|week`), range (`period_end >= period_start`) și regula day (`period_start == period_end`).
 - Importul bulk continuă la erori, returnează `processed/succeeded/failed/rows/errors`, și lasă store-ul să rezolve upsert pe cheia unică.
 - Testele țintite pentru normalize/validate/import + store lifecycle au trecut; nu există wiring nou în dashboard/API.
+
+
+# TODO — Endpoint intern/admin bulk import pentru client_business_inputs
+
+- [x] Adaug endpoint `POST /clients/{client_id}/business-inputs/import` în API clients, reutilizând import service-ul existent.
+- [x] Adaug schema request/response minimă pentru bulk import business inputs.
+- [x] Aplic regulă de siguranță: `client_id` din path este forțat pe fiecare row (fără import cross-client accidental).
+- [x] Adaug teste backend pentru propagare default-uri + rezultat partial failures + shape răspuns.
+- [x] Rulez verificări țintite și confirm explicit că nu există wiring în dashboard/API de raportare.
+
+## Review
+- Am adăugat endpoint-ul `POST /clients/{client_id}/business-inputs/import` în `api/clients.py`, folosind direct `client_business_inputs_import_service.import_client_business_inputs(...)`.
+- Am adăugat schema request/response în `schemas/client.py` pentru `period_grain`, `source`, `rows` și rezultatul de import (`processed/succeeded/failed/errors/rows`).
+- Pentru siguranță, endpoint-ul suprascrie `client_id` pe fiecare row cu valoarea din path și transmite `default_client_id=client_id` către import service.
+- Testele verifică propagarea default-urilor, forțarea `client_id` din path și răspunsul pentru partial failures.
+- Nu am făcut wiring în dashboard, formule business sau alte endpoint-uri de raportare.
