@@ -9,6 +9,7 @@ import requests
 
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
+from app.services.business_metric_formulas import build_business_derived_metrics
 from app.services.client_business_inputs_store import client_business_inputs_store
 from app.services.report_metric_formulas import build_derived_metrics
 from app.services.google_ads import google_ads_service
@@ -293,6 +294,20 @@ class UnifiedDashboardService:
             "totals": self._business_inputs_totals(rows),
         }
 
+
+    def _build_business_derived_metrics_payload(self, *, total_spend: float, business_inputs_totals: dict[str, object]) -> dict[str, float | None]:
+        return build_business_derived_metrics(
+            total_spend=total_spend,
+            actual_revenue=business_inputs_totals.get("actual_revenue"),
+            target_revenue=business_inputs_totals.get("target_revenue"),
+            applicants=business_inputs_totals.get("applicants"),
+            approved_applicants=business_inputs_totals.get("approved_applicants"),
+            cogs=business_inputs_totals.get("cogs"),
+            taxes=business_inputs_totals.get("taxes"),
+            gross_profit=business_inputs_totals.get("gross_profit"),
+            contribution_profit=business_inputs_totals.get("contribution_profit"),
+        )
+
     def get_client_dashboard(self, client_id: int, *, start_date: date | None = None, end_date: date | None = None, business_period_grain: str = "day") -> dict[str, object]:
         resolved_end = end_date or date.today()
         resolved_start = start_date or (resolved_end - timedelta(days=29))
@@ -391,6 +406,10 @@ class UnifiedDashboardService:
             start_date=resolved_start,
             end_date=resolved_end,
         )
+        business_derived_metrics = self._build_business_derived_metrics_payload(
+            total_spend=total_spend,
+            business_inputs_totals=business_inputs_payload.get("totals") if isinstance(business_inputs_payload.get("totals"), dict) else {},
+        )
 
         return {
             "client_id": client_id,
@@ -418,6 +437,7 @@ class UnifiedDashboardService:
                 or snapchat_metrics.get("is_synced")
             ),
             "business_inputs": business_inputs_payload,
+            "business_derived_metrics": business_derived_metrics,
         }
 
     def _agency_reports_query(self) -> str:

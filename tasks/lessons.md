@@ -127,3 +127,5 @@
 - 2026-03-02: După import service validat pentru business inputs, următorul increment minim este endpoint intern/admin de bulk import care propagă `default_client_id` din path și nu permite import accidental cross-client.
 
 - 2026-03-02: După endpoint-ul de import business inputs, următorul increment de read path trebuie să fie additive-only (`business_inputs` cu `rows/totals/period_grain`), fără formule business și fără schimbare contract existent.
+
+- 2026-03-02: Când se cer metrici business derivați, adaugă layer de formule separat și păstrează-l strict additive-only în dashboard payload, fără modificări de schemă și fără metrici ce cer inputuri inexistente.

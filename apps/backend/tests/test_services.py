@@ -39,6 +39,11 @@ from app.services.client_registry import client_registry_service
 from app.services.performance_reports import performance_reports_store
 from app.services.report_metric_catalog import DERIVED_METRICS_IMPLEMENTED, MANUAL_BUSINESS_METRICS_EXCLUDED
 from app.services.report_metric_formulas import build_derived_metrics
+from app.services.business_metric_formulas import (
+    BUSINESS_DERIVED_METRICS_DEFERRED,
+    BUSINESS_DERIVED_METRICS_IMPLEMENTED,
+    build_business_derived_metrics,
+)
 from app.services.sync_runs_store import sync_runs_store
 from app.services.sync_state_store import sync_state_store
 from app.services.sync_run_chunks_store import sync_run_chunks_store
@@ -3403,6 +3408,59 @@ class ServiceTests(unittest.TestCase):
 
 
 
+
+    def test_business_metric_formulas_compute_expected_values(self):
+        derived = build_business_derived_metrics(
+            total_spend=1000.0,
+            actual_revenue=2500.0,
+            target_revenue=3000.0,
+            applicants=100,
+            approved_applicants=20,
+            cogs=700.0,
+            taxes=150.0,
+            gross_profit=1000.0,
+            contribution_profit=800.0,
+        )
+        self.assertEqual(derived["mer"], 2.5)
+        self.assertEqual(derived["cost_per_applicant"], 10.0)
+        self.assertEqual(derived["cost_per_approved_applicant"], 50.0)
+        self.assertEqual(derived["cost_vs_actual_revenue"], 0.4)
+        self.assertEqual(derived["gross_profit_margin"], 0.4)
+        self.assertEqual(derived["contribution_profit_margin"], 0.32)
+        self.assertEqual(derived["total_cogs_and_taxes"], 850.0)
+        self.assertEqual(derived["target_attainment"], 0.8333333333333334)
+        self.assertEqual(derived["revenue_gap"], 500.0)
+
+    def test_business_metric_formulas_return_none_for_missing_denominators(self):
+        derived = build_business_derived_metrics(
+            total_spend=0.0,
+            actual_revenue=None,
+            target_revenue=0.0,
+            applicants=0,
+            approved_applicants=None,
+            cogs=None,
+            taxes=None,
+            gross_profit=100.0,
+            contribution_profit=20.0,
+        )
+        self.assertIsNone(derived["mer"])
+        self.assertIsNone(derived["cost_per_applicant"])
+        self.assertIsNone(derived["cost_per_approved_applicant"])
+        self.assertIsNone(derived["cost_vs_actual_revenue"])
+        self.assertIsNone(derived["gross_profit_margin"])
+        self.assertIsNone(derived["contribution_profit_margin"])
+        self.assertIsNone(derived["target_attainment"])
+        self.assertIsNone(derived["revenue_gap"])
+        self.assertIsNone(derived["total_cogs_and_taxes"])
+
+    def test_business_metric_catalog_marks_deferred_metrics(self):
+        self.assertIn("mer", BUSINESS_DERIVED_METRICS_IMPLEMENTED)
+        self.assertIn("cost_per_applicant", BUSINESS_DERIVED_METRICS_IMPLEMENTED)
+        self.assertIn("aov", BUSINESS_DERIVED_METRICS_DEFERRED)
+        self.assertIn("ncac", BUSINESS_DERIVED_METRICS_DEFERRED)
+        self.assertIn("applicants_per_sale", BUSINESS_DERIVED_METRICS_DEFERRED)
+        self.assertIn("approved_applicants_per_sale", BUSINESS_DERIVED_METRICS_DEFERRED)
+
     def test_dashboard_client_endpoint_propagates_business_period_grain(self):
         original_get = dashboard_api.unified_dashboard_service.get_client_dashboard
         try:
@@ -3541,6 +3599,11 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(business_inputs["totals"]["gross_profit"], 600.0)
         self.assertEqual(business_inputs["totals"]["contribution_profit"], 650.0)
         self.assertIn("conversions", dashboard["totals"])
+        self.assertIn("business_derived_metrics", dashboard)
+        self.assertIn("mer", dashboard["business_derived_metrics"])
+        self.assertIn("cost_per_applicant", dashboard["business_derived_metrics"])
+        self.assertNotIn("aov", dashboard["business_derived_metrics"])
+        self.assertNotIn("ncac", dashboard["business_derived_metrics"])
 
     def test_client_dashboard_business_inputs_week_grain_filters_only_week(self):
         calls: list[dict[str, object]] = []

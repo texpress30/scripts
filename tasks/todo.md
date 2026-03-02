@@ -1008,3 +1008,19 @@
 - `business_inputs` conține `period_grain`, `rows` și `totals`; totals sunt sume simple peste câmpurile numerice, ignorând valorile `None`.
 - Endpoint-ul `GET /dashboard/{client_id}` propagă `business_period_grain` către service-ul de dashboard.
 - Am adăugat teste pentru day/week/empty + propagare endpoint și compatibilitate; nu am adăugat formule business sau merge în alte layere.
+
+
+# TODO — business_derived_metrics în dashboard read path (fără schimbări de schemă)
+
+- [x] Adaug modul mic `business_metric_formulas.py` cu formule pure și helper-e safe pentru metrici business derivați.
+- [x] Integrez calculul `business_derived_metrics` în `dashboard.py` folosind `business_inputs.totals` + total spend consolidat existent.
+- [x] Păstrez payload-ul additive-only și compatibil (`business_inputs` rămâne intact, metricii ads existenți neatinși).
+- [x] Adaug catalog clar pentru metrici business implementați vs amânați din cauza inputurilor lipsă.
+- [x] Adaug teste backend pentru formule + payload și rulez verificări țintite.
+
+## Review
+- Am adăugat `business_metric_formulas.py` cu formule pure pentru metricii business derivați disponibili acum + catalog explicit pentru metricii amânați (inputuri lipsă).
+- `dashboard.py` calculează acum `business_derived_metrics` din `business_inputs.totals` + `total_spend` consolidat cross-platform deja existent în dashboard service.
+- Payload-ul client dashboard rămâne compatibil și adaugă doar `business_derived_metrics` (additive-only), păstrând `business_inputs`, metricii ads existenți și structura anterioară.
+- Denominatorii lipsă/zero returnează `None` (fără zero-uri inventate, fără excepții).
+- Testele țintite pentru formule, catalog, payload și compatibilitate au trecut.
