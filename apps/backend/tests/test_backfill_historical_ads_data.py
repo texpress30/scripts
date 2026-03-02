@@ -81,7 +81,7 @@ def test_dry_run_does_not_call_google_sync(monkeypatch):
         called["sync"] += 1
         return {"rows_upserted": 10}
 
-    monkeypatch.setattr(backfill_script.google_ads_service, "sync_customer_for_client", _sync)
+    monkeypatch.setattr(backfill_script.google_ads_service, "sync_customer_for_client_historical_range", _sync)
 
     summary = backfill_script.run_backfill(_args(mode="dry-run"))
 
@@ -98,9 +98,9 @@ def test_google_apply_calls_backfill_with_range(monkeypatch):
 
     def _sync(**kwargs):
         calls.append(dict(kwargs))
-        return {"rows_upserted": 42}
+        return {"rows_upserted": 42, "planned_chunks": 3, "executed_chunks": 3, "empty_chunks": 1, "failed_chunks": 0}
 
-    monkeypatch.setattr(backfill_script.google_ads_service, "sync_customer_for_client", _sync)
+    monkeypatch.setattr(backfill_script.google_ads_service, "sync_customer_for_client_historical_range", _sync)
 
     summary = backfill_script.run_backfill(
         _args(mode="apply", start_date=date(2024, 9, 1), end_date=date(2024, 9, 15), chunk_days=5)
@@ -112,6 +112,11 @@ def test_google_apply_calls_backfill_with_range(monkeypatch):
     assert int(calls[0]["chunk_days"]) == 5
     assert summary["succeeded"] == 1
     assert summary["items"][0]["rows_upserted"] == 42
+    assert summary["rows_upserted"] == 42
+    assert summary["planned_chunks"] == 3
+    assert summary["executed_chunks"] == 3
+    assert summary["empty_chunks"] == 1
+    assert summary["failed_chunks"] == 0
 
 
 def test_unsupported_platform_marked_skipped(monkeypatch):

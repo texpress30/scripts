@@ -47,6 +47,10 @@ class BackfillItemResult:
     status: str
     reason: str | None = None
     rows_upserted: int | None = None
+    planned_chunks: int | None = None
+    executed_chunks: int | None = None
+    empty_chunks: int | None = None
+    failed_chunks: int | None = None
 
 
 def _parse_iso_date(value: str) -> date:
@@ -151,12 +155,11 @@ def _run_google_backfill_for_client(*, client_id: int, start_date: date, end_dat
             continue
 
         try:
-            payload = google_ads_service.sync_customer_for_client(
+            payload = google_ads_service.sync_customer_for_client_historical_range(
                 client_id=client_id,
                 customer_id=account_id,
                 start_date=start_date,
                 end_date=end_date,
-                days=max(1, (end_date - start_date).days + 1),
                 chunk_days=chunk_days,
             )
             items.append(
@@ -166,6 +169,10 @@ def _run_google_backfill_for_client(*, client_id: int, start_date: date, end_dat
                     account_id=account_id,
                     status="succeeded",
                     rows_upserted=int(payload.get("rows_upserted", 0) or 0),
+                    planned_chunks=int(payload.get("planned_chunks", 0) or 0),
+                    executed_chunks=int(payload.get("executed_chunks", 0) or 0),
+                    empty_chunks=int(payload.get("empty_chunks", 0) or 0),
+                    failed_chunks=int(payload.get("failed_chunks", 0) or 0),
                 )
             )
         except GoogleAdsIntegrationError as exc:
@@ -231,6 +238,11 @@ def run_backfill(args: argparse.Namespace) -> dict[str, Any]:
         "skipped": sum(1 for item in results if item.status == "skipped"),
         "planned": sum(1 for item in results if item.status == "planned"),
         "errors": [item.reason for item in results if item.status == "failed" and item.reason],
+        "planned_chunks": sum(int(item.planned_chunks or 0) for item in results),
+        "executed_chunks": sum(int(item.executed_chunks or 0) for item in results),
+        "empty_chunks": sum(int(item.empty_chunks or 0) for item in results),
+        "failed_chunks": sum(int(item.failed_chunks or 0) for item in results),
+        "rows_upserted": sum(int(item.rows_upserted or 0) for item in results),
         "items": [item.__dict__ for item in results],
     }
     return summary

@@ -23,6 +23,7 @@ from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
 from app.services.google_store import google_snapshot_store
 from app.services.performance_reports import performance_reports_store
+from app.services.sync_engine import BackfillRunResult, DailyMetricRow, enqueue_backfill
 
 logger = logging.getLogger(__name__)
 
@@ -1213,17 +1214,105 @@ class GoogleAdsService:
     def upsert_rows(self, rows: list[DailyMetricRow]) -> int:
         return performance_reports_store.upsert_rows(rows)
 
+    def _build_historical_range_summary(self, *, run_result: BackfillRunResult) -> dict[str, int]:
+        empty_chunks = len([chunk for chunk in run_result.chunks if chunk.status == "ok" and int(chunk.fetched_rows) == 0])
+        failed_chunks = len([chunk for chunk in run_result.chunks if chunk.status == "error"])
+        return {
+            "planned_chunks": int(run_result.attempted_chunks),
+            "executed_chunks": int(len(run_result.chunks)),
+            "empty_chunks": int(empty_chunks),
+            "failed_chunks": int(failed_chunks),
+            "rows_upserted": int(run_result.upserted_rows_total),
+            "successful_chunks": int(run_result.successful_chunks),
+        }
+
+    def _run_customer_backfill_range(
+        self,
+        *,
+        client_id: int,
+        customer_id: str,
+        start_date: date,
+        end_date: date,
+        chunk_days: int,
+        mode: str,
+    ) -> tuple[dict[str, float | int | str], int, int, dict[str, int]]:
+        if mode not in ("rolling_30d", "historical_range"):
+            raise GoogleAdsIntegrationError(f"Unsupported Google Ads sync mode '{mode}'")
+        normalized_customer_id = self._normalize_customer_id(customer_id)
+        if not self._is_valid_customer_id(normalized_customer_id):
+            raise GoogleAdsIntegrationError(f"Invalid customer id mapping '{customer_id}'. Expected 10 digits.")
+        if start_date > end_date:
+            raise GoogleAdsIntegrationError("historical_range requires start_date <= end_date")
+        if int(chunk_days) <= 0:
+            raise GoogleAdsIntegrationError("chunk_days must be > 0")
+
+        run_result = enqueue_backfill(
+            platform="google_ads",
+            account_id=normalized_customer_id,
+            client_id=client_id,
+            start=start_date,
+            end=end_date,
+            chunk_days=max(1, min(int(chunk_days), 31)),
+            fetch_chunk=lambda account_id, chunk_start, chunk_end: self.fetch_chunk(account_id=account_id, chunk_start=chunk_start, chunk_end=chunk_end),
+            normalize_to_rows=lambda payload, account_id, cid: self.normalize_to_rows(payload=payload, account_id=account_id, client_id=cid),
+            upsert_rows=self.upsert_rows,
+        )
+
+        if mode == "historical_range":
+            for chunk in run_result.chunks:
+                logger.info(
+                    "google_ads.sync mode=%s client_id=%s account_id=%s chunk_start=%s chunk_end=%s rows_upserted=%s status=%s",
+                    mode,
+                    client_id,
+                    normalized_customer_id,
+                    chunk.start_date.isoformat(),
+                    chunk.end_date.isoformat(),
+                    int(chunk.upserted_rows),
+                    chunk.status,
+                )
+                if chunk.status == "ok" and int(chunk.fetched_rows) == 0:
+                    logger.warning(
+                        "google_ads.sync mode=%s client_id=%s account_id=%s chunk_start=%s chunk_end=%s empty_result=true",
+                        mode,
+                        client_id,
+                        normalized_customer_id,
+                        chunk.start_date.isoformat(),
+                        chunk.end_date.isoformat(),
+                    )
+                if chunk.status == "error":
+                    logger.warning(
+                        "google_ads.sync mode=%s client_id=%s account_id=%s chunk_start=%s chunk_end=%s error=%s",
+                        mode,
+                        client_id,
+                        normalized_customer_id,
+                        chunk.start_date.isoformat(),
+                        chunk.end_date.isoformat(),
+                        str(chunk.error or "")[:300],
+                    )
+
+        snapshot: dict[str, float | int | str] = {
+            "client_id": client_id,
+            "platform": "google_ads",
+            "spend": round(float(sum(float(chunk.spend) for chunk in run_result.chunks)), 2),
+            "impressions": int(sum(int(chunk.impressions) for chunk in run_result.chunks)),
+            "clicks": int(sum(int(chunk.clicks) for chunk in run_result.chunks)),
+            "conversions": int(sum(float(chunk.conversions) for chunk in run_result.chunks)),
+            "revenue": round(float(sum(float(chunk.revenue) for chunk in run_result.chunks)), 2),
+            "google_customer_id": normalized_customer_id,
+            "synced_at": datetime.now(timezone.utc).isoformat(),
+            "mode": mode,
+            "effective_start_date": start_date.isoformat(),
+            "effective_end_date": end_date.isoformat(),
+        }
+        return snapshot, int(run_result.fetched_rows_total), int(run_result.upserted_rows_total), self._build_historical_range_summary(run_result=run_result)
+
     def sync_customer_for_client(self, *, client_id: int, customer_id: str, days: int = 30, start_date: date | None = None, end_date: date | None = None, chunk_days: int = 7) -> dict[str, float | int | str]:
         normalized_customer_id = self._normalize_customer_id(customer_id)
         if not self._is_valid_customer_id(normalized_customer_id):
             raise GoogleAdsIntegrationError(f"Invalid customer id mapping '{customer_id}'. Expected 10 digits.")
 
         window_days = max(1, min(int(days), 3660))
-        logger.info(
-            "google_ads.sync_now customer_id=%s client_id=%s START",
-            normalized_customer_id,
-            client_id,
-        )
+        logger.info("google_ads.sync_now customer_id=%s client_id=%s START", normalized_customer_id, client_id)
 
         reason_if_zero: str | None = None
         zero_message: str | None = None
@@ -1232,49 +1321,26 @@ class GoogleAdsService:
         if self._is_production_mode():
             resolved_end = end_date or datetime.now(timezone.utc).date()
             resolved_start = start_date or (resolved_end - timedelta(days=window_days - 1))
-            run_result = enqueue_backfill(
-                platform="google_ads",
-                account_id=normalized_customer_id,
+            snapshot, gaql_rows_fetched, inserted_rows, chunk_summary = self._run_customer_backfill_range(
                 client_id=client_id,
-                start=resolved_start,
-                end=resolved_end,
-                chunk_days=max(1, min(int(chunk_days), 31)),
-                fetch_chunk=lambda account_id, chunk_start, chunk_end: self.fetch_chunk(account_id=account_id, chunk_start=chunk_start, chunk_end=chunk_end),
-                normalize_to_rows=lambda payload, account_id, cid: self.normalize_to_rows(payload=payload, account_id=account_id, client_id=cid),
-                upsert_rows=self.upsert_rows,
+                customer_id=normalized_customer_id,
+                start_date=resolved_start,
+                end_date=resolved_end,
+                chunk_days=chunk_days,
+                mode="rolling_30d",
             )
-            gaql_rows_fetched = int(run_result.fetched_rows_total)
-            inserted_rows = int(run_result.upserted_rows_total)
             if gaql_rows_fetched == 0:
                 reason_if_zero = "GAQL_RETURNED_0"
                 zero_message = f"Account has no data in selected range {resolved_start.isoformat()}..{resolved_end.isoformat()} or no permission"
-
-            total_spend = sum(float(chunk.spend) for chunk in run_result.chunks)
-            total_impressions = sum(int(chunk.impressions) for chunk in run_result.chunks)
-            total_clicks = sum(int(chunk.clicks) for chunk in run_result.chunks)
-            total_conversions = sum(float(chunk.conversions) for chunk in run_result.chunks)
-            total_revenue = sum(float(chunk.revenue) for chunk in run_result.chunks)
             logger.info(
                 "google_ads.sync_now customer_id=%s client_id=%s CHUNKS ok=%s failed=%s upserted=%s",
                 normalized_customer_id,
                 client_id,
-                run_result.successful_chunks,
-                run_result.failed_chunks,
-                run_result.upserted_rows_total,
+                int(chunk_summary.get("successful_chunks", 0)),
+                int(chunk_summary.get("failed_chunks", 0)),
+                inserted_rows,
             )
-            snapshot: dict[str, float | int | str] = {
-                "client_id": client_id,
-                "platform": "google_ads",
-                "spend": round(float(total_spend), 2),
-                "impressions": int(total_impressions),
-                "clicks": int(total_clicks),
-                "conversions": int(total_conversions),
-                "revenue": round(float(total_revenue), 2),
-                "google_customer_id": normalized_customer_id,
-                "synced_at": datetime.now(timezone.utc).isoformat(),
-            }
         else:
-            daily_rows = []
             inserted_rows = 0
             spend = float(100 + client_id * 17)
             impressions = 5000 + client_id * 110
@@ -1292,19 +1358,11 @@ class GoogleAdsService:
                 "revenue": revenue,
                 "google_customer_id": normalized_customer_id,
                 "synced_at": datetime.now(timezone.utc).isoformat(),
+                "mode": "rolling_30d",
             }
-            logger.info(
-                "google_ads.sync_now customer_id=%s client_id=%s GAQL ok (mock mode)",
-                normalized_customer_id,
-                client_id,
-            )
+            logger.info("google_ads.sync_now customer_id=%s client_id=%s GAQL ok (mock mode)", normalized_customer_id, client_id)
 
-        logger.info(
-            "google_ads.sync_now customer_id=%s client_id=%s GAQL_ROWS=%s",
-            normalized_customer_id,
-            client_id,
-            gaql_rows_fetched,
-        )
+        logger.info("google_ads.sync_now customer_id=%s client_id=%s GAQL_ROWS=%s", normalized_customer_id, client_id, gaql_rows_fetched)
 
         google_snapshot_store.upsert_snapshot(payload=snapshot)
         try:
@@ -1315,20 +1373,10 @@ class GoogleAdsService:
             zero_message = str(exc)[:300]
             inserted_rows = 0
 
-        logger.info(
-            "google_ads.sync_now customer_id=%s client_id=%s UPSERT_INSERTED=%s",
-            normalized_customer_id,
-            client_id,
-            inserted_rows,
-        )
+        logger.info("google_ads.sync_now customer_id=%s client_id=%s UPSERT_INSERTED=%s", normalized_customer_id, client_id, inserted_rows)
 
         db_rows_last_30 = self._count_rows_last_30_days_for_customer(customer_id=normalized_customer_id)
-        logger.info(
-            "google_ads.sync_now customer_id=%s client_id=%s DB_ROWS_LAST30=%s",
-            normalized_customer_id,
-            client_id,
-            db_rows_last_30,
-        )
+        logger.info("google_ads.sync_now customer_id=%s client_id=%s DB_ROWS_LAST30=%s", normalized_customer_id, client_id, db_rows_last_30)
 
         if reason_if_zero is None and gaql_rows_fetched > 0 and inserted_rows > 0 and db_rows_last_30 == 0:
             reason_if_zero = "DB_ROWS_FILTER_MISMATCH"
@@ -1338,11 +1386,7 @@ class GoogleAdsService:
             reason_if_zero = "GAQL_RETURNED_0"
             zero_message = zero_message or "Account has no data in last 30 days or no permission"
 
-        logger.info(
-            "google_ads.sync_now customer_id=%s client_id=%s DONE",
-            normalized_customer_id,
-            client_id,
-        )
+        logger.info("google_ads.sync_now customer_id=%s client_id=%s DONE", normalized_customer_id, client_id)
         snapshot["gaql_rows_fetched"] = gaql_rows_fetched
         if self._is_production_mode():
             snapshot["resolved_start_date"] = resolved_start
@@ -1353,6 +1397,36 @@ class GoogleAdsService:
         if zero_message:
             snapshot["message"] = zero_message
         return snapshot
+
+    def sync_customer_for_client_historical_range(
+        self,
+        *,
+        client_id: int,
+        customer_id: str,
+        start_date: date,
+        end_date: date,
+        chunk_days: int,
+    ) -> dict[str, object]:
+        if not self._is_production_mode():
+            raise GoogleAdsIntegrationError("historical_range backfill is supported only in production mode")
+        snapshot, gaql_rows_fetched, inserted_rows, chunk_summary = self._run_customer_backfill_range(
+            client_id=client_id,
+            customer_id=customer_id,
+            start_date=start_date,
+            end_date=end_date,
+            chunk_days=chunk_days,
+            mode="historical_range",
+        )
+        google_snapshot_store.upsert_snapshot(payload=snapshot)
+        return {
+            **snapshot,
+            "gaql_rows_fetched": gaql_rows_fetched,
+            "rows_upserted": inserted_rows,
+            "planned_chunks": int(chunk_summary.get("planned_chunks", 0)),
+            "executed_chunks": int(chunk_summary.get("executed_chunks", 0)),
+            "empty_chunks": int(chunk_summary.get("empty_chunks", 0)),
+            "failed_chunks": int(chunk_summary.get("failed_chunks", 0)),
+        }
 
     def get_metrics(self, client_id: int) -> dict[str, float | int | str | bool]:
         return google_snapshot_store.get_snapshot(client_id=client_id)

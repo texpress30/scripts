@@ -16,6 +16,7 @@ from app.api import dashboard as dashboard_api
 from app.services.ai_assistant import ai_assistant_service
 from app.services.insights import insights_service
 from app.services.dashboard import unified_dashboard_service
+from app.services import google_ads as google_ads_service_module
 from app.services.google_ads import GoogleAdsIntegrationError, google_ads_service
 from app.services.meta_ads import MetaAdsIntegrationError, meta_ads_service
 from app.services.google_store import google_snapshot_store
@@ -490,7 +491,58 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(len(captured_queries), 2)
         self.assertIn("segments.date BETWEEN '2026-01-01' AND '2026-01-31'", captured_queries[0])
         self.assertIn("segments.date BETWEEN '2026-01-01' AND '2026-01-31'", captured_queries[1])
+        self.assertNotIn("LAST_30_DAYS", captured_queries[0])
+        self.assertNotIn("LAST_30_DAYS", captured_queries[1])
         self.assertIn("2026-01-01..2026-01-31", str(payload.get("zero_data_message") or ""))
+
+
+    def test_google_ads_historical_range_uses_explicit_chunked_backfill_path(self):
+        os.environ["GOOGLE_ADS_MODE"] = "production"
+
+        original_enqueue = google_ads_service_module.enqueue_backfill
+        original_upsert_snapshot = google_ads_service_module.google_snapshot_store.upsert_snapshot
+        captured: dict[str, object] = {}
+
+        class _RunResult:
+            def __init__(self):
+                self.attempted_chunks = 3
+                self.successful_chunks = 2
+                self.failed_chunks = 1
+                self.fetched_rows_total = 15
+                self.upserted_rows_total = 11
+                self.chunks = [
+                    type("C", (), {"status": "ok", "fetched_rows": 10, "upserted_rows": 8, "start_date": date(2024, 9, 1), "end_date": date(2024, 9, 7), "spend": 10.0, "impressions": 100, "clicks": 10, "conversions": 1.0, "revenue": 20.0, "error": None})(),
+                    type("C", (), {"status": "ok", "fetched_rows": 0, "upserted_rows": 0, "start_date": date(2024, 9, 8), "end_date": date(2024, 9, 14), "spend": 0.0, "impressions": 0, "clicks": 0, "conversions": 0.0, "revenue": 0.0, "error": None})(),
+                    type("C", (), {"status": "error", "fetched_rows": 0, "upserted_rows": 0, "start_date": date(2024, 9, 15), "end_date": date(2024, 9, 21), "spend": 0.0, "impressions": 0, "clicks": 0, "conversions": 0.0, "revenue": 0.0, "error": "timeout"})(),
+                ]
+
+        def fake_enqueue_backfill(**kwargs):
+            captured.update(kwargs)
+            return _RunResult()
+
+        google_ads_service_module.enqueue_backfill = fake_enqueue_backfill
+        google_ads_service_module.google_snapshot_store.upsert_snapshot = lambda payload: None
+        try:
+            result = google_ads_service.sync_customer_for_client_historical_range(
+                client_id=11,
+                customer_id="1234567890",
+                start_date=date(2024, 9, 1),
+                end_date=date(2024, 9, 21),
+                chunk_days=7,
+            )
+        finally:
+            google_ads_service_module.enqueue_backfill = original_enqueue
+            google_ads_service_module.google_snapshot_store.upsert_snapshot = original_upsert_snapshot
+
+        self.assertEqual(str(captured.get("start")), "2024-09-01")
+        self.assertEqual(str(captured.get("end")), "2024-09-21")
+        self.assertEqual(int(captured.get("chunk_days", 0)), 7)
+        self.assertEqual(result.get("mode"), "historical_range")
+        self.assertEqual(int(result.get("rows_upserted", 0)), 11)
+        self.assertEqual(int(result.get("planned_chunks", 0)), 3)
+        self.assertEqual(int(result.get("executed_chunks", 0)), 3)
+        self.assertEqual(int(result.get("empty_chunks", 0)), 1)
+        self.assertEqual(int(result.get("failed_chunks", 0)), 1)
 
     def test_google_ads_list_accessible_customers_uses_manager_search_stream(self):
         os.environ["GOOGLE_ADS_MODE"] = "production"

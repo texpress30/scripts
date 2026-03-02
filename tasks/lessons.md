@@ -133,3 +133,5 @@
 - When user says previous solution was unsatisfactory, add a focused regression test file for the new operational path before finalizing.
 
 - When adding guard-rail defaults, update existing endpoint tests to assert ignored inputs and effective values, not previous passthrough params.
+
+- If script reports rows_upserted from service payload, verify field names align and add tests for aggregate chunk counters.

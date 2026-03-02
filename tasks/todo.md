@@ -1042,3 +1042,12 @@
 
 ### Review
 - UI sync now ignores request date range and always runs rolling_30d with chunk_days=7; historical ranges stay in script path.
+
+## 2026-03-02 Google historical range path fix
+- [x] Split Google service flow into rolling_30d and historical_range execution paths.
+- [x] Wire backfill script to call historical_range service directly.
+- [x] Add chunk-level historical summary metrics (planned/executed/empty/failed/rows_upserted).
+- [x] Add/update tests for explicit range query and historical path invocation.
+
+### Review
+- Historical script no longer uses rolling_30d execution path; it calls explicit-range service path with chunked backfill.
