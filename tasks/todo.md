@@ -914,3 +914,19 @@
 - Google GAQL aduce acum `metrics.conversions` + `metrics.conversions_value`; valorile sunt agregate zilnic și păstrate atât în câmpurile canonice (`conversions`/`conversion_value`), cât și în `extra_metrics.google_ads`.
 - Sync-urile Meta/TikTok scriu acum și în `ad_performance_reports`, cu mapare nativă minimă în `extra_metrics` per provider.
 - Testele țintite pentru `performance_reports` și parser-ul GAQL Google au trecut.
+
+
+# TODO — Formula engine pentru metrici derivați din ad_performance_reports + extra_metrics
+
+- [x] Adaug modul simplu de formule (`report_metric_formulas.py`) cu helper-e safe divide/rate și metrici derivați comuni.
+- [x] Adaug catalog explicit pentru metricii derivați incluși acum vs metricii manual/business excluși (`report_metric_catalog.py`).
+- [x] Integrez calculul la read-time în serviciul de raportare (payload additive `derived_metrics`, fără breaking changes).
+- [x] Agreg extra_metrics per platformă în read path și calculez metrici specifici Google/Meta/TikTok doar când inputurile există.
+- [x] Adaug teste backend pentru formule + payload (None la lipsă/0 denominator, fără metrici business) și rulez verificările.
+
+## Review
+- Am adăugat `report_metric_formulas.py` cu helper-e pure (`safe_divide`, `safe_rate`) și calcul pentru metrici comuni + specifici Google/Meta/TikTok, returnând `None` la lipsă/numitor 0.
+- Am adăugat `report_metric_catalog.py` cu lista explicită de metrici derivați incluși acum și metrici manual/business excluși.
+- În `dashboard.py` read path-ul client agregă acum și `extra_metrics` per platformă (merge numeric), apoi expune aditiv `conversion_value`, `extra_metrics` și `derived_metrics` în payload-ul platformelor, păstrând câmpurile existente.
+- Nu am introdus metrici manual/business (`applicants`, `gross_profit`, `ncac` etc.) și nu am persistat metrici derivați în DB.
+- Testele țintite pentru formule/catalog/payload au trecut.

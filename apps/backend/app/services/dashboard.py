@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+import json
 from decimal import Decimal
 import logging
 
@@ -8,6 +9,7 @@ import requests
 
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
+from app.services.report_metric_formulas import build_derived_metrics
 from app.services.google_ads import google_ads_service
 from app.services.meta_ads import meta_ads_service
 from app.services.performance_reports import performance_reports_store
@@ -140,16 +142,30 @@ class UnifiedDashboardService:
 
     def _normalize_platform_metrics(self, platform: str, metrics: dict[str, object], client_id: int) -> dict[str, object]:
         spend = round(_to_float(metrics.get("spend")), 2)
-        revenue = round(_to_float(metrics.get("revenue")), 2)
+        conversion_value = round(_to_float(metrics.get("conversion_value", metrics.get("revenue"))), 2)
+        extra_metrics = metrics.get("extra_metrics") if isinstance(metrics.get("extra_metrics"), dict) else {}
+        conversions = _to_float(metrics.get("conversions"))
+
         normalized: dict[str, object] = {
             "client_id": _to_int(metrics.get("client_id")) or client_id,
             "platform": platform,
             "spend": spend,
             "impressions": _to_int(metrics.get("impressions")),
             "clicks": _to_int(metrics.get("clicks")),
-            "conversions": _to_int(metrics.get("conversions")),
-            "revenue": revenue,
-            "roas": round(revenue / spend, 2) if spend > 0 else 0.0,
+            "conversions": conversions,
+            "conversion_value": conversion_value,
+            "revenue": conversion_value,
+            "roas": round(conversion_value / spend, 2) if spend > 0 else 0.0,
+            "extra_metrics": extra_metrics,
+            "derived_metrics": build_derived_metrics(
+                platform=platform,
+                spend=spend,
+                impressions=_to_int(metrics.get("impressions")),
+                clicks=_to_int(metrics.get("clicks")),
+                conversions=conversions,
+                conversion_value=conversion_value,
+                extra_metrics=extra_metrics,
+            ),
             "is_synced": bool(metrics.get("is_synced")),
             "synced_at": str(metrics.get("synced_at") or ""),
             "attempts": _to_int(metrics.get("attempts")),
@@ -167,7 +183,8 @@ class UnifiedDashboardService:
                                 apr.impressions,
                                 apr.clicks,
                                 apr.conversions,
-                                apr.conversion_value
+                                apr.conversion_value,
+                                COALESCE(apr.extra_metrics, '{}'::jsonb) AS extra_metrics
                             FROM ad_performance_reports apr
                             LEFT JOIN LATERAL (
                                 SELECT m.client_id
@@ -177,17 +194,45 @@ class UnifiedDashboardService:
                                 LIMIT 1
                             ) mapped ON TRUE
                         )
-                        SELECT platform,
-                               COALESCE(SUM(spend), 0),
-                               COALESCE(SUM(impressions), 0),
-                               COALESCE(SUM(clicks), 0),
-                               COALESCE(SUM(conversions), 0),
-                               COALESCE(SUM(conversion_value), 0)
+                        SELECT
+                            platform,
+                            COALESCE(spend, 0),
+                            COALESCE(impressions, 0),
+                            COALESCE(clicks, 0),
+                            COALESCE(conversions, 0),
+                            COALESCE(conversion_value, 0),
+                            extra_metrics
                         FROM perf
                         WHERE resolved_client_id = %s
                           AND report_date BETWEEN %s AND %s
-                        GROUP BY platform
                         """
+
+
+    def _coerce_extra_metrics(self, value: object) -> dict[str, object]:
+        if isinstance(value, dict):
+            return dict(value)
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:  # noqa: BLE001
+                return {}
+        return {}
+
+    def _merge_extra_metrics(self, base: dict[str, object], incoming: dict[str, object]) -> dict[str, object]:
+        merged = dict(base)
+        for key, incoming_value in incoming.items():
+            base_value = merged.get(key)
+            if isinstance(base_value, dict) and isinstance(incoming_value, dict):
+                merged[key] = self._merge_extra_metrics(base_value, incoming_value)
+            elif isinstance(base_value, (int, float, Decimal)) and isinstance(incoming_value, (int, float, Decimal)):
+                merged[key] = float(base_value) + float(incoming_value)
+            elif key not in merged:
+                merged[key] = incoming_value
+            else:
+                merged[key] = incoming_value
+        return merged
 
     def get_client_dashboard(self, client_id: int, *, start_date: date | None = None, end_date: date | None = None) -> dict[str, object]:
         resolved_end = end_date or date.today()
@@ -203,16 +248,30 @@ class UnifiedDashboardService:
                     )
                     rows = cur.fetchall()
 
-            platform_totals = {
-                str(row[0]): {
-                    "spend": _to_float(row[1]),
-                    "impressions": _to_int(row[2]),
-                    "clicks": _to_int(row[3]),
-                    "conversions": _to_int(row[4]),
-                    "revenue": _to_float(row[5]),
-                }
-                for row in rows
-            }
+            platform_totals: dict[str, dict[str, object]] = {}
+            for row in rows:
+                platform = str(row[0])
+                current = platform_totals.setdefault(
+                    platform,
+                    {
+                        "spend": 0.0,
+                        "impressions": 0,
+                        "clicks": 0,
+                        "conversions": 0.0,
+                        "conversion_value": 0.0,
+                        "extra_metrics": {},
+                    },
+                )
+                current["spend"] = _to_float(current.get("spend")) + _to_float(row[1])
+                current["impressions"] = _to_int(current.get("impressions")) + _to_int(row[2])
+                current["clicks"] = _to_int(current.get("clicks")) + _to_int(row[3])
+                current["conversions"] = _to_float(current.get("conversions")) + _to_float(row[4])
+                current["conversion_value"] = _to_float(current.get("conversion_value")) + _to_float(row[5])
+                incoming_extra = self._coerce_extra_metrics(row[6])
+                current["extra_metrics"] = self._merge_extra_metrics(
+                    current.get("extra_metrics") if isinstance(current.get("extra_metrics"), dict) else {},
+                    incoming_extra,
+                )
 
             def platform_metrics(name: str) -> dict[str, object]:
                 return self._normalize_platform_metrics(name, {"client_id": client_id, **platform_totals.get(name, {})}, client_id)

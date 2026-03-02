@@ -35,6 +35,8 @@ from app.services.rules_engine import rules_engine_service
 from app.services.audit import audit_log_service
 from app.services.client_registry import client_registry_service
 from app.services.performance_reports import performance_reports_store
+from app.services.report_metric_catalog import DERIVED_METRICS_IMPLEMENTED, MANUAL_BUSINESS_METRICS_EXCLUDED
+from app.services.report_metric_formulas import build_derived_metrics
 from app.services.sync_runs_store import sync_runs_store
 from app.services.sync_state_store import sync_state_store
 from app.services.sync_run_chunks_store import sync_run_chunks_store
@@ -917,6 +919,111 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(float(rows[0]["conversions"]), 3.5)
         self.assertEqual(float(rows[0]["revenue"]), 45.0)
         self.assertEqual(int(rows[0]["extra_metrics"]["google_ads"]["cost_micros"]), 2000000)
+
+
+    def test_report_formula_common_metrics_return_expected_values(self):
+        derived = build_derived_metrics(
+            platform="google_ads",
+            spend=100.0,
+            impressions=10000,
+            clicks=250,
+            conversions=10,
+            conversion_value=400.0,
+            extra_metrics={
+                "google_ads": {
+                    "search_spend": 60.0,
+                    "search_clicks": 150,
+                    "search_impressions": 6000,
+                    "pmax_spend": 40.0,
+                    "pmax_clicks": 100,
+                    "pmax_impressions": 4000,
+                }
+            },
+        )
+        self.assertEqual(derived["ctr"], 0.025)
+        self.assertEqual(derived["cpc"], 0.4)
+        self.assertEqual(derived["cpm"], 10.0)
+        self.assertEqual(derived["cpa"], 10.0)
+        self.assertEqual(derived["roas"], 4.0)
+        self.assertEqual(derived["cost_vs_revenue"], 0.25)
+        self.assertEqual(derived["cpc_search"], 0.4)
+        self.assertEqual(derived["cpc_pmax"], 0.4)
+        self.assertEqual(derived["cpm_search"], 10.0)
+        self.assertEqual(derived["cpm_pmax"], 10.0)
+
+    def test_report_formula_meta_tiktok_and_zero_denominator_return_none(self):
+        meta_derived = build_derived_metrics(
+            platform="meta_ads",
+            spend=120.0,
+            impressions=0,
+            clicks=0,
+            conversions=0,
+            conversion_value=0,
+            extra_metrics={
+                "meta_ads": {
+                    "landing_page_views": 30,
+                    "outbound_clicks": 60,
+                    "purchases": 3,
+                    "purchase_value": 450.0,
+                }
+            },
+        )
+        self.assertEqual(meta_derived["lp_view_rate"], 0.5)
+        self.assertEqual(meta_derived["cp_landing_page_view"], 4.0)
+        self.assertEqual(meta_derived["aov"], 150.0)
+
+        tiktok_derived = build_derived_metrics(
+            platform="tiktok_ads",
+            spend=90.0,
+            impressions=0,
+            clicks=0,
+            conversions=0,
+            conversion_value=0,
+            extra_metrics={
+                "tiktok_ads": {
+                    "landing_page_views": 0,
+                    "destination_clicks": 0,
+                }
+            },
+        )
+        self.assertIsNone(tiktok_derived["lp_view_rate"])
+        self.assertIsNone(tiktok_derived["cp_landing_page_view"])
+        self.assertIsNone(tiktok_derived["aov"])
+
+    def test_report_metric_catalog_keeps_manual_business_metrics_out(self):
+        self.assertIn("ctr", DERIVED_METRICS_IMPLEMENTED)
+        self.assertIn("cp_landing_page_view", DERIVED_METRICS_IMPLEMENTED)
+        self.assertIn("applicants", MANUAL_BUSINESS_METRICS_EXCLUDED)
+        self.assertIn("gross_profit", MANUAL_BUSINESS_METRICS_EXCLUDED)
+
+    def test_platform_metrics_include_extra_and_derived_metrics_additively(self):
+        metrics = unified_dashboard_service._normalize_platform_metrics(
+            "meta_ads",
+            {
+                "client_id": 44,
+                "spend": 100.0,
+                "impressions": 1000,
+                "clicks": 50,
+                "conversions": 5,
+                "conversion_value": 250.0,
+                "extra_metrics": {
+                    "meta_ads": {
+                        "landing_page_views": 25,
+                        "outbound_clicks": 50,
+                        "purchases": 2,
+                        "purchase_value": 300.0,
+                    }
+                },
+            },
+            44,
+        )
+
+        self.assertEqual(metrics["conversions"], 5.0)
+        self.assertEqual(metrics["conversion_value"], 250.0)
+        self.assertEqual(metrics["extra_metrics"]["meta_ads"]["landing_page_views"], 25)
+        self.assertIn("derived_metrics", metrics)
+        self.assertEqual(metrics["derived_metrics"]["lp_view_rate"], 0.5)
+        self.assertEqual(metrics["derived_metrics"]["cp_landing_page_view"], 4.0)
 
     def test_performance_reports_dedup_query_targets_daily_duplicate_keys(self):
         query = performance_reports_store._deduplicate_reports_query()

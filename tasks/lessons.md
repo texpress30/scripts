@@ -115,3 +115,5 @@
 - 2026-03-01: În Snapchat phase 2 (part 1), adaugă `sync_state` strict local în runner (running/done/error) best-effort și păstrează convenția de fereastră sintetică `utc_today` fără fallback `client_id`->`account_id`.
 
 - 2026-03-01: Pentru metadata operațională Snapchat, folosește strict helperul `update_platform_account_operational_metadata` și valori de cont reale (status/currency/timezone), fără a scrie statusuri de job (`running/done/error`) în `agency_platform_accounts.status`.
+
+- 2026-03-02: Când utilizatorul cere explicit separarea metricilor native/derived/manual, implementează un formula layer dedicat la read-time și exclude explicit metricii business/manual din catalog și payload.
