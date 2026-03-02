@@ -9,6 +9,7 @@ import requests
 
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
+from app.services.client_business_inputs_store import client_business_inputs_store
 from app.services.report_metric_formulas import build_derived_metrics
 from app.services.google_ads import google_ads_service
 from app.services.meta_ads import meta_ads_service
@@ -234,7 +235,65 @@ class UnifiedDashboardService:
                 merged[key] = incoming_value
         return merged
 
-    def get_client_dashboard(self, client_id: int, *, start_date: date | None = None, end_date: date | None = None) -> dict[str, object]:
+
+    def _business_inputs_totals(self, rows: list[dict[str, object]]) -> dict[str, float | int]:
+        totals: dict[str, float | int] = {
+            "applicants": 0,
+            "approved_applicants": 0,
+            "actual_revenue": 0.0,
+            "target_revenue": 0.0,
+            "cogs": 0.0,
+            "taxes": 0.0,
+            "gross_profit": 0.0,
+            "contribution_profit": 0.0,
+        }
+        for row in rows:
+            applicants = row.get("applicants")
+            approved_applicants = row.get("approved_applicants")
+            actual_revenue = row.get("actual_revenue")
+            target_revenue = row.get("target_revenue")
+            cogs = row.get("cogs")
+            taxes = row.get("taxes")
+            gross_profit = row.get("gross_profit")
+            contribution_profit = row.get("contribution_profit")
+
+            if isinstance(applicants, (int, float, Decimal)):
+                totals["applicants"] = int(totals["applicants"]) + int(applicants)
+            if isinstance(approved_applicants, (int, float, Decimal)):
+                totals["approved_applicants"] = int(totals["approved_applicants"]) + int(approved_applicants)
+            if isinstance(actual_revenue, (int, float, Decimal)):
+                totals["actual_revenue"] = float(totals["actual_revenue"]) + float(actual_revenue)
+            if isinstance(target_revenue, (int, float, Decimal)):
+                totals["target_revenue"] = float(totals["target_revenue"]) + float(target_revenue)
+            if isinstance(cogs, (int, float, Decimal)):
+                totals["cogs"] = float(totals["cogs"]) + float(cogs)
+            if isinstance(taxes, (int, float, Decimal)):
+                totals["taxes"] = float(totals["taxes"]) + float(taxes)
+            if isinstance(gross_profit, (int, float, Decimal)):
+                totals["gross_profit"] = float(totals["gross_profit"]) + float(gross_profit)
+            if isinstance(contribution_profit, (int, float, Decimal)):
+                totals["contribution_profit"] = float(totals["contribution_profit"]) + float(contribution_profit)
+
+        return totals
+
+    def _build_business_inputs_payload(self, *, client_id: int, period_grain: str, start_date: date, end_date: date) -> dict[str, object]:
+        resolved_grain = "week" if str(period_grain).strip().lower() == "week" else "day"
+        try:
+            rows = client_business_inputs_store.list_client_business_inputs(
+                client_id=client_id,
+                period_grain=resolved_grain,
+                date_from=start_date,
+                date_to=end_date,
+            )
+        except Exception:  # noqa: BLE001
+            rows = []
+        return {
+            "period_grain": resolved_grain,
+            "rows": rows,
+            "totals": self._business_inputs_totals(rows),
+        }
+
+    def get_client_dashboard(self, client_id: int, *, start_date: date | None = None, end_date: date | None = None, business_period_grain: str = "day") -> dict[str, object]:
         resolved_end = end_date or date.today()
         resolved_start = start_date or (resolved_end - timedelta(days=29))
 
@@ -326,6 +385,13 @@ class UnifiedDashboardService:
 
         preferred_currency = client_registry_service.get_preferred_currency_for_client(client_id=client_id)
 
+        business_inputs_payload = self._build_business_inputs_payload(
+            client_id=client_id,
+            period_grain=business_period_grain,
+            start_date=resolved_start,
+            end_date=resolved_end,
+        )
+
         return {
             "client_id": client_id,
             "currency": preferred_currency,
@@ -351,6 +417,7 @@ class UnifiedDashboardService:
                 or pinterest_metrics.get("is_synced")
                 or snapchat_metrics.get("is_synced")
             ),
+            "business_inputs": business_inputs_payload,
         }
 
     def _agency_reports_query(self) -> str:

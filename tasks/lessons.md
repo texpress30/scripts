@@ -125,3 +125,5 @@
 - 2026-03-02: După ce există store DB-backed, următorul pas de ingestie trebuie să fie un import service separat (normalize+validate+bulk upsert), fără wiring prematur în API/dashboard.
 
 - 2026-03-02: După import service validat pentru business inputs, următorul increment minim este endpoint intern/admin de bulk import care propagă `default_client_id` din path și nu permite import accidental cross-client.
+
+- 2026-03-02: După endpoint-ul de import business inputs, următorul increment de read path trebuie să fie additive-only (`business_inputs` cu `rows/totals/period_grain`), fără formule business și fără schimbare contract existent.

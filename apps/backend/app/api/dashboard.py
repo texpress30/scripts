@@ -43,6 +43,7 @@ def client_dashboard(
     client_id: int,
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
+    business_period_grain: str = Query(default="day"),
     user: AuthUser = Depends(get_current_user),
     response: Response = None,
 ) -> dict[str, object]:
@@ -57,6 +58,7 @@ def client_dashboard(
         client_id=client_id,
         start_date=resolved_start,
         end_date=resolved_end,
+        business_period_grain=business_period_grain,
     )
     if response is not None:
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
@@ -66,6 +68,6 @@ def client_dashboard(
         actor_role=user.role,
         action="dashboard.view",
         resource=f"client:{client_id}",
-        details={"is_synced": metrics["is_synced"], "start_date": resolved_start.isoformat(), "end_date": resolved_end.isoformat()},
+        details={"is_synced": metrics["is_synced"], "start_date": resolved_start.isoformat(), "end_date": resolved_end.isoformat(), "business_period_grain": business_period_grain},
     )
     return metrics

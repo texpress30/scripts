@@ -992,3 +992,19 @@
 - Pentru siguranță, endpoint-ul suprascrie `client_id` pe fiecare row cu valoarea din path și transmite `default_client_id=client_id` către import service.
 - Testele verifică propagarea default-urilor, forțarea `client_id` din path și răspunsul pentru partial failures.
 - Nu am făcut wiring în dashboard, formule business sau alte endpoint-uri de raportare.
+
+
+# TODO — Leagă client_business_inputs în dashboard read path (day/week), additive only
+
+- [x] Extind `get_client_dashboard` să citească business inputs via `client_business_inputs_store.list_client_business_inputs(...)`.
+- [x] Adaug parametru simplu pentru grain business inputs (`day|week`) și propagare din endpoint-ul dashboard client.
+- [x] Returnez `business_inputs` additive-only în payload (`period_grain`, `rows`, `totals`) fără formule business.
+- [x] Adaug teste pentru day/week/empty și compatibilitate payload existent.
+- [x] Rulez verificări țintite și confirm explicit că nu există dashboard merge/formule business noi.
+
+## Review
+- `dashboard.py` citește acum business inputs prin `client_business_inputs_store.list_client_business_inputs(...)` și expune un obiect aditiv `business_inputs` în payload-ul client dashboard.
+- Grain-ul business inputs este controlat prin parametru (`business_period_grain`) cu valori efective `day`/`week`; nu se amestecă grain-urile.
+- `business_inputs` conține `period_grain`, `rows` și `totals`; totals sunt sume simple peste câmpurile numerice, ignorând valorile `None`.
+- Endpoint-ul `GET /dashboard/{client_id}` propagă `business_period_grain` către service-ul de dashboard.
+- Am adăugat teste pentru day/week/empty + propagare endpoint și compatibilitate; nu am adăugat formule business sau merge în alte layere.

@@ -12,6 +12,7 @@ from app.api import tiktok_ads as tiktok_ads_api
 from app.api import pinterest_ads as pinterest_ads_api
 from app.api import snapchat_ads as snapchat_ads_api
 from app.api import clients as clients_api
+from app.api import dashboard as dashboard_api
 from app.services.ai_assistant import ai_assistant_service
 from app.services.insights import insights_service
 from app.services.dashboard import unified_dashboard_service
@@ -3401,6 +3402,30 @@ class ServiceTests(unittest.TestCase):
 
 
 
+
+    def test_dashboard_client_endpoint_propagates_business_period_grain(self):
+        original_get = dashboard_api.unified_dashboard_service.get_client_dashboard
+        try:
+            captured: list[dict[str, object]] = []
+            def _fake_get(**kwargs):
+                captured.append(kwargs)
+                return {"is_synced": False, "totals": {"conversions": 0}}
+            dashboard_api.unified_dashboard_service.get_client_dashboard = _fake_get
+            user = AuthUser(email="owner@example.com", role="agency_admin")
+            dashboard_api.client_dashboard(
+                client_id=5,
+                start_date=date(2026, 3, 1),
+                end_date=date(2026, 3, 7),
+                business_period_grain="week",
+                user=user,
+                response=None,
+            )
+        finally:
+            dashboard_api.unified_dashboard_service.get_client_dashboard = original_get
+
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(captured[0]["business_period_grain"], "week")
+
     def test_clients_business_inputs_import_endpoint_uses_path_client_id_and_defaults(self):
         calls: list[dict[str, object]] = []
         original_import = clients_api.client_business_inputs_import_service.import_client_business_inputs
@@ -3459,6 +3484,110 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(result["succeeded"], 2)
         self.assertEqual(result["failed"], 1)
         self.assertEqual(result["errors"][0]["row_index"], 1)
+
+
+    def test_client_dashboard_includes_business_inputs_day_grain_additively(self):
+        original_list = client_business_inputs_store.list_client_business_inputs
+        try:
+            client_business_inputs_store.list_client_business_inputs = lambda **kwargs: [
+                {
+                    "period_start": "2026-03-01",
+                    "period_end": "2026-03-01",
+                    "period_grain": "day",
+                    "applicants": 10,
+                    "approved_applicants": 2,
+                    "actual_revenue": 1000.0,
+                    "target_revenue": 1500.0,
+                    "cogs": 300.0,
+                    "taxes": 100.0,
+                    "gross_profit": 600.0,
+                    "contribution_profit": 500.0,
+                    "notes": None,
+                    "source": "manual",
+                    "metadata": {},
+                },
+                {
+                    "period_start": "2026-03-02",
+                    "period_end": "2026-03-02",
+                    "period_grain": "day",
+                    "applicants": None,
+                    "approved_applicants": 1,
+                    "actual_revenue": None,
+                    "target_revenue": 500.0,
+                    "cogs": None,
+                    "taxes": 50.0,
+                    "gross_profit": None,
+                    "contribution_profit": 150.0,
+                    "notes": None,
+                    "source": "sheet",
+                    "metadata": {},
+                },
+            ]
+
+            dashboard = unified_dashboard_service.get_client_dashboard(client_id=3, business_period_grain="day")
+        finally:
+            client_business_inputs_store.list_client_business_inputs = original_list
+
+        self.assertIn("business_inputs", dashboard)
+        business_inputs = dashboard["business_inputs"]
+        self.assertEqual(business_inputs["period_grain"], "day")
+        self.assertEqual(len(business_inputs["rows"]), 2)
+        self.assertEqual(business_inputs["totals"]["applicants"], 10)
+        self.assertEqual(business_inputs["totals"]["approved_applicants"], 3)
+        self.assertEqual(business_inputs["totals"]["actual_revenue"], 1000.0)
+        self.assertEqual(business_inputs["totals"]["target_revenue"], 2000.0)
+        self.assertEqual(business_inputs["totals"]["cogs"], 300.0)
+        self.assertEqual(business_inputs["totals"]["taxes"], 150.0)
+        self.assertEqual(business_inputs["totals"]["gross_profit"], 600.0)
+        self.assertEqual(business_inputs["totals"]["contribution_profit"], 650.0)
+        self.assertIn("conversions", dashboard["totals"])
+
+    def test_client_dashboard_business_inputs_week_grain_filters_only_week(self):
+        calls: list[dict[str, object]] = []
+        original_list = client_business_inputs_store.list_client_business_inputs
+        try:
+            def _fake_list(**kwargs):
+                calls.append(kwargs)
+                return [
+                    {
+                        "period_start": "2026-03-03",
+                        "period_end": "2026-03-09",
+                        "period_grain": "week",
+                        "applicants": 30,
+                        "approved_applicants": 6,
+                        "actual_revenue": 3000.0,
+                        "target_revenue": 5000.0,
+                        "cogs": 900.0,
+                        "taxes": 300.0,
+                        "gross_profit": 1800.0,
+                        "contribution_profit": 1500.0,
+                        "notes": None,
+                        "source": "manual",
+                        "metadata": {},
+                    }
+                ]
+
+            client_business_inputs_store.list_client_business_inputs = _fake_list
+            dashboard = unified_dashboard_service.get_client_dashboard(client_id=7, business_period_grain="week")
+        finally:
+            client_business_inputs_store.list_client_business_inputs = original_list
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["period_grain"], "week")
+        business_inputs = dashboard["business_inputs"]
+        self.assertEqual(business_inputs["period_grain"], "week")
+        self.assertEqual(business_inputs["totals"]["applicants"], 30)
+
+    def test_client_dashboard_business_inputs_empty_when_store_unavailable(self):
+        original_list = client_business_inputs_store.list_client_business_inputs
+        try:
+            client_business_inputs_store.list_client_business_inputs = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("db down"))
+            dashboard = unified_dashboard_service.get_client_dashboard(client_id=9, business_period_grain="day")
+        finally:
+            client_business_inputs_store.list_client_business_inputs = original_list
+
+        self.assertEqual(dashboard["business_inputs"]["rows"], [])
+        self.assertEqual(dashboard["business_inputs"]["totals"]["applicants"], 0)
 
     def test_client_business_inputs_import_normalize_row_defaults_and_types(self):
         row = normalize_client_business_input_row(
