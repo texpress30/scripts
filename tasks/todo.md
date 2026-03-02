@@ -930,3 +930,17 @@
 - În `dashboard.py` read path-ul client agregă acum și `extra_metrics` per platformă (merge numeric), apoi expune aditiv `conversion_value`, `extra_metrics` și `derived_metrics` în payload-ul platformelor, păstrând câmpurile existente.
 - Nu am introdus metrici manual/business (`applicants`, `gross_profit`, `ncac` etc.) și nu am persistat metrici derivați în DB.
 - Testele țintite pentru formule/catalog/payload au trecut.
+
+
+# TODO — Migrație SQL pentru tabela separată manual/business inputs
+
+- [x] Verific convenția de numerotare migrații și tabela FK corectă pentru clienți.
+- [x] Adaug migrarea nouă pentru `client_business_inputs` cu schema cerută (day/week), constrângeri și unicitate.
+- [x] Adaug indexurile minime cerute și păstrez migrarea idempotentă/în stilul repo-ului.
+- [x] Rulez verificări locale pentru fișierul de migrare și documentez review-ul fără schimbări în services/API/dashboard.
+
+## Review
+- Am adăugat `0012_client_business_inputs.sql` cu tabela separată `client_business_inputs`, FK către `agency_clients(id)` și `ON DELETE CASCADE`.
+- Migrarea include constrângerile cerute: range (`period_end >= period_start`), `period_grain IN ('day', 'week')` și consistență pentru day (`period_start = period_end`).
+- Am adăugat regula de unicitate pe `(client_id, period_start, period_end, period_grain)` și indexurile minime: `client_id`, `(period_grain, period_start)`, plus `(client_id, period_start DESC)` opțional.
+- Nu am făcut modificări în `services`, `api`, `dashboard`, `frontend` sau formule în acest task; patch-ul este migration-only (plus task docs).
