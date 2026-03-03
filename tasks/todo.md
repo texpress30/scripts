@@ -1126,3 +1126,17 @@
 - Worker executes only `google_ads` chunks, updates chunk done/error + duration/rows, updates run progress on both success and error paths, and finalizes run status when no queued/running chunks remain.
 - Added focused worker unit test (`tests/test_sync_worker.py`) that monkeypatches stores + Google service and validates once-step processing updates chunk/run state correctly.
 - Railway worker command: `cd apps/backend && PYTHONPATH=. python -m app.workers.sync_worker`.
+
+## 2026-03-03 Worker finalization watermarks + last status
+- [x] Review `client_registry` operational metadata update path and worker finalize flow.
+- [x] Extend `update_platform_account_operational_metadata` with new sync-state columns (v2) and conditional schema guard.
+- [x] Wire worker finalization to persist last status/watermarks to `agency_platform_accounts`.
+- [x] Extend `test_sync_worker.py` for success/error metadata update assertions.
+- [x] Run targeted backend checks (py_compile + worker/store tests).
+
+### Review
+- `ClientRegistryService.update_platform_account_operational_metadata` now supports v2 sync-state fields (`rolling_window_days`, `backfill_completed_through`, `rolling_synced_through`, `last_success_at`, `last_error`, `last_run_id`) with `_UNSET` semantics preserved for backward compatibility.
+- Added conditional schema guard `_ensure_agency_platform_accounts_sync_state_schema()` that is invoked only when new fields are being updated, keeping legacy flows resilient in envs without migration 0014.
+- Implemented advance-only SQL updates for watermark date columns (`backfill_completed_through`, `rolling_synced_through`) via CASE expressions.
+- Worker finalization now persists account-level operational status in `agency_platform_accounts`: success path updates `last_success_at` + run id + appropriate watermark; error path updates `last_error` + run id; both set `last_synced_at`.
+- Extended worker tests to assert metadata updater calls in both success and error flows; targeted worker + store-related tests pass.

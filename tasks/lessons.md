@@ -144,3 +144,4 @@
 - 2026-03-03: Când user spune că soluția anterioară e nesatisfăcătoare pe un diff mare, livrează increment minim focusat pe cerința nouă (router/API + wiring + test dedicat), evitând extinderi de scope.
 - 2026-03-03: După feedback negativ pe orchestration API, extinde incremental pe observabilitate cerută (account logs + chunk drilldown) fără a atinge worker/UI scope.
 - 2026-03-03: Pentru worker orchestration, prioritizează fluxul minim robust (claim global + once mode + finalize run), fără a extinde scope-ul în watermark/UI/runtime API.
+- 2026-03-03: Când worker-ul finalizează run-uri, persistă imediat metadata operațională (last_success/error + run_id + watermarks) în același punct de finalizare pentru consistență observabilă.

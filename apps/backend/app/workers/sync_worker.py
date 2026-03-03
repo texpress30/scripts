@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 import logging
 import os
 import time
 
 from app.core.config import load_settings
+from app.services.client_registry import client_registry_service
 from app.services.google_ads import google_ads_service
 from app.services.sync_run_chunks_store import sync_run_chunks_store
 from app.services.sync_runs_store import sync_runs_store
@@ -20,10 +21,17 @@ def _as_date(value: object) -> date:
     return parsed
 
 
-def _finalize_run_if_complete(job_id: str) -> None:
+def _finalize_run_if_complete(run: dict[str, object]) -> None:
+    job_id = str(run.get("job_id") or "")
     counts = sync_run_chunks_store.get_sync_run_chunk_status_counts(job_id)
     if int(counts.get("remaining") or 0) > 0:
         return
+
+    now_utc = datetime.now(timezone.utc)
+    platform = str(run.get("platform") or "").strip()
+    account_id = str(run.get("account_id") or "").strip()
+    job_type = str(run.get("job_type") or "manual")
+    run_date_end = _as_date(run.get("date_end"))
 
     if int(counts.get("errors") or 0) > 0:
         sync_runs_store.update_sync_run_status(
@@ -32,12 +40,34 @@ def _finalize_run_if_complete(job_id: str) -> None:
             mark_finished=True,
             error="one or more chunks failed",
         )
+        if platform != "" and account_id != "":
+            client_registry_service.update_platform_account_operational_metadata(
+                platform=platform,
+                account_id=account_id,
+                last_synced_at=now_utc,
+                last_error=(str(run.get("error") or "one or more chunks failed"))[:300],
+                last_run_id=job_id,
+            )
     else:
         sync_runs_store.update_sync_run_status(
             job_id=job_id,
             status="done",
             mark_finished=True,
         )
+        if platform != "" and account_id != "":
+            metadata_kwargs: dict[str, object] = {
+                "platform": platform,
+                "account_id": account_id,
+                "last_synced_at": now_utc,
+                "last_success_at": now_utc,
+                "last_error": None,
+                "last_run_id": job_id,
+            }
+            if job_type == "historical_backfill":
+                metadata_kwargs["backfill_completed_through"] = run_date_end
+            else:
+                metadata_kwargs["rolling_synced_through"] = run_date_end
+            client_registry_service.update_platform_account_operational_metadata(**metadata_kwargs)
 
 
 def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int = 5) -> bool:
@@ -142,7 +172,7 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
             rows_written_delta=0,
         )
 
-    _finalize_run_if_complete(job_id)
+    _finalize_run_if_complete(run)
     return True
 
 
