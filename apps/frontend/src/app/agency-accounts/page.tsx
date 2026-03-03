@@ -43,6 +43,26 @@ type GoogleAccountsResponse = {
   last_import_at?: string | null;
 };
 
+type BatchRun = {
+  account_id?: string;
+  status?: string;
+};
+
+type BatchProgress = {
+  total_runs: number;
+  queued: number;
+  running: number;
+  done: number;
+  error: number;
+  percent: number;
+};
+
+type BatchStatusResponse = {
+  batch_id: string;
+  progress: BatchProgress;
+  runs: BatchRun[];
+};
+
 function prettyPlatform(platform: string): string {
   const map: Record<string, string> = {
     google_ads: "Google Ads",
@@ -91,6 +111,14 @@ export default function AgencyAccountsPage() {
   const [loadingAccounts, setLoadingAccounts] = useState(false);
   const [accountsPage, setAccountsPage] = useState(1);
   const [accountsPageSize, setAccountsPageSize] = useState(50);
+  const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
+  const [currentBatchId, setCurrentBatchId] = useState<string | null>(null);
+  const [currentJobType, setCurrentJobType] = useState<"rolling_refresh" | "historical_backfill" | null>(null);
+  const [currentStartDateUsed, setCurrentStartDateUsed] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState("");
+  const [syncStatusMessage, setSyncStatusMessage] = useState("");
+  const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
+  const [batchRunsByAccount, setBatchRunsByAccount] = useState<Record<string, string>>({});
 
   async function loadClients() {
     const payload = await apiRequest<ClientsResponse>("/clients");
@@ -112,6 +140,7 @@ export default function AgencyAccountsPage() {
       setLoadError("");
       setLoadingAccounts(true);
       await Promise.all([loadClients(), loadAccountSummary(), loadGoogleAccounts()]);
+      setSelectedAccountIds(new Set());
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "Nu am putut încărca datele Agency Accounts");
       setClients([]);
@@ -125,6 +154,10 @@ export default function AgencyAccountsPage() {
   useEffect(() => {
     void reloadAccountsData();
   }, []);
+
+  useEffect(() => {
+    setSelectedAccountIds(new Set());
+  }, [selectedPlatform]);
 
   async function attachGoogleAccount(clientId: number, customerId: string) {
     setAttachStatus("");
@@ -250,6 +283,17 @@ export default function AgencyAccountsPage() {
     return googleAccounts.slice(start, start + accountsPageSize);
   }, [googleAccounts, accountsPage, accountsPageSize]);
 
+  const selectedCount = selectedAccountIds.size;
+  const syncInProgress = currentBatchId !== null;
+
+  const selectablePageAccountIds = useMemo(
+    () => pagedGoogleAccounts.filter((item) => item.attached_client_id).map((item) => item.id),
+    [pagedGoogleAccounts],
+  );
+
+  const allSelectableOnPageSelected =
+    selectablePageAccountIds.length > 0 && selectablePageAccountIds.every((accountId) => selectedAccountIds.has(accountId));
+
   useEffect(() => {
     setAccountsPage(1);
   }, [accountsPageSize]);
@@ -259,6 +303,119 @@ export default function AgencyAccountsPage() {
       setAccountsPage(totalAccountsPages);
     }
   }, [accountsPage, totalAccountsPages]);
+
+  async function startBatchSync(mode: "rolling" | "historical") {
+    const selectedMapped = googleAccounts.filter((account) => selectedAccountIds.has(account.id) && account.attached_client_id);
+    if (selectedMapped.length <= 0) {
+      setSyncError("Selectează cel puțin un cont atașat la client.");
+      return;
+    }
+
+    if (mode === "historical") {
+      const confirmed = window.confirm(`Vrei să descarci istoric pentru ${selectedMapped.length} conturi selectate?`);
+      if (!confirmed) return;
+    }
+
+    setSyncError("");
+    setSyncStatusMessage("");
+    setBatchProgress(null);
+    setBatchRunsByAccount({});
+
+    const accountIds = selectedMapped.map((item) => item.id);
+    const body: Record<string, unknown> = {
+      platform: "google_ads",
+      account_ids: accountIds,
+      chunk_days: 7,
+      grain: "account_daily",
+    };
+
+    let startDateUsed: string | null = null;
+    if (mode === "rolling") {
+      body.job_type = "rolling_refresh";
+      body.days = 7;
+      setCurrentJobType("rolling_refresh");
+      setCurrentStartDateUsed(null);
+    } else {
+      body.job_type = "historical_backfill";
+      const selectedStartDates = selectedMapped
+        .map((item) => (item.sync_start_date ? item.sync_start_date.trim() : ""))
+        .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value));
+      startDateUsed = selectedStartDates.sort()[0] ?? "2024-01-09";
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      body.start_date = startDateUsed;
+      body.end_date = toIsoDateLocal(yesterday);
+      setCurrentJobType("historical_backfill");
+      setCurrentStartDateUsed(startDateUsed);
+    }
+
+    try {
+      const response = await apiRequest<{ batch_id?: string; invalid_account_ids?: string[] }>("/agency/sync-runs/batch", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      if (!response.batch_id) {
+        throw new Error("Batch-ul nu a putut fi creat.");
+      }
+      setCurrentBatchId(response.batch_id);
+      if ((response.invalid_account_ids ?? []).length > 0) {
+        setSyncStatusMessage(`Unele conturi au fost ignorate: ${(response.invalid_account_ids ?? []).join(", ")}`);
+      }
+      if (mode === "historical") {
+        setCurrentStartDateUsed(startDateUsed);
+      }
+    } catch (err) {
+      setCurrentBatchId(null);
+      setSyncError(err instanceof Error ? err.message : "Nu am putut porni sync-ul batch.");
+    }
+  }
+
+  useEffect(() => {
+    if (!currentBatchId) return;
+
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const payload = await apiRequest<BatchStatusResponse>(`/agency/sync-runs/batch/${currentBatchId}`);
+        if (cancelled) return;
+
+        setBatchProgress(payload.progress);
+        const byAccount: Record<string, string> = {};
+        payload.runs.forEach((item) => {
+          if (item.account_id) {
+            byAccount[item.account_id] = String(item.status || "queued");
+          }
+        });
+        setBatchRunsByAccount(byAccount);
+
+        const runningCount = Number(payload.progress.queued || 0) + Number(payload.progress.running || 0);
+        if (runningCount <= 0) {
+          setCurrentBatchId(null);
+          if (Number(payload.progress.error || 0) > 0) {
+            setSyncStatusMessage(`Sync finalizat cu erori: ${payload.progress.error} conturi`);
+          } else if (currentJobType === "historical_backfill") {
+            setSyncStatusMessage(`Date istorice descarcate începând cu ${formatRoDate(currentStartDateUsed)}`);
+          } else {
+            setSyncStatusMessage("Sync last 7 days finalizat cu succes.");
+          }
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setCurrentBatchId(null);
+        setSyncError(err instanceof Error ? err.message : "Polling-ul batch a eșuat.");
+      }
+    };
+
+    void poll();
+    const intervalId = window.setInterval(() => {
+      void poll();
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [currentBatchId, currentJobType, currentStartDateUsed]);
 
   return (
     <ProtectedPage>
@@ -285,7 +442,7 @@ export default function AgencyAccountsPage() {
 
             {selectedPlatform === "google_ads" ? (
               <div className="mt-4 wm-card p-4">
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <h3 className="text-base font-semibold text-slate-900">Google Accounts disponibile</h3>
                   <div className="flex items-center gap-2">
                     <button className="wm-btn-primary" onClick={() => void scheduleRollingSync()} disabled={loadingAccounts || scheduleBusy}>
@@ -300,7 +457,18 @@ export default function AgencyAccountsPage() {
                   </div>
                 </div>
                 <p className="mt-1 text-xs text-slate-500">Ultimul import: {formatDate(selectedSummary?.last_import_at)}</p>
+                {batchProgress ? (
+                  <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-2">
+                    <p className="text-xs text-slate-700">
+                      Progres: {Math.round(Number(batchProgress.percent || 0))}% • {batchProgress.done}/{batchProgress.total_runs} done • {batchProgress.error} errors
+                    </p>
+                    <div className="mt-2 h-2 w-full overflow-hidden rounded bg-slate-200">
+                      <div className="h-full bg-indigo-600" style={{ width: `${Math.max(0, Math.min(100, Number(batchProgress.percent || 0)))}%` }} />
+                    </div>
+                  </div>
+                ) : null}
                 {loadError ? <p className="mt-2 text-xs text-red-600">{loadError}</p> : null}
+                {syncError ? <p className="mt-2 text-xs text-red-600">{syncError}</p> : null}
                 {attachStatus ? <p className="mt-2 text-xs text-emerald-700">{attachStatus}</p> : null}
                 {syncStatus ? <p className="mt-2 text-xs text-indigo-700">{syncStatus}</p> : null}
                 <div className="mt-3 space-y-2">
@@ -341,8 +509,8 @@ export default function AgencyAccountsPage() {
                           </button>
                         ) : null}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {googleAccounts.length === 0 ? <p className="text-sm text-slate-500">Nu există conturi importate.</p> : null}
                 </div>
                 {googleAccounts.length > 0 ? (
