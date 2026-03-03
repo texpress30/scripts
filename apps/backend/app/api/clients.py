@@ -3,6 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.api.dependencies import enforce_action_scope, get_current_user
 from app.schemas.client import (
     AttachGoogleAccountRequest,
+    BusinessInputsImportRequest,
+    BusinessInputsImportResponse,
     CreateClientRequest,
     DetachGoogleAccountRequest,
     UpdateClientProfileRequest,
@@ -10,6 +12,7 @@ from app.schemas.client import (
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
 from app.services.client_registry import client_registry_service
+from app.services.client_business_inputs_import_service import client_business_inputs_import_service
 
 router = APIRouter(prefix="/clients", tags=["clients"])
 
@@ -133,6 +136,41 @@ def update_client_profile(
     if updated is None:
         raise HTTPException(status_code=404, detail="Client not found")
     return updated
+
+
+@router.post("/{client_id}/business-inputs/import", response_model=BusinessInputsImportResponse)
+def import_client_business_inputs(
+    client_id: int,
+    payload: BusinessInputsImportRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+
+    sanitized_rows: list[dict[str, object]] = []
+    for raw in payload.rows:
+        row = dict(raw)
+        row["client_id"] = client_id
+        sanitized_rows.append(row)
+
+    result = client_business_inputs_import_service.import_client_business_inputs(
+        sanitized_rows,
+        default_client_id=client_id,
+        default_period_grain=payload.period_grain,
+        default_source=payload.source or "manual",
+    )
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="clients.business_inputs.import",
+        resource=f"client:{client_id}",
+        details={
+            "processed": int(result.get("processed", 0) or 0),
+            "succeeded": int(result.get("succeeded", 0) or 0),
+            "failed": int(result.get("failed", 0) or 0),
+        },
+    )
+    return result
 
 
 @router.get("/{client_id}/accounts")
