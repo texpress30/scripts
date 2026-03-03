@@ -1154,3 +1154,18 @@
 - Added API endpoint `POST /agency/sync-runs/rolling/enqueue` (agency `integrations:sync` scope) which calls scheduler function and returns summary.
 - Extended platform accounts listing payload with operational fields required by scheduler (`status`, `account_timezone`, `rolling_window_days`, `rolling_synced_through`).
 - Railway note: run one-shot via `cd apps/backend && PYTHONPATH=. python -m app.workers.rolling_scheduler`; this can be configured as a scheduled job command.
+
+## 2026-03-03 Frontend /agency-accounts batch sync UX
+- [x] Review current `/agency-accounts` page state/render flow and identify minimal insertion points for multi-select + batch sync progress.
+- [x] Add Google-only multi-select controls (row checkbox + select-page) with mapped-account restrictions and selection reset rules.
+- [x] Add `Sync last 7 days` + `Download historical` actions with backend batch enqueue calls and confirmation flow.
+- [x] Add batch polling/progress bar/per-row status badges and completion messaging.
+- [x] Run frontend build check and document outcome.
+
+### Review
+- Added multi-select UX for Google accounts in `/agency-accounts`: row checkbox restricted to mapped accounts, select-page checkbox for mapped rows on current page, and selection persisted across pagination.
+- Added batch sync actions `Sync last 7 days` and `Download historical` with disabled/loading states, mapped-account filtering, and historical confirmation dialog.
+- Implemented batch enqueue calls to `/agency/sync-runs/batch` for rolling and historical payloads, including historical start-date resolution (`MIN(sync_start_date)` fallback `2024-01-09`) and yesterday end date.
+- Added 2s polling for `/agency/sync-runs/batch/{batch_id}`, progress bar UI, per-row run status badges, and completion messaging (success/partial-error variants).
+- Selection resets on platform change and after data refresh; existing attach/detach flow remains intact.
+- Frontend build passed with the updated page.
