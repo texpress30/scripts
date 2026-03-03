@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from threading import Lock
 import os
 
@@ -11,6 +11,9 @@ try:
     import psycopg
 except Exception:  # noqa: BLE001
     psycopg = None
+
+
+_UNSET = object()
 
 
 @dataclass
@@ -35,6 +38,8 @@ class ClientRegistryService:
         self._memory_last_import_at: dict[str, str] = {}
         self._memory_account_client_mappings: dict[str, dict[str, set[int]]] = {}
         self._memory_account_profiles: dict[str, dict[str, dict[int, dict[str, str]]]] = {}
+        self._operational_metadata_schema_initialized = False
+        self._sync_state_schema_initialized = False
 
     def _is_test_mode(self) -> bool:
         # Use in-memory registry only while running pytest to avoid accidental data loss in deployed environments.
@@ -49,6 +54,75 @@ class ClientRegistryService:
     def _connect_or_raise(self):
         conn = self._connect()
         return conn
+
+    def _ensure_agency_platform_accounts_operational_metadata_schema(self) -> None:
+        if self._is_test_mode():
+            return
+
+        if self._operational_metadata_schema_initialized:
+            return
+
+        with self._lock:
+            if self._operational_metadata_schema_initialized:
+                return
+
+            with self._connect_or_raise() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT to_regclass('public.agency_platform_accounts')")
+                    table_row = cur.fetchone() or (None,)
+                    if table_row[0] is None:
+                        raise RuntimeError("Database schema for agency_platform_accounts operational metadata is not ready; run DB migrations")
+
+                    cur.execute(
+                        """
+                        SELECT COUNT(*)
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'agency_platform_accounts'
+                          AND column_name IN ('status', 'currency_code', 'account_timezone', 'sync_start_date', 'last_synced_at')
+                        """
+                    )
+                    columns_row = cur.fetchone() or (0,)
+                    if int(columns_row[0] or 0) < 5:
+                        raise RuntimeError("Database schema for agency_platform_accounts operational metadata is not ready; run DB migrations")
+
+            self._operational_metadata_schema_initialized = True
+
+
+    def _ensure_agency_platform_accounts_sync_state_schema(self) -> None:
+        if self._is_test_mode():
+            return
+
+        if self._sync_state_schema_initialized:
+            return
+
+        with self._lock:
+            if self._sync_state_schema_initialized:
+                return
+
+            with self._connect_or_raise() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT COUNT(*)
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'agency_platform_accounts'
+                          AND column_name IN (
+                            'rolling_window_days',
+                            'backfill_completed_through',
+                            'rolling_synced_through',
+                            'last_success_at',
+                            'last_error',
+                            'last_run_id'
+                          )
+                        """
+                    )
+                    row = cur.fetchone() or (0,)
+                    if int(row[0] or 0) < 6:
+                        raise RuntimeError("Database schema for agency_platform_accounts sync state columns is not ready; run DB migrations")
+
+            self._sync_state_schema_initialized = True
 
     def _ensure_schema(self) -> None:
         if self._is_test_mode():
@@ -569,6 +643,199 @@ class ClientRegistryService:
             for row in rows
         ]
 
+    def update_platform_account_operational_metadata(
+        self,
+        *,
+        platform: str,
+        account_id: str,
+        status: str | None | object = _UNSET,
+        currency_code: str | None | object = _UNSET,
+        account_timezone: str | None | object = _UNSET,
+        sync_start_date: date | None | object = _UNSET,
+        last_synced_at: datetime | None | object = _UNSET,
+        rolling_window_days: int | None | object = _UNSET,
+        backfill_completed_through: date | None | object = _UNSET,
+        rolling_synced_through: date | None | object = _UNSET,
+        last_success_at: datetime | None | object = _UNSET,
+        last_error: str | None | object = _UNSET,
+        last_run_id: str | None | object = _UNSET,
+    ) -> dict[str, object] | None:
+        normalized_platform = platform.strip()
+        normalized_account_id = account_id.strip()
+
+        if self._is_test_mode():
+            with self._lock:
+                items = self._memory_platform_accounts.get(normalized_platform, {})
+                existing = items.get(normalized_account_id)
+                if existing is None:
+                    return None
+                if status is not _UNSET:
+                    existing["status"] = None if status is None else str(status)
+                if currency_code is not _UNSET:
+                    existing["currency_code"] = None if currency_code is None else str(currency_code)
+                if account_timezone is not _UNSET:
+                    existing["account_timezone"] = None if account_timezone is None else str(account_timezone)
+                if sync_start_date is not _UNSET:
+                    existing["sync_start_date"] = None if sync_start_date is None else str(sync_start_date)
+                if last_synced_at is not _UNSET:
+                    existing["last_synced_at"] = None if last_synced_at is None else str(last_synced_at)
+                if rolling_window_days is not _UNSET:
+                    existing["rolling_window_days"] = None if rolling_window_days is None else int(rolling_window_days)
+                if backfill_completed_through is not _UNSET:
+                    existing["backfill_completed_through"] = None if backfill_completed_through is None else str(backfill_completed_through)
+                if rolling_synced_through is not _UNSET:
+                    existing["rolling_synced_through"] = None if rolling_synced_through is None else str(rolling_synced_through)
+                if last_success_at is not _UNSET:
+                    existing["last_success_at"] = None if last_success_at is None else str(last_success_at)
+                if last_error is not _UNSET:
+                    existing["last_error"] = None if last_error is None else str(last_error)
+                if last_run_id is not _UNSET:
+                    existing["last_run_id"] = None if last_run_id is None else str(last_run_id)
+                return {
+                    "platform": normalized_platform,
+                    "account_id": normalized_account_id,
+                    "status": existing.get("status"),
+                    "currency_code": existing.get("currency_code"),
+                    "account_timezone": existing.get("account_timezone"),
+                    "sync_start_date": existing.get("sync_start_date"),
+                    "last_synced_at": existing.get("last_synced_at"),
+                    "rolling_window_days": existing.get("rolling_window_days"),
+                    "backfill_completed_through": existing.get("backfill_completed_through"),
+                    "rolling_synced_through": existing.get("rolling_synced_through"),
+                    "last_success_at": existing.get("last_success_at"),
+                    "last_error": existing.get("last_error"),
+                    "last_run_id": existing.get("last_run_id"),
+                }
+
+        self._ensure_agency_platform_accounts_operational_metadata_schema()
+        has_new_sync_state_updates = any(
+            value is not _UNSET
+            for value in (
+                rolling_window_days,
+                backfill_completed_through,
+                rolling_synced_through,
+                last_success_at,
+                last_error,
+                last_run_id,
+            )
+        )
+        if has_new_sync_state_updates:
+            self._ensure_agency_platform_accounts_sync_state_schema()
+
+        updates: list[str] = []
+        params: list[object] = []
+        if status is not _UNSET:
+            updates.append("status = %s")
+            params.append(status)
+        if currency_code is not _UNSET:
+            updates.append("currency_code = %s")
+            params.append(currency_code)
+        if account_timezone is not _UNSET:
+            updates.append("account_timezone = %s")
+            params.append(account_timezone)
+        if sync_start_date is not _UNSET:
+            updates.append("sync_start_date = %s")
+            params.append(sync_start_date)
+        if last_synced_at is not _UNSET:
+            updates.append("last_synced_at = %s")
+            params.append(last_synced_at)
+        if rolling_window_days is not _UNSET:
+            updates.append("rolling_window_days = %s")
+            params.append(rolling_window_days)
+        if backfill_completed_through is not _UNSET:
+            if backfill_completed_through is None:
+                updates.append("backfill_completed_through = NULL")
+            else:
+                updates.append("backfill_completed_through = CASE WHEN backfill_completed_through IS NULL OR backfill_completed_through < %s THEN %s ELSE backfill_completed_through END")
+                params.extend([backfill_completed_through, backfill_completed_through])
+        if rolling_synced_through is not _UNSET:
+            if rolling_synced_through is None:
+                updates.append("rolling_synced_through = NULL")
+            else:
+                updates.append("rolling_synced_through = CASE WHEN rolling_synced_through IS NULL OR rolling_synced_through < %s THEN %s ELSE rolling_synced_through END")
+                params.extend([rolling_synced_through, rolling_synced_through])
+        if last_success_at is not _UNSET:
+            updates.append("last_success_at = %s")
+            params.append(last_success_at)
+        if last_error is not _UNSET:
+            updates.append("last_error = %s")
+            params.append(last_error)
+        if last_run_id is not _UNSET:
+            updates.append("last_run_id = %s")
+            params.append(last_run_id)
+
+        with self._connect_or_raise() as conn:
+            with conn.cursor() as cur:
+                if len(updates) > 0:
+                    cur.execute(
+                        f"""
+                        UPDATE agency_platform_accounts
+                        SET {', '.join(updates)}
+                        WHERE platform = %s AND account_id = %s
+                        """,
+                        (*params, normalized_platform, normalized_account_id),
+                    )
+                    if cur.rowcount <= 0:
+                        conn.commit()
+                        return None
+                if has_new_sync_state_updates:
+                    cur.execute(
+                        """
+                        SELECT
+                            platform,
+                            account_id,
+                            status,
+                            currency_code,
+                            account_timezone,
+                            sync_start_date,
+                            last_synced_at,
+                            rolling_window_days,
+                            backfill_completed_through,
+                            rolling_synced_through,
+                            last_success_at,
+                            last_error,
+                            last_run_id
+                        FROM agency_platform_accounts
+                        WHERE platform = %s AND account_id = %s
+                        """,
+                        (normalized_platform, normalized_account_id),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT platform, account_id, status, currency_code, account_timezone, sync_start_date, last_synced_at
+                        FROM agency_platform_accounts
+                        WHERE platform = %s AND account_id = %s
+                        """,
+                        (normalized_platform, normalized_account_id),
+                    )
+                row = cur.fetchone()
+            conn.commit()
+
+        if row is None:
+            return None
+        payload = {
+            "platform": str(row[0]),
+            "account_id": str(row[1]),
+            "status": str(row[2]) if row[2] is not None else None,
+            "currency_code": str(row[3]) if row[3] is not None else None,
+            "account_timezone": str(row[4]) if row[4] is not None else None,
+            "sync_start_date": str(row[5]) if row[5] is not None else None,
+            "last_synced_at": str(row[6]) if row[6] is not None else None,
+        }
+        if has_new_sync_state_updates:
+            payload.update(
+                {
+                    "rolling_window_days": int(row[7]) if row[7] is not None else None,
+                    "backfill_completed_through": str(row[8]) if row[8] is not None else None,
+                    "rolling_synced_through": str(row[9]) if row[9] is not None else None,
+                    "last_success_at": str(row[10]) if row[10] is not None else None,
+                    "last_error": str(row[11]) if row[11] is not None else None,
+                    "last_run_id": str(row[12]) if row[12] is not None else None,
+                }
+            )
+        return payload
+
     def list_client_platform_accounts(self, *, platform: str, client_id: int) -> list[dict[str, str]]:
         if self._is_test_mode():
             with self._lock:
@@ -818,7 +1085,7 @@ class ClientRegistryService:
     def get_preferred_currency_for_client(self, *, client_id: int) -> str:
         accounts = self.list_client_platform_accounts(platform="google_ads", client_id=client_id)
         for account in accounts:
-            currency = str(account.get("account_currency") or "").upper()
+            currency = str(account.get("currency") or account.get("account_currency") or "").upper()
             if len(currency) == 3 and currency.isalpha():
                 return currency
         return "USD"

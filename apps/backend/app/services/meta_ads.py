@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from app.core.config import load_settings
 from app.services.meta_store import meta_snapshot_store
+from app.services.performance_reports import performance_reports_store
 
 
 class MetaAdsIntegrationError(RuntimeError):
@@ -50,6 +51,24 @@ class MetaAdsService:
         }
 
         meta_snapshot_store.upsert_snapshot(payload=snapshot)
+        performance_reports_store.write_daily_report(
+            report_date=datetime.now(timezone.utc).date(),
+            platform="meta_ads",
+            customer_id=f"client-{client_id}",
+            client_id=client_id,
+            spend=float(snapshot["spend"]),
+            impressions=int(snapshot["impressions"]),
+            clicks=int(snapshot["clicks"]),
+            conversions=float(snapshot["conversions"]),
+            conversion_value=float(snapshot["revenue"]),
+            extra_metrics={
+                "meta_ads": {
+                    "actions_offsite_conversion": float(snapshot["conversions"]),
+                    "purchase_roas_value": float(snapshot["revenue"]),
+                    "inline_link_clicks": int(snapshot["clicks"]),
+                }
+            },
+        )
         return snapshot
 
     def get_metrics(self, client_id: int) -> dict[str, float | int | str | bool]:
