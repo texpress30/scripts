@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
@@ -26,6 +26,15 @@ type GoogleStatusResponse = {
   last_import_at?: string;
 };
 
+type GoogleDiagnosticsResponse = {
+  oauth_ok?: boolean;
+  developer_token_ok?: boolean;
+  api_version?: string;
+  warnings?: string[];
+  last_error?: string | null;
+  [key: string]: unknown;
+};
+
 function formatDate(value?: string): string {
   if (!value) return "-";
   const date = new Date(value);
@@ -38,6 +47,11 @@ export default function AgencyIntegrationsPage() {
   const [googleError, setGoogleError] = useState("");
   const [googleStatus, setGoogleStatus] = useState<GoogleStatusResponse | null>(null);
   const [busy, setBusy] = useState<"connect" | "import" | null>(null);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
+  const [diagnosticsError, setDiagnosticsError] = useState("");
+  const [diagnosticsData, setDiagnosticsData] = useState<GoogleDiagnosticsResponse | null>(null);
+  const [copyMessage, setCopyMessage] = useState("");
 
   async function loadGoogleStatus() {
     try {
@@ -84,7 +98,40 @@ export default function AgencyIntegrationsPage() {
     }
   }
 
+  async function loadDiagnostics() {
+    setCopyMessage("");
+    setDiagnosticsError("");
+    setDiagnosticsBusy(true);
+    try {
+      const payload = await apiRequest<GoogleDiagnosticsResponse>("/integrations/google-ads/diagnostics");
+      setDiagnosticsData(payload);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Nu am putut încărca diagnosticele Google Ads";
+      setDiagnosticsError(message);
+      setDiagnosticsData(null);
+    } finally {
+      setDiagnosticsBusy(false);
+    }
+  }
+
+  async function openDiagnostics() {
+    setDiagnosticsOpen(true);
+    await loadDiagnostics();
+  }
+
+  async function copyDiagnosticsJson() {
+    if (!diagnosticsData) return;
+    setCopyMessage("");
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(diagnosticsData, null, 2));
+      setCopyMessage("JSON copiat în clipboard.");
+    } catch (err) {
+      setCopyMessage(err instanceof Error ? err.message : "Nu am putut copia JSON-ul.");
+    }
+  }
+
   const isConnected = googleStatus?.status === "connected";
+  const warnings = useMemo(() => (Array.isArray(diagnosticsData?.warnings) ? diagnosticsData?.warnings : []), [diagnosticsData]);
 
   return (
     <ProtectedPage>
@@ -115,6 +162,13 @@ export default function AgencyIntegrationsPage() {
               >
                 {busy === "import" ? "Importing..." : "Import Accounts"}
               </button>
+              <button
+                onClick={() => void openDiagnostics()}
+                disabled={busy !== null}
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Diagnostics
+              </button>
             </div>
             <p className="mt-3 text-xs text-slate-500">
               După import, rulează sync pe fiecare sub-account pentru a popula dashboard-ul cu date reale.
@@ -138,6 +192,63 @@ export default function AgencyIntegrationsPage() {
             <p className="mt-3 text-xs text-slate-500">Status și sync disponibile. Datele apar în dashboard după prima sincronizare.</p>
           </article>
         </div>
+
+        {diagnosticsOpen ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4" role="dialog" aria-modal="true">
+            <div className="wm-card max-h-[90vh] w-full max-w-3xl overflow-y-auto p-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-semibold text-slate-900">Google Ads Diagnostics</h3>
+                <button className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700" onClick={() => setDiagnosticsOpen(false)}>
+                  Close
+                </button>
+              </div>
+
+              {diagnosticsBusy ? <p className="mt-3 text-sm text-slate-600">Loading diagnostics...</p> : null}
+              {diagnosticsError ? <pre className="mt-3 whitespace-pre-wrap break-words rounded bg-red-50 p-3 text-xs text-red-700">{diagnosticsError}</pre> : null}
+
+              {!diagnosticsBusy && diagnosticsData ? (
+                <div className="mt-3 space-y-3 text-sm text-slate-700">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <p>
+                      <span className="font-medium">oauth_ok:</span> {String(Boolean(diagnosticsData.oauth_ok))}
+                    </p>
+                    <p>
+                      <span className="font-medium">developer_token_ok:</span> {String(Boolean(diagnosticsData.developer_token_ok))}
+                    </p>
+                    <p>
+                      <span className="font-medium">api_version:</span> {diagnosticsData.api_version ?? "-"}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="font-medium">warnings</p>
+                    {warnings.length > 0 ? (
+                      <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-amber-700">
+                        {warnings.map((warning, idx) => (
+                          <li key={`${warning}-${idx}`}>{warning}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-1 text-xs text-slate-500">No warnings.</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <p className="font-medium">last_error</p>
+                    <pre className="mt-1 whitespace-pre-wrap break-words rounded bg-slate-50 p-3 text-xs text-slate-700">{String(diagnosticsData.last_error ?? "") || "-"}</pre>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button className="rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50" onClick={() => void copyDiagnosticsJson()}>
+                      Copy
+                    </button>
+                    {copyMessage ? <p className="text-xs text-slate-600">{copyMessage}</p> : null}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
       </AppShell>
     </ProtectedPage>
   );
