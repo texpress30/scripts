@@ -1087,3 +1087,28 @@
 - Completed additive store updates (new fields and query helpers) and kept existing call patterns backward-compatible.
 - Adjusted `test_services.py` fake SQL matcher order so aggregate batch progress query hits the correct branch before generic batch list matching.
 - Targeted sync-run/chunk service tests now pass.
+
+## 2026-03-03 Agency sync orchestration batch enqueue API
+- [x] Review existing auth/router/store patterns and define minimal additive API shape for agency batch enqueue + polling.
+- [x] Implement `apps/backend/app/api/sync_orchestration.py` with POST `/agency/sync-runs/batch` and GET `/agency/sync-runs/batch/{batch_id}` using DB-backed stores.
+- [x] Wire router include in `apps/backend/app/main.py`.
+- [x] Add focused backend API test(s) for batch create + status polling path.
+- [x] Run targeted pytest and capture results.
+
+### Review
+- Added new agency sync orchestration router with enqueue-only batch creation and batch polling endpoints using DB-backed sync run/chunk stores.
+- POST endpoint normalizes account ids (including dash removal), resolves date range from explicit start/end or rolling `days`, validates accounts via registry mappings, and creates queued `sync_runs` + queued `sync_run_chunks`.
+- GET endpoint returns aggregate progress from `get_batch_progress` plus batch runs from `list_sync_runs_by_batch`, including safe percent computation.
+- Router is included in app startup routing and a focused API test file was added for POST+GET contract (skipped in this environment if FastAPI test dependency import path is unavailable).
+
+## 2026-03-03 Sync orchestration logs + chunk drilldown endpoints
+- [x] Review current sync_orchestration router and store interfaces for account logs/chunk listing.
+- [x] Add GET `/agency/sync-runs/accounts/{platform}/{account_id}` and GET `/agency/sync-runs/{job_id}/chunks` (+ optional GET `/agency/sync-runs/{job_id}`) with agency status RBAC.
+- [x] Add a focused API test for response shapes using store monkeypatches.
+- [x] Run backend validation checks (py_compile + pytest).
+
+### Review
+- Extended `sync_orchestration` router with account-level sync run logs endpoint, single-run details endpoint, and chunk drilldown endpoint, all protected with agency `integrations:status` scope checks.
+- Account logs endpoint preserves account id formatting (strip only, no dash removal) and returns `runs: []` when empty.
+- Chunk drilldown endpoint returns 404 when run is missing, otherwise returns chunk list (including edge case empty list).
+- Added focused API shape test coverage (plus existing batch flow test) using monkeypatched stores/registry; in this environment TestClient suite is skipped due import/runtime limitations.
