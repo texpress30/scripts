@@ -55,3 +55,90 @@
 - 2026-02-28: După commit pentru livrare, verifică explicit că branch-ul local este împins pe `origin` (nu doar commit local) și re-rulează `make_pr`; fără push, butonul/PR-ul poate lipsi chiar dacă rezumatul spune că PR-ul există.
 - 2026-02-28: Când utilizatorul cere branch fix de lucru (ex. `work`) și PR unic activ, nu crea branch-uri noi per task; menține toate schimbările pe branch-ul indicat și actualizează același PR până la confirmarea finală.
 - 2026-02-28: În Agency Clients, pentru câmpurile editabile pe rând (tip cont, responsabil, monedă), oferă controale de editare separate per câmp (creion individual), nu un singur toggle global pe rând.
+- 2026-02-28: După refactor UI, verifică să nu rămână blocuri JSX duplicate cu variabile vechi; rulează obligatoriu `npm run build` ca să prinzi rapid erori TypeScript de tip "Cannot find name" înainte de push.
+- 2026-02-28: Când backend-ul expune câmpuri denumite diferit între straturi (ex. `currency` vs `account_currency`), validează explicit contractul producer/consumer; un key mismatch poate păstra fallback-uri greșite (USD) deși datele sunt setate corect.
+- 2026-02-28: Pentru dashboard-uri agency multi-account, nu agrega sume monetare cross-account fără normalizare de monedă; convertește pe zi și pe cont în moneda de raportare (ex. RON) înainte de total/top rankings.
+- 2026-02-28: Pentru paginile Sub-account Settings cerute ca variantă Agency Clients-like, evită placeholder-ul și livrează direct listarea conturilor per platformă pentru sub-account-ul din URL, fără UI de re-atașare/selectare client.
+- 2026-02-28: Pentru sync pe client în platforme ads, nu folosi un singur account fallback (`LIMIT 1`) când modelul permite many-to-one; iterează toate mapping-urile clientului și persistă per account.
+- 2026-02-28: Pentru conversii FX critice în dashboard, nu folosi fallback `1.0` la outage provider; aplică fallback-uri de curs explicite pe monede comune și păstrează ranking-ul pe moneda normalizată (RON).
+- 2026-02-28: Pentru cerințe de tip "calendar funcțional", nu livra doar componenta UI; extinde în același task endpoint-ul backend cu filtre `start_date`/`end_date` și leagă fetch-ul frontend la intervalul aplicat.
+- 2026-02-28: Dacă dashboard-ul are date-range picker dar valorile rămân constante, verifică întâi granularitatea datelor persistate (daily vs snapshot agregat 30d); filtrarea pe date nu poate funcționa corect peste snapshot-uri periodice.
+- 2026-02-28: Când introduci un unique index pe tabele deja populate, deduplicatează explicit datele istorice înainte de `CREATE UNIQUE INDEX`; altfel schema guard-ul poate produce 500 în request path.
+- 2026-02-28: Pentru dashboard-uri filtrate pe date în medii cu proxy/CDN, setează explicit `Cache-Control: no-store` pe endpoint-uri și folosește request key/nonce în frontend ca să elimini răspunsurile stale care maschează schimbarea intervalului.
+- 2026-02-28: Pentru cerințe de backfill istoric (de la o dată fixă), nu lăsa endpoint-ul doar pe `days`/LAST_30_DAYS; expune explicit `start_date`/`end_date` în API + GAQL `BETWEEN` ca să poți popula granular perioade lungi.
+- 2026-02-28: Pentru refactor-uri multi-platform de sync, separă clar contractul de date (`DailyMetricRow`), chunk-runnerul și adapterul platformei; astfel extinzi Meta/TikTok fără a duplica logică de chunking/upsert/background.
+- 2026-02-28: Când mediul cere tool-ul `apply_patch`, folosește-l direct pentru patch-uri; nu îl rula prin `exec_command` pentru a evita avertismente și neconformități de workflow.
+- 2026-02-28: Pentru cerințe operaționale de tip backfill live, verifică de la început prezența env-urilor critice (`DATABASE_URL`, `APP_AUTH_SECRET`, `GOOGLE_ADS_*`) și raportează explicit blocajele de execuție înainte de promisiuni de rezultat numeric.
+- 2026-02-28: Pentru endpoint-uri de sync care afișează erori în UI, nu lăsa excepțiile neașteptate să iasă ca 502 generic opac; convertește-le în erori de integrare cu context util (fără date sensibile) și acoperă cu test.
+- 2026-02-28: Când extinzi un query builder cu date-range, centralizează construcția expresiei (`date_clause`) într-un singur loc și acoperă cu test de regresie; astfel eviți NameError-uri de runtime în branch-urile de fallback.
+- 2026-02-28: Pentru bug-uri NameError pe variabile de interval (ex. `start_literal`), definește explicit literal-ele imediat după normalizarea date-range și reutilizează-le peste query + mesaje; evită apeluri duplicate inline care pot diverge între branch-uri.
+- 2026-02-28: Pentru tabele daily fact cu denormalizări (`client_id`), separă clar cheia canonical de conflict de câmpurile payload; `ON CONFLICT` trebuie să urmeze exact cheia canonical și testele trebuie să verifice explicit că payload-ul se actualizează fără duplicate.
+- 2026-02-28: După alinierea cheii canonice în runtime DDL, formalizează imediat aceeași regulă și în migrații SQL idempotente (inclusiv cleanup legacy + dedup înainte de unique index), ca să eviți drift între cod și schema live.
+- 2026-02-28: După ce schema e formalizată în migrații, evită runtime DDL în servicii; folosește validare read-only (`to_regclass`) și eroare explicită dacă migrațiile nu sunt aplicate.
+- 2026-02-28: Pentru pași incrementali de infrastructură (ex. persistarea joburilor de sync), livrează întâi o migrație SQL minimă și idempotentă, fără schimbări de business logic în același task.
+- 2026-02-28: Când introduci persistență nouă DB-backed (ex. `sync_runs`), livrează întâi store-ul cu contract CRUD minim + validare read-only de schemă și teste de lifecycle, fără wiring prematur în API/engine.
+- 2026-02-28: Pentru tranziții in-memory -> DB la orchestration jobs, introdu mai întâi mirror write best-effort (non-blocking) în punctul de create, cu teste pentru success/failure, înainte de a schimba sursa de adevăr pentru status.
+- 2026-02-28: La mirror lifecycle updates (running/done/error), păstrează write-ul DB strict best-effort și poziționează-l lângă tranzițiile in-memory corespunzătoare; astfel migrarea graduală nu destabilizează flow-ul existent.
+- 2026-03-01: Pentru migrare incrementală a status joburilor, păstrează endpoint-ul memory-first și adaugă fallback DB doar la memory miss, cu handling defensiv (warning + comportament not-found neschimbat) când DB-ul cade.
+- 2026-03-01: Pentru pași DB-first incrementali, livrează întâi migrația SQL idempotentă minimă (tabelă + FK + constrângeri + indexuri) fără wiring în API/runner până la task-ul dedicat.
+- 2026-03-01: Când un task cere explicit store DB-backed nou, livrează implementarea completă (fișier service + metode concrete + teste de lifecycle), nu doar migrația de schemă.
+- 2026-03-01: După ce există tabela + store pentru chunk-uri, următorul pas incremental corect este mirror write best-effort la create job (plan de chunk-uri date-range), fără să atingi runner-ul sau endpoint-ul de status.
+- 2026-03-01: Pentru extinderi de status endpoint în migrare graduală, păstrează contractul de bază și adaugă câmpuri additive best-effort (ex. chunk_summary/chunks), fără a face endpoint-ul fragil la erori DB secundare.
+- 2026-03-01: Pentru tabele operaționale state-like (cheie compusă), livrează întâi store-ul cu upsert canonic ON CONFLICT + schema guard + teste de lifecycle înainte de orice wiring în API/runner.
+- 2026-03-01: Pentru wiring incremental per-cont în runner, adaugă mirror state best-effort în punctele naturale (start/success/error) și validează explicit că excepțiile DB nu afectează fluxul principal.
+- 2026-03-01: Pentru taskuri strict de migrație metadata pe tabele existente, livrează doar ALTER TABLE + indexuri minime idempotente, fără wiring sau update de date în același pas.
+- 2026-03-01: Pentru extinderi operaționale pe tabele existente din client_registry, folosește helper de update parțial cu sentință explicită (doar câmpurile furnizate), schema-check read-only și fără DDL runtime/wiring prematur.
+- 2026-03-01: Pentru wiring gradual între sync flow și agency_platform_accounts, actualizează metadata operațională strict best-effort în puncte simple (start/success), fără să reutilizezi coloana status ca job-state.
+- 2026-03-01: În taskuri de cleanup final, extrage valorile canonice (platform/grain/status) în constante comune și uniformizează logging-ul best-effort, fără a modifica contractele publice sau fluxul logic.
+- 2026-03-01: La rollout incremental pe o platformă nouă (Meta), livrează întâi phase 1 minimal (sync_runs create+lifecycle+status fallback memory-first) și evită chunking/state suplimentar până există flow real pentru ele.
+- 2026-03-01: În rollout-uri Meta incrementale, pentru phase 2 adaugă sync_state strict local în `api/meta_ads.py` (running/done/error per cont) cu upsert best-effort non-blocking, fără refactor orchestration sau schimbări de endpoint.
+- 2026-03-01: În flow-uri multi-cont (Meta inclus), nu folosi niciodată `client_id` ca substitut pentru `account_id`; cheia canonică pentru `sync_state`/`sync_runs` trebuie alimentată doar cu platform account id real, iar la ambiguitate se sare best-effort fără write greșit.
+- 2026-03-01: Pentru metadata operațională în `agency_platform_accounts`, scrie doar valori de cont (status/currency/timezone/sync_start_date/last_synced_at) cu `account_id` real al platformei; nu folosi statusuri de job și păstrează update-ul strict best-effort.
+- 2026-03-01: La rollout phase 1 pentru platformă nouă (TikTok), pornește minim cu `sync_runs` mirror (create+lifecycle) și status memory-first cu fallback DB, fără chunking/state suplimentar până există flow real.
+- 2026-03-01: În TikTok phase 2 incremental, adaugă `sync_state` strict local în runner (running/done/error) cu upsert best-effort; dacă `account_id` nu e determinabil sigur, omite write-ul în loc să folosești `client_id`.
+- 2026-03-01: În TikTok phase 2 (metadata operațională), actualizează `agency_platform_accounts` doar cu date de cont (status/currency/timezone/sync_start_date/last_synced_at) prin helperul existent și strict best-effort, fără să atingi statusurile de sync.
+- 2026-03-01: La cleanup final cross-platform, preferă alinierea locală a contextului de warning (operation/platform/job_id/account_id) și verificări țintite pentru constante/absența chunking-ului, fără refactor comun mare.
+- 2026-03-01: La rollout phase 1 pe Pinterest, păstrează patch-ul minim: `sync_runs` create+lifecycle și status memory-first cu fallback DB, fără `sync_run_chunks` dacă flow-ul nu are chunking real.
+
+- 2026-03-01: Când cerința spune "prerequisite minimal memory-only", nu extinde implementarea cu mirroring DB (`sync_runs`) sau fallback DB; livrează strict capabilitatea minimă cerută și validează explicit limita de scope.
+
+- 2026-03-01: Pentru Pinterest phase 2 incremental, adaugă `sync_state` strict local în runner-ul async, best-effort/non-blocking, cu `account_id` rezolvat canonic și skip defensiv la ambiguitate (fără fallback la `client_id`).
+
+- 2026-03-01: La restaurări de paritate cross-platform, tratează patch-ul ca additive: păstrează wiring-ul nou valid (ex. `sync_state`) și reintrodu punctual piesele lipsă (`sync_runs` create/lifecycle/status fallback) fără regresii de scope.
+
+- 2026-03-01: Pentru metadata operațională Pinterest, folosește strict helperul `update_platform_account_operational_metadata` și valori de cont reale (status/currency/timezone), fără a scrie statusuri de job (`running/done/error`) în `agency_platform_accounts.status`.
+
+- 2026-03-01: Pentru prerequisite-uri async pe platforme noi (ex. Snapchat), respectă strict scope-ul memory-only (fără `sync_runs`/`sync_state`/fallback DB) până la taskul de paritate dedicat.
+
+- 2026-03-01: După prerequisite async memory-only pe o platformă, phase 1 real trebuie să reintroducă incremental doar `sync_runs` (create+lifecycle+status DB fallback), păstrând flow-ul existent și fără a adăuga `sync_state`/`sync_run_chunks` prematur.
+
+- 2026-03-01: În Snapchat phase 2 (part 1), adaugă `sync_state` strict local în runner (running/done/error) best-effort și păstrează convenția de fereastră sintetică `utc_today` fără fallback `client_id`->`account_id`.
+
+- 2026-03-01: Pentru metadata operațională Snapchat, folosește strict helperul `update_platform_account_operational_metadata` și valori de cont reale (status/currency/timezone), fără a scrie statusuri de job (`running/done/error`) în `agency_platform_accounts.status`.
+
+- 2026-03-02: Când utilizatorul cere explicit separarea metricilor native/derived/manual, implementează un formula layer dedicat la read-time și exclude explicit metricii business/manual din catalog și payload.
+
+- 2026-03-02: Când cerința este migration-only pe DB, limitează patch-ul strict la `db/migrations` (plus task docs), fără wiring prematur în services/API/dashboard.
+
+- 2026-03-02: Când utilizatorul cere explicit un store DB-backed nou, livrează fișier de service cu metode concrete (`get/upsert/list`) + teste lifecycle; nu te opri la migrare.
+
+- 2026-03-02: După ce există store DB-backed, următorul pas de ingestie trebuie să fie un import service separat (normalize+validate+bulk upsert), fără wiring prematur în API/dashboard.
+
+- 2026-03-02: După import service validat pentru business inputs, următorul increment minim este endpoint intern/admin de bulk import care propagă `default_client_id` din path și nu permite import accidental cross-client.
+
+- 2026-03-02: După endpoint-ul de import business inputs, următorul increment de read path trebuie să fie additive-only (`business_inputs` cu `rows/totals/period_grain`), fără formule business și fără schimbare contract existent.
+
+- 2026-03-02: Când se cer metrici business derivați, adaugă layer de formule separat și păstrează-l strict additive-only în dashboard payload, fără modificări de schemă și fără metrici ce cer inputuri inexistente.
+
+- When user says previous solution was unsatisfactory, add a focused regression test file for the new operational path before finalizing.
+
+- When adding guard-rail defaults, update existing endpoint tests to assert ignored inputs and effective values, not previous passthrough params.
+
+- If script reports rows_upserted from service payload, verify field names align and add tests for aggregate chunk counters.
+
+- For Railway/private DB topologies, move heavy backfill execution to server-side endpoints; keep local scripts as HTTP launchers with polling.
+
+- For rollout-safe toggles, move hardcoded operational defaults into config with strict fallback validation and test coverage.
+
+- For schema-only requests, ship only new migration file(s) and avoid touching existing migration history or runtime logic.
+- 2026-03-03: Când user spune că soluția anterioară e nesatisfăcătoare pe un diff mare, livrează increment minim focusat pe cerința nouă (router/API + wiring + test dedicat), evitând extinderi de scope.

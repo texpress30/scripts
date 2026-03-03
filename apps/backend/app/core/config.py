@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
+from datetime import date
 
 
 @dataclass(frozen=True)
@@ -26,6 +27,9 @@ class Settings:
     google_ads_refresh_token: str
     google_ads_customer_ids_csv: str
     google_ads_api_version: str
+    google_ads_ui_rolling_sync_days: int
+    google_ads_ui_rolling_chunk_days: int
+    google_ads_historical_backfill_start_date: date
     meta_access_token: str
     bigquery_project_id: str
     database_url: str
@@ -75,6 +79,21 @@ def _parse_int_env(name: str, default: int) -> int:
     except ValueError:
         return default
 
+
+def _parse_positive_int_env(name: str, default: int) -> int:
+    value = _parse_int_env(name, default)
+    if value <= 0:
+        return default
+    return value
+
+
+def _parse_iso_date_env(name: str, default: str) -> date:
+    raw = _get_env(name, default=default).strip()
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return date.fromisoformat(default)
+
 def _safe_regex_env(name: str, default: str) -> str | None:
     value = _get_env(name, default=default).strip()
     if value == "":
@@ -105,6 +124,9 @@ def load_settings() -> Settings:
         google_ads_refresh_token=_get_env("GOOGLE_ADS_REFRESH_TOKEN", default=""),
         google_ads_customer_ids_csv=_get_env("GOOGLE_ADS_CUSTOMER_IDS_CSV", default=""),
         google_ads_api_version=_get_env("GOOGLE_ADS_API_VERSION", default="v23"),
+        google_ads_ui_rolling_sync_days=_parse_positive_int_env("GOOGLE_ADS_UI_ROLLING_SYNC_DAYS", default=7),
+        google_ads_ui_rolling_chunk_days=_parse_positive_int_env("GOOGLE_ADS_UI_ROLLING_CHUNK_DAYS", default=7),
+        google_ads_historical_backfill_start_date=_parse_iso_date_env("GOOGLE_ADS_HISTORICAL_BACKFILL_START_DATE", default="2024-01-09"),
         meta_access_token=_get_env("META_ACCESS_TOKEN", default=""),
         bigquery_project_id=_get_env("BIGQUERY_PROJECT_ID", default=""),
         database_url=_get_env("DATABASE_URL", default="postgresql://postgres:postgres@localhost:5432/mcc"),
