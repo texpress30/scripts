@@ -4,6 +4,7 @@ import time
 from datetime import datetime, timezone
 
 from app.core.config import load_settings
+from app.services.performance_reports import performance_reports_store
 from app.services.tiktok_store import tiktok_snapshot_store
 
 
@@ -72,6 +73,24 @@ class TikTokAdsService:
                     forced_failures=forced_failures,
                 )
                 tiktok_snapshot_store.upsert_snapshot(payload=snapshot)
+                performance_reports_store.write_daily_report(
+                    report_date=datetime.now(timezone.utc).date(),
+                    platform="tiktok_ads",
+                    customer_id=f"client-{client_id}",
+                    client_id=client_id,
+                    spend=float(snapshot["spend"]),
+                    impressions=int(snapshot["impressions"]),
+                    clicks=int(snapshot["clicks"]),
+                    conversions=float(snapshot["conversions"]),
+                    conversion_value=float(snapshot["revenue"]),
+                    extra_metrics={
+                        "tiktok_ads": {
+                            "result": float(snapshot["conversions"]),
+                            "gmv": float(snapshot["revenue"]),
+                            "click_through_rate_clicks": int(snapshot["clicks"]),
+                        }
+                    },
+                )
                 return snapshot
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
