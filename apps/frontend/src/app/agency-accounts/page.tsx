@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
@@ -439,7 +440,13 @@ export default function AgencyAccountsPage() {
                             }}
                           />
                           <div>
-                            <p className="text-sm font-medium text-slate-900">{account.name}</p>
+                            <Link
+                              href={`/agency-accounts/${selectedPlatform}/${encodeURIComponent(account.id)}`}
+                              className="text-sm font-medium text-slate-900 hover:underline"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              {account.name}
+                            </Link>
                             <p className="text-xs text-slate-500">ID: {account.id}</p>
                             {account.attached_client_name ? <p className="text-xs text-emerald-700">Atașat la: {account.attached_client_name}</p> : <p className="text-xs text-amber-700">neatașat la client</p>}
                           </div>

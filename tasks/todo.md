@@ -1169,3 +1169,16 @@
 - Added 2s polling for `/agency/sync-runs/batch/{batch_id}`, progress bar UI, per-row run status badges, and completion messaging (success/partial-error variants).
 - Selection resets on platform change and after data refresh; existing attach/detach flow remains intact.
 - Frontend build passed with the updated page.
+
+## 2026-03-03 Frontend agency account detail page (logs + chunks)
+- [x] Add dedicated dynamic route `/agency-accounts/[platform]/[accountId]` with metadata card, sync runs table, and chunks drilldown.
+- [x] Wire account name links from `/agency-accounts` list to detail page while preserving checkbox behavior.
+- [x] Add error/empty/loading UX for logs and chunks fetches.
+- [x] Run frontend build and verify route compiles.
+
+### Review
+- Added dynamic detail route `/agency-accounts/[platform]/[accountId]` that loads account metadata (from `/clients/accounts/google` for Google), sync runs (`/agency/sync-runs/accounts/...`) and chunk drilldown (`/agency/sync-runs/{job_id}/chunks`).
+- Implemented metadata/status coverage card with fallback handling when account metadata is unavailable.
+- Added runs table with clickable rows and selected-job chunks table, plus loading/empty/error states and refresh action while selected run is queued/running.
+- Updated `/agency-accounts` list to make account name clickable via `Link` to the new detail page without turning whole row into a link (checkbox interactions remain intact).
+- Frontend build succeeds with the new route and existing page changes.

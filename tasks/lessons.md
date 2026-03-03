@@ -147,3 +147,4 @@
 - 2026-03-03: Când worker-ul finalizează run-uri, persistă imediat metadata operațională (last_success/error + run_id + watermarks) în același punct de finalizare pentru consistență observabilă.
 - 2026-03-03: Pentru rolling schedulers, separă clar logica de enqueue într-un modul worker reutilizabil și apeleaz-o din endpoint, ca să eviți duplicarea și drift-ul de comportament.
 - 2026-03-03: Pentru UX orchestration în pagini existente, păstrează flow-urile curente (attach/detach) și adaugă state-uri noi strict additive, cu guards pentru platform-specific behavior.
+- 2026-03-03: Când extinzi list pages cu drilldown route, fă linking doar pe textul țintă (nu pe row) ca să nu strici interacțiunile existente (checkbox/select).
