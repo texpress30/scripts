@@ -52,10 +52,36 @@ class SyncRunChunksStore:
 
             with self._connect() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("SELECT to_regclass('public.sync_run_chunks')")
-                    row = cur.fetchone() or (None,)
-                    if row[0] is None:
-                        raise RuntimeError("Database schema for sync_run_chunks is not ready; run DB migrations")
+                    cur.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS sync_run_chunks (
+                            id BIGSERIAL PRIMARY KEY,
+                            job_id TEXT NOT NULL,
+                            chunk_index INTEGER NOT NULL,
+                            status TEXT NOT NULL,
+                            date_start DATE NOT NULL,
+                            date_end DATE NOT NULL,
+                            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            started_at TIMESTAMPTZ NULL,
+                            finished_at TIMESTAMPTZ NULL,
+                            error TEXT NULL,
+                            metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+                            CONSTRAINT sync_run_chunks_job_id_fk
+                                FOREIGN KEY (job_id) REFERENCES sync_runs(job_id) ON DELETE CASCADE,
+                            CONSTRAINT sync_run_chunks_date_range_check CHECK (date_end >= date_start),
+                            CONSTRAINT sync_run_chunks_chunk_index_check CHECK (chunk_index >= 0),
+                            CONSTRAINT sync_run_chunks_job_id_chunk_index_unique UNIQUE (job_id, chunk_index)
+                        )
+                        """
+                    )
+                    cur.execute("ALTER TABLE sync_run_chunks ADD COLUMN IF NOT EXISTS attempts INTEGER DEFAULT 0")
+                    cur.execute("ALTER TABLE sync_run_chunks ADD COLUMN IF NOT EXISTS rows_written BIGINT DEFAULT 0")
+                    cur.execute("ALTER TABLE sync_run_chunks ADD COLUMN IF NOT EXISTS duration_ms INTEGER NULL")
+
+                    cur.execute("CREATE INDEX IF NOT EXISTS idx_sync_run_chunks_status_created_at ON sync_run_chunks(status, created_at)")
+                    cur.execute("CREATE INDEX IF NOT EXISTS idx_sync_run_chunks_job_id_chunk_index ON sync_run_chunks(job_id, chunk_index)")
+                conn.commit()
 
             self._schema_initialized = True
 

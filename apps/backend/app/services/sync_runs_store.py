@@ -57,10 +57,41 @@ class SyncRunsStore:
 
             with self._connect() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("SELECT to_regclass('public.sync_runs')")
-                    row = cur.fetchone() or (None,)
-                    if row[0] is None:
-                        raise RuntimeError("Database schema for sync_runs is not ready; run DB migrations")
+                    cur.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS sync_runs (
+                            job_id TEXT PRIMARY KEY,
+                            platform TEXT NOT NULL,
+                            status TEXT NOT NULL,
+                            client_id BIGINT NULL,
+                            account_id TEXT NULL,
+                            date_start DATE NOT NULL,
+                            date_end DATE NOT NULL,
+                            chunk_days INTEGER NOT NULL,
+                            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            started_at TIMESTAMPTZ NULL,
+                            finished_at TIMESTAMPTZ NULL,
+                            error TEXT NULL,
+                            metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+                            CONSTRAINT sync_runs_date_range_check CHECK (date_end >= date_start),
+                            CONSTRAINT sync_runs_chunk_days_check CHECK (chunk_days > 0)
+                        )
+                        """
+                    )
+                    cur.execute("ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS batch_id TEXT NULL")
+                    cur.execute("ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS job_type TEXT NULL")
+                    cur.execute("ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS grain TEXT NULL")
+                    cur.execute("ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS chunks_total INTEGER DEFAULT 0")
+                    cur.execute("ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS chunks_done INTEGER DEFAULT 0")
+                    cur.execute("ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS rows_written BIGINT DEFAULT 0")
+
+                    cur.execute("CREATE INDEX IF NOT EXISTS idx_sync_runs_batch_id ON sync_runs(batch_id)")
+                    cur.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_sync_runs_platform_account_created_at ON sync_runs(platform, account_id, created_at DESC)"
+                    )
+                    cur.execute("CREATE INDEX IF NOT EXISTS idx_sync_runs_client_created_at ON sync_runs(client_id, created_at DESC)")
+                conn.commit()
 
             self._schema_initialized = True
 
