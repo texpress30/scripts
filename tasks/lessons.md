@@ -148,3 +148,4 @@
 - 2026-03-03: Pentru rolling schedulers, separă clar logica de enqueue într-un modul worker reutilizabil și apeleaz-o din endpoint, ca să eviți duplicarea și drift-ul de comportament.
 - 2026-03-03: Pentru UX orchestration în pagini existente, păstrează flow-urile curente (attach/detach) și adaugă state-uri noi strict additive, cu guards pentru platform-specific behavior.
 - 2026-03-03: Când extinzi list pages cu drilldown route, fă linking doar pe textul țintă (nu pe row) ca să nu strici interacțiunile existente (checkbox/select).
+- 2026-03-03: Pentru incidente de producție din coloane lipsă, preferă self-healing DDL în startup path (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`) și evită blocarea runtime prin schema-check hard-fail.

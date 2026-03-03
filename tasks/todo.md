@@ -1182,3 +1182,14 @@
 - Added runs table with clickable rows and selected-job chunks table, plus loading/empty/error states and refresh action while selected run is queued/running.
 - Updated `/agency-accounts` list to make account name clickable via `Link` to the new detail page without turning whole row into a link (checkbox interactions remain intact).
 - Frontend build succeeds with the new route and existing page changes.
+
+## 2026-03-03 Backend hotfix: self-healing agency_platform_accounts columns
+- [x] Update `ClientRegistryService._ensure_schema()` to auto-add missing operational/sync-state columns on `agency_platform_accounts`.
+- [x] Make schema guard methods non-blocking for runtime safety when columns are missing pre-heal.
+- [x] Run requested backend validation commands.
+
+### Review
+- Added startup self-healing DDL in `ClientRegistryService._ensure_schema()` to auto-create missing operational and sync-state columns on `agency_platform_accounts` via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`.
+- Kept test mode behavior unchanged (in-memory path untouched).
+- Updated `_ensure_agency_platform_accounts_operational_metadata_schema()` and `_ensure_agency_platform_accounts_sync_state_schema()` to avoid runtime hard-fail (return early when columns are missing), preventing 500s before self-heal runs.
+- Requested backend checks pass (`py_compile` + targeted `pytest` subset).

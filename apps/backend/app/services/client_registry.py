@@ -71,7 +71,7 @@ class ClientRegistryService:
                     cur.execute("SELECT to_regclass('public.agency_platform_accounts')")
                     table_row = cur.fetchone() or (None,)
                     if table_row[0] is None:
-                        raise RuntimeError("Database schema for agency_platform_accounts operational metadata is not ready; run DB migrations")
+                        return
 
                     cur.execute(
                         """
@@ -84,7 +84,7 @@ class ClientRegistryService:
                     )
                     columns_row = cur.fetchone() or (0,)
                     if int(columns_row[0] or 0) < 5:
-                        raise RuntimeError("Database schema for agency_platform_accounts operational metadata is not ready; run DB migrations")
+                        return
 
             self._operational_metadata_schema_initialized = True
 
@@ -120,7 +120,7 @@ class ClientRegistryService:
                     )
                     row = cur.fetchone() or (0,)
                     if int(row[0] or 0) < 6:
-                        raise RuntimeError("Database schema for agency_platform_accounts sync state columns is not ready; run DB migrations")
+                        return
 
             self._sync_state_schema_initialized = True
 
@@ -160,6 +160,17 @@ class ClientRegistryService:
                     )
                     """
                 )
+                cur.execute("ALTER TABLE agency_platform_accounts ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active'")
+                cur.execute("ALTER TABLE agency_platform_accounts ADD COLUMN IF NOT EXISTS currency_code TEXT NULL")
+                cur.execute("ALTER TABLE agency_platform_accounts ADD COLUMN IF NOT EXISTS account_timezone TEXT NULL")
+                cur.execute("ALTER TABLE agency_platform_accounts ADD COLUMN IF NOT EXISTS sync_start_date DATE NULL")
+                cur.execute("ALTER TABLE agency_platform_accounts ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ NULL")
+                cur.execute("ALTER TABLE agency_platform_accounts ADD COLUMN IF NOT EXISTS rolling_window_days INTEGER DEFAULT 7")
+                cur.execute("ALTER TABLE agency_platform_accounts ADD COLUMN IF NOT EXISTS backfill_completed_through DATE NULL")
+                cur.execute("ALTER TABLE agency_platform_accounts ADD COLUMN IF NOT EXISTS rolling_synced_through DATE NULL")
+                cur.execute("ALTER TABLE agency_platform_accounts ADD COLUMN IF NOT EXISTS last_success_at TIMESTAMPTZ NULL")
+                cur.execute("ALTER TABLE agency_platform_accounts ADD COLUMN IF NOT EXISTS last_error TEXT NULL")
+                cur.execute("ALTER TABLE agency_platform_accounts ADD COLUMN IF NOT EXISTS last_run_id TEXT NULL")
                 cur.execute(
                     """
                     CREATE TABLE IF NOT EXISTS agency_platform_imports (
