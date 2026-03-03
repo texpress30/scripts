@@ -1069,3 +1069,11 @@
 
 ### Review
 - UI rolling sync window/chunk are now env-configurable, defaulting to 7d/7d, while preserving existing endpoint behavior.
+
+## 2026-03-02 sync orchestration v2 schema extension
+- [x] Add new additive migration extending sync_runs/sync_run_chunks/agency_platform_accounts for v2 orchestration fields.
+- [x] Keep migration backward-compatible (ALTER ADD COLUMN IF NOT EXISTS + CREATE INDEX IF NOT EXISTS only).
+- [x] Verify repository startup sanity with lightweight backend check.
+
+### Review
+- Added migration-only patch (no service/API behavior changes) with safe defaults and non-breaking nullable columns.

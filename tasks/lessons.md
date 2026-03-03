@@ -139,3 +139,5 @@
 - For Railway/private DB topologies, move heavy backfill execution to server-side endpoints; keep local scripts as HTTP launchers with polling.
 
 - For rollout-safe toggles, move hardcoded operational defaults into config with strict fallback validation and test coverage.
+
+- For schema-only requests, ship only new migration file(s) and avoid touching existing migration history or runtime logic.
