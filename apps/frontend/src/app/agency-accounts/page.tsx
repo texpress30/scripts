@@ -104,8 +104,11 @@ export default function AgencyAccountsPage() {
   const [selectedPlatform, setSelectedPlatform] = useState<string>("google_ads");
   const [googleAccounts, setGoogleAccounts] = useState<GoogleAccount[]>([]);
   const [attachStatus, setAttachStatus] = useState("");
+  const [syncStatus, setSyncStatus] = useState("");
   const [loadError, setLoadError] = useState("");
   const [refreshBusy, setRefreshBusy] = useState(false);
+  const [scheduleBusy, setScheduleBusy] = useState(false);
+  const [loadingAccounts, setLoadingAccounts] = useState(false);
   const [accountsPage, setAccountsPage] = useState(1);
   const [accountsPageSize, setAccountsPageSize] = useState(50);
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
@@ -135,6 +138,7 @@ export default function AgencyAccountsPage() {
   async function reloadAccountsData() {
     try {
       setLoadError("");
+      setLoadingAccounts(true);
       await Promise.all([loadClients(), loadAccountSummary(), loadGoogleAccounts()]);
       setSelectedAccountIds(new Set());
     } catch (err) {
@@ -142,7 +146,8 @@ export default function AgencyAccountsPage() {
       setClients([]);
       setSummary([]);
       setGoogleAccounts([]);
-      setSelectedAccountIds(new Set());
+    } finally {
+      setLoadingAccounts(false);
     }
   }
 
@@ -197,6 +202,75 @@ export default function AgencyAccountsPage() {
       setAttachStatus(err instanceof Error ? err.message : "Nu am putut actualiza numele conturilor Google");
     } finally {
       setRefreshBusy(false);
+    }
+  }
+
+  async function scheduleRollingSync() {
+    setSyncStatus("");
+    setScheduleBusy(true);
+    try {
+      const payload = await apiRequest<Record<string, unknown>>("/agency/sync-runs/rolling/enqueue", {
+        method: "POST",
+        body: JSON.stringify({
+          platform: "google_ads",
+          limit: 500,
+          chunk_days: 7,
+          force: false,
+        }),
+      });
+      const enqueued = Number(payload.enqueued_count ?? payload.created_count ?? 0);
+      const skippedUpToDate = Number(payload.skipped_up_to_date_count ?? 0);
+      const skippedUnmapped = Number(payload.skipped_unmapped_count ?? 0);
+      if (Number.isFinite(enqueued)) {
+        setSyncStatus(`Am pus în coadă sync pentru ${enqueued} conturi (${skippedUpToDate} skipped up-to-date, ${skippedUnmapped} unmapped).`);
+      } else {
+        setSyncStatus(`Sync scheduled: ${String(payload.created_count ?? "runs")} runs`);
+      }
+    } catch (err) {
+      setSyncStatus(err instanceof Error ? err.message : "Nu am putut programa sync last 7 days.");
+    } finally {
+      setScheduleBusy(false);
+    }
+  }
+
+  async function scheduleHistoricalSync() {
+    const mapped = googleAccounts.filter((account) => account.attached_client_id);
+    if (mapped.length <= 0) {
+      setSyncStatus("Nu există conturi mapate la client pentru backfill istoric.");
+      return;
+    }
+
+    const confirmed = window.confirm(`Descarc date istorice pentru ${mapped.length} conturi (poate dura mult). Continui?`);
+    if (!confirmed) return;
+
+    const validStarts = mapped
+      .map((account) => String(account.sync_start_date ?? "").trim())
+      .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value));
+    const startDate = validStarts.sort()[0] ?? "2024-01-09";
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const endDate = toIsoDateLocal(yesterday);
+
+    setSyncStatus("");
+    setScheduleBusy(true);
+    try {
+      await apiRequest("/agency/sync-runs/batch", {
+        method: "POST",
+        body: JSON.stringify({
+          platform: "google_ads",
+          account_ids: mapped.map((account) => String(account.id).trim()),
+          job_type: "historical_backfill",
+          start_date: startDate,
+          end_date: endDate,
+          chunk_days: 7,
+          grain: "account_daily",
+        }),
+      });
+      setSyncStatus(`Backfill istoric programat pentru ${mapped.length} conturi, începând cu ${formatRoDate(startDate)}.`);
+    } catch (err) {
+      setSyncStatus(err instanceof Error ? err.message : "Nu am putut programa backfill-ul istoric.");
+    } finally {
+      setScheduleBusy(false);
     }
   }
 
@@ -370,14 +444,14 @@ export default function AgencyAccountsPage() {
               <div className="mt-4 wm-card p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <h3 className="text-base font-semibold text-slate-900">Google Accounts disponibile</h3>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button className="wm-btn" onClick={() => void startBatchSync("rolling")} disabled={selectedCount <= 0 || syncInProgress}>
-                      {syncInProgress && currentJobType === "rolling_refresh" ? "Sync în progres..." : "Sync last 7 days"}
+                  <div className="flex items-center gap-2">
+                    <button className="wm-btn-primary" onClick={() => void scheduleRollingSync()} disabled={loadingAccounts || scheduleBusy}>
+                      {scheduleBusy ? "Scheduling..." : "Sync last 7 days"}
                     </button>
-                    <button className="wm-btn" onClick={() => void startBatchSync("historical")} disabled={selectedCount <= 0 || syncInProgress}>
-                      {syncInProgress && currentJobType === "historical_backfill" ? "Download în progres..." : "Download historical"}
+                    <button className="wm-btn-secondary" onClick={() => void scheduleHistoricalSync()} disabled={loadingAccounts || scheduleBusy}>
+                      {scheduleBusy ? "Scheduling..." : "Download historical"}
                     </button>
-                    <button className="wm-btn" onClick={() => void refreshGoogleAccountNames()} disabled={refreshBusy || syncInProgress}>
+                    <button className="wm-btn" onClick={() => void refreshGoogleAccountNames()} disabled={refreshBusy || scheduleBusy || loadingAccounts}>
                       {refreshBusy ? "Refresh..." : "Refresh Names"}
                     </button>
                   </div>
@@ -396,95 +470,44 @@ export default function AgencyAccountsPage() {
                 {loadError ? <p className="mt-2 text-xs text-red-600">{loadError}</p> : null}
                 {syncError ? <p className="mt-2 text-xs text-red-600">{syncError}</p> : null}
                 {attachStatus ? <p className="mt-2 text-xs text-emerald-700">{attachStatus}</p> : null}
-                {syncStatusMessage ? <p className="mt-2 text-xs text-indigo-700">{syncStatusMessage}</p> : null}
-                <div className="mt-3 flex items-center gap-2 text-xs text-slate-600">
-                  <input
-                    id="select-page"
-                    type="checkbox"
-                    checked={allSelectableOnPageSelected}
-                    onChange={(event) => {
-                      const checked = event.target.checked;
-                      setSelectedAccountIds((current) => {
-                        const next = new Set(current);
-                        selectablePageAccountIds.forEach((accountId) => {
-                          if (checked) next.add(accountId);
-                          else next.delete(accountId);
-                        });
-                        return next;
-                      });
-                    }}
-                    disabled={selectablePageAccountIds.length <= 0 || syncInProgress}
-                  />
-                  <label htmlFor="select-page">Select page ({selectedCount} selectate)</label>
-                </div>
+                {syncStatus ? <p className="mt-2 text-xs text-indigo-700">{syncStatus}</p> : null}
                 <div className="mt-3 space-y-2">
-                  {pagedGoogleAccounts.map((account) => {
-                    const mapped = Boolean(account.attached_client_id);
-                    const batchStatus = batchRunsByAccount[account.id];
-                    return (
-                      <div key={account.id} className="flex flex-wrap items-center justify-between rounded-md border border-slate-200 px-3 py-2">
-                        <div className="flex items-start gap-2">
-                          <input
-                            type="checkbox"
-                            checked={selectedAccountIds.has(account.id)}
-                            disabled={!mapped || syncInProgress}
-                            title={!mapped ? "neatașat la client" : ""}
-                            onChange={(event) => {
-                              const checked = event.target.checked;
-                              setSelectedAccountIds((current) => {
-                                const next = new Set(current);
-                                if (checked) next.add(account.id);
-                                else next.delete(account.id);
-                                return next;
-                              });
-                            }}
-                          />
-                          <div>
-                            <Link
-                              href={`/agency-accounts/${selectedPlatform}/${encodeURIComponent(account.id)}`}
-                              className="text-sm font-medium text-slate-900 hover:underline"
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              {account.name}
-                            </Link>
-                            <p className="text-xs text-slate-500">ID: {account.id}</p>
-                            {account.attached_client_name ? <p className="text-xs text-emerald-700">Atașat la: {account.attached_client_name}</p> : <p className="text-xs text-amber-700">neatașat la client</p>}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {batchStatus ? (
-                            <span className={`rounded px-2 py-1 text-xs font-medium ${batchStatus === "done" ? "bg-emerald-100 text-emerald-700" : batchStatus === "error" ? "bg-red-100 text-red-700" : batchStatus === "running" ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-700"}`}>
-                              {batchStatus}
-                            </span>
-                          ) : null}
-                          <select
-                            className="rounded-md border border-slate-300 px-2 py-1 text-sm"
-                            value={account.attached_client_id?.toString() ?? ""}
-                            onChange={(event) => {
-                              const value = Number(event.target.value);
-                              if (value > 0) {
-                                void attachGoogleAccount(value, account.id);
-                              }
-                            }}
-                            disabled={syncInProgress}
-                          >
-                            <option value="">Atașează la client...</option>
-                            {clients.map((client) => (
-                              <option key={client.id} value={client.id}>
-                                #{client.display_id ?? client.id} {client.name}
-                              </option>
-                            ))}
-                          </select>
-                          {account.attached_client_id ? (
-                            <button
-                              className="wm-btn"
-                              onClick={() => void detachGoogleAccount(account.attached_client_id ?? 0, account.id)}
-                              disabled={syncInProgress}
-                            >
-                              Detașează
-                            </button>
-                          ) : null}
-                        </div>
+                  {pagedGoogleAccounts.map((account) => (
+                    <div key={account.id} className="flex flex-wrap items-center justify-between rounded-md border border-slate-200 px-3 py-2">
+                      <div>
+                        <Link
+                          href={`/agency-accounts/${selectedPlatform}/${encodeURIComponent(account.id)}`}
+                          className="text-sm font-medium text-slate-900 hover:underline"
+                        >
+                          {account.name}
+                        </Link>
+                        <p className="text-xs text-slate-500">ID: {account.id}</p>
+                        {account.attached_client_name ? <p className="text-xs text-emerald-700">Atașat la: {account.attached_client_name}</p> : null}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <select
+                          className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+                          value={account.attached_client_id?.toString() ?? ""}
+                          onChange={(event) => {
+                            const value = Number(event.target.value);
+                            if (value > 0) {
+                              void attachGoogleAccount(value, account.id);
+                            }
+                          }}
+                          disabled={scheduleBusy || loadingAccounts}
+                        >
+                          <option value="">Atașează la client...</option>
+                          {clients.map((client) => (
+                            <option key={client.id} value={client.id}>
+                              #{client.display_id ?? client.id} {client.name}
+                            </option>
+                          ))}
+                        </select>
+                        {account.attached_client_id ? (
+                          <button className="wm-btn" onClick={() => void detachGoogleAccount(account.attached_client_id ?? 0, account.id)} disabled={scheduleBusy || loadingAccounts}>
+                            Detașează
+                          </button>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -526,7 +549,6 @@ export default function AgencyAccountsPage() {
                     </div>
                   </div>
                 ) : null}
-
               </div>
             ) : (
               <div className="mt-4 wm-card p-4 text-sm text-slate-500">Detalierea conturilor este disponibilă momentan pentru Google Ads.</div>
