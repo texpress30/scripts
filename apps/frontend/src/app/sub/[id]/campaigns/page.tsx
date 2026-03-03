@@ -62,7 +62,7 @@ export default function SubCampaignsPage() {
   const readOnly = isReadOnlyRole(role);
   const [result, setResult] = useState("");
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState<boolean>(false);
   const [loadingMetrics, setLoadingMetrics] = useState(true);
   const [metricsData, setMetricsData] = useState<DashboardResponse | null>(null);
 
@@ -82,23 +82,18 @@ export default function SubCampaignsPage() {
     if (Number.isFinite(clientId)) void loadMetrics();
   }, [clientId]);
 
-  async function action(name: "google" | "meta" | "tiktok" | "pinterest" | "snapchat" | "evaluate") {
+  async function action(name: "evaluate") {
     setError("");
     setResult("");
-    setBusy(name);
+    setBusy(true);
     try {
-      if (name === "google") await apiRequest(`/integrations/google-ads/${clientId}/sync`, { method: "POST" });
-      if (name === "meta") await apiRequest(`/integrations/meta-ads/${clientId}/sync`, { method: "POST" });
-      if (name === "tiktok") await apiRequest(`/integrations/tiktok-ads/${clientId}/sync`, { method: "POST" });
-      if (name === "pinterest") await apiRequest(`/integrations/pinterest-ads/${clientId}/sync`, { method: "POST" });
-      if (name === "snapchat") await apiRequest(`/integrations/snapchat-ads/${clientId}/sync`, { method: "POST" });
       if (name === "evaluate") await apiRequest(`/rules/${clientId}/evaluate`, { method: "POST" });
       setResult(`Acțiunea ${name} a fost executată.`);
       await loadMetrics();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Acțiunea a eșuat");
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   }
 
@@ -178,40 +173,10 @@ export default function SubCampaignsPage() {
           </table>
         </section>
 
-        <section className="grid grid-cols-1 gap-4 md:grid-cols-6">
-          <ActionCard
-            title="Sync Google"
-            disabled={readOnly || busy !== null}
-            description="Rulează sincronizare Google Ads pentru acest sub-account"
-            onClick={() => action("google")}
-          />
-          <ActionCard
-            title="Sync Meta"
-            disabled={readOnly || busy !== null}
-            description="Rulează sincronizare Meta Ads pentru acest sub-account"
-            onClick={() => action("meta")}
-          />
-          <ActionCard
-            title="Sync TikTok"
-            disabled={readOnly || busy !== null}
-            description="Rulează sincronizare TikTok Ads pentru acest sub-account"
-            onClick={() => action("tiktok")}
-          />
-          <ActionCard
-            title="Sync Pinterest"
-            disabled={readOnly || busy !== null}
-            description="Rulează sincronizare Pinterest Ads pentru acest sub-account"
-            onClick={() => action("pinterest")}
-          />
-          <ActionCard
-            title="Sync Snapchat"
-            disabled={readOnly || busy !== null}
-            description="Rulează sincronizare Snapchat Ads pentru acest sub-account"
-            onClick={() => action("snapchat")}
-          />
+        <section className="grid grid-cols-1 gap-4 md:grid-cols-1">
           <ActionCard
             title="Evaluate Rules"
-            disabled={readOnly || busy !== null}
+            disabled={readOnly || busy}
             description="Evaluează regulile active pentru acest sub-account"
             onClick={() => action("evaluate")}
           />

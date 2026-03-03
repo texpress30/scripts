@@ -12,7 +12,6 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiRequest } from "@/lib/api";
-import { getCurrentRole, isReadOnlyRole } from "@/lib/session";
 
 type DashboardResponse = {
   client_id: number;
@@ -41,7 +40,6 @@ type PlatformMetrics = {
   conversions?: number;
   revenue?: number;
   roas?: number;
-  is_synced?: boolean;
 };
 
 type NormalizedMetrics = {
@@ -51,7 +49,6 @@ type NormalizedMetrics = {
   conversions: number;
   revenue: number;
   roas: number;
-  isSynced: boolean;
 };
 
 type DatePresetKey = "today" | "yesterday" | "last7" | "last14" | "last30" | "month" | "custom";
@@ -115,19 +112,25 @@ function normalizeMetrics(value?: PlatformMetrics): NormalizedMetrics {
     conversions: Math.max(0, Math.trunc(safeNumber(value?.conversions))),
     revenue,
     roas: spend > 0 ? revenue / spend : 0,
-    isSynced: Boolean(value?.is_synced),
   };
 }
 
 export default function SubDashboardPage() {
   const params = useParams<{ id: string }>();
   const clientId = Number(params.id);
-  const role = getCurrentRole();
-  const readOnly = isReadOnlyRole(role);
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<"google" | "meta" | "tiktok" | "pinterest" | "snapchat" | null>(null);
+
+  const initialRange = rangeForPreset("last30");
+  const [openPicker, setOpenPicker] = useState(false);
+  const [appliedPreset, setAppliedPreset] = useState<DatePresetKey>("last30");
+  const [appliedRange, setAppliedRange] = useState<DateRange>(initialRange);
+  const [draftPreset, setDraftPreset] = useState<DatePresetKey>("last30");
+  const [draftRange, setDraftRange] = useState<DateRange>(initialRange);
+
+  const appliedFrom = appliedRange.from ?? subDays(new Date(), 29);
+  const appliedTo = appliedRange.to ?? appliedFrom;
 
   const initialRange = rangeForPreset("last30");
   const [openPicker, setOpenPicker] = useState(false);
@@ -159,29 +162,6 @@ export default function SubDashboardPage() {
     if (Number.isFinite(clientId)) void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId, appliedFrom, appliedTo]);
-
-  async function sync(channel: "google" | "meta" | "tiktok" | "pinterest" | "snapchat") {
-    setBusy(channel);
-    setError("");
-    try {
-      const path =
-        channel === "google"
-          ? `/integrations/google-ads/${clientId}/sync`
-          : channel === "meta"
-            ? `/integrations/meta-ads/${clientId}/sync`
-            : channel === "tiktok"
-              ? `/integrations/tiktok-ads/${clientId}/sync`
-              : channel === "pinterest"
-                ? `/integrations/pinterest-ads/${clientId}/sync`
-                : `/integrations/snapchat-ads/${clientId}/sync`;
-      await apiRequest(path, { method: "POST" });
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Sync eșuat");
-    } finally {
-      setBusy(null);
-    }
-  }
 
   function handlePresetClick(nextPreset: DatePresetKey) {
     setDraftPreset(nextPreset);
@@ -333,83 +313,6 @@ export default function SubDashboardPage() {
           </table>
         </section>
 
-        <section className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-5">
-          <IntegrationCard
-            title="Google Ads"
-            spend={google.spend}
-            impressions={google.impressions}
-            clicks={google.clicks}
-            conversions={google.conversions}
-            revenue={google.revenue}
-            roas={google.roas}
-            currencyCode={currencyCode}
-            loading={loading}
-            synced={google.isSynced}
-            buttonLabel={busy === "google" ? "Sync..." : "Sync Google"}
-            disabled={readOnly || busy !== null}
-            onSync={() => sync("google")}
-          />
-          <IntegrationCard
-            title="Meta Ads"
-            spend={meta.spend}
-            impressions={meta.impressions}
-            clicks={meta.clicks}
-            conversions={meta.conversions}
-            revenue={meta.revenue}
-            roas={meta.roas}
-            currencyCode={currencyCode}
-            loading={loading}
-            synced={meta.isSynced}
-            buttonLabel={busy === "meta" ? "Sync..." : "Sync Meta"}
-            disabled={readOnly || busy !== null}
-            onSync={() => sync("meta")}
-          />
-          <IntegrationCard
-            title="TikTok Ads"
-            spend={tiktok.spend}
-            impressions={tiktok.impressions}
-            clicks={tiktok.clicks}
-            conversions={tiktok.conversions}
-            revenue={tiktok.revenue}
-            roas={tiktok.roas}
-            currencyCode={currencyCode}
-            loading={loading}
-            synced={tiktok.isSynced}
-            buttonLabel={busy === "tiktok" ? "Sync..." : "Sync TikTok"}
-            disabled={readOnly || busy !== null}
-            onSync={() => sync("tiktok")}
-          />
-          <IntegrationCard
-            title="Pinterest Ads"
-            spend={pinterest.spend}
-            impressions={pinterest.impressions}
-            clicks={pinterest.clicks}
-            conversions={pinterest.conversions}
-            revenue={pinterest.revenue}
-            roas={pinterest.roas}
-            currencyCode={currencyCode}
-            loading={loading}
-            synced={pinterest.isSynced}
-            buttonLabel={busy === "pinterest" ? "Sync..." : "Sync Pinterest"}
-            disabled={readOnly || busy !== null}
-            onSync={() => sync("pinterest")}
-          />
-          <IntegrationCard
-            title="Snapchat Ads"
-            spend={snapchat.spend}
-            impressions={snapchat.impressions}
-            clicks={snapchat.clicks}
-            conversions={snapchat.conversions}
-            revenue={snapchat.revenue}
-            roas={snapchat.roas}
-            currencyCode={currencyCode}
-            loading={loading}
-            synced={snapchat.isSynced}
-            buttonLabel={busy === "snapchat" ? "Sync..." : "Sync Snapchat"}
-            disabled={readOnly || busy !== null}
-            onSync={() => sync("snapchat")}
-          />
-        </section>
       </AppShell>
     </ProtectedPage>
   );
@@ -423,61 +326,6 @@ function MetricCard({ title, value }: { title: string; value: string }) {
       </CardHeader>
       <CardContent>
         <p className="text-2xl font-bold text-slate-900">{value}</p>
-      </CardContent>
-    </Card>
-  );
-}
-
-function IntegrationCard({
-  title,
-  spend,
-  impressions,
-  clicks,
-  conversions,
-  revenue,
-  roas,
-  buttonLabel,
-  currencyCode,
-  disabled,
-  onSync,
-  loading,
-  synced,
-}: {
-  title: string;
-  spend: number;
-  impressions: number;
-  clicks: number;
-  conversions: number;
-  revenue: number;
-  roas: number;
-  buttonLabel: string;
-  currencyCode: string;
-  disabled: boolean;
-  onSync: () => void;
-  loading: boolean;
-  synced: boolean;
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="text-sm text-slate-600">Status: {loading ? "Loading..." : synced ? "Synced" : "No data"}</p>
-        <p className="text-sm text-slate-600">Spend: {loading ? "..." : formatCurrency(spend, currencyCode)}</p>
-        <p className="text-sm text-slate-600">Impressions: {loading ? "..." : impressions.toLocaleString()}</p>
-        <p className="text-sm text-slate-600">Clicks: {loading ? "..." : clicks.toLocaleString()}</p>
-        <p className="text-sm text-slate-600">Conversions: {loading ? "..." : conversions.toLocaleString()}</p>
-        <p className="text-sm text-slate-600">Revenue: {loading ? "..." : formatCurrency(revenue, currencyCode)}</p>
-        <p className="text-sm text-slate-600">ROAS: {loading ? "..." : roas.toFixed(2)}</p>
-        <button
-          disabled={disabled}
-          onClick={onSync}
-          className="mt-4 h-9 rounded-md bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
-          title={disabled ? "Read-only sau acțiune în progres" : undefined}
-        >
-          {buttonLabel}
-        </button>
       </CardContent>
     </Card>
   );
