@@ -142,3 +142,4 @@
 
 - For schema-only requests, ship only new migration file(s) and avoid touching existing migration history or runtime logic.
 - 2026-03-03: Când user spune că soluția anterioară e nesatisfăcătoare pe un diff mare, livrează increment minim focusat pe cerința nouă (router/API + wiring + test dedicat), evitând extinderi de scope.
+- 2026-03-03: După feedback negativ pe orchestration API, extinde incremental pe observabilitate cerută (account logs + chunk drilldown) fără a atinge worker/UI scope.

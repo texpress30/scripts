@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.api.dependencies import enforce_action_scope, get_current_user
@@ -59,6 +59,51 @@ def _build_chunks(*, start_date: date, end_date: date, chunk_days: int) -> list[
         current = chunk_end + timedelta(days=1)
     return chunks
 
+
+
+def _serialize_run(item: dict[str, object]) -> dict[str, object]:
+    return {
+        "job_id": item.get("job_id"),
+        "batch_id": item.get("batch_id"),
+        "job_type": item.get("job_type"),
+        "grain": item.get("grain"),
+        "platform": item.get("platform"),
+        "account_id": item.get("account_id"),
+        "client_id": item.get("client_id"),
+        "status": item.get("status"),
+        "date_start": item.get("date_start"),
+        "date_end": item.get("date_end"),
+        "chunk_days": item.get("chunk_days"),
+        "chunks_total": item.get("chunks_total"),
+        "chunks_done": item.get("chunks_done"),
+        "rows_written": item.get("rows_written"),
+        "error": item.get("error"),
+        "created_at": item.get("created_at"),
+        "updated_at": item.get("updated_at"),
+        "started_at": item.get("started_at"),
+        "finished_at": item.get("finished_at"),
+        "metadata": item.get("metadata") or {},
+    }
+
+
+def _serialize_chunk(item: dict[str, object]) -> dict[str, object]:
+    return {
+        "id": item.get("id"),
+        "job_id": item.get("job_id"),
+        "chunk_index": item.get("chunk_index"),
+        "status": item.get("status"),
+        "date_start": item.get("date_start"),
+        "date_end": item.get("date_end"),
+        "attempts": item.get("attempts"),
+        "rows_written": item.get("rows_written"),
+        "duration_ms": item.get("duration_ms"),
+        "started_at": item.get("started_at"),
+        "finished_at": item.get("finished_at"),
+        "created_at": item.get("created_at"),
+        "updated_at": item.get("updated_at"),
+        "error": item.get("error"),
+        "metadata": item.get("metadata") or {},
+    }
 
 @router.post("/batch")
 def create_batch_sync_runs(payload: CreateBatchSyncRunsRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
@@ -184,23 +229,55 @@ def get_batch_sync_runs_status(batch_id: str, user: AuthUser = Depends(get_curre
     return {
         "batch_id": str(batch_id),
         "progress": progress,
-        "runs": [
-            {
-                "job_id": item.get("job_id"),
-                "account_id": item.get("account_id"),
-                "client_id": item.get("client_id"),
-                "status": item.get("status"),
-                "job_type": item.get("job_type"),
-                "grain": item.get("grain"),
-                "date_start": item.get("date_start"),
-                "date_end": item.get("date_end"),
-                "chunks_total": item.get("chunks_total"),
-                "chunks_done": item.get("chunks_done"),
-                "rows_written": item.get("rows_written"),
-                "error": item.get("error"),
-                "created_at": item.get("created_at"),
-                "updated_at": item.get("updated_at"),
-            }
-            for item in runs
-        ],
+        "runs": [_serialize_run(item) for item in runs],
+    }
+
+
+@router.get("/accounts/{platform}/{account_id}")
+def list_account_sync_runs(
+    platform: str,
+    account_id: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+
+    normalized_platform = str(platform).strip()
+    normalized_account_id = str(account_id).strip()
+    runs = sync_runs_store.list_sync_runs_for_account(
+        platform=normalized_platform,
+        account_id=normalized_account_id,
+        limit=int(limit),
+    )
+
+    return {
+        "platform": normalized_platform,
+        "account_id": normalized_account_id,
+        "limit": int(limit),
+        "runs": [_serialize_run(item) for item in runs],
+    }
+
+
+@router.get("/{job_id}")
+def get_sync_run_details(job_id: str, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+    run = sync_runs_store.get_sync_run(str(job_id).strip())
+    if run is None:
+        raise HTTPException(status_code=404, detail="Sync run not found")
+    return _serialize_run(run)
+
+
+@router.get("/{job_id}/chunks")
+def list_sync_run_chunks(job_id: str, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+
+    normalized_job_id = str(job_id).strip()
+    run = sync_runs_store.get_sync_run(normalized_job_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Sync run not found")
+
+    chunks = sync_run_chunks_store.list_sync_run_chunks(normalized_job_id)
+    return {
+        "job_id": normalized_job_id,
+        "chunks": [_serialize_chunk(item) for item in chunks],
     }
