@@ -1112,3 +1112,17 @@
 - Account logs endpoint preserves account id formatting (strip only, no dash removal) and returns `runs: []` when empty.
 - Chunk drilldown endpoint returns 404 when run is missing, otherwise returns chunk list (including edge case empty list).
 - Added focused API shape test coverage (plus existing batch flow test) using monkeypatched stores/registry; in this environment TestClient suite is skipped due import/runtime limitations.
+
+## 2026-03-03 DB-backed sync worker (google-only)
+- [x] Review sync run/chunk store capabilities and identify minimal additive worker hooks.
+- [x] Add global chunk claim method in `sync_run_chunks_store` for worker polling without prior job id.
+- [x] Implement runnable `app/workers/sync_worker.py` loop with claim/execute/update/finalize flow (google_ads only).
+- [x] Add focused once-mode worker test with mocked Google service methods.
+- [x] Run backend validation checks (py_compile + pytest subset).
+
+### Review
+- Added `claim_next_queued_chunk_any(...)` in `sync_run_chunks_store` to atomically claim the next queued chunk globally (optionally filtered by platform) using `FOR UPDATE SKIP LOCKED`, plus run context projection and status count helper for run finalization.
+- Implemented `app/workers/sync_worker.py` runnable worker loop with env controls (`SYNC_WORKER_POLL_SECONDS`, `SYNC_WORKER_PLATFORM`, `SYNC_WORKER_ONCE`) and fail-fast guard for `APP_ENV=test`.
+- Worker executes only `google_ads` chunks, updates chunk done/error + duration/rows, updates run progress on both success and error paths, and finalizes run status when no queued/running chunks remain.
+- Added focused worker unit test (`tests/test_sync_worker.py`) that monkeypatches stores + Google service and validates once-step processing updates chunk/run state correctly.
+- Railway worker command: `cd apps/backend && PYTHONPATH=. python -m app.workers.sync_worker`.

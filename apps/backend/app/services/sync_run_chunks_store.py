@@ -210,6 +210,94 @@ class SyncRunChunksStore:
         chunks = self.list_sync_run_chunks(str(job_id))
         return next((item for item in chunks if int(item.get("chunk_index", -1)) == int(chunk_index)), None)
 
+
+    def claim_next_queued_chunk_any(self, *, platform: str | None = None, max_attempts: int = 5) -> dict[str, object] | None:
+        self._ensure_schema()
+        normalized_platform = str(platform).strip() if platform is not None else None
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT c.id
+                    FROM sync_run_chunks c
+                    INNER JOIN sync_runs r ON r.job_id = c.job_id
+                    WHERE c.status = 'queued'
+                      AND c.attempts < %s
+                      AND r.status IN ('queued', 'running')
+                      AND (%s IS NULL OR r.platform = %s)
+                    ORDER BY r.created_at ASC, c.chunk_index ASC
+                    FOR UPDATE SKIP LOCKED
+                    LIMIT 1
+                    """,
+                    (max(1, int(max_attempts)), normalized_platform, normalized_platform),
+                )
+                selected = cur.fetchone()
+                if selected is None:
+                    conn.commit()
+                    return None
+
+                cur.execute(
+                    f"""
+                    UPDATE sync_run_chunks
+                    SET
+                        status = 'running',
+                        attempts = attempts + 1,
+                        started_at = COALESCE(started_at, NOW()),
+                        updated_at = NOW()
+                    WHERE id = %s
+                    RETURNING
+                        {_SYNC_RUN_CHUNKS_SELECT_COLUMNS}
+                    """,
+                    (int(selected[0]),),
+                )
+                claimed = cur.fetchone()
+                chunk_payload = self._row_to_payload(claimed)
+                if chunk_payload is None:
+                    conn.commit()
+                    return None
+
+                cur.execute(
+                    """
+                    SELECT platform, account_id, client_id, job_type, grain, chunk_days, batch_id, status
+                    FROM sync_runs
+                    WHERE job_id = %s
+                    """,
+                    (str(chunk_payload.get("job_id")),),
+                )
+                run_row = cur.fetchone()
+            conn.commit()
+
+        if run_row is not None:
+            chunk_payload["platform"] = str(run_row[0]) if run_row[0] is not None else None
+            chunk_payload["account_id"] = str(run_row[1]) if run_row[1] is not None else None
+            chunk_payload["client_id"] = int(run_row[2]) if run_row[2] is not None else None
+            chunk_payload["job_type"] = str(run_row[3]) if run_row[3] is not None else None
+            chunk_payload["grain"] = str(run_row[4]) if run_row[4] is not None else None
+            chunk_payload["chunk_days"] = int(run_row[5]) if run_row[5] is not None else None
+            chunk_payload["batch_id"] = str(run_row[6]) if run_row[6] is not None else None
+            chunk_payload["run_status"] = str(run_row[7]) if run_row[7] is not None else None
+        return chunk_payload
+
+    def get_sync_run_chunk_status_counts(self, job_id: str) -> dict[str, int]:
+        self._ensure_schema()
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        COUNT(*) FILTER (WHERE status IN ('queued', 'running'))::int,
+                        COUNT(*) FILTER (WHERE status = 'error')::int
+                    FROM sync_run_chunks
+                    WHERE job_id = %s
+                    """,
+                    (str(job_id),),
+                )
+                row = cur.fetchone() or (0, 0)
+        return {
+            "remaining": int(row[0] or 0),
+            "errors": int(row[1] or 0),
+        }
+
     def claim_next_queued_chunk(self, *, job_id: str, max_attempts: int = 5) -> dict[str, object] | None:
         self._ensure_schema()
         with self._connect() as conn:
