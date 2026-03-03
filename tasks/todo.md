@@ -1077,3 +1077,13 @@
 
 ### Review
 - Added migration-only patch (no service/API behavior changes) with safe defaults and non-breaking nullable columns.
+
+## 2026-03-03 sync orchestration v2 store methods
+- [x] Validate and finalize additive updates in sync_runs_store and sync_run_chunks_store for orchestration v2 fields/methods.
+- [x] Fix failing store test fake cursor branch ordering for batch aggregate query.
+- [x] Run targeted backend tests for sync run/chunk stores.
+
+### Review
+- Completed additive store updates (new fields and query helpers) and kept existing call patterns backward-compatible.
+- Adjusted `test_services.py` fake SQL matcher order so aggregate batch progress query hits the correct branch before generic batch list matching.
+- Targeted sync-run/chunk service tests now pass.

@@ -1208,6 +1208,81 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(len(queries), 1)
         self.assertIn("SELECT to_regclass('public.ad_performance_reports')", queries[0])
 
+    def test_sync_run_chunks_store_claim_next_queued_chunk(self):
+        sync_run_chunks_store._schema_initialized = False
+        rows = [
+            {"id": 1, "job_id": "job-7", "chunk_index": 0, "status": "queued", "date_start": "2026-01-01", "date_end": "2026-01-07", "created_at": "2026-03-01T00:00:01+00:00", "updated_at": "2026-03-01T00:00:01+00:00", "started_at": None, "finished_at": None, "error": None, "metadata": "{}", "attempts": 0, "rows_written": 0, "duration_ms": None},
+            {"id": 2, "job_id": "job-7", "chunk_index": 1, "status": "queued", "date_start": "2026-01-08", "date_end": "2026-01-14", "created_at": "2026-03-01T00:00:02+00:00", "updated_at": "2026-03-01T00:00:02+00:00", "started_at": None, "finished_at": None, "error": None, "metadata": "{}", "attempts": 5, "rows_written": 0, "duration_ms": None},
+        ]
+
+        class _FakeCursor:
+            def __init__(self):
+                self._row = None
+
+            def execute(self, query, params=None):
+                sql = str(query)
+                args = tuple(params or ())
+                if "SELECT to_regclass('public.sync_run_chunks')" in sql:
+                    self._row = ("sync_run_chunks",)
+                    return
+                if "SELECT id" in sql and "FOR UPDATE SKIP LOCKED" in sql:
+                    job_id = str(args[0])
+                    max_attempts = int(args[1])
+                    selected = next((r for r in rows if r["job_id"] == job_id and r["status"] == "queued" and int(r["attempts"]) < max_attempts), None)
+                    self._row = (selected["id"],) if selected is not None else None
+                    return
+                if "UPDATE sync_run_chunks" in sql and "RETURNING" in sql:
+                    target_id = int(args[0])
+                    selected = next((r for r in rows if int(r["id"]) == target_id), None)
+                    if selected is None:
+                        self._row = None
+                        return
+                    selected["status"] = "running"
+                    selected["attempts"] = int(selected["attempts"]) + 1
+                    selected["started_at"] = selected["started_at"] or "2026-03-01T00:00:10+00:00"
+                    selected["updated_at"] = "2026-03-01T00:00:10+00:00"
+                    self._row = (
+                        selected["id"], selected["job_id"], selected["chunk_index"], selected["status"], selected["date_start"], selected["date_end"],
+                        selected["created_at"], selected["updated_at"], selected["started_at"], selected["finished_at"], selected["error"], selected["metadata"],
+                        selected["attempts"], selected["rows_written"], selected["duration_ms"],
+                    )
+                    return
+                raise AssertionError(f"Unexpected SQL: {sql}")
+
+            def fetchone(self):
+                return self._row
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def commit(self):
+                return None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_connect = sync_run_chunks_store._connect
+        try:
+            sync_run_chunks_store._connect = lambda: _FakeConn()
+            claimed = sync_run_chunks_store.claim_next_queued_chunk(job_id="job-7", max_attempts=5)
+            self.assertIsNotNone(claimed)
+            self.assertEqual(claimed["chunk_index"], 0)
+            self.assertEqual(claimed["status"], "running")
+            self.assertEqual(claimed["attempts"], 1)
+        finally:
+            sync_run_chunks_store._connect = original_connect
+            sync_run_chunks_store._schema_initialized = False
+
     def test_sync_runs_store_schema_missing_raises_clear_error(self):
         sync_runs_store._schema_initialized = False
 
@@ -3416,7 +3491,7 @@ class ServiceTests(unittest.TestCase):
                     return
 
                 if "INSERT INTO sync_run_chunks" in sql:
-                    job_id, chunk_index, status, date_start, date_end, metadata_json = params
+                    job_id, chunk_index, status, date_start, date_end, metadata_json, attempts, rows_written, duration_ms = params
                     key = (str(job_id), int(chunk_index))
                     next_id["value"] += 1
                     now_value = _now()
@@ -3433,11 +3508,14 @@ class ServiceTests(unittest.TestCase):
                         "finished_at": None,
                         "error": None,
                         "metadata": str(metadata_json),
+                        "attempts": int(attempts),
+                        "rows_written": int(rows_written),
+                        "duration_ms": int(duration_ms) if duration_ms is not None else None,
                     }
                     return
 
                 if "UPDATE sync_run_chunks" in sql:
-                    status, mark_started, mark_finished, error, metadata_json, job_id, chunk_index = params
+                    status, mark_started, mark_finished, error, metadata_json, rows_written, duration_ms, increment_attempts, job_id, chunk_index = params
                     key = (str(job_id), int(chunk_index))
                     row = state.get(key)
                     if row is None:
@@ -3452,6 +3530,12 @@ class ServiceTests(unittest.TestCase):
                         row["error"] = str(error)
                     if metadata_json is not None:
                         row["metadata"] = str(metadata_json)
+                    if rows_written is not None:
+                        row["rows_written"] = int(rows_written)
+                    if duration_ms is not None:
+                        row["duration_ms"] = int(duration_ms)
+                    if bool(increment_attempts):
+                        row["attempts"] = int(row.get("attempts") or 0) + 1
                     return
 
                 if "FROM sync_run_chunks" in sql and "ORDER BY chunk_index ASC" in sql:
@@ -3470,6 +3554,9 @@ class ServiceTests(unittest.TestCase):
                             row["finished_at"],
                             row["error"],
                             row["metadata"],
+                            row.get("attempts", 0),
+                            row.get("rows_written", 0),
+                            row.get("duration_ms"),
                         )
                         for row in sorted(state.values(), key=lambda item: int(item["chunk_index"]))
                         if str(row["job_id"]) == job_id
@@ -3539,6 +3626,9 @@ class ServiceTests(unittest.TestCase):
                 mark_finished=True,
                 error="chunk done",
                 metadata={"rows": 10},
+                rows_written=10,
+                duration_ms=420,
+                increment_attempts=True,
             )
             chunks_after = sync_run_chunks_store.list_sync_run_chunks("job-1")
         finally:
@@ -3562,6 +3652,9 @@ class ServiceTests(unittest.TestCase):
         self.assertIsNotNone(finished["finished_at"])
         self.assertEqual(finished["error"], "chunk done")
         self.assertEqual((finished.get("metadata") or {}).get("rows"), 10)
+        self.assertEqual(finished.get("rows_written"), 10)
+        self.assertEqual(finished.get("duration_ms"), 420)
+        self.assertEqual(finished.get("attempts"), 1)
         self.assertNotEqual(started["updated_at"], finished["updated_at"])
 
         first_chunk = next(item for item in chunks_after if int(item["chunk_index"]) == 0)
@@ -4548,20 +4641,63 @@ class ServiceTests(unittest.TestCase):
             tick["value"] += 1
             return f"2026-03-01T00:00:{tick['value']:02d}+00:00"
 
+        def _to_row(row: dict[str, object]) -> tuple[object, ...]:
+            return (
+                row["job_id"],
+                row["platform"],
+                row["status"],
+                row["client_id"],
+                row["account_id"],
+                row["date_start"],
+                row["date_end"],
+                row["chunk_days"],
+                row["created_at"],
+                row["updated_at"],
+                row["started_at"],
+                row["finished_at"],
+                row["error"],
+                row["metadata"],
+                row.get("batch_id"),
+                row.get("job_type"),
+                row.get("grain"),
+                row.get("chunks_total", 0),
+                row.get("chunks_done", 0),
+                row.get("rows_written", 0),
+            )
+
         class _FakeCursor:
             _row: tuple[object, ...] | None
+            _rows: list[tuple[object, ...]]
 
             def __init__(self):
                 self._row = None
+                self._rows = []
 
             def execute(self, query, params=None):
                 sql = str(query)
+                args = tuple(params or ())
                 if "SELECT to_regclass('public.sync_runs')" in sql:
                     self._row = ("sync_runs",)
                     return
 
                 if "INSERT INTO sync_runs" in sql:
-                    job_id, platform, status, client_id, account_id, date_start, date_end, chunk_days, metadata_json = params
+                    (
+                        job_id,
+                        platform,
+                        status,
+                        client_id,
+                        account_id,
+                        date_start,
+                        date_end,
+                        chunk_days,
+                        metadata_json,
+                        batch_id,
+                        job_type,
+                        grain,
+                        chunks_total,
+                        chunks_done,
+                        rows_written,
+                    ) = args
                     now_value = _now()
                     state[str(job_id)] = {
                         "job_id": str(job_id),
@@ -4578,11 +4714,29 @@ class ServiceTests(unittest.TestCase):
                         "finished_at": None,
                         "error": None,
                         "metadata": str(metadata_json),
+                        "batch_id": str(batch_id) if batch_id is not None else None,
+                        "job_type": str(job_type) if job_type is not None else None,
+                        "grain": str(grain) if grain is not None else None,
+                        "chunks_total": int(chunks_total),
+                        "chunks_done": int(chunks_done),
+                        "rows_written": int(rows_written),
                     }
                     return
 
+                if "UPDATE sync_runs" in sql and "chunks_done = chunks_done +" in sql:
+                    chunks_done_delta, rows_written_delta, chunks_total, chunks_total_for_max, job_id = args
+                    row = state.get(str(job_id))
+                    if row is None:
+                        return
+                    row["chunks_done"] = int(row.get("chunks_done") or 0) + int(chunks_done_delta or 0)
+                    row["rows_written"] = int(row.get("rows_written") or 0) + int(rows_written_delta or 0)
+                    if chunks_total is not None:
+                        row["chunks_total"] = max(int(row.get("chunks_total") or 0), int(chunks_total_for_max or 0))
+                    row["updated_at"] = _now()
+                    return
+
                 if "UPDATE sync_runs" in sql:
-                    status, mark_started, mark_finished, error, metadata_json, job_id = params
+                    status, mark_started, mark_finished, error, metadata_json, job_id = args
                     row = state.get(str(job_id))
                     if row is None:
                         return
@@ -4599,32 +4753,54 @@ class ServiceTests(unittest.TestCase):
                     return
 
                 if "FROM sync_runs" in sql and "WHERE job_id = %s" in sql:
-                    row = state.get(str(params[0]))
-                    if row is None:
-                        self._row = None
-                    else:
-                        self._row = (
-                            row["job_id"],
-                            row["platform"],
-                            row["status"],
-                            row["client_id"],
-                            row["account_id"],
-                            row["date_start"],
-                            row["date_end"],
-                            row["chunk_days"],
-                            row["created_at"],
-                            row["updated_at"],
-                            row["started_at"],
-                            row["finished_at"],
-                            row["error"],
-                            row["metadata"],
-                        )
+                    row = state.get(str(args[0]))
+                    self._row = _to_row(row) if row is not None else None
+                    return
+
+                if "COUNT(*) FILTER (WHERE status = 'queued')" in sql:
+                    batch_id = str(args[0])
+                    selected = [r for r in state.values() if str(r.get("batch_id") or "") == batch_id]
+                    def _count(st: str) -> int:
+                        return len([r for r in selected if str(r.get("status")) == st])
+                    self._row = (
+                        len(selected),
+                        _count("queued"),
+                        _count("running"),
+                        _count("done"),
+                        _count("error"),
+                        sum(int(r.get("chunks_total") or 0) for r in selected),
+                        sum(int(r.get("chunks_done") or 0) for r in selected),
+                        sum(int(r.get("rows_written") or 0) for r in selected),
+                    )
+                    return
+
+                if "FROM sync_runs" in sql and "WHERE batch_id = %s" in sql:
+                    batch_id = str(args[0])
+                    selected = [r for r in state.values() if str(r.get("batch_id") or "") == batch_id]
+                    selected.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+                    self._rows = [_to_row(r) for r in selected]
+                    return
+
+                if "FROM sync_runs" in sql and "WHERE platform = %s AND account_id = %s" in sql:
+                    platform = str(args[0])
+                    account_id = str(args[1])
+                    limit = int(args[2])
+                    selected = [
+                        r
+                        for r in state.values()
+                        if str(r.get("platform") or "") == platform and str(r.get("account_id") or "") == account_id
+                    ]
+                    selected.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+                    self._rows = [_to_row(r) for r in selected[:limit]]
                     return
 
                 raise AssertionError(f"Unexpected SQL: {sql}")
 
             def fetchone(self):
                 return self._row
+
+            def fetchall(self):
+                return list(self._rows)
 
             def __enter__(self):
                 return self
@@ -4659,11 +4835,18 @@ class ServiceTests(unittest.TestCase):
                 client_id=96,
                 account_id="1234567890",
                 metadata={"source": "test"},
+                batch_id="batch-a",
+                job_type="historical_backfill",
+                grain="account_daily",
+                chunks_total=3,
             )
             self.assertIsNotNone(created)
             self.assertEqual(created["job_id"], "job-1")
             self.assertEqual(created["status"], "queued")
             self.assertEqual(created["metadata"], {"source": "test"})
+            self.assertEqual(created["batch_id"], "batch-a")
+            self.assertEqual(created["job_type"], "historical_backfill")
+            self.assertEqual(created["chunks_total"], 3)
 
             fetched = sync_runs_store.get_sync_run("job-1")
             self.assertEqual(fetched["job_id"], "job-1")
@@ -4690,6 +4873,21 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(updated_done["metadata"], {"step": "chunk-2"})
             self.assertIsNotNone(updated_done["finished_at"])
             self.assertNotEqual(updated_at_running, updated_done["updated_at"])
+
+            progressed = sync_runs_store.update_sync_run_progress(job_id="job-1", chunks_done_delta=2, rows_written_delta=15, chunks_total=5)
+            self.assertEqual(progressed["chunks_done"], 2)
+            self.assertEqual(progressed["rows_written"], 15)
+            self.assertEqual(progressed["chunks_total"], 5)
+
+            listed_batch = sync_runs_store.list_sync_runs_by_batch("batch-a")
+            self.assertEqual(len(listed_batch), 1)
+            listed_account = sync_runs_store.list_sync_runs_for_account(platform="google_ads", account_id="1234567890")
+            self.assertEqual(len(listed_account), 1)
+            progress = sync_runs_store.get_batch_progress("batch-a")
+            self.assertEqual(progress["batch_id"], "batch-a")
+            self.assertEqual(progress["total_runs"], 1)
+            self.assertEqual(progress["chunks_done_sum"], 2)
+            self.assertEqual(progress["rows_written_sum"], 15)
         finally:
             sync_runs_store._connect = original_connect
             sync_runs_store._schema_initialized = False
