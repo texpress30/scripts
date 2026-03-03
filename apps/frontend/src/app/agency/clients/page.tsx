@@ -34,6 +34,7 @@ export default function AgencyClientsPage() {
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(10);
+  const [selectedClientIds, setSelectedClientIds] = useState<Set<number>>(new Set());
 
   function markSaved(clientId: number) {
     setSavedClientId(clientId);
@@ -109,6 +110,7 @@ export default function AgencyClientsPage() {
 
   useEffect(() => {
     setPage(1);
+    setSelectedClientIds(new Set());
   }, [search, pageSize]);
 
   useEffect(() => {
@@ -121,6 +123,29 @@ export default function AgencyClientsPage() {
     const start = (page - 1) * pageSize;
     return filteredClients.slice(start, start + pageSize);
   }, [filteredClients, page, pageSize]);
+
+  const pagedClientIds = useMemo(() => pagedClients.map((client) => client.id), [pagedClients]);
+  const allPageSelected = pagedClientIds.length > 0 && pagedClientIds.every((id) => selectedClientIds.has(id));
+
+  function toggleClient(clientId: number, checked: boolean) {
+    setSelectedClientIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(clientId);
+      else next.delete(clientId);
+      return next;
+    });
+  }
+
+  function toggleAllOnPage(checked: boolean) {
+    setSelectedClientIds((current) => {
+      const next = new Set(current);
+      for (const clientId of pagedClientIds) {
+        if (checked) next.add(clientId);
+        else next.delete(clientId);
+      }
+      return next;
+    });
+  }
 
   return (
     <ProtectedPage>
@@ -158,6 +183,14 @@ export default function AgencyClientsPage() {
             <table className="min-w-full text-sm">
               <thead className="bg-slate-100 text-left text-slate-600">
                 <tr>
+                  <th className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={allPageSelected}
+                      onChange={(event) => toggleAllOnPage(event.target.checked)}
+                      aria-label="Selectează toți clienții de pe pagină"
+                    />
+                  </th>
                   <th className="px-4 py-3">ID</th>
                   <th className="px-4 py-3">Nume</th>
                   <th className="px-4 py-3">Owner</th>
@@ -169,6 +202,14 @@ export default function AgencyClientsPage() {
                   const isSaving = savingClientId === client.id;
                   return (
                     <tr key={client.id} className="border-t border-slate-100">
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedClientIds.has(client.id)}
+                          onChange={(event) => toggleClient(client.id, event.target.checked)}
+                          aria-label={`Selectează client ${client.name}`}
+                        />
+                      </td>
                       <td className="px-4 py-3">{client.display_id ?? client.id}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
@@ -215,7 +256,7 @@ export default function AgencyClientsPage() {
                 })}
                 {pagedClients.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-4 text-slate-500" colSpan={3}>
+                    <td className="px-4 py-4 text-slate-500" colSpan={4}>
                       Nu există clienți pentru filtrul curent.
                     </td>
                   </tr>
