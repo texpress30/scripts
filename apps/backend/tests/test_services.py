@@ -1301,7 +1301,7 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(response["status"], "queued")
         self.assertEqual(response["job_id"], "job-xyz")
         expected_end = datetime.utcnow().date() - timedelta(days=1)
-        expected_start = expected_end - timedelta(days=29)
+        expected_start = expected_end - timedelta(days=6)
 
         self.assertEqual(response["chunk_days"], 7)
         self.assertEqual(response["mode"], "rolling_30d")
@@ -1324,22 +1324,10 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual((sync_run_payload.get("metadata") or {}).get("mode"), "rolling_30d")
 
         chunk_payloads = captured.get("chunk_payloads") or []
-        self.assertEqual(len(chunk_payloads), 5)
-        self.assertEqual([int(item.get("chunk_index", -1)) for item in chunk_payloads], [0, 1, 2, 3, 4])
-        self.assertEqual([str(item.get("date_start")) for item in chunk_payloads], [
-            expected_start.isoformat(),
-            (expected_start + timedelta(days=7)).isoformat(),
-            (expected_start + timedelta(days=14)).isoformat(),
-            (expected_start + timedelta(days=21)).isoformat(),
-            (expected_start + timedelta(days=28)).isoformat(),
-        ])
-        self.assertEqual([str(item.get("date_end")) for item in chunk_payloads], [
-            (expected_start + timedelta(days=6)).isoformat(),
-            (expected_start + timedelta(days=13)).isoformat(),
-            (expected_start + timedelta(days=20)).isoformat(),
-            (expected_start + timedelta(days=27)).isoformat(),
-            expected_end.isoformat(),
-        ])
+        self.assertEqual(len(chunk_payloads), 1)
+        self.assertEqual([int(item.get("chunk_index", -1)) for item in chunk_payloads], [0])
+        self.assertEqual([str(item.get("date_start")) for item in chunk_payloads], [expected_start.isoformat()])
+        self.assertEqual([str(item.get("date_end")) for item in chunk_payloads], [expected_end.isoformat()])
         self.assertTrue(all(str(item.get("status")) == "queued" for item in chunk_payloads))
 
     def test_google_ads_sync_now_async_continues_when_sync_run_chunk_mirror_fails(self):
@@ -1384,7 +1372,7 @@ class ServiceTests(unittest.TestCase):
             google_ads_api.sync_run_chunks_store.create_sync_run_chunk = original_chunk_create
 
         expected_end = datetime.utcnow().date() - timedelta(days=1)
-        expected_start = expected_end - timedelta(days=29)
+        expected_start = expected_end - timedelta(days=6)
         self.assertEqual(response["status"], "queued")
         self.assertEqual(response["job_id"], "job-fallback")
         self.assertEqual(response["mode"], "rolling_30d")

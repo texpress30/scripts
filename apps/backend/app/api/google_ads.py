@@ -5,6 +5,7 @@ from threading import Lock
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 
 from app.api.dependencies import enforce_action_scope, get_current_user
+from app.core.config import load_settings
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
 from app.services.client_registry import client_registry_service
@@ -18,10 +19,6 @@ from app.services.sync_constants import PLATFORM_GOOGLE_ADS, SYNC_GRAIN_ACCOUNT_
 
 router = APIRouter(prefix="/integrations/google-ads", tags=["google-ads"])
 logger = logging.getLogger(__name__)
-
-UI_ROLLING_SYNC_DAYS = 30
-UI_ROLLING_SYNC_CHUNK_DAYS = 7
-
 
 _HISTORICAL_JOBS_LOCK = Lock()
 _HISTORICAL_JOBS: dict[str, dict[str, object]] = {}
@@ -152,16 +149,20 @@ def _run_google_historical_backfill_job(
 
 
 def _resolve_ui_rolling_window(*, client_id: int | None, start_date: date | None, end_date: date | None, days: int, chunk_days: int) -> tuple[date, date, int]:
+    settings = load_settings()
+    rolling_days = max(1, int(settings.google_ads_ui_rolling_sync_days))
+    rolling_chunk_days = max(1, int(settings.google_ads_ui_rolling_chunk_days))
+
     effective_end = datetime.utcnow().date() - timedelta(days=1)
-    effective_start = effective_end - timedelta(days=UI_ROLLING_SYNC_DAYS - 1)
+    effective_start = effective_end - timedelta(days=rolling_days - 1)
     ignored_inputs: dict[str, object] = {}
     if start_date is not None:
         ignored_inputs["start_date"] = start_date.isoformat()
     if end_date is not None:
         ignored_inputs["end_date"] = end_date.isoformat()
-    if int(days) != UI_ROLLING_SYNC_DAYS:
+    if int(days) != rolling_days:
         ignored_inputs["days"] = int(days)
-    if int(chunk_days) != UI_ROLLING_SYNC_CHUNK_DAYS:
+    if int(chunk_days) != rolling_chunk_days:
         ignored_inputs["chunk_days"] = int(chunk_days)
 
     if ignored_inputs:
@@ -170,7 +171,7 @@ def _resolve_ui_rolling_window(*, client_id: int | None, start_date: date | None
             client_id,
             effective_start.isoformat(),
             effective_end.isoformat(),
-            UI_ROLLING_SYNC_CHUNK_DAYS,
+            rolling_chunk_days,
             ignored_inputs,
         )
     else:
@@ -179,10 +180,10 @@ def _resolve_ui_rolling_window(*, client_id: int | None, start_date: date | None
             client_id,
             effective_start.isoformat(),
             effective_end.isoformat(),
-            UI_ROLLING_SYNC_CHUNK_DAYS,
+            rolling_chunk_days,
         )
 
-    return effective_start, effective_end, UI_ROLLING_SYNC_CHUNK_DAYS
+    return effective_start, effective_end, rolling_chunk_days
 
 
 def _log_best_effort_warning(*, operation: str, error: Exception, job_id: str | None = None, account_id: str | None = None, status_value: str | None = None, grain: str | None = None, platform: str | None = None) -> None:

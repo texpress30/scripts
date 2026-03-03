@@ -137,3 +137,5 @@
 - If script reports rows_upserted from service payload, verify field names align and add tests for aggregate chunk counters.
 
 - For Railway/private DB topologies, move heavy backfill execution to server-side endpoints; keep local scripts as HTTP launchers with polling.
+
+- For rollout-safe toggles, move hardcoded operational defaults into config with strict fallback validation and test coverage.

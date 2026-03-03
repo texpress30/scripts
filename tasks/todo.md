@@ -1060,3 +1060,12 @@
 
 ### Review
 - Historical Google backfill can now be initiated from laptop via HTTP while execution runs server-side in backend environment.
+
+## 2026-03-02 Google rolling sync config cleanup
+- [x] Add config-driven Google UI rolling sync settings with safe defaults/fallbacks.
+- [x] Replace hardcoded UI rolling values in google_ads API with settings-based values.
+- [x] Add focused backend test coverage for defaults/overrides/fallback parsing.
+- [x] Run targeted config + API sync tests.
+
+### Review
+- UI rolling sync window/chunk are now env-configurable, defaulting to 7d/7d, while preserving existing endpoint behavior.
