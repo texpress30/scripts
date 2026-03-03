@@ -81,8 +81,7 @@ function formatDate(value?: string | null): string {
   return date.toLocaleString();
 }
 
-function formatRoDate(value?: string | null): string {
-  if (!value) return "-";
+function formatRoDate(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   const day = String(date.getDate()).padStart(2, "0");
@@ -108,7 +107,7 @@ export default function AgencyAccountsPage() {
   const [loadError, setLoadError] = useState("");
   const [refreshBusy, setRefreshBusy] = useState(false);
   const [scheduleBusy, setScheduleBusy] = useState(false);
-  const [loadingAccounts, setLoadingAccounts] = useState(false);
+  const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
   const [accountsPage, setAccountsPage] = useState(1);
   const [accountsPageSize, setAccountsPageSize] = useState(50);
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
@@ -205,51 +204,19 @@ export default function AgencyAccountsPage() {
     }
   }
 
-  async function scheduleRollingSync() {
-    setSyncStatus("");
-    setScheduleBusy(true);
-    try {
-      const payload = await apiRequest<Record<string, unknown>>("/agency/sync-runs/rolling/enqueue", {
-        method: "POST",
-        body: JSON.stringify({
-          platform: "google_ads",
-          limit: 500,
-          chunk_days: 7,
-          force: false,
-        }),
-      });
-      const enqueued = Number(payload.enqueued_count ?? payload.created_count ?? 0);
-      const skippedUpToDate = Number(payload.skipped_up_to_date_count ?? 0);
-      const skippedUnmapped = Number(payload.skipped_unmapped_count ?? 0);
-      if (Number.isFinite(enqueued)) {
-        setSyncStatus(`Am pus în coadă sync pentru ${enqueued} conturi (${skippedUpToDate} skipped up-to-date, ${skippedUnmapped} unmapped).`);
-      } else {
-        setSyncStatus(`Sync scheduled: ${String(payload.created_count ?? "runs")} runs`);
-      }
-    } catch (err) {
-      setSyncStatus(err instanceof Error ? err.message : "Nu am putut programa sync last 7 days.");
-    } finally {
-      setScheduleBusy(false);
-    }
-  }
-
-  async function scheduleHistoricalSync() {
-    const mapped = googleAccounts.filter((account) => account.attached_client_id);
-    if (mapped.length <= 0) {
-      setSyncStatus("Nu există conturi mapate la client pentru backfill istoric.");
+  async function startBatchSync(mode: "rolling" | "historical") {
+    const selected = googleAccounts.filter((account) => selectedAccountIds.has(account.id));
+    if (selected.length === 0) {
+      setSyncStatus("Selectează cel puțin un cont pentru sync.");
       return;
     }
 
-    const confirmed = window.confirm(`Descarc date istorice pentru ${mapped.length} conturi (poate dura mult). Continui?`);
-    if (!confirmed) return;
-
-    const validStarts = mapped
-      .map((account) => String(account.sync_start_date ?? "").trim())
-      .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value));
-    const startDate = validStarts.sort()[0] ?? "2024-01-09";
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const endDate = toIsoDateLocal(yesterday);
+    const rollingStart = new Date(yesterday);
+    rollingStart.setDate(rollingStart.getDate() - 6);
+    const startDate = mode === "rolling" ? toIsoDateLocal(rollingStart) : "2024-01-09";
 
     setSyncStatus("");
     setScheduleBusy(true);
@@ -258,17 +225,21 @@ export default function AgencyAccountsPage() {
         method: "POST",
         body: JSON.stringify({
           platform: "google_ads",
-          account_ids: mapped.map((account) => String(account.id).trim()),
-          job_type: "historical_backfill",
+          account_ids: selected.map((account) => String(account.id).trim()),
+          job_type: mode === "rolling" ? "rolling_refresh" : "historical_backfill",
           start_date: startDate,
           end_date: endDate,
           chunk_days: 7,
           grain: "account_daily",
         }),
       });
-      setSyncStatus(`Backfill istoric programat pentru ${mapped.length} conturi, începând cu ${formatRoDate(startDate)}.`);
+      setSyncStatus(
+        mode === "rolling"
+          ? `Sync last 7 days programat pentru ${selected.length} conturi (${formatRoDate(startDate)} - ${formatRoDate(endDate)}).`
+          : `Backfill istoric programat pentru ${selected.length} conturi, începând cu ${formatRoDate(startDate)}.`
+      );
     } catch (err) {
-      setSyncStatus(err instanceof Error ? err.message : "Nu am putut programa backfill-ul istoric.");
+      setSyncStatus(err instanceof Error ? err.message : "Nu am putut programa sync-ul selectat.");
     } finally {
       setScheduleBusy(false);
     }
@@ -445,13 +416,13 @@ export default function AgencyAccountsPage() {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <h3 className="text-base font-semibold text-slate-900">Google Accounts disponibile</h3>
                   <div className="flex items-center gap-2">
-                    <button className="wm-btn-primary" onClick={() => void scheduleRollingSync()} disabled={loadingAccounts || scheduleBusy}>
+                    <button className="wm-btn-primary" onClick={() => void startBatchSync("rolling")} disabled={scheduleBusy || refreshBusy}>
                       {scheduleBusy ? "Scheduling..." : "Sync last 7 days"}
                     </button>
-                    <button className="wm-btn-secondary" onClick={() => void scheduleHistoricalSync()} disabled={loadingAccounts || scheduleBusy}>
+                    <button className="wm-btn-secondary" onClick={() => void startBatchSync("historical")} disabled={scheduleBusy || refreshBusy}>
                       {scheduleBusy ? "Scheduling..." : "Download historical"}
                     </button>
-                    <button className="wm-btn" onClick={() => void refreshGoogleAccountNames()} disabled={refreshBusy || scheduleBusy || loadingAccounts}>
+                    <button className="wm-btn" onClick={() => void refreshGoogleAccountNames()} disabled={refreshBusy || scheduleBusy}>
                       {refreshBusy ? "Refresh..." : "Refresh Names"}
                     </button>
                   </div>
@@ -474,15 +445,24 @@ export default function AgencyAccountsPage() {
                 <div className="mt-3 space-y-2">
                   {pagedGoogleAccounts.map((account) => (
                     <div key={account.id} className="flex flex-wrap items-center justify-between rounded-md border border-slate-200 px-3 py-2">
-                      <div>
-                        <Link
-                          href={`/agency-accounts/${selectedPlatform}/${encodeURIComponent(account.id)}`}
-                          className="text-sm font-medium text-slate-900 hover:underline"
-                        >
-                          {account.name}
-                        </Link>
-                        <p className="text-xs text-slate-500">ID: {account.id}</p>
-                        {account.attached_client_name ? <p className="text-xs text-emerald-700">Atașat la: {account.attached_client_name}</p> : null}
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedAccountIds.has(account.id)}
+                          onChange={(event) => {
+                            setSelectedAccountIds((current) => {
+                              const next = new Set(current);
+                              if (event.target.checked) next.add(account.id);
+                              else next.delete(account.id);
+                              return next;
+                            });
+                          }}
+                        />
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">{account.name}</p>
+                          <p className="text-xs text-slate-500">ID: {account.id}</p>
+                          {account.attached_client_name ? <p className="text-xs text-emerald-700">Atașat la: {account.attached_client_name}</p> : null}
+                        </div>
                       </div>
                       <div className="flex items-center gap-2">
                         <select
