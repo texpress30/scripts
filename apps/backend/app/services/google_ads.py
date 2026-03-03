@@ -1031,6 +1031,8 @@ class GoogleAdsService:
             "gaql_rows_fetched": gaql_rows_fetched,
             "used_fallback": used_fallback,
             "zero_data_message": zero_data_message,
+            "resolved_start_date": start_literal,
+            "resolved_end_date": end_literal,
         }
 
     def _fetch_production_metrics(self, *, customer_id: str) -> dict[str, float | int | str]:
@@ -1386,6 +1388,9 @@ class GoogleAdsService:
 
         logger.info("google_ads.sync_now customer_id=%s client_id=%s DONE", normalized_customer_id, client_id)
         snapshot["gaql_rows_fetched"] = gaql_rows_fetched
+        if self._is_production_mode():
+            snapshot["resolved_start_date"] = resolved_start
+            snapshot["resolved_end_date"] = resolved_end
         snapshot["inserted_rows"] = inserted_rows
         snapshot["db_rows_last_30_for_customer"] = db_rows_last_30
         snapshot["reason_if_zero"] = reason_if_zero
