@@ -17,3 +17,17 @@ class UpdateClientProfileRequest(BaseModel):
     currency: str | None = None
     platform: str | None = None
     account_id: str | None = None
+
+
+class BusinessInputsImportRequest(BaseModel):
+    period_grain: str | None = None
+    source: str | None = None
+    rows: list[dict[str, object]]
+
+
+class BusinessInputsImportResponse(BaseModel):
+    processed: int
+    succeeded: int
+    failed: int
+    errors: list[dict[str, object]]
+    rows: list[dict[str, object]] | None = None
