@@ -12,6 +12,7 @@ from app.services.auth import AuthUser
 from app.services.client_registry import client_registry_service
 from app.services.sync_run_chunks_store import sync_run_chunks_store
 from app.services.sync_runs_store import sync_runs_store
+from app.workers.rolling_scheduler import enqueue_rolling_sync_runs
 
 router = APIRouter(prefix="/agency/sync-runs", tags=["sync-orchestration"])
 
@@ -26,6 +27,14 @@ class CreateBatchSyncRunsRequest(BaseModel):
     chunk_days: int = Field(default=7, ge=1, le=31)
     grain: str = "account_daily"
 
+
+
+
+class RollingEnqueueRequest(BaseModel):
+    platform: Literal["google_ads"] = "google_ads"
+    limit: int = Field(default=500, ge=1, le=5000)
+    chunk_days: int = Field(default=7, ge=1, le=31)
+    force: bool = False
 
 def _normalize_account_id(value: str) -> str:
     return str(value).strip().replace("-", "")
@@ -281,3 +290,17 @@ def list_sync_run_chunks(job_id: str, user: AuthUser = Depends(get_current_user)
         "job_id": normalized_job_id,
         "chunks": [_serialize_chunk(item) for item in chunks],
     }
+
+
+@router.post("/rolling/enqueue")
+def enqueue_rolling_sync_runs_api(payload: RollingEnqueueRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:sync", scope="agency")
+    try:
+        return enqueue_rolling_sync_runs(
+            platform=payload.platform,
+            limit=int(payload.limit),
+            chunk_days=int(payload.chunk_days),
+            force=bool(payload.force),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

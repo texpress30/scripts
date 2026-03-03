@@ -609,6 +609,10 @@ class ClientRegistryService:
                     mapped_client = clients_by_id.get(mapped_client_ids[0]) if mapped_client_ids else None
                     item["attached_client_id"] = mapped_client.id if mapped_client else None
                     item["attached_client_name"] = mapped_client.name if mapped_client else None
+                    item.setdefault("status", None)
+                    item.setdefault("account_timezone", None)
+                    item.setdefault("rolling_window_days", None)
+                    item.setdefault("rolling_synced_through", None)
                     result.append(item)
                 return result
 
@@ -616,7 +620,15 @@ class ClientRegistryService:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT a.account_id, a.account_name, m.client_id, c.name
+                    SELECT
+                        a.account_id,
+                        a.account_name,
+                        m.client_id,
+                        c.name,
+                        a.status,
+                        a.account_timezone,
+                        a.rolling_window_days,
+                        a.rolling_synced_through
                     FROM agency_platform_accounts a
                     LEFT JOIN LATERAL (
                       SELECT client_id
@@ -639,6 +651,10 @@ class ClientRegistryService:
                 "name": str(row[1]),
                 "attached_client_id": int(row[2]) if row[2] is not None else None,
                 "attached_client_name": str(row[3]) if row[3] else None,
+                "status": str(row[4]) if row[4] is not None else None,
+                "account_timezone": str(row[5]) if row[5] is not None else None,
+                "rolling_window_days": int(row[6]) if row[6] is not None else None,
+                "rolling_synced_through": str(row[7]) if row[7] is not None else None,
             }
             for row in rows
         ]
