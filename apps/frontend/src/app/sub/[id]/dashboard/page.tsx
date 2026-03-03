@@ -132,6 +132,16 @@ export default function SubDashboardPage() {
   const appliedFrom = appliedRange.from ?? subDays(new Date(), 29);
   const appliedTo = appliedRange.to ?? appliedFrom;
 
+  const initialRange = rangeForPreset("last30");
+  const [openPicker, setOpenPicker] = useState(false);
+  const [appliedPreset, setAppliedPreset] = useState<DatePresetKey>("last30");
+  const [appliedRange, setAppliedRange] = useState<DateRange>(initialRange);
+  const [draftPreset, setDraftPreset] = useState<DatePresetKey>("last30");
+  const [draftRange, setDraftRange] = useState<DateRange>(initialRange);
+
+  const appliedFrom = appliedRange.from ?? subDays(new Date(), 29);
+  const appliedTo = appliedRange.to ?? appliedFrom;
+
   async function load() {
     setLoading(true);
     setError("");
