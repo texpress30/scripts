@@ -1,5 +1,6 @@
 import os
 import unittest
+from datetime import date
 
 from app.core.config import load_settings
 
@@ -105,6 +106,32 @@ class ConfigTests(unittest.TestCase):
         settings = load_settings()
 
         self.assertIsNone(settings.cors_origin_regex)
+
+
+    def test_google_ui_rolling_and_historical_backfill_settings_defaults_overrides_and_fallbacks(self):
+        os.environ.clear()
+        os.environ["APP_AUTH_SECRET"] = "test-auth-secret"
+
+        defaults = load_settings()
+        self.assertEqual(defaults.google_ads_ui_rolling_sync_days, 7)
+        self.assertEqual(defaults.google_ads_ui_rolling_chunk_days, 7)
+        self.assertEqual(defaults.google_ads_historical_backfill_start_date, date(2024, 1, 9))
+
+        os.environ["GOOGLE_ADS_UI_ROLLING_SYNC_DAYS"] = "11"
+        os.environ["GOOGLE_ADS_UI_ROLLING_CHUNK_DAYS"] = "3"
+        os.environ["GOOGLE_ADS_HISTORICAL_BACKFILL_START_DATE"] = "2024-02-10"
+        overridden = load_settings()
+        self.assertEqual(overridden.google_ads_ui_rolling_sync_days, 11)
+        self.assertEqual(overridden.google_ads_ui_rolling_chunk_days, 3)
+        self.assertEqual(overridden.google_ads_historical_backfill_start_date, date(2024, 2, 10))
+
+        os.environ["GOOGLE_ADS_UI_ROLLING_SYNC_DAYS"] = "0"
+        os.environ["GOOGLE_ADS_UI_ROLLING_CHUNK_DAYS"] = "-1"
+        os.environ["GOOGLE_ADS_HISTORICAL_BACKFILL_START_DATE"] = "invalid-date"
+        fallback = load_settings()
+        self.assertEqual(fallback.google_ads_ui_rolling_sync_days, 7)
+        self.assertEqual(fallback.google_ads_ui_rolling_chunk_days, 7)
+        self.assertEqual(fallback.google_ads_historical_backfill_start_date, date(2024, 1, 9))
 
     def test_settings_are_loaded_from_environment(self):
         os.environ["APP_ENV"] = "test"
