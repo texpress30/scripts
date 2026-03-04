@@ -146,8 +146,8 @@ def create_batch_sync_runs(payload: CreateBatchSyncRunsRequest, user: AuthUser =
         attached = item.get("attached_client_id")
         accounts_map[normalized] = int(attached) if attached is not None else None
 
-    valid_account_ids = [account_id for account_id in normalized_account_ids if account_id in accounts_map]
-    invalid_account_ids = [account_id for account_id in normalized_account_ids if account_id not in accounts_map]
+    valid_account_ids = [account_id for account_id in normalized_account_ids if account_id in accounts_map and accounts_map.get(account_id) is not None]
+    invalid_account_ids = [account_id for account_id in normalized_account_ids if account_id not in accounts_map or accounts_map.get(account_id) is None]
 
     if len(valid_account_ids) <= 0:
         raise HTTPException(status_code=400, detail={"message": "Niciun account_id valid pentru platformă", "invalid_account_ids": invalid_account_ids})

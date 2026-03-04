@@ -115,6 +115,12 @@ class ServiceTests(unittest.TestCase):
     def test_rbac_dashboard_view_allowed_for_agency_scope(self):
         require_action("agency_admin", action="dashboard:view", scope="agency")
 
+    def test_rbac_integrations_sync_allowed_for_agency_scope(self):
+        require_action("agency_admin", action="integrations:sync", scope="agency")
+        require_action("agency_admin", action="integrations:sync", scope="subaccount")
+        with self.assertRaises(AuthorizationError):
+            require_action("client_viewer", action="integrations:sync", scope="subaccount")
+
     def test_rbac_action_scope_validation(self):
         require_action("agency_admin", action="clients:list", scope="agency")
         with self.assertRaises(AuthorizationError):

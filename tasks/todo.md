@@ -1308,3 +1308,25 @@
 - Documentație operare Railway adăugată în `README.md` (comandă cron + worker + regulă fereastră zilnică).
 - Verificări rulate: backend py_compile, teste backend țintite (rolling/sync API/metadata), `tsc --noEmit`, `npm run build`.
 
+
+---
+
+# TODO — Task 5: repară autorizarea Download historical din Agency View
+
+- [x] Sincronizez workspace-ul (detect/config remote + pull branch curent).
+- [x] Reproduc eroarea de autorizare și identific cauza exactă pe traseul frontend -> endpoint -> permission guard.
+- [x] Repar autorizarea pentru manual historical backfill în agency scope, fără extindere excesivă de permisiuni.
+- [x] Verific restricțiile: conturi neatașate/neeligibile rămân blocate corect.
+- [x] Îmbunătățesc mesajele de eroare în UI (fără raw JSON).
+- [x] Adaug/actualizez teste backend pentru permission/scope + manual historical enqueue.
+- [x] Rulez build frontend și verific fluxul (enqueue + vizibilitate în account detail).
+- [x] Documentez review + lessons.
+
+## Review — Task 5: repară autorizarea Download historical din Agency View
+- Cauza reală: endpoint-ul de batch folosea `enforce_action_scope(action="integrations:sync", scope="agency")`, dar policy-ul RBAC pentru `integrations:sync` era definit doar pe `subaccount`, deci apărea exact eroarea `scope 'agency' vs expected: subaccount`.
+- Fix auth: am permis `integrations:sync` pe ambele scope-uri (`agency`, `subaccount`) în policy, păstrând controlul pe permisiune (role-urile fără `integrations:sync` rămân blocate).
+- Fix securitate flow: în `create_batch_sync_runs` am blocat explicit conturile neatașate (`attached_client_id is None`) ca invalide pentru manual backfill.
+- UX erori frontend: `apiRequest` parsează acum payload-ul de eroare și extrage mesajul relevant (`detail` / `message`) în loc de a afișa raw JSON brut.
+- Teste adăugate/actualizate: RBAC pentru `integrations:sync` în agency scope + test API batch care tratează cont neatașat ca invalid.
+- Build frontend trece și screenshot-ul pentru Agency Accounts a fost capturat; în dev local, apelurile API reale pot da `ECONNREFUSED` fără backend pornit, dar UI compilează corect.
+
