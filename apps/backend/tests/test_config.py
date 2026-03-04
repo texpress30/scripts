@@ -49,6 +49,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.pinterest_sync_backoff_ms, 75)
         self.assertEqual(settings.snapchat_sync_retry_attempts, 2)
         self.assertEqual(settings.snapchat_sync_backoff_ms, 75)
+        self.assertEqual(settings.sync_run_repair_stale_minutes, 30)
 
 
     def test_tiktok_pinterest_and_snapchat_feature_flags_can_be_enabled_from_env(self):
@@ -133,6 +134,21 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(fallback.google_ads_ui_rolling_sync_days, 7)
         self.assertEqual(fallback.google_ads_ui_rolling_chunk_days, 7)
         self.assertEqual(fallback.google_ads_historical_backfill_start_date, date(2024, 1, 9))
+
+    def test_sync_run_repair_stale_minutes_defaults_and_overrides(self):
+        os.environ.clear()
+        os.environ["APP_AUTH_SECRET"] = "test-auth-secret"
+
+        defaults = load_settings()
+        self.assertEqual(defaults.sync_run_repair_stale_minutes, 30)
+
+        os.environ["SYNC_RUN_REPAIR_STALE_MINUTES"] = "45"
+        overridden = load_settings()
+        self.assertEqual(overridden.sync_run_repair_stale_minutes, 45)
+
+        os.environ["SYNC_RUN_REPAIR_STALE_MINUTES"] = "0"
+        fallback = load_settings()
+        self.assertEqual(fallback.sync_run_repair_stale_minutes, 30)
 
     def test_settings_are_loaded_from_environment(self):
         os.environ["APP_ENV"] = "test"

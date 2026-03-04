@@ -161,3 +161,4 @@
 - 2026-03-04: La fluxuri OAuth production, nu expune niciodată refresh token-ul în response/UI pentru copy/paste; persistă automat secretul criptat în DB și folosește doar metadata non-sensibilă (source/updated_at) pentru feedback.
 - 2026-03-04: Pentru progres orchestration, nu te baza pe agregate denormalizate `sync_runs.chunks_*` ca sursă unică de adevăr; reconciliază read-time din `sync_run_chunks` și derivează `percent_complete` strict din statusurile chunk-urilor.
 - 2026-03-04: După feedback de tip "unsatisfied" pe PR mare, păstrează următorul increment strict pe scope-ul cerut (ex. backend-only dedupe) și evită modificările frontend până la taskul dedicat.
+- 2026-03-04: Pentru run repair țintit pe job_id, folosește lock tranzacțional DB (`pg_advisory_xact_lock`) + `FOR UPDATE` pe run/chunks; un simplu check aplicativ nu e suficient în deployment-uri multiple.

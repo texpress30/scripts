@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.api.dependencies import enforce_action_scope, get_current_user
+from app.core.config import load_settings
 from app.services.auth import AuthUser
 from app.services.client_registry import client_registry_service
 from app.services.sync_run_chunks_store import sync_run_chunks_store
@@ -466,6 +467,56 @@ def get_sync_run_details(job_id: str, user: AuthUser = Depends(get_current_user)
     if run is None:
         raise HTTPException(status_code=404, detail="Sync run not found")
     return _serialize_run(_reconcile_run_payload(run))
+
+
+@router.post("/{job_id}/repair")
+def repair_sync_run(job_id: str, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:sync", scope="agency")
+
+    stale_minutes = load_settings().sync_run_repair_stale_minutes
+    result = sync_runs_store.repair_historical_sync_run(
+        job_id=str(job_id).strip(),
+        stale_after_minutes=int(stale_minutes),
+        repair_source="api.sync_orchestration",
+    )
+
+    outcome = str(result.get("outcome") or "")
+    logger.info(
+        "sync_runs.repair outcome=%s job_id=%s reason=%s stale_chunks_closed=%s final_status=%s",
+        outcome,
+        str(job_id).strip(),
+        result.get("reason"),
+        result.get("stale_chunks_closed"),
+        result.get("final_status"),
+    )
+
+    if outcome == "not_found":
+        raise HTTPException(
+            status_code=404,
+            detail={"message": "Sync run not found", "job_id": str(job_id).strip(), "outcome": "not_found"},
+        )
+
+    response: dict[str, object] = {
+        "job_id": str(job_id).strip(),
+        "outcome": outcome,
+        "stale_after_minutes": int(stale_minutes),
+    }
+    if result.get("reason") is not None:
+        response["reason"] = result.get("reason")
+    if result.get("active_chunks") is not None:
+        response["active_chunks"] = int(result.get("active_chunks") or 0)
+    if result.get("stale_chunks") is not None:
+        response["stale_chunks"] = int(result.get("stale_chunks") or 0)
+    if result.get("stale_chunks_closed") is not None:
+        response["stale_chunks_closed"] = int(result.get("stale_chunks_closed") or 0)
+    if result.get("final_status") is not None:
+        response["final_status"] = str(result.get("final_status"))
+
+    run_payload = result.get("run")
+    if isinstance(run_payload, dict):
+        response["run"] = _serialize_run(_reconcile_run_payload(run_payload))
+
+    return response
 
 
 @router.get("/{job_id}/chunks")

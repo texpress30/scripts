@@ -29,6 +29,7 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.original_list_by_batch = sync_orchestration.sync_runs_store.list_sync_runs_by_batch
         self.original_list_for_account = sync_orchestration.sync_runs_store.list_sync_runs_for_account
         self.original_get_run = sync_orchestration.sync_runs_store.get_sync_run
+        self.original_repair_run = sync_orchestration.sync_runs_store.repair_historical_sync_run
         self.original_create_chunk = sync_orchestration.sync_run_chunks_store.create_sync_run_chunk
         self.original_list_chunks = sync_orchestration.sync_run_chunks_store.list_sync_run_chunks
 
@@ -151,6 +152,65 @@ class SyncOrchestrationApiTests(unittest.TestCase):
                 "rows_written_sum": sum(int(r.get("rows_written") or 0) for r in selected),
             }
 
+        def _repair_historical_sync_run(*, job_id: str, stale_after_minutes: int, repair_source: str = "api"):
+            run = self.state["runs"].get(job_id)
+            if run is None:
+                return {"outcome": "not_found", "job_id": job_id}
+
+            status = str(run.get("status") or "").lower()
+            if status not in {"queued", "running"}:
+                return {"outcome": "noop_not_active", "job_id": job_id, "run": run}
+
+            chunks = [c for c in self.state["chunks"] if c.get("job_id") == job_id]
+            active = [c for c in chunks if str(c.get("status") or "").lower() in {"queued", "running", "pending"}]
+            stale = [c for c in active if bool(c.get("force_stale"))]
+            if len(active) > 0 and len(stale) != len(active):
+                return {
+                    "outcome": "noop_active_fresh",
+                    "job_id": job_id,
+                    "active_chunks": len(active),
+                    "stale_chunks": len(stale),
+                    "run": run,
+                }
+
+            reason = "all_chunks_terminal_reconcile"
+            stale_closed = 0
+            if len(stale) > 0:
+                reason = "stale_chunk_timeout"
+                stale_closed = len(stale)
+                for chunk in stale:
+                    chunk["status"] = "error"
+                    chunk["error"] = "stale_timeout"
+                    metadata = dict(chunk.get("metadata") or {})
+                    metadata["repair_reason"] = "stale_timeout"
+                    metadata["repair_source"] = repair_source
+                    chunk["metadata"] = metadata
+
+            error_chunks = len([c for c in chunks if str(c.get("status") or "").lower() in {"error", "failed"}])
+            done_chunks = len([c for c in chunks if str(c.get("status") or "").lower() in {"done", "success", "completed"}])
+            run["status"] = "error" if error_chunks > 0 or stale_closed > 0 else "done"
+            run["error"] = None if run["status"] == "done" else f"repair:{reason}"
+            run["chunks_total"] = len(chunks)
+            run["chunks_done"] = done_chunks
+            run["rows_written"] = sum(int(c.get("rows_written") or 0) for c in chunks)
+            metadata = dict(run.get("metadata") or {})
+            metadata["repair"] = {
+                "reason": reason,
+                "source": repair_source,
+                "stale_after_minutes": stale_after_minutes,
+                "stale_chunks_closed": stale_closed,
+                "final_status": run["status"],
+            }
+            run["metadata"] = metadata
+            return {
+                "outcome": "repaired",
+                "reason": reason,
+                "job_id": job_id,
+                "stale_chunks_closed": stale_closed,
+                "final_status": run["status"],
+                "run": run,
+            }
+
         sync_orchestration.client_registry_service.list_platform_accounts = _list_platform_accounts
         sync_orchestration.sync_runs_store.create_sync_run = _create_sync_run
         sync_orchestration.sync_runs_store.create_historical_sync_run_if_not_active = _create_historical_sync_run_if_not_active
@@ -158,6 +218,7 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         sync_orchestration.sync_runs_store.list_sync_runs_for_account = _list_sync_runs_for_account
         sync_orchestration.sync_runs_store.get_sync_run = _get_sync_run
         sync_orchestration.sync_runs_store.get_batch_progress = _get_batch_progress
+        sync_orchestration.sync_runs_store.repair_historical_sync_run = _repair_historical_sync_run
         sync_orchestration.sync_run_chunks_store.create_sync_run_chunk = _create_chunk
         sync_orchestration.sync_run_chunks_store.list_sync_run_chunks = _list_sync_run_chunks
 
@@ -169,6 +230,7 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         sync_orchestration.sync_runs_store.list_sync_runs_by_batch = self.original_list_by_batch
         sync_orchestration.sync_runs_store.list_sync_runs_for_account = self.original_list_for_account
         sync_orchestration.sync_runs_store.get_sync_run = self.original_get_run
+        sync_orchestration.sync_runs_store.repair_historical_sync_run = self.original_repair_run
         sync_orchestration.sync_run_chunks_store.create_sync_run_chunk = self.original_create_chunk
         sync_orchestration.sync_run_chunks_store.list_sync_run_chunks = self.original_list_chunks
         os.environ.clear()
@@ -448,6 +510,180 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.assertEqual(first_payload["already_exists_count"], 0)
         self.assertEqual(second_payload["already_exists_count"], 0)
         self.assertEqual(len(self.state["runs"]), 2)
+
+    def test_repair_endpoint_not_found(self):
+        headers = self._auth_headers()
+        response = self.client.post("/agency/sync-runs/missing-job/repair", headers=headers)
+        self.assertEqual(response.status_code, 404)
+        payload = response.json()
+        self.assertEqual(payload["detail"]["outcome"], "not_found")
+
+    def test_repair_endpoint_noop_not_active_for_terminal_run(self):
+        headers = self._auth_headers()
+        sync_orchestration.sync_runs_store.create_sync_run(
+            job_id="terminal-run",
+            platform="google_ads",
+            status="done",
+            date_start=date(2026, 1, 1),
+            date_end=date(2026, 1, 2),
+            chunk_days=1,
+            client_id=11,
+            account_id="3986597205",
+            metadata={},
+            batch_id="seed",
+            job_type="historical_backfill",
+            grain="account_daily",
+            chunks_total=2,
+            chunks_done=2,
+            rows_written=100,
+        )
+        response = self.client.post("/agency/sync-runs/terminal-run/repair", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["outcome"], "noop_not_active")
+        self.assertEqual(payload["run"]["status"], "done")
+
+    def test_repair_endpoint_finalizes_active_run_when_chunks_already_terminal(self):
+        headers = self._auth_headers()
+        sync_orchestration.sync_runs_store.create_sync_run(
+            job_id="stuck-terminal",
+            platform="google_ads",
+            status="running",
+            date_start=date(2026, 1, 1),
+            date_end=date(2026, 1, 3),
+            chunk_days=1,
+            client_id=11,
+            account_id="3986597205",
+            metadata={},
+            batch_id="seed",
+            job_type="historical_backfill",
+            grain="account_daily",
+            chunks_total=3,
+            chunks_done=0,
+            rows_written=0,
+        )
+        for idx in range(3):
+            sync_orchestration.sync_run_chunks_store.create_sync_run_chunk(
+                job_id="stuck-terminal",
+                chunk_index=idx,
+                status="done",
+                date_start=date(2026, 1, 1),
+                date_end=date(2026, 1, 1),
+                rows_written=5,
+                metadata={},
+            )
+        response = self.client.post("/agency/sync-runs/stuck-terminal/repair", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["outcome"], "repaired")
+        self.assertEqual(payload["reason"], "all_chunks_terminal_reconcile")
+        self.assertEqual(payload["final_status"], "done")
+        self.assertEqual(payload["run"]["status"], "done")
+
+    def test_repair_endpoint_closes_stale_active_chunks_and_finishes_with_error(self):
+        headers = self._auth_headers()
+        sync_orchestration.sync_runs_store.create_sync_run(
+            job_id="stale-run",
+            platform="google_ads",
+            status="running",
+            date_start=date(2026, 1, 1),
+            date_end=date(2026, 1, 2),
+            chunk_days=1,
+            client_id=11,
+            account_id="3986597205",
+            metadata={},
+            batch_id="seed",
+            job_type="historical_backfill",
+            grain="account_daily",
+            chunks_total=2,
+            chunks_done=0,
+            rows_written=0,
+        )
+        chunk = sync_orchestration.sync_run_chunks_store.create_sync_run_chunk(
+            job_id="stale-run",
+            chunk_index=0,
+            status="running",
+            date_start=date(2026, 1, 1),
+            date_end=date(2026, 1, 1),
+            metadata={},
+        )
+        chunk["force_stale"] = True
+        response = self.client.post("/agency/sync-runs/stale-run/repair", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["outcome"], "repaired")
+        self.assertEqual(payload["reason"], "stale_chunk_timeout")
+        self.assertEqual(payload["final_status"], "error")
+        self.assertEqual(payload["stale_chunks_closed"], 1)
+
+    def test_repair_endpoint_noop_when_active_chunks_are_fresh(self):
+        headers = self._auth_headers()
+        sync_orchestration.sync_runs_store.create_sync_run(
+            job_id="fresh-run",
+            platform="google_ads",
+            status="running",
+            date_start=date(2026, 1, 1),
+            date_end=date(2026, 1, 2),
+            chunk_days=1,
+            client_id=11,
+            account_id="3986597205",
+            metadata={},
+            batch_id="seed",
+            job_type="historical_backfill",
+            grain="account_daily",
+            chunks_total=2,
+            chunks_done=0,
+            rows_written=0,
+        )
+        sync_orchestration.sync_run_chunks_store.create_sync_run_chunk(
+            job_id="fresh-run",
+            chunk_index=0,
+            status="running",
+            date_start=date(2026, 1, 1),
+            date_end=date(2026, 1, 1),
+            metadata={},
+        )
+        response = self.client.post("/agency/sync-runs/fresh-run/repair", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["outcome"], "noop_active_fresh")
+        self.assertEqual(payload["run"]["status"], "running")
+
+    def test_repair_endpoint_repeat_call_is_stable(self):
+        headers = self._auth_headers()
+        sync_orchestration.sync_runs_store.create_sync_run(
+            job_id="repeat-run",
+            platform="google_ads",
+            status="running",
+            date_start=date(2026, 1, 1),
+            date_end=date(2026, 1, 2),
+            chunk_days=1,
+            client_id=11,
+            account_id="3986597205",
+            metadata={},
+            batch_id="seed",
+            job_type="historical_backfill",
+            grain="account_daily",
+            chunks_total=1,
+            chunks_done=0,
+            rows_written=0,
+        )
+        stale_chunk = sync_orchestration.sync_run_chunks_store.create_sync_run_chunk(
+            job_id="repeat-run",
+            chunk_index=0,
+            status="running",
+            date_start=date(2026, 1, 1),
+            date_end=date(2026, 1, 1),
+            metadata={},
+        )
+        stale_chunk["force_stale"] = True
+
+        first = self.client.post("/agency/sync-runs/repeat-run/repair", headers=headers)
+        second = self.client.post("/agency/sync-runs/repeat-run/repair", headers=headers)
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(first.json()["outcome"], "repaired")
+        self.assertEqual(second.json()["outcome"], "noop_not_active")
 
 
 if __name__ == "__main__":

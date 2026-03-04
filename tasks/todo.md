@@ -1427,3 +1427,24 @@
 - API orchestration: pentru `job_type=historical_backfill`, endpoint-ul batch folosește noul guard; dacă găsește run activ identic întoarce rezultat `already_exists`, nu creează run/chunk-uri noi pentru acel account și loghează explicit decizia de skip.
 - Contract răspuns extins compatibil: `runs` rămâne lista run-urilor create, iar payload-ul include `already_exists_count` și `results` per account cu `result=created|already_exists`, `platform`, `account_id`, `job_id`, `status`, `date_start`, `date_end`, `client_id`.
 - Teste: am adăugat teste API pentru duplicate historical (request 2 => `already_exists` + fără chunk-uri noi), batch mixt (`created`/`already_exists`) și non-regression pentru `job_type=manual`; plus teste unit store pentru path-ul lock+existing și lock+insert.
+
+---
+
+# TODO — Task 10: repair backend pentru historical backfill runs blocate în running
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și verific flow-ul curent sync_runs + sync_run_chunks.
+- [x] Adaug flow backend-only `POST /agency/sync-runs/{job_id}/repair` cu stale detection configurabil și răspunsuri explicite (`not_found`, `noop_not_active`, `noop_active_fresh`, `repaired`).
+- [x] Implementez guard concurent-safe per job_id la nivel DB/tranzacție pentru repair, fără refactor worker.
+- [x] Finalizez coerent run-ul după repair (`done` vs `error`) și marchez chunk-urile stale în terminal cu reason clar.
+- [x] Adaug teste backend pentru toate scenariile cerute + test repeat-call stabil și rulez suita relevantă.
+
+## Review — Task 10: repair backend pentru historical backfill runs blocate
+- Am introdus `SyncRunsStore.repair_historical_sync_run(job_id, stale_after_minutes, repair_source)` care rulează într-o tranzacție unică cu `pg_advisory_xact_lock` pe cheia `sync_runs:repair:{job_id}` și `SELECT ... FOR UPDATE` pe run/chunks, pentru a evita tranziții inconsistente la apeluri simultane.
+- Detectarea stale folosește timestamp-ul existent per chunk `COALESCE(updated_at, started_at, created_at)` comparat cu `NOW()`, cu prag configurabil `SYNC_RUN_REPAIR_STALE_MINUTES` (default 30).
+- Cazuri implementate:
+  - `not_found` dacă job_id nu există;
+  - `noop_not_active` dacă run-ul nu e activ (`queued/running`);
+  - `noop_active_fresh` dacă există chunk-uri active dar cel puțin unul este încă fresh;
+  - `repaired` dacă toate chunk-urile sunt deja terminale (reconcile) sau dacă toate chunk-urile active sunt stale (sunt închise cu `status=error`, `error=stale_timeout`, metadata repair).
+- Regula de finalizare run după repair: `done` dacă toate chunk-urile sunt terminale fără erori; `error` dacă există cel puțin un chunk în eroare (inclusiv chunk-uri închise prin stale repair).
+- Endpointul API nou expune outcome + detalii operaționale (`reason`, `active_chunks`, `stale_chunks`, `stale_chunks_closed`, `final_status`) și returnează payload reconciliat de run pentru UI polling consistent.
