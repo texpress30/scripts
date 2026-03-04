@@ -35,6 +35,10 @@ _SYNC_RUNS_SELECT_COLUMNS = """
     rows_written
 """
 
+_ACTIVE_CHUNK_STATUSES = ("queued", "running", "pending")
+_SUCCESS_CHUNK_STATUSES = ("done", "success", "completed")
+_ERROR_CHUNK_STATUSES = ("error", "failed")
+
 
 class SyncRunsStore:
     def __init__(self) -> None:
@@ -199,6 +203,297 @@ class SyncRunsStore:
 
         return self.get_sync_run(str(job_id))
 
+    def create_historical_sync_run_if_not_active(
+        self,
+        *,
+        job_id: str,
+        platform: str,
+        date_start: date,
+        date_end: date,
+        chunk_days: int,
+        client_id: int | None = None,
+        account_id: str | None = None,
+        metadata: dict[str, object] | None = None,
+        batch_id: str | None = None,
+        grain: str | None = None,
+        chunks_total: int = 0,
+        chunks_done: int = 0,
+        rows_written: int = 0,
+    ) -> dict[str, object]:
+        self._ensure_schema()
+        metadata_payload = metadata or {}
+        normalized_platform = str(platform)
+        normalized_account_id = str(account_id) if account_id is not None else ""
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                lock_key = (
+                    f"sync_runs:historical_backfill:{normalized_platform}:{normalized_account_id}:"
+                    f"{date_start.isoformat()}:{date_end.isoformat()}"
+                )
+                cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (lock_key,))
+
+                cur.execute(
+                    f"""
+                    SELECT
+                        {_SYNC_RUNS_SELECT_COLUMNS}
+                    FROM sync_runs
+                    WHERE platform = %s
+                        AND account_id = %s
+                        AND job_type = 'historical_backfill'
+                        AND date_start = %s
+                        AND date_end = %s
+                        AND status IN ('queued', 'running')
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (
+                        normalized_platform,
+                        normalized_account_id,
+                        date_start,
+                        date_end,
+                    ),
+                )
+                existing_row = cur.fetchone()
+                if existing_row is not None:
+                    conn.commit()
+                    return {"created": False, "run": self._row_to_payload(existing_row)}
+
+                cur.execute(
+                    """
+                    INSERT INTO sync_runs (
+                        job_id,
+                        platform,
+                        status,
+                        client_id,
+                        account_id,
+                        date_start,
+                        date_end,
+                        chunk_days,
+                        metadata,
+                        batch_id,
+                        job_type,
+                        grain,
+                        chunks_total,
+                        chunks_done,
+                        rows_written
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s)
+                    RETURNING
+                        {_SYNC_RUNS_SELECT_COLUMNS}
+                    """,
+                    (
+                        str(job_id),
+                        normalized_platform,
+                        "queued",
+                        client_id,
+                        normalized_account_id,
+                        date_start,
+                        date_end,
+                        int(chunk_days),
+                        json.dumps(metadata_payload),
+                        str(batch_id) if batch_id is not None else None,
+                        "historical_backfill",
+                        str(grain) if grain is not None else None,
+                        int(chunks_total),
+                        int(chunks_done),
+                        int(rows_written),
+                    ),
+                )
+                created_row = cur.fetchone()
+            conn.commit()
+
+        return {"created": True, "run": self._row_to_payload(created_row)}
+
+    def repair_historical_sync_run(
+        self,
+        *,
+        job_id: str,
+        stale_after_minutes: int,
+        repair_source: str = "api",
+    ) -> dict[str, object]:
+        self._ensure_schema()
+        normalized_job_id = str(job_id)
+        stale_minutes = max(1, int(stale_after_minutes))
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                lock_key = f"sync_runs:repair:{normalized_job_id}"
+                cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (lock_key,))
+
+                cur.execute(
+                    f"""
+                    SELECT
+                        {_SYNC_RUNS_SELECT_COLUMNS}
+                    FROM sync_runs
+                    WHERE job_id = %s
+                    FOR UPDATE
+                    """,
+                    (normalized_job_id,),
+                )
+                run_row = cur.fetchone()
+                run_payload = self._row_to_payload(run_row)
+                if run_payload is None:
+                    conn.commit()
+                    return {"outcome": "not_found", "job_id": normalized_job_id}
+
+                run_status = str(run_payload.get("status") or "").strip().lower()
+                if run_status not in {"queued", "running"}:
+                    conn.commit()
+                    return {"outcome": "noop_not_active", "job_id": normalized_job_id, "run": run_payload}
+
+                cur.execute(
+                    """
+                    SELECT
+                        id,
+                        status,
+                        COALESCE(updated_at, started_at, created_at) AS freshness_ts
+                    FROM sync_run_chunks
+                    WHERE job_id = %s
+                    FOR UPDATE
+                    """,
+                    (normalized_job_id,),
+                )
+                chunk_rows = cur.fetchall() or []
+                active_chunk_ids: list[int] = []
+                stale_active_chunk_ids: list[int] = []
+
+                cur.execute(
+                    "SELECT NOW()"
+                )
+                now_row = cur.fetchone()
+                now_ts = now_row[0] if now_row is not None else None
+
+                for row in chunk_rows:
+                    chunk_id = int(row[0])
+                    chunk_status = str(row[1] or "").strip().lower()
+                    freshness_ts = row[2]
+                    if chunk_status in _ACTIVE_CHUNK_STATUSES:
+                        active_chunk_ids.append(chunk_id)
+                        if now_ts is not None and freshness_ts is not None and (now_ts - freshness_ts).total_seconds() >= stale_minutes * 60:
+                            stale_active_chunk_ids.append(chunk_id)
+
+                if len(active_chunk_ids) > 0 and len(stale_active_chunk_ids) != len(active_chunk_ids):
+                    conn.commit()
+                    return {
+                        "outcome": "noop_active_fresh",
+                        "job_id": normalized_job_id,
+                        "active_chunks": len(active_chunk_ids),
+                        "stale_chunks": len(stale_active_chunk_ids),
+                        "run": run_payload,
+                    }
+
+                stale_chunks_closed = 0
+                repair_reason = "all_chunks_terminal_reconcile"
+
+                if len(stale_active_chunk_ids) > 0:
+                    repair_reason = "stale_chunk_timeout"
+                    stale_chunks_closed = len(stale_active_chunk_ids)
+                    cur.execute(
+                        """
+                        UPDATE sync_run_chunks
+                        SET
+                            status = 'error',
+                            error = %s,
+                            finished_at = COALESCE(finished_at, NOW()),
+                            updated_at = NOW(),
+                            metadata = COALESCE(metadata, '{}'::jsonb) || %s::jsonb
+                        WHERE id = ANY(%s)
+                        """,
+                        (
+                            "stale_timeout",
+                            json.dumps(
+                                {
+                                    "repair_reason": "stale_timeout",
+                                    "repair_source": str(repair_source),
+                                    "repaired_at": "now",
+                                }
+                            ),
+                            stale_active_chunk_ids,
+                        ),
+                    )
+
+                cur.execute(
+                    """
+                    SELECT
+                        COUNT(*)::int,
+                        COUNT(*) FILTER (WHERE status IN ('done', 'success', 'completed'))::int,
+                        COUNT(*) FILTER (WHERE status IN ('error', 'failed'))::int,
+                        COUNT(*) FILTER (WHERE status IN ('queued', 'running', 'pending'))::int,
+                        COALESCE(SUM(rows_written), 0)::bigint
+                    FROM sync_run_chunks
+                    WHERE job_id = %s
+                    """,
+                    (normalized_job_id,),
+                )
+                summary_row = cur.fetchone() or (0, 0, 0, 0, 0)
+
+                total_chunks = int(summary_row[0] or 0)
+                done_chunks = int(summary_row[1] or 0)
+                error_chunks = int(summary_row[2] or 0)
+                active_chunks_remaining = int(summary_row[3] or 0)
+                rows_written = int(summary_row[4] or 0)
+
+                if active_chunks_remaining > 0:
+                    conn.commit()
+                    return {
+                        "outcome": "noop_active_fresh",
+                        "job_id": normalized_job_id,
+                        "active_chunks": active_chunks_remaining,
+                        "stale_chunks": stale_chunks_closed,
+                        "run": run_payload,
+                    }
+
+                final_status = "error" if error_chunks > 0 or stale_chunks_closed > 0 else "done"
+                final_error = None if final_status == "done" else f"repair:{repair_reason}"
+                metadata_patch = json.dumps(
+                    {
+                        "repair": {
+                            "reason": repair_reason,
+                            "source": str(repair_source),
+                            "stale_after_minutes": stale_minutes,
+                            "stale_chunks_closed": stale_chunks_closed,
+                            "final_status": final_status,
+                        }
+                    }
+                )
+
+                cur.execute(
+                    """
+                    UPDATE sync_runs
+                    SET
+                        status = %s,
+                        error = %s,
+                        chunks_total = GREATEST(chunks_total, %s),
+                        chunks_done = %s,
+                        rows_written = %s,
+                        finished_at = COALESCE(finished_at, NOW()),
+                        updated_at = NOW(),
+                        metadata = COALESCE(metadata, '{}'::jsonb) || %s::jsonb
+                    WHERE job_id = %s
+                    RETURNING
+                        """ + _SYNC_RUNS_SELECT_COLUMNS,
+                    (
+                        final_status,
+                        final_error,
+                        total_chunks,
+                        done_chunks,
+                        rows_written,
+                        metadata_patch,
+                        normalized_job_id,
+                    ),
+                )
+                repaired_row = cur.fetchone()
+            conn.commit()
+
+        return {
+            "outcome": "repaired",
+            "reason": repair_reason,
+            "job_id": normalized_job_id,
+            "stale_chunks_closed": stale_chunks_closed,
+            "final_status": final_status,
+            "run": self._row_to_payload(repaired_row),
+        }
+
     def get_sync_run(self, job_id: str) -> dict[str, object] | None:
         self._ensure_schema()
         with self._connect() as conn:
@@ -267,24 +562,40 @@ class SyncRunsStore:
 
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE sync_runs
-                    SET
-                        chunks_done = chunks_done + %s,
-                        rows_written = rows_written + %s,
-                        chunks_total = CASE WHEN %s IS NULL THEN chunks_total ELSE GREATEST(chunks_total, %s) END,
-                        updated_at = NOW()
-                    WHERE job_id = %s
-                    """,
-                    (
-                        int(chunks_done_delta),
-                        int(rows_written_delta),
-                        chunks_total,
-                        int(chunks_total) if chunks_total is not None else None,
-                        str(job_id),
-                    ),
-                )
+                if chunks_total is None:
+                    cur.execute(
+                        """
+                        UPDATE sync_runs
+                        SET
+                            chunks_done = chunks_done + %s,
+                            rows_written = rows_written + %s,
+                            updated_at = NOW()
+                        WHERE job_id = %s
+                        """,
+                        (
+                            int(chunks_done_delta),
+                            int(rows_written_delta),
+                            str(job_id),
+                        ),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        UPDATE sync_runs
+                        SET
+                            chunks_done = chunks_done + %s,
+                            rows_written = rows_written + %s,
+                            chunks_total = GREATEST(chunks_total, %s),
+                            updated_at = NOW()
+                        WHERE job_id = %s
+                        """,
+                        (
+                            int(chunks_done_delta),
+                            int(rows_written_delta),
+                            int(chunks_total),
+                            str(job_id),
+                        ),
+                    )
             conn.commit()
 
         return self.get_sync_run(str(job_id))
