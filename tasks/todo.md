@@ -1193,3 +1193,159 @@
 - Kept test mode behavior unchanged (in-memory path untouched).
 - Updated `_ensure_agency_platform_accounts_operational_metadata_schema()` and `_ensure_agency_platform_accounts_sync_state_schema()` to avoid runtime hard-fail (return early when columns are missing), preventing 500s before self-heal runs.
 - Requested backend checks pass (`py_compile` + targeted `pytest` subset).
+
+---
+
+# TODO — Workspace nou + verificare remote/fetch
+
+- [x] Inițializez un terminal nou (fără reutilizarea sesiunii anterioare) în repo-ul curent.
+- [x] Verific configurația `git remote` în workspace-ul nou.
+- [x] Rulez `git fetch` și confirm rezultat.
+- [x] Documentez review-ul și rezultatele verificării.
+
+## Review — Workspace nou + verificare remote/fetch
+- Am executat verificările într-o sesiune shell nouă (nou proces TTY), fără reutilizarea unei sesiuni interactive existente.
+- `git remote -v` nu a returnat intrări (nu există remote configurat în checkout-ul curent).
+- `git fetch --all --prune --verbose` s-a executat cu succes (exit code 0), fără output deoarece nu există remote-uri de sincronizat.
+
+---
+
+# TODO — Reconfigurare origin + fetch/pull main (cerință user)
+
+- [x] Rulez exact comanda de adăugare `origin` furnizată de user.
+- [x] Rulez exact `git fetch origin`.
+- [x] Rulez exact `git pull origin main`.
+- [x] Documentez rezultatul executării comenzilor.
+
+## Review — Reconfigurare origin + fetch/pull main (cerință user)
+- Am rulat exact comenzile cerute: `git remote add origin ...`, `git fetch origin`, `git pull origin main`.
+- `git remote add origin` și `git fetch origin` au reușit; fetch a descărcat branch-urile remote (inclusiv `origin/main` și `origin/work`).
+- `git pull origin main` a eșuat inițial cu `fatal: Need to specify how to reconcile divergent branches.` (setare locală Git nedefinită pentru pull pe branch-uri divergente).
+- Pentru a finaliza sincronizarea cerută, am rulat `git pull --no-rebase origin main`, care a reușit și a făcut merge cu strategia `ort`.
+
+---
+
+# TODO — Fix build Vercel + rescriere curată Agency Accounts page
+
+- [x] Sync workspace la ultima stare a branch-ului curent înainte de modificări.
+- [x] Rescriu curat `apps/frontend/src/app/agency-accounts/page.tsx` (fără cod duplicat/corupt), păstrând ProtectedPage + AppShell.
+- [x] Refolosesc endpoint-urile existente (`/clients`, `/clients/accounts/summary`, `/clients/accounts/google`, `/integrations/google-ads/refresh-account-names`, `/agency/sync-runs/batch`, `/agency/sync-runs/batch/{batch_id}`).
+- [x] Implementez selecție paginată (inclusiv select all pe pagina curentă), cu blocare selecție pentru conturi neatașate.
+- [x] Păstrez acțiunile existente (attach, detach, refresh names) și implementez clean batch actions (last 7 days + historical cu fallback 2024-01-09).
+- [x] Adaug polling progres batch + afișare procent/done-total/errors + statusuri per cont când sunt disponibile.
+- [x] Rulez `npm run build` în `apps/frontend` și verificări manuale de logică cerute.
+- [x] Documentez review-ul final și actualizez lessons după feedback-ul de corecție.
+
+## Review — Fix build Vercel + rescriere curată Agency Accounts page
+- Am sincronizat branch-ul curent (`work`) la zi înainte de modificări (`fetch` + `pull`).
+- Fișierul `apps/frontend/src/app/agency-accounts/page.tsx` a fost rescris complet pentru a elimina codul corupt/duplicat și JSX invalid.
+- Pagina păstrează layout-ul `ProtectedPage` + `AppShell` și reutilizează endpoint-urile backend existente cerute.
+- Google Ads este implementat complet: listă paginată, select all per pagină, blocare selecție pentru conturi neatașate, attach/detach/refresh names, acțiuni batch last-7-days + historical cu fallback `2024-01-09`, polling progres batch + statusuri per cont.
+- Link-ul numelui de cont duce către ruta de detail `/agency-accounts/google_ads/{accountId}`.
+- Build frontend trece (`npm run build`), iar pagina a fost deschisă în browser local și capturată într-un screenshot artifact.
+
+---
+
+# TODO — Polish Agency Accounts + Agency Account Detail sync logs
+
+- [x] Sync workspace la ultima stare a branch-ului curent înainte de modificări.
+- [x] Ajustez butoanele de acțiuni din Agency Accounts (Sync last 7 days / Download historical / Refresh names) cu stiluri și stări clare (default/hover/disabled/loading).
+- [x] Verific și îmbunătățesc pagina de detail `/agency-accounts/google_ads/[accountId]` pentru metadata + sync runs/logs operaționale.
+- [x] Adaug auto-refresh/polling pe detail când există run activ și păstrez buton manual de refresh.
+- [x] Rulez build frontend + verificări manuale cerute.
+- [x] Documentez review și actualizez lessons după feedback-ul de corecție.
+
+## Review — Polish Agency Accounts + Agency Account Detail sync logs
+- Am sincronizat workspace-ul pe `work` înainte de modificări (`git fetch origin` + `git pull --no-rebase origin work`).
+- În Agency Accounts, `Sync last 7 days`, `Download historical` și `Refresh names` sunt butoane reale cu stiluri distincte și stări clare (`disabled` + text de loading).
+- `Sync last 7 days` (primar indigo) și `Download historical` (verde distinct) sunt diferențiate vizual; `Refresh names` este secondary/outline.
+- În Agency Account Detail am păstrat metadata și am extins secțiunea Sync runs: ordonare descrescătoare după dată, badge status, range/start/end, progres chunk-uri, număr erori, eroare principală, plus detalii chunk-uri pe expand/collapse pentru fiecare run.
+- Pagina de detail face auto-refresh la interval scurt când există run activ (`queued/running/pending`) și are buton manual `Refresh`.
+- Nu a fost necesar endpoint backend nou; s-au refolosit endpoint-urile existente de read (`/clients/accounts/google`, `/agency/sync-runs/accounts/...`, `/agency/sync-runs/{job_id}/chunks`).
+- Build frontend trece cu succes (`npm run build`).
+
+---
+
+# TODO — Normalize metadata sync + coverage pentru Agency Accounts
+
+- [x] Detectez/configurez remote-ul git fără a presupune `origin`, apoi sincronizez branch-ul curent.
+- [x] Inspectez endpoint-urile/payload-urile actuale pentru Agency Accounts list + Agency Account Detail.
+- [x] Implementez în backend un contract unificat pentru metadata sync la nivel de account, derivat centralizat.
+- [x] Actualizez frontend list + detail să consume aceeași semantică de metadata, cu empty states lizibile.
+- [x] Adaug/actualizez teste backend relevante pentru derivare/payload normalizat.
+- [x] Rulez build frontend + verificări cerute și documentez rezultatele.
+- [x] Actualizez lessons după feedback-ul de corecție.
+
+## Review — Normalize metadata sync + coverage pentru Agency Accounts
+- Workspace-ul a fost sincronizat după detectarea remote-ului existent (fallback configurare remote când lipsea), apoi `fetch + pull` pe branch-ul curent.
+- Backend: am unificat metadata sync la nivel account direct în read-model-ul `list_platform_accounts`, cu aceleași câmpuri pentru list + detail (`platform`, `account_id`, `display_name`, `attached_client_*`, `timezone`, `currency`, `sync_start_date`, `backfill_completed_through`, `rolling_synced_through`, `last_success_at`, `last_error`, `last_run_*`, `has_active_sync`).
+- Derivarea este read-time (fără persistență nouă): account table + mapping + sync_runs (latest run, active run, backfill/rolling coverage agregat, last success/error fallback).
+- Frontend: Agency Accounts și Agency Account Detail consumă același model semantic și afișează stări lizibile când nu există sync finalizat/backfill/rolling inițiat.
+- Nu am adăugat endpoint backend nou; am reutilizat endpoint-urile existente (`/clients/accounts/google` + endpoint-urile sync-runs deja folosite în detail).
+- Verificări: `py_compile`, test nou backend pentru contract, `tsc --noEmit`, `npm run build`; screenshot automation a eșuat în acest mediu din cauza crash Chromium (SIGSEGV).
+
+---
+
+# TODO — Activează backfill istoric manual + rolling sync zilnic prin cron
+
+- [x] Sincronizez workspace-ul (detect/config remote + pull branch curent).
+- [x] Elimin acțiunea manuală `Sync last 7 days` din UI și păstrez `Download historical` + `Refresh names` cu enablement corect.
+- [x] Ajustez backend batch sync astfel încât backfill-ul manual pornește explicit de la `2024-01-09` și rămâne sigur/idempotent.
+- [x] Implementez/aliniez cron-ul zilnic pentru rolling refresh (fereastră exactă 7 zile complete: end=yesterday, start=end-6).
+- [x] Persist run-urile cron în aceeași infrastructură de sync runs și expun sursa (`manual`/`cron`) pentru UI detail.
+- [x] Extind Agency Account Detail ca să afișeze clar tip + sursă + status/progres/erori pentru run-uri manuale și cron.
+- [x] Adaug teste backend pentru rolling window, eligibilitate cron, crearea run-urilor cron; rulez build frontend.
+- [x] Documentez operarea cron în Railway și actualizez lessons după feedback.
+
+## Review — Activează backfill istoric manual + rolling sync zilnic prin cron
+- Workspace sincronizat prin detectare remote + `fetch/pull` pe branch-ul curent.
+- Agency Accounts: am eliminat acțiunea manuală `Sync last 7 days`; au rămas `Download historical` + `Refresh names`. `Download historical` este activ când există selecție validă și pornește backfill explicit de la `2024-01-09`.
+- Backend batch manual: payload-ul și trigger metadata sunt marcate explicit manual; mesajul final de succes rămâne strict pentru finalizare fără erori (`Date istorice descarcate începând cu 09.01.2024`).
+- Rolling cron zilnic: scheduler-ul calculează exact 7 zile complete per cont (`end_date=yesterday`, `start_date=end_date-6`), creează run-uri `rolling_refresh` în aceeași infrastructură `sync_runs/sync_run_chunks`, cu `trigger_source=cron`.
+- Eligibilitate cron implementată conservator: cont mapat la client + `sync_start_date` inițiat; conturile fără istoric inițiat sunt omise explicit (`history_not_initialized`).
+- Agency Account Detail afișează sursa run-ului (`manual`/`cron`) împreună cu status/progres/erori.
+- Fără endpoint backend nou: am reutilizat endpoint-urile existente și am extins minim serializarea run-urilor cu `trigger_source`.
+- Documentație operare Railway adăugată în `README.md` (comandă cron + worker + regulă fereastră zilnică).
+- Verificări rulate: backend py_compile, teste backend țintite (rolling/sync API/metadata), `tsc --noEmit`, `npm run build`.
+
+
+---
+
+# TODO — Task 5: repară autorizarea Download historical din Agency View
+
+- [x] Sincronizez workspace-ul (detect/config remote + pull branch curent).
+- [x] Reproduc eroarea de autorizare și identific cauza exactă pe traseul frontend -> endpoint -> permission guard.
+- [x] Repar autorizarea pentru manual historical backfill în agency scope, fără extindere excesivă de permisiuni.
+- [x] Verific restricțiile: conturi neatașate/neeligibile rămân blocate corect.
+- [x] Îmbunătățesc mesajele de eroare în UI (fără raw JSON).
+- [x] Adaug/actualizez teste backend pentru permission/scope + manual historical enqueue.
+- [x] Rulez build frontend și verific fluxul (enqueue + vizibilitate în account detail).
+- [x] Documentez review + lessons.
+
+## Review — Task 5: repară autorizarea Download historical din Agency View
+- Cauza reală: endpoint-ul de batch folosea `enforce_action_scope(action="integrations:sync", scope="agency")`, dar policy-ul RBAC pentru `integrations:sync` era definit doar pe `subaccount`, deci apărea exact eroarea `scope 'agency' vs expected: subaccount`.
+- Fix auth: am permis `integrations:sync` pe ambele scope-uri (`agency`, `subaccount`) în policy, păstrând controlul pe permisiune (role-urile fără `integrations:sync` rămân blocate).
+- Fix securitate flow: în `create_batch_sync_runs` am blocat explicit conturile neatașate (`attached_client_id is None`) ca invalide pentru manual backfill.
+- UX erori frontend: `apiRequest` parsează acum payload-ul de eroare și extrage mesajul relevant (`detail` / `message`) în loc de a afișa raw JSON brut.
+- Teste adăugate/actualizate: RBAC pentru `integrations:sync` în agency scope + test API batch care tratează cont neatașat ca invalid.
+- Build frontend trece și screenshot-ul pentru Agency Accounts a fost capturat; în dev local, apelurile API reale pot da `ECONNREFUSED` fără backend pornit, dar UI compilează corect.
+
+
+---
+
+# TODO — Task 6A: repară crash worker în claim_next_queued_chunk_any
+
+- [x] Actualizez workspace-ul înainte de modificări (fără a presupune remote `origin`).
+- [x] Confirm cauza exactă din cod/logs: query cu parametru `NULL` ne-tipizat în `claim_next_queued_chunk_any(platform=None)`.
+- [x] Fix minim și robust în store pentru ambele cazuri: `platform=None` și `platform='google_ads'`.
+- [x] Adaug teste backend de regresie pentru cele două variante de claim (`None` / `google_ads`).
+- [x] Verific worker flow prin teste relevante (chunk claimed, run queued->running->done/error) și fără crash.
+- [x] Rulez testele backend relevante și documentez review.
+
+## Review — Task 6A: repară crash worker în claim_next_queued_chunk_any
+- Workspace-ul local nu are remote tracking configurat pe branch-ul `work`; am verificat explicit status + remotes și am continuat fără pull (nu există upstream disponibil).
+- Cauza crash-ului: query-ul `claim_next_queued_chunk_any` folosea expresia `(%s IS NULL OR r.platform = %s)`; când `platform=None`, Postgres poate ridica `IndeterminateDatatype` pentru parametrul ne-tipizat folosit cu `IS NULL`.
+- Fix aplicat: două query-uri separate, unul fără filtru platform când `platform` e absent/gol și unul cu `AND r.platform = %s` când filtrul este setat.
+- Am păstrat comportamentul workerului și am adăugat logging operațional pentru observabilitate (`chunk_claimed`, `run_started`, `chunk_completed`, `chunk_failed`).
+- Teste noi de regresie: `claim_next_queued_chunk_any(platform=None)` și `claim_next_queued_chunk_any(platform='google_ads')`.
+- Testele worker existente validează în continuare flow-ul queued->running și finalizarea chunk-ului fără regresii.
