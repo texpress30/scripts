@@ -1207,7 +1207,6 @@
 - Am executat verificările într-o sesiune shell nouă (nou proces TTY), fără reutilizarea unei sesiuni interactive existente.
 - `git remote -v` nu a returnat intrări (nu există remote configurat în checkout-ul curent).
 - `git fetch --all --prune --verbose` s-a executat cu succes (exit code 0), fără output deoarece nu există remote-uri de sincronizat.
-<<<<<<< codex/close-session-and-open-new-workspace-z4otnh
 
 ---
 
@@ -1223,5 +1222,25 @@
 - `git remote add origin` și `git fetch origin` au reușit; fetch a descărcat branch-urile remote (inclusiv `origin/main` și `origin/work`).
 - `git pull origin main` a eșuat inițial cu `fatal: Need to specify how to reconcile divergent branches.` (setare locală Git nedefinită pentru pull pe branch-uri divergente).
 - Pentru a finaliza sincronizarea cerută, am rulat `git pull --no-rebase origin main`, care a reușit și a făcut merge cu strategia `ort`.
-=======
->>>>>>> main
+
+---
+
+# TODO — Fix build Vercel + rescriere curată Agency Accounts page
+
+- [x] Sync workspace la ultima stare a branch-ului curent înainte de modificări.
+- [x] Rescriu curat `apps/frontend/src/app/agency-accounts/page.tsx` (fără cod duplicat/corupt), păstrând ProtectedPage + AppShell.
+- [x] Refolosesc endpoint-urile existente (`/clients`, `/clients/accounts/summary`, `/clients/accounts/google`, `/integrations/google-ads/refresh-account-names`, `/agency/sync-runs/batch`, `/agency/sync-runs/batch/{batch_id}`).
+- [x] Implementez selecție paginată (inclusiv select all pe pagina curentă), cu blocare selecție pentru conturi neatașate.
+- [x] Păstrez acțiunile existente (attach, detach, refresh names) și implementez clean batch actions (last 7 days + historical cu fallback 2024-01-09).
+- [x] Adaug polling progres batch + afișare procent/done-total/errors + statusuri per cont când sunt disponibile.
+- [x] Rulez `npm run build` în `apps/frontend` și verificări manuale de logică cerute.
+- [x] Documentez review-ul final și actualizez lessons după feedback-ul de corecție.
+
+## Review — Fix build Vercel + rescriere curată Agency Accounts page
+- Am sincronizat branch-ul curent (`work`) la zi înainte de modificări (`fetch` + `pull`).
+- Fișierul `apps/frontend/src/app/agency-accounts/page.tsx` a fost rescris complet pentru a elimina codul corupt/duplicat și JSX invalid.
+- Pagina păstrează layout-ul `ProtectedPage` + `AppShell` și reutilizează endpoint-urile backend existente cerute.
+- Google Ads este implementat complet: listă paginată, select all per pagină, blocare selecție pentru conturi neatașate, attach/detach/refresh names, acțiuni batch last-7-days + historical cu fallback `2024-01-09`, polling progres batch + statusuri per cont.
+- Link-ul numelui de cont duce către ruta de detail `/agency-accounts/google_ads/{accountId}`.
+- Build frontend trece (`npm run build`), iar pagina a fost deschisă în browser local și capturată într-un screenshot artifact.
+
