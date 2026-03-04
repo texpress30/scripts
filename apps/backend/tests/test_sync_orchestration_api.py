@@ -205,6 +205,7 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.assertEqual(logs_payload["limit"], 10)
         self.assertEqual(len(logs_payload["runs"]), 1)
         self.assertEqual(logs_payload["runs"][0]["job_id"], job_id)
+        self.assertEqual(logs_payload["runs"][0]["trigger_source"], "manual")
 
         run_response = self.client.get(f"/agency/sync-runs/{job_id}", headers=headers)
         self.assertEqual(run_response.status_code, 200)
