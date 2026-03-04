@@ -1408,3 +1408,15 @@
 - Endpoint-uri aliniate la aceeași sursă de adevăr: `GET /batch/{batch_id}`, `GET /accounts/{platform}/{account_id}`, `GET /{job_id}` returnează run-uri reconciliate; batch progress este calculat din run-uri reconciliate și nu mai poate rămâne activ fals după terminalizare.
 - Pentru run-uri istorice cu agregate stale, reconcilierea read-time corectează afișarea imediat, fără rerulare manuală a sync-urilor vechi.
 - Teste: am adăugat teste unit pentru regulile done/active/partial/error, independența percent față de rows_written, și batch summary coherence; backend + frontend build trecute.
+
+---
+
+# TODO — Task 9: previne duplicate historical backfill + active run guard
+
+- [x] Actualizez workspace-ul înainte de modificări (fără a presupune remote `origin`).
+- [ ] Identific cauza reală a duplicatelor în create batch flow pentru historical_backfill.
+- [ ] Adaug guard backend per account/range/job_type pentru run activ existent (queued/running) și evit creare duplicat.
+- [ ] Returnez payload clar `already_exists` + run existent pentru UX/polling.
+- [ ] Ajustez frontend minim: mesaj clar pentru run activ existent + disable acțiune relevantă.
+- [ ] Adaug teste backend pentru request repetat/no-duplicate și path normal.
+- [ ] Rulez teste backend relevante + build frontend și documentez review + lessons.
