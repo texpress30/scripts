@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
+import logging
 from typing import Literal
 from uuid import uuid4
 
@@ -15,6 +16,7 @@ from app.services.sync_runs_store import sync_runs_store
 from app.workers.rolling_scheduler import enqueue_rolling_sync_runs
 
 router = APIRouter(prefix="/agency/sync-runs", tags=["sync-orchestration"])
+logger = logging.getLogger(__name__)
 
 
 class CreateBatchSyncRunsRequest(BaseModel):
@@ -262,33 +264,82 @@ def create_batch_sync_runs(payload: CreateBatchSyncRunsRequest, user: AuthUser =
 
     batch_id = uuid4().hex
     created_runs: list[dict[str, object]] = []
+    account_results: list[dict[str, object]] = []
+    already_exists_count = 0
 
     for account_id in valid_account_ids:
         job_id = uuid4().hex
         chunks = _build_chunks(start_date=start_date, end_date=end_date, chunk_days=payload.chunk_days)
-        created = sync_runs_store.create_sync_run(
-            job_id=job_id,
-            platform=payload.platform,
-            status="queued",
-            date_start=start_date,
-            date_end=end_date,
-            chunk_days=int(payload.chunk_days),
-            client_id=accounts_map.get(account_id),
-            account_id=account_id,
-            metadata={
-                "source": "manual",
-                "trigger_source": "manual",
-                "job_type": payload.job_type,
-                "grain": payload.grain,
-                "batch_id": batch_id,
-            },
-            batch_id=batch_id,
-            job_type=payload.job_type,
-            grain=payload.grain,
-            chunks_total=len(chunks),
-            chunks_done=0,
-            rows_written=0,
-        )
+        create_metadata = {
+            "source": "manual",
+            "trigger_source": "manual",
+            "job_type": payload.job_type,
+            "grain": payload.grain,
+            "batch_id": batch_id,
+        }
+        if payload.job_type == "historical_backfill":
+            outcome = sync_runs_store.create_historical_sync_run_if_not_active(
+                job_id=job_id,
+                platform=payload.platform,
+                date_start=start_date,
+                date_end=end_date,
+                chunk_days=int(payload.chunk_days),
+                client_id=accounts_map.get(account_id),
+                account_id=account_id,
+                metadata=create_metadata,
+                batch_id=batch_id,
+                grain=payload.grain,
+                chunks_total=len(chunks),
+                chunks_done=0,
+                rows_written=0,
+            )
+            created_flag = bool(outcome.get("created"))
+            created = outcome.get("run") if isinstance(outcome.get("run"), dict) else None
+        else:
+            created = sync_runs_store.create_sync_run(
+                job_id=job_id,
+                platform=payload.platform,
+                status="queued",
+                date_start=start_date,
+                date_end=end_date,
+                chunk_days=int(payload.chunk_days),
+                client_id=accounts_map.get(account_id),
+                account_id=account_id,
+                metadata=create_metadata,
+                batch_id=batch_id,
+                job_type=payload.job_type,
+                grain=payload.grain,
+                chunks_total=len(chunks),
+                chunks_done=0,
+                rows_written=0,
+            )
+            created_flag = True
+
+        if not created_flag:
+            already_exists_count += 1
+            logger.info(
+                "sync_runs.dedupe.skip_existing_active platform=%s account_id=%s job_type=%s date_start=%s date_end=%s existing_job_id=%s existing_status=%s",
+                payload.platform,
+                account_id,
+                payload.job_type,
+                start_date,
+                end_date,
+                created.get("job_id") if isinstance(created, dict) else None,
+                created.get("status") if isinstance(created, dict) else None,
+            )
+            account_results.append(
+                {
+                    "platform": payload.platform,
+                    "account_id": account_id,
+                    "client_id": created.get("client_id") if isinstance(created, dict) else accounts_map.get(account_id),
+                    "result": "already_exists",
+                    "job_id": created.get("job_id") if isinstance(created, dict) else None,
+                    "status": created.get("status") if isinstance(created, dict) else "queued",
+                    "date_start": str(created.get("date_start") if isinstance(created, dict) else start_date),
+                    "date_end": str(created.get("date_end") if isinstance(created, dict) else end_date),
+                }
+            )
+            continue
 
         for chunk_index, chunk_start, chunk_end in chunks:
             sync_run_chunks_store.create_sync_run_chunk(
@@ -306,6 +357,17 @@ def create_batch_sync_runs(payload: CreateBatchSyncRunsRequest, user: AuthUser =
                 },
             )
 
+        logger.info(
+            "sync_runs.created platform=%s account_id=%s job_type=%s date_start=%s date_end=%s job_id=%s chunks_total=%s",
+            payload.platform,
+            account_id,
+            payload.job_type,
+            start_date,
+            end_date,
+            created.get("job_id") if created is not None else job_id,
+            len(chunks),
+        )
+
         created_runs.append(
             {
                 "job_id": str(created.get("job_id") if created is not None else job_id),
@@ -313,6 +375,18 @@ def create_batch_sync_runs(payload: CreateBatchSyncRunsRequest, user: AuthUser =
                 "client_id": created.get("client_id") if created is not None else accounts_map.get(account_id),
                 "status": "queued",
                 "chunks_total": len(chunks),
+            }
+        )
+        account_results.append(
+            {
+                "platform": payload.platform,
+                "account_id": account_id,
+                "client_id": created.get("client_id") if created is not None else accounts_map.get(account_id),
+                "result": "created",
+                "job_id": str(created.get("job_id") if created is not None else job_id),
+                "status": "queued",
+                "date_start": str(start_date),
+                "date_end": str(end_date),
             }
         )
 
@@ -325,8 +399,10 @@ def create_batch_sync_runs(payload: CreateBatchSyncRunsRequest, user: AuthUser =
         "date_range": {"start": str(start_date), "end": str(end_date)},
         "chunk_days": int(payload.chunk_days),
         "created_count": len(created_runs),
+        "already_exists_count": already_exists_count,
         "invalid_account_ids": invalid_account_ids,
         "runs": created_runs,
+        "results": account_results,
     }
 
 

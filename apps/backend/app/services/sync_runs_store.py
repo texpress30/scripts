@@ -199,6 +199,107 @@ class SyncRunsStore:
 
         return self.get_sync_run(str(job_id))
 
+    def create_historical_sync_run_if_not_active(
+        self,
+        *,
+        job_id: str,
+        platform: str,
+        date_start: date,
+        date_end: date,
+        chunk_days: int,
+        client_id: int | None = None,
+        account_id: str | None = None,
+        metadata: dict[str, object] | None = None,
+        batch_id: str | None = None,
+        grain: str | None = None,
+        chunks_total: int = 0,
+        chunks_done: int = 0,
+        rows_written: int = 0,
+    ) -> dict[str, object]:
+        self._ensure_schema()
+        metadata_payload = metadata or {}
+        normalized_platform = str(platform)
+        normalized_account_id = str(account_id) if account_id is not None else ""
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                lock_key = (
+                    f"sync_runs:historical_backfill:{normalized_platform}:{normalized_account_id}:"
+                    f"{date_start.isoformat()}:{date_end.isoformat()}"
+                )
+                cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (lock_key,))
+
+                cur.execute(
+                    f"""
+                    SELECT
+                        {_SYNC_RUNS_SELECT_COLUMNS}
+                    FROM sync_runs
+                    WHERE platform = %s
+                        AND account_id = %s
+                        AND job_type = 'historical_backfill'
+                        AND date_start = %s
+                        AND date_end = %s
+                        AND status IN ('queued', 'running')
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (
+                        normalized_platform,
+                        normalized_account_id,
+                        date_start,
+                        date_end,
+                    ),
+                )
+                existing_row = cur.fetchone()
+                if existing_row is not None:
+                    conn.commit()
+                    return {"created": False, "run": self._row_to_payload(existing_row)}
+
+                cur.execute(
+                    """
+                    INSERT INTO sync_runs (
+                        job_id,
+                        platform,
+                        status,
+                        client_id,
+                        account_id,
+                        date_start,
+                        date_end,
+                        chunk_days,
+                        metadata,
+                        batch_id,
+                        job_type,
+                        grain,
+                        chunks_total,
+                        chunks_done,
+                        rows_written
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s)
+                    RETURNING
+                        {_SYNC_RUNS_SELECT_COLUMNS}
+                    """,
+                    (
+                        str(job_id),
+                        normalized_platform,
+                        "queued",
+                        client_id,
+                        normalized_account_id,
+                        date_start,
+                        date_end,
+                        int(chunk_days),
+                        json.dumps(metadata_payload),
+                        str(batch_id) if batch_id is not None else None,
+                        "historical_backfill",
+                        str(grain) if grain is not None else None,
+                        int(chunks_total),
+                        int(chunks_done),
+                        int(rows_written),
+                    ),
+                )
+                created_row = cur.fetchone()
+            conn.commit()
+
+        return {"created": True, "run": self._row_to_payload(created_row)}
+
     def get_sync_run(self, job_id: str) -> dict[str, object] | None:
         self._ensure_schema()
         with self._connect() as conn:
