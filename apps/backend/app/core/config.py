@@ -25,6 +25,7 @@ class Settings:
     google_ads_manager_customer_id: str
     google_ads_redirect_uri: str
     google_ads_refresh_token: str
+    integration_secret_encryption_key: str
     google_ads_customer_ids_csv: str
     google_ads_api_version: str
     google_ads_ui_rolling_sync_days: int
@@ -122,6 +123,7 @@ def load_settings() -> Settings:
         google_ads_manager_customer_id=_get_env("GOOGLE_ADS_MANAGER_CUSTOMER_ID", default=""),
         google_ads_redirect_uri=_get_env("GOOGLE_ADS_REDIRECT_URI", default=""),
         google_ads_refresh_token=_get_env("GOOGLE_ADS_REFRESH_TOKEN", default=""),
+        integration_secret_encryption_key=_get_env("INTEGRATION_SECRET_ENCRYPTION_KEY", default=""),
         google_ads_customer_ids_csv=_get_env("GOOGLE_ADS_CUSTOMER_IDS_CSV", default=""),
         google_ads_api_version=_get_env("GOOGLE_ADS_API_VERSION", default="v23"),
         google_ads_ui_rolling_sync_days=_parse_positive_int_env("GOOGLE_ADS_UI_ROLLING_SYNC_DAYS", default=7),
