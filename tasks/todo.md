@@ -1193,3 +1193,32 @@
 - Kept test mode behavior unchanged (in-memory path untouched).
 - Updated `_ensure_agency_platform_accounts_operational_metadata_schema()` and `_ensure_agency_platform_accounts_sync_state_schema()` to avoid runtime hard-fail (return early when columns are missing), preventing 500s before self-heal runs.
 - Requested backend checks pass (`py_compile` + targeted `pytest` subset).
+
+---
+
+# TODO — Workspace nou + verificare remote/fetch
+
+- [x] Inițializez un terminal nou (fără reutilizarea sesiunii anterioare) în repo-ul curent.
+- [x] Verific configurația `git remote` în workspace-ul nou.
+- [x] Rulez `git fetch` și confirm rezultat.
+- [x] Documentez review-ul și rezultatele verificării.
+
+## Review — Workspace nou + verificare remote/fetch
+- Am executat verificările într-o sesiune shell nouă (nou proces TTY), fără reutilizarea unei sesiuni interactive existente.
+- `git remote -v` nu a returnat intrări (nu există remote configurat în checkout-ul curent).
+- `git fetch --all --prune --verbose` s-a executat cu succes (exit code 0), fără output deoarece nu există remote-uri de sincronizat.
+
+---
+
+# TODO — Reconfigurare origin + fetch/pull main (cerință user)
+
+- [x] Rulez exact comanda de adăugare `origin` furnizată de user.
+- [x] Rulez exact `git fetch origin`.
+- [x] Rulez exact `git pull origin main`.
+- [x] Documentez rezultatul executării comenzilor.
+
+## Review — Reconfigurare origin + fetch/pull main (cerință user)
+- Am rulat exact comenzile cerute: `git remote add origin ...`, `git fetch origin`, `git pull origin main`.
+- `git remote add origin` și `git fetch origin` au reușit; fetch a descărcat branch-urile remote (inclusiv `origin/main` și `origin/work`).
+- `git pull origin main` a eșuat inițial cu `fatal: Need to specify how to reconcile divergent branches.` (setare locală Git nedefinită pentru pull pe branch-uri divergente).
+- Pentru a finaliza sincronizarea cerută, am rulat `git pull --no-rebase origin main`, care a reușit și a făcut merge cu strategia `ort`.
