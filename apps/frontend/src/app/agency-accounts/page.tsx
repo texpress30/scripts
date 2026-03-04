@@ -69,6 +69,7 @@ type BatchProgress = {
 
 type BatchStatusResponse = {
   batch_id: string;
+  status?: string;
   progress: BatchProgress;
   runs: BatchRun[];
 };
@@ -359,6 +360,7 @@ export default function AgencyAccountsPage() {
       if ((payload.invalid_account_ids ?? []).length > 0) {
         setSyncStatusMessage(`Unele conturi au fost ignorate: ${(payload.invalid_account_ids ?? []).join(", ")}`);
       }
+
       if (mode === "historical") {
         setCurrentHistoricalStartDate(historicalStartDateUsed);
       }
