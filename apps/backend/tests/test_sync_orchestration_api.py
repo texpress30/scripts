@@ -36,7 +36,7 @@ class SyncOrchestrationApiTests(unittest.TestCase):
                 return []
             return [
                 {"id": "3986597205", "name": "A", "attached_client_id": 11},
-                {"id": "1234567890", "name": "B", "attached_client_id": 22},
+                {"id": "1234567890", "name": "B", "attached_client_id": None},
             ]
 
         def _create_sync_run(**kwargs):
@@ -168,17 +168,18 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         )
         self.assertEqual(create_response.status_code, 200)
         create_payload = create_response.json()
-        self.assertEqual(create_payload["created_count"], 2)
-        self.assertEqual(len(create_payload["runs"]), 2)
+        self.assertEqual(create_payload["created_count"], 1)
+        self.assertEqual(len(create_payload["runs"]), 1)
         self.assertTrue(create_payload["batch_id"])
+        self.assertIn("1234567890", create_payload["invalid_account_ids"])
 
         batch_id = create_payload["batch_id"]
         status_response = self.client.get(f"/agency/sync-runs/batch/{batch_id}", headers=headers)
         self.assertEqual(status_response.status_code, 200)
         status_payload = status_response.json()
-        self.assertEqual(status_payload["progress"]["total_runs"], 2)
+        self.assertEqual(status_payload["progress"]["total_runs"], 1)
         self.assertGreater(status_payload["progress"]["chunks_total"], 0)
-        self.assertEqual(len(status_payload["runs"]), 2)
+        self.assertEqual(len(status_payload["runs"]), 1)
 
     def test_account_runs_and_chunk_details_shape(self):
         headers = self._auth_headers()
@@ -205,6 +206,7 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.assertEqual(logs_payload["limit"], 10)
         self.assertEqual(len(logs_payload["runs"]), 1)
         self.assertEqual(logs_payload["runs"][0]["job_id"], job_id)
+        self.assertEqual(logs_payload["runs"][0]["trigger_source"], "manual")
 
         run_response = self.client.get(f"/agency/sync-runs/{job_id}", headers=headers)
         self.assertEqual(run_response.status_code, 200)

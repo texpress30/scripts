@@ -71,6 +71,12 @@ def _build_chunks(*, start_date: date, end_date: date, chunk_days: int) -> list[
 
 
 def _serialize_run(item: dict[str, object]) -> dict[str, object]:
+    metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+    trigger_source = metadata.get("trigger_source") or metadata.get("source") or "manual"
+    if str(trigger_source) in {"agency_batch", "manual"}:
+        trigger_source = "manual"
+    elif str(trigger_source) in {"rolling_scheduler", "cron"}:
+        trigger_source = "cron"
     return {
         "job_id": item.get("job_id"),
         "batch_id": item.get("batch_id"),
@@ -91,7 +97,8 @@ def _serialize_run(item: dict[str, object]) -> dict[str, object]:
         "updated_at": item.get("updated_at"),
         "started_at": item.get("started_at"),
         "finished_at": item.get("finished_at"),
-        "metadata": item.get("metadata") or {},
+        "metadata": metadata,
+        "trigger_source": str(trigger_source),
     }
 
 
@@ -113,6 +120,7 @@ def _serialize_chunk(item: dict[str, object]) -> dict[str, object]:
         "error": item.get("error"),
         "metadata": item.get("metadata") or {},
     }
+
 
 @router.post("/batch")
 def create_batch_sync_runs(payload: CreateBatchSyncRunsRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
@@ -138,8 +146,8 @@ def create_batch_sync_runs(payload: CreateBatchSyncRunsRequest, user: AuthUser =
         attached = item.get("attached_client_id")
         accounts_map[normalized] = int(attached) if attached is not None else None
 
-    valid_account_ids = [account_id for account_id in normalized_account_ids if account_id in accounts_map]
-    invalid_account_ids = [account_id for account_id in normalized_account_ids if account_id not in accounts_map]
+    valid_account_ids = [account_id for account_id in normalized_account_ids if account_id in accounts_map and accounts_map.get(account_id) is not None]
+    invalid_account_ids = [account_id for account_id in normalized_account_ids if account_id not in accounts_map or accounts_map.get(account_id) is None]
 
     if len(valid_account_ids) <= 0:
         raise HTTPException(status_code=400, detail={"message": "Niciun account_id valid pentru platformă", "invalid_account_ids": invalid_account_ids})
@@ -160,7 +168,8 @@ def create_batch_sync_runs(payload: CreateBatchSyncRunsRequest, user: AuthUser =
             client_id=accounts_map.get(account_id),
             account_id=account_id,
             metadata={
-                "source": "agency_batch",
+                "source": "manual",
+                "trigger_source": "manual",
                 "job_type": payload.job_type,
                 "grain": payload.grain,
                 "batch_id": batch_id,
@@ -181,7 +190,8 @@ def create_batch_sync_runs(payload: CreateBatchSyncRunsRequest, user: AuthUser =
                 date_start=chunk_start,
                 date_end=chunk_end,
                 metadata={
-                    "source": "agency_batch",
+                    "source": "manual",
+                    "trigger_source": "manual",
                     "batch_id": batch_id,
                     "job_type": payload.job_type,
                     "grain": payload.grain,
