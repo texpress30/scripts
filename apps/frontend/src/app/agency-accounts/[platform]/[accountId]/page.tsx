@@ -270,6 +270,25 @@ export default function AgencyAccountDetailPage() {
     }
   }
 
+  function toggleRunExpanded(jobId: string) {
+    setExpandedRunIds((current) => {
+      const next = new Set(current);
+      if (next.has(jobId)) {
+        next.delete(jobId);
+      } else {
+        next.add(jobId);
+        if (!chunksByRun[jobId] && !chunksLoadingByRun[jobId]) {
+          void loadChunks(jobId);
+        }
+      }
+      return next;
+    });
+  }
+
+  async function refreshAll() {
+    await Promise.all([loadAccountMeta(), loadRuns()]);
+  }
+
   useEffect(() => {
     if (!platform || !accountId) return;
     void refreshAll();

@@ -69,6 +69,7 @@ type BatchProgress = {
 
 type BatchStatusResponse = {
   batch_id: string;
+  status?: string;
   progress: BatchProgress;
   runs: BatchRun[];
 };
