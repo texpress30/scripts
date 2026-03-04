@@ -28,12 +28,23 @@ type AccountSummaryResponse = { items: AccountSummaryItem[] };
 type GoogleAccount = {
   id: string;
   name: string;
+  platform?: string;
+  account_id?: string;
+  display_name?: string;
   attached_client_id?: number | null;
   attached_client_name?: string | null;
+  timezone?: string | null;
+  currency?: string | null;
   sync_start_date?: string | null;
-  last_synced_at?: string | null;
+  backfill_completed_through?: string | null;
   rolling_synced_through?: string | null;
+  last_success_at?: string | null;
   last_error?: string | null;
+  last_run_status?: string | null;
+  last_run_type?: string | null;
+  last_run_started_at?: string | null;
+  last_run_finished_at?: string | null;
+  has_active_sync?: boolean;
 };
 
 type GoogleAccountsResponse = {
@@ -109,7 +120,7 @@ function formatRoDate(value: string): string {
 }
 
 function accountDisplayName(account: GoogleAccount): string {
-  const clean = account.name?.trim();
+  const clean = account.display_name?.trim() || account.name?.trim();
   return clean ? clean : `Google Account ${account.id}`;
 }
 
@@ -542,9 +553,13 @@ export default function AgencyAccountsPage() {
                                   {attached ? `Atașat la: ${account.attached_client_name}` : "Neatașat la client (nu poate fi selectat)"}
                                 </p>
                                 <p className="text-xs text-slate-500">
-                                  Last synced: {formatDateTime(account.last_synced_at)} · Rolling through: {formatDateTime(account.rolling_synced_through)}
+                                  Ultimul sync reușit: {account.last_success_at ? formatDateTime(account.last_success_at) : "Nu există sync finalizat încă"} · Istoric până la: {account.backfill_completed_through ?? "Backfill neinițiat"}
                                 </p>
-                                {account.last_error ? <p className="text-xs text-red-600">Last error: {account.last_error}</p> : null}
+                                {account.rolling_synced_through ? <p className="text-xs text-slate-500">Rolling până la: {account.rolling_synced_through}</p> : <p className="text-xs text-slate-500">Rolling sync neinițiat</p>}
+                                {account.sync_start_date ? <p className="text-xs text-slate-500">Start istoric: {account.sync_start_date}</p> : null}
+                                {account.last_error ? <p className="text-xs text-red-600">Eroare recentă: {account.last_error}</p> : null}
+                                {account.has_active_sync ? <p className="text-xs text-indigo-700">Sync activ</p> : null}
+                                {account.last_run_status ? <p className="text-xs text-slate-500">Ultimul status: {account.last_run_status}{account.last_run_type ? ` (${account.last_run_type})` : ""}</p> : null}
                                 {rowStatus ? <p className="text-xs text-indigo-700">Batch status: {rowStatus}</p> : null}
                               </div>
                             </div>

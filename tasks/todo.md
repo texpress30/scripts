@@ -1263,3 +1263,23 @@
 - Pagina de detail face auto-refresh la interval scurt când există run activ (`queued/running/pending`) și are buton manual `Refresh`.
 - Nu a fost necesar endpoint backend nou; s-au refolosit endpoint-urile existente de read (`/clients/accounts/google`, `/agency/sync-runs/accounts/...`, `/agency/sync-runs/{job_id}/chunks`).
 - Build frontend trece cu succes (`npm run build`).
+
+---
+
+# TODO — Normalize metadata sync + coverage pentru Agency Accounts
+
+- [x] Detectez/configurez remote-ul git fără a presupune `origin`, apoi sincronizez branch-ul curent.
+- [x] Inspectez endpoint-urile/payload-urile actuale pentru Agency Accounts list + Agency Account Detail.
+- [x] Implementez în backend un contract unificat pentru metadata sync la nivel de account, derivat centralizat.
+- [x] Actualizez frontend list + detail să consume aceeași semantică de metadata, cu empty states lizibile.
+- [x] Adaug/actualizez teste backend relevante pentru derivare/payload normalizat.
+- [x] Rulez build frontend + verificări cerute și documentez rezultatele.
+- [x] Actualizez lessons după feedback-ul de corecție.
+
+## Review — Normalize metadata sync + coverage pentru Agency Accounts
+- Workspace-ul a fost sincronizat după detectarea remote-ului existent (fallback configurare remote când lipsea), apoi `fetch + pull` pe branch-ul curent.
+- Backend: am unificat metadata sync la nivel account direct în read-model-ul `list_platform_accounts`, cu aceleași câmpuri pentru list + detail (`platform`, `account_id`, `display_name`, `attached_client_*`, `timezone`, `currency`, `sync_start_date`, `backfill_completed_through`, `rolling_synced_through`, `last_success_at`, `last_error`, `last_run_*`, `has_active_sync`).
+- Derivarea este read-time (fără persistență nouă): account table + mapping + sync_runs (latest run, active run, backfill/rolling coverage agregat, last success/error fallback).
+- Frontend: Agency Accounts și Agency Account Detail consumă același model semantic și afișează stări lizibile când nu există sync finalizat/backfill/rolling inițiat.
+- Nu am adăugat endpoint backend nou; am reutilizat endpoint-urile existente (`/clients/accounts/google` + endpoint-urile sync-runs deja folosite în detail).
+- Verificări: `py_compile`, test nou backend pentru contract, `tsc --noEmit`, `npm run build`; screenshot automation a eșuat în acest mediu din cauza crash Chromium (SIGSEGV).

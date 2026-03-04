@@ -11,15 +11,23 @@ import { apiRequest } from "@/lib/api";
 type GoogleAccount = {
   id: string;
   name: string;
+  platform?: string;
+  account_id?: string;
+  display_name?: string;
   attached_client_id?: number | null;
   attached_client_name?: string | null;
-  account_timezone?: string | null;
-  account_currency?: string | null;
+  timezone?: string | null;
+  currency?: string | null;
   sync_start_date?: string | null;
   backfill_completed_through?: string | null;
   rolling_synced_through?: string | null;
   last_success_at?: string | null;
   last_error?: string | null;
+  last_run_status?: string | null;
+  last_run_type?: string | null;
+  last_run_started_at?: string | null;
+  last_run_finished_at?: string | null;
+  has_active_sync?: boolean;
 };
 
 type GoogleAccountsResponse = {
@@ -218,7 +226,7 @@ export default function AgencyAccountDetailPage() {
         <main className="space-y-4 p-6">
           <div>
             <Link href="/agency-accounts" className="text-sm text-indigo-600 hover:underline">← Back to Agency Accounts</Link>
-            <h2 className="mt-2 text-lg font-semibold text-slate-900">Account: {accountMeta?.name ?? accountId}</h2>
+            <h2 className="mt-2 text-lg font-semibold text-slate-900">Account: {accountMeta?.display_name ?? accountMeta?.name ?? accountId}</h2>
           </div>
 
           <section className="wm-card p-4">
@@ -226,18 +234,34 @@ export default function AgencyAccountDetailPage() {
             {metaError ? <p className="mt-2 text-sm text-red-600">{metaError}</p> : null}
             {metaLoading ? <p className="mt-2 text-sm text-slate-500">Se încarcă metadata contului...</p> : null}
             {!metaLoading ? (
+              <>
               <div className="mt-3 grid grid-cols-1 gap-2 text-sm text-slate-700 md:grid-cols-2">
-                <p><span className="font-medium">Account name:</span> {accountMeta?.name ?? "-"}</p>
+                <p><span className="font-medium">Account name:</span> {accountMeta?.display_name ?? accountMeta?.name ?? "-"}</p>
                 <p><span className="font-medium">Account ID:</span> {accountId}</p>
-                <p><span className="font-medium">Platform:</span> {platform}</p>
+                <p><span className="font-medium">Platform:</span> {accountMeta?.platform ?? platform}</p>
                 <p><span className="font-medium">Attached client:</span> {accountMeta?.attached_client_name ?? "Neatașat"}</p>
-                <p><span className="font-medium">Timezone:</span> {accountMeta?.account_timezone ?? "-"}</p>
-                <p><span className="font-medium">Currency:</span> {accountMeta?.account_currency ?? "-"}</p>
+                <p><span className="font-medium">Timezone:</span> {accountMeta?.timezone ?? "-"}</p>
+                <p><span className="font-medium">Currency:</span> {accountMeta?.currency ?? "-"}</p>
                 <p><span className="font-medium">sync_start_date:</span> {accountMeta?.sync_start_date ?? "-"}</p>
-                <p><span className="font-medium">backfill_completed_through:</span> {accountMeta?.backfill_completed_through ?? "-"}</p>
-                <p><span className="font-medium">rolling_synced_through:</span> {accountMeta?.rolling_synced_through ?? "-"}</p>
-                <p><span className="font-medium">last_success_at:</span> {formatDate(accountMeta?.last_success_at)}</p>
+                <p><span className="font-medium">backfill_completed_through:</span> {accountMeta?.backfill_completed_through ?? "Backfill neinițiat"}</p>
+                <p><span className="font-medium">rolling_synced_through:</span> {accountMeta?.rolling_synced_through ?? "Rolling sync neinițiat"}</p>
+                <p><span className="font-medium">last_success_at:</span> {accountMeta?.last_success_at ? formatDate(accountMeta?.last_success_at) : "Nu există sync finalizat încă"}</p>
+                <p><span className="font-medium">last_run_status:</span> {accountMeta?.last_run_status ?? "N/A"}</p>
+                <p><span className="font-medium">last_run_type:</span> {accountMeta?.last_run_type ?? "N/A"}</p>
+                <p><span className="font-medium">last_run_started_at:</span> {formatDate(accountMeta?.last_run_started_at)}</p>
+                <p><span className="font-medium">last_run_finished_at:</span> {formatDate(accountMeta?.last_run_finished_at)}</p>
               </div>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                <span className={`rounded px-2 py-1 font-medium ${accountMeta?.has_active_sync ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600"}`}>
+                  {accountMeta?.has_active_sync ? "Sync activ" : "Fără sync activ"}
+                </span>
+                {accountMeta?.last_run_status ? (
+                  <span className={`rounded px-2 py-1 font-medium ${statusBadge(accountMeta.last_run_status)}`}>
+                    Ultimul status: {accountMeta.last_run_status}
+                  </span>
+                ) : null}
+              </div>
+              </>
             ) : null}
             {accountMeta?.last_error ? <div className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-700">{accountMeta.last_error}</div> : null}
           </section>
