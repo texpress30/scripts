@@ -1228,6 +1228,9 @@ class ServiceTests(unittest.TestCase):
             def execute(self, query, params=None):
                 sql = str(query)
                 args = tuple(params or ())
+                if "CREATE TABLE IF NOT EXISTS sync_run_chunks" in sql or "ALTER TABLE sync_run_chunks" in sql or "CREATE INDEX IF NOT EXISTS idx_sync_run_chunks" in sql:
+                    self._row = None
+                    return
                 if "SELECT to_regclass('public.sync_run_chunks')" in sql:
                     self._row = ("sync_run_chunks",)
                     return
@@ -1284,6 +1287,261 @@ class ServiceTests(unittest.TestCase):
             self.assertIsNotNone(claimed)
             self.assertEqual(claimed["chunk_index"], 0)
             self.assertEqual(claimed["status"], "running")
+            self.assertEqual(claimed["attempts"], 1)
+        finally:
+            sync_run_chunks_store._connect = original_connect
+            sync_run_chunks_store._schema_initialized = False
+
+    def test_sync_run_chunks_store_claim_next_queued_chunk_any_without_platform_filter(self):
+        sync_run_chunks_store._schema_initialized = False
+        rows = [
+            {
+                "id": 11,
+                "job_id": "job-11",
+                "chunk_index": 0,
+                "status": "queued",
+                "date_start": "2026-01-01",
+                "date_end": "2026-01-07",
+                "created_at": "2026-03-01T00:00:01+00:00",
+                "updated_at": "2026-03-01T00:00:01+00:00",
+                "started_at": None,
+                "finished_at": None,
+                "error": None,
+                "metadata": "{}",
+                "attempts": 0,
+                "rows_written": 0,
+                "duration_ms": None,
+                "platform": "google_ads",
+                "account_id": "3986597205",
+                "client_id": 101,
+                "job_type": "manual",
+                "grain": "account_daily",
+                "chunk_days": 7,
+                "batch_id": "batch-1",
+                "run_status": "queued",
+            }
+        ]
+
+        class _FakeCursor:
+            def __init__(self):
+                self._row = None
+
+            def execute(self, query, params=None):
+                sql = str(query)
+                args = tuple(params or ())
+                if "CREATE TABLE IF NOT EXISTS sync_run_chunks" in sql or "ALTER TABLE sync_run_chunks" in sql or "CREATE INDEX IF NOT EXISTS idx_sync_run_chunks" in sql:
+                    self._row = None
+                    return
+                if "SELECT to_regclass('public.sync_run_chunks')" in sql:
+                    self._row = ("sync_run_chunks",)
+                    return
+                if "SELECT c.id" in sql and "FROM sync_run_chunks c" in sql:
+                    self.assertNotIn("r.platform = %s", sql)
+                    selected = next((r for r in rows if r["status"] == "queued" and int(r["attempts"]) < int(args[0])), None)
+                    self._row = (selected["id"],) if selected is not None else None
+                    return
+                if "UPDATE sync_run_chunks" in sql and "RETURNING" in sql:
+                    selected = rows[0]
+                    selected["status"] = "running"
+                    selected["attempts"] = int(selected["attempts"]) + 1
+                    selected["started_at"] = "2026-03-01T00:00:05+00:00"
+                    selected["updated_at"] = "2026-03-01T00:00:05+00:00"
+                    self._row = (
+                        selected["id"],
+                        selected["job_id"],
+                        selected["chunk_index"],
+                        selected["status"],
+                        selected["date_start"],
+                        selected["date_end"],
+                        selected["created_at"],
+                        selected["updated_at"],
+                        selected["started_at"],
+                        selected["finished_at"],
+                        selected["error"],
+                        selected["metadata"],
+                        selected["attempts"],
+                        selected["rows_written"],
+                        selected["duration_ms"],
+                    )
+                    return
+                if "SELECT platform, account_id, client_id, job_type, grain, chunk_days, batch_id, status" in sql:
+                    selected = rows[0]
+                    self._row = (
+                        selected["platform"],
+                        selected["account_id"],
+                        selected["client_id"],
+                        selected["job_type"],
+                        selected["grain"],
+                        selected["chunk_days"],
+                        selected["batch_id"],
+                        selected["run_status"],
+                    )
+                    return
+                raise AssertionError(f"Unexpected SQL: {sql}")
+
+            def fetchone(self):
+                return self._row
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def assertNotIn(self, text: str, payload: str):
+                if text in payload:
+                    raise AssertionError(f"'{text}' unexpectedly found in SQL: {payload}")
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def commit(self):
+                return None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_connect = sync_run_chunks_store._connect
+        try:
+            sync_run_chunks_store._connect = lambda: _FakeConn()
+            claimed = sync_run_chunks_store.claim_next_queued_chunk_any(platform=None, max_attempts=5)
+            self.assertIsNotNone(claimed)
+            self.assertEqual(claimed["status"], "running")
+            self.assertEqual(claimed["platform"], "google_ads")
+            self.assertEqual(claimed["attempts"], 1)
+        finally:
+            sync_run_chunks_store._connect = original_connect
+            sync_run_chunks_store._schema_initialized = False
+
+    def test_sync_run_chunks_store_claim_next_queued_chunk_any_with_platform_filter(self):
+        sync_run_chunks_store._schema_initialized = False
+        rows = [
+            {
+                "id": 22,
+                "job_id": "job-22",
+                "chunk_index": 0,
+                "status": "queued",
+                "date_start": "2026-01-01",
+                "date_end": "2026-01-07",
+                "created_at": "2026-03-01T00:00:01+00:00",
+                "updated_at": "2026-03-01T00:00:01+00:00",
+                "started_at": None,
+                "finished_at": None,
+                "error": None,
+                "metadata": "{}",
+                "attempts": 0,
+                "rows_written": 0,
+                "duration_ms": None,
+                "platform": "google_ads",
+                "account_id": "3986597205",
+                "client_id": 101,
+                "job_type": "manual",
+                "grain": "account_daily",
+                "chunk_days": 7,
+                "batch_id": "batch-2",
+                "run_status": "queued",
+            }
+        ]
+
+        class _FakeCursor:
+            def __init__(self):
+                self._row = None
+
+            def execute(self, query, params=None):
+                sql = str(query)
+                args = tuple(params or ())
+                if "CREATE TABLE IF NOT EXISTS sync_run_chunks" in sql or "ALTER TABLE sync_run_chunks" in sql or "CREATE INDEX IF NOT EXISTS idx_sync_run_chunks" in sql:
+                    self._row = None
+                    return
+                if "SELECT to_regclass('public.sync_run_chunks')" in sql:
+                    self._row = ("sync_run_chunks",)
+                    return
+                if "SELECT c.id" in sql and "FROM sync_run_chunks c" in sql:
+                    self.assertIn("r.platform = %s", sql)
+                    self.assertEqual(args[1], "google_ads")
+                    selected = next((r for r in rows if r["status"] == "queued" and int(r["attempts"]) < int(args[0]) and r["platform"] == str(args[1])), None)
+                    self._row = (selected["id"],) if selected is not None else None
+                    return
+                if "UPDATE sync_run_chunks" in sql and "RETURNING" in sql:
+                    selected = rows[0]
+                    selected["status"] = "running"
+                    selected["attempts"] = int(selected["attempts"]) + 1
+                    selected["started_at"] = "2026-03-01T00:00:05+00:00"
+                    selected["updated_at"] = "2026-03-01T00:00:05+00:00"
+                    self._row = (
+                        selected["id"],
+                        selected["job_id"],
+                        selected["chunk_index"],
+                        selected["status"],
+                        selected["date_start"],
+                        selected["date_end"],
+                        selected["created_at"],
+                        selected["updated_at"],
+                        selected["started_at"],
+                        selected["finished_at"],
+                        selected["error"],
+                        selected["metadata"],
+                        selected["attempts"],
+                        selected["rows_written"],
+                        selected["duration_ms"],
+                    )
+                    return
+                if "SELECT platform, account_id, client_id, job_type, grain, chunk_days, batch_id, status" in sql:
+                    selected = rows[0]
+                    self._row = (
+                        selected["platform"],
+                        selected["account_id"],
+                        selected["client_id"],
+                        selected["job_type"],
+                        selected["grain"],
+                        selected["chunk_days"],
+                        selected["batch_id"],
+                        selected["run_status"],
+                    )
+                    return
+                raise AssertionError(f"Unexpected SQL: {sql}")
+
+            def fetchone(self):
+                return self._row
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def assertIn(self, text: str, payload: str):
+                if text not in payload:
+                    raise AssertionError(f"'{text}' missing from SQL: {payload}")
+
+            def assertEqual(self, left, right):
+                if left != right:
+                    raise AssertionError(f"{left!r} != {right!r}")
+
+        class _FakeConn:
+            def cursor(self):
+                return _FakeCursor()
+
+            def commit(self):
+                return None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        original_connect = sync_run_chunks_store._connect
+        try:
+            sync_run_chunks_store._connect = lambda: _FakeConn()
+            claimed = sync_run_chunks_store.claim_next_queued_chunk_any(platform="google_ads", max_attempts=5)
+            self.assertIsNotNone(claimed)
+            self.assertEqual(claimed["status"], "running")
+            self.assertEqual(claimed["platform"], "google_ads")
             self.assertEqual(claimed["attempts"], 1)
         finally:
             sync_run_chunks_store._connect = original_connect
@@ -3492,6 +3750,9 @@ class ServiceTests(unittest.TestCase):
             def execute(self, query, params=None):
                 sql = str(query)
 
+                if "CREATE TABLE IF NOT EXISTS sync_run_chunks" in sql or "ALTER TABLE sync_run_chunks" in sql or "CREATE INDEX IF NOT EXISTS idx_sync_run_chunks" in sql:
+                    self._row = None
+                    return
                 if "SELECT to_regclass('public.sync_run_chunks')" in sql:
                     self._row = ("sync_run_chunks",)
                     return

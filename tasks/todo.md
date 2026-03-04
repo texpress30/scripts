@@ -1330,3 +1330,22 @@
 - Teste adăugate/actualizate: RBAC pentru `integrations:sync` în agency scope + test API batch care tratează cont neatașat ca invalid.
 - Build frontend trece și screenshot-ul pentru Agency Accounts a fost capturat; în dev local, apelurile API reale pot da `ECONNREFUSED` fără backend pornit, dar UI compilează corect.
 
+
+---
+
+# TODO — Task 6A: repară crash worker în claim_next_queued_chunk_any
+
+- [x] Actualizez workspace-ul înainte de modificări (fără a presupune remote `origin`).
+- [x] Confirm cauza exactă din cod/logs: query cu parametru `NULL` ne-tipizat în `claim_next_queued_chunk_any(platform=None)`.
+- [x] Fix minim și robust în store pentru ambele cazuri: `platform=None` și `platform='google_ads'`.
+- [x] Adaug teste backend de regresie pentru cele două variante de claim (`None` / `google_ads`).
+- [x] Verific worker flow prin teste relevante (chunk claimed, run queued->running->done/error) și fără crash.
+- [x] Rulez testele backend relevante și documentez review.
+
+## Review — Task 6A: repară crash worker în claim_next_queued_chunk_any
+- Workspace-ul local nu are remote tracking configurat pe branch-ul `work`; am verificat explicit status + remotes și am continuat fără pull (nu există upstream disponibil).
+- Cauza crash-ului: query-ul `claim_next_queued_chunk_any` folosea expresia `(%s IS NULL OR r.platform = %s)`; când `platform=None`, Postgres poate ridica `IndeterminateDatatype` pentru parametrul ne-tipizat folosit cu `IS NULL`.
+- Fix aplicat: două query-uri separate, unul fără filtru platform când `platform` e absent/gol și unul cu `AND r.platform = %s` când filtrul este setat.
+- Am păstrat comportamentul workerului și am adăugat logging operațional pentru observabilitate (`chunk_claimed`, `run_started`, `chunk_completed`, `chunk_failed`).
+- Teste noi de regresie: `claim_next_queued_chunk_any(platform=None)` și `claim_next_queued_chunk_any(platform='google_ads')`.
+- Testele worker existente validează în continuare flow-ul queued->running și finalizarea chunk-ului fără regresii.

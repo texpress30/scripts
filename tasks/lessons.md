@@ -156,3 +156,4 @@
 - 2026-03-04: Când se mută un flow din UI în cron, elimină trigger-ul manual din frontend (nu doar disable), marchează sursa run-ului în backend (`trigger_source`) și păstrează aceeași infrastructură de persistare/logging pentru observabilitate unificată.
 
 - 2026-03-04: Când un endpoint agency folosește o acțiune RBAC existentă, verifică explicit compatibilitatea `action`+`scope` în `ACTION_POLICIES`; nu presupune că permisiunea role este suficientă dacă scope-ul nu include contextul endpoint-ului.
+- 2026-03-04: Pentru query-uri SQL cu filtre opționale pe parametri (`platform`), evită pattern-ul `(%s IS NULL OR column = %s)` cu psycopg; folosește query-uri separate sau cast explicit tipat pentru a preveni `psycopg.errors.IndeterminateDatatype` la valori `None`.
