@@ -1244,3 +1244,22 @@
 - Link-ul numelui de cont duce către ruta de detail `/agency-accounts/google_ads/{accountId}`.
 - Build frontend trece (`npm run build`), iar pagina a fost deschisă în browser local și capturată într-un screenshot artifact.
 
+---
+
+# TODO — Polish Agency Accounts + Agency Account Detail sync logs
+
+- [x] Sync workspace la ultima stare a branch-ului curent înainte de modificări.
+- [x] Ajustez butoanele de acțiuni din Agency Accounts (Sync last 7 days / Download historical / Refresh names) cu stiluri și stări clare (default/hover/disabled/loading).
+- [x] Verific și îmbunătățesc pagina de detail `/agency-accounts/google_ads/[accountId]` pentru metadata + sync runs/logs operaționale.
+- [x] Adaug auto-refresh/polling pe detail când există run activ și păstrez buton manual de refresh.
+- [x] Rulez build frontend + verificări manuale cerute.
+- [x] Documentez review și actualizez lessons după feedback-ul de corecție.
+
+## Review — Polish Agency Accounts + Agency Account Detail sync logs
+- Am sincronizat workspace-ul pe `work` înainte de modificări (`git fetch origin` + `git pull --no-rebase origin work`).
+- În Agency Accounts, `Sync last 7 days`, `Download historical` și `Refresh names` sunt butoane reale cu stiluri distincte și stări clare (`disabled` + text de loading).
+- `Sync last 7 days` (primar indigo) și `Download historical` (verde distinct) sunt diferențiate vizual; `Refresh names` este secondary/outline.
+- În Agency Account Detail am păstrat metadata și am extins secțiunea Sync runs: ordonare descrescătoare după dată, badge status, range/start/end, progres chunk-uri, număr erori, eroare principală, plus detalii chunk-uri pe expand/collapse pentru fiecare run.
+- Pagina de detail face auto-refresh la interval scurt când există run activ (`queued/running/pending`) și are buton manual `Refresh`.
+- Nu a fost necesar endpoint backend nou; s-au refolosit endpoint-urile existente de read (`/clients/accounts/google`, `/agency/sync-runs/accounts/...`, `/agency/sync-runs/{job_id}/chunks`).
+- Build frontend trece cu succes (`npm run build`).

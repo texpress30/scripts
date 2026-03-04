@@ -45,7 +45,6 @@ type GoogleAccountsResponse = {
 type BatchRun = {
   account_id?: string | null;
   status?: string | null;
-  error?: string | null;
 };
 
 type BatchProgress = {
@@ -114,6 +113,17 @@ function accountDisplayName(account: GoogleAccount): string {
   return clean ? clean : `Google Account ${account.id}`;
 }
 
+function actionButtonClass(variant: "primary" | "historical" | "ghost"): string {
+  const base = "inline-flex items-center rounded-md px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50";
+  if (variant === "primary") {
+    return `${base} bg-indigo-600 text-white hover:bg-indigo-700`;
+  }
+  if (variant === "historical") {
+    return `${base} bg-emerald-600 text-white hover:bg-emerald-700`;
+  }
+  return `${base} border border-slate-300 bg-white text-slate-700 hover:bg-slate-50`;
+}
+
 export default function AgencyAccountsPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -128,6 +138,7 @@ export default function AgencyAccountsPage() {
   const [accountsPageSize, setAccountsPageSize] = useState(50);
 
   const [actionBusy, setActionBusy] = useState(false);
+  const [runningAction, setRunningAction] = useState<"refresh" | "rolling" | "historical" | null>(null);
   const [attachStatus, setAttachStatus] = useState("");
   const [syncError, setSyncError] = useState("");
   const [syncStatusMessage, setSyncStatusMessage] = useState("");
@@ -271,6 +282,7 @@ export default function AgencyAccountsPage() {
   async function refreshGoogleAccountNames() {
     setAttachStatus("");
     setActionBusy(true);
+    setRunningAction("refresh");
     try {
       const payload = await apiRequest<{ refreshed_count: number }>("/integrations/google-ads/refresh-account-names", {
         method: "POST",
@@ -281,6 +293,7 @@ export default function AgencyAccountsPage() {
       setAttachStatus(err instanceof Error ? err.message : "Nu am putut actualiza numele conturilor Google.");
     } finally {
       setActionBusy(false);
+      setRunningAction(null);
     }
   }
 
@@ -310,16 +323,13 @@ export default function AgencyAccountsPage() {
       setCurrentHistoricalStartDate(null);
     } else {
       body.job_type = "historical_backfill";
-
       const validStarts = selectedMappedAccounts
         .map((item) => item.sync_start_date?.trim() ?? "")
         .filter((dateValue) => isValidIsoDate(dateValue))
         .sort();
-
       historicalStartDateUsed = validStarts[0] ?? DEFAULT_HISTORICAL_START;
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
-
       body.start_date = historicalStartDateUsed;
       body.end_date = toIsoDateLocal(yesterday);
       setCurrentJobType("historical_backfill");
@@ -327,19 +337,17 @@ export default function AgencyAccountsPage() {
     }
 
     setActionBusy(true);
+    setRunningAction(mode);
     try {
       const payload = await apiRequest<BatchCreateResponse>("/agency/sync-runs/batch", {
         method: "POST",
         body: JSON.stringify(body),
       });
-      if (!payload.batch_id) {
-        throw new Error("Batch-ul nu a putut fi creat.");
-      }
+      if (!payload.batch_id) throw new Error("Batch-ul nu a putut fi creat.");
       setCurrentBatchId(payload.batch_id);
 
-      const ignored = payload.invalid_account_ids ?? [];
-      if (ignored.length > 0) {
-        setSyncStatusMessage(`Unele conturi au fost ignorate: ${ignored.join(", ")}`);
+      if ((payload.invalid_account_ids ?? []).length > 0) {
+        setSyncStatusMessage(`Unele conturi au fost ignorate: ${(payload.invalid_account_ids ?? []).join(", ")}`);
       }
 
       if (mode === "historical") {
@@ -348,6 +356,7 @@ export default function AgencyAccountsPage() {
     } catch (err) {
       setCurrentBatchId(null);
       setSyncError(err instanceof Error ? err.message : "Nu am putut porni sync-ul batch.");
+      setRunningAction(null);
     } finally {
       setActionBusy(false);
     }
@@ -355,26 +364,24 @@ export default function AgencyAccountsPage() {
 
   useEffect(() => {
     if (!currentBatchId) return;
-
     let cancelled = false;
 
     async function pollBatch() {
       try {
         const payload = await apiRequest<BatchStatusResponse>(`/agency/sync-runs/batch/${currentBatchId}`);
         if (cancelled) return;
-
         setBatchProgress(payload.progress);
-        const runsByAccount: Record<string, string> = {};
+
+        const byAccount: Record<string, string> = {};
         for (const run of payload.runs ?? []) {
-          if (run.account_id) {
-            runsByAccount[run.account_id] = String(run.status ?? "queued");
-          }
+          if (run.account_id) byAccount[run.account_id] = String(run.status ?? "queued");
         }
-        setBatchRunsByAccount(runsByAccount);
+        setBatchRunsByAccount(byAccount);
 
         const activeCount = Number(payload.progress.queued || 0) + Number(payload.progress.running || 0);
         if (activeCount <= 0) {
           setCurrentBatchId(null);
+          setRunningAction(null);
           if (Number(payload.progress.error || 0) > 0) {
             setSyncStatusMessage(`Sync finalizat cu erori: ${payload.progress.error} conturi`);
           } else if (currentJobType === "historical_backfill" && currentHistoricalStartDate) {
@@ -387,6 +394,7 @@ export default function AgencyAccountsPage() {
       } catch (err) {
         if (cancelled) return;
         setCurrentBatchId(null);
+        setRunningAction(null);
         setSyncError(err instanceof Error ? err.message : "Polling batch eșuat.");
       }
     }
@@ -442,33 +450,36 @@ export default function AgencyAccountsPage() {
                     {selectedSummary ? ` · Conectate: ${selectedSummary.connected_count}` : ""}
                   </p>
                   <div className="flex flex-wrap items-center gap-2">
-                    <button type="button" className="wm-btn" onClick={() => void refreshGoogleAccountNames()} disabled={controlsDisabled}>
-                      Refresh names
+                    <button
+                      type="button"
+                      className={actionButtonClass("ghost")}
+                      onClick={() => void refreshGoogleAccountNames()}
+                      disabled={controlsDisabled}
+                    >
+                      {runningAction === "refresh" ? "Refreshing..." : "Refresh names"}
                     </button>
                     <button
                       type="button"
-                      className="wm-btn"
+                      className={actionButtonClass("primary")}
                       onClick={() => void startBatchSync("rolling")}
                       disabled={controlsDisabled || selectedMappedAccounts.length === 0}
                     >
-                      Sync last 7 days
+                      {runningAction === "rolling" || isBatchActive ? "Syncing..." : "Sync last 7 days"}
                     </button>
                     <button
                       type="button"
-                      className="wm-btn"
+                      className={actionButtonClass("historical")}
                       onClick={() => void startBatchSync("historical")}
                       disabled={controlsDisabled || selectedMappedAccounts.length === 0}
                     >
-                      Download historical
+                      {runningAction === "historical" || isBatchActive ? "Downloading..." : "Download historical"}
                     </button>
                   </div>
                 </div>
 
                 <div className="mt-2 text-xs text-slate-600">
                   Selectate: <span className="font-semibold text-slate-900">{selectedAccountIds.size}</span> conturi
-                  {selectedMappedAccounts.length !== selectedAccountIds.size
-                    ? ` (${selectedMappedAccounts.length} eligibile pentru sync)`
-                    : ""}
+                  {selectedMappedAccounts.length !== selectedAccountIds.size ? ` (${selectedMappedAccounts.length} eligibile pentru sync)` : ""}
                 </div>
 
                 {isBatchActive && batchProgress ? (
@@ -478,10 +489,7 @@ export default function AgencyAccountsPage() {
                       {batchProgress.done}/{batchProgress.total_runs} done · {batchProgress.running} running · {batchProgress.queued} queued · {batchProgress.error} errors
                     </p>
                     <div className="mt-2 h-2 w-full overflow-hidden rounded bg-indigo-100">
-                      <div
-                        className="h-full bg-indigo-600 transition-all"
-                        style={{ width: `${Math.max(0, Math.min(100, Number(batchProgress.percent || 0)))}%` }}
-                      />
+                      <div className="h-full bg-indigo-600 transition-all" style={{ width: `${Math.max(0, Math.min(100, Number(batchProgress.percent || 0)))}%` }} />
                     </div>
                   </div>
                 ) : null}
@@ -505,9 +513,7 @@ export default function AgencyAccountsPage() {
                         />
                         Select all pe pagina curentă
                       </label>
-                      <span>
-                        Pagina {accountsPage}/{totalAccountsPages}
-                      </span>
+                      <span>Pagina {accountsPage}/{totalAccountsPages}</span>
                     </div>
 
                     <div className="divide-y divide-slate-100">
@@ -549,24 +555,20 @@ export default function AgencyAccountsPage() {
                                 value={account.attached_client_id?.toString() ?? ""}
                                 onChange={(event) => {
                                   const value = Number(event.target.value);
-                                  if (value > 0) {
-                                    void attachGoogleAccount(value, account.id);
-                                  }
+                                  if (value > 0) void attachGoogleAccount(value, account.id);
                                 }}
                                 disabled={controlsDisabled}
                               >
                                 <option value="">Atașează la client...</option>
                                 {clients.map((client) => (
-                                  <option key={client.id} value={client.id}>
-                                    #{client.display_id ?? client.id} {client.name}
-                                  </option>
+                                  <option key={client.id} value={client.id}>#{client.display_id ?? client.id} {client.name}</option>
                                 ))}
                               </select>
 
                               {account.attached_client_id ? (
                                 <button
                                   type="button"
-                                  className="wm-btn"
+                                  className="inline-flex items-center rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                                   onClick={() => void detachGoogleAccount(account.attached_client_id ?? 0, account.id)}
                                   disabled={controlsDisabled}
                                 >
@@ -580,10 +582,7 @@ export default function AgencyAccountsPage() {
                     </div>
 
                     <div className="flex flex-col gap-2 border-t border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
-                      <p>
-                        Afișare {(accountsPage - 1) * accountsPageSize + 1}-
-                        {Math.min(accountsPage * accountsPageSize, googleAccounts.length)} din {googleAccounts.length}
-                      </p>
+                      <p>Afișare {(accountsPage - 1) * accountsPageSize + 1}-{Math.min(accountsPage * accountsPageSize, googleAccounts.length)} din {googleAccounts.length}</p>
                       <div className="flex items-center gap-2">
                         <span>Rânduri/pagină</span>
                         <select
@@ -592,11 +591,7 @@ export default function AgencyAccountsPage() {
                           onChange={(event) => setAccountsPageSize(Number(event.target.value))}
                           disabled={controlsDisabled}
                         >
-                          {[25, 50, 100, 200].map((size) => (
-                            <option key={size} value={size}>
-                              {size}
-                            </option>
-                          ))}
+                          {[25, 50, 100, 200].map((size) => (<option key={size} value={size}>{size}</option>))}
                         </select>
                         <button
                           type="button"
