@@ -181,6 +181,106 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.assertGreater(status_payload["progress"]["chunks_total"], 0)
         self.assertEqual(len(status_payload["runs"]), 1)
 
+
+    def test_reconciles_stale_run_progress_from_chunks_for_batch_and_account(self):
+        headers = self._auth_headers()
+        create_response = self.client.post(
+            "/agency/sync-runs/batch",
+            headers=headers,
+            json={
+                "platform": "google_ads",
+                "account_ids": ["3986597205"],
+                "job_type": "manual",
+                "start_date": str(date(2026, 2, 1)),
+                "end_date": str(date(2026, 2, 4)),
+                "chunk_days": 1,
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        payload = create_response.json()
+        batch_id = payload["batch_id"]
+        job_id = payload["runs"][0]["job_id"]
+
+        run_state = self.state["runs"][job_id]
+        run_state["status"] = "done"
+        run_state["chunks_total"] = 113
+        run_state["chunks_done"] = 80
+        run_state["rows_written"] = 999
+
+        chunks = [c for c in self.state["chunks"] if c.get("job_id") == job_id]
+        for idx, chunk in enumerate(chunks):
+            chunk["status"] = "done"
+            chunk["rows_written"] = 1
+            chunk["chunk_index"] = idx
+
+        status_response = self.client.get(f"/agency/sync-runs/batch/{batch_id}", headers=headers)
+        self.assertEqual(status_response.status_code, 200)
+        status_payload = status_response.json()
+        self.assertEqual(status_payload["progress"]["done"], 1)
+        self.assertEqual(status_payload["progress"]["running"], 0)
+        self.assertEqual(status_payload["progress"]["chunks_done"], len(chunks))
+        self.assertEqual(status_payload["progress"]["chunks_total"], len(chunks))
+        self.assertEqual(status_payload["progress"]["percent"], 100.0)
+
+        run_payload = status_payload["runs"][0]
+        self.assertEqual(run_payload["status"], "done")
+        self.assertEqual(run_payload["chunks_done"], len(chunks))
+        self.assertEqual(run_payload["chunks_total"], len(chunks))
+        self.assertEqual(run_payload["percent_complete"], 100.0)
+
+        logs_response = self.client.get("/agency/sync-runs/accounts/google_ads/3986597205?limit=10", headers=headers)
+        self.assertEqual(logs_response.status_code, 200)
+        logs_payload = logs_response.json()
+        self.assertEqual(logs_payload["runs"][0]["percent_complete"], 100.0)
+
+
+    def test_progress_and_terminal_status_rules_from_chunk_truth(self):
+        headers = self._auth_headers()
+        created = self.client.post(
+            "/agency/sync-runs/batch",
+            headers=headers,
+            json={
+                "platform": "google_ads",
+                "account_ids": ["3986597205"],
+                "job_type": "manual",
+                "start_date": str(date(2026, 2, 1)),
+                "end_date": str(date(2026, 2, 5)),
+                "chunk_days": 1,
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        job_id = created.json()["runs"][0]["job_id"]
+
+        # Case A: 2 done, 3 active -> running, percent = 40% based on chunks only.
+        chunks = [c for c in self.state["chunks"] if c.get("job_id") == job_id]
+        for idx, chunk in enumerate(chunks):
+            if idx < 2:
+                chunk["status"] = "done"
+                chunk["rows_written"] = 0
+            else:
+                chunk["status"] = "queued"
+                chunk["rows_written"] = 5000
+
+        run_response = self.client.get(f"/agency/sync-runs/{job_id}", headers=headers)
+        self.assertEqual(run_response.status_code, 200)
+        run_payload = run_response.json()
+        self.assertEqual(run_payload["status"], "running")
+        self.assertEqual(run_payload["chunks_done"], 2)
+        self.assertEqual(run_payload["chunks_total"], len(chunks))
+        self.assertEqual(run_payload["percent_complete"], 40.0)
+
+        # Case B: all terminal with errors -> partial, not active.
+        for idx, chunk in enumerate(chunks):
+            chunk["status"] = "done" if idx < 3 else "error"
+
+        run_response_2 = self.client.get(f"/agency/sync-runs/{job_id}", headers=headers)
+        self.assertEqual(run_response_2.status_code, 200)
+        run_payload_2 = run_response_2.json()
+        self.assertEqual(run_payload_2["status"], "partial")
+        self.assertEqual(run_payload_2["error_chunks"], 2)
+        self.assertEqual(run_payload_2["active_chunks"], 0)
+        self.assertEqual(run_payload_2["percent_complete"], 60.0)
+
     def test_account_runs_and_chunk_details_shape(self):
         headers = self._auth_headers()
         created = self.client.post(

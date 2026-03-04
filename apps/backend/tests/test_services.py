@@ -13,6 +13,7 @@ from app.api import pinterest_ads as pinterest_ads_api
 from app.api import snapchat_ads as snapchat_ads_api
 from app.api import clients as clients_api
 from app.api import dashboard as dashboard_api
+from app.api import sync_orchestration as sync_orchestration_api
 from app.services.ai_assistant import ai_assistant_service
 from app.services.insights import insights_service
 from app.services.dashboard import unified_dashboard_service
@@ -677,6 +678,65 @@ class ServiceTests(unittest.TestCase):
         finally:
             google_ads_service._access_token_from_refresh = original_token
             google_ads_service._list_accessible_customers_via_http = original_preflight
+
+    def test_sync_orchestration_summary_all_done_is_100_percent(self):
+        run = {"status": "running", "chunks_total": 113, "chunks_done": 80, "rows_written": 500}
+        chunks = [
+            {"status": "done", "rows_written": 1}
+            for _ in range(113)
+        ]
+
+        summary = sync_orchestration_api._summarize_run_from_chunks(run, chunks)
+        self.assertEqual(summary["status"], "done")
+        self.assertEqual(summary["chunks_done"], 113)
+        self.assertEqual(summary["chunks_total"], 113)
+        self.assertEqual(summary["percent_complete"], 100.0)
+
+    def test_sync_orchestration_summary_partial_progress_and_rows_independent(self):
+        run = {"status": "running", "chunks_total": 10, "chunks_done": 0, "rows_written": 0}
+        chunks = [
+            {"status": "done", "rows_written": 0},
+            {"status": "done", "rows_written": 9999},
+            {"status": "queued", "rows_written": 5000},
+            {"status": "running", "rows_written": 3000},
+        ]
+
+        summary = sync_orchestration_api._summarize_run_from_chunks(run, chunks)
+        self.assertEqual(summary["status"], "running")
+        self.assertEqual(summary["chunks_done"], 2)
+        self.assertEqual(summary["chunks_total"], 4)
+        self.assertEqual(summary["active_chunks"], 2)
+        self.assertEqual(summary["percent_complete"], 50.0)
+
+    def test_sync_orchestration_summary_terminal_with_errors_becomes_partial(self):
+        run = {"status": "running", "chunks_total": 6, "chunks_done": 1, "rows_written": 10}
+        chunks = [
+            {"status": "done", "rows_written": 1},
+            {"status": "done", "rows_written": 1},
+            {"status": "error", "rows_written": 0},
+            {"status": "error", "rows_written": 0},
+        ]
+
+        summary = sync_orchestration_api._summarize_run_from_chunks(run, chunks)
+        self.assertEqual(summary["status"], "partial")
+        self.assertEqual(summary["error_chunks"], 2)
+        self.assertEqual(summary["active_chunks"], 0)
+        self.assertEqual(summary["percent_complete"], 50.0)
+
+    def test_sync_orchestration_batch_summary_is_coherent_with_runs(self):
+        runs = [
+            {"status": "done", "chunks_total": 10, "chunks_done": 10, "rows_written": 100},
+            {"status": "partial", "chunks_total": 10, "chunks_done": 6, "rows_written": 80},
+            {"status": "error", "chunks_total": 10, "chunks_done": 0, "rows_written": 0},
+        ]
+        summary = sync_orchestration_api._summarize_batch_from_runs(runs)
+        self.assertEqual(summary["status_counts"]["running"], 0)
+        self.assertEqual(summary["status_counts"]["queued"], 0)
+        self.assertEqual(summary["status_counts"]["done"], 1)
+        self.assertEqual(summary["status_counts"]["partial"], 1)
+        self.assertEqual(summary["status_counts"]["error"], 1)
+        self.assertEqual(summary["chunks_total_sum"], 30)
+        self.assertEqual(summary["chunks_done_sum"], 16)
 
     def test_google_ads_api_version_normalizes_numeric_input(self):
         os.environ["GOOGLE_ADS_API_VERSION"] = "23"

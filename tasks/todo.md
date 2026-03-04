@@ -1388,3 +1388,23 @@
 - Runtime Google Ads rezolvă refresh token DB-first, apoi fallback `env` pentru compatibilitate tranzitorie; sursa token-ului este expusă doar ca metadata (`database`/`env_fallback`), fără secret.
 - Diagnostics/status includ `refresh_token_present` + `refresh_token_source`; callback UI arată succes + metadata non-sensibilă, fără copy/paste Railway.
 - Teste adăugate/actualizate pentru callback-save, DB-first/fallback env și crypto round-trip; build frontend trecut.
+
+---
+
+# TODO — Task 8: reconciliere progres final run/batch/chunk
+
+- [x] Actualizez workspace-ul înainte de modificări (fără a presupune remote `origin`).
+- [x] Reproduc și identific cauza exactă pentru run `done` dar progres < 100%.
+- [x] Introduc o singură regulă de agregare progres din chunk-uri (nu din rows) cu helper centralizat.
+- [x] Reconcile la write-time și/sau read-time pentru run-uri istorice cu agregate stale.
+- [x] Aliniez batch summary la aceeași sursă de adevăr și elimin stări active false după finalizare.
+- [x] Ajustez frontend minim ca să consume câmpurile reconciliate fără fallback stale.
+- [x] Adaug teste backend pentru cazurile done/active/error/partial + batch coherence + rows_written independent de percent.
+- [x] Rulez backend tests relevante + build frontend și documentez review.
+
+## Review — Task 8: reconciliere progres final run/batch/chunk
+- Cauza reală: endpoint-urile `/agency/sync-runs/*` foloseau agregate denormalizate din `sync_runs` (`chunks_done/chunks_total`) care pot rămâne stale față de `sync_run_chunks`; astfel un run putea avea `status=done` cu toate chunk-urile done, dar progres sub 100%.
+- Fix aplicat: am centralizat reconcilierea read-time în `sync_orchestration` (`_summarize_run_from_chunks`, `_reconcile_run_payload`, `_summarize_batch_from_runs`) și deriv progresul exclusiv din chunk-uri, separat de volume (`rows_written`).
+- Endpoint-uri aliniate la aceeași sursă de adevăr: `GET /batch/{batch_id}`, `GET /accounts/{platform}/{account_id}`, `GET /{job_id}` returnează run-uri reconciliate; batch progress este calculat din run-uri reconciliate și nu mai poate rămâne activ fals după terminalizare.
+- Pentru run-uri istorice cu agregate stale, reconcilierea read-time corectează afișarea imediat, fără rerulare manuală a sync-urilor vechi.
+- Teste: am adăugat teste unit pentru regulile done/active/partial/error, independența percent față de rows_written, și batch summary coherence; backend + frontend build trecute.
