@@ -149,3 +149,4 @@
 - 2026-03-03: Pentru UX orchestration în pagini existente, păstrează flow-urile curente (attach/detach) și adaugă state-uri noi strict additive, cu guards pentru platform-specific behavior.
 - 2026-03-03: Când extinzi list pages cu drilldown route, fă linking doar pe textul țintă (nu pe row) ca să nu strici interacțiunile existente (checkbox/select).
 - 2026-03-03: Pentru incidente de producție din coloane lipsă, preferă self-healing DDL în startup path (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`) și evită blocarea runtime prin schema-check hard-fail.
+- 2026-03-04: Când userul cere explicit comenzi Git de conectare/sync și semnalează că soluția anterioară e nesatisfăcătoare, rulează imediat comenzile exacte cerute și, dacă `git pull` cere strategie de reconciliere, finalizează autonom cu opțiune explicită (`--no-rebase` sau `--rebase`) și documentează clar rezultatul.
