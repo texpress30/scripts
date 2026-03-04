@@ -1243,3 +1243,4 @@
 - Google Ads este implementat complet: listă paginată, select all per pagină, blocare selecție pentru conturi neatașate, attach/detach/refresh names, acțiuni batch last-7-days + historical cu fallback `2024-01-09`, polling progres batch + statusuri per cont.
 - Link-ul numelui de cont duce către ruta de detail `/agency-accounts/google_ads/{accountId}`.
 - Build frontend trece (`npm run build`), iar pagina a fost deschisă în browser local și capturată într-un screenshot artifact.
+
