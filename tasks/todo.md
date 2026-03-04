@@ -1368,3 +1368,23 @@
 - Flow worker la OAuth failure: chunk-ul rămâne marcat `error`, progresul se actualizează fără crash, apoi finalizarea run-ului duce statusul în `error` (terminal), deci nu mai rămâne `running`.
 - Frontend detail polling: auto-refresh urmărește doar status-uri active reale (`queued`/`running`), iar când nu mai există active și ultimul run are eroare terminală, mesajul este afișat clar.
 - Verificări: pytest backend țintit (store + worker + API) și `npm run build` frontend au trecut.
+
+---
+
+# TODO — Task 7: Google refresh token în DB (autosave callback, encrypted-at-rest)
+
+- [x] Actualizez workspace-ul înainte de modificări (fără a presupune remote `origin`).
+- [x] Inspectez flow-ul curent OAuth Google + config/token resolution + diagnostics și helper-ele crypto existente.
+- [x] Implementez persistence DB pentru integration secrets (generic provider-ready) cu criptare la rest.
+- [x] Salvez automat refresh token-ul în callback OAuth și elimin expunerea token-ului brut în UI/response.
+- [x] Fac runtime resolution DB-first cu fallback la env pentru compatibilitate tranzitorie.
+- [x] Actualizez diagnostics/UI pentru a indica disponibilitate + source (`database`/`env_fallback`) fără expunere secret.
+- [x] Adaug teste backend pentru save/load/fallback/crypto round-trip și rulez backend tests + frontend build.
+- [x] Documentez review + lessons.
+
+## Review — Task 7: token Google autosave în DB, encrypted-at-rest
+- Am introdus store generic `integration_secrets` (provider/secret_key/scope) cu criptare Fernet derivată din `INTEGRATION_SECRET_ENCRYPTION_KEY` (fallback `APP_AUTH_SECRET`) pentru extensie ulterioară la alți provideri.
+- OAuth exchange Google salvează automat refresh token-ul în DB (`integration_secrets`) și nu mai returnează token-ul brut către frontend.
+- Runtime Google Ads rezolvă refresh token DB-first, apoi fallback `env` pentru compatibilitate tranzitorie; sursa token-ului este expusă doar ca metadata (`database`/`env_fallback`), fără secret.
+- Diagnostics/status includ `refresh_token_present` + `refresh_token_source`; callback UI arată succes + metadata non-sensibilă, fără copy/paste Railway.
+- Teste adăugate/actualizate pentru callback-save, DB-first/fallback env și crypto round-trip; build frontend trecut.

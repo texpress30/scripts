@@ -36,7 +36,7 @@ Variabile importante:
   - `GOOGLE_ADS_DEVELOPER_TOKEN`
   - `GOOGLE_ADS_MANAGER_CUSTOMER_ID`
   - `GOOGLE_ADS_REDIRECT_URI`
-  - `GOOGLE_ADS_REFRESH_TOKEN` (după OAuth exchange)
+  - `INTEGRATION_SECRET_ENCRYPTION_KEY` (secret pentru criptarea token-urilor integration în DB; dacă lipsește se folosește `APP_AUTH_SECRET`)
 
 Feature flags:
 - `FF_TIKTOK_INTEGRATION`
@@ -80,7 +80,7 @@ Variabile minime necesare:
 - `GOOGLE_ADS_DEVELOPER_TOKEN`
 - `GOOGLE_ADS_MANAGER_CUSTOMER_ID`
 - `GOOGLE_ADS_REDIRECT_URI`
-- `GOOGLE_ADS_REFRESH_TOKEN`
+- `INTEGRATION_SECRET_ENCRYPTION_KEY`
 
 ## Endpoint-uri cheie
 ### Core
@@ -130,9 +130,10 @@ cd apps/frontend && npm run build
    - `GOOGLE_ADS_DEVELOPER_TOKEN`
    - `GOOGLE_ADS_MANAGER_CUSTOMER_ID`
    - `GOOGLE_ADS_REDIRECT_URI`
-   - `GOOGLE_ADS_REFRESH_TOKEN`
+   - `INTEGRATION_SECRET_ENCRYPTION_KEY`
    - opțional: `GOOGLE_ADS_API_VERSION` (default `v23`)
 2. Rulează migrațiile DB (în ordinea fișierelor din `apps/backend/db/migrations`).
+2.1 OAuth callback salvează automat refresh token-ul Google în DB (criptat); nu mai este necesar copy/paste manual în Railway pentru `GOOGLE_ADS_REFRESH_TOKEN`.
 3. Rulează diagnostic local/remote: `PYTHONPATH=apps/backend python scripts/diag_google_ads.py`.
 4. Rulează sync on-demand pentru conturile mapate: `POST /integrations/google-ads/sync-now` (agency admin).
 5. Verifică datele în DB (`ad_performance_reports`) pe ultimele 30 zile și endpoint-ul `GET /dashboard/agency/summary?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD`.

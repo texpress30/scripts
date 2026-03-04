@@ -18,6 +18,7 @@ from app.services.insights import insights_service
 from app.services.dashboard import unified_dashboard_service
 from app.services import google_ads as google_ads_service_module
 from app.services.google_ads import GoogleAdsIntegrationError, google_ads_service
+from app.services.integration_secrets_store import IntegrationSecretValue, integration_secrets_store
 from app.services.meta_ads import MetaAdsIntegrationError, meta_ads_service
 from app.services.google_store import google_snapshot_store
 from app.services.meta_store import meta_snapshot_store
@@ -735,26 +736,83 @@ class ServiceTests(unittest.TestCase):
         google_ads_service._oauth_state_cache.add(state)
 
         original_http = google_ads_service._http_json
-        original_list = google_ads_service.list_accessible_customers
+        original_list = google_ads_service.list_accessible_customer_accounts
+        original_upsert = google_ads_service_module.integration_secrets_store.upsert_secret
+        original_get = google_ads_service_module.integration_secrets_store.get_secret
         captured: dict[str, object] = {}
+        persisted: dict[str, str] = {}
         try:
             def fake_http_json(*, method: str, url: str, payload=None, headers=None):
                 return {"refresh_token": "refresh-from-exchange"}
 
             def fake_list_accessible_customers():
                 captured["called"] = True
-                return ["3986597205", "3578697670"]
+                return [{"id": "3986597205"}, {"id": "3578697670"}]
+
+            def fake_upsert_secret(*, provider: str, secret_key: str, value: str, scope: str = "agency_default"):
+                persisted["provider"] = provider
+                persisted["secret_key"] = secret_key
+                persisted["scope"] = scope
+                persisted["value"] = value
+
+            def fake_get_secret(*, provider: str, secret_key: str, scope: str = "agency_default"):
+                if persisted.get("value"):
+                    return IntegrationSecretValue(
+                        provider=str(provider),
+                        secret_key=str(secret_key),
+                        scope=str(scope),
+                        value=str(persisted["value"]),
+                        updated_at=None,
+                    )
+                return None
 
             google_ads_service._http_json = fake_http_json
-            google_ads_service.list_accessible_customers = fake_list_accessible_customers
+            google_ads_service.list_accessible_customer_accounts = fake_list_accessible_customers
+            google_ads_service_module.integration_secrets_store.upsert_secret = fake_upsert_secret
+            google_ads_service_module.integration_secrets_store.get_secret = fake_get_secret
 
             response = google_ads_service.exchange_oauth_code(code="auth-code", state=state)
         finally:
             google_ads_service._http_json = original_http
-            google_ads_service.list_accessible_customers = original_list
+            google_ads_service.list_accessible_customer_accounts = original_list
+            google_ads_service_module.integration_secrets_store.upsert_secret = original_upsert
+            google_ads_service_module.integration_secrets_store.get_secret = original_get
 
         self.assertTrue(bool(captured.get("called")))
         self.assertEqual(response["accessible_customers"], ["3986597205", "3578697670"])
+        self.assertEqual(response.get("refresh_token_source"), "database")
+        self.assertEqual(persisted.get("provider"), "google_ads")
+        self.assertEqual(persisted.get("secret_key"), "refresh_token")
+
+    def test_integration_secret_crypto_round_trip(self):
+        os.environ["INTEGRATION_SECRET_ENCRYPTION_KEY"] = "integration-secret-key"
+        encrypted = integration_secrets_store.encrypt_secret("refresh-secret-token")
+        self.assertNotEqual(encrypted, "refresh-secret-token")
+        decrypted = integration_secrets_store.decrypt_secret(encrypted)
+        self.assertEqual(decrypted, "refresh-secret-token")
+
+    def test_google_ads_refresh_token_resolution_db_first_with_env_fallback(self):
+        os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "env-refresh"
+
+        original_get = google_ads_service_module.integration_secrets_store.get_secret
+        try:
+            google_ads_service_module.integration_secrets_store.get_secret = lambda **kwargs: IntegrationSecretValue(
+                provider="google_ads",
+                secret_key="refresh_token",
+                scope="agency_default",
+                value="db-refresh",
+                updated_at=None,
+            )
+            token, source, _ = google_ads_service._refresh_token_with_source()
+            self.assertEqual(token, "db-refresh")
+            self.assertEqual(source, "database")
+
+            google_ads_service_module.integration_secrets_store.get_secret = lambda **kwargs: None
+            token2, source2, _ = google_ads_service._refresh_token_with_source()
+            self.assertEqual(token2, "env-refresh")
+            self.assertEqual(source2, "env_fallback")
+        finally:
+            google_ads_service_module.integration_secrets_store.get_secret = original_get
 
     def test_google_ads_sdk_client_config_uses_refresh_and_developer_token(self):
         os.environ["GOOGLE_ADS_MODE"] = "production"

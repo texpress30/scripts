@@ -36,6 +36,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.google_ads_redirect_uri, "")
         self.assertEqual(settings.google_ads_refresh_token, "")
         self.assertEqual(settings.google_ads_customer_ids_csv, "")
+        self.assertEqual(settings.integration_secret_encryption_key, "")
         self.assertEqual(settings.google_ads_api_version, "v23")
         self.assertEqual(settings.meta_access_token, "")
         self.assertEqual(settings.bigquery_project_id, "")
@@ -150,6 +151,7 @@ class ConfigTests(unittest.TestCase):
         os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://app.example.com/agency/integrations/google/callback"
         os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
         os.environ["GOOGLE_ADS_CUSTOMER_IDS_CSV"] = "1111111111,2222222222"
+        os.environ["INTEGRATION_SECRET_ENCRYPTION_KEY"] = "enc-key"
         os.environ["GOOGLE_ADS_API_VERSION"] = "v23"
         os.environ["META_ACCESS_TOKEN"] = "test-meta-token"
         os.environ["BIGQUERY_PROJECT_ID"] = "test-project"
@@ -182,6 +184,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.google_ads_redirect_uri, "https://app.example.com/agency/integrations/google/callback")
         self.assertEqual(settings.google_ads_refresh_token, "refresh-token")
         self.assertEqual(settings.google_ads_customer_ids_csv, "1111111111,2222222222")
+        self.assertEqual(settings.integration_secret_encryption_key, "enc-key")
         self.assertEqual(settings.google_ads_api_version, "v23")
         self.assertEqual(settings.meta_access_token, "test-meta-token")
         self.assertEqual(settings.bigquery_project_id, "test-project")
