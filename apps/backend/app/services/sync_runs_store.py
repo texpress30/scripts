@@ -267,24 +267,40 @@ class SyncRunsStore:
 
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE sync_runs
-                    SET
-                        chunks_done = chunks_done + %s,
-                        rows_written = rows_written + %s,
-                        chunks_total = CASE WHEN %s IS NULL THEN chunks_total ELSE GREATEST(chunks_total, %s) END,
-                        updated_at = NOW()
-                    WHERE job_id = %s
-                    """,
-                    (
-                        int(chunks_done_delta),
-                        int(rows_written_delta),
-                        chunks_total,
-                        int(chunks_total) if chunks_total is not None else None,
-                        str(job_id),
-                    ),
-                )
+                if chunks_total is None:
+                    cur.execute(
+                        """
+                        UPDATE sync_runs
+                        SET
+                            chunks_done = chunks_done + %s,
+                            rows_written = rows_written + %s,
+                            updated_at = NOW()
+                        WHERE job_id = %s
+                        """,
+                        (
+                            int(chunks_done_delta),
+                            int(rows_written_delta),
+                            str(job_id),
+                        ),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        UPDATE sync_runs
+                        SET
+                            chunks_done = chunks_done + %s,
+                            rows_written = rows_written + %s,
+                            chunks_total = GREATEST(chunks_total, %s),
+                            updated_at = NOW()
+                        WHERE job_id = %s
+                        """,
+                        (
+                            int(chunks_done_delta),
+                            int(rows_written_delta),
+                            int(chunks_total),
+                            str(job_id),
+                        ),
+                    )
             conn.commit()
 
         return self.get_sync_run(str(job_id))
