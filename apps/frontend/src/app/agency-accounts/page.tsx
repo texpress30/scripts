@@ -124,11 +124,8 @@ function accountDisplayName(account: GoogleAccount): string {
   return clean ? clean : `Google Account ${account.id}`;
 }
 
-function actionButtonClass(variant: "primary" | "historical" | "ghost"): string {
+function actionButtonClass(variant: "historical" | "ghost"): string {
   const base = "inline-flex items-center rounded-md px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50";
-  if (variant === "primary") {
-    return `${base} bg-indigo-600 text-white hover:bg-indigo-700`;
-  }
   if (variant === "historical") {
     return `${base} bg-emerald-600 text-white hover:bg-emerald-700`;
   }
@@ -149,13 +146,13 @@ export default function AgencyAccountsPage() {
   const [accountsPageSize, setAccountsPageSize] = useState(50);
 
   const [actionBusy, setActionBusy] = useState(false);
-  const [runningAction, setRunningAction] = useState<"refresh" | "rolling" | "historical" | null>(null);
+  const [runningAction, setRunningAction] = useState<"refresh" | "historical" | null>(null);
   const [attachStatus, setAttachStatus] = useState("");
   const [syncError, setSyncError] = useState("");
   const [syncStatusMessage, setSyncStatusMessage] = useState("");
 
   const [currentBatchId, setCurrentBatchId] = useState<string | null>(null);
-  const [currentJobType, setCurrentJobType] = useState<"rolling_refresh" | "historical_backfill" | null>(null);
+  const [currentJobType, setCurrentJobType] = useState<"historical_backfill" | null>(null);
   const [currentHistoricalStartDate, setCurrentHistoricalStartDate] = useState<string | null>(null);
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
   const [batchRunsByAccount, setBatchRunsByAccount] = useState<Record<string, string>>({});
@@ -308,7 +305,7 @@ export default function AgencyAccountsPage() {
     }
   }
 
-  async function startBatchSync(mode: "rolling" | "historical") {
+  async function startBatchSyncHistorical() {
     if (selectedMappedAccounts.length <= 0) {
       setSyncError("Selectează cel puțin un cont atașat la client.");
       return;
@@ -319,36 +316,24 @@ export default function AgencyAccountsPage() {
     setBatchProgress(null);
     setBatchRunsByAccount({});
 
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const historicalStartDateUsed = DEFAULT_HISTORICAL_START;
+
     const body: Record<string, unknown> = {
       platform: "google_ads",
       account_ids: selectedMappedAccounts.map((item) => item.id),
       chunk_days: 7,
       grain: "account_daily",
+      job_type: "historical_backfill",
+      start_date: historicalStartDateUsed,
+      end_date: toIsoDateLocal(yesterday),
     };
 
-    let historicalStartDateUsed: string | null = null;
-    if (mode === "rolling") {
-      body.job_type = "rolling_refresh";
-      body.days = 7;
-      setCurrentJobType("rolling_refresh");
-      setCurrentHistoricalStartDate(null);
-    } else {
-      body.job_type = "historical_backfill";
-      const validStarts = selectedMappedAccounts
-        .map((item) => item.sync_start_date?.trim() ?? "")
-        .filter((dateValue) => isValidIsoDate(dateValue))
-        .sort();
-      historicalStartDateUsed = validStarts[0] ?? DEFAULT_HISTORICAL_START;
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      body.start_date = historicalStartDateUsed;
-      body.end_date = toIsoDateLocal(yesterday);
-      setCurrentJobType("historical_backfill");
-      setCurrentHistoricalStartDate(historicalStartDateUsed);
-    }
-
     setActionBusy(true);
-    setRunningAction(mode);
+    setRunningAction("historical");
+    setCurrentJobType("historical_backfill");
+    setCurrentHistoricalStartDate(historicalStartDateUsed);
     try {
       const payload = await apiRequest<BatchCreateResponse>("/agency/sync-runs/batch", {
         method: "POST",
@@ -360,18 +345,15 @@ export default function AgencyAccountsPage() {
       if ((payload.invalid_account_ids ?? []).length > 0) {
         setSyncStatusMessage(`Unele conturi au fost ignorate: ${(payload.invalid_account_ids ?? []).join(", ")}`);
       }
-
-      if (mode === "historical") {
-        setCurrentHistoricalStartDate(historicalStartDateUsed);
-      }
     } catch (err) {
       setCurrentBatchId(null);
-      setSyncError(err instanceof Error ? err.message : "Nu am putut porni sync-ul batch.");
       setRunningAction(null);
+      setSyncError(err instanceof Error ? err.message : "Nu am putut porni backfill-ul istoric.");
     } finally {
       setActionBusy(false);
     }
   }
+
 
   useEffect(() => {
     if (!currentBatchId) return;
@@ -397,8 +379,6 @@ export default function AgencyAccountsPage() {
             setSyncStatusMessage(`Sync finalizat cu erori: ${payload.progress.error} conturi`);
           } else if (currentJobType === "historical_backfill" && currentHistoricalStartDate) {
             setSyncStatusMessage(`Date istorice descarcate începând cu ${formatRoDate(currentHistoricalStartDate)}`);
-          } else {
-            setSyncStatusMessage("Sync last 7 days finalizat cu succes.");
           }
           void loadData();
         }
@@ -471,16 +451,8 @@ export default function AgencyAccountsPage() {
                     </button>
                     <button
                       type="button"
-                      className={actionButtonClass("primary")}
-                      onClick={() => void startBatchSync("rolling")}
-                      disabled={controlsDisabled || selectedMappedAccounts.length === 0}
-                    >
-                      {runningAction === "rolling" || isBatchActive ? "Syncing..." : "Sync last 7 days"}
-                    </button>
-                    <button
-                      type="button"
                       className={actionButtonClass("historical")}
-                      onClick={() => void startBatchSync("historical")}
+                      onClick={() => void startBatchSyncHistorical()}
                       disabled={controlsDisabled || selectedMappedAccounts.length === 0}
                     >
                       {runningAction === "historical" || isBatchActive ? "Downloading..." : "Download historical"}
