@@ -1349,3 +1349,22 @@
 - Am păstrat comportamentul workerului și am adăugat logging operațional pentru observabilitate (`chunk_claimed`, `run_started`, `chunk_completed`, `chunk_failed`).
 - Teste noi de regresie: `claim_next_queued_chunk_any(platform=None)` și `claim_next_queued_chunk_any(platform='google_ads')`.
 - Testele worker existente validează în continuare flow-ul queued->running și finalizarea chunk-ului fără regresii.
+
+---
+
+# TODO — Task 6E: repară update_sync_run_progress + terminal error flow + polling stop
+
+- [x] Actualizez workspace-ul înainte de modificări (fără a presupune remote `origin`).
+- [x] Confirm cauza exactă a crash-ului secundar în `update_sync_run_progress()` (parametru NULL ne-tipizat în SQL).
+- [x] Repar `update_sync_run_progress()` cu ramuri SQL separate (`chunks_total is None` vs setat).
+- [x] Verific și întăresc flow-ul worker pentru erori OAuth: chunk error + run terminal fără crash loop.
+- [x] Ajustez frontend polling pe Agency Account Detail să ruleze doar pentru status-uri active reale și să se oprească în terminal.
+- [x] Adaug teste backend de regresie pentru update progress (`None`/setat) și failure path terminal.
+- [x] Rulez teste backend relevante + build frontend și documentez review.
+
+## Review — Task 6E: repară update_sync_run_progress + terminal error flow + polling stop
+- Cauza exactă a crash-ului secundar: `update_sync_run_progress` folosea `CASE WHEN %s IS NULL THEN ... ELSE GREATEST(..., %s)`; la `chunks_total=None`, Postgres/psycopg poate ridica `IndeterminateDatatype` pentru parametrul NULL ne-tipizat.
+- Fix backend: `update_sync_run_progress` are acum două query-uri explicite (fără `NULL` în expresie `IS NULL` pe parametru): branch fără update de `chunks_total` când e `None`, respectiv branch cu `GREATEST` când e setat.
+- Flow worker la OAuth failure: chunk-ul rămâne marcat `error`, progresul se actualizează fără crash, apoi finalizarea run-ului duce statusul în `error` (terminal), deci nu mai rămâne `running`.
+- Frontend detail polling: auto-refresh urmărește doar status-uri active reale (`queued`/`running`), iar când nu mai există active și ultimul run are eroare terminală, mesajul este afișat clar.
+- Verificări: pytest backend țintit (store + worker + API) și `npm run build` frontend au trecut.

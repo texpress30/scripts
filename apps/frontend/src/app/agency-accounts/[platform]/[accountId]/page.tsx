@@ -101,7 +101,7 @@ function statusBadge(status?: string | null): string {
 }
 
 function isRunActive(status?: string | null): boolean {
-  return ["queued", "running", "pending"].includes(normalizeStatus(status));
+  return ["queued", "running"].includes(normalizeStatus(status));
 }
 
 export default function AgencyAccountDetailPage() {
@@ -131,6 +131,10 @@ export default function AgencyAccountDetailPage() {
   }, [runs]);
 
   const hasActiveRun = useMemo(() => runsSorted.some((run) => isRunActive(run.status)), [runsSorted]);
+  const latestTerminalError = useMemo(() => {
+    const failedRun = runsSorted.find((run) => ["error", "failed", "partial"].includes(normalizeStatus(run.status)) && String(run.error ?? "").trim() !== "");
+    return failedRun?.error ?? "";
+  }, [runsSorted]);
 
   async function loadAccountMeta() {
     if (platform !== "google_ads") {
@@ -292,6 +296,11 @@ export default function AgencyAccountDetailPage() {
             {runsLoading ? <p className="mt-2 text-sm text-slate-500">Se încarcă sync runs...</p> : null}
             {!runsLoading && runsSorted.length <= 0 && !runsError ? (
               <p className="mt-2 text-sm text-slate-500">Nu există sync runs pentru acest cont încă.</p>
+            ) : null}
+            {!hasActiveRun && latestTerminalError ? (
+              <p className="mt-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                Ultimul run a eșuat: {latestTerminalError}
+              </p>
             ) : null}
 
             {runsSorted.length > 0 ? (

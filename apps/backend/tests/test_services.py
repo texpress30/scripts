@@ -4943,6 +4943,9 @@ class ServiceTests(unittest.TestCase):
             def execute(self, query, params=None):
                 sql = str(query)
                 args = tuple(params or ())
+                if "CREATE TABLE IF NOT EXISTS sync_runs" in sql or "ALTER TABLE sync_runs" in sql or "CREATE INDEX IF NOT EXISTS idx_sync_runs" in sql:
+                    self._row = None
+                    return
                 if "SELECT to_regclass('public.sync_runs')" in sql:
                     self._row = ("sync_runs",)
                     return
@@ -4991,14 +4994,15 @@ class ServiceTests(unittest.TestCase):
                     return
 
                 if "UPDATE sync_runs" in sql and "chunks_done = chunks_done +" in sql:
-                    chunks_done_delta, rows_written_delta, chunks_total, chunks_total_for_max, job_id = args
-                    row = state.get(str(job_id))
+                    row = state.get(str(args[-1]))
                     if row is None:
                         return
-                    row["chunks_done"] = int(row.get("chunks_done") or 0) + int(chunks_done_delta or 0)
-                    row["rows_written"] = int(row.get("rows_written") or 0) + int(rows_written_delta or 0)
-                    if chunks_total is not None:
-                        row["chunks_total"] = max(int(row.get("chunks_total") or 0), int(chunks_total_for_max or 0))
+                    chunks_done_delta = int(args[0] or 0)
+                    rows_written_delta = int(args[1] or 0)
+                    row["chunks_done"] = int(row.get("chunks_done") or 0) + chunks_done_delta
+                    row["rows_written"] = int(row.get("rows_written") or 0) + rows_written_delta
+                    if "chunks_total = GREATEST(chunks_total, %s)" in sql:
+                        row["chunks_total"] = max(int(row.get("chunks_total") or 0), int(args[2] or 0))
                     row["updated_at"] = _now()
                     return
 
@@ -5146,6 +5150,11 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(progressed["rows_written"], 15)
             self.assertEqual(progressed["chunks_total"], 5)
 
+            progressed_no_total = sync_runs_store.update_sync_run_progress(job_id="job-1", chunks_done_delta=1, rows_written_delta=4, chunks_total=None)
+            self.assertEqual(progressed_no_total["chunks_done"], 3)
+            self.assertEqual(progressed_no_total["rows_written"], 19)
+            self.assertEqual(progressed_no_total["chunks_total"], 5)
+
             listed_batch = sync_runs_store.list_sync_runs_by_batch("batch-a")
             self.assertEqual(len(listed_batch), 1)
             listed_account = sync_runs_store.list_sync_runs_for_account(platform="google_ads", account_id="1234567890")
@@ -5153,8 +5162,8 @@ class ServiceTests(unittest.TestCase):
             progress = sync_runs_store.get_batch_progress("batch-a")
             self.assertEqual(progress["batch_id"], "batch-a")
             self.assertEqual(progress["total_runs"], 1)
-            self.assertEqual(progress["chunks_done_sum"], 2)
-            self.assertEqual(progress["rows_written_sum"], 15)
+            self.assertEqual(progress["chunks_done_sum"], 3)
+            self.assertEqual(progress["rows_written_sum"], 19)
         finally:
             sync_runs_store._connect = original_connect
             sync_runs_store._schema_initialized = False

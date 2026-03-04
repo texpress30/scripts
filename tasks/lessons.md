@@ -157,3 +157,4 @@
 
 - 2026-03-04: Când un endpoint agency folosește o acțiune RBAC existentă, verifică explicit compatibilitatea `action`+`scope` în `ACTION_POLICIES`; nu presupune că permisiunea role este suficientă dacă scope-ul nu include contextul endpoint-ului.
 - 2026-03-04: Pentru query-uri SQL cu filtre opționale pe parametri (`platform`), evită pattern-ul `(%s IS NULL OR column = %s)` cu psycopg; folosește query-uri separate sau cast explicit tipat pentru a preveni `psycopg.errors.IndeterminateDatatype` la valori `None`.
+- 2026-03-04: Pentru update-uri SQL cu parametru opțional numeric (ex. `chunks_total`), evită `CASE WHEN %s IS NULL` cu parametri `None`; folosește ramuri SQL separate pentru a preveni `IndeterminateDatatype` și crash în worker loops.
