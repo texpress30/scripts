@@ -1486,3 +1486,27 @@
 - Cauza raportată de Vercel (`Duplicate function implementation` la `toggleRunExpanded`) nu se mai reproduce în snapshot-ul curent: fișierul conține o singură implementare `toggleRunExpanded` și o singură referință de utilizare.
 - Nu a fost necesară modificare de logică frontend pentru repair button/polling/messages deoarece codul curent este deja consistent.
 - Verificare finală: testele frontend și build-ul Next trec local în workspace-ul curent.
+
+---
+
+# TODO — Task 13: retry/resume doar pentru chunk-urile eșuate din historical backfill
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și inspectez flow-ul existent sync_runs/sync_run_chunks + repair.
+- [x] Adaug endpoint backend `POST /agency/sync-runs/{job_id}/retry-failed` cu outcome-uri explicite și contract compatibil pentru UI ulterior.
+- [x] Implementez logică store concurent-safe pentru creare retry-run doar din chunk-uri eșuate, cu legătură metadata la run-ul sursă.
+- [x] Adaug teste backend pentru cazurile not_found/not_retryable/no_failed_chunks/created/already_exists + validare intervale chunk retry.
+- [x] Rulez testele backend relevante și verific non-regresie pentru endpoint-urile existente.
+
+## Review — Task 13: retry/resume failed chunks
+- Am adăugat `SyncRunsStore.retry_failed_historical_run(source_job_id, retry_job_id, trigger_source)` care rulează într-o tranzacție unică cu `pg_advisory_xact_lock` pe `source_job_id` și `FOR UPDATE` pe run/chunks.
+- Eligibilitate retry:
+  - run existent;
+  - `job_type=historical_backfill`;
+  - status terminal (`done`/`error`);
+  - are cel puțin un chunk cu status de eroare (`error`/`failed`).
+- Outcome-uri implementate: `not_found`, `not_retryable`, `no_failed_chunks`, `already_exists`, `created`.
+- Guard concurent-safe pentru duplicate retry: în aceeași tranzacție verificăm run activ existent cu metadata `retry_of_job_id=<source_job_id>` + `retry_reason=failed_chunks`; dacă există, întoarcem `already_exists`.
+- La `created`, noul run este `historical_backfill` queued și conține DOAR chunk-urile eșuate din sursă (intervale `date_start/date_end` păstrate exact); legătura se face prin metadata:
+  - run: `retry_of_job_id`, `retry_reason=failed_chunks`;
+  - chunk: `retry_of_job_id`, `retry_of_chunk_index`, `retry_reason=failed_chunks`.
+- API nou `POST /agency/sync-runs/{job_id}/retry-failed` întoarce payload orientat UI ulterior (`source_job_id`, `retry_job_id`, `platform`, `account_id`, `status`, `chunks_created`, `failed_chunks_count`) și 404 doar pentru `not_found`.

@@ -38,6 +38,7 @@ _SYNC_RUNS_SELECT_COLUMNS = """
 _ACTIVE_CHUNK_STATUSES = ("queued", "running", "pending")
 _SUCCESS_CHUNK_STATUSES = ("done", "success", "completed")
 _ERROR_CHUNK_STATUSES = ("error", "failed")
+_TERMINAL_RUN_STATUSES = ("done", "error")
 
 
 class SyncRunsStore:
@@ -492,6 +493,209 @@ class SyncRunsStore:
             "stale_chunks_closed": stale_chunks_closed,
             "final_status": final_status,
             "run": self._row_to_payload(repaired_row),
+        }
+
+    def retry_failed_historical_run(
+        self,
+        *,
+        source_job_id: str,
+        retry_job_id: str,
+        trigger_source: str = "manual",
+    ) -> dict[str, object]:
+        self._ensure_schema()
+        normalized_source_job_id = str(source_job_id)
+        normalized_retry_job_id = str(retry_job_id)
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                lock_key = f"sync_runs:retry_failed:{normalized_source_job_id}"
+                cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (lock_key,))
+
+                cur.execute(
+                    f"""
+                    SELECT
+                        {_SYNC_RUNS_SELECT_COLUMNS}
+                    FROM sync_runs
+                    WHERE job_id = %s
+                    FOR UPDATE
+                    """,
+                    (normalized_source_job_id,),
+                )
+                source_row = cur.fetchone()
+                source_payload = self._row_to_payload(source_row)
+                if source_payload is None:
+                    conn.commit()
+                    return {"outcome": "not_found", "source_job_id": normalized_source_job_id}
+
+                source_job_type = str(source_payload.get("job_type") or "").strip().lower()
+                source_status = str(source_payload.get("status") or "").strip().lower()
+                if source_job_type != "historical_backfill" or source_status not in _TERMINAL_RUN_STATUSES:
+                    conn.commit()
+                    return {
+                        "outcome": "not_retryable",
+                        "source_job_id": normalized_source_job_id,
+                        "platform": source_payload.get("platform"),
+                        "account_id": source_payload.get("account_id"),
+                        "status": source_payload.get("status"),
+                    }
+
+                cur.execute(
+                    f"""
+                    SELECT
+                        {_SYNC_RUNS_SELECT_COLUMNS}
+                    FROM sync_runs
+                    WHERE job_type = 'historical_backfill'
+                      AND status IN ('queued', 'running')
+                      AND COALESCE(metadata->>'retry_of_job_id', '') = %s
+                      AND COALESCE(metadata->>'retry_reason', '') = 'failed_chunks'
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (normalized_source_job_id,),
+                )
+                existing_retry_row = cur.fetchone()
+                if existing_retry_row is not None:
+                    existing_retry_payload = self._row_to_payload(existing_retry_row)
+                    conn.commit()
+                    return {
+                        "outcome": "already_exists",
+                        "source_job_id": normalized_source_job_id,
+                        "retry_job_id": existing_retry_payload.get("job_id") if existing_retry_payload is not None else None,
+                        "platform": source_payload.get("platform"),
+                        "account_id": source_payload.get("account_id"),
+                        "status": existing_retry_payload.get("status") if existing_retry_payload is not None else "queued",
+                        "chunks_created": int(existing_retry_payload.get("chunks_total") or 0) if existing_retry_payload is not None else 0,
+                        "failed_chunks_count": int(existing_retry_payload.get("chunks_total") or 0) if existing_retry_payload is not None else 0,
+                    }
+
+                cur.execute(
+                    """
+                    SELECT chunk_index, date_start, date_end
+                    FROM sync_run_chunks
+                    WHERE job_id = %s
+                      AND status IN ('error', 'failed')
+                    ORDER BY chunk_index ASC
+                    FOR UPDATE
+                    """,
+                    (normalized_source_job_id,),
+                )
+                failed_rows = cur.fetchall() or []
+                failed_chunks_count = len(failed_rows)
+                if failed_chunks_count <= 0:
+                    conn.commit()
+                    return {
+                        "outcome": "no_failed_chunks",
+                        "source_job_id": normalized_source_job_id,
+                        "platform": source_payload.get("platform"),
+                        "account_id": source_payload.get("account_id"),
+                        "status": source_payload.get("status"),
+                    }
+
+                failed_start_dates = [row[1] for row in failed_rows if row[1] is not None]
+                failed_end_dates = [row[2] for row in failed_rows if row[2] is not None]
+                retry_start_date = min(failed_start_dates) if failed_start_dates else source_payload.get("date_start")
+                retry_end_date = max(failed_end_dates) if failed_end_dates else source_payload.get("date_end")
+                source_metadata = source_payload.get("metadata") if isinstance(source_payload.get("metadata"), dict) else {}
+                retry_metadata = {
+                    **source_metadata,
+                    "source": "manual",
+                    "trigger_source": str(trigger_source),
+                    "job_type": "historical_backfill",
+                    "retry_of_job_id": normalized_source_job_id,
+                    "retry_reason": "failed_chunks",
+                }
+
+                cur.execute(
+                    """
+                    INSERT INTO sync_runs (
+                        job_id,
+                        platform,
+                        status,
+                        client_id,
+                        account_id,
+                        date_start,
+                        date_end,
+                        chunk_days,
+                        metadata,
+                        batch_id,
+                        job_type,
+                        grain,
+                        chunks_total,
+                        chunks_done,
+                        rows_written
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s)
+                    RETURNING
+                        """ + _SYNC_RUNS_SELECT_COLUMNS,
+                    (
+                        normalized_retry_job_id,
+                        source_payload.get("platform"),
+                        "queued",
+                        source_payload.get("client_id"),
+                        source_payload.get("account_id"),
+                        retry_start_date,
+                        retry_end_date,
+                        int(source_payload.get("chunk_days") or 1),
+                        json.dumps(retry_metadata),
+                        None,
+                        "historical_backfill",
+                        source_payload.get("grain"),
+                        failed_chunks_count,
+                        0,
+                        0,
+                    ),
+                )
+                retry_row = cur.fetchone()
+
+                for retry_chunk_index, failed_row in enumerate(failed_rows):
+                    source_chunk_index = int(failed_row[0])
+                    chunk_start = failed_row[1]
+                    chunk_end = failed_row[2]
+                    chunk_metadata = {
+                        "source": "manual",
+                        "trigger_source": str(trigger_source),
+                        "retry_of_job_id": normalized_source_job_id,
+                        "retry_of_chunk_index": source_chunk_index,
+                        "retry_reason": "failed_chunks",
+                    }
+                    cur.execute(
+                        """
+                        INSERT INTO sync_run_chunks (
+                            job_id,
+                            chunk_index,
+                            status,
+                            date_start,
+                            date_end,
+                            metadata,
+                            attempts,
+                            rows_written,
+                            duration_ms
+                        ) VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s)
+                        """,
+                        (
+                            normalized_retry_job_id,
+                            retry_chunk_index,
+                            "queued",
+                            chunk_start,
+                            chunk_end,
+                            json.dumps(chunk_metadata),
+                            0,
+                            0,
+                            None,
+                        ),
+                    )
+            conn.commit()
+
+        retry_payload = self._row_to_payload(retry_row)
+        return {
+            "outcome": "created",
+            "source_job_id": normalized_source_job_id,
+            "retry_job_id": normalized_retry_job_id,
+            "platform": source_payload.get("platform"),
+            "account_id": source_payload.get("account_id"),
+            "status": retry_payload.get("status") if retry_payload is not None else "queued",
+            "chunks_created": failed_chunks_count,
+            "failed_chunks_count": failed_chunks_count,
+            "run": retry_payload,
         }
 
     def get_sync_run(self, job_id: str) -> dict[str, object] | None:

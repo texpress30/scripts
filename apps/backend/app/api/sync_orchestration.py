@@ -519,6 +519,51 @@ def repair_sync_run(job_id: str, user: AuthUser = Depends(get_current_user)) -> 
     return response
 
 
+@router.post("/{job_id}/retry-failed")
+def retry_failed_sync_run(job_id: str, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:sync", scope="agency")
+
+    normalized_job_id = str(job_id).strip()
+    retry_job_id = uuid4().hex
+    result = sync_runs_store.retry_failed_historical_run(
+        source_job_id=normalized_job_id,
+        retry_job_id=retry_job_id,
+        trigger_source="manual",
+    )
+
+    outcome = str(result.get("outcome") or "")
+    logger.info(
+        "sync_runs.retry_failed outcome=%s source_job_id=%s retry_job_id=%s platform=%s account_id=%s chunks_created=%s failed_chunks_count=%s",
+        outcome,
+        normalized_job_id,
+        result.get("retry_job_id"),
+        result.get("platform"),
+        result.get("account_id"),
+        result.get("chunks_created"),
+        result.get("failed_chunks_count"),
+    )
+
+    if outcome == "not_found":
+        raise HTTPException(
+            status_code=404,
+            detail={"message": "Sync run not found", "job_id": normalized_job_id, "outcome": "not_found"},
+        )
+
+    response: dict[str, object] = {
+        "outcome": outcome,
+        "source_job_id": normalized_job_id,
+    }
+    for key in ("retry_job_id", "platform", "account_id", "status", "chunks_created", "failed_chunks_count"):
+        if result.get(key) is not None:
+            response[key] = result.get(key)
+
+    run_payload = result.get("run")
+    if isinstance(run_payload, dict):
+        response["run"] = _serialize_run(_reconcile_run_payload(run_payload))
+
+    return response
+
+
 @router.get("/{job_id}/chunks")
 def list_sync_run_chunks(job_id: str, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="integrations:status", scope="agency")

@@ -30,6 +30,7 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.original_list_for_account = sync_orchestration.sync_runs_store.list_sync_runs_for_account
         self.original_get_run = sync_orchestration.sync_runs_store.get_sync_run
         self.original_repair_run = sync_orchestration.sync_runs_store.repair_historical_sync_run
+        self.original_retry_failed_run = sync_orchestration.sync_runs_store.retry_failed_historical_run
         self.original_create_chunk = sync_orchestration.sync_run_chunks_store.create_sync_run_chunk
         self.original_list_chunks = sync_orchestration.sync_run_chunks_store.list_sync_run_chunks
 
@@ -211,6 +212,101 @@ class SyncOrchestrationApiTests(unittest.TestCase):
                 "run": run,
             }
 
+        def _retry_failed_historical_run(*, source_job_id: str, retry_job_id: str, trigger_source: str = "manual"):
+            run = self.state["runs"].get(source_job_id)
+            if run is None:
+                return {"outcome": "not_found", "source_job_id": source_job_id}
+
+            if str(run.get("job_type") or "").lower() != "historical_backfill" or str(run.get("status") or "").lower() not in {"done", "error"}:
+                return {
+                    "outcome": "not_retryable",
+                    "source_job_id": source_job_id,
+                    "platform": run.get("platform"),
+                    "account_id": run.get("account_id"),
+                    "status": run.get("status"),
+                }
+
+            for existing in self.state["runs"].values():
+                metadata = existing.get("metadata") or {}
+                if (
+                    str(existing.get("status") or "").lower() in {"queued", "running"}
+                    and str(existing.get("job_type") or "").lower() == "historical_backfill"
+                    and str(metadata.get("retry_of_job_id") or "") == source_job_id
+                    and str(metadata.get("retry_reason") or "") == "failed_chunks"
+                ):
+                    return {
+                        "outcome": "already_exists",
+                        "source_job_id": source_job_id,
+                        "retry_job_id": existing.get("job_id"),
+                        "platform": run.get("platform"),
+                        "account_id": run.get("account_id"),
+                        "status": existing.get("status") or "queued",
+                        "chunks_created": int(existing.get("chunks_total") or 0),
+                        "failed_chunks_count": int(existing.get("chunks_total") or 0),
+                    }
+
+            failed_chunks = [
+                chunk
+                for chunk in self.state["chunks"]
+                if chunk.get("job_id") == source_job_id and str(chunk.get("status") or "").lower() in {"error", "failed"}
+            ]
+            if len(failed_chunks) <= 0:
+                return {
+                    "outcome": "no_failed_chunks",
+                    "source_job_id": source_job_id,
+                    "platform": run.get("platform"),
+                    "account_id": run.get("account_id"),
+                    "status": run.get("status"),
+                }
+
+            failed_chunks.sort(key=lambda item: int(item.get("chunk_index") or 0))
+            retry_run = _create_sync_run(
+                job_id=retry_job_id,
+                platform=run.get("platform"),
+                status="queued",
+                date_start=date.fromisoformat(str(failed_chunks[0].get("date_start"))),
+                date_end=date.fromisoformat(str(failed_chunks[-1].get("date_end"))),
+                chunk_days=run.get("chunk_days") or 1,
+                client_id=run.get("client_id"),
+                account_id=run.get("account_id"),
+                metadata={
+                    **(run.get("metadata") or {}),
+                    "retry_of_job_id": source_job_id,
+                    "retry_reason": "failed_chunks",
+                    "trigger_source": trigger_source,
+                },
+                job_type="historical_backfill",
+                grain=run.get("grain"),
+                chunks_total=len(failed_chunks),
+                chunks_done=0,
+                rows_written=0,
+            )
+            for idx, chunk in enumerate(failed_chunks):
+                _create_chunk(
+                    job_id=retry_job_id,
+                    chunk_index=idx,
+                    status="queued",
+                    date_start=date.fromisoformat(str(chunk.get("date_start"))),
+                    date_end=date.fromisoformat(str(chunk.get("date_end"))),
+                    metadata={
+                        "retry_of_job_id": source_job_id,
+                        "retry_of_chunk_index": int(chunk.get("chunk_index") or 0),
+                        "retry_reason": "failed_chunks",
+                    },
+                )
+
+            return {
+                "outcome": "created",
+                "source_job_id": source_job_id,
+                "retry_job_id": retry_job_id,
+                "platform": run.get("platform"),
+                "account_id": run.get("account_id"),
+                "status": "queued",
+                "chunks_created": len(failed_chunks),
+                "failed_chunks_count": len(failed_chunks),
+                "run": retry_run,
+            }
+
         sync_orchestration.client_registry_service.list_platform_accounts = _list_platform_accounts
         sync_orchestration.sync_runs_store.create_sync_run = _create_sync_run
         sync_orchestration.sync_runs_store.create_historical_sync_run_if_not_active = _create_historical_sync_run_if_not_active
@@ -219,6 +315,7 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         sync_orchestration.sync_runs_store.get_sync_run = _get_sync_run
         sync_orchestration.sync_runs_store.get_batch_progress = _get_batch_progress
         sync_orchestration.sync_runs_store.repair_historical_sync_run = _repair_historical_sync_run
+        sync_orchestration.sync_runs_store.retry_failed_historical_run = _retry_failed_historical_run
         sync_orchestration.sync_run_chunks_store.create_sync_run_chunk = _create_chunk
         sync_orchestration.sync_run_chunks_store.list_sync_run_chunks = _list_sync_run_chunks
 
@@ -231,6 +328,7 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         sync_orchestration.sync_runs_store.list_sync_runs_for_account = self.original_list_for_account
         sync_orchestration.sync_runs_store.get_sync_run = self.original_get_run
         sync_orchestration.sync_runs_store.repair_historical_sync_run = self.original_repair_run
+        sync_orchestration.sync_runs_store.retry_failed_historical_run = self.original_retry_failed_run
         sync_orchestration.sync_run_chunks_store.create_sync_run_chunk = self.original_create_chunk
         sync_orchestration.sync_run_chunks_store.list_sync_run_chunks = self.original_list_chunks
         os.environ.clear()
@@ -684,6 +782,116 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.assertEqual(second.status_code, 200)
         self.assertEqual(first.json()["outcome"], "repaired")
         self.assertEqual(second.json()["outcome"], "noop_not_active")
+
+    def test_retry_failed_endpoint_not_found(self):
+        headers = self._auth_headers()
+        response = self.client.post("/agency/sync-runs/missing-source/retry-failed", headers=headers)
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["detail"]["outcome"], "not_found")
+
+    def test_retry_failed_endpoint_not_retryable_for_non_historical_or_active(self):
+        headers = self._auth_headers()
+        sync_orchestration.sync_runs_store.create_sync_run(
+            job_id="manual-run",
+            platform="google_ads",
+            status="done",
+            date_start=date(2026, 1, 1),
+            date_end=date(2026, 1, 1),
+            chunk_days=1,
+            client_id=11,
+            account_id="3986597205",
+            metadata={},
+            batch_id="seed",
+            job_type="manual",
+            grain="account_daily",
+            chunks_total=1,
+            chunks_done=1,
+            rows_written=10,
+        )
+        response = self.client.post("/agency/sync-runs/manual-run/retry-failed", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["outcome"], "not_retryable")
+
+    def test_retry_failed_endpoint_created_and_then_already_exists(self):
+        headers = self._auth_headers()
+        sync_orchestration.sync_runs_store.create_sync_run(
+            job_id="source-error-run",
+            platform="google_ads",
+            status="error",
+            date_start=date(2026, 1, 1),
+            date_end=date(2026, 1, 7),
+            chunk_days=2,
+            client_id=11,
+            account_id="3986597205",
+            metadata={},
+            batch_id="seed",
+            job_type="historical_backfill",
+            grain="account_daily",
+            chunks_total=3,
+            chunks_done=2,
+            rows_written=10,
+        )
+        sync_orchestration.sync_run_chunks_store.create_sync_run_chunk(
+            job_id="source-error-run",
+            chunk_index=0,
+            status="done",
+            date_start=date(2026, 1, 1),
+            date_end=date(2026, 1, 2),
+            metadata={},
+        )
+        sync_orchestration.sync_run_chunks_store.create_sync_run_chunk(
+            job_id="source-error-run",
+            chunk_index=1,
+            status="error",
+            date_start=date(2026, 1, 3),
+            date_end=date(2026, 1, 4),
+            metadata={},
+        )
+
+        created = self.client.post("/agency/sync-runs/source-error-run/retry-failed", headers=headers)
+        self.assertEqual(created.status_code, 200)
+        created_payload = created.json()
+        self.assertEqual(created_payload["outcome"], "created")
+        self.assertEqual(created_payload["chunks_created"], 1)
+        retry_job_id = created_payload["retry_job_id"]
+
+        again = self.client.post("/agency/sync-runs/source-error-run/retry-failed", headers=headers)
+        self.assertEqual(again.status_code, 200)
+        again_payload = again.json()
+        self.assertEqual(again_payload["outcome"], "already_exists")
+        self.assertEqual(again_payload["retry_job_id"], retry_job_id)
+
+    def test_retry_failed_endpoint_no_failed_chunks(self):
+        headers = self._auth_headers()
+        sync_orchestration.sync_runs_store.create_sync_run(
+            job_id="source-done-run",
+            platform="google_ads",
+            status="done",
+            date_start=date(2026, 1, 1),
+            date_end=date(2026, 1, 2),
+            chunk_days=1,
+            client_id=11,
+            account_id="3986597205",
+            metadata={},
+            batch_id="seed",
+            job_type="historical_backfill",
+            grain="account_daily",
+            chunks_total=1,
+            chunks_done=1,
+            rows_written=10,
+        )
+        sync_orchestration.sync_run_chunks_store.create_sync_run_chunk(
+            job_id="source-done-run",
+            chunk_index=0,
+            status="done",
+            date_start=date(2026, 1, 1),
+            date_end=date(2026, 1, 2),
+            metadata={},
+        )
+
+        response = self.client.post("/agency/sync-runs/source-done-run/retry-failed", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["outcome"], "no_failed_chunks")
 
 
 if __name__ == "__main__":

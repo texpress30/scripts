@@ -164,3 +164,4 @@
 - 2026-03-04: Pentru run repair țintit pe job_id, folosește lock tranzacțional DB (`pg_advisory_xact_lock`) + `FOR UPDATE` pe run/chunks; un simplu check aplicativ nu e suficient în deployment-uri multiple.
 - 2026-03-04: Pentru acțiuni operaționale UI pe run-uri active, afișează CTA-ul strict context-aware (tip/status), folosește stare in-flight dedicată ca anti-double-click și bazează stop-ul polling pe aceeași sursă de adevăr `hasActiveRun` după refetch.
 - 2026-03-04: Pentru erori TS de tip "Duplicate function implementation" raportate din CI/Vercel, validează întâi snapshot-ul curent prin căutare explicită a declarațiilor duplicate și rulează build local înainte de a aplica refactor inutil.
+- 2026-03-05: Pentru retry țintit al run-urilor terminale, păstrează retry-ul minimal (doar chunk-uri `error/failed`) și folosește metadata (`retry_of_job_id`, `retry_reason`) + lock tranzacțional per run sursă pentru a evita duplicate concurente.
