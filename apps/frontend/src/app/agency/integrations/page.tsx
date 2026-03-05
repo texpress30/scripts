@@ -32,6 +32,8 @@ type GoogleDiagnosticsResponse = {
   api_version?: string;
   warnings?: string[];
   last_error?: string | null;
+  refresh_token_present?: boolean;
+  refresh_token_source?: string;
   [key: string]: unknown;
 };
 
@@ -217,6 +219,12 @@ export default function AgencyIntegrationsPage() {
                     </p>
                     <p>
                       <span className="font-medium">api_version:</span> {diagnosticsData.api_version ?? "-"}
+                    </p>
+                    <p>
+                      <span className="font-medium">refresh_token_present:</span> {String(Boolean(diagnosticsData.refresh_token_present))}
+                    </p>
+                    <p>
+                      <span className="font-medium">refresh_token_source:</span> {String(diagnosticsData.refresh_token_source ?? "missing")}
                     </p>
                   </div>
 
