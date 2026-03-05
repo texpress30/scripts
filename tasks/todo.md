@@ -1671,3 +1671,39 @@
 - Run-urile active dar fresh sunt lăsate în pace și raportate în `noop_active_fresh_job_ids`; pentru candidatele stale, outcome-urile repair sunt agregate în summary (`repaired`, `noop_not_active`, `not_found`, `noop_active_fresh`, `error`).
 - Am adăugat worker one-shot `app/workers/historical_repair_sweeper.py` cu helper `sweep_stale_historical_runs(...)` reutilizabil și `main()` pentru operare Railway/local, folosind default `sync_run_repair_stale_minutes` din config + env override (`HISTORICAL_REPAIR_SWEEPER_STALE_MINUTES`, `HISTORICAL_REPAIR_SWEEPER_LIMIT`).
 - Implementarea rămâne backend-only, fără schimbări UI/retry-failed/rolling cron/worker principal de procesare chunks.
+
+---
+
+# TODO — Task 22: runner periodic pentru historical repair sweeper
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și inspectez implementarea one-shot existentă.
+- [x] Adaug runner periodic separat pentru sweeper (`historical_repair_sweeper_loop`) fără a modifica repair/retry/rolling logic.
+- [x] Introduc configurare minimă pentru loop: enable flag + interval seconds, cu logging explicit pe iterații.
+- [x] Păstrez one-shot entrypoint existent și reutilizez helper-ul de sweep existent.
+- [x] Adaug teste deterministe pentru contractul runner-ului (disabled/config/interval/call/erori continue).
+- [x] Actualizez documentația operațională Railway/local și rulez testele backend relevante.
+
+## Review — Task 22: runner periodic historical repair sweeper
+- Am adăugat worker-ul `app/workers/historical_repair_sweeper_loop.py` cu buclă periodică simplă care apelează `sweep_stale_historical_runs(...)`, doarme conform intervalului configurabil și loghează `iteration_started` / `iteration_finished` cu duration + summary.
+- Config nou pentru loop runner (din env): `HISTORICAL_REPAIR_SWEEPER_ENABLED` și `HISTORICAL_REPAIR_SWEEPER_INTERVAL_SECONDS`; am păstrat reutilizarea variabilelor existente `HISTORICAL_REPAIR_SWEEPER_STALE_MINUTES` și `HISTORICAL_REPAIR_SWEEPER_LIMIT`.
+- Dacă runner-ul este disabled (`HISTORICAL_REPAIR_SWEEPER_ENABLED=false`), iese imediat cu status `disabled`.
+- Dacă o iterație aruncă excepție, eroarea este logată (`iteration_failed`) iar loop-ul continuă la următoarea iterație (nu oprește serviciul).
+- Am păstrat implementarea strict backend-only și fără schimbări în flow-urile repair/retry-failed/rolling/UI.
+
+---
+
+# TODO — Task 23: extindere sweeper auto-repair pentru rolling_refresh stale
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și inspectez logica de repair/sweeper/loop existentă.
+- [x] Extind sweeper-ul backend cu suport pentru `rolling_refresh` fără refactor mare și fără duplicare masivă.
+- [x] Refolosesc aceeași stale detection (`queued/running` + vârstă pe `COALESCE(updated_at, started_at, created_at)` + prag configurabil).
+- [x] Păstrez repair-ul concurent-safe și finalizez coerent run-urile rolling stale (done/error) prin aceeași infrastructură de repair.
+- [x] Extind loop runner-ul periodic să ruleze sweep atât pentru historical, cât și pentru rolling, cu summary separat + totaluri.
+- [x] Adaug/actualizez teste backend pentru rolling stale/fresh, non-target unaffected, summary și integrarea loop runner-ului.
+- [x] Actualizez documentația operațională + tasks/lessons și rulez testele backend relevante.
+
+## Review — Task 23: extindere sweeper la rolling_refresh
+- Am extras în `SyncRunsStore` un path comun minim (`_repair_active_sync_run` + `_sweep_stale_runs_for_job_type`) și am păstrat wrapper-ele explicite pentru `historical_backfill` și `rolling_refresh`, evitând duplicarea logicii de stale close/finalizare run.
+- `sweep_stale_rolling_runs(...)` folosește exact aceeași regulă de stale detection ca historical (`status IN queued/running` + vechime din `COALESCE(updated_at, started_at, created_at)` față de `stale_after_minutes`).
+- Loop-ul periodic rulează acum în fiecare iterație ambele sweep-uri (`historical` + `rolling`) și returnează summary cu breakdown per job type + totaluri (`total_processed_count`, `total_repaired_count`, `total_error_count`).
+- Nu am schimbat UI/retry-failed/rolling window logic/eligibility; extinderea este strict operațională backend.

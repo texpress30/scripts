@@ -308,12 +308,13 @@ class SyncRunsStore:
 
         return {"created": True, "run": self._row_to_payload(created_row)}
 
-    def repair_historical_sync_run(
+    def _repair_active_sync_run(
         self,
         *,
         job_id: str,
         stale_after_minutes: int,
-        repair_source: str = "api",
+        repair_source: str,
+        allowed_job_types: set[str] | None = None,
     ) -> dict[str, object]:
         self._ensure_schema()
         normalized_job_id = str(job_id)
@@ -340,10 +341,25 @@ class SyncRunsStore:
                     conn.commit()
                     return {"outcome": "not_found", "job_id": normalized_job_id}
 
+                run_job_type = str(run_payload.get("job_type") or "").strip().lower()
+                if allowed_job_types and run_job_type not in allowed_job_types:
+                    conn.commit()
+                    return {
+                        "outcome": "not_supported_job_type",
+                        "job_id": normalized_job_id,
+                        "job_type": run_payload.get("job_type"),
+                        "run": run_payload,
+                    }
+
                 run_status = str(run_payload.get("status") or "").strip().lower()
                 if run_status not in {"queued", "running"}:
                     conn.commit()
-                    return {"outcome": "noop_not_active", "job_id": normalized_job_id, "run": run_payload}
+                    return {
+                        "outcome": "noop_not_active",
+                        "job_id": normalized_job_id,
+                        "job_type": run_payload.get("job_type"),
+                        "run": run_payload,
+                    }
 
                 cur.execute(
                     """
@@ -361,9 +377,7 @@ class SyncRunsStore:
                 active_chunk_ids: list[int] = []
                 stale_active_chunk_ids: list[int] = []
 
-                cur.execute(
-                    "SELECT NOW()"
-                )
+                cur.execute("SELECT NOW()")
                 now_row = cur.fetchone()
                 now_ts = now_row[0] if now_row is not None else None
 
@@ -381,6 +395,7 @@ class SyncRunsStore:
                     return {
                         "outcome": "noop_active_fresh",
                         "job_id": normalized_job_id,
+                        "job_type": run_payload.get("job_type"),
                         "active_chunks": len(active_chunk_ids),
                         "stale_chunks": len(stale_active_chunk_ids),
                         "run": run_payload,
@@ -442,6 +457,7 @@ class SyncRunsStore:
                     return {
                         "outcome": "noop_active_fresh",
                         "job_id": normalized_job_id,
+                        "job_type": run_payload.get("job_type"),
                         "active_chunks": active_chunks_remaining,
                         "stale_chunks": stale_chunks_closed,
                         "run": run_payload,
@@ -493,19 +509,50 @@ class SyncRunsStore:
             "outcome": "repaired",
             "reason": repair_reason,
             "job_id": normalized_job_id,
+            "job_type": run_payload.get("job_type"),
             "stale_chunks_closed": stale_chunks_closed,
             "final_status": final_status,
             "run": self._row_to_payload(repaired_row),
         }
 
-    def sweep_stale_historical_runs(
+    def repair_historical_sync_run(
         self,
         *,
+        job_id: str,
         stale_after_minutes: int,
-        limit: int = 100,
+        repair_source: str = "api",
+    ) -> dict[str, object]:
+        return self._repair_active_sync_run(
+            job_id=job_id,
+            stale_after_minutes=stale_after_minutes,
+            repair_source=repair_source,
+            allowed_job_types={"historical_backfill"},
+        )
+
+    def repair_rolling_sync_run(
+        self,
+        *,
+        job_id: str,
+        stale_after_minutes: int,
         repair_source: str = "sweeper",
     ) -> dict[str, object]:
+        return self._repair_active_sync_run(
+            job_id=job_id,
+            stale_after_minutes=stale_after_minutes,
+            repair_source=repair_source,
+            allowed_job_types={"rolling_refresh"},
+        )
+
+    def _sweep_stale_runs_for_job_type(
+        self,
+        *,
+        job_type: str,
+        stale_after_minutes: int,
+        limit: int,
+        repair_source: str,
+    ) -> dict[str, object]:
         self._ensure_schema()
+        normalized_job_type = str(job_type).strip().lower()
         stale_minutes = max(1, int(stale_after_minutes))
         limit_value = max(1, int(limit))
 
@@ -521,12 +568,12 @@ class SyncRunsStore:
                         job_id,
                         COALESCE(updated_at, started_at, created_at) AS freshness_ts
                     FROM sync_runs
-                    WHERE job_type = 'historical_backfill'
+                    WHERE job_type = %s
                       AND status IN ('queued', 'running')
                     ORDER BY COALESCE(updated_at, started_at, created_at) ASC
                     LIMIT %s
                     """,
-                    (limit_value,),
+                    (normalized_job_type, limit_value),
                 )
                 active_rows = cur.fetchall() or []
 
@@ -550,7 +597,8 @@ class SyncRunsStore:
                     fresh_active_job_ids.append(job_id)
 
         logger.info(
-            "sync_runs.sweeper candidates=%s stale_candidates=%s fresh_active=%s stale_after_minutes=%s limit=%s",
+            "sync_runs.sweeper job_type=%s candidates=%s stale_candidates=%s fresh_active=%s stale_after_minutes=%s limit=%s",
+            normalized_job_type,
             len(active_rows),
             len(stale_candidate_job_ids),
             len(fresh_active_job_ids),
@@ -566,32 +614,39 @@ class SyncRunsStore:
 
         for job_id in stale_candidate_job_ids:
             try:
-                repair_result = self.repair_historical_sync_run(
+                repair_result = self._repair_active_sync_run(
                     job_id=job_id,
                     stale_after_minutes=stale_minutes,
                     repair_source=str(repair_source),
+                    allowed_job_types={normalized_job_type},
                 )
                 outcome = str(repair_result.get("outcome") or "")
                 if outcome == "repaired":
                     repaired_job_ids.append(job_id)
-                    logger.info("sync_runs.sweeper repaired job_id=%s", job_id)
+                    logger.info("sync_runs.sweeper repaired job_type=%s job_id=%s", normalized_job_type, job_id)
                 elif outcome == "noop_not_active":
                     noop_not_active_job_ids.append(job_id)
                 elif outcome == "not_found":
                     not_found_job_ids.append(job_id)
                 elif outcome == "noop_active_fresh":
                     noop_active_fresh_from_repair.append(job_id)
-                    logger.info("sync_runs.sweeper skipped_fresh_after_repair job_id=%s", job_id)
+                    logger.info("sync_runs.sweeper skipped_fresh_after_repair job_type=%s job_id=%s", normalized_job_type, job_id)
                 else:
-                    logger.warning("sync_runs.sweeper unexpected_outcome=%s job_id=%s", outcome, job_id)
+                    logger.warning(
+                        "sync_runs.sweeper unexpected_outcome=%s job_type=%s job_id=%s",
+                        outcome,
+                        normalized_job_type,
+                        job_id,
+                    )
             except Exception:
-                logger.exception("sync_runs.sweeper repair_failed job_id=%s", job_id)
+                logger.exception("sync_runs.sweeper repair_failed job_type=%s job_id=%s", normalized_job_type, job_id)
                 errored_job_ids.append(job_id)
 
         noop_active_fresh_job_ids = fresh_active_job_ids + noop_active_fresh_from_repair
 
         return {
             "status": "ok",
+            "job_type": normalized_job_type,
             "stale_after_minutes": stale_minutes,
             "limit": limit_value,
             "candidate_count": len(active_rows),
@@ -608,6 +663,34 @@ class SyncRunsStore:
             "not_found_job_ids": not_found_job_ids,
             "error_job_ids": errored_job_ids,
         }
+
+    def sweep_stale_historical_runs(
+        self,
+        *,
+        stale_after_minutes: int,
+        limit: int = 100,
+        repair_source: str = "sweeper",
+    ) -> dict[str, object]:
+        return self._sweep_stale_runs_for_job_type(
+            job_type="historical_backfill",
+            stale_after_minutes=stale_after_minutes,
+            limit=limit,
+            repair_source=repair_source,
+        )
+
+    def sweep_stale_rolling_runs(
+        self,
+        *,
+        stale_after_minutes: int,
+        limit: int = 100,
+        repair_source: str = "sweeper",
+    ) -> dict[str, object]:
+        return self._sweep_stale_runs_for_job_type(
+            job_type="rolling_refresh",
+            stale_after_minutes=stale_after_minutes,
+            limit=limit,
+            repair_source=repair_source,
+        )
 
     def retry_failed_historical_run(
         self,

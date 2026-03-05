@@ -146,3 +146,13 @@ cd apps/frontend && npm run build
 - Cron-ul creează run-uri `job_type=rolling_refresh` cu `trigger_source=cron` în `sync_runs`, vizibile în Agency Account Detail → Sync runs.
 - Regula exactă pentru fereastra zilnică rolling: `end_date = yesterday` (în timezone-ul contului), `start_date = end_date - 6 zile` ⇒ fix 7 zile calendaristice complete.
 - Eligibilitate minimă rolling cron: cont mapat la client + `sync_start_date` inițiat (altfel este omis explicit ca `history_not_initialized`).
+
+## Railway: repair sweeper (historical + rolling stale runs)
+- **One-shot manual sweep (historical):** `cd apps/backend && PYTHONPATH=. python -m app.workers.historical_repair_sweeper`
+- **Periodic sweeper loop (historical + rolling, service separat):** `cd apps/backend && PYTHONPATH=. python -m app.workers.historical_repair_sweeper_loop`
+- Env vars suportate:
+  - `HISTORICAL_REPAIR_SWEEPER_ENABLED` (`true/false`, default `true` pentru loop runner)
+  - `HISTORICAL_REPAIR_SWEEPER_INTERVAL_SECONDS` (default `300`)
+  - `HISTORICAL_REPAIR_SWEEPER_STALE_MINUTES` (override la `SYNC_RUN_REPAIR_STALE_MINUTES`)
+  - `HISTORICAL_REPAIR_SWEEPER_LIMIT` (default `100`)
+- Loop-ul loghează explicit `iteration_started`/`iteration_finished` + summary; dacă o iterație eșuează, eroarea este logată și loop-ul continuă la următoarea iterație.
