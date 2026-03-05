@@ -498,6 +498,117 @@ class SyncRunsStore:
             "run": self._row_to_payload(repaired_row),
         }
 
+    def sweep_stale_historical_runs(
+        self,
+        *,
+        stale_after_minutes: int,
+        limit: int = 100,
+        repair_source: str = "sweeper",
+    ) -> dict[str, object]:
+        self._ensure_schema()
+        stale_minutes = max(1, int(stale_after_minutes))
+        limit_value = max(1, int(limit))
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT NOW()")
+                now_row = cur.fetchone()
+                now_ts = now_row[0] if now_row is not None else None
+
+                cur.execute(
+                    """
+                    SELECT
+                        job_id,
+                        COALESCE(updated_at, started_at, created_at) AS freshness_ts
+                    FROM sync_runs
+                    WHERE job_type = 'historical_backfill'
+                      AND status IN ('queued', 'running')
+                    ORDER BY COALESCE(updated_at, started_at, created_at) ASC
+                    LIMIT %s
+                    """,
+                    (limit_value,),
+                )
+                active_rows = cur.fetchall() or []
+
+        stale_candidate_job_ids: list[str] = []
+        fresh_active_job_ids: list[str] = []
+        if now_ts is None:
+            stale_candidate_job_ids = [str(row[0]) for row in active_rows if row and row[0] is not None]
+        else:
+            for row in active_rows:
+                if row is None or row[0] is None:
+                    continue
+                job_id = str(row[0])
+                freshness_ts = row[1]
+                if freshness_ts is None:
+                    stale_candidate_job_ids.append(job_id)
+                    continue
+                age_seconds = (now_ts - freshness_ts).total_seconds()
+                if age_seconds >= stale_minutes * 60:
+                    stale_candidate_job_ids.append(job_id)
+                else:
+                    fresh_active_job_ids.append(job_id)
+
+        logger.info(
+            "sync_runs.sweeper candidates=%s stale_candidates=%s fresh_active=%s stale_after_minutes=%s limit=%s",
+            len(active_rows),
+            len(stale_candidate_job_ids),
+            len(fresh_active_job_ids),
+            stale_minutes,
+            limit_value,
+        )
+
+        repaired_job_ids: list[str] = []
+        noop_not_active_job_ids: list[str] = []
+        not_found_job_ids: list[str] = []
+        noop_active_fresh_from_repair: list[str] = []
+        errored_job_ids: list[str] = []
+
+        for job_id in stale_candidate_job_ids:
+            try:
+                repair_result = self.repair_historical_sync_run(
+                    job_id=job_id,
+                    stale_after_minutes=stale_minutes,
+                    repair_source=str(repair_source),
+                )
+                outcome = str(repair_result.get("outcome") or "")
+                if outcome == "repaired":
+                    repaired_job_ids.append(job_id)
+                    logger.info("sync_runs.sweeper repaired job_id=%s", job_id)
+                elif outcome == "noop_not_active":
+                    noop_not_active_job_ids.append(job_id)
+                elif outcome == "not_found":
+                    not_found_job_ids.append(job_id)
+                elif outcome == "noop_active_fresh":
+                    noop_active_fresh_from_repair.append(job_id)
+                    logger.info("sync_runs.sweeper skipped_fresh_after_repair job_id=%s", job_id)
+                else:
+                    logger.warning("sync_runs.sweeper unexpected_outcome=%s job_id=%s", outcome, job_id)
+            except Exception:
+                logger.exception("sync_runs.sweeper repair_failed job_id=%s", job_id)
+                errored_job_ids.append(job_id)
+
+        noop_active_fresh_job_ids = fresh_active_job_ids + noop_active_fresh_from_repair
+
+        return {
+            "status": "ok",
+            "stale_after_minutes": stale_minutes,
+            "limit": limit_value,
+            "candidate_count": len(active_rows),
+            "processed_count": len(stale_candidate_job_ids),
+            "repaired_count": len(repaired_job_ids),
+            "noop_not_active_count": len(noop_not_active_job_ids),
+            "noop_active_fresh_count": len(noop_active_fresh_job_ids),
+            "not_found_count": len(not_found_job_ids),
+            "error_count": len(errored_job_ids),
+            "stale_candidate_job_ids": stale_candidate_job_ids,
+            "repaired_job_ids": repaired_job_ids,
+            "noop_not_active_job_ids": noop_not_active_job_ids,
+            "noop_active_fresh_job_ids": noop_active_fresh_job_ids,
+            "not_found_job_ids": not_found_job_ids,
+            "error_job_ids": errored_job_ids,
+        }
+
     def retry_failed_historical_run(
         self,
         *,

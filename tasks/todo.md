@@ -1654,3 +1654,20 @@
 - Read-model: `list_platform_accounts(...)` expune acum și `status` din `agency_platform_accounts`, astfel rolling scheduler poate aplica regula fără query-uri suplimentare.
 - Summary rolling: am adăugat câmpurile additive `skipped_inactive_count` și `skipped_inactive_account_ids`.
 - Teste: acoperire pentru active/unmapped/no-history/disabled/inactive și verificare explicită a noului skip reason în summary.
+
+---
+
+# TODO — Task 21: sweeper backend auto-repair pentru historical backfill stale
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și inspectez logica existentă de repair pentru historical_backfill.
+- [x] Adaug helper backend `sweep_stale_historical_runs(...)` care identifică run-uri active historical_backfill stale și reutilizează `repair_historical_sync_run(...)`.
+- [x] Mențin scope-ul strict pe `job_type=historical_backfill` și păstrez concurența sigură prin guard-urile existente din repair.
+- [x] Adaug entrypoint worker one-shot pentru rulare operațională (Railway/local) cu prag stale + limit configurabile.
+- [x] Adaug summary explicit (processed/repaired/noop/not_found/error + job_ids) și logging pentru candidate/outcomes.
+- [x] Adaug/actualizez teste backend pentru stale/fresh/outcomes/contract worker și rulez suita relevantă.
+
+## Review — Task 21: sweeper backend auto-repair historical stale
+- Am introdus în `SyncRunsStore` metoda `sweep_stale_historical_runs(...)` care citește run-urile active (`queued/running`) strict pentru `historical_backfill`, clasifică candidate stale pe baza `COALESCE(updated_at, started_at, created_at)` față de `stale_after_minutes`, apoi apelează pentru fiecare candidat `repair_historical_sync_run(...)` (fără a duplica logica de stale chunk detection).
+- Run-urile active dar fresh sunt lăsate în pace și raportate în `noop_active_fresh_job_ids`; pentru candidatele stale, outcome-urile repair sunt agregate în summary (`repaired`, `noop_not_active`, `not_found`, `noop_active_fresh`, `error`).
+- Am adăugat worker one-shot `app/workers/historical_repair_sweeper.py` cu helper `sweep_stale_historical_runs(...)` reutilizabil și `main()` pentru operare Railway/local, folosind default `sync_run_repair_stale_minutes` din config + env override (`HISTORICAL_REPAIR_SWEEPER_STALE_MINUTES`, `HISTORICAL_REPAIR_SWEEPER_LIMIT`).
+- Implementarea rămâne backend-only, fără schimbări UI/retry-failed/rolling cron/worker principal de procesare chunks.
