@@ -8,6 +8,7 @@ const apiMock = vi.hoisted(() => ({
   apiRequest: vi.fn(),
   repairSyncRun: vi.fn(),
   retryFailedSyncRun: vi.fn(),
+  listAccountSyncRuns: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -30,6 +31,7 @@ vi.mock("@/lib/api", () => ({
   apiRequest: apiMock.apiRequest,
   repairSyncRun: apiMock.repairSyncRun,
   retryFailedSyncRun: apiMock.retryFailedSyncRun,
+  listAccountSyncRuns: apiMock.listAccountSyncRuns,
 }));
 
 function accountMeta() {
@@ -52,6 +54,12 @@ describe("AgencyAccountDetailPage repair/retry actions", () => {
     apiMock.apiRequest.mockReset();
     apiMock.repairSyncRun.mockReset();
     apiMock.retryFailedSyncRun.mockReset();
+    apiMock.listAccountSyncRuns.mockReset();
+    apiMock.listAccountSyncRuns.mockImplementation((platform: string, accountId: string, limit = 100) =>
+      apiMock
+        .apiRequest(`/agency/sync-runs/accounts/${encodeURIComponent(platform)}/${encodeURIComponent(accountId)}?limit=${limit}`)
+        .then((payload: { runs?: unknown[] }) => payload.runs ?? []),
+    );
   });
 
   it("shows repair button for active historical_backfill run and sends repair request", async () => {

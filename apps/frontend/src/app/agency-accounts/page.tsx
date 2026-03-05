@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
-import { apiRequest } from "@/lib/api";
+import { apiRequest, listAccountSyncRuns } from "@/lib/api";
 
 type ClientRecord = {
   id: number;
@@ -79,6 +79,13 @@ type BatchCreateResponse = {
   batch_id?: string;
   invalid_account_ids?: string[];
 };
+
+type RowChunkProgress = {
+  chunksDone: number;
+  chunksTotal: number;
+  percent: number;
+};
+
 
 const DEFAULT_HISTORICAL_START = "2024-01-09";
 
@@ -159,6 +166,7 @@ export default function AgencyAccountsPage() {
   const [currentHistoricalStartDate, setCurrentHistoricalStartDate] = useState<string | null>(null);
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
   const [batchRunsByAccount, setBatchRunsByAccount] = useState<Record<string, string>>({});
+  const [rowChunkProgressByAccount, setRowChunkProgressByAccount] = useState<Record<string, RowChunkProgress>>({});
 
   const selectedSummary = useMemo(
     () => summary.find((item) => item.platform === selectedPlatform),
@@ -206,6 +214,16 @@ export default function AgencyAccountsPage() {
     return grouped;
   }, [googleAccounts]);
 
+  const activeSyncAccountIds = useMemo(() => {
+    return googleAccounts
+      .filter((account) => {
+        const rowStatus = String(batchRunsByAccount[account.id] ?? "").toLowerCase();
+        if (rowStatus === "queued" || rowStatus === "running") return true;
+        return !rowStatus && Boolean(account.has_active_sync);
+      })
+      .map((account) => account.id);
+  }, [googleAccounts, batchRunsByAccount]);
+
   function toggleClientQuickView(accountId: string, open: boolean) {
     setExpandedClientRows((current) => {
       const next = new Set(current);
@@ -215,7 +233,11 @@ export default function AgencyAccountsPage() {
     });
   }
 
-  function renderSyncProgress(account: GoogleAccount, rowStatus?: string | null): JSX.Element {
+  function renderSyncProgress(
+    account: GoogleAccount,
+    rowStatus?: string | null,
+    chunkProgress?: RowChunkProgress | null,
+  ): JSX.Element {
     const normalizedRowStatus = String(rowStatus ?? "").toLowerCase();
     const isBatchActiveRow = normalizedRowStatus === "queued" || normalizedRowStatus === "running";
     const hasStandaloneActiveSync = !rowStatus && Boolean(account.has_active_sync);
@@ -224,8 +246,7 @@ export default function AgencyAccountsPage() {
     const statusText = rowStatus || account.last_run_status || (account.has_active_sync ? "running" : "idle");
     const normalizedStatusText = String(statusText).toLowerCase();
 
-    const activePercent = normalizedRowStatus === "queued" ? 14 : 52;
-    const activeColor = normalizedRowStatus === "queued" ? "bg-indigo-300" : "bg-indigo-500";
+    const fallbackPercent = normalizedRowStatus === "queued" ? 14 : 52;
 
     return (
       <div className="w-full">
@@ -233,12 +254,19 @@ export default function AgencyAccountsPage() {
         <div className="mt-1 h-2 w-full overflow-hidden rounded bg-slate-200" data-testid={`sync-progress-track-${account.id}`}>
           {isActiveSyncRow ? (
             <div
-              className={`h-full ${activeColor} ${normalizedStatusText === "running" ? "animate-pulse" : ""}`}
-              style={{ width: `${Math.max(8, Math.min(80, activePercent))}%` }}
+              className={`h-full bg-indigo-500 ${normalizedStatusText === "running" ? "animate-pulse" : ""}`}
+              style={{ width: `${Math.max(6, Math.min(100, chunkProgress?.percent ?? fallbackPercent))}%` }}
               data-testid={`sync-progress-fill-${account.id}`}
             />
           ) : null}
         </div>
+        {chunkProgress ? (
+          <p className="mt-1 text-xs text-slate-600" data-testid={`sync-progress-chunks-${account.id}`}>
+            {chunkProgress.chunksDone}/{chunkProgress.chunksTotal} chunks ({chunkProgress.percent}%)
+          </p>
+        ) : isActiveSyncRow ? (
+          <p className="mt-1 text-xs text-slate-500">Chunk progress în curs de actualizare...</p>
+        ) : null}
         {account.last_run_type ? <p className="mt-1 text-xs text-slate-500">Tip run: {account.last_run_type}</p> : null}
         {rowStatus ? <p className="mt-1 text-xs text-indigo-700">Batch status: {rowStatus}</p> : null}
       </div>
@@ -471,6 +499,63 @@ export default function AgencyAccountsPage() {
     };
   }, [currentBatchId, currentHistoricalStartDate, currentJobType]);
 
+
+  useEffect(() => {
+    if (selectedPlatform !== "google_ads" || activeSyncAccountIds.length <= 0) {
+      setRowChunkProgressByAccount({});
+      return;
+    }
+
+    let cancelled = false;
+
+    async function refreshActiveRunsProgress() {
+      try {
+        const entries = await Promise.all(
+          activeSyncAccountIds.map(async (accountId) => {
+            const runs = await listAccountSyncRuns("google_ads", accountId, 25);
+            const activeRun = runs.find((run) => {
+              const normalized = String(run.status ?? "").toLowerCase();
+              return normalized === "queued" || normalized === "running";
+            });
+            if (!activeRun) return [accountId, null] as const;
+
+            const done = Math.max(0, Number(activeRun.chunks_done ?? 0));
+            const total = Math.max(0, Number(activeRun.chunks_total ?? 0));
+            if (total <= 0) return [accountId, null] as const;
+
+            return [
+              accountId,
+              {
+                chunksDone: done,
+                chunksTotal: total,
+                percent: Math.max(0, Math.min(100, Math.round((done / total) * 100))),
+              } satisfies RowChunkProgress,
+            ] as const;
+          }),
+        );
+
+        if (cancelled) return;
+        const next: Record<string, RowChunkProgress> = {};
+        for (const [accountId, progress] of entries) {
+          if (progress) next[accountId] = progress;
+        }
+        setRowChunkProgressByAccount(next);
+      } catch {
+        if (cancelled) return;
+      }
+    }
+
+    void refreshActiveRunsProgress();
+    const intervalId = window.setInterval(() => {
+      void refreshActiveRunsProgress();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [activeSyncAccountIds, selectedPlatform]);
+
   const isBatchActive = Boolean(currentBatchId);
   const controlsDisabled = loading || actionBusy || isBatchActive;
 
@@ -620,7 +705,7 @@ export default function AgencyAccountsPage() {
 
                             <div>
                               <p className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Sync progress</p>
-                              {renderSyncProgress(account, rowStatus)}
+                              {renderSyncProgress(account, rowStatus, rowChunkProgressByAccount[account.id])}
                               <p className="mt-1 text-xs text-slate-500">Istoric până la: {account.backfill_completed_through ?? "Backfill neinițiat"}</p>
                               <p className="text-xs text-slate-500">Rolling până la: {account.rolling_synced_through ?? "Rolling sync neinițiat"}</p>
                             </div>

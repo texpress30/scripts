@@ -1776,3 +1776,21 @@
 - Regula nouă: fill-ul este randat doar dacă row-ul are sync activ relevant (`rowStatus` din batch curent în `queued/running`, sau fallback `has_active_sync` când nu există `rowStatus`).
 - Pentru row-uri inactive (idle/done/error fără activitate curentă), coloana afișează status/text și metadata, dar pista rămâne fără fill.
 - Pentru row-uri active: `queued` primește indicator de start discret, `running` primește indicator intermediar animat; după ce row-ul nu mai e activ, fill-ul dispare.
+
+---
+
+# TODO — Task 28: Agency Accounts row-level progress REAL din chunks pentru conturile active
+
+- [x] Actualizez workspace-ul și verific starea branch-ului (remote/tracking indisponibil în mediul curent).
+- [x] Identific endpoint-ul reutilizabil pentru runs/chunk counters din Account Detail și îl expun prin helper comun în `src/lib/api.ts`.
+- [x] Adaug în list page polling țintit (doar conturi active queued/running) pentru a citi `chunks_done/chunks_total` per cont.
+- [x] Randrez în `SYNC PROGRESS` procent real + text `done/total chunks` când există date; fallback simplu pentru activ fără counters; gol pentru inactive.
+- [x] Evit fetch pe toate conturile prin filtrare explicită `activeSyncAccountIds` înainte de polling.
+- [x] Adaug/actualizez teste frontend pentru no-active, active real-progress, și start/stop polling.
+- [x] Rulez `pnpm test` și `pnpm build` pe frontend.
+
+## Review — Task 28: progress real pe chunks pentru active rows
+- Endpoint reutilizat: `/agency/sync-runs/accounts/{platform}/{account_id}?limit=...` (același folosit de Account Detail), expus prin helper comun `listAccountSyncRuns(...)` în `src/lib/api.ts`.
+- În Agency Accounts, polling-ul pentru chunk progress pornește doar când există conturi active (`queued/running` în batch sau `has_active_sync` fallback) și rulează pe lista activă, nu pe toate conturile.
+- Pentru fiecare cont activ se citește run-ul activ și se derivează `chunksDone/chunksTotal/percent`; UI afișează bară reală + text ex. `12/113 chunks (11%)`.
+- Când contul nu mai este activ, row progress revine la track gol (fără fill) și polling-ul se oprește automat când nu mai există active rows.

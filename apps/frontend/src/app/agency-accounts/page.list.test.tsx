@@ -4,9 +4,15 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import AgencyAccountsPage from "./page";
 
-const apiMock = vi.hoisted(() => ({ apiRequest: vi.fn() }));
+const apiMock = vi.hoisted(() => ({
+  apiRequest: vi.fn(),
+  listAccountSyncRuns: vi.fn(),
+}));
 
-vi.mock("@/lib/api", () => ({ apiRequest: apiMock.apiRequest }));
+vi.mock("@/lib/api", () => ({
+  apiRequest: apiMock.apiRequest,
+  listAccountSyncRuns: apiMock.listAccountSyncRuns,
+}));
 vi.mock("@/components/ProtectedPage", () => ({ ProtectedPage: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
 vi.mock("@/components/AppShell", () => ({ AppShell: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
 vi.mock("next/link", () => ({
@@ -64,11 +70,14 @@ function mockBasePayloads() {
     }
     return Promise.resolve({});
   });
+  apiMock.listAccountSyncRuns.mockResolvedValue([]);
 }
 
 describe("AgencyAccountsPage list redesign + same-client quick view", () => {
   beforeEach(() => {
+    vi.useRealTimers();
     apiMock.apiRequest.mockReset();
+    apiMock.listAccountSyncRuns.mockReset();
     mockBasePayloads();
   });
 
@@ -121,7 +130,6 @@ describe("AgencyAccountsPage list redesign + same-client quick view", () => {
     });
   });
 
-
   it("does not render filled progress for idle/done rows without active sync", async () => {
     render(<AgencyAccountsPage />);
     await screen.findByText("Account One");
@@ -131,7 +139,7 @@ describe("AgencyAccountsPage list redesign + same-client quick view", () => {
     expect(screen.getAllByText(/Status: done/i).length).toBeGreaterThan(0);
   });
 
-  it("renders active progress indicator for queued/running rows from current batch", async () => {
+  it("renders real chunk progress for active rows when backend progress is available", async () => {
     let batchStatusCalls = 0;
     apiMock.apiRequest.mockImplementation((path: string, options?: { method?: string }) => {
       if (path === "/clients") {
@@ -182,6 +190,16 @@ describe("AgencyAccountsPage list redesign + same-client quick view", () => {
       return Promise.resolve({});
     });
 
+    apiMock.listAccountSyncRuns.mockImplementation((platform: string, accountId: string) => {
+      if (platform === "google_ads" && accountId === "1001") {
+        return Promise.resolve([{ job_id: "run-1", status: "running", chunks_done: 12, chunks_total: 113 }]);
+      }
+      if (platform === "google_ads" && accountId === "1002") {
+        return Promise.resolve([{ job_id: "run-2", status: "queued", chunks_done: 3, chunks_total: 20 }]);
+      }
+      return Promise.resolve([]);
+    });
+
     render(<AgencyAccountsPage />);
     await screen.findByText("Account One");
 
@@ -191,10 +209,96 @@ describe("AgencyAccountsPage list redesign + same-client quick view", () => {
     await waitFor(() => {
       expect(screen.getByTestId("sync-progress-fill-1001")).toBeInTheDocument();
       expect(screen.getByTestId("sync-progress-fill-1002")).toBeInTheDocument();
+      expect(screen.getByTestId("sync-progress-chunks-1001")).toHaveTextContent("12/113 chunks (11%)");
+      expect(screen.getByTestId("sync-progress-chunks-1002")).toHaveTextContent("3/20 chunks (15%)");
+    });
+  });
+
+  it("starts chunk polling only for active accounts and stops after no active rows", async () => {
+    let batchStatusCalls = 0;
+
+    apiMock.apiRequest.mockImplementation((path: string, options?: { method?: string }) => {
+      if (path === "/clients") {
+        return Promise.resolve({ items: [{ id: 11, name: "Client A", owner_email: "a@x.com", display_id: 1 }] });
+      }
+      if (path === "/clients/accounts/summary") {
+        return Promise.resolve({ items: [{ platform: "google_ads", connected_count: 2, last_import_at: null }] });
+      }
+      if (path === "/clients/accounts/google") {
+        return Promise.resolve({
+          count: 2,
+          items: [
+            { id: "1001", name: "Account One", attached_client_id: 11, attached_client_name: "Client A", last_run_status: "idle", has_active_sync: false },
+            { id: "1002", name: "Account Two", attached_client_id: 11, attached_client_name: "Client A", last_run_status: "idle", has_active_sync: false },
+          ],
+        });
+      }
+      if (path === "/agency/sync-runs/batch" && options?.method === "POST") {
+        return Promise.resolve({ batch_id: "batch-1", invalid_account_ids: [] });
+      }
+      if (path === "/agency/sync-runs/batch/batch-1") {
+        batchStatusCalls += 1;
+        if (batchStatusCalls === 1) {
+          return Promise.resolve({
+            batch_id: "batch-1",
+            progress: { total_runs: 2, queued: 0, running: 1, done: 1, error: 0, percent: 55 },
+            runs: [
+              { account_id: "1001", status: "running" },
+              { account_id: "1002", status: "done" },
+            ],
+          });
+        }
+        return Promise.resolve({
+          batch_id: "batch-1",
+          progress: { total_runs: 2, queued: 0, running: 0, done: 2, error: 0, percent: 100 },
+          runs: [
+            { account_id: "1001", status: "done" },
+            { account_id: "1002", status: "done" },
+          ],
+        });
+      }
+      return Promise.resolve({});
     });
 
-    expect(screen.getByText("Batch status: running")).toBeInTheDocument();
-    expect(screen.getByText("Batch status: queued")).toBeInTheDocument();
+    apiMock.listAccountSyncRuns.mockImplementation((platform: string, accountId: string) => {
+      if (platform === "google_ads" && accountId === "1001") {
+        return Promise.resolve([{ job_id: "run-1", status: "running", chunks_done: 1, chunks_total: 10 }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const intervalRegistry: Array<{ id: number; ms: number; cb: () => void }> = [];
+    let intervalId = 1;
+    const setIntervalSpy = vi.spyOn(window, "setInterval").mockImplementation((cb: TimerHandler, ms?: number) => {
+      const id = intervalId++;
+      intervalRegistry.push({ id, ms: Number(ms ?? 0), cb: cb as () => void });
+      return id as unknown as number;
+    });
+    const clearIntervalSpy = vi.spyOn(window, "clearInterval").mockImplementation(() => {});
+
+    render(<AgencyAccountsPage />);
+    await screen.findByText("Account One");
+
+    fireEvent.click(screen.getByLabelText("Select all pe pagina curentă"));
+    fireEvent.click(screen.getByRole("button", { name: /Download historical/i }));
+
+    await waitFor(() => {
+      expect(apiMock.listAccountSyncRuns).toHaveBeenCalledWith("google_ads", "1001", 25);
+    });
+    expect(apiMock.listAccountSyncRuns).not.toHaveBeenCalledWith("google_ads", "1002", 25);
+
+    const batchInterval = intervalRegistry.find((entry) => entry.ms === 2000);
+    expect(batchInterval).toBeDefined();
+    batchInterval?.cb();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const progressInterval = intervalRegistry.find((entry) => entry.ms === 5000);
+    expect(progressInterval).toBeDefined();
+    expect(clearIntervalSpy).toHaveBeenCalledWith(progressInterval?.id);
+
+    setIntervalSpy.mockRestore();
+    clearIntervalSpy.mockRestore();
   });
 
   it("keeps client filter behavior with quick-view layout", async () => {

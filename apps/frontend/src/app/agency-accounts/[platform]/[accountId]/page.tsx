@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
-import { apiRequest, repairSyncRun, retryFailedSyncRun } from "@/lib/api";
+import { apiRequest, listAccountSyncRuns, repairSyncRun, retryFailedSyncRun, type AccountSyncRun } from "@/lib/api";
 
 type GoogleAccount = {
   id: string;
@@ -44,32 +44,7 @@ type GoogleAccountsResponse = {
   items: GoogleAccount[];
 };
 
-type SyncRun = {
-  job_id: string;
-  batch_id?: string | null;
-  job_type?: string | null;
-  grain?: string | null;
-  status?: string | null;
-  date_start?: string | null;
-  date_end?: string | null;
-  chunks_total?: number | null;
-  chunks_done?: number | null;
-  rows_written?: number | null;
-  error_count?: number | null;
-  error?: string | null;
-  created_at?: string | null;
-  started_at?: string | null;
-  finished_at?: string | null;
-  trigger_source?: string | null;
-  metadata?: Record<string, unknown> | null;
-};
-
-type AccountRunsResponse = {
-  platform: string;
-  account_id: string;
-  limit: number;
-  runs: SyncRun[];
-};
+type SyncRun = AccountSyncRun;
 
 type SyncChunk = {
   chunk_index: number;
@@ -329,10 +304,8 @@ export default function AgencyAccountDetailPage() {
     setRunsLoading(true);
     setRunsError("");
     try {
-      const payload = await apiRequest<AccountRunsResponse>(
-        `/agency/sync-runs/accounts/${encodeURIComponent(platform)}/${encodeURIComponent(accountId)}?limit=100`,
-      );
-      setRuns(payload.runs ?? []);
+      const runsPayload = await listAccountSyncRuns(platform, accountId, 100);
+      setRuns(runsPayload);
     } catch (err) {
       setRuns([]);
       setRunsError(err instanceof Error ? err.message : "Nu am putut încărca sync runs.");

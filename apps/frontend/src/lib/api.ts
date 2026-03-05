@@ -80,6 +80,41 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
   return (await response.json()) as T;
 }
 
+
+export type AccountSyncRun = {
+  job_id: string;
+  batch_id?: string | null;
+  job_type?: string | null;
+  grain?: string | null;
+  status?: string | null;
+  date_start?: string | null;
+  date_end?: string | null;
+  chunks_total?: number | null;
+  chunks_done?: number | null;
+  rows_written?: number | null;
+  error_count?: number | null;
+  error?: string | null;
+  created_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  trigger_source?: string | null;
+  metadata?: Record<string, unknown> | null;
+};
+
+type AccountRunsResponse = {
+  platform: string;
+  account_id: string;
+  limit: number;
+  runs: AccountSyncRun[];
+};
+
+export async function listAccountSyncRuns(platform: string, accountId: string, limit = 100): Promise<AccountSyncRun[]> {
+  const payload = await apiRequest<AccountRunsResponse>(
+    `/agency/sync-runs/accounts/${encodeURIComponent(platform)}/${encodeURIComponent(accountId)}?limit=${Math.max(1, Math.floor(limit))}`,
+  );
+  return payload.runs ?? [];
+}
+
 export async function repairSyncRun(jobId: string): Promise<RepairSyncRunResult> {
   const token = getAuthToken();
   const headers = new Headers();
