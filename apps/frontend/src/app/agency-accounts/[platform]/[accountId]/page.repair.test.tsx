@@ -150,6 +150,29 @@ describe("AgencyAccountDetailPage repair/retry actions", () => {
     expect(screen.queryByRole("button", { name: "Reia chunk-urile eșuate" })).not.toBeInTheDocument();
   });
 
+  it("hides retry button when a retry historical run is already active", async () => {
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients/accounts/google") return Promise.resolve(accountMeta());
+      if (path.includes("/accounts/google_ads/3986597205")) {
+        return Promise.resolve({
+          platform: "google_ads",
+          account_id: "3986597205",
+          limit: 100,
+          runs: [
+            { job_id: "job-old-terminal", job_type: "historical_backfill", status: "error", error_count: 1, created_at: "2026-03-04T10:00:00Z" },
+            { job_id: "job-retry-active", job_type: "historical_backfill", status: "running", created_at: "2026-03-04T10:30:00Z" },
+          ],
+        });
+      }
+      return Promise.resolve({ chunks: [] });
+    });
+
+    render(<AgencyAccountDetailPage />);
+
+    await screen.findByText("Auto-refresh activ (există run queued/running/pending).");
+    expect(screen.queryByRole("button", { name: "Reia chunk-urile eșuate" })).not.toBeInTheDocument();
+  });
+
   it("sends retry request and keeps button disabled in-flight", async () => {
     apiMock.apiRequest.mockImplementation((path: string) => {
       if (path === "/clients/accounts/google") return Promise.resolve(accountMeta());
@@ -225,6 +248,112 @@ describe("AgencyAccountDetailPage repair/retry actions", () => {
     });
     expect(setIntervalSpy).toHaveBeenCalled();
   });
+
+  it("keeps header synced with runs when runs are newer than account meta", async () => {
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients/accounts/google") {
+        return Promise.resolve({
+          items: [
+            {
+              ...accountMeta().items[0],
+              has_active_sync: true,
+              last_run_status: "queued",
+              last_run_type: "historical_backfill",
+              last_run_started_at: "2026-03-04T09:00:00Z",
+              last_run_finished_at: null,
+            },
+          ],
+        });
+      }
+      if (path.includes("/accounts/google_ads/3986597205")) {
+        return Promise.resolve({
+          platform: "google_ads",
+          account_id: "3986597205",
+          limit: 100,
+          runs: [
+            {
+              job_id: "job-finished",
+              job_type: "historical_backfill",
+              status: "done",
+              created_at: "2026-03-04T10:00:00Z",
+              started_at: "2026-03-04T10:00:00Z",
+              finished_at: "2026-03-04T10:10:00Z",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({ chunks: [] });
+    });
+
+    render(<AgencyAccountDetailPage />);
+
+    expect(await screen.findByText("Auto-refresh oprit (nu există run activ).")).toBeInTheDocument();
+    expect(screen.getByText("Fără sync activ")).toBeInTheDocument();
+    expect(screen.getByText("Ultimul status: done")).toBeInTheDocument();
+  });
+
+  it("polling reloads account metadata and ends in coherent stopped state", async () => {
+    vi.useRealTimers();
+    let metaCallCount = 0;
+    let runsCallCount = 0;
+
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients/accounts/google") {
+        metaCallCount += 1;
+        if (metaCallCount <= 2) {
+          return Promise.resolve({
+            items: [
+              {
+                ...accountMeta().items[0],
+                has_active_sync: true,
+                last_run_status: "queued",
+              },
+            ],
+          });
+        }
+        return Promise.resolve({
+          items: [
+            {
+              ...accountMeta().items[0],
+              has_active_sync: false,
+              last_run_status: "done",
+            },
+          ],
+        });
+      }
+
+      if (path.includes("/accounts/google_ads/3986597205")) {
+        runsCallCount += 1;
+        if (runsCallCount <= 2) {
+          return Promise.resolve({
+            platform: "google_ads",
+            account_id: "3986597205",
+            limit: 100,
+            runs: [{ job_id: "job-live", job_type: "historical_backfill", status: "running", created_at: "2026-03-04T10:00:00Z" }],
+          });
+        }
+        return Promise.resolve({
+          platform: "google_ads",
+          account_id: "3986597205",
+          limit: 100,
+          runs: [{ job_id: "job-live", job_type: "historical_backfill", status: "done", created_at: "2026-03-04T10:00:00Z", finished_at: "2026-03-04T10:10:00Z" }],
+        });
+      }
+      return Promise.resolve({ chunks: [] });
+    });
+
+    render(<AgencyAccountDetailPage />);
+    await screen.findByText("Auto-refresh activ (există run queued/running/pending).");
+
+    await waitFor(() => {
+      expect(screen.getByText("Auto-refresh oprit (nu există run activ).")).toBeInTheDocument();
+    }, { timeout: 10000 });
+    await waitFor(() => {
+      expect(screen.getByText("Fără sync activ")).toBeInTheDocument();
+    }, { timeout: 10000 });
+    expect(metaCallCount).toBeGreaterThan(1);
+    expect(runsCallCount).toBeGreaterThan(1);
+  }, 12000);
 
   it("shows info on already_exists and refetches", async () => {
     let runsCallCount = 0;

@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
@@ -29,6 +29,15 @@ type GoogleAccount = {
   last_run_started_at?: string | null;
   last_run_finished_at?: string | null;
   has_active_sync?: boolean;
+};
+
+type EffectiveSyncHeader = {
+  hasActiveSync: boolean;
+  lastRunStatus?: string | null;
+  lastRunType?: string | null;
+  lastRunStartedAt?: string | null;
+  lastRunFinishedAt?: string | null;
+  lastError?: string | null;
 };
 
 type GoogleAccountsResponse = {
@@ -130,6 +139,22 @@ function hasRetryFailedSignals(run: SyncRun): boolean {
   return String(run.error ?? "").trim().length > 0;
 }
 
+function toRunTimestamp(run?: SyncRun | null): number {
+  if (!run) return 0;
+  const raw = run.finished_at ?? run.started_at ?? run.created_at ?? null;
+  if (!raw) return 0;
+  const ts = new Date(raw).getTime();
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+function toMetaTimestamp(meta?: GoogleAccount | null): number {
+  if (!meta) return 0;
+  const raw = meta.last_run_finished_at ?? meta.last_run_started_at ?? meta.last_success_at ?? null;
+  if (!raw) return 0;
+  const ts = new Date(raw).getTime();
+  return Number.isFinite(ts) ? ts : 0;
+}
+
 export default function AgencyAccountDetailPage() {
   const params = useParams<{ platform: string; accountId: string }>();
   const platform = decodeURIComponent(String(params?.platform ?? "")).trim();
@@ -162,6 +187,10 @@ export default function AgencyAccountDetailPage() {
   }, [runs]);
 
   const hasActiveRun = useMemo(() => runsSorted.some((run) => isRunActive(run.status)), [runsSorted]);
+  const hasActiveHistoricalRun = useMemo(
+    () => runsSorted.some((run) => normalizeJobType(run.job_type) === "historical_backfill" && isRunActive(run.status)),
+    [runsSorted],
+  );
   const repairableRun = useMemo(
     () => runsSorted.find((run) => isRunActive(run.status) && normalizeJobType(run.job_type) === "historical_backfill") ?? null,
     [runsSorted],
@@ -177,6 +206,40 @@ export default function AgencyAccountDetailPage() {
       ) ?? null,
     [runsSorted],
   );
+  const retryActionRun = useMemo(() => {
+    if (hasActiveHistoricalRun) return null;
+    return retryableFailedRun;
+  }, [hasActiveHistoricalRun, retryableFailedRun]);
+  const latestRun = runsSorted[0] ?? null;
+  const effectiveSyncHeader = useMemo<EffectiveSyncHeader>(() => {
+    const metaBased: EffectiveSyncHeader = {
+      hasActiveSync: Boolean(accountMeta?.has_active_sync),
+      lastRunStatus: accountMeta?.last_run_status ?? null,
+      lastRunType: accountMeta?.last_run_type ?? null,
+      lastRunStartedAt: accountMeta?.last_run_started_at ?? null,
+      lastRunFinishedAt: accountMeta?.last_run_finished_at ?? null,
+      lastError: accountMeta?.last_error ?? null,
+    };
+    if (!latestRun) return metaBased;
+
+    const runIsNewerOrEqual = toRunTimestamp(latestRun) >= toMetaTimestamp(accountMeta);
+    if (!runIsNewerOrEqual) {
+      return { ...metaBased, hasActiveSync: hasActiveRun };
+    }
+
+    const runStatus = latestRun.status ?? metaBased.lastRunStatus ?? null;
+    const runError = String(latestRun.error ?? "").trim();
+    return {
+      hasActiveSync: hasActiveRun,
+      lastRunStatus: runStatus,
+      lastRunType: latestRun.job_type ?? metaBased.lastRunType ?? null,
+      lastRunStartedAt: latestRun.started_at ?? metaBased.lastRunStartedAt ?? null,
+      lastRunFinishedAt: latestRun.finished_at ?? metaBased.lastRunFinishedAt ?? null,
+      lastError: runError || metaBased.lastError || null,
+    };
+  }, [accountMeta, hasActiveRun, latestRun]);
+
+  const hadActiveRunRef = useRef(false);
 
   async function loadAccountMeta() {
     if (platform !== "google_ads") {
@@ -351,6 +414,7 @@ export default function AgencyAccountDetailPage() {
   useEffect(() => {
     if (!hasActiveRun) return;
     const intervalId = window.setInterval(() => {
+      void loadAccountMeta();
       void loadRuns();
       for (const jobId of expandedRunIds) {
         void loadChunks(jobId);
@@ -359,6 +423,16 @@ export default function AgencyAccountDetailPage() {
 
     return () => window.clearInterval(intervalId);
   }, [expandedRunIds, hasActiveRun]);
+
+  useEffect(() => {
+    if (hasActiveRun) {
+      hadActiveRunRef.current = true;
+      return;
+    }
+    if (!hadActiveRunRef.current) return;
+    hadActiveRunRef.current = false;
+    void refreshAll();
+  }, [hasActiveRun]);
 
   return (
     <ProtectedPage>
@@ -386,24 +460,24 @@ export default function AgencyAccountDetailPage() {
                 <p><span className="font-medium">backfill_completed_through:</span> {accountMeta?.backfill_completed_through ?? "Backfill neinițiat"}</p>
                 <p><span className="font-medium">rolling_synced_through:</span> {accountMeta?.rolling_synced_through ?? "Rolling sync neinițiat"}</p>
                 <p><span className="font-medium">last_success_at:</span> {accountMeta?.last_success_at ? formatDate(accountMeta?.last_success_at) : "Nu există sync finalizat încă"}</p>
-                <p><span className="font-medium">last_run_status:</span> {accountMeta?.last_run_status ?? "N/A"}</p>
-                <p><span className="font-medium">last_run_type:</span> {accountMeta?.last_run_type ?? "N/A"}</p>
-                <p><span className="font-medium">last_run_started_at:</span> {formatDate(accountMeta?.last_run_started_at)}</p>
-                <p><span className="font-medium">last_run_finished_at:</span> {formatDate(accountMeta?.last_run_finished_at)}</p>
+                <p><span className="font-medium">last_run_status:</span> {effectiveSyncHeader.lastRunStatus ?? "N/A"}</p>
+                <p><span className="font-medium">last_run_type:</span> {effectiveSyncHeader.lastRunType ?? "N/A"}</p>
+                <p><span className="font-medium">last_run_started_at:</span> {formatDate(effectiveSyncHeader.lastRunStartedAt)}</p>
+                <p><span className="font-medium">last_run_finished_at:</span> {formatDate(effectiveSyncHeader.lastRunFinishedAt)}</p>
               </div>
               <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                <span className={`rounded px-2 py-1 font-medium ${accountMeta?.has_active_sync ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600"}`}>
-                  {accountMeta?.has_active_sync ? "Sync activ" : "Fără sync activ"}
+                <span className={`rounded px-2 py-1 font-medium ${effectiveSyncHeader.hasActiveSync ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600"}`}>
+                  {effectiveSyncHeader.hasActiveSync ? "Sync activ" : "Fără sync activ"}
                 </span>
-                {accountMeta?.last_run_status ? (
-                  <span className={`rounded px-2 py-1 font-medium ${statusBadge(accountMeta.last_run_status)}`}>
-                    Ultimul status: {accountMeta.last_run_status}
+                {effectiveSyncHeader.lastRunStatus ? (
+                  <span className={`rounded px-2 py-1 font-medium ${statusBadge(effectiveSyncHeader.lastRunStatus)}`}>
+                    Ultimul status: {effectiveSyncHeader.lastRunStatus}
                   </span>
                 ) : null}
               </div>
               </>
             ) : null}
-            {accountMeta?.last_error ? <div className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-700">{accountMeta.last_error}</div> : null}
+            {effectiveSyncHeader.lastError ? <div className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-700">{effectiveSyncHeader.lastError}</div> : null}
           </section>
 
           <section className="wm-card p-4">
@@ -425,16 +499,16 @@ export default function AgencyAccountDetailPage() {
                     {repairingJobId === repairableRun.job_id ? "Se repară..." : "Repară sync blocat"}
                   </button>
                 ) : null}
-                {retryableFailedRun ? (
+                {retryActionRun ? (
                   <button
                     type="button"
                     className="inline-flex items-center rounded-md border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-800 transition hover:bg-indigo-100 disabled:opacity-50"
                     onClick={() => {
-                      void handleRetryFailedRun(retryableFailedRun.job_id);
+                      void handleRetryFailedRun(retryActionRun.job_id);
                     }}
                     disabled={Boolean(retryingJobId)}
                   >
-                    {retryingJobId === retryableFailedRun.job_id ? "Se pornește retry..." : "Reia chunk-urile eșuate"}
+                    {retryingJobId === retryActionRun.job_id ? "Se pornește retry..." : "Reia chunk-urile eșuate"}
                   </button>
                 ) : null}
                 <button
