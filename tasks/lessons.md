@@ -174,3 +174,4 @@
 - 2026-03-05: Pentru auto-repair operațional, creează sweepere mici care fac doar selecția candidaților și reutilizează helper-ele concurent-safe existente (ex. `repair_historical_sync_run`), cu summary explicit pe outcome-uri și limit configurabil per sweep.
 - 2026-03-05: Pentru worker-e operaționale periodice, separă explicit modul one-shot de loop runner, adaugă `enabled` + `interval` configurabile și tratează erorile pe iterație cu log + continue ca să eviți downtime la excepții tranzitorii.
 - 2026-03-05: Când extinzi un sweeper la mai multe job types, preferă un helper comun parametrizat pe `job_type` + wrappere explicite, ca să reutilizezi lock/repair logic fără duplicare și să păstrezi summary clar per tip.
+- 2026-03-05: Pentru redesign-uri de listă operațională, păstrează comportamentul existent și mută doar prezentarea pe coloane explicite; validează obligatoriu prin teste UI pentru headere, filtru, linkuri și acțiuni critice (attach/detach/batch).

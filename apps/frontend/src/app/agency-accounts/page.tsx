@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
@@ -144,6 +145,7 @@ export default function AgencyAccountsPage() {
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
   const [accountsPage, setAccountsPage] = useState(1);
   const [accountsPageSize, setAccountsPageSize] = useState(50);
+  const [clientFilter, setClientFilter] = useState("");
 
   const [actionBusy, setActionBusy] = useState(false);
   const [runningAction, setRunningAction] = useState<"refresh" | "historical" | null>(null);
@@ -162,15 +164,22 @@ export default function AgencyAccountsPage() {
     [summary, selectedPlatform],
   );
 
+
+  const filteredGoogleAccounts = useMemo(() => {
+    const needle = clientFilter.trim().toLowerCase();
+    if (!needle) return googleAccounts;
+    return googleAccounts.filter((account) => (account.attached_client_name || "").toLowerCase().includes(needle));
+  }, [googleAccounts, clientFilter]);
+
   const totalAccountsPages = useMemo(
-    () => Math.max(1, Math.ceil(googleAccounts.length / accountsPageSize)),
-    [googleAccounts.length, accountsPageSize],
+    () => Math.max(1, Math.ceil(filteredGoogleAccounts.length / accountsPageSize)),
+    [filteredGoogleAccounts.length, accountsPageSize],
   );
 
   const pagedGoogleAccounts = useMemo(() => {
     const start = (accountsPage - 1) * accountsPageSize;
-    return googleAccounts.slice(start, start + accountsPageSize);
-  }, [googleAccounts, accountsPage, accountsPageSize]);
+    return filteredGoogleAccounts.slice(start, start + accountsPageSize);
+  }, [filteredGoogleAccounts, accountsPage, accountsPageSize]);
 
   const selectablePageAccountIds = useMemo(
     () => pagedGoogleAccounts.filter((item) => Boolean(item.attached_client_id)).map((item) => item.id),
@@ -184,6 +193,24 @@ export default function AgencyAccountsPage() {
     () => googleAccounts.filter((account) => selectedAccountIds.has(account.id) && Boolean(account.attached_client_id)),
     [googleAccounts, selectedAccountIds],
   );
+
+  function renderSyncProgress(account: GoogleAccount, rowStatus?: string | null): JSX.Element {
+    const statusText = rowStatus || account.last_run_status || (account.has_active_sync ? "running" : "idle");
+    const normalized = String(statusText).toLowerCase();
+    const percent = account.has_active_sync ? 55 : normalized === "done" ? 100 : normalized === "error" ? 100 : account.last_success_at ? 100 : 15;
+    const color = normalized === "error" ? "bg-red-500" : normalized === "done" ? "bg-emerald-500" : "bg-indigo-500";
+
+    return (
+      <div className="w-full">
+        <p className="text-xs font-medium text-slate-700">Status: {statusText}</p>
+        <div className="mt-1 h-2 w-full overflow-hidden rounded bg-slate-200">
+          <div className={`h-full ${color}`} style={{ width: `${Math.max(5, Math.min(100, percent))}%` }} />
+        </div>
+        {account.last_run_type ? <p className="mt-1 text-xs text-slate-500">Tip run: {account.last_run_type}</p> : null}
+        {rowStatus ? <p className="mt-1 text-xs text-indigo-700">Batch status: {rowStatus}</p> : null}
+      </div>
+    );
+  }
 
   async function loadData() {
     setLoading(true);
@@ -486,7 +513,7 @@ export default function AgencyAccountsPage() {
 
                 {!loading && googleAccounts.length > 0 ? (
                   <div className="mt-3 overflow-hidden rounded-md border border-slate-200">
-                    <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                       <label className="flex items-center gap-2">
                         <input
                           type="checkbox"
@@ -496,7 +523,26 @@ export default function AgencyAccountsPage() {
                         />
                         Select all pe pagina curentă
                       </label>
-                      <span>Pagina {accountsPage}/{totalAccountsPages}</span>
+                      <div className="flex items-center gap-2">
+                        <label htmlFor="client-filter" className="text-xs font-medium text-slate-600">Filtru client</label>
+                        <input
+                          id="client-filter"
+                          value={clientFilter}
+                          onChange={(event) => setClientFilter(event.target.value)}
+                          placeholder="Caută după numele clientului"
+                          className="w-56 rounded-md border border-slate-300 px-2 py-1 text-xs"
+                        />
+                        <span>Pagina {accountsPage}/{totalAccountsPages}</span>
+                      </div>
+                    </div>
+
+                    <div className="hidden grid-cols-[48px_minmax(220px,2fr)_minmax(180px,1.2fr)_minmax(180px,1.2fr)_minmax(220px,1.4fr)_110px] gap-3 border-b border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 lg:grid">
+                      <span>Selecție</span>
+                      <span>Cont</span>
+                      <span>Sync progress</span>
+                      <span>Client atașat</span>
+                      <span>Acțiuni</span>
+                      <span>Detach</span>
                     </div>
 
                     <div className="divide-y divide-slate-100">
@@ -506,39 +552,52 @@ export default function AgencyAccountsPage() {
                         const rowStatus = batchRunsByAccount[account.id];
 
                         return (
-                          <div key={account.id} className="flex flex-wrap items-center justify-between gap-3 px-3 py-3">
-                            <div className="flex min-w-0 items-start gap-3">
+                          <div key={account.id} className="grid gap-3 px-3 py-3 lg:grid-cols-[48px_minmax(220px,2fr)_minmax(180px,1.2fr)_minmax(180px,1.2fr)_minmax(220px,1.4fr)_110px] lg:items-start">
+                            <div className="flex items-start justify-between lg:justify-center">
+                              <span className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Selecție</span>
                               <input
                                 type="checkbox"
                                 checked={selected}
                                 disabled={!attached || controlsDisabled}
                                 onChange={(event) => toggleAccountSelection(account.id, event.target.checked)}
                               />
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-medium text-slate-900">
-                                  <Link href={`/agency-accounts/google_ads/${encodeURIComponent(account.id)}`} className="hover:underline">
-                                    {accountDisplayName(account)}
-                                  </Link>
-                                </p>
-                                <p className="text-xs text-slate-500">ID: {account.id}</p>
-                                <p className={`text-xs ${attached ? "text-emerald-700" : "text-amber-700"}`}>
-                                  {attached ? `Atașat la: ${account.attached_client_name}` : "Neatașat la client (nu poate fi selectat)"}
-                                </p>
-                                <p className="text-xs text-slate-500">
-                                  Ultimul sync reușit: {account.last_success_at ? formatDateTime(account.last_success_at) : "Nu există sync finalizat încă"} · Istoric până la: {account.backfill_completed_through ?? "Backfill neinițiat"}
-                                </p>
-                                {account.rolling_synced_through ? <p className="text-xs text-slate-500">Rolling până la: {account.rolling_synced_through}</p> : <p className="text-xs text-slate-500">Rolling sync neinițiat</p>}
-                                {account.sync_start_date ? <p className="text-xs text-slate-500">Start istoric: {account.sync_start_date}</p> : null}
-                                {account.last_error ? <p className="text-xs text-red-600">Eroare recentă: {account.last_error}</p> : null}
-                                {account.has_active_sync ? <p className="text-xs text-indigo-700">Sync activ</p> : null}
-                                {account.last_run_status ? <p className="text-xs text-slate-500">Ultimul status: {account.last_run_status}{account.last_run_type ? ` (${account.last_run_type})` : ""}</p> : null}
-                                {rowStatus ? <p className="text-xs text-indigo-700">Batch status: {rowStatus}</p> : null}
-                              </div>
                             </div>
 
-                            <div className="flex items-center gap-2">
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Cont</p>
+                              <p className="truncate text-sm font-medium text-slate-900">
+                                <Link href={`/agency-accounts/google_ads/${encodeURIComponent(account.id)}`} className="hover:underline">
+                                  {accountDisplayName(account)}
+                                </Link>
+                              </p>
+                              <p className="text-xs text-slate-500">ID: {account.id}</p>
+                              <p className="text-xs text-slate-500">Ultimul sync reușit: {account.last_success_at ? formatDateTime(account.last_success_at) : "Nu există sync finalizat încă"}</p>
+                              {account.last_error ? <p className="text-xs text-red-600">Eroare recentă: {account.last_error}</p> : null}
+                            </div>
+
+                            <div>
+                              <p className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Sync progress</p>
+                              {renderSyncProgress(account, rowStatus)}
+                              <p className="mt-1 text-xs text-slate-500">Istoric până la: {account.backfill_completed_through ?? "Backfill neinițiat"}</p>
+                              <p className="text-xs text-slate-500">Rolling până la: {account.rolling_synced_through ?? "Rolling sync neinițiat"}</p>
+                            </div>
+
+                            <div>
+                              <p className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Client atașat</p>
+                              {attached ? (
+                                <>
+                                  <p className="text-sm font-medium text-emerald-700">{account.attached_client_name}</p>
+                                  {account.sync_start_date ? <p className="text-xs text-slate-500">Start istoric: {account.sync_start_date}</p> : null}
+                                </>
+                              ) : (
+                                <p className="text-sm text-amber-700">Neatașat la client</p>
+                              )}
+                            </div>
+
+                            <div>
+                              <p className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Acțiuni</p>
                               <select
-                                className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+                                className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
                                 value={account.attached_client_id?.toString() ?? ""}
                                 onChange={(event) => {
                                   const value = Number(event.target.value);
@@ -551,25 +610,33 @@ export default function AgencyAccountsPage() {
                                   <option key={client.id} value={client.id}>#{client.display_id ?? client.id} {client.name}</option>
                                 ))}
                               </select>
+                            </div>
 
+                            <div>
+                              <p className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Detach</p>
                               {account.attached_client_id ? (
                                 <button
                                   type="button"
-                                  className="inline-flex items-center rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="inline-flex w-full items-center justify-center rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                                   onClick={() => void detachGoogleAccount(account.attached_client_id ?? 0, account.id)}
                                   disabled={controlsDisabled}
                                 >
                                   Detach
                                 </button>
-                              ) : null}
+                              ) : (
+                                <span className="inline-flex w-full items-center justify-center rounded-md border border-dashed border-slate-200 px-3 py-2 text-xs text-slate-400">-</span>
+                              )}
                             </div>
                           </div>
                         );
                       })}
+                      {pagedGoogleAccounts.length === 0 ? (
+                        <div className="px-3 py-6 text-sm text-slate-500">Nu există conturi care să corespundă filtrului de client.</div>
+                      ) : null}
                     </div>
 
                     <div className="flex flex-col gap-2 border-t border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
-                      <p>Afișare {(accountsPage - 1) * accountsPageSize + 1}-{Math.min(accountsPage * accountsPageSize, googleAccounts.length)} din {googleAccounts.length}</p>
+                      <p>Afișare {filteredGoogleAccounts.length === 0 ? 0 : (accountsPage - 1) * accountsPageSize + 1}-{Math.min(accountsPage * accountsPageSize, filteredGoogleAccounts.length)} din {filteredGoogleAccounts.length}</p>
                       <div className="flex items-center gap-2">
                         <span>Rânduri/pagină</span>
                         <select

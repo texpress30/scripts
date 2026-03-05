@@ -1707,3 +1707,22 @@
 - `sweep_stale_rolling_runs(...)` folosește exact aceeași regulă de stale detection ca historical (`status IN queued/running` + vechime din `COALESCE(updated_at, started_at, created_at)` față de `stale_after_minutes`).
 - Loop-ul periodic rulează acum în fiecare iterație ambele sweep-uri (`historical` + `rolling`) și returnează summary cu breakdown per job type + totaluri (`total_processed_count`, `total_repaired_count`, `total_error_count`).
 - Nu am schimbat UI/retry-failed/rolling window logic/eligibility; extinderea este strict operațională backend.
+
+---
+
+# TODO — Task 24: redesign listă Agency Accounts (coloane + filtru client)
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și inspectez structura curentă a listei Google Accounts.
+- [x] Refac layout-ul listei pe coloane clare: selecție, cont, sync progress/status, client atașat, acțiuni, detach separat.
+- [x] Mut progress bar/status între zona cont și client pentru scanare mai rapidă.
+- [x] Separ acțiunea `Detach` într-o coloană dedicată, distinctă de acțiunile principale.
+- [x] Adaug filtru local după numele clientului atașat + empty state explicit la zero rezultate.
+- [x] Păstrez funcțiile existente (select-page, attach/detach, refresh names, download historical, batch progress/polling) fără schimbări de contract API.
+- [x] Adaug teste frontend pentru headers/filter/progress/detail-link/actions și rulez testele relevante + build + screenshot.
+
+## Review — Task 24: redesign listă Agency Accounts
+- Lista Google Accounts este acum randată într-un layout tip grid cu headere de coloană explicite (`Selecție`, `Cont`, `Sync progress`, `Client atașat`, `Acțiuni`, `Detach`) și fallback labels pe mobile.
+- Progress/status-ul este afișat în coloană dedicată între cont și client, cu bar vizual + status text + metadate coverage.
+- `Detach` a fost mutat într-o coloană separată; `attach` rămâne în coloana `Acțiuni`.
+- Filtrul `Filtru client` rulează local pe `attached_client_name` și afișează empty state când nu există rezultate.
+- Link-ul către Account Detail (`/agency-accounts/google_ads/{accountId}`) și acțiunile operaționale existente au rămas funcționale.
