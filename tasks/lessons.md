@@ -182,3 +182,4 @@
 - 2026-03-05: Pentru watermark-ul rolling în liste, nu folosi doar `rolling_synced_through`; dacă există run activ `rolling_refresh` (`queued/running/pending`), afișează explicit ținta/fereastra curentă din run înainte de fallback-ul istoric.
 - 2026-03-05: Pentru polling operațional pe multe conturi active, expune endpoint batch backend cu agregare SQL set-based (CTE/joins) și validare de limită, evitând pattern-ul N request-uri × N query-uri.
 - 2026-03-05: Pentru pagini cu multe run-uri active, mută polling-ul frontend pe endpoint batch și aplică split pe limita server-side (ex. 200 IDs) pentru a evita burst N requests per interval.
+- 2026-03-05: Pentru liste operaționale cu volum mare, adaugă quick filters + sort local (active/error/uninitialized) înainte de optimizări backend suplimentare; reduce timp de triere fără cost API.

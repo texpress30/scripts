@@ -48,15 +48,17 @@ function mockBasePayloads() {
             last_run_status: "running",
             has_active_sync: true,
             backfill_completed_through: "2026-01-10",
+            sync_start_date: "2025-12-01",
           },
           {
             id: "1002",
             name: "Account Two",
             attached_client_id: 11,
             attached_client_name: "Client A",
-            last_run_status: "done",
+            last_run_status: "error",
             backfill_completed_through: "2026-01-11",
             rolling_synced_through: "2026-01-14",
+            sync_start_date: "2025-12-01",
           },
           {
             id: "1003",
@@ -131,6 +133,87 @@ describe("AgencyAccountsPage list redesign + same-client quick view", () => {
     });
   });
 
+
+  it("filters Active to show only active rows", async () => {
+    render(<AgencyAccountsPage />);
+    await screen.findByText("Account One");
+
+    fireEvent.change(screen.getByLabelText("Filtru rapid"), { target: { value: "active" } });
+
+    expect(screen.getByText("Account One")).toBeInTheDocument();
+    expect(screen.queryByText("Account Two")).not.toBeInTheDocument();
+    expect(screen.queryByText("Account Three")).not.toBeInTheDocument();
+  });
+
+  it("filters Errors to show only error/failed rows", async () => {
+    render(<AgencyAccountsPage />);
+    await screen.findByText("Account One");
+
+    fireEvent.change(screen.getByLabelText("Filtru rapid"), { target: { value: "errors" } });
+
+    expect(screen.getByText("Account Two")).toBeInTheDocument();
+    expect(screen.queryByText("Account One")).not.toBeInTheDocument();
+    expect(screen.queryByText("Account Three")).not.toBeInTheDocument();
+  });
+
+  it("filters Neinițializate to show only rows without sync_start_date", async () => {
+    render(<AgencyAccountsPage />);
+    await screen.findByText("Account One");
+
+    fireEvent.change(screen.getByLabelText("Filtru rapid"), { target: { value: "uninitialized" } });
+
+    expect(screen.getByText("Account Three")).toBeInTheDocument();
+    expect(screen.queryByText("Account One")).not.toBeInTheDocument();
+    expect(screen.queryByText("Account Two")).not.toBeInTheDocument();
+  });
+
+  it("select all on current page respects active quick filter", async () => {
+    render(<AgencyAccountsPage />);
+    await screen.findByText("Account One");
+
+    fireEvent.change(screen.getByLabelText("Filtru rapid"), { target: { value: "active" } });
+    fireEvent.click(screen.getByLabelText("Select all pe pagina curentă"));
+
+    expect(screen.getByText(/Selectate:/)).toHaveTextContent("Selectate: 1 conturi");
+  });
+
+  it("active first sorts active rows before error and idle", async () => {
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients") {
+        return Promise.resolve({
+          items: [
+            { id: 11, name: "Client A", owner_email: "a@x.com", display_id: 1 },
+          ],
+        });
+      }
+      if (path === "/clients/accounts/summary") {
+        return Promise.resolve({ items: [{ platform: "google_ads", connected_count: 3, last_import_at: null }] });
+      }
+      if (path === "/clients/accounts/google") {
+        return Promise.resolve({
+          count: 3,
+          items: [
+            { id: "1002", name: "Account Two", attached_client_id: 11, attached_client_name: "Client A", last_run_status: "error", sync_start_date: "2025-12-01" },
+            { id: "1003", name: "Account Three", attached_client_id: 11, attached_client_name: "Client A", last_run_status: "idle" },
+            { id: "1001", name: "Account One", attached_client_id: 11, attached_client_name: "Client A", last_run_status: "running", has_active_sync: true, sync_start_date: "2025-12-01" },
+          ],
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountsPage />);
+    await screen.findByText("Account One");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /Active first/i }));
+
+    const links = screen.getAllByRole("link");
+    const names = links
+      .map((node) => node.textContent || "")
+      .filter((name) => name === "Account One" || name === "Account Two" || name === "Account Three");
+
+    expect(names.slice(0, 3)).toEqual(["Account One", "Account Two", "Account Three"]);
+  });
 
   it("shows rolling in-progress window for active rolling_refresh and not 'neinițiat'", async () => {
     apiMock.postAccountSyncProgressBatch.mockImplementation((platform: string, accountIds: string[]) => {

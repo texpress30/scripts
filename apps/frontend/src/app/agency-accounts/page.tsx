@@ -80,6 +80,8 @@ type BatchCreateResponse = {
   invalid_account_ids?: string[];
 };
 
+type QuickFilter = "all" | "active" | "errors" | "uninitialized";
+
 type RowChunkProgress = {
   chunksDone: number;
   chunksTotal: number;
@@ -158,6 +160,8 @@ export default function AgencyAccountsPage() {
   const [accountsPage, setAccountsPage] = useState(1);
   const [accountsPageSize, setAccountsPageSize] = useState(50);
   const [clientFilter, setClientFilter] = useState("");
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
+  const [activeFirst, setActiveFirst] = useState(false);
   const [expandedClientRows, setExpandedClientRows] = useState<Set<string>>(new Set());
 
   const [actionBusy, setActionBusy] = useState(false);
@@ -179,11 +183,77 @@ export default function AgencyAccountsPage() {
   );
 
 
+
+  function getEffectiveStatus(account: GoogleAccount): string {
+    const rowStatus = String(batchRunsByAccount[account.id] ?? "").toLowerCase();
+    if (rowStatus) return rowStatus;
+    const runStatus = String(account.last_run_status ?? "").toLowerCase();
+    if (runStatus) return runStatus;
+    if (account.has_active_sync) return "running";
+    return "idle";
+  }
+
+  function isActiveAccount(account: GoogleAccount): boolean {
+    const status = getEffectiveStatus(account);
+    return status === "queued" || status === "running" || status === "pending";
+  }
+
+  function isErrorAccount(account: GoogleAccount): boolean {
+    const status = getEffectiveStatus(account);
+    return status === "error" || status === "failed";
+  }
+
+  function isUninitializedAccount(account: GoogleAccount): boolean {
+    return String(account.sync_start_date ?? "").trim() === "";
+  }
+
+  const quickFilterCounts = useMemo(() => {
+    let active = 0;
+    let errors = 0;
+    let uninitialized = 0;
+    for (const account of googleAccounts) {
+      if (isActiveAccount(account)) active += 1;
+      if (isErrorAccount(account)) errors += 1;
+      if (isUninitializedAccount(account)) uninitialized += 1;
+    }
+    return {
+      all: googleAccounts.length,
+      active,
+      errors,
+      uninitialized,
+    };
+  }, [googleAccounts, batchRunsByAccount]);
+
   const filteredGoogleAccounts = useMemo(() => {
     const needle = clientFilter.trim().toLowerCase();
-    if (!needle) return googleAccounts;
-    return googleAccounts.filter((account) => (account.attached_client_name || "").toLowerCase().includes(needle));
-  }, [googleAccounts, clientFilter]);
+    const base = googleAccounts.filter((account) => {
+      if (needle && !(account.attached_client_name || "").toLowerCase().includes(needle)) return false;
+      if (quickFilter === "active") return isActiveAccount(account);
+      if (quickFilter === "errors") return isErrorAccount(account);
+      if (quickFilter === "uninitialized") return isUninitializedAccount(account);
+      return true;
+    });
+
+    if (!activeFirst) return base;
+
+    return base
+      .map((account, index) => ({ account, index }))
+      .sort((left, right) => {
+        const leftStatus = getEffectiveStatus(left.account);
+        const rightStatus = getEffectiveStatus(right.account);
+
+        const rank = (status: string): number => {
+          if (status === "queued" || status === "running" || status === "pending") return 0;
+          if (status === "error" || status === "failed") return 1;
+          return 2;
+        };
+
+        const byRank = rank(leftStatus) - rank(rightStatus);
+        if (byRank !== 0) return byRank;
+        return left.index - right.index;
+      })
+      .map((item) => item.account);
+  }, [googleAccounts, clientFilter, quickFilter, activeFirst, batchRunsByAccount]);
 
   const totalAccountsPages = useMemo(
     () => Math.max(1, Math.ceil(filteredGoogleAccounts.length / accountsPageSize)),
@@ -680,7 +750,19 @@ export default function AgencyAccountsPage() {
                         />
                         Select all pe pagina curentă
                       </label>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label htmlFor="quick-filter" className="text-xs font-medium text-slate-600">Filtru rapid</label>
+                        <select
+                          id="quick-filter"
+                          value={quickFilter}
+                          onChange={(event) => setQuickFilter(event.target.value as QuickFilter)}
+                          className="rounded-md border border-slate-300 px-2 py-1 text-xs"
+                        >
+                          <option value="all">Toate ({quickFilterCounts.all})</option>
+                          <option value="active">Active ({quickFilterCounts.active})</option>
+                          <option value="errors">Erori ({quickFilterCounts.errors})</option>
+                          <option value="uninitialized">Neinițializate ({quickFilterCounts.uninitialized})</option>
+                        </select>
                         <label htmlFor="client-filter" className="text-xs font-medium text-slate-600">Filtru client</label>
                         <input
                           id="client-filter"
@@ -689,6 +771,14 @@ export default function AgencyAccountsPage() {
                           placeholder="Caută după numele clientului"
                           className="w-56 rounded-md border border-slate-300 px-2 py-1 text-xs"
                         />
+                        <label className="inline-flex items-center gap-1 text-xs text-slate-600">
+                          <input
+                            type="checkbox"
+                            checked={activeFirst}
+                            onChange={(event) => setActiveFirst(event.target.checked)}
+                          />
+                          Active first
+                        </label>
                         <span>Pagina {accountsPage}/{totalAccountsPages}</span>
                       </div>
                     </div>

@@ -1844,3 +1844,20 @@
 - Migrarea a înlocuit `Promise.all(listAccountSyncRuns(...))` per cont activ cu apel batch `postAccountSyncProgressBatch(...)`, reducând request-urile per interval de la N la 1 (sau câteva batch-uri când active IDs > 200).
 - Split-ul de limită este implementat local în frontend pe chunk-uri de max 200 IDs, agregând rezultatele într-un singur map `rowChunkProgressByAccount`.
 - Semantica vizuală rămâne neschimbată: bara umplută doar pentru conturi active, fallback text când progress chunks nu are total, iar rolling watermark continuă să deriveze din metadata run-ului activ.
+
+---
+
+# TODO — Task 32: Agency Accounts quick filters + sort Active first
+
+- [x] Verific workspace/fetch și continui cu limitarea de remote/upstream din mediu.
+- [x] Adaug filtre rapide client-side (Toate / Active / Erori / Neinițializate) în Agency Accounts, lângă filtrul client.
+- [x] Adaug toggle `Active first` (default off) cu sort stabil: active, apoi error, apoi restul.
+- [x] Păstrez semantica progress bar (fill doar pentru active) și fără API calls noi.
+- [x] Mă asigur că `Select all pe pagina curentă` operează doar pe rândurile vizibile după filtrare/sort.
+- [x] Adaug teste Vitest pentru filtre, select-all în context filtrat și sort minim `Active first`.
+- [x] Rulez `pnpm --dir apps/frontend test` și `pnpm --dir apps/frontend build`.
+
+## Review — Task 32: quick filters + active-first sort
+- Filtrarea rapidă rulează client-side peste lista deja încărcată și suportă: `Active` (queued/running/pending + fallback `has_active_sync`), `Erori` (error/failed), `Neinițializate` (`sync_start_date` gol).
+- Toggle-ul `Active first` aplică sort stabil pe 3 grupe (active > errors > rest) fără schimbări backend.
+- Selectarea pe pagină rămâne coerentă deoarece sursa pentru selectable IDs este `pagedGoogleAccounts` (deja filtrată/sortată).
