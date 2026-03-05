@@ -1,12 +1,13 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
-import { apiRequest } from "@/lib/api";
+import { apiRequest, repairSyncRun } from "@/lib/api";
 
 type GoogleAccount = {
   id: string;
@@ -76,6 +77,11 @@ type ChunksResponse = {
   chunks: SyncChunk[];
 };
 
+type RepairNotice = {
+  tone: "success" | "info" | "error";
+  text: string;
+};
+
 function formatDate(value?: string | null): string {
   if (!value) return "-";
   const parsed = new Date(value);
@@ -91,6 +97,10 @@ function normalizeStatus(status?: string | null): string {
   return String(status ?? "queued").toLowerCase();
 }
 
+function normalizeJobType(jobType?: string | null): string {
+  return String(jobType ?? "").trim().toLowerCase();
+}
+
 function statusBadge(status?: string | null): string {
   const normalized = normalizeStatus(status);
   if (["done", "success", "completed"].includes(normalized)) return "bg-emerald-100 text-emerald-700";
@@ -101,7 +111,7 @@ function statusBadge(status?: string | null): string {
 }
 
 function isRunActive(status?: string | null): boolean {
-  return ["queued", "running"].includes(normalizeStatus(status));
+  return ["queued", "running", "pending"].includes(normalizeStatus(status));
 }
 
 export default function AgencyAccountDetailPage() {
@@ -122,6 +132,9 @@ export default function AgencyAccountDetailPage() {
   const [chunksLoadingByRun, setChunksLoadingByRun] = useState<Record<string, boolean>>({});
   const [chunksErrorByRun, setChunksErrorByRun] = useState<Record<string, string>>({});
 
+  const [repairingJobId, setRepairingJobId] = useState<string | null>(null);
+  const [repairNotice, setRepairNotice] = useState<RepairNotice | null>(null);
+
   const runsSorted = useMemo(() => {
     return [...runs].sort((a, b) => {
       const aTime = new Date(a.created_at ?? a.started_at ?? 0).getTime() || 0;
@@ -131,6 +144,10 @@ export default function AgencyAccountDetailPage() {
   }, [runs]);
 
   const hasActiveRun = useMemo(() => runsSorted.some((run) => isRunActive(run.status)), [runsSorted]);
+  const repairableRun = useMemo(
+    () => runsSorted.find((run) => isRunActive(run.status) && normalizeJobType(run.job_type) === "historical_backfill") ?? null,
+    [runsSorted],
+  );
   const latestTerminalError = useMemo(() => {
     const failedRun = runsSorted.find((run) => ["error", "failed", "partial"].includes(normalizeStatus(run.status)) && String(run.error ?? "").trim() !== "");
     return failedRun?.error ?? "";
@@ -208,6 +225,51 @@ export default function AgencyAccountDetailPage() {
     await Promise.all([loadAccountMeta(), loadRuns()]);
   }
 
+  async function handleRepairRun(jobId: string) {
+    if (repairingJobId) return;
+    setRepairingJobId(jobId);
+    setRepairNotice(null);
+
+    try {
+      const result = await repairSyncRun(jobId);
+      if (!result.ok) {
+        if (result.outcome === "not_found") {
+          setRepairNotice({ tone: "error", text: "Run-ul nu mai există. Reîncarc lista de sync runs." });
+          await refreshAll();
+          return;
+        }
+        setRepairNotice({ tone: "error", text: result.message || "Repair a eșuat. Încearcă din nou." });
+        return;
+      }
+
+      const outcome = result.payload.outcome;
+      if (outcome === "repaired") {
+        setRepairNotice({ tone: "success", text: "Repair aplicat. Am reîncărcat statusul run-urilor." });
+        await refreshAll();
+      } else if (outcome === "noop_not_active") {
+        setRepairNotice({ tone: "info", text: "Run-ul nu mai este activ. Am reîncărcat statusul." });
+        await refreshAll();
+      } else if (outcome === "noop_active_fresh") {
+        setRepairNotice({ tone: "info", text: "Run-ul este încă activ și fresh. Repair-ul nu s-a aplicat încă." });
+      } else if (outcome === "not_found") {
+        setRepairNotice({ tone: "error", text: "Run-ul nu a fost găsit." });
+      } else {
+        setRepairNotice({ tone: "error", text: "Outcome necunoscut la repair." });
+      }
+
+      for (const expandedRunId of expandedRunIds) {
+        void loadChunks(expandedRunId);
+      }
+    } catch (err) {
+      setRepairNotice({
+        tone: "error",
+        text: err instanceof Error ? err.message : "Nu am putut executa repair-ul pentru acest run.",
+      });
+    } finally {
+      setRepairingJobId(null);
+    }
+  }
+
   useEffect(() => {
     if (!platform || !accountId) return;
     void refreshAll();
@@ -272,26 +334,53 @@ export default function AgencyAccountDetailPage() {
           </section>
 
           <section className="wm-card p-4">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h3 className="text-base font-semibold text-slate-900">Sync runs</h3>
-                {hasActiveRun ? <p className="text-xs text-indigo-700">Auto-refresh activ (există run queued/running).</p> : null}
+                {hasActiveRun ? <p className="text-xs text-indigo-700">Auto-refresh activ (există run queued/running/pending).</p> : <p className="text-xs text-slate-600">Auto-refresh oprit (nu există run activ).</p>}
               </div>
-              <button
-                type="button"
-                className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-                onClick={() => {
-                  void loadRuns();
-                  for (const jobId of expandedRunIds) {
-                    void loadChunks(jobId);
-                  }
-                }}
-                disabled={runsLoading}
-              >
-                {runsLoading ? "Refreshing..." : "Refresh"}
-              </button>
+              <div className="flex items-center gap-2">
+                {repairableRun ? (
+                  <button
+                    type="button"
+                    className="inline-flex items-center rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-100 disabled:opacity-50"
+                    onClick={() => {
+                      void handleRepairRun(repairableRun.job_id);
+                    }}
+                    disabled={Boolean(repairingJobId)}
+                  >
+                    {repairingJobId === repairableRun.job_id ? "Se repară..." : "Repară sync blocat"}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                  onClick={() => {
+                    void loadRuns();
+                    for (const jobId of expandedRunIds) {
+                      void loadChunks(jobId);
+                    }
+                  }}
+                  disabled={runsLoading}
+                >
+                  {runsLoading ? "Refreshing..." : "Refresh"}
+                </button>
+              </div>
             </div>
 
+            {repairNotice ? (
+              <p
+                className={`mt-2 rounded border px-3 py-2 text-sm ${
+                  repairNotice.tone === "success"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : repairNotice.tone === "info"
+                      ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+                      : "border-red-200 bg-red-50 text-red-700"
+                }`}
+              >
+                {repairNotice.text}
+              </p>
+            ) : null}
             {runsError ? <p className="mt-2 text-sm text-red-600">{runsError}</p> : null}
             {runsLoading ? <p className="mt-2 text-sm text-slate-500">Se încarcă sync runs...</p> : null}
             {!runsLoading && runsSorted.length <= 0 && !runsError ? (
