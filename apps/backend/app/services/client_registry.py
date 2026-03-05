@@ -66,6 +66,30 @@ def _normalize_account_sync_metadata_payload(*, platform: str, account_id: str, 
     }
 
 
+def _normalize_account_sync_metadata_payload(*, platform: str, account_id: str, display_name: str, attached_client_id: int | None, attached_client_name: str | None, timezone_value: str | None, currency_value: str | None, sync_start_date: object | None, backfill_completed_through: object | None, rolling_synced_through: object | None, last_success_at: object | None, last_error: object | None, last_run_status: object | None, last_run_type: object | None, last_run_started_at: object | None, last_run_finished_at: object | None, has_active_sync: bool) -> dict[str, str | int | None | bool]:
+    return {
+        "id": str(account_id),
+        "name": str(display_name),
+        "platform": str(platform),
+        "account_id": str(account_id),
+        "display_name": str(display_name),
+        "attached_client_id": int(attached_client_id) if attached_client_id is not None else None,
+        "attached_client_name": str(attached_client_name) if attached_client_name is not None else None,
+        "timezone": str(timezone_value) if timezone_value is not None else None,
+        "currency": str(currency_value) if currency_value is not None else None,
+        "sync_start_date": str(sync_start_date) if sync_start_date is not None else None,
+        "backfill_completed_through": str(backfill_completed_through) if backfill_completed_through is not None else None,
+        "rolling_synced_through": str(rolling_synced_through) if rolling_synced_through is not None else None,
+        "last_success_at": str(last_success_at) if last_success_at is not None else None,
+        "last_error": str(last_error) if last_error is not None else None,
+        "last_run_status": str(last_run_status) if last_run_status is not None else None,
+        "last_run_type": str(last_run_type) if last_run_type is not None else None,
+        "last_run_started_at": str(last_run_started_at) if last_run_started_at is not None else None,
+        "last_run_finished_at": str(last_run_finished_at) if last_run_finished_at is not None else None,
+        "has_active_sync": bool(has_active_sync),
+    }
+
+
 @dataclass
 class ClientRecord:
     id: int
