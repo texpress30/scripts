@@ -1794,3 +1794,19 @@
 - În Agency Accounts, polling-ul pentru chunk progress pornește doar când există conturi active (`queued/running` în batch sau `has_active_sync` fallback) și rulează pe lista activă, nu pe toate conturile.
 - Pentru fiecare cont activ se citește run-ul activ și se derivează `chunksDone/chunksTotal/percent`; UI afișează bară reală + text ex. `12/113 chunks (11%)`.
 - Când contul nu mai este activ, row progress revine la track gol (fără fill) și polling-ul se oprește automat când nu mai există active rows.
+
+---
+
+# TODO — Task 29: Agency Accounts rolling watermark corect pentru run-uri active
+
+- [x] Verific workspace + AGENTS + tasks și confirm scope frontend-only.
+- [x] Identific fallback-ul greșit pentru `rolling_synced_through` în `page.tsx`.
+- [x] Refolosesc datele din polling-ul existent (`listAccountSyncRuns`) ca să disting rolling activ (`job_type=rolling_refresh`, status queued/running/pending).
+- [x] Afișez `Rolling în curs` cu fereastră/date_end când există rolling activ; păstrez fallback la `rolling_synced_through` sau `Rolling sync neinițiat` când nu există run activ.
+- [x] Adaug teste pentru rolling activ, rolling neinițiat și rolling done cu dată setată.
+- [x] Rulez `pnpm --dir apps/frontend test` și `pnpm --dir apps/frontend build`.
+
+## Review — Task 29: rolling status corect
+- Cauza: UI folosea strict `rolling_synced_through ?? "Rolling sync neinițiat"`, ignorând faptul că poate exista un run activ `rolling_refresh` cu fereastră țintă.
+- Fix: folosesc metadata run-ului activ din polling (`job_type`, `status`, `date_start`, `date_end`) și afișez mesajul de rolling în curs când run-ul este activ.
+- Regula nouă: rolling activ are prioritate față de watermark-ul istoric `rolling_synced_through`; fallback la `rolling_synced_through`/`Rolling sync neinițiat` doar când nu există rolling activ.

@@ -56,6 +56,7 @@ function mockBasePayloads() {
             attached_client_name: "Client A",
             last_run_status: "done",
             backfill_completed_through: "2026-01-11",
+            rolling_synced_through: "2026-01-14",
           },
           {
             id: "1003",
@@ -128,6 +129,45 @@ describe("AgencyAccountsPage list redesign + same-client quick view", () => {
     await waitFor(() => {
       expect(screen.queryByText("Conturi atribuite aceluiași client")).not.toBeInTheDocument();
     });
+  });
+
+
+  it("shows rolling in-progress window for active rolling_refresh and not 'neinițiat'", async () => {
+    apiMock.listAccountSyncRuns.mockImplementation((platform: string, accountId: string) => {
+      if (platform === "google_ads" && accountId === "1001") {
+        return Promise.resolve([
+          {
+            job_id: "rolling-1",
+            status: "running",
+            job_type: "rolling_refresh",
+            chunks_done: 4,
+            chunks_total: 10,
+            date_start: "2026-01-10",
+            date_end: "2026-01-14",
+          },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+
+    render(<AgencyAccountsPage />);
+    await screen.findByText("Account One");
+
+    await waitFor(() => {
+      expect(screen.getByText("Rolling până la: Rolling în curs: 2026-01-10 → 2026-01-14")).toBeInTheDocument();
+    });
+  });
+
+  it("keeps 'Rolling sync neinițiat' when no active rolling run and no synced-through date", async () => {
+    render(<AgencyAccountsPage />);
+    await screen.findByText("Account Three");
+    expect(screen.getAllByText("Rolling până la: Rolling sync neinițiat").length).toBeGreaterThan(0);
+  });
+
+  it("shows rolling synced-through date for done rows", async () => {
+    render(<AgencyAccountsPage />);
+    await screen.findByText("Account Two");
+    expect(screen.getByText("Rolling până la: 2026-01-14")).toBeInTheDocument();
   });
 
   it("does not render filled progress for idle/done rows without active sync", async () => {

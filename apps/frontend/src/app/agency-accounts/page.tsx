@@ -84,6 +84,10 @@ type RowChunkProgress = {
   chunksDone: number;
   chunksTotal: number;
   percent: number;
+  jobType?: string | null;
+  status?: string | null;
+  dateStart?: string | null;
+  dateEnd?: string | null;
 };
 
 
@@ -231,6 +235,25 @@ export default function AgencyAccountsPage() {
       else next.delete(accountId);
       return next;
     });
+  }
+
+  function renderRollingCoverage(account: GoogleAccount, chunkProgress?: RowChunkProgress | null): string {
+    const normalizedStatus = String(chunkProgress?.status ?? "").toLowerCase();
+    const normalizedJobType = String(chunkProgress?.jobType ?? "").toLowerCase();
+    const hasActiveRollingRun =
+      normalizedJobType === "rolling_refresh" && (normalizedStatus === "queued" || normalizedStatus === "running" || normalizedStatus === "pending");
+
+    if (hasActiveRollingRun) {
+      if (chunkProgress?.dateStart && chunkProgress?.dateEnd) {
+        return `Rolling în curs: ${chunkProgress.dateStart} → ${chunkProgress.dateEnd}`;
+      }
+      if (chunkProgress?.dateEnd) {
+        return `Rolling în curs până la: ${chunkProgress.dateEnd}`;
+      }
+      return "Rolling în curs";
+    }
+
+    return account.rolling_synced_through ?? "Rolling sync neinițiat";
   }
 
   function renderSyncProgress(
@@ -529,6 +552,10 @@ export default function AgencyAccountsPage() {
                 chunksDone: done,
                 chunksTotal: total,
                 percent: Math.max(0, Math.min(100, Math.round((done / total) * 100))),
+                jobType: activeRun.job_type ?? null,
+                status: activeRun.status ?? null,
+                dateStart: activeRun.date_start ?? null,
+                dateEnd: activeRun.date_end ?? null,
               } satisfies RowChunkProgress,
             ] as const;
           }),
@@ -707,7 +734,7 @@ export default function AgencyAccountsPage() {
                               <p className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Sync progress</p>
                               {renderSyncProgress(account, rowStatus, rowChunkProgressByAccount[account.id])}
                               <p className="mt-1 text-xs text-slate-500">Istoric până la: {account.backfill_completed_through ?? "Backfill neinițiat"}</p>
-                              <p className="text-xs text-slate-500">Rolling până la: {account.rolling_synced_through ?? "Rolling sync neinițiat"}</p>
+                              <p className="text-xs text-slate-500">Rolling până la: {renderRollingCoverage(account, rowChunkProgressByAccount[account.id])}</p>
                             </div>
 
                             <div>
