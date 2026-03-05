@@ -166,7 +166,7 @@ class SyncRunsStore:
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    """
+                    f"""
                     INSERT INTO sync_runs (
                         job_id,
                         platform,
@@ -264,7 +264,7 @@ class SyncRunsStore:
                     return {"created": False, "run": self._row_to_payload(existing_row)}
 
                 cur.execute(
-                    """
+                    f"""
                     INSERT INTO sync_runs (
                         job_id,
                         platform,

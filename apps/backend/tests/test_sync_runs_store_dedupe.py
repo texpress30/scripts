@@ -140,6 +140,7 @@ class SyncRunsStoreDedupeTests(unittest.TestCase):
         self.assertEqual(result["run"]["job_type"], "historical_backfill")
         self.assertEqual(conn.commit_calls, 1)
         self.assertTrue(any("INSERT INTO sync_runs" in query for query, _ in cursor.executed))
+        self.assertFalse(any("{_SYNC_RUNS_SELECT_COLUMNS}" in query for query, _ in cursor.executed))
 
 
 if __name__ == "__main__":

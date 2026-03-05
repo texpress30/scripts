@@ -1745,3 +1745,17 @@
 - Expand/collapse este per row prin `expandedClientRows` (Set de account IDs), independent de selecție și restul acțiunilor.
 - Panel-ul inline listează conturile clientului cu linkuri către `/agency-accounts/google_ads/{accountId}`, include account id și marchează contul curent cu eticheta `curent`.
 - Row-urile fără client atașat nu afișează badge și nu afișează acțiunea quick view.
+
+---
+
+# TODO — Task 26: hotfix SQL interpolation pentru create_historical_sync_run_if_not_active
+
+- [x] Confirm root-cause în query-ul INSERT...RETURNING din SyncRunsStore.
+- [x] Aplic fix minim pentru interpolarea `_SYNC_RUNS_SELECT_COLUMNS` în SQL executat.
+- [x] Adaug test de regresie care validează că placeholder-ul literal nu mai ajunge în query.
+- [x] Rulez testele backend țintite pentru dedupe + endpoint orchestration.
+
+## Review — Task 26: hotfix SQL interpolation
+- Root-cause: query-ul `INSERT INTO sync_runs ... RETURNING` era definit ca string simplu (nu f-string), astfel placeholder-ul `{_SYNC_RUNS_SELECT_COLUMNS}` ajungea literal în SQL și producea `psycopg.errors.SyntaxError` la `{`.
+- Fix: query-ul a fost convertit la f-string astfel încât `_SYNC_RUNS_SELECT_COLUMNS` este expandat înainte de execuție.
+- Regression guard: în testul de dedupe pentru path-ul `created=True` am adăugat aserție că niciun query executat nu conține literalul `{_SYNC_RUNS_SELECT_COLUMNS}`.
