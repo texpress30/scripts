@@ -173,6 +173,107 @@ describe("AgencyAccountDetailPage repair/retry actions", () => {
     expect(screen.queryByRole("button", { name: "Reia chunk-urile eșuate" })).not.toBeInTheDocument();
   });
 
+  it("hides active error banner and retry CTA when source run is fully recovered by retry", async () => {
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients/accounts/google") {
+        return Promise.resolve({
+          items: [
+            {
+              ...accountMeta().items[0],
+              sync_start_date: "2026-01-01",
+              backfill_completed_through: "2026-01-10",
+              last_run_status: "done",
+              has_active_sync: false,
+            },
+          ],
+        });
+      }
+      if (path.includes("/accounts/google_ads/3986597205")) {
+        return Promise.resolve({
+          platform: "google_ads",
+          account_id: "3986597205",
+          limit: 100,
+          runs: [
+            {
+              job_id: "retry-done",
+              job_type: "historical_backfill",
+              status: "done",
+              metadata: { retry_of_job_id: "source-error", retry_reason: "failed_chunks" },
+              created_at: "2026-03-04T11:00:00Z",
+            },
+            {
+              job_id: "source-error",
+              job_type: "historical_backfill",
+              status: "error",
+              error: "chunk failed old",
+              error_count: 1,
+              date_start: "2026-01-01",
+              date_end: "2026-01-10",
+              created_at: "2026-03-04T10:00:00Z",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({ chunks: [] });
+    });
+
+    render(<AgencyAccountDetailPage />);
+
+    await screen.findByText("Auto-refresh oprit (nu există run activ).");
+    expect(screen.queryByText(/Ultimul run a eșuat:/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reia chunk-urile eșuate" })).not.toBeInTheDocument();
+  });
+
+  it("keeps retry CTA and error banner for partially recovered source run", async () => {
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients/accounts/google") {
+        return Promise.resolve({
+          items: [
+            {
+              ...accountMeta().items[0],
+              sync_start_date: "2026-01-01",
+              backfill_completed_through: "2026-01-05",
+              last_run_status: "done",
+              has_active_sync: false,
+            },
+          ],
+        });
+      }
+      if (path.includes("/accounts/google_ads/3986597205")) {
+        return Promise.resolve({
+          platform: "google_ads",
+          account_id: "3986597205",
+          limit: 100,
+          runs: [
+            {
+              job_id: "retry-done-partial",
+              job_type: "historical_backfill",
+              status: "done",
+              metadata: { retry_of_job_id: "source-partial", retry_reason: "failed_chunks" },
+              created_at: "2026-03-04T11:00:00Z",
+            },
+            {
+              job_id: "source-partial",
+              job_type: "historical_backfill",
+              status: "error",
+              error: "still has failed chunks",
+              error_count: 1,
+              date_start: "2026-01-01",
+              date_end: "2026-01-10",
+              created_at: "2026-03-04T10:00:00Z",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({ chunks: [] });
+    });
+
+    render(<AgencyAccountDetailPage />);
+
+    expect(await screen.findByRole("button", { name: "Reia chunk-urile eșuate" })).toBeInTheDocument();
+    expect(screen.getByText(/Ultimul run a eșuat: still has failed chunks/)).toBeInTheDocument();
+  });
+
   it("sends retry request and keeps button disabled in-flight", async () => {
     apiMock.apiRequest.mockImplementation((path: string) => {
       if (path === "/clients/accounts/google") return Promise.resolve(accountMeta());

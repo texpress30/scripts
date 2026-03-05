@@ -61,6 +61,7 @@ type SyncRun = {
   started_at?: string | null;
   finished_at?: string | null;
   trigger_source?: string | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 type AccountRunsResponse = {
@@ -139,6 +140,34 @@ function hasRetryFailedSignals(run: SyncRun): boolean {
   return String(run.error ?? "").trim().length > 0;
 }
 
+function parseDateOnly(value?: string | null): number | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const parsed = Date.parse(raw.length <= 10 ? `${raw}T00:00:00Z` : raw);
+  if (Number.isNaN(parsed)) return null;
+  return parsed;
+}
+
+function isSuccessStatus(status?: string | null): boolean {
+  return ["done", "success", "completed"].includes(normalizeStatus(status));
+}
+
+function retrySourceJobId(run: SyncRun): string {
+  const metadata = run.metadata && typeof run.metadata === "object" ? run.metadata : {};
+  const retryReason = String((metadata as { retry_reason?: unknown }).retry_reason ?? "").trim();
+  if (retryReason !== "failed_chunks") return "";
+  return String((metadata as { retry_of_job_id?: unknown }).retry_of_job_id ?? "").trim();
+}
+
+function coversRunRangeByAccountMeta(run: SyncRun, accountMeta: GoogleAccount | null): boolean {
+  const accountStart = parseDateOnly(accountMeta?.sync_start_date);
+  const accountEnd = parseDateOnly(accountMeta?.backfill_completed_through);
+  const runStart = parseDateOnly(run.date_start);
+  const runEnd = parseDateOnly(run.date_end);
+  if (accountStart === null || accountEnd === null || runStart === null || runEnd === null) return false;
+  return accountStart <= runStart && accountEnd >= runEnd;
+}
+
 function toRunTimestamp(run?: SyncRun | null): number {
   if (!run) return 0;
   const raw = run.finished_at ?? run.started_at ?? run.created_at ?? null;
@@ -195,16 +224,48 @@ export default function AgencyAccountDetailPage() {
     () => runsSorted.find((run) => isRunActive(run.status) && normalizeJobType(run.job_type) === "historical_backfill") ?? null,
     [runsSorted],
   );
-  const latestTerminalError = useMemo(() => {
-    const failedRun = runsSorted.find((run) => ["error", "failed", "partial"].includes(normalizeStatus(run.status)) && String(run.error ?? "").trim() !== "");
-    return failedRun?.error ?? "";
+  const successfulRetrySourceIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const run of runsSorted) {
+      if (normalizeJobType(run.job_type) !== "historical_backfill") continue;
+      if (!isSuccessStatus(run.status)) continue;
+      const sourceJobId = retrySourceJobId(run);
+      if (sourceJobId) ids.add(sourceJobId);
+    }
+    return ids;
   }, [runsSorted]);
+  const fullyRecoveredSourceRunIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const run of runsSorted) {
+      if (normalizeJobType(run.job_type) !== "historical_backfill") continue;
+      if (!isRunTerminal(run.status)) continue;
+      if (!hasRetryFailedSignals(run)) continue;
+      if (!successfulRetrySourceIds.has(run.job_id)) continue;
+      if (!coversRunRangeByAccountMeta(run, accountMeta)) continue;
+      ids.add(run.job_id);
+    }
+    return ids;
+  }, [accountMeta, runsSorted, successfulRetrySourceIds]);
+
+  const latestTerminalError = useMemo(() => {
+    const failedRun = runsSorted.find(
+      (run) =>
+        ["error", "failed", "partial"].includes(normalizeStatus(run.status)) &&
+        String(run.error ?? "").trim() !== "" &&
+        !fullyRecoveredSourceRunIds.has(run.job_id),
+    );
+    return failedRun?.error ?? "";
+  }, [fullyRecoveredSourceRunIds, runsSorted]);
   const retryableFailedRun = useMemo(
     () =>
       runsSorted.find(
-        (run) => normalizeJobType(run.job_type) === "historical_backfill" && isRunTerminal(run.status) && hasRetryFailedSignals(run),
+        (run) =>
+          normalizeJobType(run.job_type) === "historical_backfill" &&
+          isRunTerminal(run.status) &&
+          hasRetryFailedSignals(run) &&
+          !fullyRecoveredSourceRunIds.has(run.job_id),
       ) ?? null,
-    [runsSorted],
+    [fullyRecoveredSourceRunIds, runsSorted],
   );
   const retryActionRun = useMemo(() => {
     if (hasActiveHistoricalRun) return null;

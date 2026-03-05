@@ -1593,3 +1593,26 @@
 - Fix minim: am adăugat în `SELECT` coloanele `recovered_hist.min_start_date`, `recovered_hist.max_end_date`, `recovered_hist.last_success_at`, aliniind query-ul cu mapping-ul.
 - Fallback defensiv: am introdus helper local `_safe_row_value(row, index)` și am migrat mapping-ul să folosească acces safe pentru câmpurile recovered și pentru câmpurile folosite în fallback (`sync_start_date`, `backfill_completed_through`, `last_success_at`, `last_error`, `last_run_*`, `has_active_sync`). Dacă tuple-ul are mai puține coloane sau valori `NULL`, codul cade elegant pe fallback-ul existent.
 - Am păstrat fixul strict backend-only, fără schimbări de contract API și fără modificări pe repair/retry/worker/UI.
+
+---
+
+# TODO — Task 18: UI cleanup după historical backfill fully recovered by retry
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și identific logica actuală pentru bannerul de eroare și CTA-ul retry în Account Detail.
+- [x] Ajustez derivarea UI pentru a trata source run-urile historical `error` recuperate complet prin retry ca nerelevante operațional (fără a rescrie istoricul în listă).
+- [x] Ascund bannerul `Ultimul run a eșuat` când eroarea provine din source run complet recuperat.
+- [x] Ascund CTA-ul `Reia chunk-urile eșuate` pentru source run complet recuperat; păstrez CTA-ul pentru recovery parțial/nerecuperat.
+- [x] Adaug/actualizez teste frontend pentru fully recovered vs partial recovery și comportamentul banner/CTA.
+- [x] Rulez testele frontend relevante + build și documentez review + lecție.
+
+## Review — Task 18: UI cleanup fully recovered by retry
+- Cauza inconsistenței: frontend-ul trata orice run terminal cu eroare drept “activ operațional” pentru banner/CTA, fără să distingă source run-urile historical deja recuperate complet prin retry-run-uri `done`.
+- Fix-ul este frontend-first și additive: am introdus derivare `fullyRecoveredSourceRunIds` pe baza datelor existente (`runs` + `accountMeta`), fără modificări de contract backend.
+- Regulă de fully recovered folosită în UI:
+  - source run `historical_backfill` terminal cu semnale de eșec;
+  - există cel puțin un retry run `historical_backfill` cu status de succes și metadata `retry_of_job_id=<source_job_id>` + `retry_reason=failed_chunks`;
+  - metadata reconciliată a contului acoperă complet intervalul source run (`sync_start_date <= date_start` și `backfill_completed_through >= date_end`).
+- Când run-ul este fully recovered:
+  - nu mai intră în `latestTerminalError` (bannerul “Ultimul run a eșuat” nu se mai afișează);
+  - nu mai este eligibil pentru `retryableFailedRun` / CTA “Reia chunk-urile eșuate”.
+- Pentru recovery parțial/nerecuperat, bannerul și CTA-ul rămân active conform comportamentului anterior.
