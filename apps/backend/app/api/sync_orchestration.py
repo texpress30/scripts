@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
+from time import perf_counter
 import logging
 from typing import Literal
 from uuid import uuid4
@@ -32,6 +33,14 @@ class CreateBatchSyncRunsRequest(BaseModel):
 
 
 
+
+
+class BatchAccountProgressRequest(BaseModel):
+    account_ids: list[str]
+    limit_active_only: bool = True
+
+
+_MAX_PROGRESS_BATCH_ACCOUNT_IDS = 200
 
 class RollingEnqueueRequest(BaseModel):
     platform: Literal["google_ads"] = "google_ads"
@@ -432,6 +441,55 @@ def get_batch_sync_runs_status(batch_id: str, user: AuthUser = Depends(get_curre
         "batch_id": str(batch_id),
         "progress": progress,
         "runs": [_serialize_run(item) for item in runs],
+    }
+
+
+
+@router.post("/accounts/{platform}/progress")
+def get_accounts_active_progress_batch(
+    platform: str,
+    payload: BatchAccountProgressRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+
+    normalized_platform = str(platform).strip()
+    normalized_account_ids: list[str] = []
+    for raw in payload.account_ids:
+        normalized = _normalize_account_id(str(raw))
+        if normalized == "":
+            continue
+        if normalized not in normalized_account_ids:
+            normalized_account_ids.append(normalized)
+
+    if len(normalized_account_ids) <= 0:
+        raise HTTPException(status_code=400, detail="account_ids trebuie să conțină cel puțin un id valid")
+    if len(normalized_account_ids) > _MAX_PROGRESS_BATCH_ACCOUNT_IDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"account_ids depășește limita maximă de {_MAX_PROGRESS_BATCH_ACCOUNT_IDS}",
+        )
+
+    started_at = perf_counter()
+    results = sync_runs_store.get_active_runs_progress_batch(
+        platform=normalized_platform,
+        account_ids=normalized_account_ids,
+    )
+    active_count = len([item for item in results if isinstance(item.get("active_run"), dict)])
+    duration_ms = int(round((perf_counter() - started_at) * 1000.0))
+
+    logger.info(
+        "sync_runs.progress_batch platform=%s requested_count=%s returned_active_count=%s duration_ms=%s",
+        normalized_platform,
+        len(normalized_account_ids),
+        active_count,
+        duration_ms,
+    )
+
+    return {
+        "platform": normalized_platform,
+        "requested_count": len(normalized_account_ids),
+        "results": results,
     }
 
 

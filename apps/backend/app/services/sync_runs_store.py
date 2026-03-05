@@ -1128,6 +1128,95 @@ class SyncRunsStore:
                 rows = cur.fetchall() or []
         return [self._row_to_payload(row) for row in rows if row is not None]
 
+
+    def get_active_runs_progress_batch(self, *, platform: str, account_ids: list[str]) -> list[dict[str, object]]:
+        self._ensure_schema()
+        normalized_platform = str(platform)
+        normalized_account_ids: list[str] = []
+        for raw in account_ids:
+            candidate = str(raw).strip()
+            if candidate == "":
+                continue
+            if candidate not in normalized_account_ids:
+                normalized_account_ids.append(candidate)
+
+        if len(normalized_account_ids) <= 0:
+            return []
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    WITH requested AS (
+                        SELECT account_id::text, ord::int
+                        FROM unnest(%s::text[]) WITH ORDINALITY AS ids(account_id, ord)
+                    ),
+                    active_runs AS (
+                        SELECT DISTINCT ON (r.account_id)
+                            r.account_id,
+                            r.job_id,
+                            r.job_type,
+                            r.status,
+                            r.date_start,
+                            r.date_end
+                        FROM sync_runs r
+                        JOIN requested req ON req.account_id = r.account_id
+                        WHERE r.platform = %s
+                          AND r.status IN ('queued', 'running', 'pending')
+                        ORDER BY r.account_id, r.created_at DESC
+                    ),
+                    chunk_summary AS (
+                        SELECT
+                            c.job_id,
+                            COUNT(*)::int AS chunks_total,
+                            COUNT(*) FILTER (WHERE c.status IN ('done', 'success', 'completed'))::int AS chunks_done,
+                            COUNT(*) FILTER (WHERE c.status IN ('error', 'failed'))::int AS error_chunks
+                        FROM sync_run_chunks c
+                        JOIN active_runs ar ON ar.job_id = c.job_id
+                        GROUP BY c.job_id
+                    )
+                    SELECT
+                        req.account_id,
+                        ar.job_id,
+                        ar.job_type,
+                        ar.status,
+                        ar.date_start,
+                        ar.date_end,
+                        COALESCE(cs.chunks_done, 0)::int,
+                        COALESCE(cs.chunks_total, 0)::int,
+                        COALESCE(cs.error_chunks, 0)::int
+                    FROM requested req
+                    LEFT JOIN active_runs ar ON ar.account_id = req.account_id
+                    LEFT JOIN chunk_summary cs ON cs.job_id = ar.job_id
+                    ORDER BY req.ord ASC
+                    """,
+                    (normalized_account_ids, normalized_platform),
+                )
+                rows = cur.fetchall() or []
+
+        payload: list[dict[str, object]] = []
+        for row in rows:
+            account_id = str(row[0]) if row[0] is not None else ""
+            if row[1] is None:
+                payload.append({"account_id": account_id, "active_run": None})
+                continue
+            payload.append(
+                {
+                    "account_id": account_id,
+                    "active_run": {
+                        "job_id": str(row[1]),
+                        "job_type": str(row[2]) if row[2] is not None else None,
+                        "status": str(row[3]) if row[3] is not None else None,
+                        "date_start": str(row[4]) if row[4] is not None else None,
+                        "date_end": str(row[5]) if row[5] is not None else None,
+                        "chunks_done": int(row[6]) if row[6] is not None else 0,
+                        "chunks_total": int(row[7]) if row[7] is not None else 0,
+                        "errors_count": int(row[8]) if row[8] is not None else 0,
+                    },
+                }
+            )
+        return payload
+
     def get_batch_progress(self, batch_id: str) -> dict[str, object]:
         self._ensure_schema()
         with self._connect() as conn:

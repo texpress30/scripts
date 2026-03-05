@@ -1810,3 +1810,21 @@
 - Cauza: UI folosea strict `rolling_synced_through ?? "Rolling sync neinițiat"`, ignorând faptul că poate exista un run activ `rolling_refresh` cu fereastră țintă.
 - Fix: folosesc metadata run-ului activ din polling (`job_type`, `status`, `date_start`, `date_end`) și afișez mesajul de rolling în curs când run-ul este activ.
 - Regula nouă: rolling activ are prioritate față de watermark-ul istoric `rolling_synced_through`; fallback la `rolling_synced_through`/`Rolling sync neinițiat` doar când nu există rolling activ.
+
+---
+
+# TODO — Task 30: backend batch endpoint pentru progress pe conturi active
+
+- [x] Verific workspace și notez limitarea de remote/upstream (fetch/pull indisponibil în mediu).
+- [x] Adaug endpoint batch nou pentru progress account-level în `sync_orchestration` cu validări de input și limită maximă.
+- [x] Implementez în `sync_runs_store` o metodă eficientă batch (CTE + agregare chunks) care evită query N-per-account.
+- [x] Adaug logging operațional pentru endpoint (`requested_count`, `returned_active_count`, `duration_ms`).
+- [x] Adaug teste API pentru null active run, progres corect, scope pe account_ids cerute, validare empty/limită.
+- [x] Adaug teste store pentru mapping payload batch progress.
+- [x] Rulez testele backend relevante (`test_sync_orchestration_api` + `test_sync_runs_store_progress_batch`).
+
+## Review — Task 30: endpoint batch progress
+- Am introdus endpoint-ul `POST /agency/sync-runs/accounts/{platform}/progress` cu body `{ account_ids: string[], limit_active_only?: boolean }` și limită de 200 ids.
+- Endpoint-ul returnează `platform`, `requested_count` și `results[]` (entry per account_id, `active_run` dict sau `null`).
+- Store-ul folosește o singură interogare SQL cu CTE-uri (`requested`, `active_runs`, `chunk_summary`) pentru a selecta cel mai recent run activ per cont și agregatele de chunks (`chunks_done`, `chunks_total`, `errors_count`) fără query N-per-account.
+- Am păstrat strict scope backend-only, fără schimbări UI sau logică de sync/repair/retry/sweeper/rolling.

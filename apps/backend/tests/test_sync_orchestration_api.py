@@ -28,6 +28,7 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.original_get_batch_progress = sync_orchestration.sync_runs_store.get_batch_progress
         self.original_list_by_batch = sync_orchestration.sync_runs_store.list_sync_runs_by_batch
         self.original_list_for_account = sync_orchestration.sync_runs_store.list_sync_runs_for_account
+        self.original_batch_progress_for_accounts = sync_orchestration.sync_runs_store.get_active_runs_progress_batch
         self.original_get_run = sync_orchestration.sync_runs_store.get_sync_run
         self.original_repair_run = sync_orchestration.sync_runs_store.repair_historical_sync_run
         self.original_retry_failed_run = sync_orchestration.sync_runs_store.retry_failed_historical_run
@@ -128,6 +129,42 @@ class SyncOrchestrationApiTests(unittest.TestCase):
                 if r.get("platform") == platform and r.get("account_id") == account_id
             ]
             return selected[:limit]
+
+        def _get_active_runs_progress_batch(*, platform: str, account_ids: list[str]):
+            results: list[dict[str, object]] = []
+            for account_id in account_ids:
+                runs = [
+                    r
+                    for r in self.state["runs"].values()
+                    if r.get("platform") == platform
+                    and r.get("account_id") == account_id
+                    and str(r.get("status") or "").lower() in {"queued", "running", "pending"}
+                ]
+                runs.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+                if len(runs) <= 0:
+                    results.append({"account_id": account_id, "active_run": None})
+                    continue
+
+                selected_run = runs[0]
+                chunks = [c for c in self.state["chunks"] if c.get("job_id") == selected_run.get("job_id")]
+                done_chunks = len([c for c in chunks if str(c.get("status") or "").lower() in {"done", "success", "completed"}])
+                error_chunks = len([c for c in chunks if str(c.get("status") or "").lower() in {"error", "failed"}])
+                results.append(
+                    {
+                        "account_id": account_id,
+                        "active_run": {
+                            "job_id": selected_run.get("job_id"),
+                            "job_type": selected_run.get("job_type"),
+                            "status": selected_run.get("status"),
+                            "date_start": selected_run.get("date_start"),
+                            "date_end": selected_run.get("date_end"),
+                            "chunks_done": done_chunks,
+                            "chunks_total": len(chunks),
+                            "errors_count": error_chunks,
+                        },
+                    }
+                )
+            return results
 
         def _get_sync_run(job_id: str):
             return self.state["runs"].get(job_id)
@@ -312,6 +349,7 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         sync_orchestration.sync_runs_store.create_historical_sync_run_if_not_active = _create_historical_sync_run_if_not_active
         sync_orchestration.sync_runs_store.list_sync_runs_by_batch = _list_sync_runs_by_batch
         sync_orchestration.sync_runs_store.list_sync_runs_for_account = _list_sync_runs_for_account
+        sync_orchestration.sync_runs_store.get_active_runs_progress_batch = _get_active_runs_progress_batch
         sync_orchestration.sync_runs_store.get_sync_run = _get_sync_run
         sync_orchestration.sync_runs_store.get_batch_progress = _get_batch_progress
         sync_orchestration.sync_runs_store.repair_historical_sync_run = _repair_historical_sync_run
@@ -326,6 +364,7 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         sync_orchestration.sync_runs_store.get_batch_progress = self.original_get_batch_progress
         sync_orchestration.sync_runs_store.list_sync_runs_by_batch = self.original_list_by_batch
         sync_orchestration.sync_runs_store.list_sync_runs_for_account = self.original_list_for_account
+        sync_orchestration.sync_runs_store.get_active_runs_progress_batch = self.original_batch_progress_for_accounts
         sync_orchestration.sync_runs_store.get_sync_run = self.original_get_run
         sync_orchestration.sync_runs_store.repair_historical_sync_run = self.original_repair_run
         sync_orchestration.sync_runs_store.retry_failed_historical_run = self.original_retry_failed_run
@@ -510,6 +549,128 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.assertEqual(chunks_payload["job_id"], job_id)
         self.assertGreaterEqual(len(chunks_payload["chunks"]), 1)
         self.assertIn("chunk_index", chunks_payload["chunks"][0])
+
+    def test_accounts_progress_batch_returns_active_run_and_null_entries(self):
+        headers = self._auth_headers()
+        created = self.client.post(
+            "/agency/sync-runs/batch",
+            headers=headers,
+            json={
+                "platform": "google_ads",
+                "account_ids": ["3986597205"],
+                "job_type": "rolling_refresh",
+                "start_date": str(date(2026, 1, 1)),
+                "end_date": str(date(2026, 1, 3)),
+                "chunk_days": 1,
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        job_id = created.json()["runs"][0]["job_id"]
+
+        run = self.state["runs"][job_id]
+        run["status"] = "running"
+        run["job_type"] = "rolling_refresh"
+
+        chunks = [c for c in self.state["chunks"] if c.get("job_id") == job_id]
+        self.assertGreater(len(chunks), 0)
+        chunks[0]["status"] = "done"
+        if len(chunks) > 1:
+            chunks[1]["status"] = "error"
+
+        response = self.client.post(
+            "/agency/sync-runs/accounts/google_ads/progress",
+            headers=headers,
+            json={"account_ids": ["3986597205", "missing-account"]},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["platform"], "google_ads")
+        self.assertEqual(payload["requested_count"], 2)
+        self.assertEqual(len(payload["results"]), 2)
+
+        first = payload["results"][0]
+        self.assertEqual(first["account_id"], "3986597205")
+        self.assertEqual(first["active_run"]["job_id"], job_id)
+        self.assertEqual(first["active_run"]["job_type"], "rolling_refresh")
+        self.assertEqual(first["active_run"]["status"], "running")
+        self.assertEqual(first["active_run"]["chunks_done"], 1)
+        self.assertEqual(first["active_run"]["chunks_total"], len(chunks))
+        self.assertEqual(first["active_run"]["errors_count"], 1 if len(chunks) > 1 else 0)
+
+        second = payload["results"][1]
+        self.assertEqual(second["account_id"], "missing-account")
+        self.assertIsNone(second["active_run"])
+
+    def test_accounts_progress_batch_validates_empty_and_max_limit(self):
+        headers = self._auth_headers()
+
+        empty_response = self.client.post(
+            "/agency/sync-runs/accounts/google_ads/progress",
+            headers=headers,
+            json={"account_ids": []},
+        )
+        self.assertEqual(empty_response.status_code, 400)
+
+        too_many_ids = [f"acc-{idx}" for idx in range(201)]
+        limit_response = self.client.post(
+            "/agency/sync-runs/accounts/google_ads/progress",
+            headers=headers,
+            json={"account_ids": too_many_ids},
+        )
+        self.assertEqual(limit_response.status_code, 400)
+
+    def test_accounts_progress_batch_keeps_requested_scope(self):
+        headers = self._auth_headers()
+
+        first = self.client.post(
+            "/agency/sync-runs/batch",
+            headers=headers,
+            json={
+                "platform": "google_ads",
+                "account_ids": ["3986597205"],
+                "job_type": "manual",
+                "start_date": str(date(2026, 2, 1)),
+                "end_date": str(date(2026, 2, 1)),
+                "chunk_days": 1,
+            },
+        )
+        self.assertEqual(first.status_code, 200)
+        first_job_id = first.json()["runs"][0]["job_id"]
+        self.state["runs"][first_job_id]["status"] = "running"
+
+        self.state["runs"]["job-other"] = {
+            "job_id": "job-other",
+            "platform": "google_ads",
+            "status": "running",
+            "client_id": 11,
+            "account_id": "unrequested",
+            "date_start": "2026-02-01",
+            "date_end": "2026-02-02",
+            "chunk_days": 1,
+            "job_type": "rolling_refresh",
+            "grain": "account_daily",
+            "chunks_total": 1,
+            "chunks_done": 0,
+            "rows_written": 0,
+            "error": None,
+            "created_at": "2026-03-03T00:00:00+00:00",
+            "updated_at": "2026-03-03T00:00:00+00:00",
+            "started_at": None,
+            "finished_at": None,
+            "batch_id": "seed",
+            "metadata": {},
+        }
+
+        response = self.client.post(
+            "/agency/sync-runs/accounts/google_ads/progress",
+            headers=headers,
+            json={"account_ids": ["3986597205"]},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["requested_count"], 1)
+        self.assertEqual(len(payload["results"]), 1)
+        self.assertEqual(payload["results"][0]["account_id"], "3986597205")
 
     def test_historical_duplicate_request_returns_already_exists_without_new_chunks(self):
         headers = self._auth_headers()
