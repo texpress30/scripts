@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
-import { apiRequest, repairSyncRun } from "@/lib/api";
+import { apiRequest, repairSyncRun, retryFailedSyncRun } from "@/lib/api";
 
 type GoogleAccount = {
   id: string;
@@ -82,6 +82,11 @@ type RepairNotice = {
   text: string;
 };
 
+type RetryNotice = {
+  tone: "success" | "info" | "error";
+  text: string;
+};
+
 function formatDate(value?: string | null): string {
   if (!value) return "-";
   const parsed = new Date(value);
@@ -114,6 +119,17 @@ function isRunActive(status?: string | null): boolean {
   return ["queued", "running", "pending"].includes(normalizeStatus(status));
 }
 
+function isRunTerminal(status?: string | null): boolean {
+  return ["done", "success", "completed", "error", "failed", "partial", "cancelled"].includes(normalizeStatus(status));
+}
+
+function hasRetryFailedSignals(run: SyncRun): boolean {
+  const status = normalizeStatus(run.status);
+  if (["error", "failed", "partial"].includes(status)) return true;
+  if (Number(run.error_count ?? 0) > 0) return true;
+  return String(run.error ?? "").trim().length > 0;
+}
+
 export default function AgencyAccountDetailPage() {
   const params = useParams<{ platform: string; accountId: string }>();
   const platform = decodeURIComponent(String(params?.platform ?? "")).trim();
@@ -134,6 +150,8 @@ export default function AgencyAccountDetailPage() {
 
   const [repairingJobId, setRepairingJobId] = useState<string | null>(null);
   const [repairNotice, setRepairNotice] = useState<RepairNotice | null>(null);
+  const [retryingJobId, setRetryingJobId] = useState<string | null>(null);
+  const [retryNotice, setRetryNotice] = useState<RetryNotice | null>(null);
 
   const runsSorted = useMemo(() => {
     return [...runs].sort((a, b) => {
@@ -152,6 +170,13 @@ export default function AgencyAccountDetailPage() {
     const failedRun = runsSorted.find((run) => ["error", "failed", "partial"].includes(normalizeStatus(run.status)) && String(run.error ?? "").trim() !== "");
     return failedRun?.error ?? "";
   }, [runsSorted]);
+  const retryableFailedRun = useMemo(
+    () =>
+      runsSorted.find(
+        (run) => normalizeJobType(run.job_type) === "historical_backfill" && isRunTerminal(run.status) && hasRetryFailedSignals(run),
+      ) ?? null,
+    [runsSorted],
+  );
 
   async function loadAccountMeta() {
     if (platform !== "google_ads") {
@@ -270,6 +295,54 @@ export default function AgencyAccountDetailPage() {
     }
   }
 
+  async function handleRetryFailedRun(jobId: string) {
+    if (retryingJobId) return;
+    setRetryingJobId(jobId);
+    setRetryNotice(null);
+
+    try {
+      const result = await retryFailedSyncRun(jobId);
+      if (!result.ok) {
+        if (result.outcome === "not_found") {
+          setRetryNotice({ tone: "error", text: "Run-ul nu mai există pentru retry-failed. Reîncarc lista de sync runs." });
+          await refreshAll();
+          return;
+        }
+        setRetryNotice({ tone: "error", text: result.message || "Retry-failed a eșuat. Încearcă din nou." });
+        return;
+      }
+
+      const outcome = result.payload.outcome;
+      if (outcome === "created") {
+        setRetryNotice({ tone: "success", text: "Retry pornit pentru chunk-urile eșuate. Am reîncărcat statusul run-urilor." });
+        await refreshAll();
+      } else if (outcome === "already_exists") {
+        setRetryNotice({ tone: "info", text: "Există deja un retry activ pentru acest run. Am reîncărcat statusul." });
+        await refreshAll();
+      } else if (outcome === "no_failed_chunks") {
+        setRetryNotice({ tone: "info", text: "Run-ul nu are chunk-uri eșuate de reluat." });
+      } else if (outcome === "not_retryable") {
+        setRetryNotice({ tone: "info", text: "Run-ul nu este eligibil pentru retry-failed." });
+      } else if (outcome === "not_found") {
+        setRetryNotice({ tone: "error", text: "Run-ul nu a fost găsit. Reîncarc lista de sync runs." });
+        await refreshAll();
+      } else {
+        setRetryNotice({ tone: "error", text: "Outcome necunoscut la retry-failed." });
+      }
+
+      for (const expandedRunId of expandedRunIds) {
+        void loadChunks(expandedRunId);
+      }
+    } catch (err) {
+      setRetryNotice({
+        tone: "error",
+        text: err instanceof Error ? err.message : "Nu am putut executa retry-failed pentru acest run.",
+      });
+    } finally {
+      setRetryingJobId(null);
+    }
+  }
+
   useEffect(() => {
     if (!platform || !accountId) return;
     void refreshAll();
@@ -352,6 +425,18 @@ export default function AgencyAccountDetailPage() {
                     {repairingJobId === repairableRun.job_id ? "Se repară..." : "Repară sync blocat"}
                   </button>
                 ) : null}
+                {retryableFailedRun ? (
+                  <button
+                    type="button"
+                    className="inline-flex items-center rounded-md border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-800 transition hover:bg-indigo-100 disabled:opacity-50"
+                    onClick={() => {
+                      void handleRetryFailedRun(retryableFailedRun.job_id);
+                    }}
+                    disabled={Boolean(retryingJobId)}
+                  >
+                    {retryingJobId === retryableFailedRun.job_id ? "Se pornește retry..." : "Reia chunk-urile eșuate"}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
@@ -379,6 +464,19 @@ export default function AgencyAccountDetailPage() {
                 }`}
               >
                 {repairNotice.text}
+              </p>
+            ) : null}
+            {retryNotice ? (
+              <p
+                className={`mt-2 rounded border px-3 py-2 text-sm ${
+                  retryNotice.tone === "success"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : retryNotice.tone === "info"
+                      ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+                      : "border-red-200 bg-red-50 text-red-700"
+                }`}
+              >
+                {retryNotice.text}
               </p>
             ) : null}
             {runsError ? <p className="mt-2 text-sm text-red-600">{runsError}</p> : null}

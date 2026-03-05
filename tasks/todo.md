@@ -1510,3 +1510,29 @@
   - run: `retry_of_job_id`, `retry_reason=failed_chunks`;
   - chunk: `retry_of_job_id`, `retry_of_chunk_index`, `retry_reason=failed_chunks`.
 - API nou `POST /agency/sync-runs/{job_id}/retry-failed` întoarce payload orientat UI ulterior (`source_job_id`, `retry_job_id`, `platform`, `account_id`, `status`, `chunks_created`, `failed_chunks_count`) și 404 doar pentru `not_found`.
+
+---
+
+# TODO — Task 14: UI action retry-failed pentru historical backfill în Account Detail
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și inspectez flow-ul existent din Account Detail (runs, polling, repair).
+- [x] Adaug helper frontend API pentru `POST /agency/sync-runs/{job_id}/retry-failed` cu mapare explicită outcome-uri + erori.
+- [x] Adaug CTA clar „Reia chunk-urile eșuate” în Account Detail doar pentru run-uri historical terminale retryable.
+- [x] Implementez click flow cu loading/disabled + anti-double-click și mesaje clare pentru `created`, `already_exists`, `no_failed_chunks`, `not_retryable`, `not_found`, `error`.
+- [x] După `created`/`already_exists` fac refetch imediat și las polling-ul existent să pornească/oprească automat pe baza run-urilor active.
+- [x] Adaug/actualizez teste frontend pentru visibility rules, request, in-flight state, outcome handling, refetch/polling și erori.
+- [x] Rulez testele/frontend build relevante și documentez review.
+
+## Review — Task 14: UI retry-failed în Account Detail
+- Am adăugat helper-ul frontend `retryFailedSyncRun(jobId)` care face `POST /agency/sync-runs/{job_id}/retry-failed` și normalizează outcome-urile backend (`created`, `already_exists`, `no_failed_chunks`, `not_retryable`, `not_found`) + erori HTTP/network.
+- În Account Detail (`/agency-accounts/[platform]/[accountId]`) am introdus CTA-ul „Reia chunk-urile eșuate”, afișat strict când există un run `historical_backfill` terminal cu semnale de eșec (`status error/failed/partial`, `error_count > 0` sau `error` text).
+- Click flow-ul retry folosește stare dedicată in-flight (`retryingJobId`) pentru disable/loading și anti-double-click; păstrează separat flow-ul existent de repair.
+- Outcome handling UI:
+  - `created`: mesaj succes + refetch imediat;
+  - `already_exists`: mesaj info + refetch imediat;
+  - `no_failed_chunks`: mesaj info;
+  - `not_retryable`: mesaj info clar;
+  - `not_found`: mesaj eroare util + refetch;
+  - `error`/network: mesaj eroare explicit.
+- După refetch, polling-ul rămâne bazat pe `hasActiveRun`; dacă noul retry run este `queued/running/pending`, auto-refresh-ul rămâne activ, altfel se oprește fără logică suplimentară.
+- Am extins testele frontend pentru helper + pagină: visibility rules, request endpoint, disabled/loading, outcome messaging și efecte de refetch/polling.
