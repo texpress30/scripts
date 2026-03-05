@@ -121,7 +121,7 @@ ACTION_POLICIES: dict[str, ActionPolicy] = {
     "exports:list": ActionPolicy(permission="exports:read", scopes=("agency",)),
     # sub-account scope
     "dashboard:view": ActionPolicy(permission="clients:read", scopes=("agency", "subaccount")),
-    "integrations:sync": ActionPolicy(permission="integrations:sync", scopes=("subaccount",)),
+    "integrations:sync": ActionPolicy(permission="integrations:sync", scopes=("agency", "subaccount")),
     "integrations:tiktok:sync": ActionPolicy(permission="integrations:tiktok:sync", scopes=("subaccount",)),
     "integrations:pinterest:sync": ActionPolicy(permission="integrations:pinterest:sync", scopes=("subaccount",)),
     "integrations:snapchat:sync": ActionPolicy(permission="integrations:snapchat:sync", scopes=("subaccount",)),
