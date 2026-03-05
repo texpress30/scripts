@@ -270,8 +270,16 @@ export default function AgencyAccountsPage() {
     [pagedGoogleAccounts],
   );
 
+  const selectableFilteredAccountIds = useMemo(
+    () => filteredGoogleAccounts.filter((item) => Boolean(item.attached_client_id)).map((item) => item.id),
+    [filteredGoogleAccounts],
+  );
+
   const allSelectableOnPageSelected =
     selectablePageAccountIds.length > 0 && selectablePageAccountIds.every((id) => selectedAccountIds.has(id));
+
+  const allSelectableFilteredSelected =
+    selectableFilteredAccountIds.length > 0 && selectableFilteredAccountIds.every((id) => selectedAccountIds.has(id));
 
   const selectedMappedAccounts = useMemo(
     () => googleAccounts.filter((account) => selectedAccountIds.has(account.id) && Boolean(account.attached_client_id)),
@@ -436,6 +444,21 @@ export default function AgencyAccountsPage() {
       });
       return next;
     });
+  }
+
+  function toggleSelectAllFiltered(checked: boolean) {
+    setSelectedAccountIds((current) => {
+      const next = new Set(current);
+      selectableFilteredAccountIds.forEach((accountId) => {
+        if (checked) next.add(accountId);
+        else next.delete(accountId);
+      });
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedAccountIds(new Set());
   }
 
   async function attachGoogleAccount(clientId: number, customerId: string) {
@@ -716,7 +739,8 @@ export default function AgencyAccountsPage() {
 
                 <div className="mt-2 text-xs text-slate-600">
                   Selectate: <span className="font-semibold text-slate-900">{selectedAccountIds.size}</span> conturi
-                  {selectedMappedAccounts.length !== selectedAccountIds.size ? ` (${selectedMappedAccounts.length} eligibile pentru sync)` : ""}
+                  {` (din ${selectableFilteredAccountIds.length} filtrate)`}
+                  {selectedMappedAccounts.length !== selectedAccountIds.size ? ` · ${selectedMappedAccounts.length} eligibile pentru sync` : ""}
                 </div>
 
                 {isBatchActive && batchProgress ? (
@@ -741,15 +765,34 @@ export default function AgencyAccountsPage() {
                 {!loading && googleAccounts.length > 0 ? (
                   <div className="mt-3 overflow-hidden rounded-md border border-slate-200">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={allSelectableOnPageSelected}
-                          onChange={(event) => toggleSelectAllOnPage(event.target.checked)}
-                          disabled={selectablePageAccountIds.length === 0 || controlsDisabled}
-                        />
-                        Select all pe pagina curentă
-                      </label>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={allSelectableOnPageSelected}
+                            onChange={(event) => toggleSelectAllOnPage(event.target.checked)}
+                            disabled={selectablePageAccountIds.length === 0 || controlsDisabled}
+                          />
+                          Select all pe pagina curentă
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={allSelectableFilteredSelected}
+                            onChange={(event) => toggleSelectAllFiltered(event.target.checked)}
+                            disabled={selectableFilteredAccountIds.length === 0 || controlsDisabled}
+                          />
+                          Selectează toate filtrate ({selectableFilteredAccountIds.length})
+                        </label>
+                        <button
+                          type="button"
+                          onClick={clearSelection}
+                          disabled={selectedAccountIds.size === 0 || controlsDisabled}
+                          className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Clear selection
+                        </button>
+                      </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <label htmlFor="quick-filter" className="text-xs font-medium text-slate-600">Filtru rapid</label>
                         <select
@@ -807,6 +850,7 @@ export default function AgencyAccountsPage() {
                                 checked={selected}
                                 disabled={!attached || controlsDisabled}
                                 onChange={(event) => toggleAccountSelection(account.id, event.target.checked)}
+                                data-testid={`row-select-${account.id}`}
                               />
                             </div>
 

@@ -177,6 +177,133 @@ describe("AgencyAccountsPage list redesign + same-client quick view", () => {
     expect(screen.getByText(/Selectate:/)).toHaveTextContent("Selectate: 1 conturi");
   });
 
+  it("select all filtered selects across pages and persists when paging", async () => {
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients") {
+        return Promise.resolve({ items: [{ id: 11, name: "Client A", owner_email: "a@x.com", display_id: 1 }] });
+      }
+      if (path === "/clients/accounts/summary") {
+        return Promise.resolve({ items: [{ platform: "google_ads", connected_count: 55, last_import_at: null }] });
+      }
+      if (path === "/clients/accounts/google") {
+        return Promise.resolve({
+          count: 55,
+          items: Array.from({ length: 55 }).map((_, index) => ({
+            id: String(2000 + index),
+            name: `Account ${index + 1}`,
+            attached_client_id: 11,
+            attached_client_name: "Client A",
+            last_run_status: "idle",
+            sync_start_date: "2025-12-01",
+          })),
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountsPage />);
+    await screen.findByText("Account 1");
+
+    fireEvent.change(screen.getByDisplayValue("50"), { target: { value: "25" } });
+    fireEvent.click(screen.getByLabelText("Selectează toate filtrate (55)"));
+
+    expect(screen.getByText(/Selectate:/)).toHaveTextContent("Selectate: 55 conturi");
+
+    fireEvent.click(screen.getByRole("button", { name: "Următor" }));
+    await screen.findByText("Account 26");
+
+    expect(screen.getByTestId("row-select-2025")).toBeChecked();
+
+    fireEvent.click(screen.getByRole("button", { name: "Anterior" }));
+    await screen.findByText("Account 1");
+    expect(screen.getByTestId("row-select-2000")).toBeChecked();
+  });
+
+  it("clear selection resets selection set and row checkboxes", async () => {
+    render(<AgencyAccountsPage />);
+    await screen.findByText("Account One");
+
+    fireEvent.click(screen.getByLabelText("Select all pe pagina curentă"));
+    expect(screen.getByText(/Selectate:/)).toHaveTextContent("Selectate: 2 conturi");
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+    expect(screen.getByText(/Selectate:/)).toHaveTextContent("Selectate: 0 conturi");
+
+    expect(screen.getByTestId("row-select-1001")).not.toBeChecked();
+    expect(screen.getByTestId("row-select-1002")).not.toBeChecked();
+  });
+
+  it("select all page selects only current page rows", async () => {
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients") {
+        return Promise.resolve({ items: [{ id: 11, name: "Client A", owner_email: "a@x.com", display_id: 1 }] });
+      }
+      if (path === "/clients/accounts/summary") {
+        return Promise.resolve({ items: [{ platform: "google_ads", connected_count: 60, last_import_at: null }] });
+      }
+      if (path === "/clients/accounts/google") {
+        return Promise.resolve({
+          count: 60,
+          items: Array.from({ length: 60 }).map((_, index) => ({
+            id: String(3000 + index),
+            name: `Account ${index + 1}`,
+            attached_client_id: 11,
+            attached_client_name: "Client A",
+            last_run_status: "idle",
+            sync_start_date: "2025-12-01",
+          })),
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountsPage />);
+    await screen.findByText("Account 1");
+
+    fireEvent.change(screen.getByDisplayValue("50"), { target: { value: "25" } });
+    fireEvent.click(screen.getByLabelText("Select all pe pagina curentă"));
+
+    expect(screen.getByText(/Selectate:/)).toHaveTextContent("Selectate: 25 conturi");
+
+    fireEvent.click(screen.getByRole("button", { name: "Următor" }));
+    await screen.findByText("Account 26");
+    expect(screen.getByTestId("row-select-3025")).not.toBeChecked();
+  });
+
+  it("Neinițializate + select all filtered selects only rows without sync_start_date", async () => {
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients") {
+        return Promise.resolve({ items: [{ id: 11, name: "Client A", owner_email: "a@x.com", display_id: 1 }] });
+      }
+      if (path === "/clients/accounts/summary") {
+        return Promise.resolve({ items: [{ platform: "google_ads", connected_count: 4, last_import_at: null }] });
+      }
+      if (path === "/clients/accounts/google") {
+        return Promise.resolve({
+          count: 4,
+          items: [
+            { id: "4001", name: "Ready A", attached_client_id: 11, attached_client_name: "Client A", last_run_status: "idle", sync_start_date: "2025-12-01" },
+            { id: "4002", name: "No Start A", attached_client_id: 11, attached_client_name: "Client A", last_run_status: "idle", sync_start_date: null },
+            { id: "4003", name: "No Start B", attached_client_id: 11, attached_client_name: "Client A", last_run_status: "idle", sync_start_date: "" },
+            { id: "4004", name: "Ready B", attached_client_id: 11, attached_client_name: "Client A", last_run_status: "idle", sync_start_date: "2025-12-03" },
+          ],
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountsPage />);
+    await screen.findByText("Ready A");
+
+    fireEvent.change(screen.getByLabelText("Filtru rapid"), { target: { value: "uninitialized" } });
+    fireEvent.click(screen.getByLabelText("Selectează toate filtrate (2)"));
+
+    expect(screen.getByText(/Selectate:/)).toHaveTextContent("Selectate: 2 conturi");
+    expect(screen.getByText("No Start A")).toBeInTheDocument();
+    expect(screen.getByText("No Start B")).toBeInTheDocument();
+    expect(screen.queryByText("Ready A")).not.toBeInTheDocument();
+  });
+
   it("active first sorts active rows before error and idle", async () => {
     apiMock.apiRequest.mockImplementation((path: string) => {
       if (path === "/clients") {

@@ -184,3 +184,4 @@
 - 2026-03-05: Pentru pagini cu multe run-uri active, mută polling-ul frontend pe endpoint batch și aplică split pe limita server-side (ex. 200 IDs) pentru a evita burst N requests per interval.
 - 2026-03-05: Pentru liste operaționale cu volum mare, adaugă quick filters + sort local (active/error/uninitialized) înainte de optimizări backend suplimentare; reduce timp de triere fără cost API.
 - 2026-03-05: Pentru sweepere one-shot folosite în cron/manual ops, aliniază scope-ul cu loop runner-ul operațional și acoperă toate job type-urile active (historical + rolling) în același summary.
+- 2026-03-05: Pentru liste paginate cu selecție bulk, separă explicit setul filtrat de setul paginii curente și păstrează selecția într-un `Set` persistent, fără reset la schimbare de filtru/sort/pagină.

@@ -1877,3 +1877,22 @@
 - Returned payload remains explicit per type (`historical`, `rolling`) and now includes aggregate totals (`total_processed_count`, `total_repaired_count`, `total_error_count`) for cron observability.
 - Added a backend unit test to validate dual-call behavior, shared parameters, and aggregate totals.
 - README now clarifies that one-shot sweep covers both historical and rolling stale runs.
+
+---
+
+# TODO — Agency Accounts: select all filtered + persistent selection across pages
+
+- [x] Run `git fetch --all --prune` and continue even when no remotes are configured in this environment.
+- [x] Keep selection state in a persistent `Set` keyed by account id, independent from current page.
+- [x] Add controls for `Selectează toate filtrate (X)` and `Clear selection` near page selection controls.
+- [x] Implement precise behavior split: page-only selection vs full filtered selection, while preserving selection across paging/filter/sort changes.
+- [x] Keep existing download historical flow unchanged except consuming total persistent selection.
+- [x] Extend Vitest list tests for cross-page filtered selection, persistence, clear selection, page-only selection, and uninitialized filter behavior.
+- [x] Run frontend test/build checks and capture review.
+
+## Review — Agency Accounts: select all filtered + persistent selection across pages
+- Selection remains stored as `Set<accountId>` and is not reset on page/filter/sort changes, so checkboxes reflect membership consistently when navigating pages.
+- Added a filtered-scope selector that targets all currently filtered + attachable rows (`selectableFilteredAccountIds`), distinct from page-scope selector (`selectablePageAccountIds`).
+- Header controls now include `Selectează toate filtrate (X)` and `Clear selection`, with summary text showing total selected and filtered scope.
+- Existing `Download historical` flow remains unchanged and still uses `selectedMappedAccounts` derived from persistent selection state.
+- Added targeted Vitest coverage for the requested scenarios (cross-page, persistence, clear selection, page-only selection, and uninitialized-only filtered selection).
