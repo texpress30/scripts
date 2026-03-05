@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 import json
+import logging
 from threading import Lock
 
 from app.core.config import load_settings
@@ -39,6 +40,8 @@ _ACTIVE_CHUNK_STATUSES = ("queued", "running", "pending")
 _SUCCESS_CHUNK_STATUSES = ("done", "success", "completed")
 _ERROR_CHUNK_STATUSES = ("error", "failed")
 _TERMINAL_RUN_STATUSES = ("done", "error")
+
+logger = logging.getLogger(__name__)
 
 
 class SyncRunsStore:
@@ -580,8 +583,8 @@ class SyncRunsStore:
                     (normalized_source_job_id,),
                 )
                 failed_rows = cur.fetchall() or []
-                failed_chunks_count = len(failed_rows)
-                if failed_chunks_count <= 0:
+                failed_chunks_total = len(failed_rows)
+                if failed_chunks_total <= 0:
                     conn.commit()
                     return {
                         "outcome": "no_failed_chunks",
@@ -591,8 +594,37 @@ class SyncRunsStore:
                         "status": source_payload.get("status"),
                     }
 
-                failed_start_dates = [row[1] for row in failed_rows if row[1] is not None]
-                failed_end_dates = [row[2] for row in failed_rows if row[2] is not None]
+                recovery = self._evaluate_retry_recovery_status(
+                    cur,
+                    source_job_id=normalized_source_job_id,
+                    platform=str(source_payload.get("platform") or ""),
+                    account_id=str(source_payload.get("account_id") or ""),
+                    failed_rows=failed_rows,
+                )
+                failed_rows_remaining = recovery["failed_rows_remaining"]
+                failed_chunks_count = int(recovery["failed_chunks_remaining"])
+                recovery_status = str(recovery["retry_recovery_status"])
+
+                if failed_chunks_count <= 0:
+                    logger.info(
+                        "sync_runs.retry_failed source_job_id=%s recovery_status=%s outcome=no_failed_chunks",
+                        normalized_source_job_id,
+                        recovery_status,
+                    )
+                    conn.commit()
+                    return {
+                        "outcome": "no_failed_chunks",
+                        "source_job_id": normalized_source_job_id,
+                        "platform": source_payload.get("platform"),
+                        "account_id": source_payload.get("account_id"),
+                        "status": source_payload.get("status"),
+                        "retry_recovery_status": recovery_status,
+                        "failed_chunks_total": failed_chunks_total,
+                        "failed_chunks_remaining": 0,
+                    }
+
+                failed_start_dates = [row[1] for row in failed_rows_remaining if row[1] is not None]
+                failed_end_dates = [row[2] for row in failed_rows_remaining if row[2] is not None]
                 retry_start_date = min(failed_start_dates) if failed_start_dates else source_payload.get("date_start")
                 retry_end_date = max(failed_end_dates) if failed_end_dates else source_payload.get("date_end")
                 source_metadata = source_payload.get("metadata") if isinstance(source_payload.get("metadata"), dict) else {}
@@ -646,7 +678,7 @@ class SyncRunsStore:
                 )
                 retry_row = cur.fetchone()
 
-                for retry_chunk_index, failed_row in enumerate(failed_rows):
+                for retry_chunk_index, failed_row in enumerate(failed_rows_remaining):
                     source_chunk_index = int(failed_row[0])
                     chunk_start = failed_row[1]
                     chunk_end = failed_row[2]
@@ -695,7 +727,70 @@ class SyncRunsStore:
             "status": retry_payload.get("status") if retry_payload is not None else "queued",
             "chunks_created": failed_chunks_count,
             "failed_chunks_count": failed_chunks_count,
+            "failed_chunks_total": failed_chunks_total,
+            "failed_chunks_remaining": failed_chunks_count,
+            "retry_recovery_status": recovery_status,
             "run": retry_payload,
+        }
+
+    def _evaluate_retry_recovery_status(
+        self,
+        cur,
+        *,
+        source_job_id: str,
+        platform: str,
+        account_id: str,
+        failed_rows: list[tuple[object, ...]],
+    ) -> dict[str, object]:
+        failed_chunks_total = len(failed_rows)
+        if failed_chunks_total <= 0:
+            return {
+                "retry_recovery_status": "unrecovered",
+                "failed_chunks_total": 0,
+                "failed_chunks_remaining": 0,
+                "failed_rows_remaining": [],
+            }
+
+        cur.execute(
+            """
+            SELECT DISTINCT c.date_start, c.date_end
+            FROM sync_runs r
+            JOIN sync_run_chunks c
+              ON c.job_id = r.job_id
+            WHERE r.platform = %s
+              AND r.account_id = %s
+              AND r.job_type = 'historical_backfill'
+              AND r.status = 'done'
+              AND COALESCE(r.metadata->>'retry_of_job_id', '') = %s
+              AND COALESCE(r.metadata->>'retry_reason', '') = 'failed_chunks'
+              AND c.status IN ('done', 'success', 'completed')
+              AND COALESCE(c.metadata->>'retry_of_job_id', '') = %s
+              AND COALESCE(c.metadata->>'retry_reason', '') = 'failed_chunks'
+            """,
+            (platform, account_id, source_job_id, source_job_id),
+        )
+        recovered_interval_rows = cur.fetchall() or []
+        recovered_intervals = {(row[0], row[1]) for row in recovered_interval_rows}
+
+        failed_rows_remaining: list[tuple[object, ...]] = []
+        for failed_row in failed_rows:
+            interval = (failed_row[1], failed_row[2])
+            if interval not in recovered_intervals:
+                failed_rows_remaining.append(failed_row)
+
+        failed_chunks_remaining = len(failed_rows_remaining)
+        if failed_chunks_remaining <= 0:
+            status = "fully_recovered_by_retry"
+        elif failed_chunks_remaining < failed_chunks_total:
+            status = "partially_recovered"
+        else:
+            status = "unrecovered"
+
+        return {
+            "retry_recovery_status": status,
+            "failed_chunks_total": failed_chunks_total,
+            "failed_chunks_remaining": failed_chunks_remaining,
+            "failed_rows_remaining": failed_rows_remaining,
         }
 
     def get_sync_run(self, job_id: str) -> dict[str, object] | None:

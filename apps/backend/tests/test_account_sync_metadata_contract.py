@@ -1,6 +1,11 @@
 import unittest
 
-from app.services.client_registry import _normalize_account_sync_metadata_payload
+from app.services.client_registry import (
+    _coalesce_date_max,
+    _coalesce_date_min,
+    _derive_effective_last_error,
+    _normalize_account_sync_metadata_payload,
+)
 
 
 class AccountSyncMetadataContractTests(unittest.TestCase):
@@ -70,6 +75,19 @@ class AccountSyncMetadataContractTests(unittest.TestCase):
         self.assertIsNone(payload["sync_start_date"])
         self.assertIsNone(payload["last_run_status"])
         self.assertFalse(payload["has_active_sync"])
+
+    def test_recovered_historical_range_prefers_source_interval_bounds(self):
+        self.assertEqual(_coalesce_date_min("2026-01-01", "2026-01-05"), "2026-01-01")
+        self.assertEqual(_coalesce_date_max("2026-01-07", "2026-01-10"), "2026-01-10")
+
+    def test_last_error_cleared_when_latest_run_is_successful(self):
+        self.assertIsNone(
+            _derive_effective_last_error(
+                explicit_last_error="stale source failure",
+                latest_run_error=None,
+                latest_run_status="done",
+            )
+        )
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
+import logging
 from threading import Lock
 import os
 
@@ -14,6 +15,55 @@ except Exception:  # noqa: BLE001
 
 
 _UNSET = object()
+_SUCCESS_RUN_STATUSES = {"done", "success", "completed"}
+logger = logging.getLogger(__name__)
+
+
+def _coalesce_date_max(*values: object | None) -> object | None:
+    present = [value for value in values if value is not None]
+    if not present:
+        return None
+    return max(present)
+
+
+def _coalesce_date_min(*values: object | None) -> object | None:
+    present = [value for value in values if value is not None]
+    if not present:
+        return None
+    return min(present)
+
+
+def _derive_effective_last_error(*, explicit_last_error: object | None, latest_run_error: object | None, latest_run_status: object | None) -> object | None:
+    normalized_status = str(latest_run_status or "").strip().lower()
+    if normalized_status in _SUCCESS_RUN_STATUSES:
+        return None
+    if explicit_last_error is not None:
+        return explicit_last_error
+    return latest_run_error
+
+
+def _normalize_account_sync_metadata_payload(*, platform: str, account_id: str, display_name: str, attached_client_id: int | None, attached_client_name: str | None, timezone_value: str | None, currency_value: str | None, sync_start_date: object | None, backfill_completed_through: object | None, rolling_synced_through: object | None, last_success_at: object | None, last_error: object | None, last_run_status: object | None, last_run_type: object | None, last_run_started_at: object | None, last_run_finished_at: object | None, has_active_sync: bool) -> dict[str, str | int | None | bool]:
+    return {
+        "id": str(account_id),
+        "name": str(display_name),
+        "platform": str(platform),
+        "account_id": str(account_id),
+        "display_name": str(display_name),
+        "attached_client_id": int(attached_client_id) if attached_client_id is not None else None,
+        "attached_client_name": str(attached_client_name) if attached_client_name is not None else None,
+        "timezone": str(timezone_value) if timezone_value is not None else None,
+        "currency": str(currency_value) if currency_value is not None else None,
+        "sync_start_date": str(sync_start_date) if sync_start_date is not None else None,
+        "backfill_completed_through": str(backfill_completed_through) if backfill_completed_through is not None else None,
+        "rolling_synced_through": str(rolling_synced_through) if rolling_synced_through is not None else None,
+        "last_success_at": str(last_success_at) if last_success_at is not None else None,
+        "last_error": str(last_error) if last_error is not None else None,
+        "last_run_status": str(last_run_status) if last_run_status is not None else None,
+        "last_run_type": str(last_run_type) if last_run_type is not None else None,
+        "last_run_started_at": str(last_run_started_at) if last_run_started_at is not None else None,
+        "last_run_finished_at": str(last_run_finished_at) if last_run_finished_at is not None else None,
+        "has_active_sync": bool(has_active_sync),
+    }
 
 
 def _normalize_account_sync_metadata_payload(*, platform: str, account_id: str, display_name: str, attached_client_id: int | None, attached_client_name: str | None, timezone_value: str | None, currency_value: str | None, sync_start_date: object | None, backfill_completed_through: object | None, rolling_synced_through: object | None, last_success_at: object | None, last_error: object | None, last_run_status: object | None, last_run_type: object | None, last_run_started_at: object | None, last_run_finished_at: object | None, has_active_sync: bool) -> dict[str, str | int | None | bool]:
@@ -753,6 +803,56 @@ class ClientRegistryService:
                         AND sr.account_id = a.account_id
                         AND sr.status = 'done'
                     ) success ON TRUE
+                    LEFT JOIN LATERAL (
+                      SELECT
+                        MIN(sr.date_start) AS min_start_date,
+                        MAX(sr.date_end) AS max_end_date,
+                        MAX(retry_success.last_success_at) AS last_success_at
+                      FROM sync_runs sr
+                      LEFT JOIN LATERAL (
+                        SELECT MAX(rr.finished_at) AS last_success_at
+                        FROM sync_runs rr
+                        WHERE rr.platform = sr.platform
+                          AND rr.account_id = sr.account_id
+                          AND rr.job_type = 'historical_backfill'
+                          AND rr.status = 'done'
+                          AND COALESCE(rr.metadata->>'retry_of_job_id', '') = sr.job_id
+                          AND COALESCE(rr.metadata->>'retry_reason', '') = 'failed_chunks'
+                      ) retry_success ON TRUE
+                      WHERE sr.platform = a.platform
+                        AND sr.account_id = a.account_id
+                        AND sr.job_type = 'historical_backfill'
+                        AND sr.status = 'error'
+                        AND EXISTS (
+                          SELECT 1
+                          FROM sync_run_chunks src
+                          WHERE src.job_id = sr.job_id
+                            AND src.status IN ('error', 'failed')
+                        )
+                        AND NOT EXISTS (
+                          SELECT 1
+                          FROM sync_run_chunks src
+                          WHERE src.job_id = sr.job_id
+                            AND src.status IN ('error', 'failed')
+                            AND NOT EXISTS (
+                              SELECT 1
+                              FROM sync_runs rr
+                              JOIN sync_run_chunks rc
+                                ON rc.job_id = rr.job_id
+                              WHERE rr.platform = sr.platform
+                                AND rr.account_id = sr.account_id
+                                AND rr.job_type = 'historical_backfill'
+                                AND rr.status = 'done'
+                                AND COALESCE(rr.metadata->>'retry_of_job_id', '') = sr.job_id
+                                AND COALESCE(rr.metadata->>'retry_reason', '') = 'failed_chunks'
+                                AND rc.status IN ('done', 'success', 'completed')
+                                AND COALESCE(rc.metadata->>'retry_of_job_id', '') = sr.job_id
+                                AND COALESCE(rc.metadata->>'retry_reason', '') = 'failed_chunks'
+                                AND rc.date_start = src.date_start
+                                AND rc.date_end = src.date_end
+                            )
+                        )
+                    ) recovered_hist ON TRUE
                     WHERE a.platform = %s
                     ORDER BY a.imported_at DESC
                     """,
@@ -764,11 +864,22 @@ class ClientRegistryService:
         for row in rows:
             account_id = str(row[0])
             display_name = str(row[1]) if row[1] is not None else account_id
-            sync_start_date = row[6] if row[6] is not None else row[17]
-            backfill_completed_through = row[7] if row[7] is not None else row[18]
+            recovered_sync_start_date = row[21]
+            recovered_backfill_completed_through = row[22]
+            recovered_last_success_at = row[23]
+            sync_start_date = row[6] if row[6] is not None else _coalesce_date_min(row[17], recovered_sync_start_date)
+            backfill_completed_through = row[7] if row[7] is not None else _coalesce_date_max(row[18], recovered_backfill_completed_through)
             rolling_synced_through = row[8] if row[8] is not None else row[19]
-            last_success_at = row[9] if row[9] is not None else row[20]
-            last_error = row[10] if row[10] is not None else row[15]
+            last_success_at = row[9] if row[9] is not None else _coalesce_date_max(row[20], recovered_last_success_at)
+            last_error = _derive_effective_last_error(explicit_last_error=row[10], latest_run_error=row[15], latest_run_status=row[11])
+            if recovered_sync_start_date is not None or recovered_backfill_completed_through is not None:
+                logger.info(
+                    "client_registry.recovered_historical_backfill platform=%s account_id=%s sync_start_date=%s backfill_completed_through=%s",
+                    platform,
+                    account_id,
+                    sync_start_date,
+                    backfill_completed_through,
+                )
             result.append(
                 _normalize_account_sync_metadata_payload(
                     platform=str(platform),

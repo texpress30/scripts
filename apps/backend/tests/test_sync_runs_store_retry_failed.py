@@ -34,6 +34,10 @@ class _RetryCursor:
             self._fetchall = list(self.state.get("failed_chunks", []))
             return
 
+        if "SELECT DISTINCT c.date_start, c.date_end FROM sync_runs r JOIN sync_run_chunks c" in q:
+            self._fetchall = list(self.state.get("recovered_intervals", []))
+            return
+
         if q.startswith("INSERT INTO sync_runs"):
             row = self.state.get("created_retry_row")
             self._fetchone = row
@@ -166,6 +170,44 @@ class SyncRunsStoreRetryFailedTests(unittest.TestCase):
         self.assertEqual(inserted[0][4], date(2026, 1, 6))
         self.assertEqual(inserted[1][3], date(2026, 1, 7))
         self.assertEqual(inserted[1][4], date(2026, 1, 8))
+
+    def test_no_failed_chunks_when_all_source_failures_already_recovered(self):
+        state = {
+            "runs": {"src": self._build_run_row(job_id="src", status="error")},
+            "failed_chunks": [
+                (3, date(2026, 1, 5), date(2026, 1, 6)),
+            ],
+            "recovered_intervals": [
+                (date(2026, 1, 5), date(2026, 1, 6)),
+            ],
+        }
+        store, _, _, _ = self._build_store(state)
+        result = store.retry_failed_historical_run(source_job_id="src", retry_job_id="retry-1")
+        self.assertEqual(result["outcome"], "no_failed_chunks")
+        self.assertEqual(result["retry_recovery_status"], "fully_recovered_by_retry")
+
+    def test_partial_recovery_retries_only_remaining_intervals(self):
+        created_retry_row = self._build_run_row(job_id="retry-1", status="queued")
+        state = {
+            "runs": {"src": self._build_run_row(job_id="src", status="error")},
+            "failed_chunks": [
+                (3, date(2026, 1, 5), date(2026, 1, 6)),
+                (4, date(2026, 1, 7), date(2026, 1, 8)),
+            ],
+            "recovered_intervals": [
+                (date(2026, 1, 5), date(2026, 1, 6)),
+            ],
+            "created_retry_row": created_retry_row,
+        }
+        store, state_ref, _, _ = self._build_store(state)
+        result = store.retry_failed_historical_run(source_job_id="src", retry_job_id="retry-1")
+        self.assertEqual(result["outcome"], "created")
+        self.assertEqual(result["chunks_created"], 1)
+        self.assertEqual(result["retry_recovery_status"], "partially_recovered")
+        inserted = state_ref.get("inserted_chunks", [])
+        self.assertEqual(len(inserted), 1)
+        self.assertEqual(inserted[0][3], date(2026, 1, 7))
+        self.assertEqual(inserted[0][4], date(2026, 1, 8))
 
 
 if __name__ == "__main__":

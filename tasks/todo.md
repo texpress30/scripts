@@ -1555,3 +1555,25 @@
 - Am adăugat un refetch final automat la tranziția `hasActiveRun: true -> false` pentru a evita header blocat pe stare activă după închiderea run-ului.
 - Am ajustat vizibilitatea CTA retry: `Reia chunk-urile eșuate` apare doar dacă există run terminal retryable **și** nu există deja run `historical_backfill` activ.
 - Am păstrat flow-urile existente de repair/retry și mesajele de outcome; modificarea este strict de consistență UI + polling metadata.
+
+---
+
+# TODO — Task 16: reconciliere backend historical backfill după retry-failed
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și inspectez flow-ul actual pentru retry-failed + read-model metadata account.
+- [x] Adaug helper backend pentru recovery status al source run-ului (`unrecovered` / `partially_recovered` / `fully_recovered_by_retry`) pe matching exact intervale.
+- [x] Integrez helper-ul în eligibilitatea `POST /agency/sync-runs/{job_id}/retry-failed` ca să nu mai creeze run nou când source run-ul este recuperat complet.
+- [x] Ajustez derivarea metadata account ca source run complet recuperat să contribuie coerent la coverage/last_* și să nu păstreze `last_error` vechi ca eroare activă.
+- [x] Adaug logging pentru detectare recovery complet și skip retry-failed când este deja recuperat.
+- [x] Adaug/actualizez teste backend pentru scenariile unrecovered/fully_recovered/partial + metadata reconciliation + retry-failed skip.
+- [x] Rulez testele backend relevante și documentez review.
+
+## Review — Task 16: reconciliere backend după retry-failed
+- Am introdus în `SyncRunsStore` helper-ul `_evaluate_retry_recovery_status(...)` care clasifică source run-ul pe baza chunk-urilor eșuate rămase după deducerea intervalelor deja recuperate de retry-run-uri `done` legate prin metadata (`retry_of_job_id`/`retry_reason`) și matching exact `date_start`/`date_end`.
+- `retry_failed_historical_run(...)` folosește acum helper-ul de recovery și creează retry doar pentru intervalele eșuate rămase; când toate sunt deja recuperate returnează `no_failed_chunks` (compatibil cu contractul existent) și nu mai inserează run/chunks noi.
+- Am adăugat logging explicit pentru skip-ul `retry-failed` pe source run deja recuperat complet.
+- În `ClientRegistryService.list_platform_accounts(...)` am adăugat reconciliere pentru source historical run-uri `error` recuperate complet prin retry-run-uri `done`:
+  - range fallback pentru `sync_start_date`/`backfill_completed_through` include și source run-urile complet recuperate (nu doar run-uri istorice `done`);
+  - `last_success_at` poate proveni și din `finished_at` al retry-run-ului de recovery;
+  - `last_error` este suprimat când latest run status este de succes, evitând ancorarea în eroare istorică deja recuperată.
+- Schimbarea este backend-only, fără mutații asupra statusului istoric al source run-ului și fără schimbări de contract breaking.
