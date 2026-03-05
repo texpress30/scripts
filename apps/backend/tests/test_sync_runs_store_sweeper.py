@@ -6,9 +6,9 @@ from app.workers import historical_repair_sweeper
 
 
 class _SweeperCursor:
-    def __init__(self, *, now, rows):
+    def __init__(self, *, now, rows_by_job_type):
         self.now = now
-        self.rows = list(rows)
+        self.rows_by_job_type = dict(rows_by_job_type)
         self._last_one = None
         self._last_all = None
 
@@ -21,8 +21,9 @@ class _SweeperCursor:
             self._last_one = (self.now,)
             return
 
-        if "FROM sync_runs" in q and "job_type = 'historical_backfill'" in q and "status IN ('queued', 'running')" in q:
-            self._last_all = list(self.rows)
+        if "FROM sync_runs" in q and "WHERE job_type = %s" in q and "status IN ('queued', 'running')" in q:
+            job_type = str((params or [""])[0])
+            self._last_all = list(self.rows_by_job_type.get(job_type, []))
             return
 
         raise AssertionError(f"Unexpected query: {q}")
@@ -55,10 +56,10 @@ class _SweeperConn:
 
 
 class SyncRunsStoreSweeperTests(unittest.TestCase):
-    def _build_store(self, *, now, rows):
+    def _build_store(self, *, now, rows_by_job_type):
         store = SyncRunsStore()
         store._ensure_schema = lambda: None
-        cursor = _SweeperCursor(now=now, rows=rows)
+        cursor = _SweeperCursor(now=now, rows_by_job_type=rows_by_job_type)
         store._connect = lambda: _SweeperConn(cursor)
         return store
 
@@ -66,10 +67,12 @@ class SyncRunsStoreSweeperTests(unittest.TestCase):
         now = datetime.now(timezone.utc)
         store = self._build_store(
             now=now,
-            rows=[
-                ("hist-stale", now - timedelta(minutes=90)),
-                ("hist-fresh", now - timedelta(minutes=5)),
-            ],
+            rows_by_job_type={
+                "historical_backfill": [
+                    ("hist-stale", now - timedelta(minutes=90)),
+                    ("hist-fresh", now - timedelta(minutes=5)),
+                ]
+            },
         )
 
         calls = []
@@ -78,26 +81,56 @@ class SyncRunsStoreSweeperTests(unittest.TestCase):
             calls.append(kwargs)
             return {"outcome": "repaired", "job_id": kwargs["job_id"]}
 
-        store.repair_historical_sync_run = _repair
+        store._repair_active_sync_run = _repair
 
         summary = store.sweep_stale_historical_runs(stale_after_minutes=30, limit=100)
 
+        self.assertEqual(summary["job_type"], "historical_backfill")
         self.assertEqual([c["job_id"] for c in calls], ["hist-stale"])
         self.assertEqual(summary["processed_count"], 1)
         self.assertEqual(summary["repaired_count"], 1)
         self.assertEqual(summary["noop_active_fresh_count"], 1)
         self.assertEqual(summary["noop_active_fresh_job_ids"], ["hist-fresh"])
 
-    def test_sweeper_aggregates_outcomes_and_repeat_call_is_safe(self):
+    def test_sweeper_detects_and_repairs_stale_rolling_runs(self):
         now = datetime.now(timezone.utc)
         store = self._build_store(
             now=now,
-            rows=[
-                ("job-repaired", now - timedelta(minutes=70)),
-                ("job-not-active", now - timedelta(minutes=70)),
-                ("job-not-found", now - timedelta(minutes=70)),
-                ("job-fresh", now - timedelta(minutes=2)),
-            ],
+            rows_by_job_type={
+                "rolling_refresh": [
+                    ("roll-stale", now - timedelta(minutes=80)),
+                    ("roll-fresh", now - timedelta(minutes=3)),
+                ],
+                "historical_backfill": [("hist-ignore", now - timedelta(minutes=120))],
+            },
+        )
+
+        calls = []
+
+        def _repair(**kwargs):
+            calls.append(kwargs)
+            return {"outcome": "repaired", "job_id": kwargs["job_id"]}
+
+        store._repair_active_sync_run = _repair
+
+        summary = store.sweep_stale_rolling_runs(stale_after_minutes=30, limit=100)
+
+        self.assertEqual(summary["job_type"], "rolling_refresh")
+        self.assertEqual([c["job_id"] for c in calls], ["roll-stale"])
+        self.assertEqual(summary["noop_active_fresh_job_ids"], ["roll-fresh"])
+
+    def test_sweeper_aggregates_outcomes_and_repeat_call_is_safe_for_rolling(self):
+        now = datetime.now(timezone.utc)
+        store = self._build_store(
+            now=now,
+            rows_by_job_type={
+                "rolling_refresh": [
+                    ("job-repaired", now - timedelta(minutes=70)),
+                    ("job-not-active", now - timedelta(minutes=70)),
+                    ("job-not-found", now - timedelta(minutes=70)),
+                    ("job-fresh", now - timedelta(minutes=2)),
+                ]
+            },
         )
 
         outcomes = {
@@ -109,10 +142,10 @@ class SyncRunsStoreSweeperTests(unittest.TestCase):
         def _repair(**kwargs):
             return {"job_id": kwargs["job_id"], **outcomes[kwargs["job_id"]]}
 
-        store.repair_historical_sync_run = _repair
+        store._repair_active_sync_run = _repair
 
-        summary_1 = store.sweep_stale_historical_runs(stale_after_minutes=30, limit=100)
-        summary_2 = store.sweep_stale_historical_runs(stale_after_minutes=30, limit=100)
+        summary_1 = store.sweep_stale_rolling_runs(stale_after_minutes=30, limit=100)
+        summary_2 = store.sweep_stale_rolling_runs(stale_after_minutes=30, limit=100)
 
         self.assertEqual(summary_1["repaired_count"], 1)
         self.assertEqual(summary_1["noop_not_active_count"], 1)

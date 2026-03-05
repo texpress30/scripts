@@ -147,9 +147,9 @@ cd apps/frontend && npm run build
 - Regula exactă pentru fereastra zilnică rolling: `end_date = yesterday` (în timezone-ul contului), `start_date = end_date - 6 zile` ⇒ fix 7 zile calendaristice complete.
 - Eligibilitate minimă rolling cron: cont mapat la client + `sync_start_date` inițiat (altfel este omis explicit ca `history_not_initialized`).
 
-## Railway: historical repair sweeper
-- **One-shot manual sweep:** `cd apps/backend && PYTHONPATH=. python -m app.workers.historical_repair_sweeper`
-- **Periodic sweeper loop (service separat):** `cd apps/backend && PYTHONPATH=. python -m app.workers.historical_repair_sweeper_loop`
+## Railway: repair sweeper (historical + rolling stale runs)
+- **One-shot manual sweep (historical):** `cd apps/backend && PYTHONPATH=. python -m app.workers.historical_repair_sweeper`
+- **Periodic sweeper loop (historical + rolling, service separat):** `cd apps/backend && PYTHONPATH=. python -m app.workers.historical_repair_sweeper_loop`
 - Env vars suportate:
   - `HISTORICAL_REPAIR_SWEEPER_ENABLED` (`true/false`, default `true` pentru loop runner)
   - `HISTORICAL_REPAIR_SWEEPER_INTERVAL_SECONDS` (default `300`)

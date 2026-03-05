@@ -173,3 +173,4 @@
 - 2026-03-05: Pentru rolling cron eligibility, nu te baza doar pe mapping + sync_start_date; filtrează explicit conturile inactive/disabled din read-model și păstrează skip reason dedicat cu summary (count + account ids) pentru observabilitate.
 - 2026-03-05: Pentru auto-repair operațional, creează sweepere mici care fac doar selecția candidaților și reutilizează helper-ele concurent-safe existente (ex. `repair_historical_sync_run`), cu summary explicit pe outcome-uri și limit configurabil per sweep.
 - 2026-03-05: Pentru worker-e operaționale periodice, separă explicit modul one-shot de loop runner, adaugă `enabled` + `interval` configurabile și tratează erorile pe iterație cu log + continue ca să eviți downtime la excepții tranzitorii.
+- 2026-03-05: Când extinzi un sweeper la mai multe job types, preferă un helper comun parametrizat pe `job_type` + wrappere explicite, ca să reutilizezi lock/repair logic fără duplicare și să păstrezi summary clar per tip.

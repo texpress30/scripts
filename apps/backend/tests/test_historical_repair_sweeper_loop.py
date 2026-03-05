@@ -5,6 +5,43 @@ from app.workers import historical_repair_sweeper_loop
 
 
 class HistoricalRepairSweeperLoopTests(unittest.TestCase):
+    def test_run_single_iteration_includes_historical_and_rolling_summary(self):
+        calls = []
+        original_load_settings = historical_repair_sweeper_loop.load_settings
+        original_hist = historical_repair_sweeper_loop.sync_runs_store.sweep_stale_historical_runs
+        original_roll = historical_repair_sweeper_loop.sync_runs_store.sweep_stale_rolling_runs
+
+        class _Settings:
+            sync_run_repair_stale_minutes = 33
+
+        historical_repair_sweeper_loop.load_settings = lambda: _Settings()
+
+        def _hist(**kwargs):
+            calls.append(("historical", kwargs))
+            return {"processed_count": 2, "repaired_count": 1, "error_count": 0}
+
+        def _roll(**kwargs):
+            calls.append(("rolling", kwargs))
+            return {"processed_count": 3, "repaired_count": 2, "error_count": 1}
+
+        historical_repair_sweeper_loop.sync_runs_store.sweep_stale_historical_runs = _hist
+        historical_repair_sweeper_loop.sync_runs_store.sweep_stale_rolling_runs = _roll
+        try:
+            summary = historical_repair_sweeper_loop.run_single_iteration(limit=11)
+        finally:
+            historical_repair_sweeper_loop.load_settings = original_load_settings
+            historical_repair_sweeper_loop.sync_runs_store.sweep_stale_historical_runs = original_hist
+            historical_repair_sweeper_loop.sync_runs_store.sweep_stale_rolling_runs = original_roll
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0][0], "historical")
+        self.assertEqual(calls[0][1]["stale_after_minutes"], 33)
+        self.assertEqual(calls[1][0], "rolling")
+        self.assertEqual(calls[1][1]["limit"], 11)
+        self.assertEqual(summary["total_processed_count"], 5)
+        self.assertEqual(summary["total_repaired_count"], 3)
+        self.assertEqual(summary["total_error_count"], 1)
+
     def test_run_periodic_loop_disabled_exits_immediately(self):
         calls = []
         original_run_single = historical_repair_sweeper_loop.run_single_iteration
