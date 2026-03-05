@@ -1726,3 +1726,22 @@
 - `Detach` a fost mutat într-o coloană separată; `attach` rămâne în coloana `Acțiuni`.
 - Filtrul `Filtru client` rulează local pe `attached_client_name` și afișează empty state când nu există rezultate.
 - Link-ul către Account Detail (`/agency-accounts/google_ads/{accountId}`) și acțiunile operaționale existente au rămas funcționale.
+
+---
+
+# TODO — Task 25: quick view conturi atribuite aceluiași client în Agency Accounts
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și inspectez layout-ul existent din Task 9A.
+- [x] Construiesc maparea locală `attached_client_id -> conturi` pe datele deja încărcate.
+- [x] Afișez badge/count în coloana Client pentru row-urile atașate (`X conturi atribuite`).
+- [x] Adaug acțiune `Vezi conturile` + expand/collapse inline per row, fără efecte secundare pe selecție/attach/detach/batch.
+- [x] În panel-ul quick view afișez nume cont + account id + link către Account Detail, cu marcaj pentru contul curent.
+- [x] Ascund quick view pentru row-uri neatașate și păstrez filtrul/client + acțiunile existente intacte.
+- [x] Adaug/actualizez teste frontend pentru count, visibility, expand/collapse, linkuri și compatibilitate filtru; rulez testele + build + screenshot.
+
+## Review — Task 25: quick view conturi pe același client
+- Maparea locală este derivată cu `useMemo` din `googleAccounts` și grupează conturile după `attached_client_id`.
+- Pentru row-uri atașate, coloana Client afișează badge-ul `X conturi atribuite` și buton `Vezi conturile` / `Ascunde conturile`.
+- Expand/collapse este per row prin `expandedClientRows` (Set de account IDs), independent de selecție și restul acțiunilor.
+- Panel-ul inline listează conturile clientului cu linkuri către `/agency-accounts/google_ads/{accountId}`, include account id și marchează contul curent cu eticheta `curent`.
+- Row-urile fără client atașat nu afișează badge și nu afișează acțiunea quick view.

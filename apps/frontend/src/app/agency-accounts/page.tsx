@@ -146,6 +146,7 @@ export default function AgencyAccountsPage() {
   const [accountsPage, setAccountsPage] = useState(1);
   const [accountsPageSize, setAccountsPageSize] = useState(50);
   const [clientFilter, setClientFilter] = useState("");
+  const [expandedClientRows, setExpandedClientRows] = useState<Set<string>>(new Set());
 
   const [actionBusy, setActionBusy] = useState(false);
   const [runningAction, setRunningAction] = useState<"refresh" | "historical" | null>(null);
@@ -194,6 +195,26 @@ export default function AgencyAccountsPage() {
     [googleAccounts, selectedAccountIds],
   );
 
+  const accountsByClient = useMemo(() => {
+    const grouped = new Map<number, GoogleAccount[]>();
+    for (const account of googleAccounts) {
+      if (!account.attached_client_id) continue;
+      const current = grouped.get(account.attached_client_id) ?? [];
+      current.push(account);
+      grouped.set(account.attached_client_id, current);
+    }
+    return grouped;
+  }, [googleAccounts]);
+
+  function toggleClientQuickView(accountId: string, open: boolean) {
+    setExpandedClientRows((current) => {
+      const next = new Set(current);
+      if (open) next.add(accountId);
+      else next.delete(accountId);
+      return next;
+    });
+  }
+
   function renderSyncProgress(account: GoogleAccount, rowStatus?: string | null): JSX.Element {
     const statusText = rowStatus || account.last_run_status || (account.has_active_sync ? "running" : "idle");
     const normalized = String(statusText).toLowerCase();
@@ -240,6 +261,7 @@ export default function AgencyAccountsPage() {
 
   useEffect(() => {
     setSelectedAccountIds(new Set());
+    setExpandedClientRows(new Set());
     setAccountsPage(1);
   }, [selectedPlatform]);
 
@@ -252,6 +274,15 @@ export default function AgencyAccountsPage() {
       setAccountsPage(totalAccountsPages);
     }
   }, [accountsPage, totalAccountsPages]);
+
+  useEffect(() => {
+    setExpandedClientRows((current) => {
+      const visibleIds = new Set(filteredGoogleAccounts.map((account) => account.id));
+      const next = new Set(Array.from(current).filter((id) => visibleIds.has(id)));
+      if (next.size === current.size) return current;
+      return next;
+    });
+  }, [filteredGoogleAccounts]);
 
   function toggleAccountSelection(accountId: string, checked: boolean) {
     setSelectedAccountIds((current) => {
@@ -588,6 +619,37 @@ export default function AgencyAccountsPage() {
                                 <>
                                   <p className="text-sm font-medium text-emerald-700">{account.attached_client_name}</p>
                                   {account.sync_start_date ? <p className="text-xs text-slate-500">Start istoric: {account.sync_start_date}</p> : null}
+                                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                                    <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                                      {(accountsByClient.get(account.attached_client_id ?? 0) ?? []).length} conturi atribuite
+                                    </span>
+                                    <button
+                                      type="button"
+                                      className="text-xs font-medium text-indigo-700 hover:underline"
+                                      onClick={() => toggleClientQuickView(account.id, !expandedClientRows.has(account.id))}
+                                    >
+                                      {expandedClientRows.has(account.id) ? "Ascunde conturile" : "Vezi conturile"}
+                                    </button>
+                                  </div>
+                                  {expandedClientRows.has(account.id) ? (
+                                    <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2">
+                                      <p className="mb-1 text-xs font-semibold text-slate-600">Conturi atribuite aceluiași client</p>
+                                      <ul className="space-y-1">
+                                        {(accountsByClient.get(account.attached_client_id ?? 0) ?? []).slice(0, 5).map((related) => (
+                                          <li key={`${account.id}-related-${related.id}`} className="text-xs text-slate-700">
+                                            <Link href={`/agency-accounts/google_ads/${encodeURIComponent(related.id)}`} className="hover:underline">
+                                              {accountDisplayName(related)}
+                                            </Link>{" "}
+                                            <span className="text-slate-500">({related.id})</span>
+                                            {related.id === account.id ? <span className="ml-1 rounded bg-indigo-100 px-1 py-0.5 text-[10px] font-medium text-indigo-700">curent</span> : null}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                      {(accountsByClient.get(account.attached_client_id ?? 0) ?? []).length > 5 ? (
+                                        <p className="mt-1 text-xs text-slate-500">și încă {(accountsByClient.get(account.attached_client_id ?? 0) ?? []).length - 5}</p>
+                                      ) : null}
+                                    </div>
+                                  ) : null}
                                 </>
                               ) : (
                                 <p className="text-sm text-amber-700">Neatașat la client</p>

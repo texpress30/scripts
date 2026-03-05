@@ -175,3 +175,4 @@
 - 2026-03-05: Pentru worker-e operaționale periodice, separă explicit modul one-shot de loop runner, adaugă `enabled` + `interval` configurabile și tratează erorile pe iterație cu log + continue ca să eviți downtime la excepții tranzitorii.
 - 2026-03-05: Când extinzi un sweeper la mai multe job types, preferă un helper comun parametrizat pe `job_type` + wrappere explicite, ca să reutilizezi lock/repair logic fără duplicare și să păstrezi summary clar per tip.
 - 2026-03-05: Pentru redesign-uri de listă operațională, păstrează comportamentul existent și mută doar prezentarea pe coloane explicite; validează obligatoriu prin teste UI pentru headere, filtru, linkuri și acțiuni critice (attach/detach/batch).
+- 2026-03-05: Pentru quick-view în liste operaționale, grupează local datele deja încărcate (fără endpoint nou), ține expand/collapse per-row într-un state izolat și testează explicit că row-urile neatașate nu afișează controale de grupare.
