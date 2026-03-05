@@ -15,18 +15,26 @@ class RollingSchedulerTests(unittest.TestCase):
         self.assertEqual(start_date, date(2026, 2, 25))
         self.assertEqual((end_date - start_date).days, 6)
 
-    def test_account_eligibility_requires_mapping_and_history(self):
-        ok, reason = rolling_scheduler._is_account_eligible_for_daily_rolling({"attached_client_id": 10, "sync_start_date": "2024-01-09"})
+    def test_account_eligibility_requires_mapping_history_and_active_status(self):
+        ok, reason = rolling_scheduler._is_account_eligible_for_daily_rolling({"attached_client_id": 10, "sync_start_date": "2024-01-09", "status": "active"})
         self.assertTrue(ok)
         self.assertIsNone(reason)
 
-        ok, reason = rolling_scheduler._is_account_eligible_for_daily_rolling({"attached_client_id": None, "sync_start_date": "2024-01-09"})
+        ok, reason = rolling_scheduler._is_account_eligible_for_daily_rolling({"attached_client_id": None, "sync_start_date": "2024-01-09", "status": "active"})
         self.assertFalse(ok)
         self.assertEqual(reason, "unmapped")
 
-        ok, reason = rolling_scheduler._is_account_eligible_for_daily_rolling({"attached_client_id": 10, "sync_start_date": None})
+        ok, reason = rolling_scheduler._is_account_eligible_for_daily_rolling({"attached_client_id": 10, "sync_start_date": None, "status": "active"})
         self.assertFalse(ok)
         self.assertEqual(reason, "history_not_initialized")
+
+        ok, reason = rolling_scheduler._is_account_eligible_for_daily_rolling({"attached_client_id": 10, "sync_start_date": "2024-01-09", "status": "disabled"})
+        self.assertFalse(ok)
+        self.assertEqual(reason, "inactive")
+
+        ok, reason = rolling_scheduler._is_account_eligible_for_daily_rolling({"attached_client_id": 10, "sync_start_date": "2024-01-09", "account_status": "inactive"})
+        self.assertFalse(ok)
+        self.assertEqual(reason, "inactive")
 
     def test_enqueue_rolling_sync_runs_filters_and_creates_runs(self):
         yesterday = datetime.now(timezone.utc).date() - timedelta(days=1)
@@ -39,6 +47,7 @@ class RollingSchedulerTests(unittest.TestCase):
                 "timezone": "UTC",
                 "rolling_synced_through": str(yesterday - timedelta(days=2)),
                 "sync_start_date": "2024-01-09",
+                "status": "active",
             },
             {
                 "id": "1002",
@@ -47,6 +56,7 @@ class RollingSchedulerTests(unittest.TestCase):
                 "timezone": "UTC",
                 "rolling_synced_through": str(yesterday),
                 "sync_start_date": "2024-01-09",
+                "status": "active",
             },
             {
                 "id": "1003",
@@ -55,6 +65,7 @@ class RollingSchedulerTests(unittest.TestCase):
                 "timezone": "UTC",
                 "rolling_synced_through": None,
                 "sync_start_date": "2024-01-09",
+                "status": "active",
             },
             {
                 "id": "1004",
@@ -63,6 +74,25 @@ class RollingSchedulerTests(unittest.TestCase):
                 "timezone": "UTC",
                 "rolling_synced_through": None,
                 "sync_start_date": None,
+                "status": "active",
+            },
+            {
+                "id": "1005",
+                "display_name": "Disabled",
+                "attached_client_id": 16,
+                "timezone": "UTC",
+                "rolling_synced_through": None,
+                "sync_start_date": "2024-01-09",
+                "status": "disabled",
+            },
+            {
+                "id": "1006",
+                "display_name": "Inactive",
+                "attached_client_id": 17,
+                "timezone": "UTC",
+                "rolling_synced_through": None,
+                "sync_start_date": "2024-01-09",
+                "account_status": "inactive",
             },
         ]
 
@@ -95,7 +125,9 @@ class RollingSchedulerTests(unittest.TestCase):
         self.assertEqual(summary["skipped_up_to_date_count"], 1)
         self.assertEqual(summary["skipped_unmapped_count"], 1)
         self.assertEqual(summary["skipped_history_not_initialized_count"], 1)
+        self.assertEqual(summary["skipped_inactive_count"], 2)
         self.assertEqual(summary["enqueued_account_ids"], ["1001"])
+        self.assertEqual(summary["skipped_inactive_account_ids"], ["1005", "1006"])
         self.assertEqual(len(state["run_calls"]), 1)
         self.assertGreaterEqual(len(state["chunk_calls"]), 1)
         self.assertEqual(state["run_calls"][0]["job_type"], "rolling_refresh")

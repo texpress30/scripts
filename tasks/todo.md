@@ -1636,3 +1636,21 @@
   - `last_success_at` derivă acum cu `_coalesce_date_max(explicit, success_from_done, recovered_success)`.
 - Efect: pentru fully recovered, metadata se reconciliază la intervalul real acoperit (inclusiv capetele source run), iar pentru partial recovery fără valori recovered comportamentul rămâne conservator și neschimbat.
 - Acoperire teste: am adăugat două scenarii noi (full recovery cu explicit mai mic + partial recovery fără extindere) și am păstrat testul de contract endpoint `/clients/accounts/google` fără regressii.
+
+---
+
+# TODO — Task 20: rolling cron exclude conturi inactive/disabled
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și inspectez eligibilitatea curentă din rolling scheduler.
+- [x] Confirm regresia: cont mapat + sync_start_date setat devine eligibil fără verificare status cont.
+- [x] Aplic fix minim backend-only: exclud conturile inactive/disabled din `_is_account_eligible_for_daily_rolling(...)`.
+- [x] Introduc skip reason explicit `inactive` și extind summary-ul enqueue cu count + account ids.
+- [x] Adaug/actualizez teste backend pentru active/unmapped/history_not_initialized/disabled/inactive + summary.
+- [x] Rulez testele backend relevante pentru rolling scheduler și documentez review + lecție.
+
+## Review — Task 20: rolling cron exclude conturi inactive/disabled
+- Cauza: `_is_account_eligible_for_daily_rolling(...)` valida doar mapping + `sync_start_date`, deci conturile oprite operațional puteau reintra în enqueue-ul zilnic.
+- Fix minim: eligibilitatea verifică acum explicit statusul contului și exclude stările inactive (`disabled`, `inactive` și sinonime operaționale apropiate), plus fallback conservator pe `is_active=False`.
+- Read-model: `list_platform_accounts(...)` expune acum și `status` din `agency_platform_accounts`, astfel rolling scheduler poate aplica regula fără query-uri suplimentare.
+- Summary rolling: am adăugat câmpurile additive `skipped_inactive_count` și `skipped_inactive_account_ids`.
+- Teste: acoperire pentru active/unmapped/no-history/disabled/inactive și verificare explicită a noului skip reason în summary.

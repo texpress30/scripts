@@ -38,6 +38,20 @@ def _build_chunks(*, start_date: date, end_date: date, chunk_days: int) -> list[
 
 
 
+def _is_account_inactive_for_rolling(item: dict[str, object]) -> bool:
+    status_values = [item.get("status"), item.get("account_status")]
+    for value in status_values:
+        normalized = str(value or "").strip().lower()
+        if normalized in {"inactive", "disabled", "paused", "archived", "off"}:
+            return True
+
+    is_active = item.get("is_active")
+    if isinstance(is_active, bool) and not is_active:
+        return True
+
+    return False
+
+
 def _resolve_rolling_window_dates(*, timezone_name: str) -> tuple[date, date]:
     local_now = datetime.now(ZoneInfo(timezone_name))
     end_date = local_now.date() - timedelta(days=1)
@@ -53,6 +67,9 @@ def _is_account_eligible_for_daily_rolling(item: dict[str, object]) -> tuple[boo
     sync_start_date = _safe_date(item.get("sync_start_date"))
     if sync_start_date is None:
         return False, "history_not_initialized"
+
+    if _is_account_inactive_for_rolling(item):
+        return False, "inactive"
 
     return True, None
 
@@ -76,6 +93,7 @@ def enqueue_rolling_sync_runs(
     skipped_up_to_date: list[str] = []
     skipped_unmapped: list[str] = []
     skipped_history_not_initialized: list[str] = []
+    skipped_inactive: list[str] = []
     skipped_invalid_timezone: list[str] = []
     created_runs: list[dict[str, object]] = []
 
@@ -90,6 +108,8 @@ def enqueue_rolling_sync_runs(
                 skipped_unmapped.append(account_id)
             elif reason == "history_not_initialized":
                 skipped_history_not_initialized.append(account_id)
+            elif reason == "inactive":
+                skipped_inactive.append(account_id)
             continue
 
         client_id_value = item.get("attached_client_id")
@@ -169,11 +189,13 @@ def enqueue_rolling_sync_runs(
         "skipped_unmapped_count": len(skipped_unmapped),
         "skipped_up_to_date_count": len(skipped_up_to_date),
         "skipped_history_not_initialized_count": len(skipped_history_not_initialized),
+        "skipped_inactive_count": len(skipped_inactive),
         "skipped_invalid_timezone_count": len(skipped_invalid_timezone),
         "enqueued_account_ids": enqueued_account_ids,
         "skipped_unmapped_account_ids": skipped_unmapped,
         "skipped_up_to_date_account_ids": skipped_up_to_date,
         "skipped_history_not_initialized_account_ids": skipped_history_not_initialized,
+        "skipped_inactive_account_ids": skipped_inactive,
         "skipped_invalid_timezone_account_ids": skipped_invalid_timezone,
         "runs": created_runs,
     }

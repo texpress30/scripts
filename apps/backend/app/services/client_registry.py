@@ -48,7 +48,7 @@ def _safe_row_value(row: tuple[object, ...], index: int) -> object | None:
     return row[index]
 
 
-def _normalize_account_sync_metadata_payload(*, platform: str, account_id: str, display_name: str, attached_client_id: int | None, attached_client_name: str | None, timezone_value: str | None, currency_value: str | None, sync_start_date: object | None, backfill_completed_through: object | None, rolling_synced_through: object | None, last_success_at: object | None, last_error: object | None, last_run_status: object | None, last_run_type: object | None, last_run_started_at: object | None, last_run_finished_at: object | None, has_active_sync: bool) -> dict[str, str | int | None | bool]:
+def _normalize_account_sync_metadata_payload(*, platform: str, account_id: str, display_name: str, attached_client_id: int | None, attached_client_name: str | None, timezone_value: str | None, currency_value: str | None, account_status: object | None, sync_start_date: object | None, backfill_completed_through: object | None, rolling_synced_through: object | None, last_success_at: object | None, last_error: object | None, last_run_status: object | None, last_run_type: object | None, last_run_started_at: object | None, last_run_finished_at: object | None, has_active_sync: bool) -> dict[str, str | int | None | bool]:
     return {
         "id": str(account_id),
         "name": str(display_name),
@@ -59,6 +59,7 @@ def _normalize_account_sync_metadata_payload(*, platform: str, account_id: str, 
         "attached_client_name": str(attached_client_name) if attached_client_name is not None else None,
         "timezone": str(timezone_value) if timezone_value is not None else None,
         "currency": str(currency_value) if currency_value is not None else None,
+        "status": str(account_status) if account_status is not None else None,
         "sync_start_date": str(sync_start_date) if sync_start_date is not None else None,
         "backfill_completed_through": str(backfill_completed_through) if backfill_completed_through is not None else None,
         "rolling_synced_through": str(rolling_synced_through) if rolling_synced_through is not None else None,
@@ -685,6 +686,7 @@ class ClientRegistryService:
                             attached_client_name=mapped_client.name if mapped_client else None,
                             timezone_value=None,
                             currency_value=None,
+                            account_status=None,
                             sync_start_date=None,
                             backfill_completed_through=None,
                             rolling_synced_through=None,
@@ -717,6 +719,7 @@ class ClientRegistryService:
                         c.name,
                         a.account_timezone,
                         a.currency_code,
+                        a.status,
                         a.sync_start_date,
                         a.backfill_completed_through,
                         a.rolling_synced_through,
@@ -849,21 +852,22 @@ class ClientRegistryService:
         for row in rows:
             account_id = str(row[0])
             display_name = str(row[1]) if row[1] is not None else account_id
-            recovered_sync_start_date = _safe_row_value(row, 21)
-            recovered_backfill_completed_through = _safe_row_value(row, 22)
-            recovered_last_success_at = _safe_row_value(row, 23)
+            recovered_sync_start_date = _safe_row_value(row, 22)
+            recovered_backfill_completed_through = _safe_row_value(row, 23)
+            recovered_last_success_at = _safe_row_value(row, 24)
 
-            explicit_sync_start_date = _safe_row_value(row, 6)
-            explicit_backfill_completed_through = _safe_row_value(row, 7)
-            explicit_rolling_synced_through = _safe_row_value(row, 8)
-            explicit_last_success_at = _safe_row_value(row, 9)
-            explicit_last_error = _safe_row_value(row, 10)
-            latest_status = _safe_row_value(row, 11)
-            latest_error = _safe_row_value(row, 15)
-            hist_min_start = _safe_row_value(row, 17)
-            hist_max_end = _safe_row_value(row, 18)
-            roll_max_end = _safe_row_value(row, 19)
-            last_success_from_done = _safe_row_value(row, 20)
+            account_status = _safe_row_value(row, 6)
+            explicit_sync_start_date = _safe_row_value(row, 7)
+            explicit_backfill_completed_through = _safe_row_value(row, 8)
+            explicit_rolling_synced_through = _safe_row_value(row, 9)
+            explicit_last_success_at = _safe_row_value(row, 10)
+            explicit_last_error = _safe_row_value(row, 11)
+            latest_status = _safe_row_value(row, 12)
+            latest_error = _safe_row_value(row, 16)
+            hist_min_start = _safe_row_value(row, 18)
+            hist_max_end = _safe_row_value(row, 19)
+            roll_max_end = _safe_row_value(row, 20)
+            last_success_from_done = _safe_row_value(row, 21)
 
             sync_start_date = _coalesce_date_min(explicit_sync_start_date, hist_min_start, recovered_sync_start_date)
             backfill_completed_through = _coalesce_date_max(explicit_backfill_completed_through, hist_max_end, recovered_backfill_completed_through)
@@ -887,16 +891,17 @@ class ClientRegistryService:
                     attached_client_name=str(row[3]) if row[3] is not None else None,
                     timezone_value=str(row[4]) if row[4] is not None else None,
                     currency_value=str(row[5]) if row[5] is not None else None,
+                    account_status=account_status,
                     sync_start_date=sync_start_date,
                     backfill_completed_through=backfill_completed_through,
                     rolling_synced_through=rolling_synced_through,
                     last_success_at=last_success_at,
                     last_error=last_error,
-                    last_run_status=_safe_row_value(row, 11),
-                    last_run_type=_safe_row_value(row, 12),
-                    last_run_started_at=_safe_row_value(row, 13),
-                    last_run_finished_at=_safe_row_value(row, 14),
-                    has_active_sync=bool(_safe_row_value(row, 16)),
+                    last_run_status=_safe_row_value(row, 12),
+                    last_run_type=_safe_row_value(row, 13),
+                    last_run_started_at=_safe_row_value(row, 14),
+                    last_run_finished_at=_safe_row_value(row, 15),
+                    has_active_sync=bool(_safe_row_value(row, 17)),
                 )
             )
         return result
