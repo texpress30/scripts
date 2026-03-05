@@ -115,6 +115,52 @@ export async function listAccountSyncRuns(platform: string, accountId: string, l
   return payload.runs ?? [];
 }
 
+
+export type AccountSyncProgressActiveRun = {
+  job_id: string;
+  job_type?: string | null;
+  status?: string | null;
+  date_start?: string | null;
+  date_end?: string | null;
+  chunks_done?: number | null;
+  chunks_total?: number | null;
+  errors_count?: number | null;
+  error_chunks?: number | null;
+};
+
+export type AccountSyncProgressBatchResult = {
+  account_id: string;
+  active_run: AccountSyncProgressActiveRun | null;
+};
+
+type AccountSyncProgressBatchResponse = {
+  platform: string;
+  requested_count: number;
+  results: AccountSyncProgressBatchResult[];
+};
+
+export async function postAccountSyncProgressBatch(
+  platform: string,
+  accountIds: string[],
+  limitActiveOnly = true,
+): Promise<AccountSyncProgressBatchResponse> {
+  const normalizedPlatform = encodeURIComponent(String(platform).trim());
+  const normalizedAccountIds: string[] = [];
+  for (const raw of accountIds) {
+    const candidate = String(raw).trim();
+    if (!candidate) continue;
+    if (!normalizedAccountIds.includes(candidate)) normalizedAccountIds.push(candidate);
+  }
+
+  return apiRequest<AccountSyncProgressBatchResponse>(`/agency/sync-runs/accounts/${normalizedPlatform}/progress`, {
+    method: "POST",
+    body: JSON.stringify({
+      account_ids: normalizedAccountIds,
+      limit_active_only: Boolean(limitActiveOnly),
+    }),
+  });
+}
+
 export async function repairSyncRun(jobId: string): Promise<RepairSyncRunResult> {
   const token = getAuthToken();
   const headers = new Headers();

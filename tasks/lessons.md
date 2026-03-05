@@ -181,3 +181,4 @@
 - 2026-03-05: Pentru progress per-row în liste operaționale, evită polling global pe toate conturile; derivează întâi setul minim de row-uri active și interoghează doar acele conturi, cu cleanup imediat când setul devine gol.
 - 2026-03-05: Pentru watermark-ul rolling în liste, nu folosi doar `rolling_synced_through`; dacă există run activ `rolling_refresh` (`queued/running/pending`), afișează explicit ținta/fereastra curentă din run înainte de fallback-ul istoric.
 - 2026-03-05: Pentru polling operațional pe multe conturi active, expune endpoint batch backend cu agregare SQL set-based (CTE/joins) și validare de limită, evitând pattern-ul N request-uri × N query-uri.
+- 2026-03-05: Pentru pagini cu multe run-uri active, mută polling-ul frontend pe endpoint batch și aplică split pe limita server-side (ex. 200 IDs) pentru a evita burst N requests per interval.

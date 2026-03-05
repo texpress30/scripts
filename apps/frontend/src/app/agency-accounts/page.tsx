@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
-import { apiRequest, listAccountSyncRuns } from "@/lib/api";
+import { apiRequest, postAccountSyncProgressBatch, type AccountSyncProgressBatchResult } from "@/lib/api";
 
 type ClientRecord = {
   id: number;
@@ -92,6 +92,7 @@ type RowChunkProgress = {
 
 
 const DEFAULT_HISTORICAL_START = "2024-01-09";
+const _PROGRESS_BATCH_ACCOUNT_IDS_MAX = 200;
 
 function prettyPlatform(platform: string): string {
   const map: Record<string, string> = {
@@ -222,7 +223,7 @@ export default function AgencyAccountsPage() {
     return googleAccounts
       .filter((account) => {
         const rowStatus = String(batchRunsByAccount[account.id] ?? "").toLowerCase();
-        if (rowStatus === "queued" || rowStatus === "running") return true;
+        if (rowStatus === "queued" || rowStatus === "running" || rowStatus === "pending") return true;
         return !rowStatus && Boolean(account.has_active_sync);
       })
       .map((account) => account.id);
@@ -262,7 +263,7 @@ export default function AgencyAccountsPage() {
     chunkProgress?: RowChunkProgress | null,
   ): JSX.Element {
     const normalizedRowStatus = String(rowStatus ?? "").toLowerCase();
-    const isBatchActiveRow = normalizedRowStatus === "queued" || normalizedRowStatus === "running";
+    const isBatchActiveRow = normalizedRowStatus === "queued" || normalizedRowStatus === "running" || normalizedRowStatus === "pending";
     const hasStandaloneActiveSync = !rowStatus && Boolean(account.has_active_sync);
     const isActiveSyncRow = isBatchActiveRow || hasStandaloneActiveSync;
 
@@ -278,12 +279,12 @@ export default function AgencyAccountsPage() {
           {isActiveSyncRow ? (
             <div
               className={`h-full bg-indigo-500 ${normalizedStatusText === "running" ? "animate-pulse" : ""}`}
-              style={{ width: `${Math.max(6, Math.min(100, chunkProgress?.percent ?? fallbackPercent))}%` }}
+              style={{ width: `${Math.max(6, Math.min(100, chunkProgress && chunkProgress.chunksTotal > 0 ? chunkProgress.percent : fallbackPercent))}%` }}
               data-testid={`sync-progress-fill-${account.id}`}
             />
           ) : null}
         </div>
-        {chunkProgress ? (
+        {chunkProgress && chunkProgress.chunksTotal > 0 ? (
           <p className="mt-1 text-xs text-slate-600" data-testid={`sync-progress-chunks-${account.id}`}>
             {chunkProgress.chunksDone}/{chunkProgress.chunksTotal} chunks ({chunkProgress.percent}%)
           </p>
@@ -533,39 +534,40 @@ export default function AgencyAccountsPage() {
 
     async function refreshActiveRunsProgress() {
       try {
-        const entries = await Promise.all(
-          activeSyncAccountIds.map(async (accountId) => {
-            const runs = await listAccountSyncRuns("google_ads", accountId, 25);
-            const activeRun = runs.find((run) => {
-              const normalized = String(run.status ?? "").toLowerCase();
-              return normalized === "queued" || normalized === "running";
-            });
-            if (!activeRun) return [accountId, null] as const;
+        const chunks: string[][] = [];
+        for (let index = 0; index < activeSyncAccountIds.length; index += _PROGRESS_BATCH_ACCOUNT_IDS_MAX) {
+          chunks.push(activeSyncAccountIds.slice(index, index + _PROGRESS_BATCH_ACCOUNT_IDS_MAX));
+        }
 
-            const done = Math.max(0, Number(activeRun.chunks_done ?? 0));
-            const total = Math.max(0, Number(activeRun.chunks_total ?? 0));
-            if (total <= 0) return [accountId, null] as const;
-
-            return [
-              accountId,
-              {
-                chunksDone: done,
-                chunksTotal: total,
-                percent: Math.max(0, Math.min(100, Math.round((done / total) * 100))),
-                jobType: activeRun.job_type ?? null,
-                status: activeRun.status ?? null,
-                dateStart: activeRun.date_start ?? null,
-                dateEnd: activeRun.date_end ?? null,
-              } satisfies RowChunkProgress,
-            ] as const;
-          }),
+        const batchResponses = await Promise.all(
+          chunks.map((accountIdsChunk) => postAccountSyncProgressBatch("google_ads", accountIdsChunk, true)),
         );
 
         if (cancelled) return;
-        const next: Record<string, RowChunkProgress> = {};
-        for (const [accountId, progress] of entries) {
-          if (progress) next[accountId] = progress;
+
+        const mergedResults: AccountSyncProgressBatchResult[] = [];
+        for (const response of batchResponses) {
+          mergedResults.push(...(response.results ?? []));
         }
+
+        const next: Record<string, RowChunkProgress> = {};
+        for (const item of mergedResults) {
+          const accountId = String(item.account_id || "");
+          if (!accountId || !item.active_run) continue;
+
+          const done = Math.max(0, Number(item.active_run.chunks_done ?? 0));
+          const total = Math.max(0, Number(item.active_run.chunks_total ?? 0));
+          next[accountId] = {
+            chunksDone: done,
+            chunksTotal: total,
+            percent: total > 0 ? Math.max(0, Math.min(100, Math.round((done / total) * 100))) : 0,
+            jobType: item.active_run.job_type ?? null,
+            status: item.active_run.status ?? null,
+            dateStart: item.active_run.date_start ?? null,
+            dateEnd: item.active_run.date_end ?? null,
+          } satisfies RowChunkProgress;
+        }
+
         setRowChunkProgressByAccount(next);
       } catch {
         if (cancelled) return;

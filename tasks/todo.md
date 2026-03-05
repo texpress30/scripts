@@ -1828,3 +1828,19 @@
 - Endpoint-ul returnează `platform`, `requested_count` și `results[]` (entry per account_id, `active_run` dict sau `null`).
 - Store-ul folosește o singură interogare SQL cu CTE-uri (`requested`, `active_runs`, `chunk_summary`) pentru a selecta cel mai recent run activ per cont și agregatele de chunks (`chunks_done`, `chunks_total`, `errors_count`) fără query N-per-account.
 - Am păstrat strict scope backend-only, fără schimbări UI sau logică de sync/repair/retry/sweeper/rolling.
+
+---
+
+# TODO — Task 31: Agency Accounts polling migrat pe endpoint batch progress
+
+- [x] Verific workspace (fetch/pull) și documentez limitarea de remote/upstream când lipsește.
+- [x] Adaug helper frontend nou pentru endpoint-ul batch `POST /agency/sync-runs/accounts/{platform}/progress`.
+- [x] Migrez polling-ul din Agency Accounts de la N request-uri per account la 1 request/batch per interval (+ split la 200 IDs).
+- [x] Păstrez semantica UI existentă: fill doar pe run activ, fallback indicator când chunks_total lipsește, rolling watermark funcțional.
+- [x] Adaug teste Vitest pentru request batch, no-active => fără request, și split >200 active IDs.
+- [x] Rulez `pnpm --dir apps/frontend test` și `pnpm --dir apps/frontend build`.
+
+## Review — Task 31: batch polling Agency Accounts
+- Migrarea a înlocuit `Promise.all(listAccountSyncRuns(...))` per cont activ cu apel batch `postAccountSyncProgressBatch(...)`, reducând request-urile per interval de la N la 1 (sau câteva batch-uri când active IDs > 200).
+- Split-ul de limită este implementat local în frontend pe chunk-uri de max 200 IDs, agregând rezultatele într-un singur map `rowChunkProgressByAccount`.
+- Semantica vizuală rămâne neschimbată: bara umplută doar pentru conturi active, fallback text când progress chunks nu are total, iar rolling watermark continuă să deriveze din metadata run-ului activ.

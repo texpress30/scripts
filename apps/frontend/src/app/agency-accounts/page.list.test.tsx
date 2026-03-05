@@ -6,12 +6,12 @@ import AgencyAccountsPage from "./page";
 
 const apiMock = vi.hoisted(() => ({
   apiRequest: vi.fn(),
-  listAccountSyncRuns: vi.fn(),
+  postAccountSyncProgressBatch: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({
   apiRequest: apiMock.apiRequest,
-  listAccountSyncRuns: apiMock.listAccountSyncRuns,
+  postAccountSyncProgressBatch: apiMock.postAccountSyncProgressBatch,
 }));
 vi.mock("@/components/ProtectedPage", () => ({ ProtectedPage: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
 vi.mock("@/components/AppShell", () => ({ AppShell: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
@@ -71,14 +71,14 @@ function mockBasePayloads() {
     }
     return Promise.resolve({});
   });
-  apiMock.listAccountSyncRuns.mockResolvedValue([]);
+  apiMock.postAccountSyncProgressBatch.mockResolvedValue({ platform: "google_ads", requested_count: 0, results: [] });
 }
 
 describe("AgencyAccountsPage list redesign + same-client quick view", () => {
   beforeEach(() => {
     vi.useRealTimers();
     apiMock.apiRequest.mockReset();
-    apiMock.listAccountSyncRuns.mockReset();
+    apiMock.postAccountSyncProgressBatch.mockReset();
     mockBasePayloads();
   });
 
@@ -133,21 +133,28 @@ describe("AgencyAccountsPage list redesign + same-client quick view", () => {
 
 
   it("shows rolling in-progress window for active rolling_refresh and not 'neinițiat'", async () => {
-    apiMock.listAccountSyncRuns.mockImplementation((platform: string, accountId: string) => {
-      if (platform === "google_ads" && accountId === "1001") {
-        return Promise.resolve([
-          {
-            job_id: "rolling-1",
-            status: "running",
-            job_type: "rolling_refresh",
-            chunks_done: 4,
-            chunks_total: 10,
-            date_start: "2026-01-10",
-            date_end: "2026-01-14",
-          },
-        ]);
+    apiMock.postAccountSyncProgressBatch.mockImplementation((platform: string, accountIds: string[]) => {
+      if (platform === "google_ads" && accountIds.includes("1001")) {
+        return Promise.resolve({
+          platform: "google_ads",
+          requested_count: accountIds.length,
+          results: [
+            {
+              account_id: "1001",
+              active_run: {
+                job_id: "rolling-1",
+                status: "running",
+                job_type: "rolling_refresh",
+                chunks_done: 4,
+                chunks_total: 10,
+                date_start: "2026-01-10",
+                date_end: "2026-01-14",
+              },
+            },
+          ],
+        });
       }
-      return Promise.resolve([]);
+      return Promise.resolve({ platform: "google_ads", requested_count: accountIds.length, results: [] });
     });
 
     render(<AgencyAccountsPage />);
@@ -230,14 +237,13 @@ describe("AgencyAccountsPage list redesign + same-client quick view", () => {
       return Promise.resolve({});
     });
 
-    apiMock.listAccountSyncRuns.mockImplementation((platform: string, accountId: string) => {
-      if (platform === "google_ads" && accountId === "1001") {
-        return Promise.resolve([{ job_id: "run-1", status: "running", chunks_done: 12, chunks_total: 113 }]);
-      }
-      if (platform === "google_ads" && accountId === "1002") {
-        return Promise.resolve([{ job_id: "run-2", status: "queued", chunks_done: 3, chunks_total: 20 }]);
-      }
-      return Promise.resolve([]);
+    apiMock.postAccountSyncProgressBatch.mockResolvedValue({
+      platform: "google_ads",
+      requested_count: 2,
+      results: [
+        { account_id: "1001", active_run: { job_id: "run-1", status: "running", chunks_done: 12, chunks_total: 113 } },
+        { account_id: "1002", active_run: { job_id: "run-2", status: "queued", chunks_done: 3, chunks_total: 20 } },
+      ],
     });
 
     render(<AgencyAccountsPage />);
@@ -252,6 +258,8 @@ describe("AgencyAccountsPage list redesign + same-client quick view", () => {
       expect(screen.getByTestId("sync-progress-chunks-1001")).toHaveTextContent("12/113 chunks (11%)");
       expect(screen.getByTestId("sync-progress-chunks-1002")).toHaveTextContent("3/20 chunks (15%)");
     });
+    expect(apiMock.postAccountSyncProgressBatch).toHaveBeenCalledTimes(1);
+    expect(apiMock.postAccountSyncProgressBatch).toHaveBeenCalledWith("google_ads", ["1001", "1002"], true);
   });
 
   it("starts chunk polling only for active accounts and stops after no active rows", async () => {
@@ -300,11 +308,10 @@ describe("AgencyAccountsPage list redesign + same-client quick view", () => {
       return Promise.resolve({});
     });
 
-    apiMock.listAccountSyncRuns.mockImplementation((platform: string, accountId: string) => {
-      if (platform === "google_ads" && accountId === "1001") {
-        return Promise.resolve([{ job_id: "run-1", status: "running", chunks_done: 1, chunks_total: 10 }]);
-      }
-      return Promise.resolve([]);
+    apiMock.postAccountSyncProgressBatch.mockResolvedValue({
+      platform: "google_ads",
+      requested_count: 1,
+      results: [{ account_id: "1001", active_run: { job_id: "run-1", status: "running", chunks_done: 1, chunks_total: 10 } }],
     });
 
     const intervalRegistry: Array<{ id: number; ms: number; cb: () => void }> = [];
@@ -323,9 +330,9 @@ describe("AgencyAccountsPage list redesign + same-client quick view", () => {
     fireEvent.click(screen.getByRole("button", { name: /Download historical/i }));
 
     await waitFor(() => {
-      expect(apiMock.listAccountSyncRuns).toHaveBeenCalledWith("google_ads", "1001", 25);
+      expect(apiMock.postAccountSyncProgressBatch).toHaveBeenCalledWith("google_ads", ["1001"], true);
     });
-    expect(apiMock.listAccountSyncRuns).not.toHaveBeenCalledWith("google_ads", "1002", 25);
+    expect(apiMock.postAccountSyncProgressBatch).not.toHaveBeenCalledWith("google_ads", ["1002"], true);
 
     const batchInterval = intervalRegistry.find((entry) => entry.ms === 2000);
     expect(batchInterval).toBeDefined();
@@ -339,6 +346,51 @@ describe("AgencyAccountsPage list redesign + same-client quick view", () => {
 
     setIntervalSpy.mockRestore();
     clearIntervalSpy.mockRestore();
+  });
+
+  it("splits active account ids in batches of 200 for progress polling", async () => {
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients") {
+        return Promise.resolve({ items: [{ id: 11, name: "Client A", owner_email: "a@x.com", display_id: 1 }] });
+      }
+      if (path === "/clients/accounts/summary") {
+        return Promise.resolve({ items: [{ platform: "google_ads", connected_count: 205, last_import_at: null }] });
+      }
+      if (path === "/clients/accounts/google") {
+        return Promise.resolve({
+          count: 205,
+          items: Array.from({ length: 205 }).map((_, index) => ({
+            id: `acc-${index + 1}`,
+            name: `Account ${index + 1}`,
+            attached_client_id: 11,
+            attached_client_name: "Client A",
+            has_active_sync: true,
+            last_run_status: "running",
+          })),
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    apiMock.postAccountSyncProgressBatch.mockImplementation((_platform: string, accountIds: string[]) =>
+      Promise.resolve({
+        platform: "google_ads",
+        requested_count: accountIds.length,
+        results: accountIds.map((accountId) => ({
+          account_id: accountId,
+          active_run: { job_id: `job-${accountId}`, status: "running", chunks_done: 1, chunks_total: 10 },
+        })),
+      }),
+    );
+
+    render(<AgencyAccountsPage />);
+    await screen.findByText("Account 1");
+
+    await waitFor(() => {
+      expect(apiMock.postAccountSyncProgressBatch).toHaveBeenCalledTimes(2);
+    });
+    expect(apiMock.postAccountSyncProgressBatch.mock.calls[0][1]).toHaveLength(200);
+    expect(apiMock.postAccountSyncProgressBatch.mock.calls[1][1]).toHaveLength(5);
   });
 
   it("keeps client filter behavior with quick-view layout", async () => {
