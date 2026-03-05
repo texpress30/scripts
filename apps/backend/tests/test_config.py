@@ -36,6 +36,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.google_ads_redirect_uri, "")
         self.assertEqual(settings.google_ads_refresh_token, "")
         self.assertEqual(settings.google_ads_customer_ids_csv, "")
+        self.assertEqual(settings.integration_secret_encryption_key, "")
         self.assertEqual(settings.google_ads_api_version, "v23")
         self.assertEqual(settings.meta_access_token, "")
         self.assertEqual(settings.bigquery_project_id, "")
@@ -48,6 +49,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.pinterest_sync_backoff_ms, 75)
         self.assertEqual(settings.snapchat_sync_retry_attempts, 2)
         self.assertEqual(settings.snapchat_sync_backoff_ms, 75)
+        self.assertEqual(settings.sync_run_repair_stale_minutes, 30)
 
 
     def test_tiktok_pinterest_and_snapchat_feature_flags_can_be_enabled_from_env(self):
@@ -133,6 +135,21 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(fallback.google_ads_ui_rolling_chunk_days, 7)
         self.assertEqual(fallback.google_ads_historical_backfill_start_date, date(2024, 1, 9))
 
+    def test_sync_run_repair_stale_minutes_defaults_and_overrides(self):
+        os.environ.clear()
+        os.environ["APP_AUTH_SECRET"] = "test-auth-secret"
+
+        defaults = load_settings()
+        self.assertEqual(defaults.sync_run_repair_stale_minutes, 30)
+
+        os.environ["SYNC_RUN_REPAIR_STALE_MINUTES"] = "45"
+        overridden = load_settings()
+        self.assertEqual(overridden.sync_run_repair_stale_minutes, 45)
+
+        os.environ["SYNC_RUN_REPAIR_STALE_MINUTES"] = "0"
+        fallback = load_settings()
+        self.assertEqual(fallback.sync_run_repair_stale_minutes, 30)
+
     def test_settings_are_loaded_from_environment(self):
         os.environ["APP_ENV"] = "test"
         os.environ["APP_HOST"] = "127.0.0.1"
@@ -150,6 +167,7 @@ class ConfigTests(unittest.TestCase):
         os.environ["GOOGLE_ADS_REDIRECT_URI"] = "https://app.example.com/agency/integrations/google/callback"
         os.environ["GOOGLE_ADS_REFRESH_TOKEN"] = "refresh-token"
         os.environ["GOOGLE_ADS_CUSTOMER_IDS_CSV"] = "1111111111,2222222222"
+        os.environ["INTEGRATION_SECRET_ENCRYPTION_KEY"] = "enc-key"
         os.environ["GOOGLE_ADS_API_VERSION"] = "v23"
         os.environ["META_ACCESS_TOKEN"] = "test-meta-token"
         os.environ["BIGQUERY_PROJECT_ID"] = "test-project"
@@ -182,6 +200,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.google_ads_redirect_uri, "https://app.example.com/agency/integrations/google/callback")
         self.assertEqual(settings.google_ads_refresh_token, "refresh-token")
         self.assertEqual(settings.google_ads_customer_ids_csv, "1111111111,2222222222")
+        self.assertEqual(settings.integration_secret_encryption_key, "enc-key")
         self.assertEqual(settings.google_ads_api_version, "v23")
         self.assertEqual(settings.meta_access_token, "test-meta-token")
         self.assertEqual(settings.bigquery_project_id, "test-project")
