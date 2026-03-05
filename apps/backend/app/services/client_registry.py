@@ -865,10 +865,10 @@ class ClientRegistryService:
             roll_max_end = _safe_row_value(row, 19)
             last_success_from_done = _safe_row_value(row, 20)
 
-            sync_start_date = explicit_sync_start_date if explicit_sync_start_date is not None else _coalesce_date_min(hist_min_start, recovered_sync_start_date)
-            backfill_completed_through = explicit_backfill_completed_through if explicit_backfill_completed_through is not None else _coalesce_date_max(hist_max_end, recovered_backfill_completed_through)
+            sync_start_date = _coalesce_date_min(explicit_sync_start_date, hist_min_start, recovered_sync_start_date)
+            backfill_completed_through = _coalesce_date_max(explicit_backfill_completed_through, hist_max_end, recovered_backfill_completed_through)
             rolling_synced_through = explicit_rolling_synced_through if explicit_rolling_synced_through is not None else roll_max_end
-            last_success_at = explicit_last_success_at if explicit_last_success_at is not None else _coalesce_date_max(last_success_from_done, recovered_last_success_at)
+            last_success_at = _coalesce_date_max(explicit_last_success_at, last_success_from_done, recovered_last_success_at)
             last_error = _derive_effective_last_error(explicit_last_error=explicit_last_error, latest_run_error=latest_error, latest_run_status=latest_status)
             if recovered_sync_start_date is not None or recovered_backfill_completed_through is not None:
                 logger.info(

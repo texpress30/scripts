@@ -1616,3 +1616,23 @@
   - nu mai intră în `latestTerminalError` (bannerul “Ultimul run a eșuat” nu se mai afișează);
   - nu mai este eligibil pentru `retryableFailedRun` / CTA “Reia chunk-urile eșuate”.
 - Pentru recovery parțial/nerecuperat, bannerul și CTA-ul rămân active conform comportamentului anterior.
+
+---
+
+# TODO — Task 19: backend fix coverage complet după fully recovered by retry
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și inspectez derivarea metadata account pentru coverage.
+- [x] Identific cauza pentru `backfill_completed_through` rămas la intervalul retry chunk deși source run e fully recovered.
+- [x] Aplic fix minim în `client_registry.py` pentru coverage efectiv la fully recovered (`source date_start/date_end`).
+- [x] Mențin comportament conservator: fără extindere artificială pentru partial recovery.
+- [x] Adaug/actualizez teste backend pentru full vs partial recovery + contract `/clients/accounts/google`.
+- [x] Rulez testele backend relevante și documentez review + lecție.
+
+## Review — Task 19: backend fix coverage complet după fully recovered by retry
+- Cauza: derivarea metadata folosea câmpurile explicite (`sync_start_date`, `backfill_completed_through`, `last_success_at`) ca override hard. Când explicit era setat dintr-un retry chunk mai mic, valorile recovered (`recovered_hist.*`) nu mai puteau extinde intervalul la coverage-ul sursă.
+- Fix minim în `ClientRegistryService.list_platform_accounts(...)`:
+  - `sync_start_date` derivă acum cu `_coalesce_date_min(explicit, hist_min, recovered_min)`;
+  - `backfill_completed_through` derivă acum cu `_coalesce_date_max(explicit, hist_max, recovered_max)`;
+  - `last_success_at` derivă acum cu `_coalesce_date_max(explicit, success_from_done, recovered_success)`.
+- Efect: pentru fully recovered, metadata se reconciliază la intervalul real acoperit (inclusiv capetele source run), iar pentru partial recovery fără valori recovered comportamentul rămâne conservator și neschimbat.
+- Acoperire teste: am adăugat două scenarii noi (full recovery cu explicit mai mic + partial recovery fără extindere) și am păstrat testul de contract endpoint `/clients/accounts/google` fără regressii.
