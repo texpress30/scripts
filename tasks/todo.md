@@ -1577,3 +1577,19 @@
   - `last_success_at` poate proveni și din `finished_at` al retry-run-ului de recovery;
   - `last_error` este suprimat când latest run status este de succes, evitând ancorarea în eroare istorică deja recuperată.
 - Schimbarea este backend-only, fără mutații asupra statusului istoric al source run-ului și fără schimbări de contract breaking.
+
+---
+
+# TODO — Task 17: hotfix 500 /clients/accounts/google după recovered-by-retry
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și identific nealinierea dintre SELECT și row mapping în `list_platform_accounts`.
+- [x] Aplic hotfix minim în `client_registry.py` pentru alinierea coloanelor recovered și indexare robustă.
+- [x] Adaug fallback defensiv ca mapping-ul să nu crape dacă recovered fields lipsesc/au NULL.
+- [x] Adaug teste backend pentru list_platform_accounts (cu recovered și fără recovered columns) și pentru endpoint-ul `/clients/accounts/google`.
+- [x] Rulez testele backend relevante și documentez review + lecție.
+
+## Review — Task 17: hotfix 500 /clients/accounts/google
+- Cauza exactă: în `list_platform_accounts`, mapping-ul Python accesa `row[21..23]` pentru `recovered_*`, dar query-ul SQL nu selecta aceste 3 coloane (select-ul se oprea la `success.last_success_at`), rezultând `IndexError: tuple index out of range`.
+- Fix minim: am adăugat în `SELECT` coloanele `recovered_hist.min_start_date`, `recovered_hist.max_end_date`, `recovered_hist.last_success_at`, aliniind query-ul cu mapping-ul.
+- Fallback defensiv: am introdus helper local `_safe_row_value(row, index)` și am migrat mapping-ul să folosească acces safe pentru câmpurile recovered și pentru câmpurile folosite în fallback (`sync_start_date`, `backfill_completed_through`, `last_success_at`, `last_error`, `last_run_*`, `has_active_sync`). Dacă tuple-ul are mai puține coloane sau valori `NULL`, codul cade elegant pe fallback-ul existent.
+- Am păstrat fixul strict backend-only, fără schimbări de contract API și fără modificări pe repair/retry/worker/UI.

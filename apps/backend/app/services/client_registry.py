@@ -42,28 +42,10 @@ def _derive_effective_last_error(*, explicit_last_error: object | None, latest_r
     return latest_run_error
 
 
-def _normalize_account_sync_metadata_payload(*, platform: str, account_id: str, display_name: str, attached_client_id: int | None, attached_client_name: str | None, timezone_value: str | None, currency_value: str | None, sync_start_date: object | None, backfill_completed_through: object | None, rolling_synced_through: object | None, last_success_at: object | None, last_error: object | None, last_run_status: object | None, last_run_type: object | None, last_run_started_at: object | None, last_run_finished_at: object | None, has_active_sync: bool) -> dict[str, str | int | None | bool]:
-    return {
-        "id": str(account_id),
-        "name": str(display_name),
-        "platform": str(platform),
-        "account_id": str(account_id),
-        "display_name": str(display_name),
-        "attached_client_id": int(attached_client_id) if attached_client_id is not None else None,
-        "attached_client_name": str(attached_client_name) if attached_client_name is not None else None,
-        "timezone": str(timezone_value) if timezone_value is not None else None,
-        "currency": str(currency_value) if currency_value is not None else None,
-        "sync_start_date": str(sync_start_date) if sync_start_date is not None else None,
-        "backfill_completed_through": str(backfill_completed_through) if backfill_completed_through is not None else None,
-        "rolling_synced_through": str(rolling_synced_through) if rolling_synced_through is not None else None,
-        "last_success_at": str(last_success_at) if last_success_at is not None else None,
-        "last_error": str(last_error) if last_error is not None else None,
-        "last_run_status": str(last_run_status) if last_run_status is not None else None,
-        "last_run_type": str(last_run_type) if last_run_type is not None else None,
-        "last_run_started_at": str(last_run_started_at) if last_run_started_at is not None else None,
-        "last_run_finished_at": str(last_run_finished_at) if last_run_finished_at is not None else None,
-        "has_active_sync": bool(has_active_sync),
-    }
+def _safe_row_value(row: tuple[object, ...], index: int) -> object | None:
+    if index < 0 or index >= len(row):
+        return None
+    return row[index]
 
 
 def _normalize_account_sync_metadata_payload(*, platform: str, account_id: str, display_name: str, attached_client_id: int | None, attached_client_name: str | None, timezone_value: str | None, currency_value: str | None, sync_start_date: object | None, backfill_completed_through: object | None, rolling_synced_through: object | None, last_success_at: object | None, last_error: object | None, last_run_status: object | None, last_run_type: object | None, last_run_started_at: object | None, last_run_finished_at: object | None, has_active_sync: bool) -> dict[str, str | int | None | bool]:
@@ -749,7 +731,10 @@ class ClientRegistryService:
                         hist.min_start_date,
                         hist.max_end_date,
                         roll.max_end_date,
-                        success.last_success_at
+                        success.last_success_at,
+                        recovered_hist.min_start_date,
+                        recovered_hist.max_end_date,
+                        recovered_hist.last_success_at
                     FROM agency_platform_accounts a
                     LEFT JOIN LATERAL (
                       SELECT client_id
@@ -864,14 +849,27 @@ class ClientRegistryService:
         for row in rows:
             account_id = str(row[0])
             display_name = str(row[1]) if row[1] is not None else account_id
-            recovered_sync_start_date = row[21]
-            recovered_backfill_completed_through = row[22]
-            recovered_last_success_at = row[23]
-            sync_start_date = row[6] if row[6] is not None else _coalesce_date_min(row[17], recovered_sync_start_date)
-            backfill_completed_through = row[7] if row[7] is not None else _coalesce_date_max(row[18], recovered_backfill_completed_through)
-            rolling_synced_through = row[8] if row[8] is not None else row[19]
-            last_success_at = row[9] if row[9] is not None else _coalesce_date_max(row[20], recovered_last_success_at)
-            last_error = _derive_effective_last_error(explicit_last_error=row[10], latest_run_error=row[15], latest_run_status=row[11])
+            recovered_sync_start_date = _safe_row_value(row, 21)
+            recovered_backfill_completed_through = _safe_row_value(row, 22)
+            recovered_last_success_at = _safe_row_value(row, 23)
+
+            explicit_sync_start_date = _safe_row_value(row, 6)
+            explicit_backfill_completed_through = _safe_row_value(row, 7)
+            explicit_rolling_synced_through = _safe_row_value(row, 8)
+            explicit_last_success_at = _safe_row_value(row, 9)
+            explicit_last_error = _safe_row_value(row, 10)
+            latest_status = _safe_row_value(row, 11)
+            latest_error = _safe_row_value(row, 15)
+            hist_min_start = _safe_row_value(row, 17)
+            hist_max_end = _safe_row_value(row, 18)
+            roll_max_end = _safe_row_value(row, 19)
+            last_success_from_done = _safe_row_value(row, 20)
+
+            sync_start_date = explicit_sync_start_date if explicit_sync_start_date is not None else _coalesce_date_min(hist_min_start, recovered_sync_start_date)
+            backfill_completed_through = explicit_backfill_completed_through if explicit_backfill_completed_through is not None else _coalesce_date_max(hist_max_end, recovered_backfill_completed_through)
+            rolling_synced_through = explicit_rolling_synced_through if explicit_rolling_synced_through is not None else roll_max_end
+            last_success_at = explicit_last_success_at if explicit_last_success_at is not None else _coalesce_date_max(last_success_from_done, recovered_last_success_at)
+            last_error = _derive_effective_last_error(explicit_last_error=explicit_last_error, latest_run_error=latest_error, latest_run_status=latest_status)
             if recovered_sync_start_date is not None or recovered_backfill_completed_through is not None:
                 logger.info(
                     "client_registry.recovered_historical_backfill platform=%s account_id=%s sync_start_date=%s backfill_completed_through=%s",
@@ -894,11 +892,11 @@ class ClientRegistryService:
                     rolling_synced_through=rolling_synced_through,
                     last_success_at=last_success_at,
                     last_error=last_error,
-                    last_run_status=row[11],
-                    last_run_type=row[12],
-                    last_run_started_at=row[13],
-                    last_run_finished_at=row[14],
-                    has_active_sync=bool(row[16]),
+                    last_run_status=_safe_row_value(row, 11),
+                    last_run_type=_safe_row_value(row, 12),
+                    last_run_started_at=_safe_row_value(row, 13),
+                    last_run_finished_at=_safe_row_value(row, 14),
+                    has_active_sync=bool(_safe_row_value(row, 16)),
                 )
             )
         return result
