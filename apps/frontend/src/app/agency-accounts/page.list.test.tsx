@@ -121,6 +121,82 @@ describe("AgencyAccountsPage list redesign + same-client quick view", () => {
     });
   });
 
+
+  it("does not render filled progress for idle/done rows without active sync", async () => {
+    render(<AgencyAccountsPage />);
+    await screen.findByText("Account One");
+
+    expect(screen.queryByTestId("sync-progress-fill-1002")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("sync-progress-fill-1003")).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Status: done/i).length).toBeGreaterThan(0);
+  });
+
+  it("renders active progress indicator for queued/running rows from current batch", async () => {
+    let batchStatusCalls = 0;
+    apiMock.apiRequest.mockImplementation((path: string, options?: { method?: string }) => {
+      if (path === "/clients") {
+        return Promise.resolve({
+          items: [
+            { id: 11, name: "Client A", owner_email: "a@x.com", display_id: 1 },
+            { id: 12, name: "Client B", owner_email: "b@x.com", display_id: 2 },
+          ],
+        });
+      }
+      if (path === "/clients/accounts/summary") {
+        return Promise.resolve({ items: [{ platform: "google_ads", connected_count: 3, last_import_at: null }] });
+      }
+      if (path === "/clients/accounts/google") {
+        return Promise.resolve({
+          count: 3,
+          items: [
+            { id: "1001", name: "Account One", attached_client_id: 11, attached_client_name: "Client A", last_run_status: "idle" },
+            { id: "1002", name: "Account Two", attached_client_id: 11, attached_client_name: "Client A", last_run_status: "done" },
+            { id: "1003", name: "Account Three", attached_client_id: null, attached_client_name: null, last_run_status: "done" },
+          ],
+        });
+      }
+      if (path === "/agency/sync-runs/batch" && options?.method === "POST") {
+        return Promise.resolve({ batch_id: "batch-1", invalid_account_ids: [] });
+      }
+      if (path === "/agency/sync-runs/batch/batch-1") {
+        batchStatusCalls += 1;
+        if (batchStatusCalls === 1) {
+          return Promise.resolve({
+            batch_id: "batch-1",
+            progress: { total_runs: 2, queued: 1, running: 1, done: 0, error: 0, percent: 15 },
+            runs: [
+              { account_id: "1001", status: "running" },
+              { account_id: "1002", status: "queued" },
+            ],
+          });
+        }
+        return Promise.resolve({
+          batch_id: "batch-1",
+          progress: { total_runs: 2, queued: 0, running: 0, done: 2, error: 0, percent: 100 },
+          runs: [
+            { account_id: "1001", status: "done" },
+            { account_id: "1002", status: "done" },
+          ],
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountsPage />);
+    await screen.findByText("Account One");
+
+    fireEvent.click(screen.getByLabelText("Select all pe pagina curentă"));
+    fireEvent.click(screen.getByRole("button", { name: /Download historical/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("sync-progress-fill-1001")).toBeInTheDocument();
+      expect(screen.getByTestId("sync-progress-fill-1002")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Batch status: running")).toBeInTheDocument();
+    expect(screen.getByText("Batch status: queued")).toBeInTheDocument();
+  });
+
   it("keeps client filter behavior with quick-view layout", async () => {
     render(<AgencyAccountsPage />);
     await screen.findByText("Account One");

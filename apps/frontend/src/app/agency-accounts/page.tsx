@@ -216,16 +216,28 @@ export default function AgencyAccountsPage() {
   }
 
   function renderSyncProgress(account: GoogleAccount, rowStatus?: string | null): JSX.Element {
+    const normalizedRowStatus = String(rowStatus ?? "").toLowerCase();
+    const isBatchActiveRow = normalizedRowStatus === "queued" || normalizedRowStatus === "running";
+    const hasStandaloneActiveSync = !rowStatus && Boolean(account.has_active_sync);
+    const isActiveSyncRow = isBatchActiveRow || hasStandaloneActiveSync;
+
     const statusText = rowStatus || account.last_run_status || (account.has_active_sync ? "running" : "idle");
-    const normalized = String(statusText).toLowerCase();
-    const percent = account.has_active_sync ? 55 : normalized === "done" ? 100 : normalized === "error" ? 100 : account.last_success_at ? 100 : 15;
-    const color = normalized === "error" ? "bg-red-500" : normalized === "done" ? "bg-emerald-500" : "bg-indigo-500";
+    const normalizedStatusText = String(statusText).toLowerCase();
+
+    const activePercent = normalizedRowStatus === "queued" ? 14 : 52;
+    const activeColor = normalizedRowStatus === "queued" ? "bg-indigo-300" : "bg-indigo-500";
 
     return (
       <div className="w-full">
         <p className="text-xs font-medium text-slate-700">Status: {statusText}</p>
-        <div className="mt-1 h-2 w-full overflow-hidden rounded bg-slate-200">
-          <div className={`h-full ${color}`} style={{ width: `${Math.max(5, Math.min(100, percent))}%` }} />
+        <div className="mt-1 h-2 w-full overflow-hidden rounded bg-slate-200" data-testid={`sync-progress-track-${account.id}`}>
+          {isActiveSyncRow ? (
+            <div
+              className={`h-full ${activeColor} ${normalizedStatusText === "running" ? "animate-pulse" : ""}`}
+              style={{ width: `${Math.max(8, Math.min(80, activePercent))}%` }}
+              data-testid={`sync-progress-fill-${account.id}`}
+            />
+          ) : null}
         </div>
         {account.last_run_type ? <p className="mt-1 text-xs text-slate-500">Tip run: {account.last_run_type}</p> : null}
         {rowStatus ? <p className="mt-1 text-xs text-indigo-700">Batch status: {rowStatus}</p> : null}

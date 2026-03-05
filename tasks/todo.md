@@ -1759,3 +1759,20 @@
 - Root-cause: query-ul `INSERT INTO sync_runs ... RETURNING` era definit ca string simplu (nu f-string), astfel placeholder-ul `{_SYNC_RUNS_SELECT_COLUMNS}` ajungea literal în SQL și producea `psycopg.errors.SyntaxError` la `{`.
 - Fix: query-ul a fost convertit la f-string astfel încât `_SYNC_RUNS_SELECT_COLUMNS` este expandat înainte de execuție.
 - Regression guard: în testul de dedupe pentru path-ul `created=True` am adăugat aserție că niciun query executat nu conține literalul `{_SYNC_RUNS_SELECT_COLUMNS}`.
+
+---
+
+# TODO — Task 27: Agency Accounts row-level sync progress doar pentru run-uri active
+
+- [x] Actualizez workspace-ul și recitesc AGENTS + tasks/todo + tasks/lessons (remote indisponibil în mediu curent).
+- [x] Analizez logica `renderSyncProgress(...)` și identific cauza barelor afișate pe toate row-urile.
+- [x] Aplic fix frontend-only: fill doar pentru row-uri active relevante (`queued/running` în batch curent sau `has_active_sync` fără batch status).
+- [x] Elimin semantica de bară 100% pentru `done/error/last_success_at`; păstrez doar textul de status/metadata.
+- [x] Adaug teste frontend pentru idle/done fără activitate + queued/running active în batch.
+- [x] Rulez testele frontend relevante și build-ul frontend.
+
+## Review — Task 27: row-level sync progress activ-only
+- Cauza exactă: `renderSyncProgress(...)` calcula progres generic pentru orice row (`100%` pe `done/error/last_success_at`, `15%` implicit), deci aproape toate conturile primeau bare umplute chiar fără sync activ.
+- Regula nouă: fill-ul este randat doar dacă row-ul are sync activ relevant (`rowStatus` din batch curent în `queued/running`, sau fallback `has_active_sync` când nu există `rowStatus`).
+- Pentru row-uri inactive (idle/done/error fără activitate curentă), coloana afișează status/text și metadata, dar pista rămâne fără fill.
+- Pentru row-uri active: `queued` primește indicator de start discret, `running` primește indicator intermediar animat; după ce row-ul nu mai e activ, fill-ul dispare.
