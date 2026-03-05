@@ -148,7 +148,7 @@ cd apps/frontend && npm run build
 - Eligibilitate minimă rolling cron: cont mapat la client + `sync_start_date` inițiat (altfel este omis explicit ca `history_not_initialized`).
 
 ## Railway: repair sweeper (historical + rolling stale runs)
-- **One-shot manual sweep (historical):** `cd apps/backend && PYTHONPATH=. python -m app.workers.historical_repair_sweeper`
+- **One-shot manual sweep (historical + rolling):** `cd apps/backend && PYTHONPATH=. python -m app.workers.historical_repair_sweeper`
 - **Periodic sweeper loop (historical + rolling, service separat):** `cd apps/backend && PYTHONPATH=. python -m app.workers.historical_repair_sweeper_loop`
 - Env vars suportate:
   - `HISTORICAL_REPAIR_SWEEPER_ENABLED` (`true/false`, default `true` pentru loop runner)

@@ -1861,3 +1861,19 @@
 - Filtrarea rapidă rulează client-side peste lista deja încărcată și suportă: `Active` (queued/running/pending + fallback `has_active_sync`), `Erori` (error/failed), `Neinițializate` (`sync_start_date` gol).
 - Toggle-ul `Active first` aplică sort stabil pe 3 grupe (active > errors > rest) fără schimbări backend.
 - Selectarea pe pagină rămâne coerentă deoarece sursa pentru selectable IDs este `pagedGoogleAccounts` (deja filtrată/sortată).
+
+---
+
+# TODO — One-shot historical repair sweeper includes rolling runs
+
+- [x] Update one-shot sweeper to process stale historical and rolling runs in same invocation.
+- [x] Return aggregate totals across both job types in one-shot summary payload.
+- [x] Add dedicated unit test for one-shot sweeper aggregated behavior and shared parameters.
+- [x] Update README wording for one-shot command scope and keep env var contract documented.
+- [x] Run targeted checks and document review.
+
+## Review — One-shot historical repair sweeper includes rolling runs
+- `historical_repair_sweeper.sweep_stale_historical_runs` now executes both historical and rolling stale sweeps in one call, with shared `stale_after_minutes` and `limit`.
+- Returned payload remains explicit per type (`historical`, `rolling`) and now includes aggregate totals (`total_processed_count`, `total_repaired_count`, `total_error_count`) for cron observability.
+- Added a backend unit test to validate dual-call behavior, shared parameters, and aggregate totals.
+- README now clarifies that one-shot sweep covers both historical and rolling stale runs.
