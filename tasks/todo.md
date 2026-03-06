@@ -1968,3 +1968,19 @@
 - Added migration `0017_partition_daily_entity_facts.sql` that performs `rename -> create partitioned parent -> add constraints/indexes -> create partitions/default -> copy data -> drop old` for all three fact tables.
 - Partition generation uses monthly loop for `[2024-01-01, 2027-01-01)` and creates fail-safe DEFAULT partition per table.
 - Added dedicated DB migration test asserting parent tables are partitioned (`relkind='p'`), key partitions exist (`*_2024_01` + `*_default`), and duplicate business key insert is rejected.
+
+---
+
+# TODO — Backend store upserts for platform entity state tables
+
+- [x] Run workspace update commands (`git status --short`, `git fetch --all --prune`, `git pull --ff-only` when possible).
+- [x] Confirm exact entity-state schema from migration `0015_platform_entities_and_watermarks.sql` and reuse column names as-is.
+- [x] Add backend store module with 3 upsert helpers for `platform_campaigns`, `platform_ad_groups`, `platform_ads`.
+- [x] Ensure ON CONFLICT updates non-key fields (`name/status/parent ids/raw_payload/payload_hash`) and refreshes `fetched_at/last_seen_at`.
+- [x] Add DB-backed tests (skip without `DATABASE_URL`) that prove upsert overwrites fields on key conflict.
+- [x] Run targeted checks and document review.
+
+## Review — Backend store upserts for platform entity state tables
+- Added `platform_entity_store.py` with idempotent bulk upsert helpers over the 3 entity state tables using composite PK conflict targets.
+- Conflict updates overwrite mutable fields, including parent links (`campaign_id`, `ad_group_id` where relevant), `raw_payload`, and `payload_hash`, and force freshness timestamps (`fetched_at/last_seen_at`) to `NOW()`.
+- Added DB integration-style tests for campaign/ad_group/ad rows confirming second upsert on same key overwrites `name/status/payload_hash` and parent ids.
