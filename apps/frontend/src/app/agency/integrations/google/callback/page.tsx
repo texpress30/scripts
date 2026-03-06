@@ -10,9 +10,10 @@ import { apiRequest } from "@/lib/api";
 
 type ExchangeResponse = {
   status: string;
-  refresh_token: string;
   accessible_customers: string[];
-  persist_instruction: string;
+  refresh_token_source?: string;
+  refresh_token_updated_at?: string | null;
+  message?: string;
 };
 
 function OAuthCallbackBody() {
@@ -56,10 +57,9 @@ function OAuthCallbackBody() {
         <article className="wm-card p-4">
           <h2 className="text-base font-semibold text-slate-900">Google conectat cu succes</h2>
           <p className="mt-2 text-sm text-slate-700">Conturi MCC accesibile: {result.accessible_customers.length}</p>
-          <p className="mt-2 text-xs text-amber-700">{result.persist_instruction}</p>
-          <pre className="mt-3 overflow-x-auto rounded bg-slate-900 p-3 text-xs text-slate-100">
-{`GOOGLE_ADS_REFRESH_TOKEN=${result.refresh_token}`}
-          </pre>
+          <p className="mt-2 text-sm text-emerald-700">{result.message ?? "Token-ul Google a fost salvat automat."}</p>
+          <p className="mt-2 text-xs text-slate-600">Sursa token: {result.refresh_token_source ?? "database"}</p>
+          <p className="mt-1 text-xs text-slate-600">Actualizat la: {result.refresh_token_updated_at ? new Date(result.refresh_token_updated_at).toLocaleString() : "-"}</p>
           <div className="mt-4">
             <Link href="/agency/integrations" className="text-sm text-indigo-600 hover:underline">
               Înapoi la Integrations
