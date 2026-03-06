@@ -190,4 +190,5 @@
 - 2026-03-06: Pentru upsert stores de facts, expune funcții pure care primesc `conn` și liste de row dicts, astfel încât ingestion-ul viitor să poată reutiliza aceeași logică idempotentă fără coupling la API/worker.
 - 2026-03-06: La migrarea fact tables spre partitioning, folosește strategia sigură `rename old -> create parent partitioned -> recreate constraints/indexes cu nume noi -> copy -> drop old` ca să eviți conflicte de index name și pierdere de date.
 - 2026-03-06: Pentru dimension/entity-state stores, aliniază upsert-ul la PK compus și actualizează explicit câmpurile mutable + timestamp-urile de prospețime (`fetched_at`, `last_seen_at`) pe conflict.
-- 2026-03-06: La migrarea fact tables spre partitioning, folosește strategia sigură `rename old -> create parent partitioned -> recreate constraints/indexes cu nume noi -> copy -> drop old` ca să eviți conflicte de index name și pierdere de date.
+- 2026-03-06: Pentru watermark stores, encodează explicit non-regresia în SQL upsert (`min` pentru start date, `max` pentru synced-through/success) și returnează rândul final pentru observabilitate imediată.
+- 2026-03-06: La câmpuri mutable opționale (`last_error`, `last_job_id`), definește clar semantica `None` (păstrează existent) pentru a evita wipe accidental la update-uri parțiale.

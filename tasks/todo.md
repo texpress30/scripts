@@ -1984,3 +1984,20 @@
 - Added `platform_entity_store.py` with idempotent bulk upsert helpers over the 3 entity state tables using composite PK conflict targets.
 - Conflict updates overwrite mutable fields, including parent links (`campaign_id`, `ad_group_id` where relevant), `raw_payload`, and `payload_hash`, and force freshness timestamps (`fetched_at/last_seen_at`) to `NOW()`.
 - Added DB integration-style tests for campaign/ad_group/ad rows confirming second upsert on same key overwrites `name/status/payload_hash` and parent ids.
+
+---
+
+# TODO — Platform account watermarks store (DB-first, non-regressive upsert)
+
+- [x] Run workspace update commands (`git status --short`, `git fetch --all --prune`, `git pull --ff-only` when possible).
+- [x] Add backend store module for `platform_account_watermarks` read + upsert operations.
+- [x] Implement upsert non-regression semantics (`sync_start_date=min`, `historical/rolling=max`, `last_success_at=max`) with conflict-safe SQL.
+- [x] Keep mutable fields behavior explicit (`last_error`, `last_job_id`) and refresh `updated_at` on every upsert.
+- [x] Add DB-backed tests (skip without `DATABASE_URL`) validating insert, non-regression, forward progress, and mutable overwrite semantics.
+- [x] Run requested checks and document review.
+
+## Review — Platform account watermarks store (DB-first, non-regressive upsert)
+- Added `platform_account_watermarks_store.py` with grain validation, point-read helper, and idempotent `ON CONFLICT` upsert returning the final row.
+- Non-regression policy is enforced in SQL: earliest `sync_start_date`, latest `historical_synced_through`, latest `rolling_synced_through`, latest `last_success_at`.
+- `last_error` and `last_job_id` preserve existing values when omitted (`None`) and overwrite when provided with non-null values.
+- Added integration-style DB tests that apply migrations in isolated schema and verify insertion, non-regression behavior, and forward progress updates.
