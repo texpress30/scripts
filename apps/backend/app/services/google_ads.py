@@ -22,6 +22,7 @@ except Exception:  # noqa: BLE001
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
 from app.services.google_store import google_snapshot_store
+from app.services.integration_secrets_store import integration_secrets_store
 from app.services.performance_reports import performance_reports_store
 from app.services.sync_engine import BackfillRunResult, DailyMetricRow, enqueue_backfill
 
@@ -104,6 +105,26 @@ class GoogleAdsService:
 
         return request_id, failure_details
 
+
+    def _refresh_token_with_source(self) -> tuple[str, str, str | None]:
+        try:
+            db_secret = integration_secrets_store.get_secret(provider="google_ads", secret_key="refresh_token")
+        except Exception:  # noqa: BLE001
+            db_secret = None
+        if db_secret is not None and db_secret.value.strip() != "":
+            updated_at = db_secret.updated_at.isoformat() if db_secret.updated_at is not None else None
+            return db_secret.value.strip(), "database", updated_at
+
+        runtime_token = (self._runtime_refresh_token or "").strip()
+        if runtime_token != "":
+            return runtime_token, "runtime", None
+
+        env_token = load_settings().google_ads_refresh_token.strip()
+        if env_token != "":
+            return env_token, "env_fallback", None
+
+        return "", "missing", None
+
     def _google_ads_client(self, *, refresh_token: str | None = None) -> object:
         settings = load_settings()
         if GoogleAdsClient is None:
@@ -111,10 +132,11 @@ class GoogleAdsService:
                 "google-ads SDK is not installed. Add it to backend requirements to use production account discovery."
             )
 
-        effective_refresh_token = (refresh_token or self._runtime_refresh_token or settings.google_ads_refresh_token).strip()
+        resolved_token, _, _ = self._refresh_token_with_source()
+        effective_refresh_token = (refresh_token or resolved_token).strip()
         if effective_refresh_token == "":
             raise GoogleAdsIntegrationError(
-                "Google Ads SDK client requires refresh token. Complete OAuth exchange first and set GOOGLE_ADS_REFRESH_TOKEN."
+                "Google Ads SDK client requires refresh token. Complete OAuth exchange to persist token in app storage."
             )
 
         config: dict[str, object] = {
@@ -255,9 +277,10 @@ class GoogleAdsService:
         elif manager_has_dashes:
             warnings.append("GOOGLE_ADS_MANAGER_CUSTOMER_ID contains dashes; set it in Railway without dashes")
 
-        refresh_available = bool((self._runtime_refresh_token or settings.google_ads_refresh_token).strip())
+        _, token_source, _ = self._refresh_token_with_source()
+        refresh_available = token_source != "missing"
         if not refresh_available:
-            warnings.append("GOOGLE_ADS_REFRESH_TOKEN is missing (complete OAuth exchange first)")
+            warnings.append("Google Ads refresh token is missing (complete OAuth exchange first)")
 
         return {
             "mode": settings.google_ads_mode,
@@ -269,6 +292,7 @@ class GoogleAdsService:
             "manager_customer_id_valid": self._is_valid_customer_id(manager_raw) if manager_raw else False,
             "manager_customer_id_has_dashes": manager_has_dashes,
             "refresh_token_present": refresh_available,
+            "refresh_token_source": token_source,
             "redirect_uri": settings.google_ads_redirect_uri,
             "customer_ids_csv_count": len([item for item in settings.google_ads_customer_ids_csv.split(",") if item.strip()]),
             "warnings": warnings,
@@ -609,15 +633,15 @@ class GoogleAdsService:
             "last_sync_at": db_diag["last_sync_at"],
             "last_error": last_error or db_diag.get("db_error"),
             "api_version": self._google_api_version(),
+            "refresh_token_source": base.get("refresh_token_source", "missing"),
+            "refresh_token_present": bool(base.get("refresh_token_present", False)),
         }
 
     def _refresh_token(self) -> str:
-        settings = load_settings()
-        token = self._runtime_refresh_token or settings.google_ads_refresh_token
-        token = token.strip()
+        token, _, _ = self._refresh_token_with_source()
         if token == "":
             raise GoogleAdsIntegrationError(
-                "Google refresh token missing. Complete OAuth connect flow and set GOOGLE_ADS_REFRESH_TOKEN in Railway."
+                "Google refresh token missing. Complete OAuth connect flow to store token in app database."
             )
         return token
 
@@ -641,12 +665,15 @@ class GoogleAdsService:
         settings = load_settings()
 
         if self._is_production_mode():
-            connected = bool((self._runtime_refresh_token or settings.google_ads_refresh_token).strip())
+            _, token_source, token_updated_at = self._refresh_token_with_source()
+            connected = token_source != "missing"
             return {
                 "provider": "google_ads",
                 "status": "connected" if connected else "pending",
                 "message": "Google Ads production mode is enabled." if connected else "Google Ads production mode awaiting OAuth token.",
                 "mode": "production",
+                "refresh_token_source": token_source,
+                "refresh_token_updated_at": token_updated_at,
             }
 
         token = settings.google_ads_token.strip()
@@ -705,14 +732,21 @@ class GoogleAdsService:
             raise GoogleAdsIntegrationError("Google OAuth callback did not return a refresh token. Re-run consent with prompt=consent.")
 
         refresh_token = str(token_payload["refresh_token"])
+        integration_secrets_store.upsert_secret(
+            provider="google_ads",
+            secret_key="refresh_token",
+            value=refresh_token,
+        )
         self._runtime_refresh_token = refresh_token
 
         accessible_customers = [item["id"] for item in self.list_accessible_customer_accounts()]
+        _, token_source, token_updated_at = self._refresh_token_with_source()
         return {
             "status": "connected",
-            "refresh_token": refresh_token,
             "accessible_customers": accessible_customers,
-            "persist_instruction": "Set GOOGLE_ADS_REFRESH_TOKEN in Railway using refresh_token from this response.",
+            "refresh_token_source": token_source,
+            "refresh_token_updated_at": token_updated_at,
+            "message": "Google OAuth connected. Refresh token stored securely in application database.",
         }
 
     def list_accessible_customer_accounts(self) -> list[dict[str, object]]:
@@ -1034,6 +1068,101 @@ class GoogleAdsService:
             "resolved_start_date": start_literal,
             "resolved_end_date": end_literal,
         }
+
+    def fetch_campaign_daily_metrics(
+        self,
+        *,
+        customer_id: str,
+        start_date: date,
+        end_date: date,
+    ) -> list[dict[str, object]]:
+        normalized_customer_id = self._normalize_customer_id(customer_id)
+        if not self._is_valid_customer_id(normalized_customer_id):
+            raise GoogleAdsIntegrationError(f"Invalid customer id mapping '{customer_id}'. Expected 10 digits.")
+
+        resolved_start = start_date
+        resolved_end = end_date
+        if resolved_start > resolved_end:
+            resolved_start, resolved_end = resolved_end, resolved_start
+
+        if not self._is_production_mode():
+            return [
+                {
+                    "campaign_id": "mock-campaign",
+                    "report_date": resolved_start.isoformat(),
+                    "spend": 1.23,
+                    "impressions": 100,
+                    "clicks": 10,
+                    "conversions": 1.0,
+                    "conversion_value": 3.21,
+                    "extra_metrics": {
+                        "google_ads": {
+                            "cost_micros": 1_230_000,
+                        }
+                    },
+                }
+            ]
+
+        access_token = self._access_token_from_refresh()
+        login_customer_id = self._required_manager_customer_id()
+        start_literal = resolved_start.isoformat()
+        end_literal = resolved_end.isoformat()
+        query = (
+            "SELECT campaign.id, segments.date, metrics.impressions, metrics.clicks, "
+            "metrics.cost_micros, metrics.conversions, metrics.conversions_value "
+            f"FROM campaign WHERE segments.date BETWEEN '{start_literal}' AND '{end_literal}'"
+        )
+
+        response_payload = self._http_json(
+            method="POST",
+            url=self._build_google_ads_url(load_settings().google_ads_api_version, f"customers/{normalized_customer_id}/googleAds:searchStream"),
+            payload={"query": query},
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "developer-token": load_settings().google_ads_developer_token,
+                "login-customer-id": login_customer_id,
+            },
+        )
+        if not isinstance(response_payload, list):
+            raise GoogleAdsIntegrationError("Invalid Google Ads searchStream response")
+
+        rows: list[dict[str, object]] = []
+        for chunk in response_payload:
+            if not isinstance(chunk, dict):
+                continue
+            results = chunk.get("results", [])
+            if not isinstance(results, list):
+                continue
+            for result in results:
+                if not isinstance(result, dict):
+                    continue
+                campaign = result.get("campaign", {})
+                segments = result.get("segments", {})
+                metrics = result.get("metrics", {})
+                if not isinstance(campaign, dict) or not isinstance(segments, dict) or not isinstance(metrics, dict):
+                    continue
+                campaign_id = str(campaign.get("id", "")).strip()
+                report_date = str(segments.get("date", "")).strip()
+                if campaign_id == "" or report_date == "":
+                    continue
+                cost_micros = int(metrics.get("costMicros", 0) or 0)
+                rows.append(
+                    {
+                        "campaign_id": campaign_id,
+                        "report_date": report_date,
+                        "spend": round(cost_micros / 1_000_000.0, 2),
+                        "impressions": int(metrics.get("impressions", 0) or 0),
+                        "clicks": int(metrics.get("clicks", 0) or 0),
+                        "conversions": float(metrics.get("conversions", 0.0) or 0.0),
+                        "conversion_value": float(metrics.get("conversionsValue", 0.0) or 0.0),
+                        "extra_metrics": {
+                            "google_ads": {
+                                "cost_micros": cost_micros,
+                            }
+                        },
+                    }
+                )
+        return rows
 
     def _fetch_production_metrics(self, *, customer_id: str) -> dict[str, float | int | str]:
         payload = self._fetch_production_daily_metrics(customer_id=customer_id, days=30)

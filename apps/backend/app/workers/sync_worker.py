@@ -7,11 +7,16 @@ import time
 
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
+from app.services.entity_performance_reports import upsert_campaign_performance_reports
 from app.services.google_ads import google_ads_service
+from app.services.platform_watermarks_reconcile import reconcile_platform_account_watermarks
 from app.services.sync_run_chunks_store import sync_run_chunks_store
 from app.services.sync_runs_store import sync_runs_store
 
 logger = logging.getLogger(__name__)
+
+_SUPPORTED_GRAINS = {"account_daily", "campaign_daily", "ad_group_daily", "ad_daily"}
+_GRAIN_NOT_SUPPORTED_ERROR = "grain_not_supported"
 
 
 def _as_date(value: object) -> date:
@@ -19,6 +24,13 @@ def _as_date(value: object) -> date:
         return value
     parsed = date.fromisoformat(str(value))
     return parsed
+
+
+def _normalize_run_grain(run: dict[str, object]) -> str:
+    grain = str(run.get("grain") or "account_daily").strip().lower()
+    if grain == "":
+        return "account_daily"
+    return grain
 
 
 def _finalize_run_if_complete(run: dict[str, object]) -> None:
@@ -32,13 +44,15 @@ def _finalize_run_if_complete(run: dict[str, object]) -> None:
     account_id = str(run.get("account_id") or "").strip()
     job_type = str(run.get("job_type") or "manual")
     run_date_end = _as_date(run.get("date_end"))
+    run_grain = _normalize_run_grain(run)
 
     if int(counts.get("errors") or 0) > 0:
+        run_error = str(run.get("error") or "one or more chunks failed")
         sync_runs_store.update_sync_run_status(
             job_id=job_id,
             status="error",
             mark_finished=True,
-            error="one or more chunks failed",
+            error=run_error,
         )
         if platform != "" and account_id != "":
             client_registry_service.update_platform_account_operational_metadata(
@@ -68,6 +82,15 @@ def _finalize_run_if_complete(run: dict[str, object]) -> None:
             else:
                 metadata_kwargs["rolling_synced_through"] = run_date_end
             client_registry_service.update_platform_account_operational_metadata(**metadata_kwargs)
+            if platform == "google_ads" and run_grain == "campaign_daily":
+                with sync_runs_store._connect() as conn:
+                    reconcile_platform_account_watermarks(
+                        conn,
+                        platform=platform,
+                        account_id=account_id,
+                        grains=["campaign_daily"],
+                    )
+                    conn.commit()
 
 
 def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int = 5) -> bool:
@@ -77,6 +100,7 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
 
     job_id = str(claimed.get("job_id") or "")
     chunk_index = int(claimed.get("chunk_index") or 0)
+    logger.info("sync_worker.chunk_claimed job_id=%s chunk_index=%s", job_id, chunk_index)
 
     run = sync_runs_store.get_sync_run(job_id)
     if run is None:
@@ -94,6 +118,34 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
 
     if str(run.get("status") or "") == "queued":
         sync_runs_store.update_sync_run_status(job_id=job_id, status="running", mark_started=True)
+        logger.info("sync_worker.run_started job_id=%s", job_id)
+
+    grain = _normalize_run_grain(run)
+    if grain not in _SUPPORTED_GRAINS:
+        chunk_error = f"{_GRAIN_NOT_SUPPORTED_ERROR}:{grain}"
+        sync_run_chunks_store.update_sync_run_chunk_status(
+            job_id=job_id,
+            chunk_index=chunk_index,
+            status="error",
+            error=chunk_error,
+            metadata={"grain": grain, "error_code": _GRAIN_NOT_SUPPORTED_ERROR},
+            rows_written=0,
+            duration_ms=0,
+            mark_finished=True,
+        )
+        sync_runs_store.update_sync_run_progress(
+            job_id=job_id,
+            chunks_done_delta=1,
+            rows_written_delta=0,
+        )
+        sync_runs_store.update_sync_run_status(
+            job_id=job_id,
+            status="error",
+            mark_finished=True,
+            error=chunk_error,
+        )
+        logger.error("sync_worker.unsupported_grain job_id=%s grain=%s", job_id, grain)
+        return True
 
     started = time.monotonic()
     rows_written = 0
@@ -101,6 +153,8 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
 
     try:
         platform = str(run.get("platform") or "").strip()
+        if grain != "account_daily" and platform != "google_ads":
+            raise RuntimeError(f"{_GRAIN_NOT_SUPPORTED_ERROR}:{grain}")
         if platform != "google_ads":
             raise RuntimeError(f"unsupported platform '{platform}'")
 
@@ -117,7 +171,34 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
         chunk_days = int(run.get("chunk_days") or 7)
         job_type = str(run.get("job_type") or "manual")
 
-        if job_type == "historical_backfill":
+        if grain == "campaign_daily":
+            campaign_rows = google_ads_service.fetch_campaign_daily_metrics(
+                customer_id=account_id,
+                start_date=chunk_start,
+                end_date=chunk_end,
+            )
+            upsert_rows = [
+                {
+                    "platform": platform,
+                    "account_id": account_id,
+                    "campaign_id": row.get("campaign_id"),
+                    "report_date": row.get("report_date"),
+                    "spend": row.get("spend", 0),
+                    "impressions": row.get("impressions", 0),
+                    "clicks": row.get("clicks", 0),
+                    "conversions": row.get("conversions", 0),
+                    "conversion_value": row.get("conversion_value", 0),
+                    "extra_metrics": row.get("extra_metrics") if isinstance(row.get("extra_metrics"), dict) else {},
+                    "source_window_start": chunk_start,
+                    "source_window_end": chunk_end,
+                    "source_job_id": job_id,
+                }
+                for row in campaign_rows
+            ]
+            with sync_runs_store._connect() as conn:
+                rows_written = int(upsert_campaign_performance_reports(conn, upsert_rows) or 0)
+                conn.commit()
+        elif job_type == "historical_backfill":
             response = google_ads_service.sync_customer_for_client_historical_range(
                 client_id=client_id,
                 customer_id=account_id,
@@ -138,7 +219,11 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
             )
             rows_written = int(response.get("inserted_rows", 0) or 0)
     except Exception as exc:  # noqa: BLE001
-        chunk_error = str(exc)[:300]
+        raw_error = str(exc)[:300]
+        if raw_error.startswith(f"{_GRAIN_NOT_SUPPORTED_ERROR}:"):
+            chunk_error = raw_error
+        else:
+            chunk_error = raw_error
 
     duration_ms = int((time.monotonic() - started) * 1000)
 
@@ -147,6 +232,7 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
             job_id=job_id,
             chunk_index=chunk_index,
             status="done",
+            metadata={"grain": grain},
             rows_written=rows_written,
             duration_ms=duration_ms,
             mark_finished=True,
@@ -156,12 +242,21 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
             chunks_done_delta=1,
             rows_written_delta=rows_written,
         )
+        logger.info(
+            "sync_worker.chunk_completed job_id=%s chunk_index=%s rows_written=%s duration_ms=%s",
+            job_id,
+            chunk_index,
+            rows_written,
+            duration_ms,
+        )
     else:
+        run["error"] = chunk_error
         sync_run_chunks_store.update_sync_run_chunk_status(
             job_id=job_id,
             chunk_index=chunk_index,
             status="error",
             error=chunk_error,
+            metadata={"grain": grain},
             rows_written=0,
             duration_ms=duration_ms,
             mark_finished=True,
@@ -170,6 +265,13 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
             job_id=job_id,
             chunks_done_delta=1,
             rows_written_delta=0,
+        )
+        logger.error(
+            "sync_worker.chunk_failed job_id=%s chunk_index=%s error=%s duration_ms=%s",
+            job_id,
+            chunk_index,
+            chunk_error,
+            duration_ms,
         )
 
     _finalize_run_if_complete(run)
