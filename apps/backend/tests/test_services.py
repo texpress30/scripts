@@ -1109,6 +1109,107 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(float(rows[0]["revenue"]), 45.0)
         self.assertEqual(int(rows[0]["extra_metrics"]["google_ads"]["cost_micros"]), 2000000)
 
+    def test_google_fetch_campaign_daily_metrics_uses_end_exclusive_window_and_maps_spend(self):
+        original_mode = google_ads_service._is_production_mode
+        original_access = google_ads_service._access_token_from_refresh
+        original_manager = google_ads_service._required_manager_customer_id
+        original_http = google_ads_service._http_json
+        captured: dict[str, object] = {}
+        try:
+            google_ads_service._is_production_mode = lambda: True
+            google_ads_service._access_token_from_refresh = lambda: "token"
+            google_ads_service._required_manager_customer_id = lambda: "1234567890"
+
+            def _fake_http_json(**kwargs):
+                captured["query"] = kwargs.get("payload", {}).get("query")
+                return [
+                    {
+                        "results": [
+                            {
+                                "campaign": {"id": "99", "name": "Core", "status": "ENABLED"},
+                                "segments": {"date": "2026-03-01"},
+                                "metrics": {
+                                    "costMicros": 2500000,
+                                    "impressions": 123,
+                                    "clicks": 7,
+                                    "conversions": 1.5,
+                                    "conversionsValue": 11.0,
+                                },
+                            }
+                        ]
+                    }
+                ]
+
+            google_ads_service._http_json = _fake_http_json
+            rows = google_ads_service.fetch_campaign_daily_metrics(
+                customer_id="1234567890",
+                start_date=date(2026, 3, 1),
+                end_date_exclusive=date(2026, 3, 8),
+            )
+        finally:
+            google_ads_service._is_production_mode = original_mode
+            google_ads_service._access_token_from_refresh = original_access
+            google_ads_service._required_manager_customer_id = original_manager
+            google_ads_service._http_json = original_http
+
+        self.assertIn("segments.date BETWEEN '2026-03-01' AND '2026-03-07'", str(captured.get("query") or ""))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["campaign_id"], "99")
+        self.assertEqual(float(rows[0]["spend"]), 2.5)
+        self.assertEqual(int(rows[0]["extra_metrics"]["google_ads"]["cost_micros"]), 2500000)
+
+
+    def test_google_fetch_ad_group_daily_metrics_uses_end_exclusive_window_and_maps_spend(self):
+        original_mode = google_ads_service._is_production_mode
+        original_access = google_ads_service._access_token_from_refresh
+        original_manager = google_ads_service._required_manager_customer_id
+        original_http = google_ads_service._http_json
+        captured: dict[str, object] = {}
+        try:
+            google_ads_service._is_production_mode = lambda: True
+            google_ads_service._access_token_from_refresh = lambda: "token"
+            google_ads_service._required_manager_customer_id = lambda: "1234567890"
+
+            def _fake_http_json(**kwargs):
+                captured["query"] = kwargs.get("payload", {}).get("query")
+                return [
+                    {
+                        "results": [
+                            {
+                                "segments": {"date": "2026-03-03"},
+                                "campaign": {"id": "201", "name": "Camp 201"},
+                                "adGroup": {"id": "301", "name": "AG 301"},
+                                "metrics": {
+                                    "costMicros": 3300000,
+                                    "impressions": 500,
+                                    "clicks": 25,
+                                    "conversions": 2.0,
+                                    "conversionsValue": 40.0,
+                                },
+                            }
+                        ]
+                    }
+                ]
+
+            google_ads_service._http_json = _fake_http_json
+            rows = google_ads_service.fetch_ad_group_daily_metrics(
+                customer_id="1234567890",
+                start_date=date(2026, 3, 1),
+                end_date_exclusive=date(2026, 3, 8),
+                source_job_id="job-123",
+            )
+        finally:
+            google_ads_service._is_production_mode = original_mode
+            google_ads_service._access_token_from_refresh = original_access
+            google_ads_service._required_manager_customer_id = original_manager
+            google_ads_service._http_json = original_http
+
+        self.assertIn("FROM ad_group WHERE segments.date BETWEEN '2026-03-01' AND '2026-03-07'", str(captured.get("query") or ""))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["ad_group_id"], "301")
+        self.assertEqual(float(rows[0]["spend"]), 3.3)
+        self.assertEqual(int(rows[0]["extra_metrics"]["google_ads"]["cost_micros"]), 3300000)
+
 
     def test_report_formula_common_metrics_return_expected_values(self):
         derived = build_derived_metrics(
