@@ -210,3 +210,5 @@
 - 2026-03-06: Când userul cere follow-up pe același epic de grain-uri (ex. după `campaign_daily`, adaugă `ad_group_daily`), extinde simetric provider+worker+entity/facts upserts + watermark reconcile și validează explicit prin teste dedicate pe noul grain.
 
 - 2026-03-06: Pentru extinderi Google Ads pe următorul entity grain (`ad_daily`), menține simetria cu campaign/ad_group: half-open window în provider, upsert entity+facts în worker și test de contract pe query + mapping + dispatch.
+
+- 2026-03-06: Pentru extinderi de scheduler pe grain-uri noi, protejează comportamentul cu feature flag default OFF, păstrează eligibility logic existentă și validează explicit combinațiile flag/platform/dedupe în teste.

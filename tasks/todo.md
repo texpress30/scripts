@@ -1,3 +1,19 @@
+# TODO — Rolling scheduler: Google entity grains for rolling_refresh
+
+- [x] Adaug feature flag `ROLLING_ENTITY_GRAINS_ENABLED` (default OFF) pentru scheduling entity grains.
+- [x] Extind rolling scheduler să enqueuieze `campaign_daily`, `ad_group_daily`, `ad_daily` doar pentru `google_ads` când flag-ul este ON, păstrând `account_daily` existent.
+- [x] Mențin dedupe/idempotency pe `(platform, account_id, grain, rolling window, job_type=rolling_refresh)` prin logica existentă de store.
+- [x] Extind testele rolling scheduler pentru: flag OFF, flag ON google, flag ON non-google, dedupe pe grain existent.
+- [x] Documentez noul env var în README și rulez verificări + review, apoi commit + PR metadata.
+
+## Review
+- Scheduler-ul folosește acum `ROLLING_ENTITY_GRAINS_ENABLED` (default OFF); când flag-ul este inactiv, se enqueuiește strict `account_daily`.
+- Când flag-ul este activ, scheduler-ul adaugă pentru conturi Google și grain-urile entity (`campaign_daily`, `ad_group_daily`, `ad_daily`) pe aceeași fereastră rolling 7 zile (yesterday-6 .. yesterday).
+- Pentru dedupe/idempotency am adăugat `sync_runs_store.create_rolling_sync_run_if_not_active(...)`, cu lock + check pentru run activ (`queued/running`) pe aceeași combinație platform/account/grain/window/job_type=rolling_refresh.
+- Scheduler-ul creează chunk-uri doar pentru run-urile nou create (`created=True`) și include summary `enqueued_count_by_grain` + `rolling_entity_grains_enabled`.
+- Testele noi acoperă explicit: flag OFF (doar account_daily), flag ON pentru google (4 grains), flag ON non-google (fără entity grains), dedupe pentru grain existent (campaign_daily).
+
+---
 # TODO — Google Ads provider: ad_daily grain support (provider + worker + tests)
 
 - [x] Adaug în provider fetch pentru ad_daily cu window half-open și mapare metrici canonice.
