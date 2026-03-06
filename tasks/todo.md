@@ -2001,3 +2001,20 @@
 - Non-regression policy is enforced in SQL: earliest `sync_start_date`, latest `historical_synced_through`, latest `rolling_synced_through`, latest `last_success_at`.
 - `last_error` and `last_job_id` preserve existing values when omitted (`None`) and overwrite when provided with non-null values.
 - Added integration-style DB tests that apply migrations in isolated schema and verify insertion, non-regression behavior, and forward progress updates.
+
+---
+
+# TODO — Reconcile watermarks from entity fact coverage
+
+- [x] Run workspace update commands (`git status --short`, `git fetch --all --prune`, `git pull --ff-only` when possible).
+- [x] Add backend reconciler module that derives per-account fact coverage (`min/max/count`) for entity grains and preserves requested account ordering.
+- [x] Implement reconciliation flow that updates only `sync_start_date` + `historical_synced_through` via existing non-regressive watermark upsert.
+- [x] Ensure accounts without fact rows are skipped (no watermark row created by reconciler for no-data entries).
+- [x] Add DB tests (skip without `DATABASE_URL`) for derive coverage, reconcile apply, and non-regression behavior.
+- [x] Run requested checks and document review.
+
+## Review — Reconcile watermarks from entity fact coverage
+- Added `platform_watermarks_reconcile.py` with table mapping by grain and a coverage query that returns `min_date/max_date/row_count` for all requested account IDs, including no-data accounts.
+- Reconcile applies only `sync_start_date` and `historical_synced_through` via `upsert_platform_account_watermark`; it intentionally does not set `rolling_synced_through` in this task.
+- Summary payload includes per-grain updated and skipped-no-data counters to support operational observability.
+- Added DB integration tests validating coverage derivation, no-data skip behavior, and non-regression via existing watermark store semantics.
