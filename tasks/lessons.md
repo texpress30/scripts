@@ -188,4 +188,7 @@
 - 2026-03-06: Pentru task-uri "schema-only", livrează strict migrații additive + teste DB de contract (existență tabele/constraints) și evită orice schimbare de orchestration/UI.
 - 2026-03-06: Pentru fact-table migrations cross-platform, păstrează contractul de metrici canonic sincronizat cu `ad_performance_reports` (aceleași nume/tipuri pentru metrici comune + același câmp `extra_metrics`).
 - 2026-03-06: Pentru upsert stores de facts, expune funcții pure care primesc `conn` și liste de row dicts, astfel încât ingestion-ul viitor să poată reutiliza aceeași logică idempotentă fără coupling la API/worker.
+<<<<<<< codex/close-session-and-open-new-workspace-opvw5l
 - 2026-03-06: La migrarea fact tables spre partitioning, folosește strategia sigură `rename old -> create parent partitioned -> recreate constraints/indexes cu nume noi -> copy -> drop old` ca să eviți conflicte de index name și pierdere de date.
+=======
+>>>>>>> main
