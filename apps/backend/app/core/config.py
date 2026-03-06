@@ -25,6 +25,7 @@ class Settings:
     google_ads_manager_customer_id: str
     google_ads_redirect_uri: str
     google_ads_refresh_token: str
+    integration_secret_encryption_key: str
     google_ads_customer_ids_csv: str
     google_ads_api_version: str
     google_ads_ui_rolling_sync_days: int
@@ -48,6 +49,7 @@ class Settings:
     snapchat_sync_retry_attempts: int
     snapchat_sync_backoff_ms: int
     snapchat_sync_force_transient_failures: int
+    sync_run_repair_stale_minutes: int
 
 
 def _get_env(name: str, default: str | None = None, required: bool = False) -> str:
@@ -122,6 +124,7 @@ def load_settings() -> Settings:
         google_ads_manager_customer_id=_get_env("GOOGLE_ADS_MANAGER_CUSTOMER_ID", default=""),
         google_ads_redirect_uri=_get_env("GOOGLE_ADS_REDIRECT_URI", default=""),
         google_ads_refresh_token=_get_env("GOOGLE_ADS_REFRESH_TOKEN", default=""),
+        integration_secret_encryption_key=_get_env("INTEGRATION_SECRET_ENCRYPTION_KEY", default=""),
         google_ads_customer_ids_csv=_get_env("GOOGLE_ADS_CUSTOMER_IDS_CSV", default=""),
         google_ads_api_version=_get_env("GOOGLE_ADS_API_VERSION", default="v23"),
         google_ads_ui_rolling_sync_days=_parse_positive_int_env("GOOGLE_ADS_UI_ROLLING_SYNC_DAYS", default=7),
@@ -145,4 +148,5 @@ def load_settings() -> Settings:
         snapchat_sync_retry_attempts=_parse_int_env("SNAPCHAT_SYNC_RETRY_ATTEMPTS", default=2),
         snapchat_sync_backoff_ms=_parse_int_env("SNAPCHAT_SYNC_BACKOFF_MS", default=75),
         snapchat_sync_force_transient_failures=_parse_int_env("SNAPCHAT_SYNC_FORCE_TRANSIENT_FAILURES", default=0),
+        sync_run_repair_stale_minutes=_parse_positive_int_env("SYNC_RUN_REPAIR_STALE_MINUTES", default=30),
     )
