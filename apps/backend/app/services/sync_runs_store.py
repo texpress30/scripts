@@ -255,7 +255,7 @@ class SyncRunsStore:
             with conn.cursor() as cur:
                 lock_key = (
                     f"sync_runs:historical_backfill:{normalized_platform}:{normalized_account_id}:"
-                    f"{date_start.isoformat()}:{date_end.isoformat()}"
+                    f"{str(grain) if grain is not None else 'account_daily'}:{date_start.isoformat()}:{date_end.isoformat()}"
                 )
                 cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (lock_key,))
 
@@ -266,6 +266,7 @@ class SyncRunsStore:
                     FROM sync_runs
                     WHERE platform = %s
                         AND account_id = %s
+                        AND grain = %s
                         AND job_type = 'historical_backfill'
                         AND date_start = %s
                         AND date_end = %s
@@ -276,6 +277,7 @@ class SyncRunsStore:
                     (
                         normalized_platform,
                         normalized_account_id,
+                        str(grain) if grain is not None else "account_daily",
                         date_start,
                         date_end,
                     ),

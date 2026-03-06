@@ -95,6 +95,8 @@ class SyncRunsStoreDedupeTests(unittest.TestCase):
         self.assertEqual(conn.commit_calls, 1)
         self.assertTrue(any("pg_advisory_xact_lock" in query for query, _ in cursor.executed))
         self.assertFalse(any("INSERT INTO sync_runs" in query for query, _ in cursor.executed))
+        lock_params = next(params for query, params in cursor.executed if "pg_advisory_xact_lock" in query)
+        self.assertIn("account_daily", str(lock_params[0]))
 
     def test_creates_new_historical_run_when_no_active_duplicate(self):
         created_row = (
@@ -141,6 +143,49 @@ class SyncRunsStoreDedupeTests(unittest.TestCase):
         self.assertEqual(conn.commit_calls, 1)
         self.assertTrue(any("INSERT INTO sync_runs" in query for query, _ in cursor.executed))
         self.assertFalse(any("{_SYNC_RUNS_SELECT_COLUMNS}" in query for query, _ in cursor.executed))
+
+    def test_dedupe_lookup_includes_grain_filter(self):
+        created_row = (
+            "job-new-campaign",
+            "google_ads",
+            "queued",
+            11,
+            "3986597205",
+            date(2026, 1, 1),
+            date(2026, 1, 7),
+            7,
+            None,
+            None,
+            None,
+            None,
+            None,
+            {},
+            "batch-2",
+            "historical_backfill",
+            "campaign_daily",
+            2,
+            0,
+            0,
+        )
+        store, cursor, _ = self._build_store(fetches=[None, created_row])
+
+        result = store.create_historical_sync_run_if_not_active(
+            job_id="job-new-campaign",
+            platform="google_ads",
+            date_start=date(2026, 1, 1),
+            date_end=date(2026, 1, 7),
+            chunk_days=7,
+            client_id=11,
+            account_id="3986597205",
+            metadata={"source": "manual"},
+            batch_id="batch-2",
+            grain="campaign_daily",
+            chunks_total=2,
+        )
+
+        self.assertTrue(result["created"])
+        select_params = next(params for query, params in cursor.executed if "FROM sync_runs" in query)
+        self.assertEqual(select_params[2], "campaign_daily")
 
 
 if __name__ == "__main__":

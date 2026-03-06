@@ -72,6 +72,7 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         def _create_historical_sync_run_if_not_active(**kwargs):
             platform = str(kwargs["platform"])
             account_id = str(kwargs.get("account_id") or "")
+            grain = str(kwargs.get("grain") or "account_daily")
             date_start = str(kwargs["date_start"])
             date_end = str(kwargs["date_end"])
             existing = None
@@ -79,6 +80,7 @@ class SyncOrchestrationApiTests(unittest.TestCase):
                 if (
                     run.get("platform") == platform
                     and str(run.get("account_id") or "") == account_id
+                    and str(run.get("grain") or "account_daily") == grain
                     and run.get("job_type") == "historical_backfill"
                     and str(run.get("date_start")) == date_start
                     and str(run.get("date_end")) == date_end
@@ -703,6 +705,127 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.assertEqual(second_payload["results"][0]["status"], "queued")
         self.assertEqual(len(self.state["runs"]), 1)
         self.assertEqual(len(self.state["chunks"]), chunks_after_first)
+
+    def test_batch_defaults_to_account_daily_grain(self):
+        headers = self._auth_headers()
+        response = self.client.post(
+            "/agency/sync-runs/batch",
+            headers=headers,
+            json={
+                "platform": "google_ads",
+                "account_ids": ["3986597205"],
+                "job_type": "historical_backfill",
+                "start_date": str(date(2026, 1, 1)),
+                "end_date": str(date(2026, 1, 3)),
+                "chunk_days": 1,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["created_count"], 1)
+        self.assertEqual(payload["grains"], ["account_daily"])
+        self.assertEqual(payload["results"][0]["grain"], "account_daily")
+
+    def test_batch_creates_one_run_per_requested_grain(self):
+        headers = self._auth_headers()
+        response = self.client.post(
+            "/agency/sync-runs/batch",
+            headers=headers,
+            json={
+                "platform": "google_ads",
+                "account_ids": ["3986597205"],
+                "job_type": "historical_backfill",
+                "start_date": str(date(2026, 1, 1)),
+                "end_date": str(date(2026, 1, 3)),
+                "chunk_days": 1,
+                "grains": ["account_daily", "campaign_daily"],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["created_count"], 2)
+        self.assertEqual({item["grain"] for item in payload["runs"]}, {"account_daily", "campaign_daily"})
+
+    def test_batch_dedupe_is_scoped_by_grain(self):
+        headers = self._auth_headers()
+        sync_orchestration.sync_runs_store.create_sync_run(
+            job_id="existing-account",
+            platform="google_ads",
+            status="running",
+            date_start=date(2026, 1, 1),
+            date_end=date(2026, 1, 3),
+            chunk_days=1,
+            client_id=11,
+            account_id="3986597205",
+            metadata={},
+            batch_id="seed",
+            job_type="historical_backfill",
+            grain="account_daily",
+            chunks_total=3,
+            chunks_done=1,
+            rows_written=5,
+        )
+
+        response = self.client.post(
+            "/agency/sync-runs/batch",
+            headers=headers,
+            json={
+                "platform": "google_ads",
+                "account_ids": ["3986597205"],
+                "job_type": "historical_backfill",
+                "start_date": str(date(2026, 1, 1)),
+                "end_date": str(date(2026, 1, 3)),
+                "chunk_days": 1,
+                "grains": ["account_daily", "campaign_daily"],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["created_count"], 1)
+        self.assertEqual(payload["already_exists_count"], 1)
+
+        by_grain = {item["grain"]: item for item in payload["results"]}
+        self.assertEqual(by_grain["account_daily"]["result"], "already_exists")
+        self.assertEqual(by_grain["account_daily"]["job_id"], "existing-account")
+        self.assertEqual(by_grain["campaign_daily"]["result"], "created")
+
+    def test_batch_rejects_invalid_grain(self):
+        headers = self._auth_headers()
+        response = self.client.post(
+            "/agency/sync-runs/batch",
+            headers=headers,
+            json={
+                "platform": "google_ads",
+                "account_ids": ["3986597205"],
+                "job_type": "historical_backfill",
+                "start_date": str(date(2026, 1, 1)),
+                "end_date": str(date(2026, 1, 3)),
+                "chunk_days": 1,
+                "grains": ["invalid_grain"],
+            },
+        )
+        self.assertEqual(response.status_code, 422)
+
+    def test_batch_deduplicates_duplicate_grains_in_payload(self):
+        headers = self._auth_headers()
+        response = self.client.post(
+            "/agency/sync-runs/batch",
+            headers=headers,
+            json={
+                "platform": "google_ads",
+                "account_ids": ["3986597205"],
+                "job_type": "historical_backfill",
+                "start_date": str(date(2026, 1, 1)),
+                "end_date": str(date(2026, 1, 3)),
+                "chunk_days": 1,
+                "grains": ["campaign_daily", "campaign_daily"],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["created_count"], 1)
+        self.assertEqual(payload["grains"], ["campaign_daily"])
+        self.assertEqual(len(payload["runs"]), 1)
 
     def test_historical_batch_mixed_created_and_already_exists_results(self):
         headers = self._auth_headers()

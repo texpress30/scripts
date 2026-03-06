@@ -2052,3 +2052,20 @@
 - `SyncRunsStore._ensure_schema()` now upgrades runtime schema by backfilling null grains, enforcing default `account_daily`, setting `NOT NULL`, adding allowed-values check constraint, and creating `(platform, account_id, grain)` index.
 - Sync run payload serialization now defaults null grain to `account_daily`, and create/retry insert paths send `account_daily` when grain is absent.
 - Added DB integration-style test for column/default introspection and insert roundtrip for default and explicit `campaign_daily` grain values.
+
+---
+
+# TODO — Audit + contract tests for grain-aware /agency/sync-runs/batch
+
+- [x] Run workspace update commands (`git status --short`, `git fetch --all --prune`, `git pull --ff-only`) and note upstream limitations if present.
+- [x] Audit batch endpoint request/response contract and dedupe guard behavior for grain support.
+- [x] Implement minimal backward-compatible batch payload support for `grain` + `grains` with default/normalization.
+- [x] Ensure historical dedupe key includes grain in store-level guard.
+- [x] Extend backend contract tests for default grain, multi-grain create, grain-scoped dedupe, invalid grain (422), and duplicate-grain normalization.
+- [x] Run requested validation checks and capture review summary.
+
+## Review — Audit + contract tests for grain-aware /agency/sync-runs/batch
+- Batch endpoint now accepts both legacy `grain` and additive `grains` payloads, normalizes to distinct ordered grains, and defaults to `account_daily` when omitted.
+- Batch creation enqueues one run per `(account_id, grain)` and includes `grain` on per-run/per-result response items while preserving existing response fields.
+- Historical dedupe guard now locks and filters by grain, allowing concurrent backfills for different grains on same account/date window while deduping exact grain duplicates.
+- Extended API/store tests cover all requested grain contract scenarios, including 422 validation for invalid grain and duplicate grain deduplication behavior.
