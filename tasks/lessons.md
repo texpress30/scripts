@@ -202,3 +202,4 @@
 - 2026-03-06: Pentru deploy-uri Postgres în production, nu te baza pe startup implicit al web app; livrează un migration runner idempotent cu `schema_migrations` + advisory lock și documentează rulare one-shot în orchestrator.
 - 2026-03-06: La worker-ele care procesează payloaduri evolutive (ex. `grain`), normalizează explicit default-uri backward-compatible și tratează valorile necunoscute ca terminal errors controlate, nu excepții care opresc bucla.
 - 2026-03-06: Pentru extinderi pe grain-uri noi în worker, implementează branch explicit per grain+platform cu output canonic în store-ul de facts și finalizează cu reconcile watermark pe grain la succes, păstrând fallback/error code stabil pentru platforme neimplementate.
+- 2026-03-06: Pentru CLI-uri folosite în orchestratoare (Railway root_dir variabil), evită căi implicite hardcodate pe un singur cwd; implementează resolver cu candidate paths ordonate + mesaj de eroare diagnostic (cwd + tried candidates).

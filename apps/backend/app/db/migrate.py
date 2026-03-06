@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 import sys
 
@@ -15,8 +16,33 @@ except Exception:  # pragma: no cover - optional in some test envs
 _ADVISORY_LOCK_KEY = 842270291337409120
 
 
-def _default_migrations_dir() -> Path:
-    return Path(__file__).resolve().parents[2] / "db" / "migrations"
+def _candidate_migrations_dirs(*, cli_migrations_dir: Path | None = None) -> list[Path]:
+    if cli_migrations_dir is not None:
+        return [Path(cli_migrations_dir)]
+
+    file_based = Path(__file__).resolve().parents[2] / "db" / "migrations"
+    return [
+        Path("db/migrations"),
+        Path("apps/backend/db/migrations"),
+        file_based,
+    ]
+
+
+def resolve_migrations_dir(*, cli_migrations_dir: Path | None = None) -> Path:
+    candidates = _candidate_migrations_dirs(cli_migrations_dir=cli_migrations_dir)
+    tried: list[str] = []
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        tried.append(str(resolved))
+        if resolved.exists() and resolved.is_dir():
+            return resolved
+
+    cwd = Path(os.getcwd()).resolve()
+    raise SystemExit(
+        "Migrations directory not found. "
+        f"cwd={cwd}. "
+        "Tried candidates: " + ", ".join(tried)
+    )
 
 
 def _ensure_schema_migrations_table(conn) -> None:
@@ -81,7 +107,7 @@ def run_migrations(*, database_url: str | None = None, migrations_dir: Path | No
     if not db_url:
         raise RuntimeError("DATABASE_URL is required to run migrations")
 
-    target_dir = migrations_dir or _default_migrations_dir()
+    target_dir = resolve_migrations_dir(cli_migrations_dir=migrations_dir)
 
     with psycopg.connect(db_url) as conn:
         with conn.cursor() as cur:
@@ -103,6 +129,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         applied = run_migrations(database_url=args.database_url, migrations_dir=migrations_dir)
+    except SystemExit as exc:
+        print(f"Migration failed: {exc}", file=sys.stderr)
+        return 1
     except Exception as exc:  # noqa: BLE001
         print(f"Migration failed: {exc}", file=sys.stderr)
         return 1

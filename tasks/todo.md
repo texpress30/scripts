@@ -2137,3 +2137,20 @@
 - On successful completion for campaign_daily runs, worker now triggers watermark reconcile for that account/grain.
 - For campaign_daily on non-google platforms, worker sets terminal `grain_not_supported:<grain>` errors instead of crashing.
 - Added worker tests validating campaign_daily fact upsert + source traceability and non-google terminal behavior.
+
+---
+
+# TODO — Fix migration runner path resolution for Railway root_dir=apps/backend
+
+- [x] Audit current `app.db.migrate` default path behavior and reproduce failing path expectation in Railway root directory mode.
+- [x] Implement robust migration dir auto-detection with candidate order (`db/migrations`, `apps/backend/db/migrations`, file-derived path) and CLI override priority.
+- [x] Improve missing-dir error to include current working directory and list of tried candidates.
+- [x] Add resolver-focused unit tests (no DB required) including apps/backend cwd preference and failure message contract.
+- [x] Update README Railway operational command with explicit `--migrations-dir db/migrations` + uvicorn chain.
+- [x] Run compile + targeted tests and document review.
+
+## Review — Fix migration runner path resolution for Railway root_dir=apps/backend
+- `app.db.migrate` now resolves migration directories robustly and keeps CLI override compatibility.
+- Resolver prefers `db/migrations` when process cwd is already `apps/backend`, avoiding false missing-dir failures in Railway root-directory deployments.
+- Failure message now includes `cwd` and all tried candidates for fast operational debugging.
+- Added non-DB tests for resolver selection and error-message contract.
