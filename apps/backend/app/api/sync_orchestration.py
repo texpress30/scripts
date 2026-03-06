@@ -38,7 +38,14 @@ class CreateBatchSyncRunsRequest(BaseModel):
 
 
 
+_MAX_PROGRESS_BATCH_ACCOUNT_IDS = 200
 
+class BatchAccountProgressRequest(BaseModel):
+    account_ids: list[str]
+    limit_active_only: bool = True
+
+
+_MAX_PROGRESS_BATCH_ACCOUNT_IDS = 200
 
 class BatchAccountProgressRequest(BaseModel):
     account_ids: list[str]
