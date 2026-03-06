@@ -1933,3 +1933,22 @@
   - ad_group: `(platform, account_id, ad_group_id, report_date)`
   - ad_unit: `(platform, account_id, ad_id, report_date)`
 - Added existence and uniqueness DB tests in an isolated schema, with skip behavior when `DATABASE_URL` is unavailable.
+
+---
+
+# TODO — Backend store upserts for daily entity performance facts
+
+- [x] Run workspace sync/status commands (`git status --short`, `git fetch --all --prune`, `git pull --ff-only` when possible).
+- [x] Re-check existing `ad_performance_reports` upsert pattern and align ON CONFLICT update behavior.
+- [x] Add backend store module with public upsert helpers for campaign/ad_group/ad_unit fact tables.
+- [x] Ensure upsert updates canonical metrics, `extra_metrics`, traceability fields, and refreshes `ingested_at`.
+- [x] Add DB-backed tests (skip without `DATABASE_URL`) proving conflict upsert overwrites facts for same daily keys.
+- [x] Run targeted checks and document review.
+
+## Review — Backend store upserts for daily entity performance facts
+- Added `entity_performance_reports.py` with 3 public functions:
+  - `upsert_campaign_performance_reports(conn, rows)`
+  - `upsert_ad_group_performance_reports(conn, rows)`
+  - `upsert_ad_unit_performance_reports(conn, rows)`
+- Each helper performs bulk `executemany` insert with `ON CONFLICT ... DO UPDATE` on the table business key and overwrites canonical metrics (`spend/impressions/clicks/conversions/conversion_value`), `extra_metrics`, and traceability (`source_window_start/end`, `source_job_id`), while refreshing `ingested_at = NOW()`.
+- Added integration-style DB tests that apply migrations in isolated schema and verify re-upsert on same key updates spend/clicks/extra_metrics for campaign/ad_group/ad_unit tables.
