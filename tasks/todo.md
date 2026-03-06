@@ -1,3 +1,4 @@
+<<<<<<< codex/close-current-session-and-open-new-workspace-161wjn
 # TODO — Google Ads provider: campaign_daily grain support (entity + facts + watermarks)
 
 - [x] Actualizez serviciul Google Ads pentru fetch campaign_daily pe interval half-open `[start, end_exclusive)` cu GAQL end inclusiv corect.
@@ -14,6 +15,8 @@
 - Verificări rulate cu succes: `python -m py_compile ...` și `pytest -q ... -k "campaign_daily or fetch_campaign_daily_metrics"`.
 
 ---
+=======
+>>>>>>> main
 # TODO — Verificare workspace nou prin Connector (remote + fetch)
 
 - [x] Notez planul de execuție pentru verificarea remote/fetch într-o sesiune nouă.
