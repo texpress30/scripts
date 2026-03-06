@@ -186,3 +186,4 @@
 - 2026-03-05: Pentru sweepere one-shot folosite în cron/manual ops, aliniază scope-ul cu loop runner-ul operațional și acoperă toate job type-urile active (historical + rolling) în același summary.
 - 2026-03-05: Pentru liste paginate cu selecție bulk, separă explicit setul filtrat de setul paginii curente și păstrează selecția într-un `Set` persistent, fără reset la schimbare de filtru/sort/pagină.
 - 2026-03-06: Pentru task-uri "schema-only", livrează strict migrații additive + teste DB de contract (existență tabele/constraints) și evită orice schimbare de orchestration/UI.
+- 2026-03-06: Pentru fact-table migrations cross-platform, păstrează contractul de metrici canonic sincronizat cu `ad_performance_reports` (aceleași nume/tipuri pentru metrici comune + același câmp `extra_metrics`).

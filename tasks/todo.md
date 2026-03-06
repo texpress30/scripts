@@ -1913,3 +1913,23 @@
 - Entity table PKs are composite per requirements and include minimal canonical columns plus `raw_payload/fetched_at/last_seen_at/payload_hash`.
 - Watermark table includes required date/timestamp fields, `UNIQUE (platform, account_id, grain)`, and strict grain check for `account_daily/campaign_daily/ad_group_daily/ad_daily`.
 - Added DB migration tests that apply migrations into an isolated schema, assert table presence with `to_regclass`, and validate duplicate watermark insert raises an exception.
+
+---
+
+# TODO — DB foundation: daily entity performance fact tables
+
+- [x] Run workspace update/status commands (`git status --short`, `git fetch --all --prune`, `git pull --ff-only` when possible).
+- [x] Inspect canonical metric names/types from existing `ad_performance_reports` usage and preserve them in new entity fact tables.
+- [x] Add additive migration for `campaign_performance_reports`, `ad_group_performance_reports`, `ad_unit_performance_reports` with required unique keys and indexes.
+- [x] Include traceability columns (`ingested_at`, `source_window_start`, `source_window_end`, `source_job_id`) in all three tables.
+- [x] Add backend DB migration tests for table existence and duplicate-key uniqueness enforcement.
+- [x] Run targeted checks and document review.
+
+## Review — DB foundation: daily entity performance fact tables
+- Added migration `0016_daily_entity_performance_facts.sql` with 3 additive daily fact tables for campaign/ad_group/ad-unit scope; no renames/drops and no worker/UI/orchestrator changes.
+- Canonical metric columns are aligned with `ad_performance_reports` usage (`spend`, `impressions`, `clicks`, `conversions`, `conversion_value`, `extra_metrics`) and retain consistent numeric/bigint/jsonb typing.
+- Enforced business-key uniqueness per grain:
+  - campaign: `(platform, account_id, campaign_id, report_date)`
+  - ad_group: `(platform, account_id, ad_group_id, report_date)`
+  - ad_unit: `(platform, account_id, ad_id, report_date)`
+- Added existence and uniqueness DB tests in an isolated schema, with skip behavior when `DATABASE_URL` is unavailable.
