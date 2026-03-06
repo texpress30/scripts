@@ -871,79 +871,79 @@ class ClientRegistryService:
                 )
                 rows = cur.fetchall()
 
-        result: list[dict[str, object]] = []
-        for row in rows:
-            account_id = str(row[0])
-            display_name = str(row[1]) if row[1] is not None else account_id
-            recovered_sync_start_date = _safe_row_value(row, 22)
-            recovered_backfill_completed_through = _safe_row_value(row, 23)
-            recovered_last_success_at = _safe_row_value(row, 24)
+            result: list[dict[str, object]] = []
+            for row in rows:
+                account_id = str(row[0])
+                display_name = str(row[1]) if row[1] is not None else account_id
+                recovered_sync_start_date = _safe_row_value(row, 22)
+                recovered_backfill_completed_through = _safe_row_value(row, 23)
+                recovered_last_success_at = _safe_row_value(row, 24)
 
-            account_status = _safe_row_value(row, 6)
-            explicit_sync_start_date = _safe_row_value(row, 7)
-            explicit_backfill_completed_through = _safe_row_value(row, 8)
-            explicit_rolling_synced_through = _safe_row_value(row, 9)
-            explicit_last_success_at = _safe_row_value(row, 10)
-            explicit_last_error = _safe_row_value(row, 11)
-            latest_status = _safe_row_value(row, 12)
-            latest_error = _safe_row_value(row, 16)
-            hist_min_start = _safe_row_value(row, 18)
-            hist_max_end = _safe_row_value(row, 19)
-            roll_max_end = _safe_row_value(row, 20)
-            last_success_from_done = _safe_row_value(row, 21)
+                account_status = _safe_row_value(row, 6)
+                explicit_sync_start_date = _safe_row_value(row, 7)
+                explicit_backfill_completed_through = _safe_row_value(row, 8)
+                explicit_rolling_synced_through = _safe_row_value(row, 9)
+                explicit_last_success_at = _safe_row_value(row, 10)
+                explicit_last_error = _safe_row_value(row, 11)
+                latest_status = _safe_row_value(row, 12)
+                latest_error = _safe_row_value(row, 16)
+                hist_min_start = _safe_row_value(row, 18)
+                hist_max_end = _safe_row_value(row, 19)
+                roll_max_end = _safe_row_value(row, 20)
+                last_success_from_done = _safe_row_value(row, 21)
 
-            sync_start_date = _coalesce_date_min(explicit_sync_start_date, hist_min_start, recovered_sync_start_date)
-            backfill_completed_through = _coalesce_date_max(explicit_backfill_completed_through, hist_max_end, recovered_backfill_completed_through)
-            rolling_synced_through = explicit_rolling_synced_through if explicit_rolling_synced_through is not None else roll_max_end
-            last_success_at = _coalesce_date_max(explicit_last_success_at, last_success_from_done, recovered_last_success_at)
-            last_error = _derive_effective_last_error(explicit_last_error=explicit_last_error, latest_run_error=latest_error, latest_run_status=latest_status)
-            if recovered_sync_start_date is not None or recovered_backfill_completed_through is not None:
-                logger.info(
-                    "client_registry.recovered_historical_backfill platform=%s account_id=%s sync_start_date=%s backfill_completed_through=%s",
-                    platform,
-                    account_id,
-                    sync_start_date,
-                    backfill_completed_through,
+                sync_start_date = _coalesce_date_min(explicit_sync_start_date, hist_min_start, recovered_sync_start_date)
+                backfill_completed_through = _coalesce_date_max(explicit_backfill_completed_through, hist_max_end, recovered_backfill_completed_through)
+                rolling_synced_through = explicit_rolling_synced_through if explicit_rolling_synced_through is not None else roll_max_end
+                last_success_at = _coalesce_date_max(explicit_last_success_at, last_success_from_done, recovered_last_success_at)
+                last_error = _derive_effective_last_error(explicit_last_error=explicit_last_error, latest_run_error=latest_error, latest_run_status=latest_status)
+                if recovered_sync_start_date is not None or recovered_backfill_completed_through is not None:
+                    logger.info(
+                        "client_registry.recovered_historical_backfill platform=%s account_id=%s sync_start_date=%s backfill_completed_through=%s",
+                        platform,
+                        account_id,
+                        sync_start_date,
+                        backfill_completed_through,
+                    )
+                result.append(
+                    _normalize_account_sync_metadata_payload(
+                        platform=str(platform),
+                        account_id=account_id,
+                        display_name=display_name,
+                        attached_client_id=int(row[2]) if row[2] is not None else None,
+                        attached_client_name=str(row[3]) if row[3] is not None else None,
+                        timezone_value=str(row[4]) if row[4] is not None else None,
+                        currency_value=str(row[5]) if row[5] is not None else None,
+                        account_status=account_status,
+                        sync_start_date=sync_start_date,
+                        backfill_completed_through=backfill_completed_through,
+                        rolling_synced_through=rolling_synced_through,
+                        last_success_at=last_success_at,
+                        last_error=last_error,
+                        last_run_status=_safe_row_value(row, 12),
+                        last_run_type=_safe_row_value(row, 13),
+                        last_run_started_at=_safe_row_value(row, 14),
+                        last_run_finished_at=_safe_row_value(row, 15),
+                        has_active_sync=bool(_safe_row_value(row, 17)),
+                    )
                 )
-            result.append(
-                _normalize_account_sync_metadata_payload(
-                    platform=str(platform),
-                    account_id=account_id,
-                    display_name=display_name,
-                    attached_client_id=int(row[2]) if row[2] is not None else None,
-                    attached_client_name=str(row[3]) if row[3] is not None else None,
-                    timezone_value=str(row[4]) if row[4] is not None else None,
-                    currency_value=str(row[5]) if row[5] is not None else None,
-                    account_status=account_status,
-                    sync_start_date=sync_start_date,
-                    backfill_completed_through=backfill_completed_through,
-                    rolling_synced_through=rolling_synced_through,
-                    last_success_at=last_success_at,
-                    last_error=last_error,
-                    last_run_status=_safe_row_value(row, 12),
-                    last_run_type=_safe_row_value(row, 13),
-                    last_run_started_at=_safe_row_value(row, 14),
-                    last_run_finished_at=_safe_row_value(row, 15),
-                    has_active_sync=bool(_safe_row_value(row, 17)),
-                )
+
+            account_ids = [str(item.get("account_id") or "") for item in result if item.get("account_id")]
+            watermark_by_account = list_platform_account_watermarks(
+                conn,
+                platform=str(platform),
+                account_ids=account_ids,
+                grains=["campaign_daily", "ad_group_daily", "ad_daily"],
             )
-
-        account_ids = [str(item.get("account_id") or "") for item in result if item.get("account_id")]
-        watermark_by_account = list_platform_account_watermarks(
-            conn,
-            platform=str(platform),
-            account_ids=account_ids,
-            grains=["campaign_daily", "ad_group_daily", "ad_daily"],
-        )
-        for item in result:
-            account_id = str(item.get("account_id") or "")
-            by_grain = watermark_by_account.get(account_id, {})
-            item["entity_watermarks"] = {
-                "campaign_daily": _normalize_entity_watermark_payload(by_grain.get("campaign_daily")),
-                "ad_group_daily": _normalize_entity_watermark_payload(by_grain.get("ad_group_daily")),
-                "ad_daily": _normalize_entity_watermark_payload(by_grain.get("ad_daily")),
-            }
-        return result
+            for item in result:
+                account_id = str(item.get("account_id") or "")
+                by_grain = watermark_by_account.get(account_id, {})
+                item["entity_watermarks"] = {
+                    "campaign_daily": _normalize_entity_watermark_payload(by_grain.get("campaign_daily")),
+                    "ad_group_daily": _normalize_entity_watermark_payload(by_grain.get("ad_group_daily")),
+                    "ad_daily": _normalize_entity_watermark_payload(by_grain.get("ad_daily")),
+                }
+            return result
 
     def update_platform_account_operational_metadata(
         self,

@@ -2069,3 +2069,17 @@
 - Batch creation enqueues one run per `(account_id, grain)` and includes `grain` on per-run/per-result response items while preserving existing response fields.
 - Historical dedupe guard now locks and filters by grain, allowing concurrent backfills for different grains on same account/date window while deduping exact grain duplicates.
 - Extended API/store tests cover all requested grain contract scenarios, including 422 validation for invalid grain and duplicate grain deduplication behavior.
+
+---
+
+# TODO — Fix closed DB connection in client_registry list_platform_accounts
+
+- [x] Sync workspace state (`git fetch --all --prune`, `git status --short`) and confirm working branch.
+- [x] Fix connection lifetime so `list_platform_account_watermarks` is called inside an active DB connection context.
+- [x] Add non-DB regression test that fails if watermarks helper receives a closed connection.
+- [x] Run requested checks (`pytest`, `py_compile`, `git status --short`) and record review.
+
+## Review — Fix closed DB connection in client_registry list_platform_accounts
+- Moved entity watermark lookup/enrichment to run before exiting `with self._connect_or_raise() as conn`, preventing use of a closed psycopg connection.
+- Added regression test with fake connection lifecycle asserting `list_platform_account_watermarks` is invoked while `conn.closed == False`.
+- Preserved existing output contract for `entity_watermarks` keys (`campaign_daily`, `ad_group_daily`, `ad_daily`).

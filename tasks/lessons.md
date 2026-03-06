@@ -198,3 +198,4 @@
 - 2026-03-06: Pentru payload-uri per-grain, folosește batch read cu output complet pe account_ids cerute (inclusiv `null` la lipsă), evitând N+1 queries și contracte inconsistente.
 - 2026-03-06: Când o coloană există deja din migrații anterioare (ex. `sync_runs.grain`), aplică hardening incremental în schema bootstrap/store (default/check/backfill/index) în loc să introduci migrație nouă duplicată.
 - 2026-03-06: Când userul cere audit + confirmare comportament prin teste, livrează obligatoriu un commit cu teste de contract (și implementare minimă dacă lipsește suportul), nu închide task-ul doar cu "working tree clean" fără dovadă executabilă.
+- 2026-03-06: Când un helper dependent de DB primește `conn`, verifică explicit lifetime-ul context managerului și adaugă test de regresie cu fake connection (`closed` flag) ca să prinzi utilizarea după `with`.
