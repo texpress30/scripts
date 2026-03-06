@@ -399,6 +399,7 @@ class SyncWorkerTests(unittest.TestCase):
             return {"remaining": 0 if state["chunk"]["status"] in ("done", "error") else 1, "errors": 0}
 
         upsert_calls = []
+        entity_upsert_calls = []
 
         class _Conn:
             def __enter__(self):
@@ -410,6 +411,10 @@ class SyncWorkerTests(unittest.TestCase):
 
         def _upsert_campaign(conn, rows):
             upsert_calls.append(rows)
+            return len(rows)
+
+        def _upsert_entities(conn, rows):
+            entity_upsert_calls.append(rows)
             return len(rows)
 
         with patch.object(sync_worker.sync_run_chunks_store, "claim_next_queued_chunk_any", side_effect=_claim_any), patch.object(
@@ -425,6 +430,10 @@ class SyncWorkerTests(unittest.TestCase):
             "get_sync_run_chunk_status_counts",
             side_effect=_counts,
         ), patch.object(sync_worker.sync_runs_store, "_connect", return_value=_Conn()), patch.object(
+            sync_worker,
+            "upsert_platform_campaigns",
+            side_effect=_upsert_entities,
+        ), patch.object(
             sync_worker,
             "upsert_campaign_performance_reports",
             side_effect=_upsert_campaign,
@@ -442,6 +451,10 @@ class SyncWorkerTests(unittest.TestCase):
             return_value=[
                 {
                     "campaign_id": "123",
+                    "campaign_name": "Brand",
+                    "campaign_status": "ENABLED",
+                    "campaign_raw": {"id": "123", "name": "Brand", "status": "ENABLED"},
+                    "campaign_payload_hash": "h1",
                     "report_date": "2026-02-01",
                     "spend": 1.2,
                     "impressions": 10,
@@ -449,21 +462,42 @@ class SyncWorkerTests(unittest.TestCase):
                     "conversions": 0.5,
                     "conversion_value": 5.0,
                     "extra_metrics": {"google_ads": {"cost_micros": 1200000}},
+                },
+                {
+                    "campaign_id": "123",
+                    "campaign_name": "Brand",
+                    "campaign_status": "ENABLED",
+                    "campaign_raw": {"id": "123", "name": "Brand", "status": "ENABLED"},
+                    "campaign_payload_hash": "h1",
+                    "report_date": "2026-02-02",
+                    "spend": 1.5,
+                    "impressions": 11,
+                    "clicks": 3,
+                    "conversions": 0.6,
+                    "conversion_value": 5.5,
+                    "extra_metrics": {"google_ads": {"cost_micros": 1500000}},
                 }
             ],
-        ):
+        ) as campaign_fetch:
             processed = sync_worker.process_next_chunk()
 
         self.assertTrue(processed)
         self.assertEqual(state["chunk"]["status"], "done")
         self.assertEqual(state["run"]["status"], "done")
-        self.assertEqual(state["chunk"]["rows_written"], 1)
-        self.assertEqual(state["run"]["rows_written"], 1)
+        self.assertEqual(state["chunk"]["rows_written"], 2)
+        self.assertEqual(state["run"]["rows_written"], 2)
         self.assertEqual((state["chunk"].get("metadata") or {}).get("grain"), "campaign_daily")
+        self.assertEqual(campaign_fetch.call_count, 1)
+        self.assertEqual(str(campaign_fetch.call_args.kwargs["start_date"]), "2026-02-01")
+        self.assertEqual(str(campaign_fetch.call_args.kwargs["end_date_exclusive"]), "2026-02-08")
+        self.assertEqual(len(entity_upsert_calls), 1)
+        self.assertEqual(len(entity_upsert_calls[0]), 1)
+        self.assertEqual(entity_upsert_calls[0][0]["campaign_id"], "123")
         self.assertEqual(len(upsert_calls), 1)
+        self.assertEqual(len(upsert_calls[0]), 2)
         self.assertEqual(upsert_calls[0][0]["source_job_id"], "job-1")
         self.assertEqual(str(upsert_calls[0][0]["source_window_start"]), "2026-02-01")
-        self.assertEqual(str(upsert_calls[0][0]["source_window_end"]), "2026-02-07")
+        self.assertEqual(str(upsert_calls[0][0]["source_window_end"]), "2026-02-08")
 
     def test_process_next_chunk_campaign_daily_non_google_is_terminal_grain_not_supported(self):
         state = self._build_state(job_type="manual", grain="campaign_daily", platform="meta_ads")

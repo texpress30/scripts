@@ -1,3 +1,32 @@
+# TODO — Google Ads provider: campaign_daily grain support (entity + facts + watermarks)
+
+- [x] Actualizez serviciul Google Ads pentru fetch campaign_daily pe interval half-open `[start, end_exclusive)` cu GAQL end inclusiv corect.
+- [x] Extind sync worker pentru `platform=google_ads` + `grain=campaign_daily`: upsert campanii distincte în `platform_campaigns` + facts zilnice în `campaign_performance_reports`.
+- [x] Mențin reconcilierea watermark-urilor campaign_daily și metadata rows_written/duration fără regresii pe account_daily.
+- [x] Adaug/actualizez teste unitare focusate pentru fereastră GAQL, mapare micros->spend, dedupe entity rows, facts rows și path de suport grain.
+- [x] Rulez verificările cerute (`python -m py_compile`, `pytest -q` target tests), completez review, commit + PR metadata.
+
+## Review
+- `GoogleAdsService.fetch_campaign_daily_metrics` folosește acum parametru `end_date_exclusive`, convertește intern la `end_inclusive = end_exclusive - 1 zi` pentru GAQL și păstrează maparea canonică metrici (`spend` din `costMicros / 1_000_000`, plus `impressions/clicks/conversions/conversion_value`).
+- `sync_worker` pentru `platform=google_ads` + `grain=campaign_daily` face două upsert-uri în aceeași tranzacție: (1) entity dedup per `campaign_id` în `platform_campaigns`; (2) facts per zi în `campaign_performance_reports`, cu traceability fields (`source_window_start/source_window_end/source_job_id`).
+- Workerul păstrează `rows_written` bazat pe facts rows (pentru chunk metadata/progress) și menține flow-ul existent de reconciliere watermark la final de run pentru `campaign_daily`.
+- Testele actualizate validează: fereastra GAQL half-open->inclusive, conversia `cost_micros -> spend`, dedupe entity rows, facts rows per-date și faptul că path-ul `campaign_daily` pentru `google_ads` nu este tratat ca unsupported grain.
+- Verificări rulate cu succes: `python -m py_compile ...` și `pytest -q ... -k "campaign_daily or fetch_campaign_daily_metrics"`.
+
+---
+# TODO — Verificare workspace nou prin Connector (remote + fetch)
+
+- [x] Notez planul de execuție pentru verificarea remote/fetch într-o sesiune nouă.
+- [x] Deschid o sesiune nouă de terminal (fără reutilizarea sesiunii anterioare) și verific `git remote -v`.
+- [x] Rulez `git fetch --all --prune` în sesiunea nouă și confirm rezultat.
+- [x] Documentez review-ul și evidența comenzilor rulate.
+
+## Review
+- Verificarea în sesiune nouă (`NEW_SESSION_2`) arată că repository-ul local nu are remotes configurate (`git remote -v` fără output).
+- `git fetch --all --prune` a rulat fără erori, dar fără remotes nu a avut ce sincroniza (exit code 0).
+- Validare explicită pe origin: `git fetch origin --prune` eșuează cu `fatal: "origin" does not appear to be a git repository` (exit 128), confirmând lipsa remote-ului `origin`.
+
+---
 # TODO — Diagnostic E2E + Fix Google Ads Data Sync către Dashboard
 
 - [x] Audit repo end-to-end (pipeline OAuth/API/sync/DB/agregare/UI) pentru Google Ads în Agency/Sub-Account dashboard.
