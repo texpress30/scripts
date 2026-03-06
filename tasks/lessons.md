@@ -194,3 +194,5 @@
 - 2026-03-06: La câmpuri mutable opționale (`last_error`, `last_job_id`), definește clar semantica `None` (păstrează existent) pentru a evita wipe accidental la update-uri parțiale.
 - 2026-03-06: Pentru reconcilieri watermark din facts, separă derivarea coverage (read-only, include no-data accounts) de aplicarea watermark-ului (write-only pe conturile cu `max_date`), ca să păstrezi comportament explicit și testabil.
 - 2026-03-06: În task-uri de reconcile parțial, setează explicit doar câmpurile cerute (aici `sync_start_date` + `historical_synced_through`) și evită update-ul implicit al altor watermark-uri (ex. `rolling_synced_through`).
+- 2026-03-06: Pentru extinderi de read-model API, adaugă câmpurile noi strict additive (ex. `entity_watermarks`) și păstrează contractul existent neschimbat ca să eviți regresii frontend.
+- 2026-03-06: Pentru payload-uri per-grain, folosește batch read cu output complet pe account_ids cerute (inclusiv `null` la lipsă), evitând N+1 queries și contracte inconsistente.

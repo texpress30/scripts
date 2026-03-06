@@ -64,6 +64,65 @@ def get_platform_account_watermark(
         return _row_to_dict(cursor.fetchone())
 
 
+def list_platform_account_watermarks(
+    conn,
+    *,
+    platform: str,
+    account_ids: list[str],
+    grains: list[str],
+) -> dict[str, dict[str, dict[str, Any] | None]]:
+    for grain in grains:
+        _validate_grain(grain)
+
+    if not account_ids:
+        return {}
+
+    normalized_account_ids = [str(account_id) for account_id in account_ids]
+    normalized_grains = [str(grain) for grain in grains]
+
+    result: dict[str, dict[str, dict[str, Any] | None]] = {
+        account_id: {grain: None for grain in normalized_grains}
+        for account_id in normalized_account_ids
+    }
+
+    if not normalized_grains:
+        return result
+
+    with conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT
+              platform,
+              account_id,
+              grain,
+              sync_start_date,
+              historical_synced_through,
+              rolling_synced_through,
+              last_success_at,
+              last_error,
+              last_job_id,
+              updated_at
+            FROM platform_account_watermarks
+            WHERE platform = %s
+              AND account_id = ANY(%s::text[])
+              AND grain = ANY(%s::text[])
+            """,
+            (platform, normalized_account_ids, normalized_grains),
+        )
+        rows = cursor.fetchall()
+
+    for row in rows:
+        row_data = _row_to_dict(row)
+        if row_data is None:
+            continue
+        account_id = str(row_data["account_id"])
+        grain = str(row_data["grain"])
+        if account_id in result and grain in result[account_id]:
+            result[account_id][grain] = row_data
+
+    return result
+
+
 def upsert_platform_account_watermark(
     conn,
     *,

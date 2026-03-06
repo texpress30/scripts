@@ -2018,3 +2018,20 @@
 - Reconcile applies only `sync_start_date` and `historical_synced_through` via `upsert_platform_account_watermark`; it intentionally does not set `rolling_synced_through` in this task.
 - Summary payload includes per-grain updated and skipped-no-data counters to support operational observability.
 - Added DB integration tests validating coverage derivation, no-data skip behavior, and non-regression via existing watermark store semantics.
+
+---
+
+# TODO — Expose entity watermarks by grain in platform accounts read-model
+
+- [x] Run workspace update commands (`git status --short`, `git fetch --all --prune`, `git pull --ff-only` when possible).
+- [x] Add batch watermark read helper for account_ids+grains with single SQL query and full-account output coverage.
+- [x] Integrate batch watermarks into platform accounts read-model as additive `entity_watermarks` payload.
+- [x] Preserve existing response fields/semantics while adding grain-level watermark object (`campaign_daily`, `ad_group_daily`, `ad_daily`).
+- [x] Add DB-backed contract test (skip-safe) validating populated vs missing grain behavior across two accounts.
+- [x] Run requested checks and document review.
+
+## Review — Expose entity watermarks by grain in platform accounts read-model
+- Added `list_platform_account_watermarks(...)` to batch-read watermark rows for requested accounts/grains in one query and return null placeholders for missing rows.
+- `ClientRegistryService.list_platform_accounts` now enriches each account with additive `entity_watermarks` keyed by grain, while keeping existing metadata fields intact.
+- Grain payload shape mirrors watermark columns (`sync_start_date`, `historical_synced_through`, `rolling_synced_through`, `last_success_at`, `last_error`, `last_job_id`).
+- Added DB integration contract test proving: account with only campaign watermark gets object only on `campaign_daily`; missing grains and no-watermark accounts return nulls.

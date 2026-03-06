@@ -7,6 +7,7 @@ from threading import Lock
 import os
 
 from app.core.config import load_settings
+from app.services.platform_account_watermarks_store import list_platform_account_watermarks
 
 try:
     import psycopg
@@ -48,7 +49,7 @@ def _safe_row_value(row: tuple[object, ...], index: int) -> object | None:
     return row[index]
 
 
-def _normalize_account_sync_metadata_payload(*, platform: str, account_id: str, display_name: str, attached_client_id: int | None, attached_client_name: str | None, timezone_value: str | None, currency_value: str | None, account_status: object | None, sync_start_date: object | None, backfill_completed_through: object | None, rolling_synced_through: object | None, last_success_at: object | None, last_error: object | None, last_run_status: object | None, last_run_type: object | None, last_run_started_at: object | None, last_run_finished_at: object | None, has_active_sync: bool) -> dict[str, str | int | None | bool]:
+def _normalize_account_sync_metadata_payload(*, platform: str, account_id: str, display_name: str, attached_client_id: int | None, attached_client_name: str | None, timezone_value: str | None, currency_value: str | None, account_status: object | None, sync_start_date: object | None, backfill_completed_through: object | None, rolling_synced_through: object | None, last_success_at: object | None, last_error: object | None, last_run_status: object | None, last_run_type: object | None, last_run_started_at: object | None, last_run_finished_at: object | None, has_active_sync: bool) -> dict[str, object]:
     return {
         "id": str(account_id),
         "name": str(display_name),
@@ -70,6 +71,28 @@ def _normalize_account_sync_metadata_payload(*, platform: str, account_id: str, 
         "last_run_started_at": str(last_run_started_at) if last_run_started_at is not None else None,
         "last_run_finished_at": str(last_run_finished_at) if last_run_finished_at is not None else None,
         "has_active_sync": bool(has_active_sync),
+        "entity_watermarks": _empty_entity_watermarks_payload(),
+    }
+
+
+def _empty_entity_watermarks_payload() -> dict[str, dict[str, object | None] | None]:
+    return {
+        "campaign_daily": None,
+        "ad_group_daily": None,
+        "ad_daily": None,
+    }
+
+
+def _normalize_entity_watermark_payload(value: dict[str, object] | None) -> dict[str, object | None] | None:
+    if value is None:
+        return None
+    return {
+        "sync_start_date": value.get("sync_start_date"),
+        "historical_synced_through": value.get("historical_synced_through"),
+        "rolling_synced_through": value.get("rolling_synced_through"),
+        "last_success_at": value.get("last_success_at"),
+        "last_error": value.get("last_error"),
+        "last_job_id": value.get("last_job_id"),
     }
 
 
@@ -664,13 +687,13 @@ class ClientRegistryService:
                 )
             conn.commit()
 
-    def list_platform_accounts(self, *, platform: str) -> list[dict[str, str | int | None | bool]]:
+    def list_platform_accounts(self, *, platform: str) -> list[dict[str, object]]:
         if self._is_test_mode():
             with self._lock:
                 items = self._memory_platform_accounts.get(platform, {})
                 mappings = self._memory_account_client_mappings.get(platform, {})
                 clients_by_id = {c.id: c for c in self._clients if c.source == "manual"}
-                result: list[dict[str, str | int | None | bool]] = []
+                result: list[dict[str, object]] = []
                 for key in sorted(items.keys()):
                     item = dict(items[key])
                     mapped_client_ids = sorted(mappings.get(item["id"], set()))
@@ -848,7 +871,7 @@ class ClientRegistryService:
                 )
                 rows = cur.fetchall()
 
-        result: list[dict[str, str | int | None | bool]] = []
+        result: list[dict[str, object]] = []
         for row in rows:
             account_id = str(row[0])
             display_name = str(row[1]) if row[1] is not None else account_id
@@ -904,6 +927,22 @@ class ClientRegistryService:
                     has_active_sync=bool(_safe_row_value(row, 17)),
                 )
             )
+
+        account_ids = [str(item.get("account_id") or "") for item in result if item.get("account_id")]
+        watermark_by_account = list_platform_account_watermarks(
+            conn,
+            platform=str(platform),
+            account_ids=account_ids,
+            grains=["campaign_daily", "ad_group_daily", "ad_daily"],
+        )
+        for item in result:
+            account_id = str(item.get("account_id") or "")
+            by_grain = watermark_by_account.get(account_id, {})
+            item["entity_watermarks"] = {
+                "campaign_daily": _normalize_entity_watermark_payload(by_grain.get("campaign_daily")),
+                "ad_group_daily": _normalize_entity_watermark_payload(by_grain.get("ad_group_daily")),
+                "ad_daily": _normalize_entity_watermark_payload(by_grain.get("ad_daily")),
+            }
         return result
 
     def update_platform_account_operational_metadata(
