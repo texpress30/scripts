@@ -30,6 +30,7 @@
 - Verificări rulate cu succes: `python -m py_compile ...` și `pytest -q ... -k "campaign_daily or fetch_campaign_daily_metrics"`.
 
 ---
+
 # TODO — Verificare workspace nou prin Connector (remote + fetch)
 
 - [x] Notez planul de execuție pentru verificarea remote/fetch într-o sesiune nouă.
