@@ -4,3 +4,5 @@ uvicorn[standard]==0.30.6
 psycopg[binary]==3.2.1
 
 google-ads==25.1.0
+
+cryptography==43.0.1
