@@ -132,13 +132,20 @@ cd apps/frontend && npm run build
    - `GOOGLE_ADS_REDIRECT_URI`
    - `INTEGRATION_SECRET_ENCRYPTION_KEY`
    - opțional: `GOOGLE_ADS_API_VERSION` (default `v23`)
-2. Rulează migrațiile DB (în ordinea fișierelor din `apps/backend/db/migrations`).
+2. Rulează migrațiile DB cu runner-ul idempotent: `cd apps/backend && PYTHONPATH=. python -m app.db.migrate`.
 2.1 OAuth callback salvează automat refresh token-ul Google în DB (criptat); nu mai este necesar copy/paste manual în Railway pentru `GOOGLE_ADS_REFRESH_TOKEN`.
 3. Rulează diagnostic local/remote: `PYTHONPATH=apps/backend python scripts/diag_google_ads.py`.
 4. Rulează sync on-demand pentru conturile mapate: `POST /integrations/google-ads/sync-now` (agency admin).
 5. Verifică datele în DB (`ad_performance_reports`) pe ultimele 30 zile și endpoint-ul `GET /dashboard/agency/summary?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD`.
 6. Confirmă în UI că Google Ads arată `rows30 > 0` și cardurile dashboard nu mai rămân pe 0 după sync.
 
+
+
+## Railway: rulare migrații Postgres (idempotent + lock)
+- Runner migrații: `cd apps/backend && PYTHONPATH=. python -m app.db.migrate`
+- Comportament: creează `schema_migrations` dacă lipsește, aplică fișierele `apps/backend/db/migrations/*.sql` în ordine lexicografică și marchează fiecare fișier aplicat o singură dată.
+- Siguranță concurență: runner-ul folosește advisory lock Postgres global, deci rulări paralele nu aplică dublu migrațiile.
+- Recomandare Railway: rulează un serviciu one-shot dedicat migrărilor (aceeași imagine + comandă de mai sus) înainte/odată cu deploy-ul web, apoi pornește serviciul `uvicorn`.
 
 ## Railway: rolling sync zilnic (cron)
 - **Comandă cron Railway (daily enqueue):** `cd apps/backend && PYTHONPATH=. python -m app.workers.rolling_scheduler`

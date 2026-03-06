@@ -2083,3 +2083,21 @@
 - Moved entity watermark lookup/enrichment to run before exiting `with self._connect_or_raise() as conn`, preventing use of a closed psycopg connection.
 - Added regression test with fake connection lifecycle asserting `list_platform_account_watermarks` is invoked while `conn.closed == False`.
 - Preserved existing output contract for `entity_watermarks` keys (`campaign_daily`, `ad_group_daily`, `ad_daily`).
+
+---
+
+# TODO — Minimal SQL migration runner for Railway/Postgres
+
+- [x] Audit current backend startup/docs and confirm migrations are not auto-applied.
+- [x] Add `app.db.migrate` module with `python -m app.db.migrate` CLI entrypoint.
+- [x] Implement advisory lock + `schema_migrations` + lexicographic file application with per-file transaction and rollback-on-failure.
+- [x] Add skip-safe DB test covering table creation, apply, and idempotent second run.
+- [x] Update README with Railway migration runbook (one-shot migrator service recommendation).
+- [x] Run targeted checks/tests and document review.
+
+## Review — Minimal SQL migration runner for Railway/Postgres
+- Added `apps/backend/app/db/migrate.py` with CLI runner and reusable `run_migrations/apply_migrations` helpers.
+- Runner uses a global Postgres advisory lock, ensures `schema_migrations`, applies pending `*.sql` files once in sorted order, and records applied IDs atomically.
+- Migration failures rollback current transaction and return non-zero via CLI.
+- Added DB integration test (`test_db_migration_runner.py`) that uses a temporary migration directory and validates first apply + idempotent second run.
+- README now documents the exact Railway command and recommends a one-shot migration service before web startup.

@@ -199,3 +199,4 @@
 - 2026-03-06: Când o coloană există deja din migrații anterioare (ex. `sync_runs.grain`), aplică hardening incremental în schema bootstrap/store (default/check/backfill/index) în loc să introduci migrație nouă duplicată.
 - 2026-03-06: Când userul cere audit + confirmare comportament prin teste, livrează obligatoriu un commit cu teste de contract (și implementare minimă dacă lipsește suportul), nu închide task-ul doar cu "working tree clean" fără dovadă executabilă.
 - 2026-03-06: Când un helper dependent de DB primește `conn`, verifică explicit lifetime-ul context managerului și adaugă test de regresie cu fake connection (`closed` flag) ca să prinzi utilizarea după `with`.
+- 2026-03-06: Pentru deploy-uri Postgres în production, nu te baza pe startup implicit al web app; livrează un migration runner idempotent cu `schema_migrations` + advisory lock și documentează rulare one-shot în orchestrator.
