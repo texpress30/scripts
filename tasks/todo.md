@@ -2101,3 +2101,20 @@
 - Migration failures rollback current transaction and return non-zero via CLI.
 - Added DB integration test (`test_db_migration_runner.py`) that uses a temporary migration directory and validates first apply + idempotent second run.
 - README now documents the exact Railway command and recommends a one-shot migration service before web startup.
+
+---
+
+# TODO — Make sync_worker grain-aware (safe default)
+
+- [x] Audit current worker grain handling and dedupe/lock behavior.
+- [x] Add safe grain default (`NULL`/missing => `account_daily`) in worker execution path.
+- [x] Add unsupported-grain terminal handling (`grain_not_supported`) without crashing worker loop.
+- [x] Propagate normalized grain into chunk status metadata for attribution.
+- [x] Extend tests for null-grain default path, unsupported-grain error path, and grain-scoped coexistence in dedupe semantics.
+- [x] Run targeted compile/tests and document review.
+
+## Review — Make sync_worker grain-aware (safe default)
+- Worker now normalizes run grain with backward-compatible default `account_daily` and keeps existing Google account_daily execution path.
+- Unsupported grain no longer crashes processing: chunk and run are marked `error` with stable `grain_not_supported:<grain>` payload and worker continues.
+- Chunk status updates now attach `metadata.grain` so completed/failed chunks remain attributable to grain.
+- Dedupe test coverage explicitly verifies same account/date historical run creation remains allowed across different grains.

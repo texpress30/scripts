@@ -54,6 +54,14 @@ class BatchAccountProgressRequest(BaseModel):
 
 _MAX_PROGRESS_BATCH_ACCOUNT_IDS = 200
 
+
+class BatchAccountProgressRequest(BaseModel):
+    account_ids: list[str]
+    limit_active_only: bool = True
+
+
+_MAX_PROGRESS_BATCH_ACCOUNT_IDS = 200
+
 class RollingEnqueueRequest(BaseModel):
     platform: Literal["google_ads"] = "google_ads"
     limit: int = Field(default=500, ge=1, le=5000)

@@ -188,5 +188,49 @@ class SyncRunsStoreDedupeTests(unittest.TestCase):
         self.assertEqual(select_params[2], "campaign_daily")
 
 
+    def test_existing_active_run_with_other_grain_does_not_block_create(self):
+        created_row = (
+            "job-campaign",
+            "google_ads",
+            "queued",
+            11,
+            "3986597205",
+            date(2026, 1, 1),
+            date(2026, 1, 7),
+            7,
+            None,
+            None,
+            None,
+            None,
+            None,
+            {},
+            "batch-3",
+            "historical_backfill",
+            "campaign_daily",
+            2,
+            0,
+            0,
+        )
+        store, cursor, _ = self._build_store(fetches=[None, created_row])
+
+        result = store.create_historical_sync_run_if_not_active(
+            job_id="job-campaign",
+            platform="google_ads",
+            date_start=date(2026, 1, 1),
+            date_end=date(2026, 1, 7),
+            chunk_days=7,
+            client_id=11,
+            account_id="3986597205",
+            metadata={"source": "manual"},
+            batch_id="batch-3",
+            grain="campaign_daily",
+            chunks_total=2,
+        )
+
+        self.assertTrue(result["created"])
+        self.assertEqual(result["run"]["grain"], "campaign_daily")
+        self.assertTrue(any("INSERT INTO sync_runs" in query for query, _ in cursor.executed))
+
+
 if __name__ == "__main__":
     unittest.main()

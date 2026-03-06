@@ -13,12 +13,22 @@ from app.services.sync_runs_store import sync_runs_store
 
 logger = logging.getLogger(__name__)
 
+_SUPPORTED_GRAINS = {"account_daily", "campaign_daily", "ad_group_daily", "ad_daily"}
+_GRAIN_NOT_SUPPORTED_ERROR = "grain_not_supported"
+
 
 def _as_date(value: object) -> date:
     if isinstance(value, date):
         return value
     parsed = date.fromisoformat(str(value))
     return parsed
+
+
+def _normalize_run_grain(run: dict[str, object]) -> str:
+    grain = str(run.get("grain") or "account_daily").strip().lower()
+    if grain == "":
+        return "account_daily"
+    return grain
 
 
 def _finalize_run_if_complete(run: dict[str, object]) -> None:
@@ -97,6 +107,33 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
         sync_runs_store.update_sync_run_status(job_id=job_id, status="running", mark_started=True)
         logger.info("sync_worker.run_started job_id=%s", job_id)
 
+    grain = _normalize_run_grain(run)
+    if grain not in _SUPPORTED_GRAINS:
+        chunk_error = f"{_GRAIN_NOT_SUPPORTED_ERROR}:{grain}"
+        sync_run_chunks_store.update_sync_run_chunk_status(
+            job_id=job_id,
+            chunk_index=chunk_index,
+            status="error",
+            error=chunk_error,
+            metadata={"grain": grain, "error_code": _GRAIN_NOT_SUPPORTED_ERROR},
+            rows_written=0,
+            duration_ms=0,
+            mark_finished=True,
+        )
+        sync_runs_store.update_sync_run_progress(
+            job_id=job_id,
+            chunks_done_delta=1,
+            rows_written_delta=0,
+        )
+        sync_runs_store.update_sync_run_status(
+            job_id=job_id,
+            status="error",
+            mark_finished=True,
+            error=chunk_error,
+        )
+        logger.error("sync_worker.unsupported_grain job_id=%s grain=%s", job_id, grain)
+        return True
+
     started = time.monotonic()
     rows_written = 0
     chunk_error: str | None = None
@@ -149,6 +186,7 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
             job_id=job_id,
             chunk_index=chunk_index,
             status="done",
+            metadata={"grain": grain},
             rows_written=rows_written,
             duration_ms=duration_ms,
             mark_finished=True,
@@ -171,6 +209,7 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
             chunk_index=chunk_index,
             status="error",
             error=chunk_error,
+            metadata={"grain": grain},
             rows_written=0,
             duration_ms=duration_ms,
             mark_finished=True,
