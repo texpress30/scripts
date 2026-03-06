@@ -1952,3 +1952,19 @@
   - `upsert_ad_unit_performance_reports(conn, rows)`
 - Each helper performs bulk `executemany` insert with `ON CONFLICT ... DO UPDATE` on the table business key and overwrites canonical metrics (`spend/impressions/clicks/conversions/conversion_value`), `extra_metrics`, and traceability (`source_window_start/end`, `source_job_id`), while refreshing `ingested_at = NOW()`.
 - Added integration-style DB tests that apply migrations in isolated schema and verify re-upsert on same key updates spend/clicks/extra_metrics for campaign/ad_group/ad_unit tables.
+
+---
+
+# TODO — Partition monthly daily entity fact tables
+
+- [x] Run workspace update commands (`git status --short`, `git fetch --all --prune`, `git pull --ff-only` when possible).
+- [x] Add migration to convert campaign/ad_group/ad_unit fact tables into RANGE partitioned parents by `report_date`.
+- [x] Add monthly partitions from 2024-01 through 2026-12 plus DEFAULT partition for each table.
+- [x] Preserve uniqueness/index coverage with new constraint/index names and copy data from `_unpartitioned` tables before dropping old tables.
+- [x] Add DB tests (skip without `DATABASE_URL`) to verify parent relkind=`p` and partition existence.
+- [x] Run targeted checks and document review.
+
+## Review — Partition monthly daily entity fact tables
+- Added migration `0017_partition_daily_entity_facts.sql` that performs `rename -> create partitioned parent -> add constraints/indexes -> create partitions/default -> copy data -> drop old` for all three fact tables.
+- Partition generation uses monthly loop for `[2024-01-01, 2027-01-01)` and creates fail-safe DEFAULT partition per table.
+- Added dedicated DB migration test asserting parent tables are partitioned (`relkind='p'`), key partitions exist (`*_2024_01` + `*_default`), and duplicate business key insert is rejected.
