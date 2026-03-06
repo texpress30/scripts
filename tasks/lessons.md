@@ -196,3 +196,4 @@
 - 2026-03-06: În task-uri de reconcile parțial, setează explicit doar câmpurile cerute (aici `sync_start_date` + `historical_synced_through`) și evită update-ul implicit al altor watermark-uri (ex. `rolling_synced_through`).
 - 2026-03-06: Pentru extinderi de read-model API, adaugă câmpurile noi strict additive (ex. `entity_watermarks`) și păstrează contractul existent neschimbat ca să eviți regresii frontend.
 - 2026-03-06: Pentru payload-uri per-grain, folosește batch read cu output complet pe account_ids cerute (inclusiv `null` la lipsă), evitând N+1 queries și contracte inconsistente.
+- 2026-03-06: Când o coloană există deja din migrații anterioare (ex. `sync_runs.grain`), aplică hardening incremental în schema bootstrap/store (default/check/backfill/index) în loc să introduci migrație nouă duplicată.

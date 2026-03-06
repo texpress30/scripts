@@ -90,6 +90,27 @@ class SyncRunsStore:
                     cur.execute("ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS batch_id TEXT NULL")
                     cur.execute("ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS job_type TEXT NULL")
                     cur.execute("ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS grain TEXT NULL")
+                    cur.execute("UPDATE sync_runs SET grain = 'account_daily' WHERE grain IS NULL")
+                    cur.execute("ALTER TABLE sync_runs ALTER COLUMN grain SET DEFAULT 'account_daily'")
+                    cur.execute("ALTER TABLE sync_runs ALTER COLUMN grain SET NOT NULL")
+                    cur.execute(
+                        """
+                        DO $$
+                        BEGIN
+                          IF NOT EXISTS (
+                            SELECT 1
+                            FROM pg_constraint
+                            WHERE conname = 'sync_runs_grain_check'
+                              AND conrelid = 'sync_runs'::regclass
+                          ) THEN
+                            ALTER TABLE sync_runs
+                              ADD CONSTRAINT sync_runs_grain_check
+                              CHECK (grain IN ('account_daily', 'campaign_daily', 'ad_group_daily', 'ad_daily'));
+                          END IF;
+                        END
+                        $$;
+                        """
+                    )
                     cur.execute("ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS chunks_total INTEGER DEFAULT 0")
                     cur.execute("ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS chunks_done INTEGER DEFAULT 0")
                     cur.execute("ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS rows_written BIGINT DEFAULT 0")
@@ -99,6 +120,7 @@ class SyncRunsStore:
                         "CREATE INDEX IF NOT EXISTS idx_sync_runs_platform_account_created_at ON sync_runs(platform, account_id, created_at DESC)"
                     )
                     cur.execute("CREATE INDEX IF NOT EXISTS idx_sync_runs_client_created_at ON sync_runs(client_id, created_at DESC)")
+                    cur.execute("CREATE INDEX IF NOT EXISTS idx_sync_runs_platform_account_grain ON sync_runs(platform, account_id, grain)")
                 conn.commit()
 
             self._schema_initialized = True
@@ -135,7 +157,7 @@ class SyncRunsStore:
             "metadata": self._normalize_metadata(row[13]),
             "batch_id": str(row[14]) if row[14] is not None else None,
             "job_type": str(row[15]) if row[15] is not None else None,
-            "grain": str(row[16]) if row[16] is not None else None,
+            "grain": str(row[16]) if row[16] is not None else "account_daily",
             "chunks_total": int(row[17]) if row[17] is not None else 0,
             "chunks_done": int(row[18]) if row[18] is not None else 0,
             "rows_written": int(row[19]) if row[19] is not None else 0,
@@ -197,7 +219,7 @@ class SyncRunsStore:
                         json.dumps(metadata_payload),
                         str(batch_id) if batch_id is not None else None,
                         str(job_type) if job_type is not None else None,
-                        str(grain) if grain is not None else None,
+                        str(grain) if grain is not None else "account_daily",
                         int(chunks_total),
                         int(chunks_done),
                         int(rows_written),
@@ -297,7 +319,7 @@ class SyncRunsStore:
                         json.dumps(metadata_payload),
                         str(batch_id) if batch_id is not None else None,
                         "historical_backfill",
-                        str(grain) if grain is not None else None,
+                        str(grain) if grain is not None else "account_daily",
                         int(chunks_total),
                         int(chunks_done),
                         int(rows_written),
@@ -864,7 +886,7 @@ class SyncRunsStore:
                         json.dumps(retry_metadata),
                         None,
                         "historical_backfill",
-                        source_payload.get("grain"),
+                        source_payload.get("grain") or "account_daily",
                         failed_chunks_count,
                         0,
                         0,

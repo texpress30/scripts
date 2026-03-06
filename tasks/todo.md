@@ -2035,3 +2035,20 @@
 - `ClientRegistryService.list_platform_accounts` now enriches each account with additive `entity_watermarks` keyed by grain, while keeping existing metadata fields intact.
 - Grain payload shape mirrors watermark columns (`sync_start_date`, `historical_synced_through`, `rolling_synced_through`, `last_success_at`, `last_error`, `last_job_id`).
 - Added DB integration contract test proving: account with only campaign watermark gets object only on `campaign_daily`; missing grains and no-watermark accounts return nulls.
+
+---
+
+# TODO — Add grain plumbing for sync_runs (default account_daily)
+
+- [x] Run workspace update commands (`git status --short`, `git fetch --all --prune`, `git pull --ff-only` when possible).
+- [x] Audit existing migrations/store and confirm `sync_runs.grain` already exists (from 0014), so no new migration file was added.
+- [x] Harden sync_runs store schema bootstrap to enforce grain default/check/index and normalize existing null grains.
+- [x] Update sync_runs store serialization/insert paths to keep backward-compatible default grain (`account_daily`).
+- [x] Add DB test (skip-safe) for grain column/default and explicit entity grain roundtrip.
+- [x] Run requested checks and document review.
+
+## Review — Add grain plumbing for sync_runs (default account_daily)
+- Since `sync_runs.grain` already exists in migration `0014_sync_orchestration_v2.sql`, no new migration was created per instruction.
+- `SyncRunsStore._ensure_schema()` now upgrades runtime schema by backfilling null grains, enforcing default `account_daily`, setting `NOT NULL`, adding allowed-values check constraint, and creating `(platform, account_id, grain)` index.
+- Sync run payload serialization now defaults null grain to `account_daily`, and create/retry insert paths send `account_daily` when grain is absent.
+- Added DB integration-style test for column/default introspection and insert roundtrip for default and explicit `campaign_daily` grain values.
