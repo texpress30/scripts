@@ -212,6 +212,111 @@ def _summarize_batch_from_runs(runs: list[dict[str, object]]) -> dict[str, objec
         "percent": percent,
     }
 
+
+
+_ACTIVE_CHUNK_STATUSES = {"queued", "running", "pending"}
+_SUCCESS_CHUNK_STATUSES = {"done", "success", "completed"}
+_ERROR_CHUNK_STATUSES = {"error", "failed"}
+
+
+def _normalize_status(value: object, default: str = "queued") -> str:
+    normalized = str(value or default).strip().lower()
+    return normalized if normalized != "" else default
+
+
+def _summarize_run_from_chunks(run: dict[str, object], chunks: list[dict[str, object]]) -> dict[str, object]:
+    total_chunks = len(chunks)
+    if total_chunks <= 0:
+        fallback_total = max(0, int(run.get("chunks_total") or 0))
+        fallback_done = max(0, int(run.get("chunks_done") or 0))
+        fallback_rows = max(0, int(run.get("rows_written") or 0))
+        fallback_status = _normalize_status(run.get("status"), default="queued")
+        percent = 0.0 if fallback_total <= 0 else round((fallback_done / fallback_total) * 100.0, 2)
+        return {
+            "status": fallback_status,
+            "chunks_total": fallback_total,
+            "chunks_done": fallback_done,
+            "error_chunks": 0,
+            "active_chunks": 0 if fallback_status in {"done", "error", "partial", "failed", "completed", "success"} else max(0, fallback_total - fallback_done),
+            "rows_written": fallback_rows,
+            "percent_complete": percent,
+        }
+
+    success_chunks = 0
+    error_chunks = 0
+    active_chunks = 0
+    rows_written = 0
+
+    for chunk in chunks:
+        chunk_status = _normalize_status(chunk.get("status"), default="queued")
+        if chunk_status in _SUCCESS_CHUNK_STATUSES:
+            success_chunks += 1
+        elif chunk_status in _ERROR_CHUNK_STATUSES:
+            error_chunks += 1
+        elif chunk_status in _ACTIVE_CHUNK_STATUSES:
+            active_chunks += 1
+        rows_written += max(0, int(chunk.get("rows_written") or 0))
+
+    if active_chunks > 0:
+        original = _normalize_status(run.get("status"), default="queued")
+        reconciled_status = "queued" if success_chunks <= 0 and error_chunks <= 0 and original in {"queued", "pending"} else "running"
+    else:
+        if error_chunks <= 0:
+            reconciled_status = "done"
+        elif success_chunks > 0:
+            reconciled_status = "partial"
+        else:
+            reconciled_status = "error"
+
+    percent_complete = 0.0 if total_chunks <= 0 else round((success_chunks / total_chunks) * 100.0, 2)
+    return {
+        "status": reconciled_status,
+        "chunks_total": total_chunks,
+        "chunks_done": success_chunks,
+        "error_chunks": error_chunks,
+        "active_chunks": active_chunks,
+        "rows_written": rows_written,
+        "percent_complete": percent_complete,
+    }
+
+
+def _reconcile_run_payload(run: dict[str, object]) -> dict[str, object]:
+    job_id = str(run.get("job_id") or "").strip()
+    if job_id == "":
+        return dict(run)
+    chunks = sync_run_chunks_store.list_sync_run_chunks(job_id)
+    summary = _summarize_run_from_chunks(run, chunks)
+    payload = dict(run)
+    payload.update(summary)
+    return payload
+
+
+def _summarize_batch_from_runs(runs: list[dict[str, object]]) -> dict[str, object]:
+    status_counts = {"queued": 0, "running": 0, "done": 0, "error": 0, "partial": 0}
+    chunks_total = 0
+    chunks_done = 0
+    rows_written = 0
+
+    for run in runs:
+        status = _normalize_status(run.get("status"), default="queued")
+        if status in status_counts:
+            status_counts[status] += 1
+        else:
+            status_counts["queued"] += 1
+        chunks_total += max(0, int(run.get("chunks_total") or 0))
+        chunks_done += max(0, int(run.get("chunks_done") or 0))
+        rows_written += max(0, int(run.get("rows_written") or 0))
+
+    percent = 0.0 if chunks_total <= 0 else round((chunks_done / chunks_total) * 100.0, 2)
+    return {
+        "total_runs": len(runs),
+        "status_counts": status_counts,
+        "chunks_total_sum": chunks_total,
+        "chunks_done_sum": chunks_done,
+        "rows_written_sum": rows_written,
+        "percent": percent,
+    }
+
 def _serialize_run(item: dict[str, object]) -> dict[str, object]:
     metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
     trigger_source = metadata.get("trigger_source") or metadata.get("source") or "manual"
