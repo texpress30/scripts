@@ -1,4 +1,19 @@
-<<<<<<< codex/close-current-session-and-open-new-workspace-161wjn
+# TODO — Google Ads provider: ad_group_daily grain support (provider + worker + upserts + tests)
+
+- [x] Extind providerul Google Ads cu fetch `ad_group_daily` pe fereastră half-open `[start_date, end_date_exclusive)` și mapare metrici canonice.
+- [x] Extind `sync_worker` pentru `grain=ad_group_daily` cu upsert entități în `platform_ad_groups`, upsert facts în `ad_group_performance_reports` și traceability fields corecte.
+- [x] Rulez reconcile watermark pentru `ad_group_daily` la final de run, fără regresii pe flow-urile existente.
+- [x] Adaug teste unitare focusate (window conversion, spend mapping, worker ad_group_daily path + upsert calls).
+- [x] Rulez verificările cerute (`py_compile` + `pytest -q` target), completez review, commit + PR metadata.
+
+## Review
+- Providerul Google Ads are acum `fetch_ad_group_daily_metrics(customer_id, start_date, end_date_exclusive, source_job_id)` cu window half-open intern și traducere GAQL la `BETWEEN start AND (end_exclusive - 1 zi)`.
+- Maparea metricilor este canonică (`spend = cost_micros / 1_000_000`, plus impressions/clicks/conversions/conversion_value) și output-ul include `report_date`, `campaign_id`, `ad_group_id`, `ad_group_name`, `extra_metrics`.
+- Workerul tratează explicit `grain=ad_group_daily`: fetch provider, dedupe entități `ad_group_id`, upsert în `platform_ad_groups`, facts per zi în `ad_group_performance_reports`, cu `source_window_start/source_window_end/source_job_id`.
+- Reconcile watermark la final de run este generalizat pentru `google_ads` pe grain-uri entity-daily suportate (`campaign_daily`, `ad_group_daily`) folosind grain-ul curent, non-regresiv via store SQL.
+- Testele noi validează conversia ferestrei half-open, maparea `cost_micros -> spend` și exec path worker pentru `ad_group_daily` cu apeluri corecte către upsert helpers.
+
+---
 # TODO — Google Ads provider: campaign_daily grain support (entity + facts + watermarks)
 
 - [x] Actualizez serviciul Google Ads pentru fetch campaign_daily pe interval half-open `[start, end_exclusive)` cu GAQL end inclusiv corect.
@@ -15,8 +30,7 @@
 - Verificări rulate cu succes: `python -m py_compile ...` și `pytest -q ... -k "campaign_daily or fetch_campaign_daily_metrics"`.
 
 ---
-=======
->>>>>>> main
+
 # TODO — Verificare workspace nou prin Connector (remote + fetch)
 
 - [x] Notez planul de execuție pentru verificarea remote/fetch într-o sesiune nouă.
