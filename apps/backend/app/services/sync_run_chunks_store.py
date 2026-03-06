@@ -242,21 +242,37 @@ class SyncRunChunksStore:
         normalized_platform = str(platform).strip() if platform is not None else None
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT c.id
-                    FROM sync_run_chunks c
-                    INNER JOIN sync_runs r ON r.job_id = c.job_id
-                    WHERE c.status = 'queued'
-                      AND c.attempts < %s
-                      AND r.status IN ('queued', 'running')
-                      AND (%s IS NULL OR r.platform = %s)
-                    ORDER BY r.created_at ASC, c.chunk_index ASC
-                    FOR UPDATE SKIP LOCKED
-                    LIMIT 1
-                    """,
-                    (max(1, int(max_attempts)), normalized_platform, normalized_platform),
-                )
+                if normalized_platform is None or normalized_platform == "":
+                    cur.execute(
+                        """
+                        SELECT c.id
+                        FROM sync_run_chunks c
+                        INNER JOIN sync_runs r ON r.job_id = c.job_id
+                        WHERE c.status = 'queued'
+                          AND c.attempts < %s
+                          AND r.status IN ('queued', 'running')
+                        ORDER BY r.created_at ASC, c.chunk_index ASC
+                        FOR UPDATE SKIP LOCKED
+                        LIMIT 1
+                        """,
+                        (max(1, int(max_attempts)),),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT c.id
+                        FROM sync_run_chunks c
+                        INNER JOIN sync_runs r ON r.job_id = c.job_id
+                        WHERE c.status = 'queued'
+                          AND c.attempts < %s
+                          AND r.status IN ('queued', 'running')
+                          AND r.platform = %s
+                        ORDER BY r.created_at ASC, c.chunk_index ASC
+                        FOR UPDATE SKIP LOCKED
+                        LIMIT 1
+                        """,
+                        (max(1, int(max_attempts)), normalized_platform),
+                    )
                 selected = cur.fetchone()
                 if selected is None:
                     conn.commit()
