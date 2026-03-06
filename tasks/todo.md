@@ -2118,3 +2118,22 @@
 - Unsupported grain no longer crashes processing: chunk and run are marked `error` with stable `grain_not_supported:<grain>` payload and worker continues.
 - Chunk status updates now attach `metadata.grain` so completed/failed chunks remain attributable to grain.
 - Dedupe test coverage explicitly verifies same account/date historical run creation remains allowed across different grains.
+
+---
+
+# TODO — Implement google_ads campaign_daily sync path end-to-end
+
+- [x] Audit existing grain-aware worker flow, Google Ads reporting helpers, entity fact upsert store and watermark reconcile helper.
+- [x] Add Google Ads campaign_daily fetch path and map canonical campaign fact fields (`spend/impressions/clicks/conversions/conversion_value/extra_metrics`).
+- [x] Wire sync_worker campaign_daily execution to upsert campaign fact rows with source traceability (`source_window_start/source_window_end/source_job_id`).
+- [x] Reconcile `platform_account_watermarks` for `campaign_daily` after successful run finalization.
+- [x] Keep safe default + stable unsupported handling (`grain_not_supported`) and ensure non-google platform campaign_daily terminates cleanly.
+- [x] Extend unit tests for campaign_daily success path and non-google terminal error path.
+- [x] Run targeted compile/tests and document review.
+
+## Review — Implement google_ads campaign_daily sync path end-to-end
+- Added `GoogleAdsService.fetch_campaign_daily_metrics(...)` using GAQL campaign+date metrics and cost_micros->spend mapping consistent with existing conventions.
+- Worker now executes a dedicated branch for `grain=campaign_daily` on `platform=google_ads`, upserts facts via `upsert_campaign_performance_reports`, and attributes rows to chunk window/job source metadata.
+- On successful completion for campaign_daily runs, worker now triggers watermark reconcile for that account/grain.
+- For campaign_daily on non-google platforms, worker sets terminal `grain_not_supported:<grain>` errors instead of crashing.
+- Added worker tests validating campaign_daily fact upsert + source traceability and non-google terminal behavior.

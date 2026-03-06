@@ -201,3 +201,4 @@
 - 2026-03-06: Când un helper dependent de DB primește `conn`, verifică explicit lifetime-ul context managerului și adaugă test de regresie cu fake connection (`closed` flag) ca să prinzi utilizarea după `with`.
 - 2026-03-06: Pentru deploy-uri Postgres în production, nu te baza pe startup implicit al web app; livrează un migration runner idempotent cu `schema_migrations` + advisory lock și documentează rulare one-shot în orchestrator.
 - 2026-03-06: La worker-ele care procesează payloaduri evolutive (ex. `grain`), normalizează explicit default-uri backward-compatible și tratează valorile necunoscute ca terminal errors controlate, nu excepții care opresc bucla.
+- 2026-03-06: Pentru extinderi pe grain-uri noi în worker, implementează branch explicit per grain+platform cu output canonic în store-ul de facts și finalizează cu reconcile watermark pe grain la succes, păstrând fallback/error code stabil pentru platforme neimplementate.

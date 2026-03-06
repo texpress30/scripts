@@ -128,3 +128,18 @@ def reconcile_platform_account_watermarks_from_facts(
             summary["updated_count_by_grain"][grain] += 1
 
     return summary
+
+
+def reconcile_platform_account_watermarks(
+    conn,
+    *,
+    platform: str,
+    account_id: str,
+    grains: list[str] | None = None,
+) -> dict[str, Any]:
+    return reconcile_platform_account_watermarks_from_facts(
+        conn,
+        platform=platform,
+        account_ids=[str(account_id)],
+        grains=grains,
+    )
