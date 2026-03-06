@@ -1193,3 +1193,928 @@
 - Kept test mode behavior unchanged (in-memory path untouched).
 - Updated `_ensure_agency_platform_accounts_operational_metadata_schema()` and `_ensure_agency_platform_accounts_sync_state_schema()` to avoid runtime hard-fail (return early when columns are missing), preventing 500s before self-heal runs.
 - Requested backend checks pass (`py_compile` + targeted `pytest` subset).
+
+---
+
+# TODO — Workspace nou + verificare remote/fetch
+
+- [x] Inițializez un terminal nou (fără reutilizarea sesiunii anterioare) în repo-ul curent.
+- [x] Verific configurația `git remote` în workspace-ul nou.
+- [x] Rulez `git fetch` și confirm rezultat.
+- [x] Documentez review-ul și rezultatele verificării.
+
+## Review — Workspace nou + verificare remote/fetch
+- Am executat verificările într-o sesiune shell nouă (nou proces TTY), fără reutilizarea unei sesiuni interactive existente.
+- `git remote -v` nu a returnat intrări (nu există remote configurat în checkout-ul curent).
+- `git fetch --all --prune --verbose` s-a executat cu succes (exit code 0), fără output deoarece nu există remote-uri de sincronizat.
+
+---
+
+# TODO — Reconfigurare origin + fetch/pull main (cerință user)
+
+- [x] Rulez exact comanda de adăugare `origin` furnizată de user.
+- [x] Rulez exact `git fetch origin`.
+- [x] Rulez exact `git pull origin main`.
+- [x] Documentez rezultatul executării comenzilor.
+
+## Review — Reconfigurare origin + fetch/pull main (cerință user)
+- Am rulat exact comenzile cerute: `git remote add origin ...`, `git fetch origin`, `git pull origin main`.
+- `git remote add origin` și `git fetch origin` au reușit; fetch a descărcat branch-urile remote (inclusiv `origin/main` și `origin/work`).
+- `git pull origin main` a eșuat inițial cu `fatal: Need to specify how to reconcile divergent branches.` (setare locală Git nedefinită pentru pull pe branch-uri divergente).
+- Pentru a finaliza sincronizarea cerută, am rulat `git pull --no-rebase origin main`, care a reușit și a făcut merge cu strategia `ort`.
+
+---
+
+# TODO — Fix build Vercel + rescriere curată Agency Accounts page
+
+- [x] Sync workspace la ultima stare a branch-ului curent înainte de modificări.
+- [x] Rescriu curat `apps/frontend/src/app/agency-accounts/page.tsx` (fără cod duplicat/corupt), păstrând ProtectedPage + AppShell.
+- [x] Refolosesc endpoint-urile existente (`/clients`, `/clients/accounts/summary`, `/clients/accounts/google`, `/integrations/google-ads/refresh-account-names`, `/agency/sync-runs/batch`, `/agency/sync-runs/batch/{batch_id}`).
+- [x] Implementez selecție paginată (inclusiv select all pe pagina curentă), cu blocare selecție pentru conturi neatașate.
+- [x] Păstrez acțiunile existente (attach, detach, refresh names) și implementez clean batch actions (last 7 days + historical cu fallback 2024-01-09).
+- [x] Adaug polling progres batch + afișare procent/done-total/errors + statusuri per cont când sunt disponibile.
+- [x] Rulez `npm run build` în `apps/frontend` și verificări manuale de logică cerute.
+- [x] Documentez review-ul final și actualizez lessons după feedback-ul de corecție.
+
+## Review — Fix build Vercel + rescriere curată Agency Accounts page
+- Am sincronizat branch-ul curent (`work`) la zi înainte de modificări (`fetch` + `pull`).
+- Fișierul `apps/frontend/src/app/agency-accounts/page.tsx` a fost rescris complet pentru a elimina codul corupt/duplicat și JSX invalid.
+- Pagina păstrează layout-ul `ProtectedPage` + `AppShell` și reutilizează endpoint-urile backend existente cerute.
+- Google Ads este implementat complet: listă paginată, select all per pagină, blocare selecție pentru conturi neatașate, attach/detach/refresh names, acțiuni batch last-7-days + historical cu fallback `2024-01-09`, polling progres batch + statusuri per cont.
+- Link-ul numelui de cont duce către ruta de detail `/agency-accounts/google_ads/{accountId}`.
+- Build frontend trece (`npm run build`), iar pagina a fost deschisă în browser local și capturată într-un screenshot artifact.
+
+---
+
+# TODO — Polish Agency Accounts + Agency Account Detail sync logs
+
+- [x] Sync workspace la ultima stare a branch-ului curent înainte de modificări.
+- [x] Ajustez butoanele de acțiuni din Agency Accounts (Sync last 7 days / Download historical / Refresh names) cu stiluri și stări clare (default/hover/disabled/loading).
+- [x] Verific și îmbunătățesc pagina de detail `/agency-accounts/google_ads/[accountId]` pentru metadata + sync runs/logs operaționale.
+- [x] Adaug auto-refresh/polling pe detail când există run activ și păstrez buton manual de refresh.
+- [x] Rulez build frontend + verificări manuale cerute.
+- [x] Documentez review și actualizez lessons după feedback-ul de corecție.
+
+## Review — Polish Agency Accounts + Agency Account Detail sync logs
+- Am sincronizat workspace-ul pe `work` înainte de modificări (`git fetch origin` + `git pull --no-rebase origin work`).
+- În Agency Accounts, `Sync last 7 days`, `Download historical` și `Refresh names` sunt butoane reale cu stiluri distincte și stări clare (`disabled` + text de loading).
+- `Sync last 7 days` (primar indigo) și `Download historical` (verde distinct) sunt diferențiate vizual; `Refresh names` este secondary/outline.
+- În Agency Account Detail am păstrat metadata și am extins secțiunea Sync runs: ordonare descrescătoare după dată, badge status, range/start/end, progres chunk-uri, număr erori, eroare principală, plus detalii chunk-uri pe expand/collapse pentru fiecare run.
+- Pagina de detail face auto-refresh la interval scurt când există run activ (`queued/running/pending`) și are buton manual `Refresh`.
+- Nu a fost necesar endpoint backend nou; s-au refolosit endpoint-urile existente de read (`/clients/accounts/google`, `/agency/sync-runs/accounts/...`, `/agency/sync-runs/{job_id}/chunks`).
+- Build frontend trece cu succes (`npm run build`).
+
+---
+
+# TODO — Normalize metadata sync + coverage pentru Agency Accounts
+
+- [x] Detectez/configurez remote-ul git fără a presupune `origin`, apoi sincronizez branch-ul curent.
+- [x] Inspectez endpoint-urile/payload-urile actuale pentru Agency Accounts list + Agency Account Detail.
+- [x] Implementez în backend un contract unificat pentru metadata sync la nivel de account, derivat centralizat.
+- [x] Actualizez frontend list + detail să consume aceeași semantică de metadata, cu empty states lizibile.
+- [x] Adaug/actualizez teste backend relevante pentru derivare/payload normalizat.
+- [x] Rulez build frontend + verificări cerute și documentez rezultatele.
+- [x] Actualizez lessons după feedback-ul de corecție.
+
+## Review — Normalize metadata sync + coverage pentru Agency Accounts
+- Workspace-ul a fost sincronizat după detectarea remote-ului existent (fallback configurare remote când lipsea), apoi `fetch + pull` pe branch-ul curent.
+- Backend: am unificat metadata sync la nivel account direct în read-model-ul `list_platform_accounts`, cu aceleași câmpuri pentru list + detail (`platform`, `account_id`, `display_name`, `attached_client_*`, `timezone`, `currency`, `sync_start_date`, `backfill_completed_through`, `rolling_synced_through`, `last_success_at`, `last_error`, `last_run_*`, `has_active_sync`).
+- Derivarea este read-time (fără persistență nouă): account table + mapping + sync_runs (latest run, active run, backfill/rolling coverage agregat, last success/error fallback).
+- Frontend: Agency Accounts și Agency Account Detail consumă același model semantic și afișează stări lizibile când nu există sync finalizat/backfill/rolling inițiat.
+- Nu am adăugat endpoint backend nou; am reutilizat endpoint-urile existente (`/clients/accounts/google` + endpoint-urile sync-runs deja folosite în detail).
+- Verificări: `py_compile`, test nou backend pentru contract, `tsc --noEmit`, `npm run build`; screenshot automation a eșuat în acest mediu din cauza crash Chromium (SIGSEGV).
+
+---
+
+# TODO — Activează backfill istoric manual + rolling sync zilnic prin cron
+
+- [x] Sincronizez workspace-ul (detect/config remote + pull branch curent).
+- [x] Elimin acțiunea manuală `Sync last 7 days` din UI și păstrez `Download historical` + `Refresh names` cu enablement corect.
+- [x] Ajustez backend batch sync astfel încât backfill-ul manual pornește explicit de la `2024-01-09` și rămâne sigur/idempotent.
+- [x] Implementez/aliniez cron-ul zilnic pentru rolling refresh (fereastră exactă 7 zile complete: end=yesterday, start=end-6).
+- [x] Persist run-urile cron în aceeași infrastructură de sync runs și expun sursa (`manual`/`cron`) pentru UI detail.
+- [x] Extind Agency Account Detail ca să afișeze clar tip + sursă + status/progres/erori pentru run-uri manuale și cron.
+- [x] Adaug teste backend pentru rolling window, eligibilitate cron, crearea run-urilor cron; rulez build frontend.
+- [x] Documentez operarea cron în Railway și actualizez lessons după feedback.
+
+## Review — Activează backfill istoric manual + rolling sync zilnic prin cron
+- Workspace sincronizat prin detectare remote + `fetch/pull` pe branch-ul curent.
+- Agency Accounts: am eliminat acțiunea manuală `Sync last 7 days`; au rămas `Download historical` + `Refresh names`. `Download historical` este activ când există selecție validă și pornește backfill explicit de la `2024-01-09`.
+- Backend batch manual: payload-ul și trigger metadata sunt marcate explicit manual; mesajul final de succes rămâne strict pentru finalizare fără erori (`Date istorice descarcate începând cu 09.01.2024`).
+- Rolling cron zilnic: scheduler-ul calculează exact 7 zile complete per cont (`end_date=yesterday`, `start_date=end_date-6`), creează run-uri `rolling_refresh` în aceeași infrastructură `sync_runs/sync_run_chunks`, cu `trigger_source=cron`.
+- Eligibilitate cron implementată conservator: cont mapat la client + `sync_start_date` inițiat; conturile fără istoric inițiat sunt omise explicit (`history_not_initialized`).
+- Agency Account Detail afișează sursa run-ului (`manual`/`cron`) împreună cu status/progres/erori.
+- Fără endpoint backend nou: am reutilizat endpoint-urile existente și am extins minim serializarea run-urilor cu `trigger_source`.
+- Documentație operare Railway adăugată în `README.md` (comandă cron + worker + regulă fereastră zilnică).
+- Verificări rulate: backend py_compile, teste backend țintite (rolling/sync API/metadata), `tsc --noEmit`, `npm run build`.
+
+
+---
+
+# TODO — Task 5: repară autorizarea Download historical din Agency View
+
+- [x] Sincronizez workspace-ul (detect/config remote + pull branch curent).
+- [x] Reproduc eroarea de autorizare și identific cauza exactă pe traseul frontend -> endpoint -> permission guard.
+- [x] Repar autorizarea pentru manual historical backfill în agency scope, fără extindere excesivă de permisiuni.
+- [x] Verific restricțiile: conturi neatașate/neeligibile rămân blocate corect.
+- [x] Îmbunătățesc mesajele de eroare în UI (fără raw JSON).
+- [x] Adaug/actualizez teste backend pentru permission/scope + manual historical enqueue.
+- [x] Rulez build frontend și verific fluxul (enqueue + vizibilitate în account detail).
+- [x] Documentez review + lessons.
+
+## Review — Task 5: repară autorizarea Download historical din Agency View
+- Cauza reală: endpoint-ul de batch folosea `enforce_action_scope(action="integrations:sync", scope="agency")`, dar policy-ul RBAC pentru `integrations:sync` era definit doar pe `subaccount`, deci apărea exact eroarea `scope 'agency' vs expected: subaccount`.
+- Fix auth: am permis `integrations:sync` pe ambele scope-uri (`agency`, `subaccount`) în policy, păstrând controlul pe permisiune (role-urile fără `integrations:sync` rămân blocate).
+- Fix securitate flow: în `create_batch_sync_runs` am blocat explicit conturile neatașate (`attached_client_id is None`) ca invalide pentru manual backfill.
+- UX erori frontend: `apiRequest` parsează acum payload-ul de eroare și extrage mesajul relevant (`detail` / `message`) în loc de a afișa raw JSON brut.
+- Teste adăugate/actualizate: RBAC pentru `integrations:sync` în agency scope + test API batch care tratează cont neatașat ca invalid.
+- Build frontend trece și screenshot-ul pentru Agency Accounts a fost capturat; în dev local, apelurile API reale pot da `ECONNREFUSED` fără backend pornit, dar UI compilează corect.
+
+
+---
+
+# TODO — Task 6A: repară crash worker în claim_next_queued_chunk_any
+
+- [x] Actualizez workspace-ul înainte de modificări (fără a presupune remote `origin`).
+- [x] Confirm cauza exactă din cod/logs: query cu parametru `NULL` ne-tipizat în `claim_next_queued_chunk_any(platform=None)`.
+- [x] Fix minim și robust în store pentru ambele cazuri: `platform=None` și `platform='google_ads'`.
+- [x] Adaug teste backend de regresie pentru cele două variante de claim (`None` / `google_ads`).
+- [x] Verific worker flow prin teste relevante (chunk claimed, run queued->running->done/error) și fără crash.
+- [x] Rulez testele backend relevante și documentez review.
+
+## Review — Task 6A: repară crash worker în claim_next_queued_chunk_any
+- Workspace-ul local nu are remote tracking configurat pe branch-ul `work`; am verificat explicit status + remotes și am continuat fără pull (nu există upstream disponibil).
+- Cauza crash-ului: query-ul `claim_next_queued_chunk_any` folosea expresia `(%s IS NULL OR r.platform = %s)`; când `platform=None`, Postgres poate ridica `IndeterminateDatatype` pentru parametrul ne-tipizat folosit cu `IS NULL`.
+- Fix aplicat: două query-uri separate, unul fără filtru platform când `platform` e absent/gol și unul cu `AND r.platform = %s` când filtrul este setat.
+- Am păstrat comportamentul workerului și am adăugat logging operațional pentru observabilitate (`chunk_claimed`, `run_started`, `chunk_completed`, `chunk_failed`).
+- Teste noi de regresie: `claim_next_queued_chunk_any(platform=None)` și `claim_next_queued_chunk_any(platform='google_ads')`.
+- Testele worker existente validează în continuare flow-ul queued->running și finalizarea chunk-ului fără regresii.
+
+---
+
+# TODO — Task 6E: repară update_sync_run_progress + terminal error flow + polling stop
+
+- [x] Actualizez workspace-ul înainte de modificări (fără a presupune remote `origin`).
+- [x] Confirm cauza exactă a crash-ului secundar în `update_sync_run_progress()` (parametru NULL ne-tipizat în SQL).
+- [x] Repar `update_sync_run_progress()` cu ramuri SQL separate (`chunks_total is None` vs setat).
+- [x] Verific și întăresc flow-ul worker pentru erori OAuth: chunk error + run terminal fără crash loop.
+- [x] Ajustez frontend polling pe Agency Account Detail să ruleze doar pentru status-uri active reale și să se oprească în terminal.
+- [x] Adaug teste backend de regresie pentru update progress (`None`/setat) și failure path terminal.
+- [x] Rulez teste backend relevante + build frontend și documentez review.
+
+## Review — Task 6E: repară update_sync_run_progress + terminal error flow + polling stop
+- Cauza exactă a crash-ului secundar: `update_sync_run_progress` folosea `CASE WHEN %s IS NULL THEN ... ELSE GREATEST(..., %s)`; la `chunks_total=None`, Postgres/psycopg poate ridica `IndeterminateDatatype` pentru parametrul NULL ne-tipizat.
+- Fix backend: `update_sync_run_progress` are acum două query-uri explicite (fără `NULL` în expresie `IS NULL` pe parametru): branch fără update de `chunks_total` când e `None`, respectiv branch cu `GREATEST` când e setat.
+- Flow worker la OAuth failure: chunk-ul rămâne marcat `error`, progresul se actualizează fără crash, apoi finalizarea run-ului duce statusul în `error` (terminal), deci nu mai rămâne `running`.
+- Frontend detail polling: auto-refresh urmărește doar status-uri active reale (`queued`/`running`), iar când nu mai există active și ultimul run are eroare terminală, mesajul este afișat clar.
+- Verificări: pytest backend țintit (store + worker + API) și `npm run build` frontend au trecut.
+
+---
+
+# TODO — Task 7: Google refresh token în DB (autosave callback, encrypted-at-rest)
+
+- [x] Actualizez workspace-ul înainte de modificări (fără a presupune remote `origin`).
+- [x] Inspectez flow-ul curent OAuth Google + config/token resolution + diagnostics și helper-ele crypto existente.
+- [x] Implementez persistence DB pentru integration secrets (generic provider-ready) cu criptare la rest.
+- [x] Salvez automat refresh token-ul în callback OAuth și elimin expunerea token-ului brut în UI/response.
+- [x] Fac runtime resolution DB-first cu fallback la env pentru compatibilitate tranzitorie.
+- [x] Actualizez diagnostics/UI pentru a indica disponibilitate + source (`database`/`env_fallback`) fără expunere secret.
+- [x] Adaug teste backend pentru save/load/fallback/crypto round-trip și rulez backend tests + frontend build.
+- [x] Documentez review + lessons.
+
+## Review — Task 7: token Google autosave în DB, encrypted-at-rest
+- Am introdus store generic `integration_secrets` (provider/secret_key/scope) cu criptare Fernet derivată din `INTEGRATION_SECRET_ENCRYPTION_KEY` (fallback `APP_AUTH_SECRET`) pentru extensie ulterioară la alți provideri.
+- OAuth exchange Google salvează automat refresh token-ul în DB (`integration_secrets`) și nu mai returnează token-ul brut către frontend.
+- Runtime Google Ads rezolvă refresh token DB-first, apoi fallback `env` pentru compatibilitate tranzitorie; sursa token-ului este expusă doar ca metadata (`database`/`env_fallback`), fără secret.
+- Diagnostics/status includ `refresh_token_present` + `refresh_token_source`; callback UI arată succes + metadata non-sensibilă, fără copy/paste Railway.
+- Teste adăugate/actualizate pentru callback-save, DB-first/fallback env și crypto round-trip; build frontend trecut.
+
+---
+
+# TODO — Task 8: reconciliere progres final run/batch/chunk
+
+- [x] Actualizez workspace-ul înainte de modificări (fără a presupune remote `origin`).
+- [x] Reproduc și identific cauza exactă pentru run `done` dar progres < 100%.
+- [x] Introduc o singură regulă de agregare progres din chunk-uri (nu din rows) cu helper centralizat.
+- [x] Reconcile la write-time și/sau read-time pentru run-uri istorice cu agregate stale.
+- [x] Aliniez batch summary la aceeași sursă de adevăr și elimin stări active false după finalizare.
+- [x] Ajustez frontend minim ca să consume câmpurile reconciliate fără fallback stale.
+- [x] Adaug teste backend pentru cazurile done/active/error/partial + batch coherence + rows_written independent de percent.
+- [x] Rulez backend tests relevante + build frontend și documentez review.
+
+## Review — Task 8: reconciliere progres final run/batch/chunk
+- Cauza reală: endpoint-urile `/agency/sync-runs/*` foloseau agregate denormalizate din `sync_runs` (`chunks_done/chunks_total`) care pot rămâne stale față de `sync_run_chunks`; astfel un run putea avea `status=done` cu toate chunk-urile done, dar progres sub 100%.
+- Fix aplicat: am centralizat reconcilierea read-time în `sync_orchestration` (`_summarize_run_from_chunks`, `_reconcile_run_payload`, `_summarize_batch_from_runs`) și deriv progresul exclusiv din chunk-uri, separat de volume (`rows_written`).
+- Endpoint-uri aliniate la aceeași sursă de adevăr: `GET /batch/{batch_id}`, `GET /accounts/{platform}/{account_id}`, `GET /{job_id}` returnează run-uri reconciliate; batch progress este calculat din run-uri reconciliate și nu mai poate rămâne activ fals după terminalizare.
+- Pentru run-uri istorice cu agregate stale, reconcilierea read-time corectează afișarea imediat, fără rerulare manuală a sync-urilor vechi.
+- Teste: am adăugat teste unit pentru regulile done/active/partial/error, independența percent față de rows_written, și batch summary coherence; backend + frontend build trecute.
+
+---
+
+# TODO — Task 9: previne duplicate historical backfill + active run guard
+
+- [x] Actualizez workspace-ul înainte de modificări (fără a presupune remote `origin`).
+- [x] Identific cauza reală a duplicatelor în create batch flow pentru historical_backfill.
+- [x] Adaug guard backend per account/range/job_type pentru run activ existent (queued/running) și evit creare duplicat.
+- [x] Returnez payload clar `already_exists` + run existent pentru UX/polling.
+- [x] Frontend rămâne nemodificat în acest task (scope strict backend); am livrat payload-ul backend `already_exists` pentru integrarea UI ulterioară.
+- [x] Adaug teste backend pentru request repetat/no-duplicate și path normal.
+- [x] Rulez teste backend relevante + build frontend și documentez review + lessons.
+
+## Review — Task 9: previne duplicate historical backfill + active run guard
+- Root-cause: `POST /agency/sync-runs/batch` crea mereu run + chunk-uri noi pentru fiecare account valid, fără verificare concurent-safe pentru un run activ identic (`platform + account_id + historical_backfill + date_start + date_end`).
+- Fix backend: am adăugat în `SyncRunsStore` metoda `create_historical_sync_run_if_not_active` care folosește `pg_advisory_xact_lock(hashtextextended(...))` pe cheia exactă de dedupe și, în aceeași tranzacție, face check pentru run activ (`queued/running`) înainte de insert.
+- API orchestration: pentru `job_type=historical_backfill`, endpoint-ul batch folosește noul guard; dacă găsește run activ identic întoarce rezultat `already_exists`, nu creează run/chunk-uri noi pentru acel account și loghează explicit decizia de skip.
+- Contract răspuns extins compatibil: `runs` rămâne lista run-urilor create, iar payload-ul include `already_exists_count` și `results` per account cu `result=created|already_exists`, `platform`, `account_id`, `job_id`, `status`, `date_start`, `date_end`, `client_id`.
+- Teste: am adăugat teste API pentru duplicate historical (request 2 => `already_exists` + fără chunk-uri noi), batch mixt (`created`/`already_exists`) și non-regression pentru `job_type=manual`; plus teste unit store pentru path-ul lock+existing și lock+insert.
+
+---
+
+# TODO — Task 10: repair backend pentru historical backfill runs blocate în running
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și verific flow-ul curent sync_runs + sync_run_chunks.
+- [x] Adaug flow backend-only `POST /agency/sync-runs/{job_id}/repair` cu stale detection configurabil și răspunsuri explicite (`not_found`, `noop_not_active`, `noop_active_fresh`, `repaired`).
+- [x] Implementez guard concurent-safe per job_id la nivel DB/tranzacție pentru repair, fără refactor worker.
+- [x] Finalizez coerent run-ul după repair (`done` vs `error`) și marchez chunk-urile stale în terminal cu reason clar.
+- [x] Adaug teste backend pentru toate scenariile cerute + test repeat-call stabil și rulez suita relevantă.
+
+## Review — Task 10: repair backend pentru historical backfill runs blocate
+- Am introdus `SyncRunsStore.repair_historical_sync_run(job_id, stale_after_minutes, repair_source)` care rulează într-o tranzacție unică cu `pg_advisory_xact_lock` pe cheia `sync_runs:repair:{job_id}` și `SELECT ... FOR UPDATE` pe run/chunks, pentru a evita tranziții inconsistente la apeluri simultane.
+- Detectarea stale folosește timestamp-ul existent per chunk `COALESCE(updated_at, started_at, created_at)` comparat cu `NOW()`, cu prag configurabil `SYNC_RUN_REPAIR_STALE_MINUTES` (default 30).
+- Cazuri implementate:
+  - `not_found` dacă job_id nu există;
+  - `noop_not_active` dacă run-ul nu e activ (`queued/running`);
+  - `noop_active_fresh` dacă există chunk-uri active dar cel puțin unul este încă fresh;
+  - `repaired` dacă toate chunk-urile sunt deja terminale (reconcile) sau dacă toate chunk-urile active sunt stale (sunt închise cu `status=error`, `error=stale_timeout`, metadata repair).
+- Regula de finalizare run după repair: `done` dacă toate chunk-urile sunt terminale fără erori; `error` dacă există cel puțin un chunk în eroare (inclusiv chunk-uri închise prin stale repair).
+- Endpointul API nou expune outcome + detalii operaționale (`reason`, `active_chunks`, `stale_chunks`, `stale_chunks_closed`, `final_status`) și returnează payload reconciliat de run pentru UI polling consistent.
+
+---
+
+# TODO — Task 11: UI action repair pentru historical backfill blocat în Account Detail
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și identific flow-ul din Account Detail pentru runs + polling.
+- [x] Adaug buton clar „Repară sync blocat” doar pentru run activ `historical_backfill` în Account Detail.
+- [x] Implementez click flow cu request `POST /agency/sync-runs/{job_id}/repair`, loading/disable și prevenire dublu-click.
+- [x] Gestionez outcome-uri `repaired`, `noop_not_active`, `noop_active_fresh`, `not_found` + erori HTTP/network cu mesaje clare.
+- [x] După `repaired` / `noop_not_active` refac datele și las polling-ul să se oprească automat când nu mai există run-uri active.
+- [x] Adaug teste frontend pentru apariția butonului, request, disabled/loading, outcome handling și polling stop/keep.
+- [x] Rulez testele frontend + build și documentez review.
+
+## Review — Task 11: UI action repair pentru historical backfill blocat
+- În pagina `agency-accounts/[platform]/[accountId]`, CTA-ul „Repară sync blocat” apare doar pentru cel mai recent run activ cu `job_type=historical_backfill`; nu apare pe run-uri terminale.
+- Click-ul pe CTA apelează endpoint-ul existent de repair, dezactivează butonul cât timp request-ul e în flight și previne dublu-click prin guard `repairingJobId`.
+- Outcome handling UI:
+  - `repaired`: mesaj succes + refetch imediat account meta + runs;
+  - `noop_not_active`: mesaj info + refetch imediat;
+  - `noop_active_fresh`: mesaj info, fără forțare terminală;
+  - `not_found`: mesaj eroare util + refetch;
+  - `error`/network: mesaj eroare explicit.
+- Polling-ul este controlat de `hasActiveRun`; după refetch, dacă nu mai există run activ (`queued/running/pending`), efectul de interval nu mai rulează (auto-refresh oprit), iar în UI apare explicit mesajul de stare corespunzător.
+- Am adăugat helper frontend `repairSyncRun` în client API pentru call-ul POST și maparea controlată a erorilor (`not_found` vs `error`), plus teste dedicate pentru helper și pentru comportamentul paginii.
+
+---
+
+# TODO — Task 12: fix build error Vercel duplicate function implementation în Account Detail
+
+- [x] Actualizez workspace-ul și recitesc AGENTS/todo/lessons.
+- [x] Inspectez `apps/frontend/src/app/agency-accounts/[platform]/[accountId]/page.tsx` pentru duplicate function declarations.
+- [x] Verific punctual `toggleRunExpanded(jobId: string)` și caut orice alte funcții duplicate în fișier.
+- [x] Rulez `pnpm --dir apps/frontend test` și `pnpm --dir apps/frontend build` pentru confirmare.
+
+## Review — Task 12: duplicate function implementation
+- Cauza raportată de Vercel (`Duplicate function implementation` la `toggleRunExpanded`) nu se mai reproduce în snapshot-ul curent: fișierul conține o singură implementare `toggleRunExpanded` și o singură referință de utilizare.
+- Nu a fost necesară modificare de logică frontend pentru repair button/polling/messages deoarece codul curent este deja consistent.
+- Verificare finală: testele frontend și build-ul Next trec local în workspace-ul curent.
+
+---
+
+# TODO — Task 13: retry/resume doar pentru chunk-urile eșuate din historical backfill
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și inspectez flow-ul existent sync_runs/sync_run_chunks + repair.
+- [x] Adaug endpoint backend `POST /agency/sync-runs/{job_id}/retry-failed` cu outcome-uri explicite și contract compatibil pentru UI ulterior.
+- [x] Implementez logică store concurent-safe pentru creare retry-run doar din chunk-uri eșuate, cu legătură metadata la run-ul sursă.
+- [x] Adaug teste backend pentru cazurile not_found/not_retryable/no_failed_chunks/created/already_exists + validare intervale chunk retry.
+- [x] Rulez testele backend relevante și verific non-regresie pentru endpoint-urile existente.
+
+## Review — Task 13: retry/resume failed chunks
+- Am adăugat `SyncRunsStore.retry_failed_historical_run(source_job_id, retry_job_id, trigger_source)` care rulează într-o tranzacție unică cu `pg_advisory_xact_lock` pe `source_job_id` și `FOR UPDATE` pe run/chunks.
+- Eligibilitate retry:
+  - run existent;
+  - `job_type=historical_backfill`;
+  - status terminal (`done`/`error`);
+  - are cel puțin un chunk cu status de eroare (`error`/`failed`).
+- Outcome-uri implementate: `not_found`, `not_retryable`, `no_failed_chunks`, `already_exists`, `created`.
+- Guard concurent-safe pentru duplicate retry: în aceeași tranzacție verificăm run activ existent cu metadata `retry_of_job_id=<source_job_id>` + `retry_reason=failed_chunks`; dacă există, întoarcem `already_exists`.
+- La `created`, noul run este `historical_backfill` queued și conține DOAR chunk-urile eșuate din sursă (intervale `date_start/date_end` păstrate exact); legătura se face prin metadata:
+  - run: `retry_of_job_id`, `retry_reason=failed_chunks`;
+  - chunk: `retry_of_job_id`, `retry_of_chunk_index`, `retry_reason=failed_chunks`.
+- API nou `POST /agency/sync-runs/{job_id}/retry-failed` întoarce payload orientat UI ulterior (`source_job_id`, `retry_job_id`, `platform`, `account_id`, `status`, `chunks_created`, `failed_chunks_count`) și 404 doar pentru `not_found`.
+
+---
+
+# TODO — Task 14: UI action retry-failed pentru historical backfill în Account Detail
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și inspectez flow-ul existent din Account Detail (runs, polling, repair).
+- [x] Adaug helper frontend API pentru `POST /agency/sync-runs/{job_id}/retry-failed` cu mapare explicită outcome-uri + erori.
+- [x] Adaug CTA clar „Reia chunk-urile eșuate” în Account Detail doar pentru run-uri historical terminale retryable.
+- [x] Implementez click flow cu loading/disabled + anti-double-click și mesaje clare pentru `created`, `already_exists`, `no_failed_chunks`, `not_retryable`, `not_found`, `error`.
+- [x] După `created`/`already_exists` fac refetch imediat și las polling-ul existent să pornească/oprească automat pe baza run-urilor active.
+- [x] Adaug/actualizez teste frontend pentru visibility rules, request, in-flight state, outcome handling, refetch/polling și erori.
+- [x] Rulez testele/frontend build relevante și documentez review.
+
+## Review — Task 14: UI retry-failed în Account Detail
+- Am adăugat helper-ul frontend `retryFailedSyncRun(jobId)` care face `POST /agency/sync-runs/{job_id}/retry-failed` și normalizează outcome-urile backend (`created`, `already_exists`, `no_failed_chunks`, `not_retryable`, `not_found`) + erori HTTP/network.
+- În Account Detail (`/agency-accounts/[platform]/[accountId]`) am introdus CTA-ul „Reia chunk-urile eșuate”, afișat strict când există un run `historical_backfill` terminal cu semnale de eșec (`status error/failed/partial`, `error_count > 0` sau `error` text).
+- Click flow-ul retry folosește stare dedicată in-flight (`retryingJobId`) pentru disable/loading și anti-double-click; păstrează separat flow-ul existent de repair.
+- Outcome handling UI:
+  - `created`: mesaj succes + refetch imediat;
+  - `already_exists`: mesaj info + refetch imediat;
+  - `no_failed_chunks`: mesaj info;
+  - `not_retryable`: mesaj info clar;
+  - `not_found`: mesaj eroare util + refetch;
+  - `error`/network: mesaj eroare explicit.
+- După refetch, polling-ul rămâne bazat pe `hasActiveRun`; dacă noul retry run este `queued/running/pending`, auto-refresh-ul rămâne activ, altfel se oprește fără logică suplimentară.
+- Am extins testele frontend pentru helper + pagină: visibility rules, request endpoint, disabled/loading, outcome messaging și efecte de refetch/polling.
+
+---
+
+# TODO — Task 15: consistență Account Detail după repair/retry-failed
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și inspectez cauza inconsistențelor între header (`accountMeta`) și lista runs.
+- [x] Ajustez polling-ul ca, pe durata run-urilor active, să refacă și metadata din header (nu doar runs/chunks).
+- [x] Adaug un strat minim de `effective` state în header (derivat din runs când e mai actual) pentru `has_active_sync`, `last_run_*`, `last_error`.
+- [x] Fac refetch final coerent când run-ul activ dispare pentru a evita header rămas pe `queued/running`.
+- [x] Ajustez regula pentru CTA `Reia chunk-urile eșuate` astfel încât să fie ascuns când există deja run istoric activ relevant.
+- [x] Actualizez testele frontend pentru consistență header/polling și regula CTA, apoi rulez testele + build.
+
+## Review — Task 15: consistență Account Detail după repair/retry-failed
+- Cauza inconsistenței: header-ul folosea strict `accountMeta` (încărcat inițial sau la acțiuni punctuale), în timp ce polling-ul periodic actualiza doar runs/chunks; astfel, lista run-urilor devenea mai nouă decât metadata din cardul de sus.
+- Am extins polling-ul activ să refacă și `loadAccountMeta()` la fiecare tick, în paralel cu `loadRuns()` și chunks pentru run-urile expandate.
+- Am adăugat `effectiveSyncHeader` derivat minim din runs când cel mai recent run este cel puțin la fel de nou ca metadata (`toRunTimestamp >= toMetaTimestamp`), pentru consistență imediată pe `has_active_sync`, `last_run_status`, `last_run_type`, `last_run_started_at`, `last_run_finished_at`, `last_error`.
+- Am adăugat un refetch final automat la tranziția `hasActiveRun: true -> false` pentru a evita header blocat pe stare activă după închiderea run-ului.
+- Am ajustat vizibilitatea CTA retry: `Reia chunk-urile eșuate` apare doar dacă există run terminal retryable **și** nu există deja run `historical_backfill` activ.
+- Am păstrat flow-urile existente de repair/retry și mesajele de outcome; modificarea este strict de consistență UI + polling metadata.
+
+---
+
+# TODO — Task 16: reconciliere backend historical backfill după retry-failed
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și inspectez flow-ul actual pentru retry-failed + read-model metadata account.
+- [x] Adaug helper backend pentru recovery status al source run-ului (`unrecovered` / `partially_recovered` / `fully_recovered_by_retry`) pe matching exact intervale.
+- [x] Integrez helper-ul în eligibilitatea `POST /agency/sync-runs/{job_id}/retry-failed` ca să nu mai creeze run nou când source run-ul este recuperat complet.
+- [x] Ajustez derivarea metadata account ca source run complet recuperat să contribuie coerent la coverage/last_* și să nu păstreze `last_error` vechi ca eroare activă.
+- [x] Adaug logging pentru detectare recovery complet și skip retry-failed când este deja recuperat.
+- [x] Adaug/actualizez teste backend pentru scenariile unrecovered/fully_recovered/partial + metadata reconciliation + retry-failed skip.
+- [x] Rulez testele backend relevante și documentez review.
+
+## Review — Task 16: reconciliere backend după retry-failed
+- Am introdus în `SyncRunsStore` helper-ul `_evaluate_retry_recovery_status(...)` care clasifică source run-ul pe baza chunk-urilor eșuate rămase după deducerea intervalelor deja recuperate de retry-run-uri `done` legate prin metadata (`retry_of_job_id`/`retry_reason`) și matching exact `date_start`/`date_end`.
+- `retry_failed_historical_run(...)` folosește acum helper-ul de recovery și creează retry doar pentru intervalele eșuate rămase; când toate sunt deja recuperate returnează `no_failed_chunks` (compatibil cu contractul existent) și nu mai inserează run/chunks noi.
+- Am adăugat logging explicit pentru skip-ul `retry-failed` pe source run deja recuperat complet.
+- În `ClientRegistryService.list_platform_accounts(...)` am adăugat reconciliere pentru source historical run-uri `error` recuperate complet prin retry-run-uri `done`:
+  - range fallback pentru `sync_start_date`/`backfill_completed_through` include și source run-urile complet recuperate (nu doar run-uri istorice `done`);
+  - `last_success_at` poate proveni și din `finished_at` al retry-run-ului de recovery;
+  - `last_error` este suprimat când latest run status este de succes, evitând ancorarea în eroare istorică deja recuperată.
+- Schimbarea este backend-only, fără mutații asupra statusului istoric al source run-ului și fără schimbări de contract breaking.
+
+---
+
+# TODO — Task 17: hotfix 500 /clients/accounts/google după recovered-by-retry
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și identific nealinierea dintre SELECT și row mapping în `list_platform_accounts`.
+- [x] Aplic hotfix minim în `client_registry.py` pentru alinierea coloanelor recovered și indexare robustă.
+- [x] Adaug fallback defensiv ca mapping-ul să nu crape dacă recovered fields lipsesc/au NULL.
+- [x] Adaug teste backend pentru list_platform_accounts (cu recovered și fără recovered columns) și pentru endpoint-ul `/clients/accounts/google`.
+- [x] Rulez testele backend relevante și documentez review + lecție.
+
+## Review — Task 17: hotfix 500 /clients/accounts/google
+- Cauza exactă: în `list_platform_accounts`, mapping-ul Python accesa `row[21..23]` pentru `recovered_*`, dar query-ul SQL nu selecta aceste 3 coloane (select-ul se oprea la `success.last_success_at`), rezultând `IndexError: tuple index out of range`.
+- Fix minim: am adăugat în `SELECT` coloanele `recovered_hist.min_start_date`, `recovered_hist.max_end_date`, `recovered_hist.last_success_at`, aliniind query-ul cu mapping-ul.
+- Fallback defensiv: am introdus helper local `_safe_row_value(row, index)` și am migrat mapping-ul să folosească acces safe pentru câmpurile recovered și pentru câmpurile folosite în fallback (`sync_start_date`, `backfill_completed_through`, `last_success_at`, `last_error`, `last_run_*`, `has_active_sync`). Dacă tuple-ul are mai puține coloane sau valori `NULL`, codul cade elegant pe fallback-ul existent.
+- Am păstrat fixul strict backend-only, fără schimbări de contract API și fără modificări pe repair/retry/worker/UI.
+
+---
+
+# TODO — Task 18: UI cleanup după historical backfill fully recovered by retry
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și identific logica actuală pentru bannerul de eroare și CTA-ul retry în Account Detail.
+- [x] Ajustez derivarea UI pentru a trata source run-urile historical `error` recuperate complet prin retry ca nerelevante operațional (fără a rescrie istoricul în listă).
+- [x] Ascund bannerul `Ultimul run a eșuat` când eroarea provine din source run complet recuperat.
+- [x] Ascund CTA-ul `Reia chunk-urile eșuate` pentru source run complet recuperat; păstrez CTA-ul pentru recovery parțial/nerecuperat.
+- [x] Adaug/actualizez teste frontend pentru fully recovered vs partial recovery și comportamentul banner/CTA.
+- [x] Rulez testele frontend relevante + build și documentez review + lecție.
+
+## Review — Task 18: UI cleanup fully recovered by retry
+- Cauza inconsistenței: frontend-ul trata orice run terminal cu eroare drept “activ operațional” pentru banner/CTA, fără să distingă source run-urile historical deja recuperate complet prin retry-run-uri `done`.
+- Fix-ul este frontend-first și additive: am introdus derivare `fullyRecoveredSourceRunIds` pe baza datelor existente (`runs` + `accountMeta`), fără modificări de contract backend.
+- Regulă de fully recovered folosită în UI:
+  - source run `historical_backfill` terminal cu semnale de eșec;
+  - există cel puțin un retry run `historical_backfill` cu status de succes și metadata `retry_of_job_id=<source_job_id>` + `retry_reason=failed_chunks`;
+  - metadata reconciliată a contului acoperă complet intervalul source run (`sync_start_date <= date_start` și `backfill_completed_through >= date_end`).
+- Când run-ul este fully recovered:
+  - nu mai intră în `latestTerminalError` (bannerul “Ultimul run a eșuat” nu se mai afișează);
+  - nu mai este eligibil pentru `retryableFailedRun` / CTA “Reia chunk-urile eșuate”.
+- Pentru recovery parțial/nerecuperat, bannerul și CTA-ul rămân active conform comportamentului anterior.
+
+---
+
+# TODO — Task 19: backend fix coverage complet după fully recovered by retry
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și inspectez derivarea metadata account pentru coverage.
+- [x] Identific cauza pentru `backfill_completed_through` rămas la intervalul retry chunk deși source run e fully recovered.
+- [x] Aplic fix minim în `client_registry.py` pentru coverage efectiv la fully recovered (`source date_start/date_end`).
+- [x] Mențin comportament conservator: fără extindere artificială pentru partial recovery.
+- [x] Adaug/actualizez teste backend pentru full vs partial recovery + contract `/clients/accounts/google`.
+- [x] Rulez testele backend relevante și documentez review + lecție.
+
+## Review — Task 19: backend fix coverage complet după fully recovered by retry
+- Cauza: derivarea metadata folosea câmpurile explicite (`sync_start_date`, `backfill_completed_through`, `last_success_at`) ca override hard. Când explicit era setat dintr-un retry chunk mai mic, valorile recovered (`recovered_hist.*`) nu mai puteau extinde intervalul la coverage-ul sursă.
+- Fix minim în `ClientRegistryService.list_platform_accounts(...)`:
+  - `sync_start_date` derivă acum cu `_coalesce_date_min(explicit, hist_min, recovered_min)`;
+  - `backfill_completed_through` derivă acum cu `_coalesce_date_max(explicit, hist_max, recovered_max)`;
+  - `last_success_at` derivă acum cu `_coalesce_date_max(explicit, success_from_done, recovered_success)`.
+- Efect: pentru fully recovered, metadata se reconciliază la intervalul real acoperit (inclusiv capetele source run), iar pentru partial recovery fără valori recovered comportamentul rămâne conservator și neschimbat.
+- Acoperire teste: am adăugat două scenarii noi (full recovery cu explicit mai mic + partial recovery fără extindere) și am păstrat testul de contract endpoint `/clients/accounts/google` fără regressii.
+
+---
+
+# TODO — Task 20: rolling cron exclude conturi inactive/disabled
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și inspectez eligibilitatea curentă din rolling scheduler.
+- [x] Confirm regresia: cont mapat + sync_start_date setat devine eligibil fără verificare status cont.
+- [x] Aplic fix minim backend-only: exclud conturile inactive/disabled din `_is_account_eligible_for_daily_rolling(...)`.
+- [x] Introduc skip reason explicit `inactive` și extind summary-ul enqueue cu count + account ids.
+- [x] Adaug/actualizez teste backend pentru active/unmapped/history_not_initialized/disabled/inactive + summary.
+- [x] Rulez testele backend relevante pentru rolling scheduler și documentez review + lecție.
+
+## Review — Task 20: rolling cron exclude conturi inactive/disabled
+- Cauza: `_is_account_eligible_for_daily_rolling(...)` valida doar mapping + `sync_start_date`, deci conturile oprite operațional puteau reintra în enqueue-ul zilnic.
+- Fix minim: eligibilitatea verifică acum explicit statusul contului și exclude stările inactive (`disabled`, `inactive` și sinonime operaționale apropiate), plus fallback conservator pe `is_active=False`.
+- Read-model: `list_platform_accounts(...)` expune acum și `status` din `agency_platform_accounts`, astfel rolling scheduler poate aplica regula fără query-uri suplimentare.
+- Summary rolling: am adăugat câmpurile additive `skipped_inactive_count` și `skipped_inactive_account_ids`.
+- Teste: acoperire pentru active/unmapped/no-history/disabled/inactive și verificare explicită a noului skip reason în summary.
+
+---
+
+# TODO — Task 21: sweeper backend auto-repair pentru historical backfill stale
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și inspectez logica existentă de repair pentru historical_backfill.
+- [x] Adaug helper backend `sweep_stale_historical_runs(...)` care identifică run-uri active historical_backfill stale și reutilizează `repair_historical_sync_run(...)`.
+- [x] Mențin scope-ul strict pe `job_type=historical_backfill` și păstrez concurența sigură prin guard-urile existente din repair.
+- [x] Adaug entrypoint worker one-shot pentru rulare operațională (Railway/local) cu prag stale + limit configurabile.
+- [x] Adaug summary explicit (processed/repaired/noop/not_found/error + job_ids) și logging pentru candidate/outcomes.
+- [x] Adaug/actualizez teste backend pentru stale/fresh/outcomes/contract worker și rulez suita relevantă.
+
+## Review — Task 21: sweeper backend auto-repair historical stale
+- Am introdus în `SyncRunsStore` metoda `sweep_stale_historical_runs(...)` care citește run-urile active (`queued/running`) strict pentru `historical_backfill`, clasifică candidate stale pe baza `COALESCE(updated_at, started_at, created_at)` față de `stale_after_minutes`, apoi apelează pentru fiecare candidat `repair_historical_sync_run(...)` (fără a duplica logica de stale chunk detection).
+- Run-urile active dar fresh sunt lăsate în pace și raportate în `noop_active_fresh_job_ids`; pentru candidatele stale, outcome-urile repair sunt agregate în summary (`repaired`, `noop_not_active`, `not_found`, `noop_active_fresh`, `error`).
+- Am adăugat worker one-shot `app/workers/historical_repair_sweeper.py` cu helper `sweep_stale_historical_runs(...)` reutilizabil și `main()` pentru operare Railway/local, folosind default `sync_run_repair_stale_minutes` din config + env override (`HISTORICAL_REPAIR_SWEEPER_STALE_MINUTES`, `HISTORICAL_REPAIR_SWEEPER_LIMIT`).
+- Implementarea rămâne backend-only, fără schimbări UI/retry-failed/rolling cron/worker principal de procesare chunks.
+
+---
+
+# TODO — Task 22: runner periodic pentru historical repair sweeper
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și inspectez implementarea one-shot existentă.
+- [x] Adaug runner periodic separat pentru sweeper (`historical_repair_sweeper_loop`) fără a modifica repair/retry/rolling logic.
+- [x] Introduc configurare minimă pentru loop: enable flag + interval seconds, cu logging explicit pe iterații.
+- [x] Păstrez one-shot entrypoint existent și reutilizez helper-ul de sweep existent.
+- [x] Adaug teste deterministe pentru contractul runner-ului (disabled/config/interval/call/erori continue).
+- [x] Actualizez documentația operațională Railway/local și rulez testele backend relevante.
+
+## Review — Task 22: runner periodic historical repair sweeper
+- Am adăugat worker-ul `app/workers/historical_repair_sweeper_loop.py` cu buclă periodică simplă care apelează `sweep_stale_historical_runs(...)`, doarme conform intervalului configurabil și loghează `iteration_started` / `iteration_finished` cu duration + summary.
+- Config nou pentru loop runner (din env): `HISTORICAL_REPAIR_SWEEPER_ENABLED` și `HISTORICAL_REPAIR_SWEEPER_INTERVAL_SECONDS`; am păstrat reutilizarea variabilelor existente `HISTORICAL_REPAIR_SWEEPER_STALE_MINUTES` și `HISTORICAL_REPAIR_SWEEPER_LIMIT`.
+- Dacă runner-ul este disabled (`HISTORICAL_REPAIR_SWEEPER_ENABLED=false`), iese imediat cu status `disabled`.
+- Dacă o iterație aruncă excepție, eroarea este logată (`iteration_failed`) iar loop-ul continuă la următoarea iterație (nu oprește serviciul).
+- Am păstrat implementarea strict backend-only și fără schimbări în flow-urile repair/retry-failed/rolling/UI.
+
+---
+
+# TODO — Task 23: extindere sweeper auto-repair pentru rolling_refresh stale
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și inspectez logica de repair/sweeper/loop existentă.
+- [x] Extind sweeper-ul backend cu suport pentru `rolling_refresh` fără refactor mare și fără duplicare masivă.
+- [x] Refolosesc aceeași stale detection (`queued/running` + vârstă pe `COALESCE(updated_at, started_at, created_at)` + prag configurabil).
+- [x] Păstrez repair-ul concurent-safe și finalizez coerent run-urile rolling stale (done/error) prin aceeași infrastructură de repair.
+- [x] Extind loop runner-ul periodic să ruleze sweep atât pentru historical, cât și pentru rolling, cu summary separat + totaluri.
+- [x] Adaug/actualizez teste backend pentru rolling stale/fresh, non-target unaffected, summary și integrarea loop runner-ului.
+- [x] Actualizez documentația operațională + tasks/lessons și rulez testele backend relevante.
+
+## Review — Task 23: extindere sweeper la rolling_refresh
+- Am extras în `SyncRunsStore` un path comun minim (`_repair_active_sync_run` + `_sweep_stale_runs_for_job_type`) și am păstrat wrapper-ele explicite pentru `historical_backfill` și `rolling_refresh`, evitând duplicarea logicii de stale close/finalizare run.
+- `sweep_stale_rolling_runs(...)` folosește exact aceeași regulă de stale detection ca historical (`status IN queued/running` + vechime din `COALESCE(updated_at, started_at, created_at)` față de `stale_after_minutes`).
+- Loop-ul periodic rulează acum în fiecare iterație ambele sweep-uri (`historical` + `rolling`) și returnează summary cu breakdown per job type + totaluri (`total_processed_count`, `total_repaired_count`, `total_error_count`).
+- Nu am schimbat UI/retry-failed/rolling window logic/eligibility; extinderea este strict operațională backend.
+
+---
+
+# TODO — Task 24: redesign listă Agency Accounts (coloane + filtru client)
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și inspectez structura curentă a listei Google Accounts.
+- [x] Refac layout-ul listei pe coloane clare: selecție, cont, sync progress/status, client atașat, acțiuni, detach separat.
+- [x] Mut progress bar/status între zona cont și client pentru scanare mai rapidă.
+- [x] Separ acțiunea `Detach` într-o coloană dedicată, distinctă de acțiunile principale.
+- [x] Adaug filtru local după numele clientului atașat + empty state explicit la zero rezultate.
+- [x] Păstrez funcțiile existente (select-page, attach/detach, refresh names, download historical, batch progress/polling) fără schimbări de contract API.
+- [x] Adaug teste frontend pentru headers/filter/progress/detail-link/actions și rulez testele relevante + build + screenshot.
+
+## Review — Task 24: redesign listă Agency Accounts
+- Lista Google Accounts este acum randată într-un layout tip grid cu headere de coloană explicite (`Selecție`, `Cont`, `Sync progress`, `Client atașat`, `Acțiuni`, `Detach`) și fallback labels pe mobile.
+- Progress/status-ul este afișat în coloană dedicată între cont și client, cu bar vizual + status text + metadate coverage.
+- `Detach` a fost mutat într-o coloană separată; `attach` rămâne în coloana `Acțiuni`.
+- Filtrul `Filtru client` rulează local pe `attached_client_name` și afișează empty state când nu există rezultate.
+- Link-ul către Account Detail (`/agency-accounts/google_ads/{accountId}`) și acțiunile operaționale existente au rămas funcționale.
+
+---
+
+# TODO — Task 25: quick view conturi atribuite aceluiași client în Agency Accounts
+
+- [x] Actualizez workspace-ul, recitesc AGENTS/todo/lessons și inspectez layout-ul existent din Task 9A.
+- [x] Construiesc maparea locală `attached_client_id -> conturi` pe datele deja încărcate.
+- [x] Afișez badge/count în coloana Client pentru row-urile atașate (`X conturi atribuite`).
+- [x] Adaug acțiune `Vezi conturile` + expand/collapse inline per row, fără efecte secundare pe selecție/attach/detach/batch.
+- [x] În panel-ul quick view afișez nume cont + account id + link către Account Detail, cu marcaj pentru contul curent.
+- [x] Ascund quick view pentru row-uri neatașate și păstrez filtrul/client + acțiunile existente intacte.
+- [x] Adaug/actualizez teste frontend pentru count, visibility, expand/collapse, linkuri și compatibilitate filtru; rulez testele + build + screenshot.
+
+## Review — Task 25: quick view conturi pe același client
+- Maparea locală este derivată cu `useMemo` din `googleAccounts` și grupează conturile după `attached_client_id`.
+- Pentru row-uri atașate, coloana Client afișează badge-ul `X conturi atribuite` și buton `Vezi conturile` / `Ascunde conturile`.
+- Expand/collapse este per row prin `expandedClientRows` (Set de account IDs), independent de selecție și restul acțiunilor.
+- Panel-ul inline listează conturile clientului cu linkuri către `/agency-accounts/google_ads/{accountId}`, include account id și marchează contul curent cu eticheta `curent`.
+- Row-urile fără client atașat nu afișează badge și nu afișează acțiunea quick view.
+
+---
+
+# TODO — Task 26: hotfix SQL interpolation pentru create_historical_sync_run_if_not_active
+
+- [x] Confirm root-cause în query-ul INSERT...RETURNING din SyncRunsStore.
+- [x] Aplic fix minim pentru interpolarea `_SYNC_RUNS_SELECT_COLUMNS` în SQL executat.
+- [x] Adaug test de regresie care validează că placeholder-ul literal nu mai ajunge în query.
+- [x] Rulez testele backend țintite pentru dedupe + endpoint orchestration.
+
+## Review — Task 26: hotfix SQL interpolation
+- Root-cause: query-ul `INSERT INTO sync_runs ... RETURNING` era definit ca string simplu (nu f-string), astfel placeholder-ul `{_SYNC_RUNS_SELECT_COLUMNS}` ajungea literal în SQL și producea `psycopg.errors.SyntaxError` la `{`.
+- Fix: query-ul a fost convertit la f-string astfel încât `_SYNC_RUNS_SELECT_COLUMNS` este expandat înainte de execuție.
+- Regression guard: în testul de dedupe pentru path-ul `created=True` am adăugat aserție că niciun query executat nu conține literalul `{_SYNC_RUNS_SELECT_COLUMNS}`.
+
+---
+
+# TODO — Task 27: Agency Accounts row-level sync progress doar pentru run-uri active
+
+- [x] Actualizez workspace-ul și recitesc AGENTS + tasks/todo + tasks/lessons (remote indisponibil în mediu curent).
+- [x] Analizez logica `renderSyncProgress(...)` și identific cauza barelor afișate pe toate row-urile.
+- [x] Aplic fix frontend-only: fill doar pentru row-uri active relevante (`queued/running` în batch curent sau `has_active_sync` fără batch status).
+- [x] Elimin semantica de bară 100% pentru `done/error/last_success_at`; păstrez doar textul de status/metadata.
+- [x] Adaug teste frontend pentru idle/done fără activitate + queued/running active în batch.
+- [x] Rulez testele frontend relevante și build-ul frontend.
+
+## Review — Task 27: row-level sync progress activ-only
+- Cauza exactă: `renderSyncProgress(...)` calcula progres generic pentru orice row (`100%` pe `done/error/last_success_at`, `15%` implicit), deci aproape toate conturile primeau bare umplute chiar fără sync activ.
+- Regula nouă: fill-ul este randat doar dacă row-ul are sync activ relevant (`rowStatus` din batch curent în `queued/running`, sau fallback `has_active_sync` când nu există `rowStatus`).
+- Pentru row-uri inactive (idle/done/error fără activitate curentă), coloana afișează status/text și metadata, dar pista rămâne fără fill.
+- Pentru row-uri active: `queued` primește indicator de start discret, `running` primește indicator intermediar animat; după ce row-ul nu mai e activ, fill-ul dispare.
+
+---
+
+# TODO — Task 28: Agency Accounts row-level progress REAL din chunks pentru conturile active
+
+- [x] Actualizez workspace-ul și verific starea branch-ului (remote/tracking indisponibil în mediul curent).
+- [x] Identific endpoint-ul reutilizabil pentru runs/chunk counters din Account Detail și îl expun prin helper comun în `src/lib/api.ts`.
+- [x] Adaug în list page polling țintit (doar conturi active queued/running) pentru a citi `chunks_done/chunks_total` per cont.
+- [x] Randrez în `SYNC PROGRESS` procent real + text `done/total chunks` când există date; fallback simplu pentru activ fără counters; gol pentru inactive.
+- [x] Evit fetch pe toate conturile prin filtrare explicită `activeSyncAccountIds` înainte de polling.
+- [x] Adaug/actualizez teste frontend pentru no-active, active real-progress, și start/stop polling.
+- [x] Rulez `pnpm test` și `pnpm build` pe frontend.
+
+## Review — Task 28: progress real pe chunks pentru active rows
+- Endpoint reutilizat: `/agency/sync-runs/accounts/{platform}/{account_id}?limit=...` (același folosit de Account Detail), expus prin helper comun `listAccountSyncRuns(...)` în `src/lib/api.ts`.
+- În Agency Accounts, polling-ul pentru chunk progress pornește doar când există conturi active (`queued/running` în batch sau `has_active_sync` fallback) și rulează pe lista activă, nu pe toate conturile.
+- Pentru fiecare cont activ se citește run-ul activ și se derivează `chunksDone/chunksTotal/percent`; UI afișează bară reală + text ex. `12/113 chunks (11%)`.
+- Când contul nu mai este activ, row progress revine la track gol (fără fill) și polling-ul se oprește automat când nu mai există active rows.
+
+---
+
+# TODO — Task 29: Agency Accounts rolling watermark corect pentru run-uri active
+
+- [x] Verific workspace + AGENTS + tasks și confirm scope frontend-only.
+- [x] Identific fallback-ul greșit pentru `rolling_synced_through` în `page.tsx`.
+- [x] Refolosesc datele din polling-ul existent (`listAccountSyncRuns`) ca să disting rolling activ (`job_type=rolling_refresh`, status queued/running/pending).
+- [x] Afișez `Rolling în curs` cu fereastră/date_end când există rolling activ; păstrez fallback la `rolling_synced_through` sau `Rolling sync neinițiat` când nu există run activ.
+- [x] Adaug teste pentru rolling activ, rolling neinițiat și rolling done cu dată setată.
+- [x] Rulez `pnpm --dir apps/frontend test` și `pnpm --dir apps/frontend build`.
+
+## Review — Task 29: rolling status corect
+- Cauza: UI folosea strict `rolling_synced_through ?? "Rolling sync neinițiat"`, ignorând faptul că poate exista un run activ `rolling_refresh` cu fereastră țintă.
+- Fix: folosesc metadata run-ului activ din polling (`job_type`, `status`, `date_start`, `date_end`) și afișez mesajul de rolling în curs când run-ul este activ.
+- Regula nouă: rolling activ are prioritate față de watermark-ul istoric `rolling_synced_through`; fallback la `rolling_synced_through`/`Rolling sync neinițiat` doar când nu există rolling activ.
+
+---
+
+# TODO — Task 30: backend batch endpoint pentru progress pe conturi active
+
+- [x] Verific workspace și notez limitarea de remote/upstream (fetch/pull indisponibil în mediu).
+- [x] Adaug endpoint batch nou pentru progress account-level în `sync_orchestration` cu validări de input și limită maximă.
+- [x] Implementez în `sync_runs_store` o metodă eficientă batch (CTE + agregare chunks) care evită query N-per-account.
+- [x] Adaug logging operațional pentru endpoint (`requested_count`, `returned_active_count`, `duration_ms`).
+- [x] Adaug teste API pentru null active run, progres corect, scope pe account_ids cerute, validare empty/limită.
+- [x] Adaug teste store pentru mapping payload batch progress.
+- [x] Rulez testele backend relevante (`test_sync_orchestration_api` + `test_sync_runs_store_progress_batch`).
+
+## Review — Task 30: endpoint batch progress
+- Am introdus endpoint-ul `POST /agency/sync-runs/accounts/{platform}/progress` cu body `{ account_ids: string[], limit_active_only?: boolean }` și limită de 200 ids.
+- Endpoint-ul returnează `platform`, `requested_count` și `results[]` (entry per account_id, `active_run` dict sau `null`).
+- Store-ul folosește o singură interogare SQL cu CTE-uri (`requested`, `active_runs`, `chunk_summary`) pentru a selecta cel mai recent run activ per cont și agregatele de chunks (`chunks_done`, `chunks_total`, `errors_count`) fără query N-per-account.
+- Am păstrat strict scope backend-only, fără schimbări UI sau logică de sync/repair/retry/sweeper/rolling.
+
+---
+
+# TODO — Task 31: Agency Accounts polling migrat pe endpoint batch progress
+
+- [x] Verific workspace (fetch/pull) și documentez limitarea de remote/upstream când lipsește.
+- [x] Adaug helper frontend nou pentru endpoint-ul batch `POST /agency/sync-runs/accounts/{platform}/progress`.
+- [x] Migrez polling-ul din Agency Accounts de la N request-uri per account la 1 request/batch per interval (+ split la 200 IDs).
+- [x] Păstrez semantica UI existentă: fill doar pe run activ, fallback indicator când chunks_total lipsește, rolling watermark funcțional.
+- [x] Adaug teste Vitest pentru request batch, no-active => fără request, și split >200 active IDs.
+- [x] Rulez `pnpm --dir apps/frontend test` și `pnpm --dir apps/frontend build`.
+
+## Review — Task 31: batch polling Agency Accounts
+- Migrarea a înlocuit `Promise.all(listAccountSyncRuns(...))` per cont activ cu apel batch `postAccountSyncProgressBatch(...)`, reducând request-urile per interval de la N la 1 (sau câteva batch-uri când active IDs > 200).
+- Split-ul de limită este implementat local în frontend pe chunk-uri de max 200 IDs, agregând rezultatele într-un singur map `rowChunkProgressByAccount`.
+- Semantica vizuală rămâne neschimbată: bara umplută doar pentru conturi active, fallback text când progress chunks nu are total, iar rolling watermark continuă să deriveze din metadata run-ului activ.
+
+---
+
+# TODO — Task 32: Agency Accounts quick filters + sort Active first
+
+- [x] Verific workspace/fetch și continui cu limitarea de remote/upstream din mediu.
+- [x] Adaug filtre rapide client-side (Toate / Active / Erori / Neinițializate) în Agency Accounts, lângă filtrul client.
+- [x] Adaug toggle `Active first` (default off) cu sort stabil: active, apoi error, apoi restul.
+- [x] Păstrez semantica progress bar (fill doar pentru active) și fără API calls noi.
+- [x] Mă asigur că `Select all pe pagina curentă` operează doar pe rândurile vizibile după filtrare/sort.
+- [x] Adaug teste Vitest pentru filtre, select-all în context filtrat și sort minim `Active first`.
+- [x] Rulez `pnpm --dir apps/frontend test` și `pnpm --dir apps/frontend build`.
+
+## Review — Task 32: quick filters + active-first sort
+- Filtrarea rapidă rulează client-side peste lista deja încărcată și suportă: `Active` (queued/running/pending + fallback `has_active_sync`), `Erori` (error/failed), `Neinițializate` (`sync_start_date` gol).
+- Toggle-ul `Active first` aplică sort stabil pe 3 grupe (active > errors > rest) fără schimbări backend.
+- Selectarea pe pagină rămâne coerentă deoarece sursa pentru selectable IDs este `pagedGoogleAccounts` (deja filtrată/sortată).
+
+---
+
+# TODO — One-shot historical repair sweeper includes rolling runs
+
+- [x] Update one-shot sweeper to process stale historical and rolling runs in same invocation.
+- [x] Return aggregate totals across both job types in one-shot summary payload.
+- [x] Add dedicated unit test for one-shot sweeper aggregated behavior and shared parameters.
+- [x] Update README wording for one-shot command scope and keep env var contract documented.
+- [x] Run targeted checks and document review.
+
+## Review — One-shot historical repair sweeper includes rolling runs
+- `historical_repair_sweeper.sweep_stale_historical_runs` now executes both historical and rolling stale sweeps in one call, with shared `stale_after_minutes` and `limit`.
+- Returned payload remains explicit per type (`historical`, `rolling`) and now includes aggregate totals (`total_processed_count`, `total_repaired_count`, `total_error_count`) for cron observability.
+- Added a backend unit test to validate dual-call behavior, shared parameters, and aggregate totals.
+- README now clarifies that one-shot sweep covers both historical and rolling stale runs.
+
+---
+
+# TODO — Agency Accounts: select all filtered + persistent selection across pages
+
+- [x] Run `git fetch --all --prune` and continue even when no remotes are configured in this environment.
+- [x] Keep selection state in a persistent `Set` keyed by account id, independent from current page.
+- [x] Add controls for `Selectează toate filtrate (X)` and `Clear selection` near page selection controls.
+- [x] Implement precise behavior split: page-only selection vs full filtered selection, while preserving selection across paging/filter/sort changes.
+- [x] Keep existing download historical flow unchanged except consuming total persistent selection.
+- [x] Extend Vitest list tests for cross-page filtered selection, persistence, clear selection, page-only selection, and uninitialized filter behavior.
+- [x] Run frontend test/build checks and capture review.
+
+## Review — Agency Accounts: select all filtered + persistent selection across pages
+- Selection remains stored as `Set<accountId>` and is not reset on page/filter/sort changes, so checkboxes reflect membership consistently when navigating pages.
+- Added a filtered-scope selector that targets all currently filtered + attachable rows (`selectableFilteredAccountIds`), distinct from page-scope selector (`selectablePageAccountIds`).
+- Header controls now include `Selectează toate filtrate (X)` and `Clear selection`, with summary text showing total selected and filtered scope.
+- Existing `Download historical` flow remains unchanged and still uses `selectedMappedAccounts` derived from persistent selection state.
+- Added targeted Vitest coverage for the requested scenarios (cross-page, persistence, clear selection, page-only selection, and uninitialized-only filtered selection).
+
+---
+
+# TODO — DB foundation: entity tables + per-grain watermarks
+
+- [x] Run workspace sync/status commands (`git status --short`, `git fetch --all --prune`, `git pull --ff-only` when possible).
+- [x] Add additive migration for `platform_campaigns`, `platform_ad_groups`, `platform_ads` with requested PKs/columns/indexes.
+- [x] Add additive migration for `platform_account_watermarks` with unique key, grain CHECK constraint, and platform/account index.
+- [x] Add backend DB test covering table existence via `to_regclass(...)`.
+- [x] Add backend DB test covering uniqueness enforcement on `(platform, account_id, grain)`.
+- [x] Run targeted backend tests/checks and document review.
+
+## Review — DB foundation: entity tables + per-grain watermarks
+- Added migration `0015_platform_entities_and_watermarks.sql` with three cross-platform entity-state tables and one watermark table; all changes are additive-only.
+- Entity table PKs are composite per requirements and include minimal canonical columns plus `raw_payload/fetched_at/last_seen_at/payload_hash`.
+- Watermark table includes required date/timestamp fields, `UNIQUE (platform, account_id, grain)`, and strict grain check for `account_daily/campaign_daily/ad_group_daily/ad_daily`.
+- Added DB migration tests that apply migrations into an isolated schema, assert table presence with `to_regclass`, and validate duplicate watermark insert raises an exception.
+
+---
+
+# TODO — DB foundation: daily entity performance fact tables
+
+- [x] Run workspace update/status commands (`git status --short`, `git fetch --all --prune`, `git pull --ff-only` when possible).
+- [x] Inspect canonical metric names/types from existing `ad_performance_reports` usage and preserve them in new entity fact tables.
+- [x] Add additive migration for `campaign_performance_reports`, `ad_group_performance_reports`, `ad_unit_performance_reports` with required unique keys and indexes.
+- [x] Include traceability columns (`ingested_at`, `source_window_start`, `source_window_end`, `source_job_id`) in all three tables.
+- [x] Add backend DB migration tests for table existence and duplicate-key uniqueness enforcement.
+- [x] Run targeted checks and document review.
+
+## Review — DB foundation: daily entity performance fact tables
+- Added migration `0016_daily_entity_performance_facts.sql` with 3 additive daily fact tables for campaign/ad_group/ad-unit scope; no renames/drops and no worker/UI/orchestrator changes.
+- Canonical metric columns are aligned with `ad_performance_reports` usage (`spend`, `impressions`, `clicks`, `conversions`, `conversion_value`, `extra_metrics`) and retain consistent numeric/bigint/jsonb typing.
+- Enforced business-key uniqueness per grain:
+  - campaign: `(platform, account_id, campaign_id, report_date)`
+  - ad_group: `(platform, account_id, ad_group_id, report_date)`
+  - ad_unit: `(platform, account_id, ad_id, report_date)`
+- Added existence and uniqueness DB tests in an isolated schema, with skip behavior when `DATABASE_URL` is unavailable.
+
+---
+
+# TODO — Backend store upserts for daily entity performance facts
+
+- [x] Run workspace sync/status commands (`git status --short`, `git fetch --all --prune`, `git pull --ff-only` when possible).
+- [x] Re-check existing `ad_performance_reports` upsert pattern and align ON CONFLICT update behavior.
+- [x] Add backend store module with public upsert helpers for campaign/ad_group/ad_unit fact tables.
+- [x] Ensure upsert updates canonical metrics, `extra_metrics`, traceability fields, and refreshes `ingested_at`.
+- [x] Add DB-backed tests (skip without `DATABASE_URL`) proving conflict upsert overwrites facts for same daily keys.
+- [x] Run targeted checks and document review.
+
+## Review — Backend store upserts for daily entity performance facts
+- Added `entity_performance_reports.py` with 3 public functions:
+  - `upsert_campaign_performance_reports(conn, rows)`
+  - `upsert_ad_group_performance_reports(conn, rows)`
+  - `upsert_ad_unit_performance_reports(conn, rows)`
+- Each helper performs bulk `executemany` insert with `ON CONFLICT ... DO UPDATE` on the table business key and overwrites canonical metrics (`spend/impressions/clicks/conversions/conversion_value`), `extra_metrics`, and traceability (`source_window_start/end`, `source_job_id`), while refreshing `ingested_at = NOW()`.
+- Added integration-style DB tests that apply migrations in isolated schema and verify re-upsert on same key updates spend/clicks/extra_metrics for campaign/ad_group/ad_unit tables.
+
+---
+
+# TODO — Partition monthly daily entity fact tables
+
+- [x] Run workspace update commands (`git status --short`, `git fetch --all --prune`, `git pull --ff-only` when possible).
+- [x] Add migration to convert campaign/ad_group/ad_unit fact tables into RANGE partitioned parents by `report_date`.
+- [x] Add monthly partitions from 2024-01 through 2026-12 plus DEFAULT partition for each table.
+- [x] Preserve uniqueness/index coverage with new constraint/index names and copy data from `_unpartitioned` tables before dropping old tables.
+- [x] Add DB tests (skip without `DATABASE_URL`) to verify parent relkind=`p` and partition existence.
+- [x] Run targeted checks and document review.
+
+## Review — Partition monthly daily entity fact tables
+- Added migration `0017_partition_daily_entity_facts.sql` that performs `rename -> create partitioned parent -> add constraints/indexes -> create partitions/default -> copy data -> drop old` for all three fact tables.
+- Partition generation uses monthly loop for `[2024-01-01, 2027-01-01)` and creates fail-safe DEFAULT partition per table.
+- Added dedicated DB migration test asserting parent tables are partitioned (`relkind='p'`), key partitions exist (`*_2024_01` + `*_default`), and duplicate business key insert is rejected.
+
+---
+
+# TODO — Backend store upserts for platform entity state tables
+
+- [x] Run workspace update commands (`git status --short`, `git fetch --all --prune`, `git pull --ff-only` when possible).
+- [x] Confirm exact entity-state schema from migration `0015_platform_entities_and_watermarks.sql` and reuse column names as-is.
+- [x] Add backend store module with 3 upsert helpers for `platform_campaigns`, `platform_ad_groups`, `platform_ads`.
+- [x] Ensure ON CONFLICT updates non-key fields (`name/status/parent ids/raw_payload/payload_hash`) and refreshes `fetched_at/last_seen_at`.
+- [x] Add DB-backed tests (skip without `DATABASE_URL`) that prove upsert overwrites fields on key conflict.
+- [x] Run targeted checks and document review.
+
+## Review — Backend store upserts for platform entity state tables
+- Added `platform_entity_store.py` with idempotent bulk upsert helpers over the 3 entity state tables using composite PK conflict targets.
+- Conflict updates overwrite mutable fields, including parent links (`campaign_id`, `ad_group_id` where relevant), `raw_payload`, and `payload_hash`, and force freshness timestamps (`fetched_at/last_seen_at`) to `NOW()`.
+- Added DB integration-style tests for campaign/ad_group/ad rows confirming second upsert on same key overwrites `name/status/payload_hash` and parent ids.
+
+---
+
+# TODO — Platform account watermarks store (DB-first, non-regressive upsert)
+
+- [x] Run workspace update commands (`git status --short`, `git fetch --all --prune`, `git pull --ff-only` when possible).
+- [x] Add backend store module for `platform_account_watermarks` read + upsert operations.
+- [x] Implement upsert non-regression semantics (`sync_start_date=min`, `historical/rolling=max`, `last_success_at=max`) with conflict-safe SQL.
+- [x] Keep mutable fields behavior explicit (`last_error`, `last_job_id`) and refresh `updated_at` on every upsert.
+- [x] Add DB-backed tests (skip without `DATABASE_URL`) validating insert, non-regression, forward progress, and mutable overwrite semantics.
+- [x] Run requested checks and document review.
+
+## Review — Platform account watermarks store (DB-first, non-regressive upsert)
+- Added `platform_account_watermarks_store.py` with grain validation, point-read helper, and idempotent `ON CONFLICT` upsert returning the final row.
+- Non-regression policy is enforced in SQL: earliest `sync_start_date`, latest `historical_synced_through`, latest `rolling_synced_through`, latest `last_success_at`.
+- `last_error` and `last_job_id` preserve existing values when omitted (`None`) and overwrite when provided with non-null values.
+- Added integration-style DB tests that apply migrations in isolated schema and verify insertion, non-regression behavior, and forward progress updates.
+
+---
+
+# TODO — Reconcile watermarks from entity fact coverage
+
+- [x] Run workspace update commands (`git status --short`, `git fetch --all --prune`, `git pull --ff-only` when possible).
+- [x] Add backend reconciler module that derives per-account fact coverage (`min/max/count`) for entity grains and preserves requested account ordering.
+- [x] Implement reconciliation flow that updates only `sync_start_date` + `historical_synced_through` via existing non-regressive watermark upsert.
+- [x] Ensure accounts without fact rows are skipped (no watermark row created by reconciler for no-data entries).
+- [x] Add DB tests (skip without `DATABASE_URL`) for derive coverage, reconcile apply, and non-regression behavior.
+- [x] Run requested checks and document review.
+
+## Review — Reconcile watermarks from entity fact coverage
+- Added `platform_watermarks_reconcile.py` with table mapping by grain and a coverage query that returns `min_date/max_date/row_count` for all requested account IDs, including no-data accounts.
+- Reconcile applies only `sync_start_date` and `historical_synced_through` via `upsert_platform_account_watermark`; it intentionally does not set `rolling_synced_through` in this task.
+- Summary payload includes per-grain updated and skipped-no-data counters to support operational observability.
+- Added DB integration tests validating coverage derivation, no-data skip behavior, and non-regression via existing watermark store semantics.
+
+---
+
+# TODO — Expose entity watermarks by grain in platform accounts read-model
+
+- [x] Run workspace update commands (`git status --short`, `git fetch --all --prune`, `git pull --ff-only` when possible).
+- [x] Add batch watermark read helper for account_ids+grains with single SQL query and full-account output coverage.
+- [x] Integrate batch watermarks into platform accounts read-model as additive `entity_watermarks` payload.
+- [x] Preserve existing response fields/semantics while adding grain-level watermark object (`campaign_daily`, `ad_group_daily`, `ad_daily`).
+- [x] Add DB-backed contract test (skip-safe) validating populated vs missing grain behavior across two accounts.
+- [x] Run requested checks and document review.
+
+## Review — Expose entity watermarks by grain in platform accounts read-model
+- Added `list_platform_account_watermarks(...)` to batch-read watermark rows for requested accounts/grains in one query and return null placeholders for missing rows.
+- `ClientRegistryService.list_platform_accounts` now enriches each account with additive `entity_watermarks` keyed by grain, while keeping existing metadata fields intact.
+- Grain payload shape mirrors watermark columns (`sync_start_date`, `historical_synced_through`, `rolling_synced_through`, `last_success_at`, `last_error`, `last_job_id`).
+- Added DB integration contract test proving: account with only campaign watermark gets object only on `campaign_daily`; missing grains and no-watermark accounts return nulls.
+
+---
+
+# TODO — Add grain plumbing for sync_runs (default account_daily)
+
+- [x] Run workspace update commands (`git status --short`, `git fetch --all --prune`, `git pull --ff-only` when possible).
+- [x] Audit existing migrations/store and confirm `sync_runs.grain` already exists (from 0014), so no new migration file was added.
+- [x] Harden sync_runs store schema bootstrap to enforce grain default/check/index and normalize existing null grains.
+- [x] Update sync_runs store serialization/insert paths to keep backward-compatible default grain (`account_daily`).
+- [x] Add DB test (skip-safe) for grain column/default and explicit entity grain roundtrip.
+- [x] Run requested checks and document review.
+
+## Review — Add grain plumbing for sync_runs (default account_daily)
+- Since `sync_runs.grain` already exists in migration `0014_sync_orchestration_v2.sql`, no new migration was created per instruction.
+- `SyncRunsStore._ensure_schema()` now upgrades runtime schema by backfilling null grains, enforcing default `account_daily`, setting `NOT NULL`, adding allowed-values check constraint, and creating `(platform, account_id, grain)` index.
+- Sync run payload serialization now defaults null grain to `account_daily`, and create/retry insert paths send `account_daily` when grain is absent.
+- Added DB integration-style test for column/default introspection and insert roundtrip for default and explicit `campaign_daily` grain values.
+
+---
+
+# TODO — Audit + contract tests for grain-aware /agency/sync-runs/batch
+
+- [x] Run workspace update commands (`git status --short`, `git fetch --all --prune`, `git pull --ff-only`) and note upstream limitations if present.
+- [x] Audit batch endpoint request/response contract and dedupe guard behavior for grain support.
+- [x] Implement minimal backward-compatible batch payload support for `grain` + `grains` with default/normalization.
+- [x] Ensure historical dedupe key includes grain in store-level guard.
+- [x] Extend backend contract tests for default grain, multi-grain create, grain-scoped dedupe, invalid grain (422), and duplicate-grain normalization.
+- [x] Run requested validation checks and capture review summary.
+
+## Review — Audit + contract tests for grain-aware /agency/sync-runs/batch
+- Batch endpoint now accepts both legacy `grain` and additive `grains` payloads, normalizes to distinct ordered grains, and defaults to `account_daily` when omitted.
+- Batch creation enqueues one run per `(account_id, grain)` and includes `grain` on per-run/per-result response items while preserving existing response fields.
+- Historical dedupe guard now locks and filters by grain, allowing concurrent backfills for different grains on same account/date window while deduping exact grain duplicates.
+- Extended API/store tests cover all requested grain contract scenarios, including 422 validation for invalid grain and duplicate grain deduplication behavior.
+
+---
+
+# TODO — Fix closed DB connection in client_registry list_platform_accounts
+
+- [x] Sync workspace state (`git fetch --all --prune`, `git status --short`) and confirm working branch.
+- [x] Fix connection lifetime so `list_platform_account_watermarks` is called inside an active DB connection context.
+- [x] Add non-DB regression test that fails if watermarks helper receives a closed connection.
+- [x] Run requested checks (`pytest`, `py_compile`, `git status --short`) and record review.
+
+## Review — Fix closed DB connection in client_registry list_platform_accounts
+- Moved entity watermark lookup/enrichment to run before exiting `with self._connect_or_raise() as conn`, preventing use of a closed psycopg connection.
+- Added regression test with fake connection lifecycle asserting `list_platform_account_watermarks` is invoked while `conn.closed == False`.
+- Preserved existing output contract for `entity_watermarks` keys (`campaign_daily`, `ad_group_daily`, `ad_daily`).
+
+---
+
+# TODO — Minimal SQL migration runner for Railway/Postgres
+
+- [x] Audit current backend startup/docs and confirm migrations are not auto-applied.
+- [x] Add `app.db.migrate` module with `python -m app.db.migrate` CLI entrypoint.
+- [x] Implement advisory lock + `schema_migrations` + lexicographic file application with per-file transaction and rollback-on-failure.
+- [x] Add skip-safe DB test covering table creation, apply, and idempotent second run.
+- [x] Update README with Railway migration runbook (one-shot migrator service recommendation).
+- [x] Run targeted checks/tests and document review.
+
+## Review — Minimal SQL migration runner for Railway/Postgres
+- Added `apps/backend/app/db/migrate.py` with CLI runner and reusable `run_migrations/apply_migrations` helpers.
+- Runner uses a global Postgres advisory lock, ensures `schema_migrations`, applies pending `*.sql` files once in sorted order, and records applied IDs atomically.
+- Migration failures rollback current transaction and return non-zero via CLI.
+- Added DB integration test (`test_db_migration_runner.py`) that uses a temporary migration directory and validates first apply + idempotent second run.
+- README now documents the exact Railway command and recommends a one-shot migration service before web startup.
+
+---
+
+# TODO — Make sync_worker grain-aware (safe default)
+
+- [x] Audit current worker grain handling and dedupe/lock behavior.
+- [x] Add safe grain default (`NULL`/missing => `account_daily`) in worker execution path.
+- [x] Add unsupported-grain terminal handling (`grain_not_supported`) without crashing worker loop.
+- [x] Propagate normalized grain into chunk status metadata for attribution.
+- [x] Extend tests for null-grain default path, unsupported-grain error path, and grain-scoped coexistence in dedupe semantics.
+- [x] Run targeted compile/tests and document review.
+
+## Review — Make sync_worker grain-aware (safe default)
+- Worker now normalizes run grain with backward-compatible default `account_daily` and keeps existing Google account_daily execution path.
+- Unsupported grain no longer crashes processing: chunk and run are marked `error` with stable `grain_not_supported:<grain>` payload and worker continues.
+- Chunk status updates now attach `metadata.grain` so completed/failed chunks remain attributable to grain.
+- Dedupe test coverage explicitly verifies same account/date historical run creation remains allowed across different grains.

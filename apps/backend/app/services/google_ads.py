@@ -22,6 +22,7 @@ except Exception:  # noqa: BLE001
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
 from app.services.google_store import google_snapshot_store
+from app.services.integration_secrets_store import integration_secrets_store
 from app.services.performance_reports import performance_reports_store
 from app.services.sync_engine import BackfillRunResult, DailyMetricRow, enqueue_backfill
 
@@ -104,6 +105,26 @@ class GoogleAdsService:
 
         return request_id, failure_details
 
+
+    def _refresh_token_with_source(self) -> tuple[str, str, str | None]:
+        try:
+            db_secret = integration_secrets_store.get_secret(provider="google_ads", secret_key="refresh_token")
+        except Exception:  # noqa: BLE001
+            db_secret = None
+        if db_secret is not None and db_secret.value.strip() != "":
+            updated_at = db_secret.updated_at.isoformat() if db_secret.updated_at is not None else None
+            return db_secret.value.strip(), "database", updated_at
+
+        runtime_token = (self._runtime_refresh_token or "").strip()
+        if runtime_token != "":
+            return runtime_token, "runtime", None
+
+        env_token = load_settings().google_ads_refresh_token.strip()
+        if env_token != "":
+            return env_token, "env_fallback", None
+
+        return "", "missing", None
+
     def _google_ads_client(self, *, refresh_token: str | None = None) -> object:
         settings = load_settings()
         if GoogleAdsClient is None:
@@ -111,10 +132,11 @@ class GoogleAdsService:
                 "google-ads SDK is not installed. Add it to backend requirements to use production account discovery."
             )
 
-        effective_refresh_token = (refresh_token or self._runtime_refresh_token or settings.google_ads_refresh_token).strip()
+        resolved_token, _, _ = self._refresh_token_with_source()
+        effective_refresh_token = (refresh_token or resolved_token).strip()
         if effective_refresh_token == "":
             raise GoogleAdsIntegrationError(
-                "Google Ads SDK client requires refresh token. Complete OAuth exchange first and set GOOGLE_ADS_REFRESH_TOKEN."
+                "Google Ads SDK client requires refresh token. Complete OAuth exchange to persist token in app storage."
             )
 
         config: dict[str, object] = {
@@ -255,9 +277,10 @@ class GoogleAdsService:
         elif manager_has_dashes:
             warnings.append("GOOGLE_ADS_MANAGER_CUSTOMER_ID contains dashes; set it in Railway without dashes")
 
-        refresh_available = bool((self._runtime_refresh_token or settings.google_ads_refresh_token).strip())
+        _, token_source, _ = self._refresh_token_with_source()
+        refresh_available = token_source != "missing"
         if not refresh_available:
-            warnings.append("GOOGLE_ADS_REFRESH_TOKEN is missing (complete OAuth exchange first)")
+            warnings.append("Google Ads refresh token is missing (complete OAuth exchange first)")
 
         return {
             "mode": settings.google_ads_mode,
@@ -269,6 +292,7 @@ class GoogleAdsService:
             "manager_customer_id_valid": self._is_valid_customer_id(manager_raw) if manager_raw else False,
             "manager_customer_id_has_dashes": manager_has_dashes,
             "refresh_token_present": refresh_available,
+            "refresh_token_source": token_source,
             "redirect_uri": settings.google_ads_redirect_uri,
             "customer_ids_csv_count": len([item for item in settings.google_ads_customer_ids_csv.split(",") if item.strip()]),
             "warnings": warnings,
@@ -609,15 +633,15 @@ class GoogleAdsService:
             "last_sync_at": db_diag["last_sync_at"],
             "last_error": last_error or db_diag.get("db_error"),
             "api_version": self._google_api_version(),
+            "refresh_token_source": base.get("refresh_token_source", "missing"),
+            "refresh_token_present": bool(base.get("refresh_token_present", False)),
         }
 
     def _refresh_token(self) -> str:
-        settings = load_settings()
-        token = self._runtime_refresh_token or settings.google_ads_refresh_token
-        token = token.strip()
+        token, _, _ = self._refresh_token_with_source()
         if token == "":
             raise GoogleAdsIntegrationError(
-                "Google refresh token missing. Complete OAuth connect flow and set GOOGLE_ADS_REFRESH_TOKEN in Railway."
+                "Google refresh token missing. Complete OAuth connect flow to store token in app database."
             )
         return token
 
@@ -641,12 +665,15 @@ class GoogleAdsService:
         settings = load_settings()
 
         if self._is_production_mode():
-            connected = bool((self._runtime_refresh_token or settings.google_ads_refresh_token).strip())
+            _, token_source, token_updated_at = self._refresh_token_with_source()
+            connected = token_source != "missing"
             return {
                 "provider": "google_ads",
                 "status": "connected" if connected else "pending",
                 "message": "Google Ads production mode is enabled." if connected else "Google Ads production mode awaiting OAuth token.",
                 "mode": "production",
+                "refresh_token_source": token_source,
+                "refresh_token_updated_at": token_updated_at,
             }
 
         token = settings.google_ads_token.strip()
@@ -705,14 +732,21 @@ class GoogleAdsService:
             raise GoogleAdsIntegrationError("Google OAuth callback did not return a refresh token. Re-run consent with prompt=consent.")
 
         refresh_token = str(token_payload["refresh_token"])
+        integration_secrets_store.upsert_secret(
+            provider="google_ads",
+            secret_key="refresh_token",
+            value=refresh_token,
+        )
         self._runtime_refresh_token = refresh_token
 
         accessible_customers = [item["id"] for item in self.list_accessible_customer_accounts()]
+        _, token_source, token_updated_at = self._refresh_token_with_source()
         return {
             "status": "connected",
-            "refresh_token": refresh_token,
             "accessible_customers": accessible_customers,
-            "persist_instruction": "Set GOOGLE_ADS_REFRESH_TOKEN in Railway using refresh_token from this response.",
+            "refresh_token_source": token_source,
+            "refresh_token_updated_at": token_updated_at,
+            "message": "Google OAuth connected. Refresh token stored securely in application database.",
         }
 
     def list_accessible_customer_accounts(self) -> list[dict[str, object]]:

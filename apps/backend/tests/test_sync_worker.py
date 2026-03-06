@@ -6,7 +6,7 @@ from app.workers import sync_worker
 
 
 class SyncWorkerTests(unittest.TestCase):
-    def _build_state(self, *, job_type: str = "manual") -> dict[str, object]:
+    def _build_state(self, *, job_type: str = "manual", grain: object = "account_daily") -> dict[str, object]:
         return {
             "run": {
                 "job_id": "job-1",
@@ -20,6 +20,7 @@ class SyncWorkerTests(unittest.TestCase):
                 "chunks_done": 0,
                 "rows_written": 0,
                 "error": None,
+                "grain": grain,
             },
             "chunk": {
                 "job_id": "job-1",
@@ -178,6 +179,185 @@ class SyncWorkerTests(unittest.TestCase):
         self.assertEqual(metadata_call["account_id"], "3986597205")
         self.assertEqual(metadata_call["last_run_id"], "job-1")
         self.assertIn("last_error", metadata_call)
+
+
+    def test_process_next_chunk_oauth_failure_marks_terminal_error_without_crash(self):
+        state = self._build_state(job_type="historical_backfill")
+
+        def _claim_any(**kwargs):
+            if state["claimed"]:
+                return None
+            state["claimed"] = True
+            state["chunk"]["status"] = "running"
+            return dict(state["chunk"])
+
+        def _get_run(job_id):
+            if job_id != "job-1":
+                return None
+            return dict(state["run"])
+
+        def _update_run_status(**kwargs):
+            if kwargs.get("status") is not None:
+                state["run"]["status"] = kwargs["status"]
+            if kwargs.get("error") is not None:
+                state["run"]["error"] = kwargs["error"]
+            return dict(state["run"])
+
+        def _update_chunk_status(**kwargs):
+            state["chunk"]["status"] = kwargs["status"]
+            if kwargs.get("error") is not None:
+                state["chunk"]["error"] = kwargs["error"]
+            return dict(state["chunk"])
+
+        def _update_progress(**kwargs):
+            state["run"]["chunks_done"] = int(state["run"].get("chunks_done") or 0) + int(kwargs.get("chunks_done_delta") or 0)
+            return dict(state["run"])
+
+        def _counts(job_id):
+            return {"remaining": 0 if state["chunk"]["status"] in ("done", "error") else 1, "errors": 1}
+
+        with patch.object(sync_worker.sync_run_chunks_store, "claim_next_queued_chunk_any", side_effect=_claim_any), patch.object(
+            sync_worker.sync_runs_store,
+            "get_sync_run",
+            side_effect=_get_run,
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_status", side_effect=_update_run_status), patch.object(
+            sync_worker.sync_run_chunks_store,
+            "update_sync_run_chunk_status",
+            side_effect=_update_chunk_status,
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_progress", side_effect=_update_progress), patch.object(
+            sync_worker.sync_run_chunks_store,
+            "get_sync_run_chunk_status_counts",
+            side_effect=_counts,
+        ), patch.object(
+            sync_worker.client_registry_service,
+            "update_platform_account_operational_metadata",
+            return_value=None,
+        ), patch.object(
+            sync_worker.google_ads_service,
+            "sync_customer_for_client_historical_range",
+            side_effect=RuntimeError("POST https://oauth2.googleapis.com/token 400 Bad Request"),
+        ):
+            processed = sync_worker.process_next_chunk()
+
+        self.assertTrue(processed)
+        self.assertEqual(state["chunk"]["status"], "error")
+        self.assertIn("oauth2.googleapis.com/token", str(state["chunk"].get("error") or ""))
+        self.assertEqual(state["run"]["status"], "error")
+        self.assertEqual(state["run"]["chunks_done"], 1)
+
+
+    def test_process_next_chunk_null_grain_defaults_to_account_daily_path(self):
+        state = self._build_state(job_type="manual", grain=None)
+
+        def _claim_any(**kwargs):
+            if state["claimed"]:
+                return None
+            state["claimed"] = True
+            state["chunk"]["status"] = "running"
+            return dict(state["chunk"])
+
+        def _get_run(job_id):
+            return dict(state["run"]) if job_id == "job-1" else None
+
+        def _update_run_status(**kwargs):
+            if kwargs.get("status") is not None:
+                state["run"]["status"] = kwargs["status"]
+            if kwargs.get("error") is not None:
+                state["run"]["error"] = kwargs["error"]
+            return dict(state["run"])
+
+        def _update_chunk_status(**kwargs):
+            state["chunk"]["status"] = kwargs["status"]
+            state["chunk"]["metadata"] = kwargs.get("metadata") or {}
+            return dict(state["chunk"])
+
+        def _update_progress(**kwargs):
+            state["run"]["chunks_done"] = int(state["run"].get("chunks_done") or 0) + int(kwargs.get("chunks_done_delta") or 0)
+            return dict(state["run"])
+
+        def _counts(job_id):
+            return {"remaining": 0 if state["chunk"]["status"] in ("done", "error") else 1, "errors": 0}
+
+        with patch.object(sync_worker.sync_run_chunks_store, "claim_next_queued_chunk_any", side_effect=_claim_any), patch.object(
+            sync_worker.sync_runs_store,
+            "get_sync_run",
+            side_effect=_get_run,
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_status", side_effect=_update_run_status), patch.object(
+            sync_worker.sync_run_chunks_store,
+            "update_sync_run_chunk_status",
+            side_effect=_update_chunk_status,
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_progress", side_effect=_update_progress), patch.object(
+            sync_worker.sync_run_chunks_store,
+            "get_sync_run_chunk_status_counts",
+            side_effect=_counts,
+        ), patch.object(
+            sync_worker.client_registry_service,
+            "update_platform_account_operational_metadata",
+            return_value=None,
+        ), patch.object(
+            sync_worker.google_ads_service,
+            "sync_customer_for_client",
+            return_value={"inserted_rows": 3},
+        ) as account_sync:
+            processed = sync_worker.process_next_chunk()
+
+        self.assertTrue(processed)
+        self.assertEqual(state["chunk"]["status"], "done")
+        self.assertEqual((state["chunk"].get("metadata") or {}).get("grain"), "account_daily")
+        self.assertEqual(account_sync.call_count, 1)
+
+    def test_process_next_chunk_unknown_grain_marks_error_without_crash(self):
+        state = self._build_state(job_type="manual", grain="mystery_grain")
+
+        def _claim_any(**kwargs):
+            if state["claimed"]:
+                return None
+            state["claimed"] = True
+            state["chunk"]["status"] = "running"
+            return dict(state["chunk"])
+
+        def _get_run(job_id):
+            return dict(state["run"]) if job_id == "job-1" else None
+
+        def _update_run_status(**kwargs):
+            if kwargs.get("status") is not None:
+                state["run"]["status"] = kwargs["status"]
+            if kwargs.get("error") is not None:
+                state["run"]["error"] = kwargs["error"]
+            return dict(state["run"])
+
+        def _update_chunk_status(**kwargs):
+            state["chunk"]["status"] = kwargs["status"]
+            state["chunk"]["error"] = kwargs.get("error")
+            state["chunk"]["metadata"] = kwargs.get("metadata") or {}
+            return dict(state["chunk"])
+
+        def _update_progress(**kwargs):
+            state["run"]["chunks_done"] = int(state["run"].get("chunks_done") or 0) + int(kwargs.get("chunks_done_delta") or 0)
+            return dict(state["run"])
+
+        with patch.object(sync_worker.sync_run_chunks_store, "claim_next_queued_chunk_any", side_effect=_claim_any), patch.object(
+            sync_worker.sync_runs_store,
+            "get_sync_run",
+            side_effect=_get_run,
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_status", side_effect=_update_run_status), patch.object(
+            sync_worker.sync_run_chunks_store,
+            "update_sync_run_chunk_status",
+            side_effect=_update_chunk_status,
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_progress", side_effect=_update_progress), patch.object(
+            sync_worker.google_ads_service,
+            "sync_customer_for_client",
+            return_value={"inserted_rows": 3},
+        ) as account_sync:
+            processed = sync_worker.process_next_chunk()
+
+        self.assertTrue(processed)
+        self.assertEqual(state["chunk"]["status"], "error")
+        self.assertIn("grain_not_supported", str(state["chunk"].get("error") or ""))
+        self.assertEqual((state["chunk"].get("metadata") or {}).get("error_code"), "grain_not_supported")
+        self.assertEqual(state["run"]["status"], "error")
+        self.assertIn("grain_not_supported", str(state["run"].get("error") or ""))
+        self.assertEqual(account_sync.call_count, 0)
 
 
 if __name__ == "__main__":
