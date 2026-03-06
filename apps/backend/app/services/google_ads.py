@@ -1074,21 +1074,28 @@ class GoogleAdsService:
         *,
         customer_id: str,
         start_date: date,
-        end_date: date,
+        end_date_exclusive: date,
     ) -> list[dict[str, object]]:
         normalized_customer_id = self._normalize_customer_id(customer_id)
         if not self._is_valid_customer_id(normalized_customer_id):
             raise GoogleAdsIntegrationError(f"Invalid customer id mapping '{customer_id}'. Expected 10 digits.")
 
         resolved_start = start_date
-        resolved_end = end_date
-        if resolved_start > resolved_end:
-            resolved_start, resolved_end = resolved_end, resolved_start
+        resolved_end_exclusive = end_date_exclusive
+        if resolved_start > resolved_end_exclusive:
+            resolved_start, resolved_end_exclusive = resolved_end_exclusive, resolved_start
+        if resolved_start == resolved_end_exclusive:
+            return []
+        resolved_end_inclusive = resolved_end_exclusive - timedelta(days=1)
 
         if not self._is_production_mode():
             return [
                 {
                     "campaign_id": "mock-campaign",
+                    "campaign_name": "Mock Campaign",
+                    "campaign_status": "ENABLED",
+                    "campaign_raw": {"id": "mock-campaign", "name": "Mock Campaign", "status": "ENABLED"},
+                    "campaign_payload_hash": "mock-campaign",
                     "report_date": resolved_start.isoformat(),
                     "spend": 1.23,
                     "impressions": 100,
@@ -1106,9 +1113,9 @@ class GoogleAdsService:
         access_token = self._access_token_from_refresh()
         login_customer_id = self._required_manager_customer_id()
         start_literal = resolved_start.isoformat()
-        end_literal = resolved_end.isoformat()
+        end_literal = resolved_end_inclusive.isoformat()
         query = (
-            "SELECT campaign.id, segments.date, metrics.impressions, metrics.clicks, "
+            "SELECT campaign.id, campaign.name, campaign.status, segments.date, metrics.impressions, metrics.clicks, "
             "metrics.cost_micros, metrics.conversions, metrics.conversions_value "
             f"FROM campaign WHERE segments.date BETWEEN '{start_literal}' AND '{end_literal}'"
         )
@@ -1149,8 +1156,16 @@ class GoogleAdsService:
                 rows.append(
                     {
                         "campaign_id": campaign_id,
+                        "campaign_name": campaign.get("name"),
+                        "campaign_status": str(campaign.get("status", "")).strip() or None,
+                        "campaign_raw": {
+                            "id": campaign.get("id"),
+                            "name": campaign.get("name"),
+                            "status": campaign.get("status"),
+                        },
+                        "campaign_payload_hash": f"{campaign_id}:{campaign.get('status')}:{campaign.get('name')}",
                         "report_date": report_date,
-                        "spend": round(cost_micros / 1_000_000.0, 2),
+                        "spend": cost_micros / 1_000_000.0,
                         "impressions": int(metrics.get("impressions", 0) or 0),
                         "clicks": int(metrics.get("clicks", 0) or 0),
                         "conversions": float(metrics.get("conversions", 0.0) or 0.0),
@@ -1158,6 +1173,219 @@ class GoogleAdsService:
                         "extra_metrics": {
                             "google_ads": {
                                 "cost_micros": cost_micros,
+                            }
+                        },
+                    }
+                )
+        return rows
+
+    def fetch_ad_group_daily_metrics(
+        self,
+        *,
+        customer_id: str,
+        start_date: date,
+        end_date_exclusive: date,
+        source_job_id: str | None = None,
+    ) -> list[dict[str, object]]:
+        normalized_customer_id = self._normalize_customer_id(customer_id)
+        if not self._is_valid_customer_id(normalized_customer_id):
+            raise GoogleAdsIntegrationError(f"Invalid customer id mapping '{customer_id}'. Expected 10 digits.")
+
+        resolved_start = start_date
+        resolved_end_exclusive = end_date_exclusive
+        if resolved_start > resolved_end_exclusive:
+            resolved_start, resolved_end_exclusive = resolved_end_exclusive, resolved_start
+        if resolved_start == resolved_end_exclusive:
+            return []
+        resolved_end_inclusive = resolved_end_exclusive - timedelta(days=1)
+
+        if not self._is_production_mode():
+            return [
+                {
+                    "report_date": resolved_start.isoformat(),
+                    "campaign_id": "mock-campaign",
+                    "campaign_name": "Mock Campaign",
+                    "ad_group_id": "mock-ad-group",
+                    "ad_group_name": "Mock Ad Group",
+                    "spend": 1.23,
+                    "impressions": 100,
+                    "clicks": 10,
+                    "conversions": 1.0,
+                    "conversion_value": 3.21,
+                    "extra_metrics": {"google_ads": {"cost_micros": 1_230_000, "source_job_id": source_job_id}},
+                }
+            ]
+
+        access_token = self._access_token_from_refresh()
+        login_customer_id = self._required_manager_customer_id()
+        start_literal = resolved_start.isoformat()
+        end_literal = resolved_end_inclusive.isoformat()
+        query = (
+            "SELECT segments.date, campaign.id, campaign.name, ad_group.id, ad_group.name, "
+            "metrics.impressions, metrics.clicks, metrics.conversions, metrics.conversions_value, metrics.cost_micros "
+            f"FROM ad_group WHERE segments.date BETWEEN '{start_literal}' AND '{end_literal}'"
+        )
+
+        response_payload = self._http_json(
+            method="POST",
+            url=self._build_google_ads_url(load_settings().google_ads_api_version, f"customers/{normalized_customer_id}/googleAds:searchStream"),
+            payload={"query": query},
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "developer-token": load_settings().google_ads_developer_token,
+                "login-customer-id": login_customer_id,
+            },
+        )
+        if not isinstance(response_payload, list):
+            raise GoogleAdsIntegrationError("Invalid Google Ads searchStream response")
+
+        rows: list[dict[str, object]] = []
+        for chunk in response_payload:
+            if not isinstance(chunk, dict):
+                continue
+            results = chunk.get("results", [])
+            if not isinstance(results, list):
+                continue
+            for result in results:
+                if not isinstance(result, dict):
+                    continue
+                segments = result.get("segments", {})
+                campaign = result.get("campaign", {})
+                ad_group = result.get("adGroup", {})
+                metrics = result.get("metrics", {})
+                if not isinstance(segments, dict) or not isinstance(campaign, dict) or not isinstance(ad_group, dict) or not isinstance(metrics, dict):
+                    continue
+                report_date = str(segments.get("date", "")).strip()
+                campaign_id = str(campaign.get("id", "")).strip()
+                ad_group_id = str(ad_group.get("id", "")).strip()
+                if report_date == "" or ad_group_id == "":
+                    continue
+                cost_micros = int(metrics.get("costMicros", 0) or 0)
+                rows.append(
+                    {
+                        "report_date": report_date,
+                        "campaign_id": campaign_id or None,
+                        "campaign_name": campaign.get("name"),
+                        "ad_group_id": ad_group_id,
+                        "ad_group_name": ad_group.get("name"),
+                        "spend": cost_micros / 1_000_000.0,
+                        "impressions": int(metrics.get("impressions", 0) or 0),
+                        "clicks": int(metrics.get("clicks", 0) or 0),
+                        "conversions": float(metrics.get("conversions", 0.0) or 0.0),
+                        "conversion_value": float(metrics.get("conversionsValue", 0.0) or 0.0),
+                        "extra_metrics": {
+                            "google_ads": {
+                                "cost_micros": cost_micros,
+                                "source_job_id": source_job_id,
+                            }
+                        },
+                    }
+                )
+        return rows
+
+    def fetch_ad_unit_daily_metrics(
+        self,
+        *,
+        customer_id: str,
+        start_date: date,
+        end_date_exclusive: date,
+        source_job_id: str | None = None,
+    ) -> list[dict[str, object]]:
+        normalized_customer_id = self._normalize_customer_id(customer_id)
+        if not self._is_valid_customer_id(normalized_customer_id):
+            raise GoogleAdsIntegrationError(f"Invalid customer id mapping '{customer_id}'. Expected 10 digits.")
+
+        resolved_start = start_date
+        resolved_end_exclusive = end_date_exclusive
+        if resolved_start > resolved_end_exclusive:
+            resolved_start, resolved_end_exclusive = resolved_end_exclusive, resolved_start
+        if resolved_start == resolved_end_exclusive:
+            return []
+        resolved_end_inclusive = resolved_end_exclusive - timedelta(days=1)
+
+        if not self._is_production_mode():
+            return [
+                {
+                    "report_date": resolved_start.isoformat(),
+                    "campaign_id": "mock-campaign",
+                    "ad_group_id": "mock-ad-group",
+                    "ad_id": "mock-ad",
+                    "ad_name": "Mock Ad",
+                    "ad_status": "ENABLED",
+                    "spend": 1.23,
+                    "impressions": 100,
+                    "clicks": 10,
+                    "conversions": 1.0,
+                    "conversion_value": 3.21,
+                    "extra_metrics": {"google_ads": {"cost_micros": 1_230_000, "source_job_id": source_job_id}},
+                }
+            ]
+
+        access_token = self._access_token_from_refresh()
+        login_customer_id = self._required_manager_customer_id()
+        start_literal = resolved_start.isoformat()
+        end_literal = resolved_end_inclusive.isoformat()
+        query = (
+            "SELECT segments.date, campaign.id, ad_group.id, ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.status, "
+            "metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.conversions_value "
+            f"FROM ad_group_ad WHERE segments.date >= '{start_literal}' AND segments.date <= '{end_literal}'"
+        )
+
+        response_payload = self._http_json(
+            method="POST",
+            url=self._build_google_ads_url(load_settings().google_ads_api_version, f"customers/{normalized_customer_id}/googleAds:searchStream"),
+            payload={"query": query},
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "developer-token": load_settings().google_ads_developer_token,
+                "login-customer-id": login_customer_id,
+            },
+        )
+        if not isinstance(response_payload, list):
+            raise GoogleAdsIntegrationError("Invalid Google Ads searchStream response")
+
+        rows: list[dict[str, object]] = []
+        for chunk in response_payload:
+            if not isinstance(chunk, dict):
+                continue
+            results = chunk.get("results", [])
+            if not isinstance(results, list):
+                continue
+            for result in results:
+                if not isinstance(result, dict):
+                    continue
+                segments = result.get("segments", {})
+                campaign = result.get("campaign", {})
+                ad_group = result.get("adGroup", {})
+                ad_group_ad = result.get("adGroupAd", {})
+                metrics = result.get("metrics", {})
+                if not isinstance(segments, dict) or not isinstance(campaign, dict) or not isinstance(ad_group, dict) or not isinstance(ad_group_ad, dict) or not isinstance(metrics, dict):
+                    continue
+                ad_payload = ad_group_ad.get("ad", {})
+                if not isinstance(ad_payload, dict):
+                    ad_payload = {}
+                report_date = str(segments.get("date", "")).strip()
+                ad_id = str(ad_payload.get("id", "")).strip()
+                if report_date == "" or ad_id == "":
+                    continue
+                cost_micros = int(metrics.get("costMicros", 0) or 0)
+                rows.append(
+                    {
+                        "report_date": report_date,
+                        "campaign_id": str(campaign.get("id", "")).strip() or None,
+                        "ad_group_id": str(ad_group.get("id", "")).strip() or None,
+                        "ad_id": ad_id,
+                        "ad_name": ad_payload.get("name"),
+                        "ad_status": str(ad_group_ad.get("status", "")).strip() or None,
+                        "spend": cost_micros / 1_000_000.0,
+                        "impressions": int(metrics.get("impressions", 0) or 0),
+                        "clicks": int(metrics.get("clicks", 0) or 0),
+                        "conversions": float(metrics.get("conversions", 0.0) or 0.0),
+                        "conversion_value": float(metrics.get("conversionsValue", 0.0) or 0.0),
+                        "extra_metrics": {
+                            "google_ads": {
+                                "cost_micros": cost_micros,
+                                "source_job_id": source_job_id,
                             }
                         },
                     }
