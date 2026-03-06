@@ -77,6 +77,7 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
 
     job_id = str(claimed.get("job_id") or "")
     chunk_index = int(claimed.get("chunk_index") or 0)
+    logger.info("sync_worker.chunk_claimed job_id=%s chunk_index=%s", job_id, chunk_index)
 
     run = sync_runs_store.get_sync_run(job_id)
     if run is None:
@@ -94,6 +95,7 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
 
     if str(run.get("status") or "") == "queued":
         sync_runs_store.update_sync_run_status(job_id=job_id, status="running", mark_started=True)
+        logger.info("sync_worker.run_started job_id=%s", job_id)
 
     started = time.monotonic()
     rows_written = 0
@@ -156,6 +158,13 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
             chunks_done_delta=1,
             rows_written_delta=rows_written,
         )
+        logger.info(
+            "sync_worker.chunk_completed job_id=%s chunk_index=%s rows_written=%s duration_ms=%s",
+            job_id,
+            chunk_index,
+            rows_written,
+            duration_ms,
+        )
     else:
         sync_run_chunks_store.update_sync_run_chunk_status(
             job_id=job_id,
@@ -170,6 +179,13 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
             job_id=job_id,
             chunks_done_delta=1,
             rows_written_delta=0,
+        )
+        logger.error(
+            "sync_worker.chunk_failed job_id=%s chunk_index=%s error=%s duration_ms=%s",
+            job_id,
+            chunk_index,
+            chunk_error,
+            duration_ms,
         )
 
     _finalize_run_if_complete(run)
