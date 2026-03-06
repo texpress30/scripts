@@ -185,3 +185,4 @@
 - 2026-03-05: Pentru liste operaționale cu volum mare, adaugă quick filters + sort local (active/error/uninitialized) înainte de optimizări backend suplimentare; reduce timp de triere fără cost API.
 - 2026-03-05: Pentru sweepere one-shot folosite în cron/manual ops, aliniază scope-ul cu loop runner-ul operațional și acoperă toate job type-urile active (historical + rolling) în același summary.
 - 2026-03-05: Pentru liste paginate cu selecție bulk, separă explicit setul filtrat de setul paginii curente și păstrează selecția într-un `Set` persistent, fără reset la schimbare de filtru/sort/pagină.
+- 2026-03-06: Pentru task-uri "schema-only", livrează strict migrații additive + teste DB de contract (existență tabele/constraints) și evită orice schimbare de orchestration/UI.

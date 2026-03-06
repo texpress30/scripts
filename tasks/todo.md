@@ -1896,3 +1896,20 @@
 - Header controls now include `Selectează toate filtrate (X)` and `Clear selection`, with summary text showing total selected and filtered scope.
 - Existing `Download historical` flow remains unchanged and still uses `selectedMappedAccounts` derived from persistent selection state.
 - Added targeted Vitest coverage for the requested scenarios (cross-page, persistence, clear selection, page-only selection, and uninitialized-only filtered selection).
+
+---
+
+# TODO — DB foundation: entity tables + per-grain watermarks
+
+- [x] Run workspace sync/status commands (`git status --short`, `git fetch --all --prune`, `git pull --ff-only` when possible).
+- [x] Add additive migration for `platform_campaigns`, `platform_ad_groups`, `platform_ads` with requested PKs/columns/indexes.
+- [x] Add additive migration for `platform_account_watermarks` with unique key, grain CHECK constraint, and platform/account index.
+- [x] Add backend DB test covering table existence via `to_regclass(...)`.
+- [x] Add backend DB test covering uniqueness enforcement on `(platform, account_id, grain)`.
+- [x] Run targeted backend tests/checks and document review.
+
+## Review — DB foundation: entity tables + per-grain watermarks
+- Added migration `0015_platform_entities_and_watermarks.sql` with three cross-platform entity-state tables and one watermark table; all changes are additive-only.
+- Entity table PKs are composite per requirements and include minimal canonical columns plus `raw_payload/fetched_at/last_seen_at/payload_hash`.
+- Watermark table includes required date/timestamp fields, `UNIQUE (platform, account_id, grain)`, and strict grain check for `account_daily/campaign_daily/ad_group_daily/ad_daily`.
+- Added DB migration tests that apply migrations into an isolated schema, assert table presence with `to_regclass`, and validate duplicate watermark insert raises an exception.
