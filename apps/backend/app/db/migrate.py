@@ -69,16 +69,60 @@ def _fetch_applied_ids(conn) -> set[str]:
     return {str(row[0]) for row in rows if row and row[0] is not None}
 
 
-def apply_migrations(*, conn, migrations_dir: Path) -> list[str]:
+
+
+def _compute_baseline_ids(*, migration_ids: list[str], baseline_before: str) -> list[str]:
+    return sorted(migration_id for migration_id in migration_ids if migration_id < str(baseline_before))
+
+
+def _apply_baseline_if_needed(
+    conn,
+    *,
+    migration_ids: list[str],
+    applied_ids: set[str],
+    baseline_before: str | None,
+) -> set[str]:
+    if baseline_before is None:
+        return set(applied_ids)
+    if len(applied_ids) > 0:
+        return set(applied_ids)
+
+    baseline_ids = _compute_baseline_ids(migration_ids=migration_ids, baseline_before=baseline_before)
+    if len(baseline_ids) <= 0:
+        return set(applied_ids)
+
+    try:
+        with conn.cursor() as cur:
+            cur.executemany(
+                "INSERT INTO schema_migrations(id) VALUES (%s) ON CONFLICT (id) DO NOTHING",
+                [(migration_id,) for migration_id in baseline_ids],
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+    return set(applied_ids).union(baseline_ids)
+
+def apply_migrations(*, conn, migrations_dir: Path, baseline_before: str | None = None) -> list[str]:
     migrations_path = Path(migrations_dir)
     if not migrations_path.exists() or not migrations_path.is_dir():
         raise RuntimeError(f"Migrations directory not found: {migrations_path}")
 
+    migration_files = _list_migration_files(migrations_path)
+    migration_ids = [migration_file.name for migration_file in migration_files]
+
     _ensure_schema_migrations_table(conn)
     applied_ids = _fetch_applied_ids(conn)
+    applied_ids = _apply_baseline_if_needed(
+        conn,
+        migration_ids=migration_ids,
+        applied_ids=applied_ids,
+        baseline_before=baseline_before,
+    )
     applied_now: list[str] = []
 
-    for migration_file in _list_migration_files(migrations_path):
+    for migration_file in migration_files:
         migration_id = migration_file.name
         if migration_id in applied_ids:
             continue
@@ -99,7 +143,7 @@ def apply_migrations(*, conn, migrations_dir: Path) -> list[str]:
     return applied_now
 
 
-def run_migrations(*, database_url: str | None = None, migrations_dir: Path | None = None) -> list[str]:
+def run_migrations(*, database_url: str | None = None, migrations_dir: Path | None = None, baseline_before: str | None = None) -> list[str]:
     if psycopg is None:
         raise RuntimeError("psycopg is required to run database migrations")
 
@@ -113,7 +157,7 @@ def run_migrations(*, database_url: str | None = None, migrations_dir: Path | No
         with conn.cursor() as cur:
             cur.execute("SELECT pg_advisory_lock(%s)", (_ADVISORY_LOCK_KEY,))
         try:
-            return apply_migrations(conn=conn, migrations_dir=target_dir)
+            return apply_migrations(conn=conn, migrations_dir=target_dir, baseline_before=baseline_before)
         finally:
             with conn.cursor() as cur:
                 cur.execute("SELECT pg_advisory_unlock(%s)", (_ADVISORY_LOCK_KEY,))
@@ -123,12 +167,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Apply SQL migrations")
     parser.add_argument("--database-url", default=None, help="Optional DATABASE_URL override")
     parser.add_argument("--migrations-dir", default=None, help="Optional migrations directory override")
+    parser.add_argument("--baseline-before", default=None, help="Mark legacy migrations (< this id) as applied when schema_migrations is empty")
     args = parser.parse_args(argv)
 
     migrations_dir = Path(args.migrations_dir) if args.migrations_dir else None
 
     try:
-        applied = run_migrations(database_url=args.database_url, migrations_dir=migrations_dir)
+        applied = run_migrations(database_url=args.database_url, migrations_dir=migrations_dir, baseline_before=args.baseline_before)
     except SystemExit as exc:
         print(f"Migration failed: {exc}", file=sys.stderr)
         return 1

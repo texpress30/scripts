@@ -2154,3 +2154,21 @@
 - Resolver prefers `db/migrations` when process cwd is already `apps/backend`, avoiding false missing-dir failures in Railway root-directory deployments.
 - Failure message now includes `cwd` and all tried candidates for fast operational debugging.
 - Added non-DB tests for resolver selection and error-message contract.
+
+---
+
+# TODO — Baseline support in app.db.migrate for pre-existing production schema
+
+- [x] Add `--baseline-before` CLI flag to migration runner while preserving existing options.
+- [x] Implement baseline behavior: if `schema_migrations` is empty, mark all migration IDs `< baseline_before` as applied before normal run.
+- [x] Keep baseline as no-op when `schema_migrations` already contains rows.
+- [x] Ensure normal migration flow still executes unapplied IDs `>= baseline_before`.
+- [x] Add non-DB unit tests for baseline empty/non-empty behavior and execution of newer migrations.
+- [x] Update README Railway startup command with baseline flag.
+- [x] Run targeted compile/tests and document review.
+
+## Review — Baseline support in app.db.migrate for pre-existing production schema
+- Added `--baseline-before` to `app.db.migrate` and threaded it through `run_migrations(...)` -> `apply_migrations(...)`.
+- Baseline now inserts legacy migration IDs only when `schema_migrations` is empty, then regular application proceeds for pending migrations.
+- Existing installations with non-empty `schema_migrations` are unaffected (baseline no-op).
+- Added pure unit tests (no DB) validating baseline insert scope, no-op behavior, and that post-baseline migrations still execute.

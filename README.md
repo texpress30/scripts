@@ -145,7 +145,7 @@ cd apps/frontend && npm run build
 - Runner migrații: `cd apps/backend && PYTHONPATH=. python -m app.db.migrate`
 - Comportament: creează `schema_migrations` dacă lipsește, aplică fișierele `apps/backend/db/migrations/*.sql` în ordine lexicografică și marchează fiecare fișier aplicat o singură dată.
 - Siguranță concurență: runner-ul folosește advisory lock Postgres global, deci rulări paralele nu aplică dublu migrațiile.
-- Recomandare Railway (web start command): `python -m app.db.migrate --migrations-dir db/migrations && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}`.
+- Recomandare Railway (web start command): `python -m app.db.migrate --migrations-dir db/migrations --baseline-before 0015_ && uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
 
 ## Railway: rolling sync zilnic (cron)
 - **Comandă cron Railway (daily enqueue):** `cd apps/backend && PYTHONPATH=. python -m app.workers.rolling_scheduler`
