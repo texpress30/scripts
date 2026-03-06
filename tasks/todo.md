@@ -1,3 +1,16 @@
+# TODO — Verificare workspace nou prin Connector (remote + fetch)
+
+- [x] Notez planul de execuție pentru verificarea remote/fetch într-o sesiune nouă.
+- [x] Deschid o sesiune nouă de terminal (fără reutilizarea sesiunii anterioare) și verific `git remote -v`.
+- [x] Rulez `git fetch --all --prune` în sesiunea nouă și confirm rezultat.
+- [x] Documentez review-ul și evidența comenzilor rulate.
+
+## Review
+- Verificarea în sesiune nouă (`NEW_SESSION_2`) arată că repository-ul local nu are remotes configurate (`git remote -v` fără output).
+- `git fetch --all --prune` a rulat fără erori, dar fără remotes nu a avut ce sincroniza (exit code 0).
+- Validare explicită pe origin: `git fetch origin --prune` eșuează cu `fatal: "origin" does not appear to be a git repository` (exit 128), confirmând lipsa remote-ului `origin`.
+
+---
 # TODO — Diagnostic E2E + Fix Google Ads Data Sync către Dashboard
 
 - [x] Audit repo end-to-end (pipeline OAuth/API/sync/DB/agregare/UI) pentru Google Ads în Agency/Sub-Account dashboard.
