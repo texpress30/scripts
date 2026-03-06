@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import logging
 import os
 import time
@@ -8,6 +8,7 @@ import time
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
 from app.services.entity_performance_reports import upsert_campaign_performance_reports
+from app.services.platform_entity_store import upsert_platform_campaigns
 from app.services.google_ads import google_ads_service
 from app.services.platform_watermarks_reconcile import reconcile_platform_account_watermarks
 from app.services.sync_run_chunks_store import sync_run_chunks_store
@@ -172,11 +173,27 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
         job_type = str(run.get("job_type") or "manual")
 
         if grain == "campaign_daily":
+            chunk_end_exclusive = chunk_end + timedelta(days=1)
             campaign_rows = google_ads_service.fetch_campaign_daily_metrics(
                 customer_id=account_id,
                 start_date=chunk_start,
-                end_date=chunk_end,
+                end_date_exclusive=chunk_end_exclusive,
             )
+            campaign_entity_by_id: dict[str, dict[str, object]] = {}
+            for row in campaign_rows:
+                campaign_id = str(row.get("campaign_id") or "").strip()
+                if campaign_id == "":
+                    continue
+                campaign_entity_by_id[campaign_id] = {
+                    "platform": platform,
+                    "account_id": account_id,
+                    "campaign_id": campaign_id,
+                    "name": row.get("campaign_name"),
+                    "status": row.get("campaign_status"),
+                    "raw_payload": row.get("campaign_raw") if isinstance(row.get("campaign_raw"), dict) else {},
+                    "payload_hash": row.get("campaign_payload_hash"),
+                }
+
             upsert_rows = [
                 {
                     "platform": platform,
@@ -190,12 +207,13 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
                     "conversion_value": row.get("conversion_value", 0),
                     "extra_metrics": row.get("extra_metrics") if isinstance(row.get("extra_metrics"), dict) else {},
                     "source_window_start": chunk_start,
-                    "source_window_end": chunk_end,
+                    "source_window_end": chunk_end_exclusive,
                     "source_job_id": job_id,
                 }
                 for row in campaign_rows
             ]
             with sync_runs_store._connect() as conn:
+                upsert_platform_campaigns(conn, list(campaign_entity_by_id.values()))
                 rows_written = int(upsert_campaign_performance_reports(conn, upsert_rows) or 0)
                 conn.commit()
         elif job_type == "historical_backfill":

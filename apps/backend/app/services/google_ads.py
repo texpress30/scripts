@@ -1074,21 +1074,28 @@ class GoogleAdsService:
         *,
         customer_id: str,
         start_date: date,
-        end_date: date,
+        end_date_exclusive: date,
     ) -> list[dict[str, object]]:
         normalized_customer_id = self._normalize_customer_id(customer_id)
         if not self._is_valid_customer_id(normalized_customer_id):
             raise GoogleAdsIntegrationError(f"Invalid customer id mapping '{customer_id}'. Expected 10 digits.")
 
         resolved_start = start_date
-        resolved_end = end_date
-        if resolved_start > resolved_end:
-            resolved_start, resolved_end = resolved_end, resolved_start
+        resolved_end_exclusive = end_date_exclusive
+        if resolved_start > resolved_end_exclusive:
+            resolved_start, resolved_end_exclusive = resolved_end_exclusive, resolved_start
+        if resolved_start == resolved_end_exclusive:
+            return []
+        resolved_end_inclusive = resolved_end_exclusive - timedelta(days=1)
 
         if not self._is_production_mode():
             return [
                 {
                     "campaign_id": "mock-campaign",
+                    "campaign_name": "Mock Campaign",
+                    "campaign_status": "ENABLED",
+                    "campaign_raw": {"id": "mock-campaign", "name": "Mock Campaign", "status": "ENABLED"},
+                    "campaign_payload_hash": "mock-campaign",
                     "report_date": resolved_start.isoformat(),
                     "spend": 1.23,
                     "impressions": 100,
@@ -1106,9 +1113,9 @@ class GoogleAdsService:
         access_token = self._access_token_from_refresh()
         login_customer_id = self._required_manager_customer_id()
         start_literal = resolved_start.isoformat()
-        end_literal = resolved_end.isoformat()
+        end_literal = resolved_end_inclusive.isoformat()
         query = (
-            "SELECT campaign.id, segments.date, metrics.impressions, metrics.clicks, "
+            "SELECT campaign.id, campaign.name, campaign.status, segments.date, metrics.impressions, metrics.clicks, "
             "metrics.cost_micros, metrics.conversions, metrics.conversions_value "
             f"FROM campaign WHERE segments.date BETWEEN '{start_literal}' AND '{end_literal}'"
         )
@@ -1149,8 +1156,16 @@ class GoogleAdsService:
                 rows.append(
                     {
                         "campaign_id": campaign_id,
+                        "campaign_name": campaign.get("name"),
+                        "campaign_status": str(campaign.get("status", "")).strip() or None,
+                        "campaign_raw": {
+                            "id": campaign.get("id"),
+                            "name": campaign.get("name"),
+                            "status": campaign.get("status"),
+                        },
+                        "campaign_payload_hash": f"{campaign_id}:{campaign.get('status')}:{campaign.get('name')}",
                         "report_date": report_date,
-                        "spend": round(cost_micros / 1_000_000.0, 2),
+                        "spend": cost_micros / 1_000_000.0,
                         "impressions": int(metrics.get("impressions", 0) or 0),
                         "clicks": int(metrics.get("clicks", 0) or 0),
                         "conversions": float(metrics.get("conversions", 0.0) or 0.0),
