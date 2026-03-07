@@ -80,6 +80,7 @@ def _empty_entity_watermarks_payload() -> dict[str, dict[str, object | None] | N
         "campaign_daily": None,
         "ad_group_daily": None,
         "ad_daily": None,
+        "keyword_daily": None,
     }
 
 
@@ -933,7 +934,7 @@ class ClientRegistryService:
                 conn,
                 platform=str(platform),
                 account_ids=account_ids,
-                grains=["campaign_daily", "ad_group_daily", "ad_daily"],
+                grains=["campaign_daily", "ad_group_daily", "ad_daily", "keyword_daily"],
             )
             for item in result:
                 account_id = str(item.get("account_id") or "")
@@ -942,6 +943,7 @@ class ClientRegistryService:
                     "campaign_daily": _normalize_entity_watermark_payload(by_grain.get("campaign_daily")),
                     "ad_group_daily": _normalize_entity_watermark_payload(by_grain.get("ad_group_daily")),
                     "ad_daily": _normalize_entity_watermark_payload(by_grain.get("ad_daily")),
+                    "keyword_daily": _normalize_entity_watermark_payload(by_grain.get("keyword_daily")),
                 }
             return result
 

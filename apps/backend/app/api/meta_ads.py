@@ -290,7 +290,7 @@ def _map_sync_run_to_job_status_payload(sync_run: dict[str, object]) -> dict[str
 
 
 @router.get("/status")
-def meta_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, str]:
+def meta_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
         enforce_action_scope(user=user, action="integrations:status", scope="agency")
         rate_limiter_service.check(f"meta_status:{user.email}", limit=60, window_seconds=60)
@@ -307,6 +307,48 @@ def meta_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, str
     )
     return status_payload
 
+
+
+
+@router.get("/connect")
+def connect_meta_ads(user: AuthUser = Depends(get_current_user)) -> dict[str, str]:
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+    try:
+        payload = meta_ads_service.build_oauth_authorize_url()
+    except MetaAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="meta_ads.connect.start",
+        resource="integration:meta_ads",
+        details={"state": payload["state"]},
+    )
+    return payload
+
+
+@router.post("/oauth/exchange")
+def meta_ads_oauth_exchange(payload: dict[str, str], user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+    code = str(payload.get("code", "")).strip()
+    state = str(payload.get("state", "")).strip()
+    if not code or not state:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing code/state for OAuth exchange")
+
+    try:
+        response_payload = meta_ads_service.exchange_oauth_code(code=code, state=state)
+    except MetaAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="meta_ads.connect.success",
+        resource="integration:meta_ads",
+        details={"token_source": response_payload.get("token_source")},
+    )
+    return response_payload
 
 @router.post("/sync-now")
 def sync_meta_ads_now(

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
@@ -37,11 +37,49 @@ type GoogleDiagnosticsResponse = {
   [key: string]: unknown;
 };
 
-function formatDate(value?: string): string {
+type MetaConnectResponse = {
+  authorize_url: string;
+  state: string;
+};
+
+type MetaStatusResponse = {
+  provider?: string;
+  status?: string;
+  message?: string;
+  token_source?: string;
+  token_updated_at?: string | null;
+  token_expires_at?: string | null;
+  oauth_configured?: boolean;
+  [key: string]: unknown;
+};
+
+type IntegrationStatusUi = {
+  toneClass: string;
+  label: string;
+};
+
+function formatDate(value?: string | null): string {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
+}
+
+function normalizeIntegrationStatus(value?: string | null): IntegrationStatusUi {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["connected", "ok", "active", "enabled", "ready", "healthy", "success"].includes(normalized)) {
+    return { label: "Conectat", toneClass: "bg-emerald-100 text-emerald-700" };
+  }
+  if (["pending", "not_configured", "not_connected", "setup_required", "placeholder"].includes(normalized)) {
+    return { label: "În așteptare", toneClass: "bg-amber-100 text-amber-700" };
+  }
+  if (["disabled", "off", "inactive"].includes(normalized)) {
+    return { label: "Dezactivat", toneClass: "bg-slate-200 text-slate-700" };
+  }
+  if (["error", "failed", "failure", "unhealthy"].includes(normalized)) {
+    return { label: "Eroare", toneClass: "bg-red-100 text-red-700" };
+  }
+  return { label: "Necunoscut", toneClass: "bg-slate-200 text-slate-700" };
 }
 
 export default function AgencyIntegrationsPage() {
@@ -55,6 +93,12 @@ export default function AgencyIntegrationsPage() {
   const [diagnosticsData, setDiagnosticsData] = useState<GoogleDiagnosticsResponse | null>(null);
   const [copyMessage, setCopyMessage] = useState("");
 
+  const [metaStatus, setMetaStatus] = useState<MetaStatusResponse | null>(null);
+  const [metaLoading, setMetaLoading] = useState(true);
+  const [metaStatusError, setMetaStatusError] = useState("");
+  const [metaConnectError, setMetaConnectError] = useState("");
+  const [metaBusy, setMetaBusy] = useState<"connect" | null>(null);
+
   async function loadGoogleStatus() {
     try {
       const payload = await apiRequest<GoogleStatusResponse>("/integrations/google-ads/status");
@@ -64,8 +108,23 @@ export default function AgencyIntegrationsPage() {
     }
   }
 
+  async function loadMetaStatus() {
+    setMetaLoading(true);
+    setMetaStatusError("");
+    try {
+      const payload = await apiRequest<MetaStatusResponse>("/integrations/meta-ads/status");
+      setMetaStatus(payload);
+    } catch (err) {
+      setMetaStatus(null);
+      setMetaStatusError(err instanceof Error ? err.message : "Nu am putut încărca statusul Meta Ads");
+    } finally {
+      setMetaLoading(false);
+    }
+  }
+
   useEffect(() => {
     void loadGoogleStatus();
+    void loadMetaStatus();
   }, []);
 
   async function connectGoogle() {
@@ -80,6 +139,18 @@ export default function AgencyIntegrationsPage() {
       setGoogleError(err instanceof Error ? err.message : "Nu am putut iniția Google OAuth");
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function connectMetaAds() {
+    setMetaConnectError("");
+    setMetaBusy("connect");
+    try {
+      const payload = await apiRequest<MetaConnectResponse>("/integrations/meta-ads/connect");
+      window.location.href = payload.authorize_url;
+    } catch (err) {
+      setMetaConnectError(err instanceof Error ? err.message : "Nu am putut iniția conectarea Meta Ads");
+      setMetaBusy(null);
     }
   }
 
@@ -133,6 +204,11 @@ export default function AgencyIntegrationsPage() {
   }
 
   const isConnected = googleStatus?.status === "connected";
+  const metaStatusUi = metaStatusError
+    ? { label: "Eroare", toneClass: "bg-red-100 text-red-700" }
+    : normalizeIntegrationStatus(metaStatus?.status);
+  const metaOauthConfigured = Boolean(metaStatus?.oauth_configured);
+
   const warnings = useMemo(() => (Array.isArray(diagnosticsData?.warnings) ? diagnosticsData?.warnings : []), [diagnosticsData]);
 
   return (
@@ -175,6 +251,42 @@ export default function AgencyIntegrationsPage() {
             <p className="mt-3 text-xs text-slate-500">
               După import, rulează sync pe fiecare sub-account pentru a popula dashboard-ul cu date reale.
             </p>
+          </article>
+
+          <article className="wm-card p-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-slate-900">Meta Ads</h2>
+              <span className={`rounded-full px-3 py-1 text-xs font-medium ${metaStatusUi.toneClass}`}>{metaStatusUi.label}</span>
+            </div>
+            <p className="mt-2 text-sm text-slate-600">Status integrare Meta Ads pentru agency. OAuth/import/sync real vor fi activate în taskurile următoare.</p>
+            {metaLoading ? <p className="mt-3 text-xs text-slate-500">Se încarcă statusul Meta Ads...</p> : null}
+            {!metaLoading ? <p className="mt-3 text-xs text-slate-600">{metaStatus?.message || "Status Meta Ads indisponibil momentan."}</p> : null}
+            {metaStatusError ? <p className="mt-2 text-xs text-red-600">{metaStatusError}</p> : null}
+            {metaConnectError ? <p className="mt-2 text-xs text-red-600">{metaConnectError}</p> : null}
+
+            {!metaLoading && metaStatus ? (
+              <div className="mt-3 space-y-1 text-xs text-slate-500">
+                {typeof metaStatus.provider === "string" && metaStatus.provider.trim() ? <p>Provider: {metaStatus.provider}</p> : null}
+                {typeof metaStatus.status === "string" && metaStatus.status.trim() ? <p>Status raw: {metaStatus.status}</p> : null}
+                <p>Sursă token: {String(metaStatus.token_source || "missing")}</p>
+                <p>Actualizat la: {formatDate(metaStatus.token_updated_at)}</p>
+                <p>Expirare token: {formatDate(metaStatus.token_expires_at)}</p>
+              </div>
+            ) : null}
+
+            {!metaLoading && !metaOauthConfigured ? (
+              <p className="mt-3 text-xs text-amber-700">Meta OAuth nu este configurat complet în backend (META_APP_ID/META_APP_SECRET/META_REDIRECT_URI).</p>
+            ) : null}
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                onClick={() => void connectMetaAds()}
+                disabled={metaBusy !== null || metaLoading || !metaOauthConfigured}
+                className="wm-btn-primary disabled:opacity-50"
+              >
+                {metaBusy === "connect" ? "Connecting..." : "Connect Meta Ads"}
+              </button>
+            </div>
           </article>
 
           <article className="wm-card p-4">
