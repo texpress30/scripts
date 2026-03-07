@@ -53,8 +53,11 @@ type MetaConnectResponse = {
 
 type MetaImportResponse = {
   status: string;
-  imported_count: number;
-  accessible_accounts: string[];
+  message?: string;
+  imported_count?: number;
+  imported?: number;
+  accounts_discovered?: number;
+  accessible_accounts?: string[];
   last_import_at?: string;
 };
 
