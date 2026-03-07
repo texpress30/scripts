@@ -94,7 +94,9 @@ export default function AgencyIntegrationsPage() {
   const [copyMessage, setCopyMessage] = useState("");
   const [metaStatus, setMetaStatus] = useState<MetaStatusResponse | null>(null);
   const [metaLoading, setMetaLoading] = useState(true);
-  const [metaError, setMetaError] = useState("");
+  const [metaStatusError, setMetaStatusError] = useState("");
+  const [metaConnectError, setMetaConnectError] = useState("");
+  const [metaBusy, setMetaBusy] = useState(false);
 
   const [metaStatus, setMetaStatus] = useState<MetaStatusResponse | null>(null);
   const [metaLoading, setMetaLoading] = useState(true);
@@ -132,13 +134,13 @@ export default function AgencyIntegrationsPage() {
 
   async function loadMetaStatus() {
     setMetaLoading(true);
-    setMetaError("");
+    setMetaStatusError("");
     try {
       const payload = await apiRequest<MetaStatusResponse>("/integrations/meta-ads/status");
       setMetaStatus(payload);
     } catch (err) {
       setMetaStatus(null);
-      setMetaError(err instanceof Error ? err.message : "Nu am putut încărca statusul Meta Ads");
+      setMetaStatusError(err instanceof Error ? err.message : "Nu am putut încărca statusul Meta Ads");
     } finally {
       setMetaLoading(false);
     }
