@@ -53,15 +53,20 @@ cd apps/backend
 python ../../scripts/refresh_google_account_names.py
 ```
 
-### Mapping conturi la clienți (many-to-many client-side)
-- Un cont Google Ads este atașat la **un singur client**.
-- Un client poate avea **mai multe conturi Google Ads**.
+### Mapping conturi la clienți (generic, extensibil multi-platform)
+- Un cont de platformă este atașat la **un singur client** la un moment dat.
+- Un client poate avea **mai multe conturi** pe aceeași platformă sau pe platforme diferite.
 - Persistența se face în tabelul de legătură `agency_account_client_mappings`.
 
-Endpoint-uri relevante:
+Endpoint-uri generice:
+- `POST /clients/{client_id}/attach-account` cu body `{ "platform": "google_ads|meta_ads|...", "account_id": "..." }`
+- `POST /clients/{client_id}/detach-account` cu body `{ "platform": "...", "account_id": "..." }`
+- `GET /clients/{client_id}/accounts` (opțional `?platform=meta_ads`)
+- `GET /clients/accounts/{platform}`
+
+Endpoint-uri Google legacy (compatibile):
 - `POST /clients/{client_id}/attach-google-account`
 - `DELETE /clients/{client_id}/detach-google-account`
-- `GET /clients/{client_id}/accounts`
 - `GET /clients/accounts/google`
 
 ## Script diagnostic Google Ads
@@ -82,6 +87,15 @@ Variabile minime necesare:
 - `GOOGLE_ADS_REDIRECT_URI`
 - `INTEGRATION_SECRET_ENCRYPTION_KEY`
 
+
+### Meta Ads OAuth (connect foundation)
+- Variabile env noi (backend): `META_APP_ID`, `META_APP_SECRET`, `META_REDIRECT_URI`, opțional `META_API_VERSION` (default `v20.0`).
+- Endpoints:
+  - `GET /integrations/meta-ads/connect` → `{ authorize_url, state }`
+  - `POST /integrations/meta-ads/oauth/exchange` cu `{ code, state }` → persistă long-lived token securizat în `integration_secrets` (`provider=meta_ads`, `secret_key=access_token`).
+  - `POST /integrations/meta-ads/{client_id}/sync` → sync real `account_daily` pentru toate conturile `meta_ads` atașate clientului; opțional body `{ "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD" }` (implicit ultimele 7 zile complete).
+- Status-ul `GET /integrations/meta-ads/status` expune `token_source`, `token_updated_at`, `token_expires_at` (dacă există) și `oauth_configured`.
+
 ## Endpoint-uri cheie
 ### Core
 - `POST /auth/login`
@@ -98,6 +112,9 @@ Variabile minime necesare:
 - `POST /integrations/google-ads/sync-now`
 - `GET /integrations/google-ads/diagnostics`
 - `GET /integrations/meta-ads/status`
+- `GET /integrations/meta-ads/connect`
+- `POST /integrations/meta-ads/oauth/exchange`
+- `POST /integrations/meta-ads/import-accounts`
 - `POST /integrations/meta-ads/{client_id}/sync`
 - `GET /integrations/tiktok-ads/status`
 - `POST /integrations/tiktok-ads/{client_id}/sync`
@@ -153,6 +170,10 @@ cd apps/frontend && npm run build
 - Cron-ul creează run-uri `job_type=rolling_refresh` cu `trigger_source=cron` în `sync_runs`, vizibile în Agency Account Detail → Sync runs.
 - Regula exactă pentru fereastra zilnică rolling: `end_date = yesterday` (în timezone-ul contului), `start_date = end_date - 6 zile` ⇒ fix 7 zile calendaristice complete.
 - Eligibilitate minimă rolling cron: cont mapat la client + `sync_start_date` inițiat (altfel este omis explicit ca `history_not_initialized`).
+- Feature flag opțional: `ROLLING_ENTITY_GRAINS_ENABLED=1` (alias compatibil cu API: `ENTITY_GRAINS_ENABLED=1`; dacă oricare e activ, feature-ul este ON).
+  - Default (lipsă/0): scheduler enqueuiește doar `grain=account_daily` (comportament actual).
+  - Activ (1/true/yes/on): pentru conturi Google Ads, scheduler enqueuiește și `campaign_daily`, `ad_group_daily`, `ad_daily`, `keyword_daily` pe aceeași fereastră rolling; pentru non-Google rămâne doar `account_daily`.
+- Același flag (ENTITY/ROLLING alias) activează și auto-expand pentru `POST /agency/sync-runs/batch` pe request-uri legacy Google (`grain` lipsă sau `account_daily`) astfel încât historical backfill să includă și entity grains.
 
 ## Railway: repair sweeper (historical + rolling stale runs)
 - **One-shot manual sweep (historical + rolling):** `cd apps/backend && PYTHONPATH=. python -m app.workers.historical_repair_sweeper`
