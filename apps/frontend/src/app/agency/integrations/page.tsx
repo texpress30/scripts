@@ -231,7 +231,11 @@ export default function AgencyIntegrationsPage() {
     : normalizeIntegrationStatus(metaStatus?.status);
 
   const warnings = useMemo(() => (Array.isArray(diagnosticsData?.warnings) ? diagnosticsData?.warnings : []), [diagnosticsData]);
-
+  
+  const metaOauthConfigured = Boolean(metaStatus?.oauth_configured);
+  
+  const metaHasUsableToken = Boolean(metaStatus?.has_usable_token);
+  
   return (
     <ProtectedPage>
       <AppShell title="Agency Integrations">
