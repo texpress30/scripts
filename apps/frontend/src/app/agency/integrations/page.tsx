@@ -111,14 +111,6 @@ export default function AgencyIntegrationsPage() {
   const [metaImportResult, setMetaImportResult] = useState<MetaImportResponse | null>(null);
   const [metaBusy, setMetaBusy] = useState<"connect" | "import" | null>(null);
 
-  const [metaStatus, setMetaStatus] = useState<MetaStatusResponse | null>(null);
-  const [metaLoading, setMetaLoading] = useState(true);
-  const [metaStatusError, setMetaStatusError] = useState("");
-  const [metaConnectError, setMetaConnectError] = useState("");
-  const [metaImportError, setMetaImportError] = useState("");
-  const [metaImportResult, setMetaImportResult] = useState<MetaImportResponse | null>(null);
-  const [metaBusy, setMetaBusy] = useState<"connect" | "import" | null>(null);
-
   async function loadGoogleStatus() {
     try {
       const payload = await apiRequest<GoogleStatusResponse>("/integrations/google-ads/status");
