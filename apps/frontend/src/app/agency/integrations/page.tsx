@@ -107,12 +107,6 @@ export default function AgencyIntegrationsPage() {
   const [metaLoading, setMetaLoading] = useState(true);
   const [metaStatusError, setMetaStatusError] = useState("");
   const [metaConnectError, setMetaConnectError] = useState("");
-  const [metaBusy, setMetaBusy] = useState<"connect" | null>(null);
-
-  const [metaStatus, setMetaStatus] = useState<MetaStatusResponse | null>(null);
-  const [metaLoading, setMetaLoading] = useState(true);
-  const [metaStatusError, setMetaStatusError] = useState("");
-  const [metaConnectError, setMetaConnectError] = useState("");
   const [metaImportError, setMetaImportError] = useState("");
   const [metaImportResult, setMetaImportResult] = useState<MetaImportResponse | null>(null);
   const [metaBusy, setMetaBusy] = useState<"connect" | "import" | null>(null);
