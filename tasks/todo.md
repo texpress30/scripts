@@ -1,3 +1,16 @@
+# TODO — Expose keyword_daily in platform accounts entity_watermarks
+
+- [x] Extind read-model-ul `list_platform_accounts` pentru a include cheia `keyword_daily` în `entity_watermarks` cu fallback `null` când lipsește.
+- [x] Extind allowlist-ul shared pentru grains în `platform_account_watermarks_store` cu `keyword_daily`.
+- [x] Actualizez testul contract DB pentru shape-ul `entity_watermarks` ca să verifice prezența/popularea `keyword_daily` și null-uri pentru grains lipsă.
+- [x] Rulez verificări cerute (`pytest -q apps/backend/tests/test_platform_account_entity_watermarks_contract.py` + `py_compile`) și completez review.
+
+## Review
+- `list_platform_accounts` returnează acum constant 4 chei în `entity_watermarks` (`campaign_daily`, `ad_group_daily`, `ad_daily`, `keyword_daily`) și păstrează compatibilitatea câmpurilor existente.
+- Pentru conturi/platforme fără watermark pe `keyword_daily` (inclusiv non-Google), cheia este prezentă cu valoare `null`.
+- Testul contract DB validează atât cazul populat pentru `keyword_daily`, cât și null explicit pe celelalte grains nepopulate.
+
+---
 # TODO — Sync orchestration: include keyword_daily in Google entity-grain auto-expand
 
 - [x] Extind resolver-ul de grains din `sync_orchestration` astfel încât legacy request Google + flag ON să includă `keyword_daily` în ordine stabilă.

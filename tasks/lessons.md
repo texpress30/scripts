@@ -224,3 +224,5 @@
 - 2026-03-06: Când extinzi lista de grains din scheduler, actualizează în tandem resolver-ul, testele de count/order și cazul de dedupe pe noul grain, altfel feature flag-ul devine incomplet.
 
 - 2026-03-07: Când introduci un grain nou în ecosistemul entity (ex. `keyword_daily`), verifică simetric atât rolling scheduler cât și orchestration batch legacy auto-expand; altfel historical/manual rămâne în urmă față de rolling.
+
+- 2026-03-07: Când extinzi entity grains, actualizează și read-model-urile de observabilitate (ex. `entity_watermarks` din platform accounts) cu chei stabile + null defaults, nu doar pipeline-ul de ingestie.
