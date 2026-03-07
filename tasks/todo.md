@@ -1,3 +1,17 @@
+# TODO — Meta Ads backend sync real campaign_daily pentru conturile atașate
+
+- [x] Inspectez implementarea curentă Meta `account_daily`, modelul de reporting generic și pattern-urile existente pentru grains pe entități.
+- [x] Extind contractul sync Meta cu `grain` opțional (`account_daily` default, `campaign_daily`) păstrând backward compatibility.
+- [x] Implementez fetch real Meta Insights `campaign_daily` pentru toate conturile atașate clientului și persist idempotent în store-ul generic de raportare pe campanie.
+- [x] Mențin consistența derivării `conversions`/`conversion_value` cu Task 8 și păstrez raw payload util în metadata.
+- [x] Adaug teste backend focalizate pentru campaign_daily (single/multi, idempotency, fallback token, no accounts, API error, backward compat grain missing) și rulez verificări + smoke import.
+
+## Review
+- Sync-ul Meta suportă acum explicit două grains: `account_daily` (implicit) și `campaign_daily`, fără ruperea contractului existent.
+- Pentru `campaign_daily`, datele sunt citite din Meta Insights la nivel de campanie pe zi și persistate idempotent în `campaign_performance_reports` (`platform, account_id, campaign_id, report_date`).
+- Response-ul sync include `grain`, `accounts_processed`, `rows_written`, agregate și summary per cont, iar snapshot-ul Meta rămâne compatibil pe agregat real.
+
+---
 # TODO — Meta Ads backend sync real account_daily pentru conturile atașate
 
 - [x] Inspectez implementarea curentă `MetaAdsService.sync_client`, endpointul `/integrations/meta-ads/{client_id}/sync`, mapping-urile generice și store-ul generic de reporting.

@@ -2,14 +2,26 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 import json
-from urllib import parse, request, error
+import os
 import secrets
+from threading import Lock
+from typing import Literal
+from urllib import error, parse, request
 
 from app.core.config import load_settings
-from app.services.integration_secrets_store import integration_secrets_store
 from app.services.client_registry import client_registry_service
+from app.services.entity_performance_reports import upsert_campaign_performance_reports
+from app.services.integration_secrets_store import integration_secrets_store
 from app.services.meta_store import meta_snapshot_store
 from app.services.performance_reports import performance_reports_store
+
+try:
+    import psycopg
+except Exception:  # noqa: BLE001
+    psycopg = None
+
+MetaSyncGrain = Literal["account_daily", "campaign_daily"]
+_ALLOWED_SYNC_GRAINS: tuple[str, ...] = ("account_daily", "campaign_daily")
 
 
 class MetaAdsIntegrationError(RuntimeError):
@@ -22,6 +34,16 @@ class MetaAdsService:
     def __init__(self) -> None:
         self._oauth_state_cache = set()
         self._runtime_access_token = ""
+        self._memory_campaign_daily_rows: list[dict[str, object]] = []
+        self._memory_lock = Lock()
+
+    def _is_test_mode(self) -> bool:
+        return load_settings().app_env == "test" and os.environ.get("PYTEST_CURRENT_TEST") is not None
+
+    def _connect(self):
+        if psycopg is None:
+            raise RuntimeError("psycopg is required for Meta campaign_daily persistence")
+        return psycopg.connect(load_settings().database_url)
 
     def _oauth_config_missing_vars(self) -> list[str]:
         settings = load_settings()
@@ -304,6 +326,13 @@ class MetaAdsService:
             raise MetaAdsIntegrationError("start_date must be before or equal to end_date")
         return resolved_start, resolved_end
 
+    @staticmethod
+    def _validate_grain(grain: str | None) -> MetaSyncGrain:
+        normalized = str(grain or "account_daily").strip().lower()
+        if normalized not in _ALLOWED_SYNC_GRAINS:
+            raise MetaAdsIntegrationError(f"Unsupported Meta sync grain '{grain}'. Allowed: {list(_ALLOWED_SYNC_GRAINS)}")
+        return normalized  # type: ignore[return-value]
+
     def _list_client_meta_account_ids(self, *, client_id: int) -> list[str]:
         mapped_accounts = client_registry_service.list_client_platform_accounts(platform="meta_ads", client_id=int(client_id))
         account_ids: list[str] = []
@@ -347,20 +376,78 @@ class MetaAdsService:
             "cpp",
             "ctr",
         ]
+        return self._fetch_insights_rows(
+            account_id=account_id,
+            start_date=start_date,
+            end_date=end_date,
+            access_token=access_token,
+            level="account",
+            fields=fields,
+        )
 
+    def _fetch_campaign_daily_insights(
+        self,
+        *,
+        account_id: str,
+        start_date: date,
+        end_date: date,
+        access_token: str,
+    ) -> list[dict[str, object]]:
+        version = self._meta_api_version()
+        fields = [
+            "campaign_id",
+            "campaign_name",
+            "date_start",
+            "date_stop",
+            "spend",
+            "impressions",
+            "clicks",
+            "actions",
+            "action_values",
+            "outbound_clicks",
+            "inline_link_clicks",
+            "unique_clicks",
+            "reach",
+            "frequency",
+            "cpm",
+            "cpp",
+            "ctr",
+        ]
+        return self._fetch_insights_rows(
+            account_id=account_id,
+            start_date=start_date,
+            end_date=end_date,
+            access_token=access_token,
+            level="campaign",
+            fields=fields,
+            version=version,
+        )
+
+    def _fetch_insights_rows(
+        self,
+        *,
+        account_id: str,
+        start_date: date,
+        end_date: date,
+        access_token: str,
+        level: str,
+        fields: list[str],
+        version: str | None = None,
+    ) -> list[dict[str, object]]:
+        resolved_version = version or self._meta_api_version()
         all_rows: list[dict[str, object]] = []
         after: str | None = None
         while True:
             params: dict[str, object] = {
                 "fields": ",".join(fields),
-                "level": "account",
+                "level": level,
                 "time_increment": 1,
                 "limit": 200,
                 "time_range": json.dumps({"since": start_date.isoformat(), "until": end_date.isoformat()}),
             }
             if after:
                 params["after"] = after
-            url = f"https://graph.facebook.com/{version}/{account_id}/insights?{parse.urlencode(params)}"
+            url = f"https://graph.facebook.com/{resolved_version}/{account_id}/insights?{parse.urlencode(params)}"
             payload = self._http_json(method="GET", url=url, headers={"Authorization": f"Bearer {access_token}"})
             rows = payload.get("data") if isinstance(payload.get("data"), list) else []
             for row in rows:
@@ -418,7 +505,68 @@ class MetaAdsService:
             total += MetaAdsService._parse_numeric(item.get("value"))
         return total
 
-    def sync_client(self, client_id: int, *, start_date: date | None = None, end_date: date | None = None) -> dict[str, object]:
+    def _write_campaign_daily_rows(self, *, rows: list[dict[str, object]]) -> int:
+        if len(rows) == 0:
+            return 0
+        if self._is_test_mode():
+            with self._memory_lock:
+                for row in rows:
+                    key = (
+                        str(row.get("platform") or ""),
+                        str(row.get("account_id") or ""),
+                        str(row.get("campaign_id") or ""),
+                        str(row.get("report_date") or ""),
+                    )
+                    replace_idx = next(
+                        (
+                            idx
+                            for idx, existing in enumerate(self._memory_campaign_daily_rows)
+                            if (
+                                str(existing.get("platform") or ""),
+                                str(existing.get("account_id") or ""),
+                                str(existing.get("campaign_id") or ""),
+                                str(existing.get("report_date") or ""),
+                            )
+                            == key
+                        ),
+                        None,
+                    )
+                    if replace_idx is None:
+                        self._memory_campaign_daily_rows.append(dict(row))
+                    else:
+                        self._memory_campaign_daily_rows[replace_idx] = dict(row)
+            return len(rows)
+
+        with self._connect() as conn:
+            written = int(upsert_campaign_performance_reports(conn, rows) or 0)
+            conn.commit()
+        return written
+
+    @staticmethod
+    def _base_extra_metrics(item: dict[str, object]) -> dict[str, object]:
+        return {
+            "actions": item.get("actions") if isinstance(item.get("actions"), list) else [],
+            "action_values": item.get("action_values") if isinstance(item.get("action_values"), list) else [],
+            "outbound_clicks": item.get("outbound_clicks"),
+            "inline_link_clicks": item.get("inline_link_clicks"),
+            "unique_clicks": item.get("unique_clicks"),
+            "reach": item.get("reach"),
+            "frequency": item.get("frequency"),
+            "cpm": item.get("cpm"),
+            "cpp": item.get("cpp"),
+            "ctr": item.get("ctr"),
+            "date_stop": item.get("date_stop"),
+        }
+
+    def sync_client(
+        self,
+        client_id: int,
+        *,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        grain: str | None = None,
+    ) -> dict[str, object]:
+        resolved_grain = self._validate_grain(grain)
         resolved_start, resolved_end = self._resolve_sync_window(start_date=start_date, end_date=end_date)
         access_token, token_source, _, _ = self._resolve_active_access_token_with_source()
         if access_token == "":
@@ -439,12 +587,6 @@ class MetaAdsService:
         account_summaries: list[dict[str, object]] = []
 
         for account_id in account_ids:
-            insights_rows = self._fetch_account_daily_insights(
-                account_id=account_id,
-                start_date=resolved_start,
-                end_date=resolved_end,
-                access_token=access_token,
-            )
             account_rows_written = 0
             account_totals = {
                 "spend": 0.0,
@@ -453,59 +595,109 @@ class MetaAdsService:
                 "conversions": 0.0,
                 "conversion_value": 0.0,
             }
-            for item in insights_rows:
-                report_date_raw = str(item.get("date_start") or "").strip()
-                if report_date_raw == "":
-                    continue
-                try:
-                    report_date_value = date.fromisoformat(report_date_raw)
-                except ValueError:
-                    continue
 
-                spend = self._parse_numeric(item.get("spend"))
-                impressions = self._parse_int(item.get("impressions"))
-                clicks = self._parse_int(item.get("clicks"))
-                conversions = self._derive_conversions(actions=item.get("actions"))
-                conversion_value = self._derive_conversion_value(action_values=item.get("action_values"))
-
-                performance_reports_store.write_daily_report(
-                    report_date=report_date_value,
-                    platform="meta_ads",
-                    customer_id=account_id,
-                    client_id=int(client_id),
-                    spend=spend,
-                    impressions=impressions,
-                    clicks=clicks,
-                    conversions=conversions,
-                    conversion_value=conversion_value,
-                    extra_metrics={
-                        "meta_ads": {
-                            "actions": item.get("actions") if isinstance(item.get("actions"), list) else [],
-                            "action_values": item.get("action_values") if isinstance(item.get("action_values"), list) else [],
-                            "outbound_clicks": item.get("outbound_clicks"),
-                            "inline_link_clicks": item.get("inline_link_clicks"),
-                            "unique_clicks": item.get("unique_clicks"),
-                            "reach": item.get("reach"),
-                            "frequency": item.get("frequency"),
-                            "cpm": item.get("cpm"),
-                            "cpp": item.get("cpp"),
-                            "ctr": item.get("ctr"),
-                            "date_stop": item.get("date_stop"),
-                        }
-                    },
+            if resolved_grain == "account_daily":
+                insights_rows = self._fetch_account_daily_insights(
+                    account_id=account_id,
+                    start_date=resolved_start,
+                    end_date=resolved_end,
+                    access_token=access_token,
                 )
-                rows_written += 1
-                account_rows_written += 1
-                totals["spend"] += spend
-                totals["impressions"] += impressions
-                totals["clicks"] += clicks
-                totals["conversions"] += conversions
-                totals["revenue"] += conversion_value
-                account_totals["spend"] += spend
-                account_totals["impressions"] += impressions
-                account_totals["clicks"] += clicks
-                account_totals["conversions"] += conversions
-                account_totals["conversion_value"] += conversion_value
+                for item in insights_rows:
+                    report_date_raw = str(item.get("date_start") or "").strip()
+                    if report_date_raw == "":
+                        continue
+                    try:
+                        report_date_value = date.fromisoformat(report_date_raw)
+                    except ValueError:
+                        continue
+
+                    spend = self._parse_numeric(item.get("spend"))
+                    impressions = self._parse_int(item.get("impressions"))
+                    clicks = self._parse_int(item.get("clicks"))
+                    conversions = self._derive_conversions(actions=item.get("actions"))
+                    conversion_value = self._derive_conversion_value(action_values=item.get("action_values"))
+
+                    performance_reports_store.write_daily_report(
+                        report_date=report_date_value,
+                        platform="meta_ads",
+                        customer_id=account_id,
+                        client_id=int(client_id),
+                        spend=spend,
+                        impressions=impressions,
+                        clicks=clicks,
+                        conversions=conversions,
+                        conversion_value=conversion_value,
+                        extra_metrics={"meta_ads": self._base_extra_metrics(item)},
+                    )
+                    rows_written += 1
+                    account_rows_written += 1
+                    account_totals["spend"] += spend
+                    account_totals["impressions"] += impressions
+                    account_totals["clicks"] += clicks
+                    account_totals["conversions"] += conversions
+                    account_totals["conversion_value"] += conversion_value
+            else:
+                insights_rows = self._fetch_campaign_daily_insights(
+                    account_id=account_id,
+                    start_date=resolved_start,
+                    end_date=resolved_end,
+                    access_token=access_token,
+                )
+                campaign_rows: list[dict[str, object]] = []
+                for item in insights_rows:
+                    report_date_raw = str(item.get("date_start") or "").strip()
+                    campaign_id = str(item.get("campaign_id") or "").strip()
+                    if report_date_raw == "" or campaign_id == "":
+                        continue
+                    try:
+                        report_date_value = date.fromisoformat(report_date_raw)
+                    except ValueError:
+                        continue
+
+                    spend = self._parse_numeric(item.get("spend"))
+                    impressions = self._parse_int(item.get("impressions"))
+                    clicks = self._parse_int(item.get("clicks"))
+                    conversions = self._derive_conversions(actions=item.get("actions"))
+                    conversion_value = self._derive_conversion_value(action_values=item.get("action_values"))
+
+                    campaign_rows.append(
+                        {
+                            "platform": "meta_ads",
+                            "account_id": account_id,
+                            "campaign_id": campaign_id,
+                            "report_date": report_date_value,
+                            "spend": spend,
+                            "impressions": impressions,
+                            "clicks": clicks,
+                            "conversions": conversions,
+                            "conversion_value": conversion_value,
+                            "extra_metrics": {
+                                "meta_ads": {
+                                    **self._base_extra_metrics(item),
+                                    "campaign_name": str(item.get("campaign_name") or "").strip() or None,
+                                    "campaign_id": campaign_id,
+                                }
+                            },
+                            "source_window_start": resolved_start,
+                            "source_window_end": resolved_end,
+                            "source_job_id": None,
+                        }
+                    )
+                    account_totals["spend"] += spend
+                    account_totals["impressions"] += impressions
+                    account_totals["clicks"] += clicks
+                    account_totals["conversions"] += conversions
+                    account_totals["conversion_value"] += conversion_value
+
+                account_rows_written = self._write_campaign_daily_rows(rows=campaign_rows)
+                rows_written += account_rows_written
+
+            totals["spend"] += account_totals["spend"]
+            totals["impressions"] += account_totals["impressions"]
+            totals["clicks"] += account_totals["clicks"]
+            totals["conversions"] += account_totals["conversions"]
+            totals["revenue"] += account_totals["conversion_value"]
 
             account_summaries.append(
                 {
@@ -521,8 +713,9 @@ class MetaAdsService:
 
         snapshot = {
             "status": "ok",
-            "message": "Meta Ads account_daily sync completed.",
+            "message": f"Meta Ads {resolved_grain} sync completed.",
             "platform": "meta_ads",
+            "grain": resolved_grain,
             "client_id": int(client_id),
             "start_date": resolved_start.isoformat(),
             "end_date": resolved_end.isoformat(),
@@ -538,15 +731,17 @@ class MetaAdsService:
             "synced_at": datetime.now(timezone.utc).isoformat(),
         }
 
-        meta_snapshot_store.upsert_snapshot(payload={
-            "client_id": int(client_id),
-            "spend": float(snapshot["spend"]),
-            "impressions": int(snapshot["impressions"]),
-            "clicks": int(snapshot["clicks"]),
-            "conversions": int(round(float(snapshot["conversions"]))),
-            "revenue": float(snapshot["revenue"]),
-            "synced_at": str(snapshot["synced_at"]),
-        })
+        meta_snapshot_store.upsert_snapshot(
+            payload={
+                "client_id": int(client_id),
+                "spend": float(snapshot["spend"]),
+                "impressions": int(snapshot["impressions"]),
+                "clicks": int(snapshot["clicks"]),
+                "conversions": int(round(float(snapshot["conversions"]))),
+                "revenue": float(snapshot["revenue"]),
+                "synced_at": str(snapshot["synced_at"]),
+            }
+        )
         return snapshot
 
     def get_metrics(self, client_id: int) -> dict[str, float | int | str | bool]:

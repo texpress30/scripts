@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta
+from typing import Literal
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 class MetaSyncRequest(BaseModel):
     start_date: date | None = None
     end_date: date | None = None
+    grain: Literal["account_daily", "campaign_daily"] | None = None
 
 
 
@@ -222,7 +224,7 @@ def _run_meta_sync_job(job_id: str, *, client_id: int, account_context: dict[str
         )
 
     try:
-        snapshot = meta_ads_service.sync_client(client_id=client_id, start_date=payload.start_date if payload else None, end_date=payload.end_date if payload else None)
+        snapshot = meta_ads_service.sync_client(client_id=client_id, start_date=payload.start_date if payload else None, end_date=payload.end_date if payload else None, grain=payload.grain if payload else None)
         success_now = datetime.utcnow()
         payload = {
             "status": SYNC_STATUS_DONE,
@@ -505,7 +507,7 @@ def sync_meta_ads(
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
     try:
-        snapshot = meta_ads_service.sync_client(client_id=client_id, start_date=payload.start_date if payload else None, end_date=payload.end_date if payload else None)
+        snapshot = meta_ads_service.sync_client(client_id=client_id, start_date=payload.start_date if payload else None, end_date=payload.end_date if payload else None, grain=payload.grain if payload else None)
     except MetaAdsIntegrationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001

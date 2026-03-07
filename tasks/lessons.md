@@ -242,3 +242,5 @@
 - 2026-03-07: Când taskul cere explicit scope frontend-only, evită orice modificare backend chiar dacă există context conex; limitează patch-ul strict la paginile/UI/testele cerute.
 
 - 2026-03-07: Pentru taskuri de sync provider-specific, elimină explicit orice fallback stub/fake metrics și bazează scrierea doar pe date reale API + mapping-uri atașate clientului.
+
+- 2026-03-07: Când extinzi un sync existent cu grain-uri noi, păstrează contractul backward-compatible (`grain` default) și separă helper-ele per grain pentru a evita amestecarea logicii account/entity.
