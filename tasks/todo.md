@@ -1,15 +1,15 @@
-# TODO — Frontend-only PR: Meta UI în Agency Integrations + OAuth callback
+# TODO — Frontend-only PR 2: Meta account mappings în Agency Accounts
 
-- [x] Rebuild branch curat din `origin/main` și pornesc `meta-frontend-integrations-clean` fără a continua branch-uri vechi.
-- [x] Adaug `MetaIntegrationCard` și păstrez `page.tsx` doar ca pagină de compunere/layout (fără state/tipuri/logică Meta locală).
-- [x] Adaug pagina `meta/callback` cu flow-ul `oauth/exchange` + handling pentru provider error și missing code/state.
-- [x] Adaug/actualizez testele frontend cerute și rulez build-ul frontend.
-- [x] Verific explicit că diff-ul nu conține `apps/backend/**` sau `agency-accounts`.
+- [x] Rebuild branch curat din `origin/main` pentru `meta-frontend-agency-accounts-clean`, fără continuare branch-uri vechi.
+- [x] Mențin `agency-accounts/page.tsx` ca orchestrator/composition și extrag logica Meta în `MetaAgencyAccountsPanel.tsx`.
+- [x] Implementez listare `GET /clients/accounts/meta_ads`, attach/detach generic, stări busy/error/success și empty-state cu hint spre Agency Integrations.
+- [x] Adaug test de compunere pentru page + teste dedicate pentru `MetaAgencyAccountsPanel` (load, attached/unattached, attach, detach, error, empty).
+- [x] Rulez testele și build-ul frontend, apoi verific explicit diff-ul că nu include backend sau Agency Integrations.
 
 ## Review
-- `apps/frontend/src/app/agency/integrations/page.tsx` compune cardul Meta prin `<MetaIntegrationCard />` și nu conține logică Meta locală.
-- `MetaIntegrationCard.tsx` centralizează load status, connect, import, gating robust pe `has_usable_token`/fallback și summary-ul de import.
-- `meta/callback/page.tsx` gestionează provider errors, validări code/state și exchange + redirect la `/agency/integrations?meta_connected=1`.
+- `agency-accounts/page.tsx` rămâne container și comută la `MetaAgencyAccountsPanel` doar când platforma selectată este `meta_ads`.
+- `MetaAgencyAccountsPanel` acoperă complet flow-urile Meta Agency Accounts pe endpoint-urile backend existente (`/clients/accounts/meta_ads`, `/attach-account`, `/detach-account`) cu refresh automat după mutații.
+- Nu există modificări în `apps/backend/**` și nici în `apps/frontend/src/app/agency/integrations/**`.
 
 ---
 

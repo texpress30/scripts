@@ -1,6 +1,6 @@
 # Lessons
 
-- 2026-03-07: Pentru PR-uri frontend-only curate după un backend split, verific explicit boundary-ul de fișiere (`git diff --name-only origin/main...HEAD`) și refuz orice atingere accidentală în `apps/backend/**`.
+- 2026-03-07: Pentru taskuri split pe frontend (Integrations vs Agency Accounts), păstrez boundary strict pe folderele cerute și verific explicit cu diff că nu ating suprafețe excluse.
 - 2026-02-24: When user explicitly asks for workspace sync commands (`git fetch`, `git reset --hard`), run them first and report policy limitations immediately if a command is blocked, then apply the closest safe equivalent (`git checkout -B <branch> origin/main`).
 - 2026-02-24: For UI parity fixes, verify all affected surfaces (Agency + Sub-account) before reporting completion.
 - 2026-02-25: If user provides explicit terminal commands to repair git remotes, execute them exactly first, then handle any resulting divergence flags with the minimal extra git command needed (`git pull --no-rebase ...`) to complete sync.
