@@ -1,3 +1,18 @@
+# TODO — Frontend-only PR: Meta UI în Agency Integrations + OAuth callback
+
+- [x] Rebuild branch curat din `origin/main` și pornesc `meta-frontend-integrations-clean` fără a continua branch-uri vechi.
+- [x] Adaug `MetaIntegrationCard` și păstrez `page.tsx` doar ca pagină de compunere/layout (fără state/tipuri/logică Meta locală).
+- [x] Adaug pagina `meta/callback` cu flow-ul `oauth/exchange` + handling pentru provider error și missing code/state.
+- [x] Adaug/actualizez testele frontend cerute și rulez build-ul frontend.
+- [x] Verific explicit că diff-ul nu conține `apps/backend/**` sau `agency-accounts`.
+
+## Review
+- `apps/frontend/src/app/agency/integrations/page.tsx` compune cardul Meta prin `<MetaIntegrationCard />` și nu conține logică Meta locală.
+- `MetaIntegrationCard.tsx` centralizează load status, connect, import, gating robust pe `has_usable_token`/fallback și summary-ul de import.
+- `meta/callback/page.tsx` gestionează provider errors, validări code/state și exchange + redirect la `/agency/integrations?meta_connected=1`.
+
+---
+
 # TODO — Diagnostic E2E + Fix Google Ads Data Sync către Dashboard
 
 - [x] Audit repo end-to-end (pipeline OAuth/API/sync/DB/agregare/UI) pentru Google Ads în Agency/Sub-Account dashboard.
