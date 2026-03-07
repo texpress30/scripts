@@ -51,7 +51,7 @@ class RollingSchedulerTests(unittest.TestCase):
         existing_grains = existing_grains or set()
 
         def _list_platform_accounts(*, platform: str):
-            self.assertEqual(platform, "google_ads")
+            self.assertEqual(platform, str(account.get("platform") or "google_ads"))
             return [dict(account)]
 
         def _create_or_dedupe_run(**kwargs):
@@ -79,7 +79,7 @@ class RollingSchedulerTests(unittest.TestCase):
             "create_sync_run_chunk",
             side_effect=_create_chunk,
         ):
-            summary = rolling_scheduler.enqueue_rolling_sync_runs(platform="google_ads", limit=500, chunk_days=7, force=False)
+            summary = rolling_scheduler.enqueue_rolling_sync_runs(platform=str(account.get("platform") or "google_ads"), limit=500, chunk_days=7, force=False)
 
         return summary, state
 
@@ -108,14 +108,15 @@ class RollingSchedulerTests(unittest.TestCase):
         self.assertEqual(summary["enqueued_count_by_grain"]["ad_daily"], 1)
         self.assertEqual(summary["enqueued_count_by_grain"]["keyword_daily"], 1)
 
-    def test_flag_on_non_google_platform_does_not_enqueue_entity_grains(self):
+    def test_flag_on_meta_platform_enqueues_meta_entity_grains_without_keyword(self):
         summary, state = self._run_scheduler(account=self._base_account(platform="meta_ads"), env_value="1")
 
-        self.assertEqual(len(state["run_calls"]), 1)
-        self.assertEqual(state["run_calls"][0]["grain"], "account_daily")
-        self.assertEqual(summary["enqueued_count_by_grain"]["campaign_daily"], 0)
-        self.assertEqual(summary["enqueued_count_by_grain"]["ad_group_daily"], 0)
-        self.assertEqual(summary["enqueued_count_by_grain"]["ad_daily"], 0)
+        grains = [call["grain"] for call in state["run_calls"]]
+        self.assertEqual(grains, ["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"])
+        self.assertEqual(summary["enqueued_count_by_grain"]["account_daily"], 1)
+        self.assertEqual(summary["enqueued_count_by_grain"]["campaign_daily"], 1)
+        self.assertEqual(summary["enqueued_count_by_grain"]["ad_group_daily"], 1)
+        self.assertEqual(summary["enqueued_count_by_grain"]["ad_daily"], 1)
         self.assertEqual(summary["enqueued_count_by_grain"]["keyword_daily"], 0)
 
     def test_flag_on_dedupe_skips_existing_campaign_daily(self):
@@ -133,6 +134,9 @@ class RollingSchedulerTests(unittest.TestCase):
         self.assertEqual(summary["enqueued_count_by_grain"]["ad_group_daily"], 1)
         self.assertEqual(summary["enqueued_count_by_grain"]["ad_daily"], 1)
         self.assertEqual(summary["enqueued_count_by_grain"]["keyword_daily"], 0)
+    def test_invalid_platform_raises_value_error(self):
+        with self.assertRaisesRegex(ValueError, "supports only platform"):
+            rolling_scheduler.enqueue_rolling_sync_runs(platform="tiktok_ads", limit=10, chunk_days=7, force=False)
 
 
 if __name__ == "__main__":

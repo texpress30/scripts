@@ -1,3 +1,17 @@
+# TODO — Meta Ads rolling daily sync pe ultimele 7 zile complete
+
+- [x] Inspectez rolling scheduler + sync worker + sync_runs flow pentru a extinde Meta fără a rupe compatibilitatea Google.
+- [x] Extind `rolling_scheduler` să accepte `platform=meta_ads` și să enqueuieze grains Meta (`account_daily`, `campaign_daily`, `ad_group_daily`, `ad_daily`) pe aceeași fereastră rolling de 7 zile complete.
+- [x] Extind `sync_worker` pentru run-uri `platform=meta_ads` astfel încât să refolosească `meta_ads_service.sync_client(...)` per chunk + grain, fără duplicare logică de fetch/persist.
+- [x] Adaug teste focalizate pentru scheduler + worker Meta (enqueue grains, compat Google, eligibilitate, success/error mapping) și update minimal README.
+- [x] Rulez verificări relevante + smoke import pentru scheduler/worker și completez review.
+
+## Review
+- Scheduler-ul rolling suportă acum explicit și `platform=meta_ads` (pe lângă `google_ads`) și păstrează aceeași fereastră operațională: `yesterday-6` → `yesterday`.
+- Când `ROLLING_ENTITY_GRAINS_ENABLED` este activ, Meta enqueuiește `account_daily`, `campaign_daily`, `ad_group_daily`, `ad_daily` (fără `keyword_daily`), iar Google rămâne neschimbat (`+keyword_daily`).
+- Worker-ul procesează chunk-urile Meta prin `meta_ads_service.sync_client(...)`, deci păstrează idempotency-ul deja garantat de upsert-urile existente din sync-ul Meta.
+
+---
 # TODO — Meta Ads backend backfill istoric 2024-01-09 → ieri pentru toate grain-urile Meta
 
 - [x] Inspectez implementarea actuală Meta sync + infrastructura existentă de background jobs/worker pentru a alege orchestrarea sigură și minimă.

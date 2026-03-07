@@ -10,6 +10,7 @@ from app.services.client_registry import client_registry_service
 from app.services.entity_performance_reports import upsert_ad_group_performance_reports, upsert_ad_unit_performance_reports, upsert_campaign_performance_reports, upsert_keyword_performance_reports
 from app.services.platform_entity_store import upsert_platform_ad_groups, upsert_platform_ads, upsert_platform_campaigns, upsert_platform_keywords
 from app.services.google_ads import google_ads_service
+from app.services.meta_ads import MetaAdsIntegrationError, meta_ads_service
 from app.services.platform_watermarks_reconcile import reconcile_platform_account_watermarks
 from app.services.sync_run_chunks_store import sync_run_chunks_store
 from app.services.sync_runs_store import sync_runs_store
@@ -153,11 +154,7 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
     chunk_error: str | None = None
 
     try:
-        platform = str(run.get("platform") or "").strip()
-        if grain != "account_daily" and platform != "google_ads":
-            raise RuntimeError(f"{_GRAIN_NOT_SUPPORTED_ERROR}:{grain}")
-        if platform != "google_ads":
-            raise RuntimeError(f"unsupported platform '{platform}'")
+        platform = str(run.get("platform") or "").strip().lower()
 
         account_id = str(run.get("account_id") or "").strip()
         if account_id == "":
@@ -172,7 +169,20 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
         chunk_days = int(run.get("chunk_days") or 7)
         job_type = str(run.get("job_type") or "manual")
 
-        if grain == "campaign_daily":
+        if platform == "meta_ads":
+            try:
+                snapshot = meta_ads_service.sync_client(
+                    client_id=client_id,
+                    start_date=chunk_start,
+                    end_date=chunk_end,
+                    grain=grain,
+                )
+                rows_written = int(snapshot.get("rows_written") or 0)
+            except MetaAdsIntegrationError as exc:
+                raise RuntimeError(str(exc)[:300]) from exc
+        elif platform != "google_ads":
+            raise RuntimeError(f"unsupported platform '{platform}'")
+        elif grain == "campaign_daily":
             chunk_end_exclusive = chunk_end + timedelta(days=1)
             campaign_rows = google_ads_service.fetch_campaign_daily_metrics(
                 customer_id=account_id,

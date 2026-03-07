@@ -1,5 +1,6 @@
 # Lessons
 
+- 2026-03-07: Pentru rolling Meta, extind punctual scheduler-ul existent (nu unul nou), păstrez eligibilitatea curentă și rulez worker-ul prin `meta_ads_service.sync_client` per chunk/grain ca să evit duplicarea logicii și regresiile Google.
 - 2026-03-07: Pentru backfill istoric Meta, evit execuțiile monolitice în endpoint; enqueuiez job async și procesez chunk-uri fixe, reutilizând `sync_client` pe fiecare grain pentru a păstra idempotency și a evita duplicarea logicii.
 - 2026-03-07: Când userul cere extinderea incrementală a unui grain Meta (ex. ad_daily după ad_group_daily), păstrez strict contractul backend existent, adaug helper fetch + upsert generic idempotent și acopăr explicit backward compatibility pentru grains anterioare în teste API/service.
 - 2026-02-24: When user explicitly asks for workspace sync commands (`git fetch`, `git reset --hard`), run them first and report policy limitations immediately if a command is blocked, then apply the closest safe equivalent (`git checkout -B <branch> origin/main`).
