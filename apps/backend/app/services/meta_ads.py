@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import json
+from urllib import parse, request, error
+import secrets
 
 from app.core.config import load_settings
+from app.services.integration_secrets_store import integration_secrets_store
 from app.services.meta_store import meta_snapshot_store
 from app.services.performance_reports import performance_reports_store
 
@@ -12,26 +16,186 @@ class MetaAdsIntegrationError(RuntimeError):
 
 
 class MetaAdsService:
-    def integration_status(self) -> dict[str, str]:
+    _oauth_state_cache: set[str]
+
+    def __init__(self) -> None:
+        self._oauth_state_cache = set()
+        self._runtime_access_token = ""
+
+    def _oauth_config_missing_vars(self) -> list[str]:
         settings = load_settings()
-        token = settings.meta_access_token.strip()
-        if not token or token.startswith("your_"):
-            return {
-                "provider": "meta_ads",
-                "status": "pending",
-                "message": "Meta Ads token is configured as placeholder.",
-            }
+        missing: list[str] = []
+        if settings.meta_app_id.strip() == "":
+            missing.append("META_APP_ID")
+        if settings.meta_app_secret.strip() == "":
+            missing.append("META_APP_SECRET")
+        if settings.meta_redirect_uri.strip() == "":
+            missing.append("META_REDIRECT_URI")
+        return missing
+
+    def _require_oauth_config(self) -> None:
+        missing = self._oauth_config_missing_vars()
+        if missing:
+            raise MetaAdsIntegrationError(f"Meta OAuth configuration incomplete: {', '.join(missing)}")
+
+    def _meta_api_version(self) -> str:
+        raw = load_settings().meta_api_version.strip().strip("/")
+        if raw == "":
+            return "v20.0"
+        return raw
+
+    def _meta_scopes(self) -> tuple[str, ...]:
+        return ("ads_read", "ads_management", "business_management")
+
+    def _http_json(self, *, method: str, url: str) -> dict[str, object]:
+        req = request.Request(url, method=method)
+        try:
+            with request.urlopen(req, timeout=20) as response:
+                raw = response.read().decode("utf-8")
+                if raw.strip() == "":
+                    return {}
+                payload = json.loads(raw)
+                if not isinstance(payload, dict):
+                    raise MetaAdsIntegrationError("Meta API returned invalid response payload")
+                return payload
+        except error.HTTPError as exc:
+            try:
+                response_body = exc.read().decode("utf-8")
+            except Exception:  # noqa: BLE001
+                response_body = "<unreadable body>"
+            raise MetaAdsIntegrationError(
+                f"Meta API request failed: method={method} url={url} status={exc.code} response={response_body[:500]}"
+            ) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise MetaAdsIntegrationError(f"Meta API request failed: method={method} url={url} error={exc}") from exc
+
+    def _resolve_active_access_token_with_source(self) -> tuple[str, str, str | None, str | None]:
+        access_token_secret = None
+        expires_secret = None
+        try:
+            access_token_secret = integration_secrets_store.get_secret(provider="meta_ads", secret_key="access_token")
+            expires_secret = integration_secrets_store.get_secret(provider="meta_ads", secret_key="access_token_expires_at")
+        except Exception:  # noqa: BLE001
+            access_token_secret = None
+            expires_secret = None
+
+        if access_token_secret is not None and access_token_secret.value.strip() != "":
+            token_updated_at = access_token_secret.updated_at.isoformat() if access_token_secret.updated_at is not None else None
+            expires_at = str(expires_secret.value).strip() if expires_secret is not None and str(expires_secret.value).strip() != "" else None
+            return access_token_secret.value.strip(), "database", token_updated_at, expires_at
+
+        runtime_token = (self._runtime_access_token or "").strip()
+        if runtime_token != "":
+            return runtime_token, "runtime", None, None
+
+        env_token = load_settings().meta_access_token.strip()
+        if env_token != "" and not env_token.startswith("your_"):
+            return env_token, "env_fallback", None, None
+
+        return "", "missing", None, None
+
+    def _active_access_token(self) -> str:
+        token, _, _, _ = self._resolve_active_access_token_with_source()
+        if token == "":
+            raise MetaAdsIntegrationError("Meta Ads token is missing or placeholder.")
+        return token
+
+    def integration_status(self) -> dict[str, str | bool | None]:
+        token, token_source, token_updated_at, token_expires_at = self._resolve_active_access_token_with_source()
+        oauth_configured = len(self._oauth_config_missing_vars()) == 0
+        connected = token != ""
         return {
             "provider": "meta_ads",
+            "status": "connected" if connected else "pending",
+            "message": (
+                "Meta Ads access token is available."
+                if connected
+                else "Meta Ads access token missing. Complete OAuth connect or configure fallback token."
+            ),
+            "token_source": token_source,
+            "token_updated_at": token_updated_at,
+            "token_expires_at": token_expires_at,
+            "oauth_configured": oauth_configured,
+        }
+
+    def build_oauth_authorize_url(self) -> dict[str, str]:
+        self._require_oauth_config()
+        settings = load_settings()
+        state = secrets.token_urlsafe(24)
+        self._oauth_state_cache.add(state)
+        params = {
+            "client_id": settings.meta_app_id,
+            "redirect_uri": settings.meta_redirect_uri,
+            "state": state,
+            "scope": ",".join(self._meta_scopes()),
+            "response_type": "code",
+        }
+        return {
+            "authorize_url": f"https://www.facebook.com/{self._meta_api_version()}/dialog/oauth?{parse.urlencode(params)}",
+            "state": state,
+        }
+
+    def exchange_oauth_code(self, *, code: str, state: str) -> dict[str, str | bool | None]:
+        self._require_oauth_config()
+        if state not in self._oauth_state_cache:
+            raise MetaAdsIntegrationError("Invalid OAuth state for Meta connect callback")
+        self._oauth_state_cache.discard(state)
+
+        settings = load_settings()
+        base_oauth_url = f"https://graph.facebook.com/{self._meta_api_version()}/oauth/access_token"
+
+        code_exchange_params = {
+            "client_id": settings.meta_app_id,
+            "client_secret": settings.meta_app_secret,
+            "redirect_uri": settings.meta_redirect_uri,
+            "code": code,
+        }
+        short_lived_payload = self._http_json(method="GET", url=f"{base_oauth_url}?{parse.urlencode(code_exchange_params)}")
+        short_lived_token = str(short_lived_payload.get("access_token") or "").strip()
+        if short_lived_token == "":
+            raise MetaAdsIntegrationError("Meta OAuth code exchange failed: missing access_token")
+
+        long_lived_exchange_params = {
+            "grant_type": "fb_exchange_token",
+            "client_id": settings.meta_app_id,
+            "client_secret": settings.meta_app_secret,
+            "fb_exchange_token": short_lived_token,
+        }
+        long_lived_payload = self._http_json(method="GET", url=f"{base_oauth_url}?{parse.urlencode(long_lived_exchange_params)}")
+        long_lived_token = str(long_lived_payload.get("access_token") or "").strip()
+        if long_lived_token == "":
+            raise MetaAdsIntegrationError("Meta OAuth long-lived token exchange failed: missing access_token")
+
+        integration_secrets_store.upsert_secret(provider="meta_ads", secret_key="access_token", value=long_lived_token)
+        self._runtime_access_token = long_lived_token
+
+        expires_in_raw = long_lived_payload.get("expires_in")
+        token_expires_at: str | None = None
+        if expires_in_raw is not None:
+            try:
+                expires_in_seconds = int(expires_in_raw)
+                if expires_in_seconds > 0:
+                    token_expires_at = (datetime.now(timezone.utc) + timedelta(seconds=expires_in_seconds)).isoformat()
+                    integration_secrets_store.upsert_secret(
+                        provider="meta_ads",
+                        secret_key="access_token_expires_at",
+                        value=token_expires_at,
+                    )
+            except Exception:  # noqa: BLE001
+                token_expires_at = None
+
+        _, token_source, token_updated_at, resolved_expires_at = self._resolve_active_access_token_with_source()
+        return {
             "status": "connected",
-            "message": "Meta Ads token is available.",
+            "message": "Meta OAuth connected. Access token stored securely in application database.",
+            "token_source": token_source,
+            "token_updated_at": token_updated_at,
+            "token_expires_at": resolved_expires_at or token_expires_at,
+            "oauth_configured": True,
         }
 
     def sync_client(self, client_id: int) -> dict[str, float | int | str]:
-        settings = load_settings()
-        token = settings.meta_access_token.strip()
-        if not token or token.startswith("your_"):
-            raise MetaAdsIntegrationError("Meta Ads token is missing or placeholder.")
+        _ = self._active_access_token()
 
         spend = float(85 + client_id * 13)
         impressions = 4200 + client_id * 95
