@@ -1,3 +1,17 @@
+# TODO — Agency Integrations: add Meta Ads status card (frontend)
+
+- [x] Inspectez pagina Agency Integrations și păstrez pattern-ul vizual existent (card Google + grid order).
+- [x] Adaug state/type separate pentru Meta status/loading/error și citesc statusul Meta din API-ul existent la load.
+- [x] Adaug cardul Meta Ads în ordinea Google, Meta, TikTok, Pinterest, Snapchat cu badge/status normalizat și randare defensivă.
+- [x] Adaug test frontend pentru cazurile Meta success + Meta error (fără impact pe cardul Google).
+- [x] Rulez verificările frontend relevante (test + build) și completez review.
+
+## Review
+- `Agency Integrations` afișează acum un card dedicat `Meta Ads`, consistent vizual cu cardurile existente și alimentat din `/integrations/meta-ads/status`.
+- Stările Meta sunt normalizate robust în UI (`connected/pending/disabled/error` + fallback), iar la eroare cardul rămâne vizibil cu stare degradată clară.
+- Fluxul Google existent a rămas intact (status/load/connect/import/diagnostics), iar testele noi verifică explicit success/error pentru Meta fără regressii vizibile pe Google.
+
+---
 # TODO — Expose keyword_daily in platform accounts entity_watermarks
 
 - [x] Extind read-model-ul `list_platform_accounts` pentru a include cheia `keyword_daily` în `entity_watermarks` cu fallback `null` când lipsește.

@@ -226,3 +226,5 @@
 - 2026-03-07: Când introduci un grain nou în ecosistemul entity (ex. `keyword_daily`), verifică simetric atât rolling scheduler cât și orchestration batch legacy auto-expand; altfel historical/manual rămâne în urmă față de rolling.
 
 - 2026-03-07: Când extinzi entity grains, actualizează și read-model-urile de observabilitate (ex. `entity_watermarks` din platform accounts) cu chei stabile + null defaults, nu doar pipeline-ul de ingestie.
+
+- 2026-03-07: Pentru carduri noi de integrare în Agency Integrations, tratează request-urile independent per provider (state + error izolate), astfel încât un eșec Meta să nu afecteze cardul Google sau restul paginii.

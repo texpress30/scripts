@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
@@ -37,11 +37,40 @@ type GoogleDiagnosticsResponse = {
   [key: string]: unknown;
 };
 
+type MetaStatusResponse = {
+  provider?: string;
+  status?: string;
+  message?: string;
+  [key: string]: unknown;
+};
+
+type IntegrationStatusUi = {
+  toneClass: string;
+  label: string;
+};
+
 function formatDate(value?: string): string {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
+}
+
+function normalizeIntegrationStatus(value?: string | null): IntegrationStatusUi {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["connected", "ok", "active", "enabled", "ready", "healthy", "success"].includes(normalized)) {
+    return { label: "Conectat", toneClass: "bg-emerald-100 text-emerald-700" };
+  }
+  if (["pending", "not_configured", "not_connected", "setup_required", "placeholder"].includes(normalized)) {
+    return { label: "În așteptare", toneClass: "bg-amber-100 text-amber-700" };
+  }
+  if (["disabled", "off", "inactive"].includes(normalized)) {
+    return { label: "Dezactivat", toneClass: "bg-slate-200 text-slate-700" };
+  }
+  if (["error", "failed", "failure", "unhealthy"].includes(normalized)) {
+    return { label: "Eroare", toneClass: "bg-red-100 text-red-700" };
+  }
+  return { label: "Necunoscut", toneClass: "bg-slate-200 text-slate-700" };
 }
 
 export default function AgencyIntegrationsPage() {
@@ -54,6 +83,9 @@ export default function AgencyIntegrationsPage() {
   const [diagnosticsError, setDiagnosticsError] = useState("");
   const [diagnosticsData, setDiagnosticsData] = useState<GoogleDiagnosticsResponse | null>(null);
   const [copyMessage, setCopyMessage] = useState("");
+  const [metaStatus, setMetaStatus] = useState<MetaStatusResponse | null>(null);
+  const [metaLoading, setMetaLoading] = useState(true);
+  const [metaError, setMetaError] = useState("");
 
   async function loadGoogleStatus() {
     try {
@@ -66,7 +98,22 @@ export default function AgencyIntegrationsPage() {
 
   useEffect(() => {
     void loadGoogleStatus();
+    void loadMetaStatus();
   }, []);
+
+  async function loadMetaStatus() {
+    setMetaLoading(true);
+    setMetaError("");
+    try {
+      const payload = await apiRequest<MetaStatusResponse>("/integrations/meta-ads/status");
+      setMetaStatus(payload);
+    } catch (err) {
+      setMetaStatus(null);
+      setMetaError(err instanceof Error ? err.message : "Nu am putut încărca statusul Meta Ads");
+    } finally {
+      setMetaLoading(false);
+    }
+  }
 
   async function connectGoogle() {
     setGoogleError("");
@@ -133,6 +180,9 @@ export default function AgencyIntegrationsPage() {
   }
 
   const isConnected = googleStatus?.status === "connected";
+  const metaStatusUi = metaError
+    ? { label: "Eroare", toneClass: "bg-red-100 text-red-700" }
+    : normalizeIntegrationStatus(metaStatus?.status);
   const warnings = useMemo(() => (Array.isArray(diagnosticsData?.warnings) ? diagnosticsData?.warnings : []), [diagnosticsData]);
 
   return (
@@ -175,6 +225,23 @@ export default function AgencyIntegrationsPage() {
             <p className="mt-3 text-xs text-slate-500">
               După import, rulează sync pe fiecare sub-account pentru a popula dashboard-ul cu date reale.
             </p>
+          </article>
+
+          <article className="wm-card p-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-slate-900">Meta Ads</h2>
+              <span className={`rounded-full px-3 py-1 text-xs font-medium ${metaStatusUi.toneClass}`}>{metaStatusUi.label}</span>
+            </div>
+            <p className="mt-2 text-sm text-slate-600">Status integrare Meta Ads pentru agency. OAuth/import/sync real vor fi activate în taskurile următoare.</p>
+            {metaLoading ? <p className="mt-3 text-xs text-slate-500">Se încarcă statusul Meta Ads...</p> : null}
+            {!metaLoading ? <p className="mt-3 text-xs text-slate-600">{metaStatus?.message || "Status Meta Ads indisponibil momentan."}</p> : null}
+            {metaError ? <p className="mt-2 text-xs text-red-600">{metaError}</p> : null}
+            {!metaLoading && metaStatus ? (
+              <div className="mt-3 space-y-1 text-xs text-slate-500">
+                {typeof metaStatus.provider === "string" && metaStatus.provider.trim() ? <p>Provider: {metaStatus.provider}</p> : null}
+                {typeof metaStatus.status === "string" && metaStatus.status.trim() ? <p>Status raw: {metaStatus.status}</p> : null}
+              </div>
+            ) : null}
           </article>
 
           <article className="wm-card p-4">
