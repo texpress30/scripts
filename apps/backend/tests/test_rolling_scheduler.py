@@ -96,7 +96,7 @@ class RollingSchedulerTests(unittest.TestCase):
         summary, state = self._run_scheduler(account=self._base_account(platform="google_ads"), env_value="1")
 
         grains = [call["grain"] for call in state["run_calls"]]
-        self.assertEqual(grains, ["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"])
+        self.assertEqual(grains, ["account_daily", "campaign_daily", "ad_group_daily", "ad_daily", "keyword_daily"])
 
         windows = {(str(call["date_start"]), str(call["date_end"])) for call in state["run_calls"]}
         self.assertEqual(len(windows), 1)
@@ -106,6 +106,7 @@ class RollingSchedulerTests(unittest.TestCase):
         self.assertEqual(summary["enqueued_count_by_grain"]["campaign_daily"], 1)
         self.assertEqual(summary["enqueued_count_by_grain"]["ad_group_daily"], 1)
         self.assertEqual(summary["enqueued_count_by_grain"]["ad_daily"], 1)
+        self.assertEqual(summary["enqueued_count_by_grain"]["keyword_daily"], 1)
 
     def test_flag_on_non_google_platform_does_not_enqueue_entity_grains(self):
         summary, state = self._run_scheduler(account=self._base_account(platform="meta_ads"), env_value="1")
@@ -115,21 +116,23 @@ class RollingSchedulerTests(unittest.TestCase):
         self.assertEqual(summary["enqueued_count_by_grain"]["campaign_daily"], 0)
         self.assertEqual(summary["enqueued_count_by_grain"]["ad_group_daily"], 0)
         self.assertEqual(summary["enqueued_count_by_grain"]["ad_daily"], 0)
+        self.assertEqual(summary["enqueued_count_by_grain"]["keyword_daily"], 0)
 
     def test_flag_on_dedupe_skips_existing_campaign_daily(self):
         summary, state = self._run_scheduler(
             account=self._base_account(platform="google_ads"),
             env_value="1",
-            existing_grains={"campaign_daily"},
+            existing_grains={"campaign_daily", "keyword_daily"},
         )
 
         grains_called = [call["grain"] for call in state["run_calls"]]
-        self.assertEqual(grains_called, ["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"])
+        self.assertEqual(grains_called, ["account_daily", "campaign_daily", "ad_group_daily", "ad_daily", "keyword_daily"])
 
         self.assertEqual(summary["enqueued_count_by_grain"]["account_daily"], 1)
         self.assertEqual(summary["enqueued_count_by_grain"]["campaign_daily"], 0)
         self.assertEqual(summary["enqueued_count_by_grain"]["ad_group_daily"], 1)
         self.assertEqual(summary["enqueued_count_by_grain"]["ad_daily"], 1)
+        self.assertEqual(summary["enqueued_count_by_grain"]["keyword_daily"], 0)
 
 
 if __name__ == "__main__":

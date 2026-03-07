@@ -155,7 +155,7 @@ cd apps/frontend && npm run build
 - Eligibilitate minimă rolling cron: cont mapat la client + `sync_start_date` inițiat (altfel este omis explicit ca `history_not_initialized`).
 - Feature flag opțional: `ROLLING_ENTITY_GRAINS_ENABLED=1` (alias compatibil cu API: `ENTITY_GRAINS_ENABLED=1`; dacă oricare e activ, feature-ul este ON).
   - Default (lipsă/0): scheduler enqueuiește doar `grain=account_daily` (comportament actual).
-  - Activ (1/true/yes/on): pentru conturi Google Ads, scheduler enqueuiește și `campaign_daily`, `ad_group_daily`, `ad_daily` pe aceeași fereastră rolling; pentru non-Google rămâne doar `account_daily`.
+  - Activ (1/true/yes/on): pentru conturi Google Ads, scheduler enqueuiește și `campaign_daily`, `ad_group_daily`, `ad_daily`, `keyword_daily` pe aceeași fereastră rolling; pentru non-Google rămâne doar `account_daily`.
 - Același flag (ENTITY/ROLLING alias) activează și auto-expand pentru `POST /agency/sync-runs/batch` pe request-uri legacy Google (`grain` lipsă sau `account_daily`) astfel încât historical backfill să includă și entity grains.
 
 ## Railway: repair sweeper (historical + rolling stale runs)

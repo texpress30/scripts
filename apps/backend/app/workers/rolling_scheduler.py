@@ -82,7 +82,7 @@ def _rolling_entity_grains_enabled() -> bool:
 def _resolve_rolling_grains(*, platform: str) -> list[str]:
     grains = ["account_daily"]
     if str(platform).strip().lower() == "google_ads" and _rolling_entity_grains_enabled():
-        grains.extend(["campaign_daily", "ad_group_daily", "ad_daily"])
+        grains.extend(["campaign_daily", "ad_group_daily", "ad_daily", "keyword_daily"])
     return grains
 
 
@@ -226,6 +226,7 @@ def enqueue_rolling_sync_runs(
             "campaign_daily": len([run for run in created_runs if run.get("grain") == "campaign_daily"]),
             "ad_group_daily": len([run for run in created_runs if run.get("grain") == "ad_group_daily"]),
             "ad_daily": len([run for run in created_runs if run.get("grain") == "ad_daily"]),
+            "keyword_daily": len([run for run in created_runs if run.get("grain") == "keyword_daily"]),
         },
         "rolling_entity_grains_enabled": _rolling_entity_grains_enabled(),
     }

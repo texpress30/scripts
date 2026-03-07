@@ -1,3 +1,17 @@
+# TODO — Rolling scheduler: include keyword_daily in Google entity grains
+
+- [x] Extind `rolling_scheduler` ca grain expansion Google (flag ON) să includă și `keyword_daily`.
+- [x] Păstrez comportamentul neschimbat pentru flag OFF, non-google și conturi neeligibile.
+- [x] Actualizez testele rolling scheduler pentru 5 grains și dedupe explicit pe `keyword_daily`.
+- [x] Actualizez README (rolling cron) cu `keyword_daily` în lista grains.
+- [x] Rulez verificările cerute (`pytest test_rolling_scheduler.py` + `py_compile`) și completez review.
+
+## Review
+- Schedulerul rolling extinde acum Google entity grains cu `keyword_daily` când flag-ul de entity grains este ON, păstrând fallback-ul existent pentru celelalte cazuri.
+- Testele `test_rolling_scheduler.py` acoperă lista completă de 5 grains și dedupe explicit pentru `keyword_daily`, inclusiv counters în summary.
+- README este actualizat în secțiunea rolling cron pentru a reflecta includerea `keyword_daily` în expansion.
+
+---
 # TODO — Google Ads provider + worker: keyword_daily grain sync
 
 - [x] Adaug fetch provider `fetch_keyword_daily_metrics` cu window half-open și ID stabil pentru keyword (`{ad_group_id}~{criterion_id}`).
