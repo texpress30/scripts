@@ -4,79 +4,59 @@ import { render, screen, waitFor } from "@testing-library/react";
 
 import MetaOAuthCallbackPage from "./page";
 
-const apiMock = vi.hoisted(() => ({
-  apiRequest: vi.fn(),
-}));
-
-const navigationMock = vi.hoisted(() => ({
-  searchParams: new URLSearchParams(),
+const apiMock = vi.hoisted(() => ({ apiRequest: vi.fn() }));
+const navState = vi.hoisted(() => ({
+  params: new URLSearchParams(),
   replace: vi.fn(),
 }));
 
-vi.mock("@/lib/api", () => ({
-  apiRequest: apiMock.apiRequest,
-}));
-
+vi.mock("@/lib/api", () => ({ apiRequest: apiMock.apiRequest }));
 vi.mock("@/components/ProtectedPage", () => ({ ProtectedPage: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
 vi.mock("@/components/AppShell", () => ({ AppShell: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
-vi.mock("next/link", () => ({
-  default: ({ href, children, className }: { href: string; children: React.ReactNode; className?: string }) => (
-    <a href={href} className={className}>
-      {children}
-    </a>
-  ),
-}));
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => navigationMock.searchParams,
-  useRouter: () => ({ replace: navigationMock.replace }),
+  useSearchParams: () => navState.params,
+  useRouter: () => ({ replace: navState.replace }),
 }));
 
 describe("MetaOAuthCallbackPage", () => {
   beforeEach(() => {
     apiMock.apiRequest.mockReset();
-    navigationMock.replace.mockReset();
-    navigationMock.searchParams = new URLSearchParams();
+    navState.replace.mockReset();
+    navState.params = new URLSearchParams();
   });
 
-  it("shows success state after oauth exchange", async () => {
-    navigationMock.searchParams = new URLSearchParams("code=abc123&state=st123");
-    apiMock.apiRequest.mockResolvedValue({
-      status: "connected",
-      message: "Meta OAuth connected.",
-      token_source: "database",
-      token_updated_at: "2026-03-07T09:00:00+00:00",
-      token_expires_at: "2026-05-07T09:00:00+00:00",
-    });
+  it("shows provider error without calling backend", async () => {
+    navState.params = new URLSearchParams("error=access_denied&error_reason=user_denied&error_description=Denied");
 
     render(<MetaOAuthCallbackPage />);
 
-    expect(await screen.findByText("Meta Ads conectat cu succes")).toBeInTheDocument();
-    expect(screen.getByText("Meta OAuth connected.")).toBeInTheDocument();
-    expect(apiMock.apiRequest).toHaveBeenCalledWith("/integrations/meta-ads/oauth/exchange", {
-      method: "POST",
-      body: JSON.stringify({ code: "abc123", state: "st123" }),
-    });
+    expect(await screen.findByText(/Meta OAuth error/i)).toBeInTheDocument();
+    expect(apiMock.apiRequest).not.toHaveBeenCalled();
+  });
+
+  it("shows missing code/state error", async () => {
+    navState.params = new URLSearchParams("state=only-state");
+
+    render(<MetaOAuthCallbackPage />);
+
+    expect(await screen.findByText(/lipsesc code\/state/i)).toBeInTheDocument();
+    expect(apiMock.apiRequest).not.toHaveBeenCalled();
+  });
+
+  it("performs successful oauth exchange flow", async () => {
+    navState.params = new URLSearchParams("code=abc&state=state-1");
+    apiMock.apiRequest.mockResolvedValue({ status: "connected", message: "Meta connected", token_source: "database" });
+
+    render(<MetaOAuthCallbackPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole("link", { name: "Înapoi la Integrations" })).toHaveAttribute("href", "/agency/integrations");
+      expect(apiMock.apiRequest).toHaveBeenCalledWith("/integrations/meta-ads/oauth/exchange", {
+        method: "POST",
+        body: JSON.stringify({ code: "abc", state: "state-1" }),
+      });
     });
-  });
-
-  it("shows provider error from query params without calling backend", async () => {
-    navigationMock.searchParams = new URLSearchParams("error=access_denied&error_reason=user_denied&error_description=User%20denied");
-
-    render(<MetaOAuthCallbackPage />);
-
-    expect(await screen.findByText(/Meta OAuth error:/)).toBeInTheDocument();
-    expect(apiMock.apiRequest).not.toHaveBeenCalled();
-  });
-
-  it("shows clear error when code/state are missing", async () => {
-    navigationMock.searchParams = new URLSearchParams("");
-
-    render(<MetaOAuthCallbackPage />);
-
-    expect(await screen.findByText("Meta OAuth callback invalid: lipsesc parametrii code/state.")).toBeInTheDocument();
-    expect(apiMock.apiRequest).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(navState.replace).toHaveBeenCalledWith("/agency/integrations?meta_connected=1");
+    }, { timeout: 2500 });
   });
 });

@@ -6,6 +6,8 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
 
+import { MetaIntegrationCard } from "./MetaIntegrationCard";
+
 type GoogleConnectResponse = {
   authorize_url: string;
   state: string;
@@ -281,6 +283,8 @@ export default function AgencyIntegrationsPage() {
               După import, rulează sync pe fiecare sub-account pentru a popula dashboard-ul cu date reale.
             </p>
           </article>
+
+          <MetaIntegrationCard />
 
           <article className="wm-card p-4">
             <div className="flex items-center justify-between">

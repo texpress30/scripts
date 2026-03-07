@@ -1,12 +1,15 @@
-# TODO — Rebuild clean backend-only Meta PR from origin/main
+# TODO — Frontend-only PR: Meta UI în Agency Integrations + OAuth callback
 
-- [x] Recreate clean working branch from main baseline and reapply only backend/docs/test changes for Meta backend scope.
-- [x] Ensure no `apps/frontend/**` modifications are present.
-- [x] Run backend Meta/mapping/scheduler/worker API tests and report results.
+- [x] Rebuild branch curat din `origin/main` și pornesc `meta-frontend-integrations-clean` fără a continua branch-uri vechi.
+- [x] Adaug `MetaIntegrationCard` și păstrez `page.tsx` doar ca pagină de compunere/layout (fără state/tipuri/logică Meta locală).
+- [x] Adaug pagina `meta/callback` cu flow-ul `oauth/exchange` + handling pentru provider error și missing code/state.
+- [x] Adaug/actualizez testele frontend cerute și rulez build-ul frontend.
+- [x] Verific explicit că diff-ul nu conține `apps/backend/**` sau `agency-accounts`.
 
 ## Review
-- Rebuilt a backend-only change set including Meta OAuth/connect/exchange/status, import accounts, generic client-platform mappings, Meta sync grains (`account_daily`, `campaign_daily`, `ad_group_daily`, `ad_daily`), historical backfill, and rolling sync.
-- Verified changed paths contain backend, tests, migration, and docs only (no frontend files).
+- `apps/frontend/src/app/agency/integrations/page.tsx` compune cardul Meta prin `<MetaIntegrationCard />` și nu conține logică Meta locală.
+- `MetaIntegrationCard.tsx` centralizează load status, connect, import, gating robust pe `has_usable_token`/fallback și summary-ul de import.
+- `meta/callback/page.tsx` gestionează provider errors, validări code/state și exchange + redirect la `/agency/integrations?meta_connected=1`.
 
 ---
 
