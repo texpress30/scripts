@@ -103,6 +103,11 @@ export default function AgencyIntegrationsPage() {
   const [diagnosticsError, setDiagnosticsError] = useState("");
   const [diagnosticsData, setDiagnosticsData] = useState<GoogleDiagnosticsResponse | null>(null);
   const [copyMessage, setCopyMessage] = useState("");
+  const [metaStatus, setMetaStatus] = useState<MetaStatusResponse | null>(null);
+  const [metaLoading, setMetaLoading] = useState(true);
+  const [metaStatusError, setMetaStatusError] = useState("");
+  const [metaConnectError, setMetaConnectError] = useState("");
+  const [metaBusy, setMetaBusy] = useState<"connect" | null>(null);
 
   const [metaStatus, setMetaStatus] = useState<MetaStatusResponse | null>(null);
   const [metaLoading, setMetaLoading] = useState(true);
