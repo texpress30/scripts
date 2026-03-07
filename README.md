@@ -53,15 +53,20 @@ cd apps/backend
 python ../../scripts/refresh_google_account_names.py
 ```
 
-### Mapping conturi la clienți (many-to-many client-side)
-- Un cont Google Ads este atașat la **un singur client**.
-- Un client poate avea **mai multe conturi Google Ads**.
+### Mapping conturi la clienți (generic, extensibil multi-platform)
+- Un cont de platformă este atașat la **un singur client** la un moment dat.
+- Un client poate avea **mai multe conturi** pe aceeași platformă sau pe platforme diferite.
 - Persistența se face în tabelul de legătură `agency_account_client_mappings`.
 
-Endpoint-uri relevante:
+Endpoint-uri generice:
+- `POST /clients/{client_id}/attach-account` cu body `{ "platform": "google_ads|meta_ads|...", "account_id": "..." }`
+- `POST /clients/{client_id}/detach-account` cu body `{ "platform": "...", "account_id": "..." }`
+- `GET /clients/{client_id}/accounts` (opțional `?platform=meta_ads`)
+- `GET /clients/accounts/{platform}`
+
+Endpoint-uri Google legacy (compatibile):
 - `POST /clients/{client_id}/attach-google-account`
 - `DELETE /clients/{client_id}/detach-google-account`
-- `GET /clients/{client_id}/accounts`
 - `GET /clients/accounts/google`
 
 ## Script diagnostic Google Ads

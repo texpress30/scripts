@@ -1,3 +1,17 @@
+# TODO — Generic client account mappings API (Meta + extensibil multi-platform)
+
+- [x] Inspectez endpointurile/serviciile Google legacy pentru attach/detach/list și structura mapping table + registry generic.
+- [x] Implementez layer generic backend pentru attach/detach/list (client ↔ platform account) cu validare platform/account și reguli de conflict/idempotency.
+- [x] Adaug endpointuri generice (`attach-account`, `detach-account`, `client accounts`, `accounts by platform`) și păstrez compatibilitatea endpointurilor Google legacy.
+- [x] Adaug teste backend focalizate (Meta attach idempotent/conflict/detach/list + compat legacy) fără requesturi externe.
+- [x] Actualizez minimal README cu noile endpointuri și rulez verificări backend relevante + smoke import.
+
+## Review
+- API-ul `clients` expune acum endpointuri generice pentru attach/detach/list pe platformă, cu validare explicită a platformei și conflict 409 când un cont este deja atașat altui client.
+- Mapping-ul folosește registry-ul generic `agency_platform_accounts`, iar regula business este păstrată: un client poate avea mai multe conturi, dar un cont aparține unui singur client la un moment dat.
+- Endpointurile Google legacy rămân funcționale și reutilizează același layer generic pentru atașare, reducând duplicarea logicii.
+
+---
 # TODO — Meta Ads frontend: Import Accounts din Agency Integrations
 
 - [x] Inspectez cardul Meta existent și păstrez layout/stil consistent cu cardul Google, fără refactor mare.

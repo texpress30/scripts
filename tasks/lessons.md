@@ -236,3 +236,5 @@
 - 2026-03-07: La importul de conturi din provideri cu paginare cursor-based (Meta), implementează canonical account ID + loop după `paging.cursors.after` + summary idempotent (`imported/updated/unchanged`) ca bază pentru operare la scară.
 
 - 2026-03-07: Când frontend-ul controlează acțiuni de import pe integrare, condiția de enable trebuie legată de token usability real (`token_source`/`status`), nu doar de `oauth_configured`, pentru a păstra compatibilitatea cu fallback-uri legacy.
+
+- 2026-03-07: În acest mediu, evită `exec_command` pentru patch-uri; aplică modificări cu mecanismul dedicat de patch/edit ca să eviți avertismente de tooling.
