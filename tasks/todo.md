@@ -1,3 +1,17 @@
+# TODO — Meta Ads frontend: Import Accounts din Agency Integrations
+
+- [x] Inspectez cardul Meta existent și păstrez layout/stil consistent cu cardul Google, fără refactor mare.
+- [x] Adaug acțiunea reală `POST /integrations/meta-ads/import-accounts` cu state tipat pentru busy/error/last result.
+- [x] Aplic condiții explicite pentru enabled/disabled la Import pe baza token usability (`database`/`env_fallback`/`runtime` sau status connected).
+- [x] Afișez summary compact pentru ultimul import (message + discovered/imported/updated/unchanged) și reîncarc statusul Meta după succes.
+- [x] Extind testele Agency Integrations pentru import button states, success/error și regresie connect; rulez testele + build frontend.
+
+## Review
+- Cardul Meta are acum buton funcțional `Import Accounts` care cheamă endpointul backend existent fără body și menține erorile/mesajele local, izolat de restul paginii.
+- Importul este permis inclusiv pe fallback `env_fallback` (nu doar pe OAuth full config), conform contractului backend, și este blocat explicit când token source este `missing`.
+- După succes, UI arată un rezumat compact al importului și reîncarcă statusul Meta pentru consistență.
+
+---
 # TODO — Meta Ads backend import accounts în registrul generic
 
 - [x] Inspectez flow-ul Meta connect/status și flow-ul Google import pentru a păstra convențiile de API + registry.

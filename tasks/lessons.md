@@ -234,3 +234,5 @@
 - 2026-03-07: Pentru callback-uri OAuth în frontend, validează întâi query params (`error`/`code`/`state`) și evită apelul backend când providerul a trimis deja eroare, pentru UX clar și trafic inutil redus.
 
 - 2026-03-07: La importul de conturi din provideri cu paginare cursor-based (Meta), implementează canonical account ID + loop după `paging.cursors.after` + summary idempotent (`imported/updated/unchanged`) ca bază pentru operare la scară.
+
+- 2026-03-07: Când frontend-ul controlează acțiuni de import pe integrare, condiția de enable trebuie legată de token usability real (`token_source`/`status`), nu doar de `oauth_configured`, pentru a păstra compatibilitatea cu fallback-uri legacy.
