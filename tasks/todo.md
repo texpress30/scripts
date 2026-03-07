@@ -1,3 +1,17 @@
+# TODO — Meta Ads backend backfill istoric 2024-01-09 → ieri pentru toate grain-urile Meta
+
+- [x] Inspectez implementarea actuală Meta sync + infrastructura existentă de background jobs/worker pentru a alege orchestrarea sigură și minimă.
+- [x] Adaug endpoint backend `POST /integrations/meta-ads/{client_id}/backfill` cu defaults cerute (start/end/grains), validări și răspuns de enqueue clar.
+- [x] Implementez orchestrare chunked (30 zile/chunk) în background care refolosește `meta_ads_service.sync_client` pentru `account_daily|campaign_daily|ad_group_daily|ad_daily`.
+- [x] Mențin comportamentul clar pentru no-accounts/token missing/API errors și idempotency prin upsert-urile existente din sync-ul Meta.
+- [x] Adaug teste backend focalizate pentru trigger/default/custom/validări/no-accounts/env fallback/rerun/error mapping și actualizez minimal README.
+
+## Review
+- Endpointul nou de backfill enqueuiește un job async în `backfill_job_store` și procesează intervalul implicit `2024-01-09` → `ieri` în chunk-uri de 30 zile, fără request monolitic.
+- Fiecare chunk + grain refolosește direct `meta_ads_service.sync_client(...)`, deci nu se dublează logica de fetch/persist pentru cele 4 grain-uri Meta.
+- Rerun-ul rămâne idempotent deoarece persistența efectivă este deja upsert-based în straturile existente pentru account/campaign/ad_group/ad facts.
+
+---
 # TODO — Meta Ads backend sync real ad_daily pentru ads-urile conturilor atașate clientului
 
 - [x] Inspectez implementarea curentă Meta (`account_daily`/`campaign_daily`/`ad_group_daily`), store-ul generic pentru `ad_daily` și contractul API sync.

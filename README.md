@@ -94,6 +94,7 @@ Variabile minime necesare:
   - `GET /integrations/meta-ads/connect` → `{ authorize_url, state }`
   - `POST /integrations/meta-ads/oauth/exchange` cu `{ code, state }` → persistă long-lived token securizat în `integration_secrets` (`provider=meta_ads`, `secret_key=access_token`).
   - `POST /integrations/meta-ads/{client_id}/sync` → sync real pentru `account_daily` (default), `campaign_daily`, `ad_group_daily` (Meta ad sets mapate pe grain-ul generic `ad_group_daily`) sau `ad_daily` (Meta ads mapate pe grain-ul generic `ad_daily`) pe toate conturile `meta_ads` atașate clientului; body opțional `{ "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "grain": "account_daily|campaign_daily|ad_group_daily|ad_daily" }` (implicit ultimele 7 zile complete + `account_daily`).
+  - `POST /integrations/meta-ads/{client_id}/backfill` → enqueue backfill istoric chunked (implicit `2024-01-09` → ieri) pentru grains `account_daily|campaign_daily|ad_group_daily|ad_daily`; body opțional `{ "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "grains": ["..."] }`.
 - Status-ul `GET /integrations/meta-ads/status` expune `token_source`, `token_updated_at`, `token_expires_at` (dacă există) și `oauth_configured`.
 
 ## Endpoint-uri cheie

@@ -1,5 +1,6 @@
 # Lessons
 
+- 2026-03-07: Pentru backfill istoric Meta, evit execuțiile monolitice în endpoint; enqueuiez job async și procesez chunk-uri fixe, reutilizând `sync_client` pe fiecare grain pentru a păstra idempotency și a evita duplicarea logicii.
 - 2026-03-07: Când userul cere extinderea incrementală a unui grain Meta (ex. ad_daily după ad_group_daily), păstrez strict contractul backend existent, adaug helper fetch + upsert generic idempotent și acopăr explicit backward compatibility pentru grains anterioare în teste API/service.
 - 2026-02-24: When user explicitly asks for workspace sync commands (`git fetch`, `git reset --hard`), run them first and report policy limitations immediately if a command is blocked, then apply the closest safe equivalent (`git checkout -B <branch> origin/main`).
 - 2026-02-24: For UI parity fixes, verify all affected surfaces (Agency + Sub-account) before reporting completion.

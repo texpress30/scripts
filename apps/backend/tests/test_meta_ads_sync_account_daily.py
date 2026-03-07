@@ -1,12 +1,13 @@
 import os
 import unittest
-from datetime import date
+from datetime import date, datetime, timedelta
 
 from app.api import meta_ads as meta_ads_api
 from app.services.auth import AuthUser
 from app.services.client_registry import client_registry_service
 from app.services.meta_ads import MetaAdsIntegrationError, meta_ads_service
 from app.services.meta_store import meta_snapshot_store
+from app.services.sync_engine import backfill_job_store
 from app.services.performance_reports import performance_reports_store
 
 
@@ -28,6 +29,7 @@ class MetaAdsSyncDailyTests(unittest.TestCase):
         meta_ads_service._memory_campaign_daily_rows = []
         meta_ads_service._memory_ad_group_daily_rows = []
         meta_ads_service._memory_ad_daily_rows = []
+        backfill_job_store._jobs = {}
 
         self.user = AuthUser(email="owner@example.com", role="admin")
 
@@ -41,6 +43,8 @@ class MetaAdsSyncDailyTests(unittest.TestCase):
         self.original_fetch_campaign = meta_ads_service._fetch_campaign_daily_insights
         self.original_fetch_ad_group = meta_ads_service._fetch_ad_group_daily_insights
         self.original_fetch_ad_daily = meta_ads_service._fetch_ad_daily_insights
+        self.original_sync_client = meta_ads_service.sync_client
+        self.original_integration_status = meta_ads_service.integration_status
 
     def tearDown(self):
         meta_ads_api.enforce_action_scope = self.original_enforce
@@ -50,6 +54,8 @@ class MetaAdsSyncDailyTests(unittest.TestCase):
         meta_ads_service._fetch_campaign_daily_insights = self.original_fetch_campaign
         meta_ads_service._fetch_ad_group_daily_insights = self.original_fetch_ad_group
         meta_ads_service._fetch_ad_daily_insights = self.original_fetch_ad_daily
+        meta_ads_service.sync_client = self.original_sync_client
+        meta_ads_service.integration_status = self.original_integration_status
         os.environ.clear()
         os.environ.update(self.original_env)
 
@@ -392,6 +398,197 @@ class MetaAdsSyncDailyTests(unittest.TestCase):
             user=self.user,
         )
         self.assertEqual(response["grain"], "campaign_daily")
+
+    def test_backfill_trigger_happy_path_default_range(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client V", account_ids=["act_2101"])
+        meta_ads_service.integration_status = lambda: {"token_source": "database", "status": "connected"}
+
+        calls: list[dict[str, object]] = []
+
+        def _sync_client(**kwargs):
+            calls.append(dict(kwargs))
+            return {
+                "status": "ok",
+                "grain": kwargs.get("grain"),
+                "accounts_processed": 1,
+                "rows_written": 1,
+                "token_source": "database",
+            }
+
+        meta_ads_service.sync_client = _sync_client
+
+        job_id = backfill_job_store.create(payload={"platform": "meta_ads", "client_id": client_id})
+        yesterday = datetime.utcnow().date() - timedelta(days=1)
+        meta_ads_api._run_meta_historical_backfill_job(
+            job_id,
+            client_id=client_id,
+            start_date=date(2024, 1, 9),
+            end_date=yesterday,
+            grains=["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"],
+            chunk_days=30,
+        )
+
+        payload = backfill_job_store.get(job_id) or {}
+        self.assertEqual(payload.get("status"), "done")
+        result = payload.get("result") or {}
+        self.assertEqual(result.get("mode"), "historical_backfill")
+        self.assertEqual(result.get("start_date"), "2024-01-09")
+        self.assertEqual(result.get("end_date"), yesterday.isoformat())
+        self.assertEqual(result.get("grains"), ["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"])
+        self.assertGreaterEqual(int(result.get("chunks_total") or 0), 1)
+        self.assertGreaterEqual(len(calls), 4)
+
+    def test_backfill_trigger_with_custom_interval_and_grains(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client W", account_ids=["act_2201"])
+        meta_ads_service.integration_status = lambda: {"token_source": "database", "status": "connected"}
+
+        calls: list[dict[str, object]] = []
+
+        def _sync_client(**kwargs):
+            calls.append(dict(kwargs))
+            return {
+                "status": "ok",
+                "grain": kwargs.get("grain"),
+                "accounts_processed": 1,
+                "rows_written": 2,
+                "token_source": "database",
+            }
+
+        meta_ads_service.sync_client = _sync_client
+
+        job_id = backfill_job_store.create(payload={"platform": "meta_ads", "client_id": client_id})
+        meta_ads_api._run_meta_historical_backfill_job(
+            job_id,
+            client_id=client_id,
+            start_date=date(2026, 2, 1),
+            end_date=date(2026, 2, 3),
+            grains=["campaign_daily", "ad_daily"],
+            chunk_days=30,
+        )
+
+        payload = backfill_job_store.get(job_id) or {}
+        result = payload.get("result") or {}
+        self.assertEqual(payload.get("status"), "done")
+        self.assertEqual(result.get("start_date"), "2026-02-01")
+        self.assertEqual(result.get("end_date"), "2026-02-03")
+        self.assertEqual(result.get("grains"), ["campaign_daily", "ad_daily"])
+        self.assertEqual(result.get("chunks_total"), 1)
+        self.assertEqual(result.get("chunks_processed"), 2)
+        self.assertEqual(len(calls), 2)
+
+    def test_backfill_endpoint_enqueues_with_defaults(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client AB", account_ids=["act_2601"])
+        meta_ads_service.integration_status = lambda: {"token_source": "database", "status": "connected"}
+
+        background_tasks = meta_ads_api.BackgroundTasks()
+        response = meta_ads_api.backfill_meta_ads(client_id=client_id, background_tasks=background_tasks, payload=None, user=self.user)
+
+        self.assertEqual(response["status"], "queued")
+        self.assertEqual(response["mode"], "enqueued")
+        self.assertEqual(response["start_date"], "2024-01-09")
+        self.assertEqual(response["grains"], ["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"])
+        self.assertGreaterEqual(int(response["chunks_enqueued"]), 1)
+        self.assertEqual(len(background_tasks.tasks), 1)
+
+    def test_backfill_endpoint_custom_interval_and_grains(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client AC", account_ids=["act_2701"])
+        meta_ads_service.integration_status = lambda: {"token_source": "database", "status": "connected"}
+
+        background_tasks = meta_ads_api.BackgroundTasks()
+        response = meta_ads_api.backfill_meta_ads(
+            client_id=client_id,
+            background_tasks=background_tasks,
+            payload=meta_ads_api.MetaBackfillRequest(start_date=date(2026, 2, 1), end_date=date(2026, 2, 3), grains=["campaign_daily", "ad_daily"]),
+            user=self.user,
+        )
+
+        self.assertEqual(response["start_date"], "2026-02-01")
+        self.assertEqual(response["end_date"], "2026-02-03")
+        self.assertEqual(response["grains"], ["campaign_daily", "ad_daily"])
+        self.assertEqual(response["chunks_enqueued"], 1)
+        self.assertEqual(response["jobs_enqueued"], 2)
+        self.assertEqual(len(background_tasks.tasks), 1)
+
+    def test_backfill_rejects_invalid_grains(self):
+        with self.assertRaises(meta_ads_api.HTTPException) as ctx:
+            meta_ads_api._normalize_meta_backfill_grains(["invalid_grain"])
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("Unsupported Meta backfill grain", str(ctx.exception.detail))
+
+    def test_backfill_fails_when_client_has_no_attached_accounts(self):
+        client = client_registry_service.create_client(name="Client X", owner_email="owner@example.com")
+        client_id = int(client["id"])
+        meta_ads_service.integration_status = lambda: {"token_source": "database", "status": "connected"}
+
+        with self.assertRaises(meta_ads_api.HTTPException) as ctx:
+            meta_ads_api.backfill_meta_ads(client_id=client_id, background_tasks=meta_ads_api.BackgroundTasks(), payload=None, user=self.user)
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("No Meta Ads accounts attached", str(ctx.exception.detail))
+
+    def test_backfill_validates_missing_token(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client Y", account_ids=["act_2301"])
+        meta_ads_service.integration_status = lambda: {"token_source": "missing", "status": "pending"}
+
+        with self.assertRaises(meta_ads_api.HTTPException) as ctx:
+            meta_ads_api.backfill_meta_ads(client_id=client_id, background_tasks=meta_ads_api.BackgroundTasks(), payload=None, user=self.user)
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("token is missing", str(ctx.exception.detail).lower())
+
+    def test_backfill_env_fallback_token_and_idempotent_rerun(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client Z", account_ids=["act_2401"])
+        meta_ads_service.integration_status = lambda: {"token_source": "env_fallback", "status": "connected"}
+
+        calls: list[tuple[str, str, str]] = []
+
+        def _sync_client(**kwargs):
+            calls.append((str(kwargs.get("grain")), kwargs["start_date"].isoformat(), kwargs["end_date"].isoformat()))
+            return {
+                "status": "ok",
+                "grain": kwargs.get("grain"),
+                "accounts_processed": 1,
+                "rows_written": 1,
+                "token_source": "env_fallback",
+            }
+
+        meta_ads_service.sync_client = _sync_client
+
+        job_one = backfill_job_store.create(payload={"platform": "meta_ads", "client_id": client_id})
+        job_two = backfill_job_store.create(payload={"platform": "meta_ads", "client_id": client_id})
+        grains = ["ad_daily"]
+        start = date(2026, 3, 1)
+        end = date(2026, 3, 1)
+
+        meta_ads_api._run_meta_historical_backfill_job(job_one, client_id=client_id, start_date=start, end_date=end, grains=grains, chunk_days=30)
+        meta_ads_api._run_meta_historical_backfill_job(job_two, client_id=client_id, start_date=start, end_date=end, grains=grains, chunk_days=30)
+
+        first = backfill_job_store.get(job_one) or {}
+        second = backfill_job_store.get(job_two) or {}
+        self.assertEqual(first.get("status"), "done")
+        self.assertEqual(second.get("status"), "done")
+        self.assertEqual((first.get("result") or {}).get("token_source"), "env_fallback")
+        self.assertEqual((second.get("result") or {}).get("token_source"), "env_fallback")
+        self.assertEqual(len(calls), 2)
+
+    def test_backfill_maps_meta_api_error_clearly(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client AA", account_ids=["act_2501"])
+
+        def _boom(**kwargs):
+            raise MetaAdsIntegrationError("Meta API request failed: status=401")
+
+        meta_ads_service.sync_client = _boom
+        job_id = backfill_job_store.create(payload={"platform": "meta_ads", "client_id": client_id})
+        meta_ads_api._run_meta_historical_backfill_job(
+            job_id,
+            client_id=client_id,
+            start_date=date(2026, 3, 1),
+            end_date=date(2026, 3, 1),
+            grains=["account_daily"],
+            chunk_days=30,
+        )
+
+        payload = backfill_job_store.get(job_id) or {}
+        self.assertEqual(payload.get("status"), "error")
+        self.assertIn("Meta API request failed", str(payload.get("error") or ""))
 
     def test_api_sync_validates_date_interval(self):
         client_id = self._create_client_with_meta_accounts(client_name="Client I", account_ids=["act_808"])
