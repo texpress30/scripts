@@ -1,3 +1,167 @@
+# TODO — Sync orchestration: include keyword_daily in Google entity-grain auto-expand
+
+- [x] Extind resolver-ul de grains din `sync_orchestration` astfel încât legacy request Google + flag ON să includă `keyword_daily` în ordine stabilă.
+- [x] Păstrez comportamentul neschimbat pentru request-uri explicite (`grains`) și platforme non-Google.
+- [x] Actualizez testele API orchestration pentru: legacy ON (5 grains + order), flag OFF (account_daily), explicit fără keyword (fără auto-add), non-google ON (fără keyword).
+- [x] Rulez verificările cerute (`pytest -q apps/backend/tests/test_sync_orchestration_api.py` + `py_compile`) și completez review.
+
+## Review
+- `_resolve_grains(...)` include acum `keyword_daily` în auto-expand doar pentru request legacy Google când flag-ul entity grains e activ, păstrând ordinea stabilă cerută.
+- Contractul pentru `grains` explicite rămâne neschimbat: nu se adaugă automat `keyword_daily` dacă nu este cerut explicit.
+- Testele API validează toate cele 4 scenarii cerute (legacy ON/OFF, explicit fără keyword, non-google ON), inclusiv ordinea exactă și numărul de run-uri create.
+
+---
+# TODO — Rolling scheduler: include keyword_daily in Google entity grains
+
+- [x] Extind `rolling_scheduler` ca grain expansion Google (flag ON) să includă și `keyword_daily`.
+- [x] Păstrez comportamentul neschimbat pentru flag OFF, non-google și conturi neeligibile.
+- [x] Actualizez testele rolling scheduler pentru 5 grains și dedupe explicit pe `keyword_daily`.
+- [x] Actualizez README (rolling cron) cu `keyword_daily` în lista grains.
+- [x] Rulez verificările cerute (`pytest test_rolling_scheduler.py` + `py_compile`) și completez review.
+
+## Review
+- Schedulerul rolling extinde acum Google entity grains cu `keyword_daily` când flag-ul de entity grains este ON, păstrând fallback-ul existent pentru celelalte cazuri.
+- Testele `test_rolling_scheduler.py` acoperă lista completă de 5 grains și dedupe explicit pentru `keyword_daily`, inclusiv counters în summary.
+- README este actualizat în secțiunea rolling cron pentru a reflecta includerea `keyword_daily` în expansion.
+
+---
+# TODO — Google Ads provider + worker: keyword_daily grain sync
+
+- [x] Adaug fetch provider `fetch_keyword_daily_metrics` cu window half-open și ID stabil pentru keyword (`{ad_group_id}~{criterion_id}`).
+- [x] Extind `sync_worker` pentru `grain=keyword_daily` cu upsert entity (`platform_keywords`) + facts (`keyword_performance_reports`) și traceability fields.
+- [x] Extind reconcile mapping pentru `keyword_daily` și invocarea reconcile la final de run Google entity-grain.
+- [x] Adaug/actualizez teste unitare pentru provider (window/mapping/id), worker (dispatch/upserts/error non-google) și reconcile keyword_daily.
+- [x] Rulez verificări target (`py_compile` + pytest relevant), completez review, commit + PR metadata.
+
+## Review
+- Providerul Google Ads include acum `fetch_keyword_daily_metrics(...)` cu fereastră half-open (`end_exclusive`) transformată în capăt inclusiv pentru GAQL și cu ID stabil `keyword_id = "{ad_group_id}~{criterion_id}"`.
+- Workerul tratează explicit `grain=keyword_daily`: fetch provider, dedupe/upsert entity în `platform_keywords`, upsert facts în `keyword_performance_reports`, cu `source_window_start/source_window_end/source_job_id`.
+- Reconcile mapping include `keyword_daily -> keyword_performance_reports`, iar finalizarea run-ului Google entity-grain invocă reconcile și pentru `keyword_daily`.
+- Testele adăugate verifică: conversie fereastră GAQL + `cost_micros -> spend` + construcție `keyword_id`, dispatch worker keyword_daily (inclusiv non-google terminal error), și reconcile coverage pentru keyword_daily (skip-safe DB).
+- Verificări rulate: `python -m py_compile ...`, `pytest -q ... -k keyword_daily` pentru services/worker/reconcile.
+
+---
+# TODO — Store helpers: keyword entities + keyword_daily facts upsert
+
+- [x] Extind `platform_entity_store.py` cu `upsert_platform_keywords(conn, rows)` pe PK compus `(platform, account_id, keyword_id)`.
+- [x] Extind `entity_performance_reports.py` cu `upsert_keyword_performance_reports(conn, rows)` pe key `(platform, account_id, keyword_id, report_date)`.
+- [x] Adaug teste DB skip-safe pentru overwrite la upsert (keyword_text și spend) pe aceleași chei.
+- [x] Rulez verificări (`py_compile` + `pytest -q apps/backend/tests/test_*keyword*`) și completez review.
+
+## Review
+- `platform_entity_store` include acum `_KEYWORD_UPSERT_SQL` + `upsert_platform_keywords(...)` cu `ON CONFLICT (platform, account_id, keyword_id)` și update pentru câmpurile mutable (`campaign_id`, `ad_group_id`, `keyword_text`, `match_type`, `status`, payload + timestamps).
+- `entity_performance_reports` include `_KEYWORD_UPSERT_SQL` + `upsert_keyword_performance_reports(...)` cu `ON CONFLICT (platform, account_id, keyword_id, report_date)` și overwrite pentru metrici canonice + `extra_metrics` + câmpuri traceability, setând `ingested_at = NOW()` la update.
+- Testul nou DB skip-safe `test_keyword_store_upserts.py` validează explicit overwrite la a doua inserare pentru `keyword_text` (entity) și `spend` (fact) pe aceleași chei.
+- Verificări rulate: `python -m py_compile ...` și `pytest -q apps/backend/tests/test_*keyword*.py` (skip-safe în mediu fără DB).
+
+---
+# TODO — DB schema: Google keywords + keyword_daily facts + grain checks
+
+- [x] Adaug migrarea SQL `0018` pentru `platform_keywords` și `keyword_performance_reports` partitionat lunar + default partition.
+- [x] Extind CHECK constraints pentru grains astfel încât `keyword_daily` să fie permis în `platform_account_watermarks` și `sync_runs`.
+- [x] Adaug test DB skip-safe pentru existența tabelelor, partitioning și validare insert cu `grain=keyword_daily`.
+- [x] Rulez verificările cerute (`py_compile` + `pytest` test nou), completez review, commit + PR metadata.
+
+## Review
+- Migrarea `0018_google_keywords_and_keyword_daily_facts.sql` creează tabela de entități `platform_keywords` cu PK compus `(platform, account_id, keyword_id)` + indexuri de acces.
+- Aceeași migrare creează `keyword_performance_reports` ca parent partitionat RANGE pe `report_date`, cu unique business key `(platform, account_id, keyword_id, report_date)`, indexuri canonice, default partition și partiții lunare `2024-01` → `2027-01`.
+- CHECK constraints pentru grain au fost actualizate în migrare pentru a include `keyword_daily` pe `platform_account_watermarks` și `sync_runs` (drop/recreate idempotent).
+- Testul nou `test_db_migration_keyword_daily.py` validează: existența tabelelor, parent partitioned + partition default/lunar și faptul că inserările minime cu `grain='keyword_daily'` reușesc în `platform_account_watermarks` și `sync_runs`.
+
+---
+# TODO — Sync orchestration batch: auto-expand Google entity grains on historical runs
+
+- [x] Adaug flag helper pentru `ENTITY_GRAINS_ENABLED` cu alias `ROLLING_ENTITY_GRAINS_ENABLED` (default OFF).
+- [x] Extind `POST /agency/sync-runs/batch` să auto-extindă doar request-urile legacy Google (`grain` lipsă sau `account_daily`) când flag-ul este ON.
+- [x] Păstrez comportamentul explicit pentru `grains` list (fără auto-expand) și pentru platforme non-Google.
+- [x] Adaug teste API pentru toate combinațiile cerute (flag on/off, legacy/explicit, google/non-google).
+- [x] Documentez în README și rulez verificări target + review, apoi commit + PR metadata.
+
+## Review
+- Am introdus `_entity_grains_enabled()` în orchestration API care tratează `ENTITY_GRAINS_ENABLED` ca flag principal și `ROLLING_ENTITY_GRAINS_ENABLED` ca alias backward-compatible; feature-ul este ON dacă oricare env este truthy.
+- `_resolve_grains` păstrează dedupe + ordine stabilă, iar auto-expand se aplică strict pe request-uri legacy (`grains` absent), doar pentru Google, doar când rezultatul legacy este `account_daily` și flag-ul este ON.
+- Request-urile cu `grains` explicit rămân neschimbate (fără auto-expand), iar pentru platforme non-Google comportamentul default rămâne `account_daily`.
+- Testele API adăugate acoperă explicit cele 5 combinații cerute; în mediul curent sunt skip-safe (DB-dependent), fără erori.
+- README documentează aliasul de flag și faptul că același flag activează auto-expand și pentru historical backfill batch.
+
+---
+# TODO — Rolling scheduler: Google entity grains for rolling_refresh
+
+- [x] Adaug feature flag `ROLLING_ENTITY_GRAINS_ENABLED` (default OFF) pentru scheduling entity grains.
+- [x] Extind rolling scheduler să enqueuieze `campaign_daily`, `ad_group_daily`, `ad_daily` doar pentru `google_ads` când flag-ul este ON, păstrând `account_daily` existent.
+- [x] Mențin dedupe/idempotency pe `(platform, account_id, grain, rolling window, job_type=rolling_refresh)` prin logica existentă de store.
+- [x] Extind testele rolling scheduler pentru: flag OFF, flag ON google, flag ON non-google, dedupe pe grain existent.
+- [x] Documentez noul env var în README și rulez verificări + review, apoi commit + PR metadata.
+
+## Review
+- Scheduler-ul folosește acum `ROLLING_ENTITY_GRAINS_ENABLED` (default OFF); când flag-ul este inactiv, se enqueuiește strict `account_daily`.
+- Când flag-ul este activ, scheduler-ul adaugă pentru conturi Google și grain-urile entity (`campaign_daily`, `ad_group_daily`, `ad_daily`) pe aceeași fereastră rolling 7 zile (yesterday-6 .. yesterday).
+- Pentru dedupe/idempotency am adăugat `sync_runs_store.create_rolling_sync_run_if_not_active(...)`, cu lock + check pentru run activ (`queued/running`) pe aceeași combinație platform/account/grain/window/job_type=rolling_refresh.
+- Scheduler-ul creează chunk-uri doar pentru run-urile nou create (`created=True`) și include summary `enqueued_count_by_grain` + `rolling_entity_grains_enabled`.
+- Testele noi acoperă explicit: flag OFF (doar account_daily), flag ON pentru google (4 grains), flag ON non-google (fără entity grains), dedupe pentru grain existent (campaign_daily).
+
+---
+# TODO — Google Ads provider: ad_daily grain support (provider + worker + tests)
+
+- [x] Adaug în provider fetch pentru ad_daily cu window half-open și mapare metrici canonice.
+- [x] Extind sync_worker pentru grain `ad_daily` cu upsert entity în `platform_ads` + facts în `ad_unit_performance_reports`.
+- [x] Asigur reconcile watermark pentru `ad_daily` la final de run, fără regresii pe celelalte grains.
+- [x] Adaug teste unit pentru query window, spend mapping și worker path ad_daily (provider + upsert helpers + reconcile).
+- [x] Rulez verificări (`py_compile` + `pytest` target), completez review, commit + PR metadata.
+
+## Review
+- Providerul Google Ads include acum `fetch_ad_unit_daily_metrics(...)` cu interval half-open intern și query GAQL cu limită inclusivă calculată (`end_exclusive - 1 zi`) prin condițiile `segments.date >= start` și `segments.date <= end_inclusive`.
+- Workerul tratează explicit `grain=ad_daily`: fetch provider, dedupe entități pe `ad_id`, upsert în `platform_ads`, upsert facts per zi în `ad_unit_performance_reports` cu `source_window_start/source_window_end/source_job_id`.
+- Finalizarea run-ului pentru Google entity grains include acum și `ad_daily` în reconcile call, păstrând comportamentul `grain_not_supported` pentru valori necunoscute.
+- Testele noi acoperă conversia ferestrei în GAQL, maparea `cost_micros -> spend` și path-ul worker ad_daily (provider + upsert helpers + reconcile).
+- Verificări rulate: `python -m py_compile ...`, `pytest -q ... -k ad_daily` (worker), `pytest -q ... -k ad_unit_daily` (provider).
+
+---
+# TODO — Google Ads provider: ad_group_daily grain support (provider + worker + upserts + tests)
+
+- [x] Extind providerul Google Ads cu fetch `ad_group_daily` pe fereastră half-open `[start_date, end_date_exclusive)` și mapare metrici canonice.
+- [x] Extind `sync_worker` pentru `grain=ad_group_daily` cu upsert entități în `platform_ad_groups`, upsert facts în `ad_group_performance_reports` și traceability fields corecte.
+- [x] Rulez reconcile watermark pentru `ad_group_daily` la final de run, fără regresii pe flow-urile existente.
+- [x] Adaug teste unitare focusate (window conversion, spend mapping, worker ad_group_daily path + upsert calls).
+- [x] Rulez verificările cerute (`py_compile` + `pytest -q` target), completez review, commit + PR metadata.
+
+## Review
+- Providerul Google Ads are acum `fetch_ad_group_daily_metrics(customer_id, start_date, end_date_exclusive, source_job_id)` cu window half-open intern și traducere GAQL la `BETWEEN start AND (end_exclusive - 1 zi)`.
+- Maparea metricilor este canonică (`spend = cost_micros / 1_000_000`, plus impressions/clicks/conversions/conversion_value) și output-ul include `report_date`, `campaign_id`, `ad_group_id`, `ad_group_name`, `extra_metrics`.
+- Workerul tratează explicit `grain=ad_group_daily`: fetch provider, dedupe entități `ad_group_id`, upsert în `platform_ad_groups`, facts per zi în `ad_group_performance_reports`, cu `source_window_start/source_window_end/source_job_id`.
+- Reconcile watermark la final de run este generalizat pentru `google_ads` pe grain-uri entity-daily suportate (`campaign_daily`, `ad_group_daily`) folosind grain-ul curent, non-regresiv via store SQL.
+- Testele noi validează conversia ferestrei half-open, maparea `cost_micros -> spend` și exec path worker pentru `ad_group_daily` cu apeluri corecte către upsert helpers.
+
+---
+# TODO — Google Ads provider: campaign_daily grain support (entity + facts + watermarks)
+
+- [x] Actualizez serviciul Google Ads pentru fetch campaign_daily pe interval half-open `[start, end_exclusive)` cu GAQL end inclusiv corect.
+- [x] Extind sync worker pentru `platform=google_ads` + `grain=campaign_daily`: upsert campanii distincte în `platform_campaigns` + facts zilnice în `campaign_performance_reports`.
+- [x] Mențin reconcilierea watermark-urilor campaign_daily și metadata rows_written/duration fără regresii pe account_daily.
+- [x] Adaug/actualizez teste unitare focusate pentru fereastră GAQL, mapare micros->spend, dedupe entity rows, facts rows și path de suport grain.
+- [x] Rulez verificările cerute (`python -m py_compile`, `pytest -q` target tests), completez review, commit + PR metadata.
+
+## Review
+- `GoogleAdsService.fetch_campaign_daily_metrics` folosește acum parametru `end_date_exclusive`, convertește intern la `end_inclusive = end_exclusive - 1 zi` pentru GAQL și păstrează maparea canonică metrici (`spend` din `costMicros / 1_000_000`, plus `impressions/clicks/conversions/conversion_value`).
+- `sync_worker` pentru `platform=google_ads` + `grain=campaign_daily` face două upsert-uri în aceeași tranzacție: (1) entity dedup per `campaign_id` în `platform_campaigns`; (2) facts per zi în `campaign_performance_reports`, cu traceability fields (`source_window_start/source_window_end/source_job_id`).
+- Workerul păstrează `rows_written` bazat pe facts rows (pentru chunk metadata/progress) și menține flow-ul existent de reconciliere watermark la final de run pentru `campaign_daily`.
+- Testele actualizate validează: fereastra GAQL half-open->inclusive, conversia `cost_micros -> spend`, dedupe entity rows, facts rows per-date și faptul că path-ul `campaign_daily` pentru `google_ads` nu este tratat ca unsupported grain.
+- Verificări rulate cu succes: `python -m py_compile ...` și `pytest -q ... -k "campaign_daily or fetch_campaign_daily_metrics"`.
+
+---
+# TODO — Verificare workspace nou prin Connector (remote + fetch)
+
+- [x] Notez planul de execuție pentru verificarea remote/fetch într-o sesiune nouă.
+- [x] Deschid o sesiune nouă de terminal (fără reutilizarea sesiunii anterioare) și verific `git remote -v`.
+- [x] Rulez `git fetch --all --prune` în sesiunea nouă și confirm rezultat.
+- [x] Documentez review-ul și evidența comenzilor rulate.
+
+## Review
+- Verificarea în sesiune nouă (`NEW_SESSION_2`) arată că repository-ul local nu are remotes configurate (`git remote -v` fără output).
+- `git fetch --all --prune` a rulat fără erori, dar fără remotes nu a avut ce sincroniza (exit code 0).
+- Validare explicită pe origin: `git fetch origin --prune` eșuează cu `fatal: "origin" does not appear to be a git repository` (exit 128), confirmând lipsa remote-ului `origin`.
+
+---
 # TODO — Diagnostic E2E + Fix Google Ads Data Sync către Dashboard
 
 - [x] Audit repo end-to-end (pipeline OAuth/API/sync/DB/agregare/UI) pentru Google Ads în Agency/Sub-Account dashboard.
