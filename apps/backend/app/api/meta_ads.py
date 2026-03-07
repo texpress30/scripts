@@ -1,7 +1,9 @@
 from datetime import date, datetime, timedelta
+from typing import Literal
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 
 from app.api.dependencies import enforce_action_scope, get_current_user
 from app.services.audit import audit_log_service
@@ -16,6 +18,13 @@ from app.services.sync_constants import PLATFORM_META_ADS, SYNC_GRAIN_ACCOUNT_DA
 
 router = APIRouter(prefix="/integrations/meta-ads", tags=["meta-ads"])
 logger = logging.getLogger(__name__)
+
+
+class MetaSyncRequest(BaseModel):
+    start_date: date | None = None
+    end_date: date | None = None
+    grain: Literal["account_daily", "campaign_daily", "ad_group_daily"] | None = None
+
 
 
 def _log_best_effort_warning(
@@ -215,7 +224,7 @@ def _run_meta_sync_job(job_id: str, *, client_id: int, account_context: dict[str
         )
 
     try:
-        snapshot = meta_ads_service.sync_client(client_id=client_id)
+        snapshot = meta_ads_service.sync_client(client_id=client_id, start_date=payload.start_date if payload else None, end_date=payload.end_date if payload else None, grain=payload.grain if payload else None)
         success_now = datetime.utcnow()
         payload = {
             "status": SYNC_STATUS_DONE,
@@ -290,7 +299,7 @@ def _map_sync_run_to_job_status_payload(sync_run: dict[str, object]) -> dict[str
 
 
 @router.get("/status")
-def meta_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, str]:
+def meta_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
         enforce_action_scope(user=user, action="integrations:status", scope="agency")
         rate_limiter_service.check(f"meta_status:{user.email}", limit=60, window_seconds=60)
@@ -307,6 +316,126 @@ def meta_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, str
     )
     return status_payload
 
+
+
+
+@router.get("/connect")
+def connect_meta_ads(user: AuthUser = Depends(get_current_user)) -> dict[str, str]:
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+    try:
+        payload = meta_ads_service.build_oauth_authorize_url()
+    except MetaAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="meta_ads.connect.start",
+        resource="integration:meta_ads",
+        details={"state": payload["state"]},
+    )
+    return payload
+
+
+@router.post("/oauth/exchange")
+def meta_ads_oauth_exchange(payload: dict[str, str], user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+    code = str(payload.get("code", "")).strip()
+    state = str(payload.get("state", "")).strip()
+    if not code or not state:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing code/state for OAuth exchange")
+
+    try:
+        response_payload = meta_ads_service.exchange_oauth_code(code=code, state=state)
+    except MetaAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="meta_ads.connect.success",
+        resource="integration:meta_ads",
+        details={"token_source": response_payload.get("token_source")},
+    )
+    return response_payload
+
+
+
+@router.post("/import-accounts")
+def import_meta_accounts(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+
+    try:
+        discovered_accounts = meta_ads_service.list_accessible_ad_accounts()
+    except MetaAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    token_source = str(meta_ads_service.integration_status().get("token_source") or "missing")
+
+    existing_accounts = client_registry_service.list_platform_accounts(platform=PLATFORM_META_ADS)
+    existing_by_id = {str(item.get("account_id") or item.get("id") or ""): item for item in existing_accounts}
+
+    imported = 0
+    updated = 0
+    unchanged = 0
+
+    accounts_to_upsert = [{"id": str(item["id"]), "name": str(item.get("name") or item["id"])} for item in discovered_accounts]
+    if len(accounts_to_upsert) > 0:
+        client_registry_service.upsert_platform_accounts(platform=PLATFORM_META_ADS, accounts=accounts_to_upsert)
+
+    for item in discovered_accounts:
+        account_id = str(item.get("id") or "").strip()
+        if account_id == "":
+            continue
+
+        name = str(item.get("name") or account_id)
+        status_value = str(item.get("account_status") or "").strip() or None
+        currency_code = str(item.get("currency_code") or "").strip().upper() or None
+        account_timezone = str(item.get("account_timezone") or "").strip() or None
+
+        existing = existing_by_id.get(account_id)
+        if existing is None:
+            imported += 1
+            has_changes = True
+        else:
+            name_changed = str(existing.get("name") or "") != name
+            status_changed = str(existing.get("status") or "").strip() != str(status_value or "")
+            currency_changed = str(existing.get("currency") or "").strip().upper() != str(currency_code or "")
+            timezone_changed = str(existing.get("timezone") or "").strip() != str(account_timezone or "")
+            has_changes = name_changed or status_changed or currency_changed or timezone_changed
+            if has_changes:
+                updated += 1
+            else:
+                unchanged += 1
+
+        if has_changes:
+            client_registry_service.update_platform_account_operational_metadata(
+                platform=PLATFORM_META_ADS,
+                account_id=account_id,
+                status=status_value,
+                currency_code=currency_code,
+                account_timezone=account_timezone,
+            )
+
+    summary = {
+        "status": "ok",
+        "message": "Meta Ads accounts import completed.",
+        "platform": PLATFORM_META_ADS,
+        "token_source": token_source,
+        "accounts_discovered": len(discovered_accounts),
+        "imported": imported,
+        "updated": updated,
+        "unchanged": unchanged,
+    }
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="meta_ads.accounts.import",
+        resource="integration:meta_ads",
+        details=summary,
+    )
+    return summary
 
 @router.post("/sync-now")
 def sync_meta_ads_now(
@@ -366,7 +495,11 @@ def sync_now_job_status(job_id: str, user: AuthUser = Depends(get_current_user))
 
 
 @router.post("/{client_id}/sync")
-def sync_meta_ads(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, float | int | str]:
+def sync_meta_ads(
+    client_id: int,
+    payload: MetaSyncRequest | None = None,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
     try:
         enforce_action_scope(user=user, action="integrations:sync", scope="subaccount")
         rate_limiter_service.check(f"meta_sync:{user.email}", limit=30, window_seconds=60)
@@ -374,7 +507,7 @@ def sync_meta_ads(client_id: int, user: AuthUser = Depends(get_current_user)) ->
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
     try:
-        snapshot = meta_ads_service.sync_client(client_id=client_id)
+        snapshot = meta_ads_service.sync_client(client_id=client_id, start_date=payload.start_date if payload else None, end_date=payload.end_date if payload else None, grain=payload.grain if payload else None)
     except MetaAdsIntegrationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
