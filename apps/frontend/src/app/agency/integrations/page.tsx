@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
+
+import { MetaIntegrationCard } from "./MetaIntegrationCard";
 
 type GoogleConnectResponse = {
   authorize_url: string;
@@ -37,7 +39,7 @@ type GoogleDiagnosticsResponse = {
   [key: string]: unknown;
 };
 
-function formatDate(value?: string): string {
+function formatDate(value?: string | null): string {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -133,6 +135,7 @@ export default function AgencyIntegrationsPage() {
   }
 
   const isConnected = googleStatus?.status === "connected";
+
   const warnings = useMemo(() => (Array.isArray(diagnosticsData?.warnings) ? diagnosticsData?.warnings : []), [diagnosticsData]);
 
   return (
@@ -176,6 +179,8 @@ export default function AgencyIntegrationsPage() {
               După import, rulează sync pe fiecare sub-account pentru a popula dashboard-ul cu date reale.
             </p>
           </article>
+
+          <MetaIntegrationCard />
 
           <article className="wm-card p-4">
             <h2 className="text-base font-semibold text-slate-900">TikTok Ads (stabilized)</h2>
