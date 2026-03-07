@@ -22,8 +22,8 @@ router = APIRouter(prefix="/agency/sync-runs", tags=["sync-orchestration"])
 logger = logging.getLogger(__name__)
 
 
-_ALLOWED_GRAINS = ("account_daily", "campaign_daily", "ad_group_daily", "ad_daily")
-GrainValue = Literal["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"]
+_ALLOWED_GRAINS = ("account_daily", "campaign_daily", "ad_group_daily", "keyword_daily", "ad_daily")
+GrainValue = Literal["account_daily", "campaign_daily", "ad_group_daily", "keyword_daily", "ad_daily"]
 
 
 class CreateBatchSyncRunsRequest(BaseModel):
@@ -157,7 +157,7 @@ def _resolve_grains(payload: CreateBatchSyncRunsRequest) -> list[str]:
     is_google = str(payload.platform).strip().lower() == "google_ads"
     legacy_account_daily_default = len(normalized) == 1 and normalized[0] == "account_daily"
     if legacy_request and is_google and legacy_account_daily_default and _entity_grains_enabled():
-        normalized = ["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"]
+        normalized = ["account_daily", "campaign_daily", "ad_group_daily", "keyword_daily", "ad_daily"]
 
     return normalized
 

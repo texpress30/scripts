@@ -1,5 +1,6 @@
 import os
 import unittest
+from unittest.mock import patch
 from datetime import date
 
 try:
@@ -725,6 +726,7 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         payload = response.json()
         self.assertEqual(payload["created_count"], 1)
         self.assertEqual(payload["grains"], ["account_daily"])
+        self.assertNotIn("keyword_daily", payload["grains"])
         self.assertEqual(payload["results"][0]["grain"], "account_daily")
 
     def test_batch_google_legacy_missing_grain_expands_when_flag_on(self):
@@ -744,7 +746,9 @@ class SyncOrchestrationApiTests(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["grains"], ["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"])
+        self.assertEqual(payload["grains"], ["account_daily", "campaign_daily", "ad_group_daily", "keyword_daily", "ad_daily"])
+        self.assertEqual(payload["created_count"], 5)
+        self.assertEqual([item["grain"] for item in payload["runs"]], ["account_daily", "campaign_daily", "ad_group_daily", "keyword_daily", "ad_daily"])
 
     def test_batch_google_legacy_account_daily_expands_when_flag_on(self):
         headers = self._auth_headers()
@@ -764,9 +768,11 @@ class SyncOrchestrationApiTests(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["grains"], ["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"])
+        self.assertEqual(payload["grains"], ["account_daily", "campaign_daily", "ad_group_daily", "keyword_daily", "ad_daily"])
+        self.assertEqual(payload["created_count"], 5)
+        self.assertEqual([item["grain"] for item in payload["runs"]], ["account_daily", "campaign_daily", "ad_group_daily", "keyword_daily", "ad_daily"])
 
-    def test_batch_google_explicit_grains_does_not_auto_expand_when_flag_on(self):
+    def test_batch_google_explicit_grains_missing_keyword_does_not_auto_add_when_flag_on(self):
         headers = self._auth_headers()
         with patch.dict(os.environ, {"ENTITY_GRAINS_ENABLED": "1"}, clear=False):
             response = self.client.post(
@@ -779,12 +785,14 @@ class SyncOrchestrationApiTests(unittest.TestCase):
                     "start_date": str(date(2026, 1, 1)),
                     "end_date": str(date(2026, 1, 3)),
                     "chunk_days": 1,
-                    "grains": ["account_daily"],
+                    "grains": ["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"],
                 },
             )
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["grains"], ["account_daily"])
+        self.assertEqual(payload["grains"], ["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"])
+        self.assertNotIn("keyword_daily", payload["grains"])
+        self.assertEqual(payload["created_count"], 4)
 
     def test_batch_non_google_does_not_auto_expand_when_flag_on(self):
         headers = self._auth_headers()
@@ -804,6 +812,7 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["grains"], ["account_daily"])
+        self.assertNotIn("keyword_daily", payload["grains"])
 
     def test_batch_creates_one_run_per_requested_grain(self):
         headers = self._auth_headers()

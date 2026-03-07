@@ -1,3 +1,16 @@
+# TODO — Sync orchestration: include keyword_daily in Google entity-grain auto-expand
+
+- [x] Extind resolver-ul de grains din `sync_orchestration` astfel încât legacy request Google + flag ON să includă `keyword_daily` în ordine stabilă.
+- [x] Păstrez comportamentul neschimbat pentru request-uri explicite (`grains`) și platforme non-Google.
+- [x] Actualizez testele API orchestration pentru: legacy ON (5 grains + order), flag OFF (account_daily), explicit fără keyword (fără auto-add), non-google ON (fără keyword).
+- [x] Rulez verificările cerute (`pytest -q apps/backend/tests/test_sync_orchestration_api.py` + `py_compile`) și completez review.
+
+## Review
+- `_resolve_grains(...)` include acum `keyword_daily` în auto-expand doar pentru request legacy Google când flag-ul entity grains e activ, păstrând ordinea stabilă cerută.
+- Contractul pentru `grains` explicite rămâne neschimbat: nu se adaugă automat `keyword_daily` dacă nu este cerut explicit.
+- Testele API validează toate cele 4 scenarii cerute (legacy ON/OFF, explicit fără keyword, non-google ON), inclusiv ordinea exactă și numărul de run-uri create.
+
+---
 # TODO — Rolling scheduler: include keyword_daily in Google entity grains
 
 - [x] Extind `rolling_scheduler` ca grain expansion Google (flag ON) să includă și `keyword_daily`.
