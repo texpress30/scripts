@@ -350,6 +350,84 @@ def meta_ads_oauth_exchange(payload: dict[str, str], user: AuthUser = Depends(ge
     )
     return response_payload
 
+
+
+@router.post("/import-accounts")
+def import_meta_accounts(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+
+    try:
+        discovered_accounts = meta_ads_service.list_accessible_ad_accounts()
+    except MetaAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    token_source = str(meta_ads_service.integration_status().get("token_source") or "missing")
+
+    existing_accounts = client_registry_service.list_platform_accounts(platform=PLATFORM_META_ADS)
+    existing_by_id = {str(item.get("account_id") or item.get("id") or ""): item for item in existing_accounts}
+
+    imported = 0
+    updated = 0
+    unchanged = 0
+
+    accounts_to_upsert = [{"id": str(item["id"]), "name": str(item.get("name") or item["id"])} for item in discovered_accounts]
+    if len(accounts_to_upsert) > 0:
+        client_registry_service.upsert_platform_accounts(platform=PLATFORM_META_ADS, accounts=accounts_to_upsert)
+
+    for item in discovered_accounts:
+        account_id = str(item.get("id") or "").strip()
+        if account_id == "":
+            continue
+
+        name = str(item.get("name") or account_id)
+        status_value = str(item.get("account_status") or "").strip() or None
+        currency_code = str(item.get("currency_code") or "").strip().upper() or None
+        account_timezone = str(item.get("account_timezone") or "").strip() or None
+
+        existing = existing_by_id.get(account_id)
+        if existing is None:
+            imported += 1
+            has_changes = True
+        else:
+            name_changed = str(existing.get("name") or "") != name
+            status_changed = str(existing.get("status") or "").strip() != str(status_value or "")
+            currency_changed = str(existing.get("currency") or "").strip().upper() != str(currency_code or "")
+            timezone_changed = str(existing.get("timezone") or "").strip() != str(account_timezone or "")
+            has_changes = name_changed or status_changed or currency_changed or timezone_changed
+            if has_changes:
+                updated += 1
+            else:
+                unchanged += 1
+
+        if has_changes:
+            client_registry_service.update_platform_account_operational_metadata(
+                platform=PLATFORM_META_ADS,
+                account_id=account_id,
+                status=status_value,
+                currency_code=currency_code,
+                account_timezone=account_timezone,
+            )
+
+    summary = {
+        "status": "ok",
+        "message": "Meta Ads accounts import completed.",
+        "platform": PLATFORM_META_ADS,
+        "token_source": token_source,
+        "accounts_discovered": len(discovered_accounts),
+        "imported": imported,
+        "updated": updated,
+        "unchanged": unchanged,
+    }
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="meta_ads.accounts.import",
+        resource="integration:meta_ads",
+        details=summary,
+    )
+    return summary
+
 @router.post("/sync-now")
 def sync_meta_ads_now(
     background_tasks: BackgroundTasks,

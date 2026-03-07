@@ -1,3 +1,18 @@
+# TODO — Meta Ads backend import accounts în registrul generic
+
+- [x] Inspectez flow-ul Meta connect/status și flow-ul Google import pentru a păstra convențiile de API + registry.
+- [x] Extind `MetaAdsService` cu listare reală de conturi accesibile, cu paginare și token resolution (DB prioritar + env fallback).
+- [x] Adaug endpoint `POST /integrations/meta-ads/import-accounts` cu summary clar (`accounts_discovered/imported/updated/unchanged`) fără expunere token.
+- [x] Persist conturile în registrul generic (`agency_platform_accounts`) idempotent și actualizez metadata operațională relevantă (`status/currency/timezone`).
+- [x] Adaug teste backend focalizate pentru happy path, paginare, idempotency rerun, env fallback și erori token/API.
+- [x] Rulez verificări backend relevante (pytest target + py_compile + smoke import app) și completez review.
+
+## Review
+- Importul Meta folosește acum API real `/me/adaccounts` cu paginare cursor-based (`after`) și normalizează ID-ul canonic (`act_<id>`), nume și câmpuri operaționale utile.
+- Endpointul de import upsertează idempotent în registrul generic existent și returnează summary de import (fără token), pregătit pentru volume mari și rerulări.
+- Rerularea pe același set de conturi produce `unchanged` fără duplicate, iar erorile de token/API sunt mapate clar la HTTP 400.
+
+---
 # TODO — Meta Ads frontend connect flow + callback
 
 - [x] Inspectez flow-ul existent Agency Integrations + callback Google pentru a păstra convențiile UI/UX.

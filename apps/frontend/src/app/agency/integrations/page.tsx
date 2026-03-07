@@ -96,7 +96,7 @@ export default function AgencyIntegrationsPage() {
   const [metaLoading, setMetaLoading] = useState(true);
   const [metaStatusError, setMetaStatusError] = useState("");
   const [metaConnectError, setMetaConnectError] = useState("");
-  const [metaBusy, setMetaBusy] = useState(false);
+  const [metaBusy, setMetaBusy] = useState<"connect" | null>(null);
 
   async function loadGoogleStatus() {
     try {
@@ -143,13 +143,13 @@ export default function AgencyIntegrationsPage() {
 
   async function connectMetaAds() {
     setMetaConnectError("");
-    setMetaBusy(true);
+    setMetaBusy("connect");
     try {
       const payload = await apiRequest<MetaConnectResponse>("/integrations/meta-ads/connect");
       window.location.href = payload.authorize_url;
     } catch (err) {
       setMetaConnectError(err instanceof Error ? err.message : "Nu am putut iniția conectarea Meta Ads");
-      setMetaBusy(false);
+      setMetaBusy(null);
     }
   }
 
@@ -283,7 +283,7 @@ export default function AgencyIntegrationsPage() {
                 disabled={metaBusy !== null || metaLoading || !metaOauthConfigured}
                 className="wm-btn-primary disabled:opacity-50"
               >
-                {metaBusy ? "Connecting..." : "Connect Meta Ads"}
+                {metaBusy === "connect" ? "Connecting..." : "Connect Meta Ads"}
               </button>
             </div>
           </article>

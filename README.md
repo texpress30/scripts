@@ -108,6 +108,7 @@ Variabile minime necesare:
 - `GET /integrations/meta-ads/status`
 - `GET /integrations/meta-ads/connect`
 - `POST /integrations/meta-ads/oauth/exchange`
+- `POST /integrations/meta-ads/import-accounts`
 - `POST /integrations/meta-ads/{client_id}/sync`
 - `GET /integrations/tiktok-ads/status`
 - `POST /integrations/tiktok-ads/{client_id}/sync`

@@ -47,8 +47,8 @@ class MetaAdsService:
     def _meta_scopes(self) -> tuple[str, ...]:
         return ("ads_read", "ads_management", "business_management")
 
-    def _http_json(self, *, method: str, url: str) -> dict[str, object]:
-        req = request.Request(url, method=method)
+    def _http_json(self, *, method: str, url: str, headers: dict[str, str] | None = None) -> dict[str, object]:
+        req = request.Request(url, method=method, headers=headers or {})
         try:
             with request.urlopen(req, timeout=20) as response:
                 raw = response.read().decode("utf-8")
@@ -68,6 +68,19 @@ class MetaAdsService:
             ) from exc
         except Exception as exc:  # noqa: BLE001
             raise MetaAdsIntegrationError(f"Meta API request failed: method={method} url={url} error={exc}") from exc
+
+    @staticmethod
+    def _normalize_meta_account_id(*, raw_id: object, raw_account_id: object) -> str:
+        account_id = str(raw_account_id or "").strip().replace("act_", "")
+        if account_id != "" and account_id.isdigit():
+            return f"act_{account_id}"
+
+        normalized_id = str(raw_id or "").strip()
+        if normalized_id.startswith("act_"):
+            return normalized_id
+        if normalized_id.isdigit():
+            return f"act_{normalized_id}"
+        return normalized_id
 
     def _resolve_active_access_token_with_source(self) -> tuple[str, str, str | None, str | None]:
         access_token_secret = None
@@ -99,6 +112,74 @@ class MetaAdsService:
         if token == "":
             raise MetaAdsIntegrationError("Meta Ads token is missing or placeholder.")
         return token
+
+    def list_accessible_ad_accounts(self) -> list[dict[str, object]]:
+        access_token = self._active_access_token()
+        version = self._meta_api_version()
+
+        fields = [
+            "id",
+            "account_id",
+            "name",
+            "account_status",
+            "currency",
+            "timezone_name",
+            "timezone_offset_hours_utc",
+            "business",
+            "owner",
+        ]
+
+        discovered: dict[str, dict[str, object]] = {}
+        after: str | None = None
+
+        while True:
+            params: dict[str, object] = {
+                "fields": ",".join(fields),
+                "limit": 200,
+            }
+            if after is not None and after.strip() != "":
+                params["after"] = after
+
+            url = f"https://graph.facebook.com/{version}/me/adaccounts?{parse.urlencode(params)}"
+            payload = self._http_json(
+                method="GET",
+                url=url,
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+
+            raw_data = payload.get("data")
+            rows = raw_data if isinstance(raw_data, list) else []
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                canonical_id = self._normalize_meta_account_id(raw_id=row.get("id"), raw_account_id=row.get("account_id"))
+                if canonical_id == "":
+                    continue
+
+                name = str(row.get("name") or canonical_id).strip() or canonical_id
+                account_status = row.get("account_status")
+                currency = str(row.get("currency") or "").strip().upper() or None
+                timezone_name = str(row.get("timezone_name") or "").strip() or None
+
+                account_payload: dict[str, object] = {
+                    "id": canonical_id,
+                    "name": name,
+                    "account_status": None if account_status is None else str(account_status),
+                    "currency_code": currency,
+                    "account_timezone": timezone_name,
+                    "raw_id": str(row.get("id") or "").strip() or None,
+                    "raw_account_id": str(row.get("account_id") or "").strip() or None,
+                }
+                discovered[canonical_id] = account_payload
+
+            paging = payload.get("paging") if isinstance(payload.get("paging"), dict) else {}
+            cursors = paging.get("cursors") if isinstance(paging.get("cursors"), dict) else {}
+            next_after = str(cursors.get("after") or "").strip()
+            if next_after == "":
+                break
+            after = next_after
+
+        return [discovered[key] for key in sorted(discovered.keys())]
 
     def integration_status(self) -> dict[str, str | bool | None]:
         token, token_source, token_updated_at, token_expires_at = self._resolve_active_access_token_with_source()

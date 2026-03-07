@@ -232,3 +232,5 @@
 - 2026-03-07: Pentru migrarea unui provider din stub în OAuth real, păstrează compatibilitatea graduală prin resolver de token source (DB prioritar, env fallback, missing) și nu expune tokenuri în endpoint responses.
 
 - 2026-03-07: Pentru callback-uri OAuth în frontend, validează întâi query params (`error`/`code`/`state`) și evită apelul backend când providerul a trimis deja eroare, pentru UX clar și trafic inutil redus.
+
+- 2026-03-07: La importul de conturi din provideri cu paginare cursor-based (Meta), implementează canonical account ID + loop după `paging.cursors.after` + summary idempotent (`imported/updated/unchanged`) ca bază pentru operare la scară.
