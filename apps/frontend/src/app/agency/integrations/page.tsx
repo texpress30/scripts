@@ -143,7 +143,7 @@ export default function AgencyIntegrationsPage() {
 
   async function connectMetaAds() {
     setMetaConnectError("");
-    setMetaBusy("true");
+    setMetaBusy("connect");
     try {
       const payload = await apiRequest<MetaConnectResponse>("/integrations/meta-ads/connect");
       window.location.href = payload.authorize_url;
