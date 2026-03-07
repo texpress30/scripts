@@ -212,3 +212,7 @@
 - 2026-03-06: Pentru extinderi Google Ads pe următorul entity grain (`ad_daily`), menține simetria cu campaign/ad_group: half-open window în provider, upsert entity+facts în worker și test de contract pe query + mapping + dispatch.
 
 - 2026-03-06: Pentru extinderi de scheduler pe grain-uri noi, protejează comportamentul cu feature flag default OFF, păstrează eligibility logic existentă și validează explicit combinațiile flag/platform/dedupe în teste.
+
+- 2026-03-06: Pentru extinderi de grain-uri în API batch, diferențiază strict request-urile legacy (`grain`) de intenția explicită (`grains`) și aplică auto-expand doar pe legacy+flag pentru a evita surprize de contract.
+
+- 2026-03-06: Pentru task-uri DB-only pe grain nou, livrează migrare aditivă cu partition parent+default+monthly și actualizează explicit toate grain check constraints relevante (`watermarks`, `sync_runs`) în aceeași migrare.

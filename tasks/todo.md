@@ -1,3 +1,33 @@
+# TODO — DB schema: Google keywords + keyword_daily facts + grain checks
+
+- [x] Adaug migrarea SQL `0018` pentru `platform_keywords` și `keyword_performance_reports` partitionat lunar + default partition.
+- [x] Extind CHECK constraints pentru grains astfel încât `keyword_daily` să fie permis în `platform_account_watermarks` și `sync_runs`.
+- [x] Adaug test DB skip-safe pentru existența tabelelor, partitioning și validare insert cu `grain=keyword_daily`.
+- [x] Rulez verificările cerute (`py_compile` + `pytest` test nou), completez review, commit + PR metadata.
+
+## Review
+- Migrarea `0018_google_keywords_and_keyword_daily_facts.sql` creează tabela de entități `platform_keywords` cu PK compus `(platform, account_id, keyword_id)` + indexuri de acces.
+- Aceeași migrare creează `keyword_performance_reports` ca parent partitionat RANGE pe `report_date`, cu unique business key `(platform, account_id, keyword_id, report_date)`, indexuri canonice, default partition și partiții lunare `2024-01` → `2027-01`.
+- CHECK constraints pentru grain au fost actualizate în migrare pentru a include `keyword_daily` pe `platform_account_watermarks` și `sync_runs` (drop/recreate idempotent).
+- Testul nou `test_db_migration_keyword_daily.py` validează: existența tabelelor, parent partitioned + partition default/lunar și faptul că inserările minime cu `grain='keyword_daily'` reușesc în `platform_account_watermarks` și `sync_runs`.
+
+---
+# TODO — Sync orchestration batch: auto-expand Google entity grains on historical runs
+
+- [x] Adaug flag helper pentru `ENTITY_GRAINS_ENABLED` cu alias `ROLLING_ENTITY_GRAINS_ENABLED` (default OFF).
+- [x] Extind `POST /agency/sync-runs/batch` să auto-extindă doar request-urile legacy Google (`grain` lipsă sau `account_daily`) când flag-ul este ON.
+- [x] Păstrez comportamentul explicit pentru `grains` list (fără auto-expand) și pentru platforme non-Google.
+- [x] Adaug teste API pentru toate combinațiile cerute (flag on/off, legacy/explicit, google/non-google).
+- [x] Documentez în README și rulez verificări target + review, apoi commit + PR metadata.
+
+## Review
+- Am introdus `_entity_grains_enabled()` în orchestration API care tratează `ENTITY_GRAINS_ENABLED` ca flag principal și `ROLLING_ENTITY_GRAINS_ENABLED` ca alias backward-compatible; feature-ul este ON dacă oricare env este truthy.
+- `_resolve_grains` păstrează dedupe + ordine stabilă, iar auto-expand se aplică strict pe request-uri legacy (`grains` absent), doar pentru Google, doar când rezultatul legacy este `account_daily` și flag-ul este ON.
+- Request-urile cu `grains` explicit rămân neschimbate (fără auto-expand), iar pentru platforme non-Google comportamentul default rămâne `account_daily`.
+- Testele API adăugate acoperă explicit cele 5 combinații cerute; în mediul curent sunt skip-safe (DB-dependent), fără erori.
+- README documentează aliasul de flag și faptul că același flag activează auto-expand și pentru historical backfill batch.
+
+---
 # TODO — Rolling scheduler: Google entity grains for rolling_refresh
 
 - [x] Adaug feature flag `ROLLING_ENTITY_GRAINS_ENABLED` (default OFF) pentru scheduling entity grains.
