@@ -46,6 +46,11 @@ function formatDate(value?: string | null): string {
   return date.toLocaleString();
 }
 
+type IntegrationStatusUi = {
+  toneClass: string;
+  label: string;
+};
+
 function normalizeIntegrationStatus(value?: string | null): IntegrationStatusUi {
   const normalized = String(value || "").trim().toLowerCase();
   if (["connected", "ok", "active", "enabled", "ready", "healthy", "success"].includes(normalized)) {
