@@ -54,6 +54,25 @@ type GoogleAccountsResponse = {
   last_import_at?: string | null;
 };
 
+type MetaAccount = {
+  platform: string;
+  account_id: string;
+  account_name?: string;
+  client_id?: number | null;
+  client_name?: string | null;
+  is_attached?: boolean;
+  status?: string | null;
+  currency?: string | null;
+  timezone?: string | null;
+};
+
+type MetaAccountsResponse = {
+  platform: string;
+  items: MetaAccount[];
+  count: number;
+  last_import_at?: string | null;
+};
+
 type BatchRun = {
   account_id?: string | null;
   status?: string | null;
@@ -139,6 +158,12 @@ function accountDisplayName(account: GoogleAccount): string {
   return clean ? clean : `Google Account ${account.id}`;
 }
 
+function metaAccountDisplayName(account: MetaAccount): string {
+  const clean = String(account.account_name || "").trim();
+  if (clean !== "") return clean;
+  return `Meta Account ${account.account_id}`;
+}
+
 function actionButtonClass(variant: "historical" | "ghost"): string {
   const base = "inline-flex items-center rounded-md px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50";
   if (variant === "historical") {
@@ -154,6 +179,14 @@ export default function AgencyAccountsPage() {
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [summary, setSummary] = useState<AccountSummaryItem[]>([]);
   const [googleAccounts, setGoogleAccounts] = useState<GoogleAccount[]>([]);
+  const [metaAccounts, setMetaAccounts] = useState<MetaAccount[]>([]);
+  const [metaLastImportAt, setMetaLastImportAt] = useState<string | null>(null);
+  const [metaLoading, setMetaLoading] = useState(false);
+  const [metaLoadError, setMetaLoadError] = useState("");
+  const [metaActionError, setMetaActionError] = useState("");
+  const [metaActionMessage, setMetaActionMessage] = useState("");
+  const [metaAttachClientByAccount, setMetaAttachClientByAccount] = useState<Record<string, string>>({});
+  const [metaBusyByAccount, setMetaBusyByAccount] = useState<Record<string, "attach" | "detach">>({});
   const [selectedPlatform, setSelectedPlatform] = useState("google_ads");
 
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
@@ -397,6 +430,21 @@ export default function AgencyAccountsPage() {
     }
   }
 
+  async function loadMetaAccounts() {
+    setMetaLoading(true);
+    setMetaLoadError("");
+    try {
+      const payload = await apiRequest<MetaAccountsResponse>("/clients/accounts/meta_ads");
+      setMetaAccounts(Array.isArray(payload.items) ? payload.items : []);
+      setMetaLastImportAt(payload.last_import_at ?? null);
+    } catch (err) {
+      setMetaAccounts([]);
+      setMetaLoadError(err instanceof Error ? err.message : "Nu am putut încărca conturile Meta Ads.");
+    } finally {
+      setMetaLoading(false);
+    }
+  }
+
   useEffect(() => {
     void loadData();
   }, []);
@@ -405,6 +453,11 @@ export default function AgencyAccountsPage() {
     setSelectedAccountIds(new Set());
     setExpandedClientRows(new Set());
     setAccountsPage(1);
+  }, [selectedPlatform]);
+
+  useEffect(() => {
+    if (selectedPlatform !== "meta_ads") return;
+    void loadMetaAccounts();
   }, [selectedPlatform]);
 
   useEffect(() => {
@@ -499,6 +552,57 @@ export default function AgencyAccountsPage() {
       setAttachStatus(err instanceof Error ? err.message : "Nu am putut detașa contul Google.");
     } finally {
       setActionBusy(false);
+    }
+  }
+
+  async function attachMetaAccount(clientId: number, accountId: string) {
+    setMetaActionError("");
+    setMetaActionMessage("");
+    setMetaBusyByAccount((current) => ({ ...current, [accountId]: "attach" }));
+    try {
+      await apiRequest(`/clients/${clientId}/attach-account`, {
+        method: "POST",
+        body: JSON.stringify({ platform: "meta_ads", account_id: accountId }),
+      });
+      const targetClient = clients.find((item) => item.id === clientId);
+      setMetaActionMessage(`Contul ${accountId} a fost atașat clientului ${targetClient?.name ?? `#${clientId}`}.`);
+      await loadMetaAccounts();
+    } catch (err) {
+      setMetaActionError(err instanceof Error ? err.message : "Nu am putut atașa contul Meta Ads.");
+    } finally {
+      setMetaBusyByAccount((current) => {
+        const next = { ...current };
+        delete next[accountId];
+        return next;
+      });
+    }
+  }
+
+  async function detachMetaAccount(clientId: number, accountId: string) {
+    setMetaActionError("");
+    setMetaActionMessage("");
+    setMetaBusyByAccount((current) => ({ ...current, [accountId]: "detach" }));
+    try {
+      await apiRequest(`/clients/${clientId}/detach-account`, {
+        method: "POST",
+        body: JSON.stringify({ platform: "meta_ads", account_id: accountId }),
+      });
+      const targetClient = clients.find((item) => item.id === clientId);
+      setMetaActionMessage(`Contul ${accountId} a fost detașat de la clientul ${targetClient?.name ?? `#${clientId}`}.`);
+      setMetaAttachClientByAccount((current) => {
+        const next = { ...current };
+        delete next[accountId];
+        return next;
+      });
+      await loadMetaAccounts();
+    } catch (err) {
+      setMetaActionError(err instanceof Error ? err.message : "Nu am putut detașa contul Meta Ads.");
+    } finally {
+      setMetaBusyByAccount((current) => {
+        const next = { ...current };
+        delete next[accountId];
+        return next;
+      });
     }
   }
 
@@ -707,9 +811,126 @@ export default function AgencyAccountsPage() {
             </div>
 
             {selectedPlatform !== "google_ads" ? (
-              <div className="mt-4 wm-card p-4 text-sm text-slate-500">
-                Pentru acest task, doar Google Ads este funcțional complet. Celelalte platforme rămân informative.
-              </div>
+              selectedPlatform === "meta_ads" ? (
+                <div className="mt-4 wm-card p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm text-slate-600">
+                      Total Meta Accounts: <span className="font-semibold text-slate-900">{metaAccounts.length}</span>
+                    </p>
+                    <p className="text-xs text-slate-500">Ultimul import Meta: {formatDateTime(metaLastImportAt)}</p>
+                  </div>
+
+                  {metaLoading ? <p className="mt-3 text-sm text-slate-500">Se încarcă conturile Meta...</p> : null}
+                  {metaLoadError ? <p className="mt-3 text-sm text-red-600">{metaLoadError}</p> : null}
+                  {metaActionError ? <p className="mt-2 text-sm text-red-600">{metaActionError}</p> : null}
+                  {metaActionMessage ? <p className="mt-2 text-sm text-emerald-700">{metaActionMessage}</p> : null}
+
+                  {!metaLoading && !metaLoadError && metaAccounts.length === 0 ? (
+                    <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                      Nu există conturi Meta importate în registry. Importă conturile din Agency Integrations → Meta Ads.
+                    </div>
+                  ) : null}
+
+                  {!metaLoading && !metaLoadError && metaAccounts.length > 0 ? (
+                    <div className="mt-3 overflow-hidden rounded-md border border-slate-200">
+                      <div className="hidden grid-cols-[minmax(240px,2fr)_minmax(170px,1.1fr)_minmax(240px,1.5fr)_120px] gap-3 border-b border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 lg:grid">
+                        <span>Cont Meta</span>
+                        <span>Status</span>
+                        <span>Attach</span>
+                        <span>Detach</span>
+                      </div>
+
+                      <div className="divide-y divide-slate-100">
+                        {metaAccounts.map((account) => {
+                          const accountId = String(account.account_id || "");
+                          const busyAction = metaBusyByAccount[accountId] ?? null;
+                          const isBusy = busyAction !== null;
+                          const attachedClientId = typeof account.client_id === "number" ? account.client_id : null;
+                          const selectedClientIdRaw = metaAttachClientByAccount[accountId] ?? "";
+                          const selectedClientId = Number(selectedClientIdRaw);
+                          const canAttach = !attachedClientId && clients.length > 0 && selectedClientId > 0 && !isBusy;
+
+                          return (
+                            <div key={accountId} data-testid={`meta-row-${accountId}`} className="grid gap-3 px-3 py-3 lg:grid-cols-[minmax(240px,2fr)_minmax(170px,1.1fr)_minmax(240px,1.5fr)_120px] lg:items-center">
+                              <div>
+                                <p className="text-sm font-medium text-slate-900">{metaAccountDisplayName(account)}</p>
+                                <p className="mt-1 text-xs text-slate-500">ID: {accountId}</p>
+                                {account.currency ? <p className="mt-1 text-xs text-slate-500">Currency: {account.currency}</p> : null}
+                                {account.timezone ? <p className="mt-1 text-xs text-slate-500">Timezone: {account.timezone}</p> : null}
+                              </div>
+
+                              <div>
+                                <p className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${attachedClientId ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                                  {attachedClientId ? "Atașat" : "Neatașat"}
+                                </p>
+                                {account.status ? <p className="mt-1 text-xs text-slate-500">Status: {account.status}</p> : null}
+                                {attachedClientId ? (
+                                  <p className="mt-1 text-xs text-slate-600">Client: {account.client_name || "-"} #{attachedClientId}</p>
+                                ) : null}
+                              </div>
+
+                              <div>
+                                {attachedClientId ? (
+                                  <p className="text-xs text-slate-500">Contul este deja atașat. Detașează înainte de o altă atașare.</p>
+                                ) : (
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <select
+                                      data-testid={`meta-client-select-${accountId}`}
+                                      value={selectedClientIdRaw}
+                                      onChange={(event) => {
+                                        const value = event.target.value;
+                                        setMetaAttachClientByAccount((current) => ({ ...current, [accountId]: value }));
+                                      }}
+                                      disabled={clients.length === 0 || isBusy}
+                                      className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1 text-sm"
+                                    >
+                                      <option value="">Selectează client...</option>
+                                      {clients.map((client) => (
+                                        <option key={client.id} value={client.id}>#{client.display_id ?? client.id} {client.name}</option>
+                                      ))}
+                                    </select>
+                                    <button
+                                      type="button"
+                                      data-testid={`meta-attach-${accountId}`}
+                                      onClick={() => void attachMetaAccount(selectedClientId, accountId)}
+                                      disabled={!canAttach}
+                                      className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      {busyAction === "attach" ? "Attaching..." : "Attach"}
+                                    </button>
+                                  </div>
+                                )}
+                                {clients.length === 0 && !attachedClientId ? <p className="mt-1 text-xs text-amber-700">Attach indisponibil: nu există clienți.</p> : null}
+                                {loadError && !attachedClientId ? <p className="mt-1 text-xs text-amber-700">Attach indisponibil: lista de clienți nu a putut fi încărcată.</p> : null}
+                              </div>
+
+                              <div>
+                                {attachedClientId ? (
+                                  <button
+                                    type="button"
+                                    data-testid={`meta-detach-${accountId}`}
+                                    onClick={() => void detachMetaAccount(attachedClientId, accountId)}
+                                    disabled={isBusy}
+                                    className="inline-flex w-full items-center justify-center rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {busyAction === "detach" ? "Detaching..." : "Detach"}
+                                  </button>
+                                ) : (
+                                  <span className="inline-flex w-full items-center justify-center rounded-md border border-dashed border-slate-200 px-3 py-2 text-xs text-slate-400">-</span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="mt-4 wm-card p-4 text-sm text-slate-500">
+                  Pentru acest task, doar Google Ads și Meta Ads sunt funcționale. Celelalte platforme rămân informative.
+                </div>
+              )
             ) : (
               <div className="mt-4 wm-card p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
