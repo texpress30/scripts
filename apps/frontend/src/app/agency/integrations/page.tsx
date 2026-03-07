@@ -149,7 +149,7 @@ export default function AgencyIntegrationsPage() {
       window.location.href = payload.authorize_url;
     } catch (err) {
       setMetaConnectError(err instanceof Error ? err.message : "Nu am putut iniția conectarea Meta Ads");
-      setMetaBusy(null);
+      setMetaBusy(false);
     }
   }
 
