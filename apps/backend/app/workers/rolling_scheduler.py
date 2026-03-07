@@ -73,6 +73,19 @@ def _is_account_eligible_for_daily_rolling(item: dict[str, object]) -> tuple[boo
 
     return True, None
 
+
+def _rolling_entity_grains_enabled() -> bool:
+    raw = str(os.environ.get("ROLLING_ENTITY_GRAINS_ENABLED", "0") or "0").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _resolve_rolling_grains(*, platform: str) -> list[str]:
+    grains = ["account_daily"]
+    if str(platform).strip().lower() == "google_ads" and _rolling_entity_grains_enabled():
+        grains.extend(["campaign_daily", "ad_group_daily", "ad_daily"])
+    return grains
+
+
 def enqueue_rolling_sync_runs(
     *,
     platform: str = "google_ads",
@@ -126,57 +139,67 @@ def enqueue_rolling_sync_runs(
             continue
 
         chunks = _build_chunks(start_date=start_date, end_date=end_date, chunk_days=max(1, int(chunk_days)))
-        job_id = uuid4().hex
-        created = sync_runs_store.create_sync_run(
-            job_id=job_id,
-            platform=normalized_platform,
-            status="queued",
-            client_id=int(client_id_value),
-            account_id=account_id,
-            date_start=start_date,
-            date_end=end_date,
-            chunk_days=max(1, int(chunk_days)),
-            metadata={
-                "source": "cron",
-                "trigger_source": "cron",
-                "batch_id": batch_id,
-                "tz": timezone_name,
-                "rolling_window_days": 7,
-            },
-            batch_id=batch_id,
-            job_type="rolling_refresh",
-            grain="account_daily",
-            chunks_total=len(chunks),
-            chunks_done=0,
-            rows_written=0,
-        )
-
-        for chunk_index, chunk_start, chunk_end in chunks:
-            sync_run_chunks_store.create_sync_run_chunk(
+        account_platform = str(item.get("platform") or normalized_platform).strip().lower() or normalized_platform
+        account_enqueued = False
+        for grain in _resolve_rolling_grains(platform=account_platform):
+            job_id = uuid4().hex
+            outcome = sync_runs_store.create_rolling_sync_run_if_not_active(
                 job_id=job_id,
-                chunk_index=chunk_index,
-                status="queued",
-                date_start=chunk_start,
-                date_end=chunk_end,
+                platform=normalized_platform,
+                client_id=int(client_id_value),
+                account_id=account_id,
+                date_start=start_date,
+                date_end=end_date,
+                chunk_days=max(1, int(chunk_days)),
                 metadata={
                     "source": "cron",
+                    "trigger_source": "cron",
                     "batch_id": batch_id,
                     "tz": timezone_name,
                     "rolling_window_days": 7,
                 },
+                batch_id=batch_id,
+                grain=grain,
+                chunks_total=len(chunks),
+                chunks_done=0,
+                rows_written=0,
+            )
+            created = bool(outcome.get("created"))
+            run_payload = outcome.get("run") if isinstance(outcome.get("run"), dict) else {}
+            run_job_id = str(run_payload.get("job_id") or job_id)
+            if not created:
+                continue
+
+            account_enqueued = True
+            for chunk_index, chunk_start, chunk_end in chunks:
+                sync_run_chunks_store.create_sync_run_chunk(
+                    job_id=run_job_id,
+                    chunk_index=chunk_index,
+                    status="queued",
+                    date_start=chunk_start,
+                    date_end=chunk_end,
+                    metadata={
+                        "source": "cron",
+                        "batch_id": batch_id,
+                        "tz": timezone_name,
+                        "rolling_window_days": 7,
+                    },
+                )
+
+            created_runs.append(
+                {
+                    "job_id": run_job_id,
+                    "account_id": account_id,
+                    "client_id": int(client_id_value),
+                    "grain": grain,
+                    "date_start": str(start_date),
+                    "date_end": str(end_date),
+                    "chunks_total": len(chunks),
+                }
             )
 
-        created_runs.append(
-            {
-                "job_id": str(created.get("job_id") if created is not None else job_id),
-                "account_id": account_id,
-                "client_id": int(client_id_value),
-                "date_start": str(start_date),
-                "date_end": str(end_date),
-                "chunks_total": len(chunks),
-            }
-        )
-        enqueued_account_ids.append(account_id)
+        if account_enqueued:
+            enqueued_account_ids.append(account_id)
 
     return {
         "status": "queued",
@@ -198,6 +221,13 @@ def enqueue_rolling_sync_runs(
         "skipped_inactive_account_ids": skipped_inactive,
         "skipped_invalid_timezone_account_ids": skipped_invalid_timezone,
         "runs": created_runs,
+        "enqueued_count_by_grain": {
+            "account_daily": len([run for run in created_runs if run.get("grain") == "account_daily"]),
+            "campaign_daily": len([run for run in created_runs if run.get("grain") == "campaign_daily"]),
+            "ad_group_daily": len([run for run in created_runs if run.get("grain") == "ad_group_daily"]),
+            "ad_daily": len([run for run in created_runs if run.get("grain") == "ad_daily"]),
+        },
+        "rolling_entity_grains_enabled": _rolling_entity_grains_enabled(),
     }
 
 

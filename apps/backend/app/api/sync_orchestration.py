@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from time import perf_counter
 import logging
+import os
 from typing import Literal
 from uuid import uuid4
 
@@ -125,7 +126,16 @@ def _build_chunks(*, start_date: date, end_date: date, chunk_days: int) -> list[
     return chunks
 
 
+def _entity_grains_enabled() -> bool:
+    raw_values = (
+        str(os.environ.get("ENTITY_GRAINS_ENABLED", "") or "").strip().lower(),
+        str(os.environ.get("ROLLING_ENTITY_GRAINS_ENABLED", "") or "").strip().lower(),
+    )
+    return any(value in {"1", "true", "yes", "on"} for value in raw_values)
+
+
 def _resolve_grains(payload: CreateBatchSyncRunsRequest) -> list[str]:
+    explicit_grains_list = payload.grains is not None
     raw_grains = payload.grains
     if raw_grains is None:
         raw_grains = [payload.grain] if payload.grain is not None else []
@@ -141,7 +151,14 @@ def _resolve_grains(payload: CreateBatchSyncRunsRequest) -> list[str]:
             normalized.append(value)
 
     if len(normalized) <= 0:
-        return ["account_daily"]
+        normalized = ["account_daily"]
+
+    legacy_request = not explicit_grains_list
+    is_google = str(payload.platform).strip().lower() == "google_ads"
+    legacy_account_daily_default = len(normalized) == 1 and normalized[0] == "account_daily"
+    if legacy_request and is_google and legacy_account_daily_default and _entity_grains_enabled():
+        normalized = ["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"]
+
     return normalized
 
 
