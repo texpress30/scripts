@@ -204,3 +204,25 @@
 - 2026-03-06: Pentru extinderi pe grain-uri noi în worker, implementează branch explicit per grain+platform cu output canonic în store-ul de facts și finalizează cu reconcile watermark pe grain la succes, păstrând fallback/error code stabil pentru platforme neimplementate.
 - 2026-03-06: Pentru CLI-uri folosite în orchestratoare (Railway root_dir variabil), evită căi implicite hardcodate pe un singur cwd; implementează resolver cu candidate paths ordonate + mesaj de eroare diagnostic (cwd + tried candidates).
 - 2026-03-06: Când introduci migration runner pe DB-uri deja provisionate, adaugă explicit mecanism de baseline bootstrap (condiționat pe `schema_migrations` gol) pentru a evita crash loop-uri din conflicte pe tabele legacy existente.
+
+- 2026-03-06: Când userul cere extindere provider pe grain nou (ex. `campaign_daily`), livrează end-to-end pe traseul worker+provider+entity store+facts store+watermarks cu teste de contract pentru windowing și mapping metrici; nu te limita la documentare.
+
+- 2026-03-06: Când userul cere follow-up pe același epic de grain-uri (ex. după `campaign_daily`, adaugă `ad_group_daily`), extinde simetric provider+worker+entity/facts upserts + watermark reconcile și validează explicit prin teste dedicate pe noul grain.
+
+- 2026-03-06: Pentru extinderi Google Ads pe următorul entity grain (`ad_daily`), menține simetria cu campaign/ad_group: half-open window în provider, upsert entity+facts în worker și test de contract pe query + mapping + dispatch.
+
+- 2026-03-06: Pentru extinderi de scheduler pe grain-uri noi, protejează comportamentul cu feature flag default OFF, păstrează eligibility logic existentă și validează explicit combinațiile flag/platform/dedupe în teste.
+
+- 2026-03-06: Pentru extinderi de grain-uri în API batch, diferențiază strict request-urile legacy (`grain`) de intenția explicită (`grains`) și aplică auto-expand doar pe legacy+flag pentru a evita surprize de contract.
+
+- 2026-03-06: Pentru task-uri DB-only pe grain nou, livrează migrare aditivă cu partition parent+default+monthly și actualizează explicit toate grain check constraints relevante (`watermarks`, `sync_runs`) în aceeași migrare.
+
+- 2026-03-06: După migrarea unui nou grain entity/fact, adaugă imediat helper-ele de upsert idempotent în store modules + teste DB de overwrite pe aceeași cheie (entity text/metrici), nu lăsa schema fără write-path verificat.
+
+- 2026-03-06: Pentru grain-uri noi la provider Google, definește explicit cheia de entity fără coliziuni (ex. `ad_group_id~criterion_id` pentru keyword), propagă aceeași cheie în facts/store și validează în test că mapping-ul rămâne stabil.
+
+- 2026-03-06: Când extinzi lista de grains din scheduler, actualizează în tandem resolver-ul, testele de count/order și cazul de dedupe pe noul grain, altfel feature flag-ul devine incomplet.
+
+- 2026-03-07: Când introduci un grain nou în ecosistemul entity (ex. `keyword_daily`), verifică simetric atât rolling scheduler cât și orchestration batch legacy auto-expand; altfel historical/manual rămâne în urmă față de rolling.
+
+- 2026-03-07: Când extinzi entity grains, actualizează și read-model-urile de observabilitate (ex. `entity_watermarks` din platform accounts) cu chei stabile + null defaults, nu doar pipeline-ul de ingestie.
