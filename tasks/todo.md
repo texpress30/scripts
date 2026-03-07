@@ -1,3 +1,17 @@
+# TODO — Meta Ads backend sync real account_daily pentru conturile atașate
+
+- [x] Inspectez implementarea curentă `MetaAdsService.sync_client`, endpointul `/integrations/meta-ads/{client_id}/sync`, mapping-urile generice și store-ul generic de reporting.
+- [x] Înlocuiesc sync-ul stub cu fetch real Meta Insights `account_daily` pentru toate conturile `meta_ads` atașate clientului, cu token resolution existent.
+- [x] Persist date reale idempotent în `ad_performance_reports` (platform `meta_ads`) și mențin snapshot compatibil pe agregat real.
+- [x] Extind endpointul sync cu interval opțional (`start_date`/`end_date`) backward-compatible + validări minimale și summary util.
+- [x] Adaug teste backend focalizate (single/multi-account, idempotency rerun, no accounts, env fallback, Meta API error, date validation) și rulez verificări + smoke import.
+
+## Review
+- `MetaAdsService.sync_client` face acum sync real `account_daily` pentru toate conturile `meta_ads` atașate clientului, pe interval explicit/opțional, fără date sintetice.
+- Persistența folosește `performance_reports_store.write_daily_report` cu cheie idempotentă (`report_date`, `platform`, `customer_id`) și păstrează payload-ul Meta raw în `extra_metrics.meta_ads`.
+- Endpointul `POST /integrations/meta-ads/{client_id}/sync` acceptă body opțional pentru interval și întoarce summary clar (`accounts_processed`, `rows_written`, `token_source`, interval, agregate).
+
+---
 # TODO — Agency Accounts frontend: Meta mappings funcționale
 
 - [x] Inspectez pagina Agency Accounts, pattern-ul de listare clienți și endpointurile generice existente pentru mappings.

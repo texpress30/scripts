@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 
 from app.api.dependencies import enforce_action_scope, get_current_user
 from app.services.audit import audit_log_service
@@ -16,6 +17,12 @@ from app.services.sync_constants import PLATFORM_META_ADS, SYNC_GRAIN_ACCOUNT_DA
 
 router = APIRouter(prefix="/integrations/meta-ads", tags=["meta-ads"])
 logger = logging.getLogger(__name__)
+
+
+class MetaSyncRequest(BaseModel):
+    start_date: date | None = None
+    end_date: date | None = None
+
 
 
 def _log_best_effort_warning(
@@ -215,7 +222,7 @@ def _run_meta_sync_job(job_id: str, *, client_id: int, account_context: dict[str
         )
 
     try:
-        snapshot = meta_ads_service.sync_client(client_id=client_id)
+        snapshot = meta_ads_service.sync_client(client_id=client_id, start_date=payload.start_date if payload else None, end_date=payload.end_date if payload else None)
         success_now = datetime.utcnow()
         payload = {
             "status": SYNC_STATUS_DONE,
@@ -486,7 +493,11 @@ def sync_now_job_status(job_id: str, user: AuthUser = Depends(get_current_user))
 
 
 @router.post("/{client_id}/sync")
-def sync_meta_ads(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, float | int | str]:
+def sync_meta_ads(
+    client_id: int,
+    payload: MetaSyncRequest | None = None,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
     try:
         enforce_action_scope(user=user, action="integrations:sync", scope="subaccount")
         rate_limiter_service.check(f"meta_sync:{user.email}", limit=30, window_seconds=60)
@@ -494,7 +505,7 @@ def sync_meta_ads(client_id: int, user: AuthUser = Depends(get_current_user)) ->
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
     try:
-        snapshot = meta_ads_service.sync_client(client_id=client_id)
+        snapshot = meta_ads_service.sync_client(client_id=client_id, start_date=payload.start_date if payload else None, end_date=payload.end_date if payload else None)
     except MetaAdsIntegrationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001

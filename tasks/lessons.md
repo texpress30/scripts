@@ -240,3 +240,5 @@
 - 2026-03-07: În acest mediu, evită `exec_command` pentru patch-uri; aplică modificări cu mecanismul dedicat de patch/edit ca să eviți avertismente de tooling.
 
 - 2026-03-07: Când taskul cere explicit scope frontend-only, evită orice modificare backend chiar dacă există context conex; limitează patch-ul strict la paginile/UI/testele cerute.
+
+- 2026-03-07: Pentru taskuri de sync provider-specific, elimină explicit orice fallback stub/fake metrics și bazează scrierea doar pe date reale API + mapping-uri atașate clientului.
