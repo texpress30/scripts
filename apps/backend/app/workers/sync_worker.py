@@ -7,8 +7,8 @@ import time
 
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
-from app.services.entity_performance_reports import upsert_ad_group_performance_reports, upsert_campaign_performance_reports
-from app.services.platform_entity_store import upsert_platform_ad_groups, upsert_platform_campaigns
+from app.services.entity_performance_reports import upsert_ad_group_performance_reports, upsert_ad_unit_performance_reports, upsert_campaign_performance_reports
+from app.services.platform_entity_store import upsert_platform_ad_groups, upsert_platform_ads, upsert_platform_campaigns
 from app.services.google_ads import google_ads_service
 from app.services.platform_watermarks_reconcile import reconcile_platform_account_watermarks
 from app.services.sync_run_chunks_store import sync_run_chunks_store
@@ -83,7 +83,7 @@ def _finalize_run_if_complete(run: dict[str, object]) -> None:
             else:
                 metadata_kwargs["rolling_synced_through"] = run_date_end
             client_registry_service.update_platform_account_operational_metadata(**metadata_kwargs)
-            if platform == "google_ads" and run_grain in ("campaign_daily", "ad_group_daily"):
+            if platform == "google_ads" and run_grain in ("campaign_daily", "ad_group_daily", "ad_daily"):
                 with sync_runs_store._connect() as conn:
                     reconcile_platform_account_watermarks(
                         conn,
@@ -267,6 +267,61 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
             with sync_runs_store._connect() as conn:
                 upsert_platform_ad_groups(conn, list(ad_group_entity_by_id.values()))
                 rows_written = int(upsert_ad_group_performance_reports(conn, upsert_rows) or 0)
+                conn.commit()
+        elif grain == "ad_daily":
+            chunk_end_exclusive = chunk_end + timedelta(days=1)
+            ad_rows = google_ads_service.fetch_ad_unit_daily_metrics(
+                customer_id=account_id,
+                start_date=chunk_start,
+                end_date_exclusive=chunk_end_exclusive,
+                source_job_id=job_id,
+            )
+            ad_entity_by_id: dict[str, dict[str, object]] = {}
+            for row in ad_rows:
+                ad_id = str(row.get("ad_id") or "").strip()
+                if ad_id == "":
+                    continue
+                ad_entity_by_id[ad_id] = {
+                    "platform": platform,
+                    "account_id": account_id,
+                    "ad_id": ad_id,
+                    "ad_group_id": row.get("ad_group_id"),
+                    "campaign_id": row.get("campaign_id"),
+                    "name": row.get("ad_name"),
+                    "status": row.get("ad_status"),
+                    "raw_payload": {
+                        "campaign_id": row.get("campaign_id"),
+                        "ad_group_id": row.get("ad_group_id"),
+                        "ad_id": row.get("ad_id"),
+                        "ad_name": row.get("ad_name"),
+                        "ad_status": row.get("ad_status"),
+                    },
+                    "payload_hash": f"{ad_id}:{row.get('ad_group_id')}:{row.get('ad_status')}",
+                }
+
+            upsert_rows = [
+                {
+                    "platform": platform,
+                    "account_id": account_id,
+                    "ad_id": row.get("ad_id"),
+                    "campaign_id": row.get("campaign_id"),
+                    "ad_group_id": row.get("ad_group_id"),
+                    "report_date": row.get("report_date"),
+                    "spend": row.get("spend", 0),
+                    "impressions": row.get("impressions", 0),
+                    "clicks": row.get("clicks", 0),
+                    "conversions": row.get("conversions", 0),
+                    "conversion_value": row.get("conversion_value", 0),
+                    "extra_metrics": row.get("extra_metrics") if isinstance(row.get("extra_metrics"), dict) else {},
+                    "source_window_start": chunk_start,
+                    "source_window_end": chunk_end_exclusive,
+                    "source_job_id": job_id,
+                }
+                for row in ad_rows
+            ]
+            with sync_runs_store._connect() as conn:
+                upsert_platform_ads(conn, list(ad_entity_by_id.values()))
+                rows_written = int(upsert_ad_unit_performance_reports(conn, upsert_rows) or 0)
                 conn.commit()
         elif job_type == "historical_backfill":
             response = google_ads_service.sync_customer_for_client_historical_range(

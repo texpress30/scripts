@@ -634,6 +634,126 @@ class SyncWorkerTests(unittest.TestCase):
 
 
 
+    def test_process_next_chunk_ad_daily_google_ads_upserts_entity_facts_and_reconciles(self):
+        state = self._build_state(job_type="manual", grain="ad_daily", platform="google_ads")
+
+        def _claim_any(**kwargs):
+            if state["claimed"]:
+                return None
+            state["claimed"] = True
+            state["chunk"]["status"] = "running"
+            return dict(state["chunk"])
+
+        def _get_run(job_id):
+            return dict(state["run"]) if job_id == "job-1" else None
+
+        def _update_run_status(**kwargs):
+            if kwargs.get("status") is not None:
+                state["run"]["status"] = kwargs["status"]
+            if kwargs.get("error") is not None:
+                state["run"]["error"] = kwargs["error"]
+            return dict(state["run"])
+
+        def _update_chunk_status(**kwargs):
+            state["chunk"]["status"] = kwargs["status"]
+            state["chunk"]["metadata"] = kwargs.get("metadata") or {}
+            if kwargs.get("rows_written") is not None:
+                state["chunk"]["rows_written"] = int(kwargs.get("rows_written") or 0)
+            return dict(state["chunk"])
+
+        def _update_progress(**kwargs):
+            state["run"]["chunks_done"] = int(state["run"].get("chunks_done") or 0) + int(kwargs.get("chunks_done_delta") or 0)
+            state["run"]["rows_written"] = int(state["run"].get("rows_written") or 0) + int(kwargs.get("rows_written_delta") or 0)
+            return dict(state["run"])
+
+        def _counts(job_id):
+            return {"remaining": 0 if state["chunk"]["status"] in ("done", "error") else 1, "errors": 0}
+
+        entity_upsert_calls = []
+        facts_upsert_calls = []
+
+        class _Conn:
+            def __enter__(self):
+                return self
+            def __exit__(self, exc_type, exc, tb):
+                return False
+            def commit(self):
+                return None
+
+        def _upsert_entities(conn, rows):
+            entity_upsert_calls.append(rows)
+            return len(rows)
+
+        def _upsert_facts(conn, rows):
+            facts_upsert_calls.append(rows)
+            return len(rows)
+
+        with patch.object(sync_worker.sync_run_chunks_store, "claim_next_queued_chunk_any", side_effect=_claim_any), patch.object(
+            sync_worker.sync_runs_store,
+            "get_sync_run",
+            side_effect=_get_run,
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_status", side_effect=_update_run_status), patch.object(
+            sync_worker.sync_run_chunks_store,
+            "update_sync_run_chunk_status",
+            side_effect=_update_chunk_status,
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_progress", side_effect=_update_progress), patch.object(
+            sync_worker.sync_run_chunks_store,
+            "get_sync_run_chunk_status_counts",
+            side_effect=_counts,
+        ), patch.object(sync_worker.sync_runs_store, "_connect", return_value=_Conn()), patch.object(
+            sync_worker,
+            "upsert_platform_ads",
+            side_effect=_upsert_entities,
+        ), patch.object(
+            sync_worker,
+            "upsert_ad_unit_performance_reports",
+            side_effect=_upsert_facts,
+        ), patch.object(
+            sync_worker,
+            "reconcile_platform_account_watermarks",
+            return_value={"updated_count_by_grain": {"ad_daily": 1}},
+        ) as reconcile_mock, patch.object(
+            sync_worker.client_registry_service,
+            "update_platform_account_operational_metadata",
+            return_value=None,
+        ), patch.object(
+            sync_worker.google_ads_service,
+            "fetch_ad_unit_daily_metrics",
+            return_value=[
+                {
+                    "report_date": "2026-02-01",
+                    "campaign_id": "cmp-1",
+                    "ad_group_id": "ag-1",
+                    "ad_id": "ad-1",
+                    "ad_name": "Ad One",
+                    "ad_status": "ENABLED",
+                    "spend": 4.2,
+                    "impressions": 100,
+                    "clicks": 5,
+                    "conversions": 1.0,
+                    "conversion_value": 15.0,
+                    "extra_metrics": {"google_ads": {"cost_micros": 4200000}},
+                }
+            ],
+        ) as ad_fetch:
+            processed = sync_worker.process_next_chunk()
+
+        self.assertTrue(processed)
+        self.assertEqual(state["chunk"]["status"], "done")
+        self.assertEqual(state["run"]["status"], "done")
+        self.assertEqual((state["chunk"].get("metadata") or {}).get("grain"), "ad_daily")
+        self.assertEqual(ad_fetch.call_count, 1)
+        self.assertEqual(str(ad_fetch.call_args.kwargs["end_date_exclusive"]), "2026-02-08")
+        self.assertEqual(len(entity_upsert_calls), 1)
+        self.assertEqual(entity_upsert_calls[0][0]["ad_id"], "ad-1")
+        self.assertEqual(len(facts_upsert_calls), 1)
+        self.assertEqual(facts_upsert_calls[0][0]["ad_id"], "ad-1")
+        self.assertEqual(str(facts_upsert_calls[0][0]["source_window_end"]), "2026-02-08")
+        self.assertEqual(reconcile_mock.call_count, 1)
+        self.assertEqual(reconcile_mock.call_args.kwargs["grains"], ["ad_daily"])
+
+
+
     def test_process_next_chunk_campaign_daily_non_google_is_terminal_grain_not_supported(self):
         state = self._build_state(job_type="manual", grain="campaign_daily", platform="meta_ads")
 

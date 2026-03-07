@@ -1,3 +1,35 @@
+# TODO — Rolling scheduler: Google entity grains for rolling_refresh
+
+- [x] Adaug feature flag `ROLLING_ENTITY_GRAINS_ENABLED` (default OFF) pentru scheduling entity grains.
+- [x] Extind rolling scheduler să enqueuieze `campaign_daily`, `ad_group_daily`, `ad_daily` doar pentru `google_ads` când flag-ul este ON, păstrând `account_daily` existent.
+- [x] Mențin dedupe/idempotency pe `(platform, account_id, grain, rolling window, job_type=rolling_refresh)` prin logica existentă de store.
+- [x] Extind testele rolling scheduler pentru: flag OFF, flag ON google, flag ON non-google, dedupe pe grain existent.
+- [x] Documentez noul env var în README și rulez verificări + review, apoi commit + PR metadata.
+
+## Review
+- Scheduler-ul folosește acum `ROLLING_ENTITY_GRAINS_ENABLED` (default OFF); când flag-ul este inactiv, se enqueuiește strict `account_daily`.
+- Când flag-ul este activ, scheduler-ul adaugă pentru conturi Google și grain-urile entity (`campaign_daily`, `ad_group_daily`, `ad_daily`) pe aceeași fereastră rolling 7 zile (yesterday-6 .. yesterday).
+- Pentru dedupe/idempotency am adăugat `sync_runs_store.create_rolling_sync_run_if_not_active(...)`, cu lock + check pentru run activ (`queued/running`) pe aceeași combinație platform/account/grain/window/job_type=rolling_refresh.
+- Scheduler-ul creează chunk-uri doar pentru run-urile nou create (`created=True`) și include summary `enqueued_count_by_grain` + `rolling_entity_grains_enabled`.
+- Testele noi acoperă explicit: flag OFF (doar account_daily), flag ON pentru google (4 grains), flag ON non-google (fără entity grains), dedupe pentru grain existent (campaign_daily).
+
+---
+# TODO — Google Ads provider: ad_daily grain support (provider + worker + tests)
+
+- [x] Adaug în provider fetch pentru ad_daily cu window half-open și mapare metrici canonice.
+- [x] Extind sync_worker pentru grain `ad_daily` cu upsert entity în `platform_ads` + facts în `ad_unit_performance_reports`.
+- [x] Asigur reconcile watermark pentru `ad_daily` la final de run, fără regresii pe celelalte grains.
+- [x] Adaug teste unit pentru query window, spend mapping și worker path ad_daily (provider + upsert helpers + reconcile).
+- [x] Rulez verificări (`py_compile` + `pytest` target), completez review, commit + PR metadata.
+
+## Review
+- Providerul Google Ads include acum `fetch_ad_unit_daily_metrics(...)` cu interval half-open intern și query GAQL cu limită inclusivă calculată (`end_exclusive - 1 zi`) prin condițiile `segments.date >= start` și `segments.date <= end_inclusive`.
+- Workerul tratează explicit `grain=ad_daily`: fetch provider, dedupe entități pe `ad_id`, upsert în `platform_ads`, upsert facts per zi în `ad_unit_performance_reports` cu `source_window_start/source_window_end/source_job_id`.
+- Finalizarea run-ului pentru Google entity grains include acum și `ad_daily` în reconcile call, păstrând comportamentul `grain_not_supported` pentru valori necunoscute.
+- Testele noi acoperă conversia ferestrei în GAQL, maparea `cost_micros -> spend` și path-ul worker ad_daily (provider + upsert helpers + reconcile).
+- Verificări rulate: `python -m py_compile ...`, `pytest -q ... -k ad_daily` (worker), `pytest -q ... -k ad_unit_daily` (provider).
+
+---
 # TODO — Google Ads provider: ad_group_daily grain support (provider + worker + upserts + tests)
 
 - [x] Extind providerul Google Ads cu fetch `ad_group_daily` pe fereastră half-open `[start_date, end_date_exclusive)` și mapare metrici canonice.
@@ -30,7 +62,6 @@
 - Verificări rulate cu succes: `python -m py_compile ...` și `pytest -q ... -k "campaign_daily or fetch_campaign_daily_metrics"`.
 
 ---
-
 # TODO — Verificare workspace nou prin Connector (remote + fetch)
 
 - [x] Notez planul de execuție pentru verificarea remote/fetch într-o sesiune nouă.
