@@ -27,6 +27,7 @@ class MetaAdsSyncDailyTests(unittest.TestCase):
         meta_snapshot_store._memory_snapshots = {}
         meta_ads_service._memory_campaign_daily_rows = []
         meta_ads_service._memory_ad_group_daily_rows = []
+        meta_ads_service._memory_ad_daily_rows = []
 
         self.user = AuthUser(email="owner@example.com", role="admin")
 
@@ -39,6 +40,7 @@ class MetaAdsSyncDailyTests(unittest.TestCase):
         self.original_fetch_account = meta_ads_service._fetch_account_daily_insights
         self.original_fetch_campaign = meta_ads_service._fetch_campaign_daily_insights
         self.original_fetch_ad_group = meta_ads_service._fetch_ad_group_daily_insights
+        self.original_fetch_ad_daily = meta_ads_service._fetch_ad_daily_insights
 
     def tearDown(self):
         meta_ads_api.enforce_action_scope = self.original_enforce
@@ -47,6 +49,7 @@ class MetaAdsSyncDailyTests(unittest.TestCase):
         meta_ads_service._fetch_account_daily_insights = self.original_fetch_account
         meta_ads_service._fetch_campaign_daily_insights = self.original_fetch_campaign
         meta_ads_service._fetch_ad_group_daily_insights = self.original_fetch_ad_group
+        meta_ads_service._fetch_ad_daily_insights = self.original_fetch_ad_daily
         os.environ.clear()
         os.environ.update(self.original_env)
 
@@ -265,6 +268,105 @@ class MetaAdsSyncDailyTests(unittest.TestCase):
 
         with self.assertRaisesRegex(MetaAdsIntegrationError, "Meta API request failed"):
             meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 1), grain="ad_group_daily")
+
+    def test_ad_daily_happy_path_single_account(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client P", account_ids=["act_1501"])
+
+        meta_ads_service._resolve_active_access_token_with_source = lambda: ("token-1", "database", None, None)
+        meta_ads_service._fetch_ad_daily_insights = lambda **kwargs: [
+            {
+                "ad_id": "ad-1",
+                "ad_name": "Ad One",
+                "adset_id": "adset-1",
+                "adset_name": "Adset One",
+                "campaign_id": "cmp-15",
+                "campaign_name": "Campaign Fifteen",
+                "date_start": "2026-03-01",
+                "spend": "13.50",
+                "impressions": "150",
+                "clicks": "10",
+                "actions": [{"action_type": "purchase", "value": "2"}],
+                "action_values": [{"action_type": "purchase", "value": "77.70"}],
+            }
+        ]
+
+        payload = meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 1), grain="ad_daily")
+        self.assertEqual(payload["grain"], "ad_daily")
+        self.assertEqual(payload["rows_written"], 1)
+        self.assertEqual(len(meta_ads_service._memory_ad_daily_rows), 1)
+        row = meta_ads_service._memory_ad_daily_rows[0]
+        self.assertEqual(str(row.get("ad_id")), "ad-1")
+        self.assertEqual(str(row.get("ad_group_id")), "adset-1")
+        self.assertEqual(str(row.get("campaign_id")), "cmp-15")
+        extra = row.get("extra_metrics")
+        self.assertIsInstance(extra, dict)
+        self.assertEqual(extra["meta_ads"]["ad_name"], "Ad One")
+        self.assertEqual(extra["meta_ads"]["adset_name"], "Adset One")
+
+    def test_ad_daily_happy_path_multiple_accounts(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client Q", account_ids=["act_1601", "act_1602"])
+        meta_ads_service._resolve_active_access_token_with_source = lambda: ("token-1", "database", None, None)
+
+        def _ad_rows(**kwargs):
+            if kwargs["account_id"] == "act_1601":
+                return [{"ad_id": "ad-a", "adset_id": "adset-a", "campaign_id": "cmp-a", "date_start": "2026-03-01", "spend": "4", "impressions": "40", "clicks": "4", "actions": [], "action_values": []}]
+            return [{"ad_id": "ad-b", "adset_id": "adset-b", "campaign_id": "cmp-b", "date_start": "2026-03-01", "spend": "6", "impressions": "60", "clicks": "6", "actions": [], "action_values": []}]
+
+        meta_ads_service._fetch_ad_daily_insights = _ad_rows
+
+        payload = meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 1), grain="ad_daily")
+        self.assertEqual(payload["accounts_processed"], 2)
+        self.assertEqual(payload["rows_written"], 2)
+        self.assertEqual(len(meta_ads_service._memory_ad_daily_rows), 2)
+
+    def test_ad_daily_idempotent_rerun_same_interval(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client R", account_ids=["act_1701"])
+        meta_ads_service._resolve_active_access_token_with_source = lambda: ("token-1", "database", None, None)
+        meta_ads_service._fetch_ad_daily_insights = lambda **kwargs: [
+            {"ad_id": "ad-17", "adset_id": "adset-17", "campaign_id": "cmp-17", "date_start": "2026-03-01", "spend": "9", "impressions": "90", "clicks": "9", "actions": [], "action_values": []}
+        ]
+
+        first = meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 1), grain="ad_daily")
+        second = meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 1), grain="ad_daily")
+        self.assertEqual(first["rows_written"], 1)
+        self.assertEqual(second["rows_written"], 1)
+        self.assertEqual(len(meta_ads_service._memory_ad_daily_rows), 1)
+
+    def test_ad_daily_uses_env_fallback_token_source(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client S", account_ids=["act_1801"])
+        meta_ads_service._resolve_active_access_token_with_source = lambda: ("env-token", "env_fallback", None, None)
+        meta_ads_service._fetch_ad_daily_insights = lambda **kwargs: [
+            {"ad_id": "ad-18", "adset_id": "adset-18", "campaign_id": "cmp-18", "date_start": "2026-03-01", "spend": "2", "impressions": "20", "clicks": "2", "actions": [], "action_values": []}
+        ]
+
+        payload = meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 1), grain="ad_daily")
+        self.assertEqual(payload["token_source"], "env_fallback")
+
+    def test_ad_daily_maps_meta_api_error(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client T", account_ids=["act_1901"])
+        meta_ads_service._resolve_active_access_token_with_source = lambda: ("token-1", "database", None, None)
+
+        def _boom(**kwargs):
+            raise MetaAdsIntegrationError("Meta API request failed: status=401")
+
+        meta_ads_service._fetch_ad_daily_insights = _boom
+
+        with self.assertRaisesRegex(MetaAdsIntegrationError, "Meta API request failed"):
+            meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 1), grain="ad_daily")
+
+    def test_api_sync_ad_group_daily_backward_compat_kept(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client U", account_ids=["act_2001"])
+        meta_ads_service._resolve_active_access_token_with_source = lambda: ("token-1", "database", None, None)
+        meta_ads_service._fetch_ad_group_daily_insights = lambda **kwargs: [
+            {"adset_id": "adset-20", "campaign_id": "cmp-20", "date_start": "2026-03-01", "spend": "1", "impressions": "10", "clicks": "1", "actions": [], "action_values": []}
+        ]
+
+        response = meta_ads_api.sync_meta_ads(
+            client_id=client_id,
+            payload=meta_ads_api.MetaSyncRequest(start_date=date(2026, 3, 1), end_date=date(2026, 3, 1), grain="ad_group_daily"),
+            user=self.user,
+        )
+        self.assertEqual(response["grain"], "ad_group_daily")
 
     def test_api_sync_backward_compat_grain_missing_defaults_to_account_daily(self):
         client_id = self._create_client_with_meta_accounts(client_name="Client H", account_ids=["act_707"])

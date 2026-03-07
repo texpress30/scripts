@@ -10,7 +10,7 @@ from urllib import error, parse, request
 
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
-from app.services.entity_performance_reports import upsert_ad_group_performance_reports, upsert_campaign_performance_reports
+from app.services.entity_performance_reports import upsert_ad_group_performance_reports, upsert_ad_unit_performance_reports, upsert_campaign_performance_reports
 from app.services.integration_secrets_store import integration_secrets_store
 from app.services.meta_store import meta_snapshot_store
 from app.services.performance_reports import performance_reports_store
@@ -20,8 +20,8 @@ try:
 except Exception:  # noqa: BLE001
     psycopg = None
 
-MetaSyncGrain = Literal["account_daily", "campaign_daily", "ad_group_daily"]
-_ALLOWED_SYNC_GRAINS: tuple[str, ...] = ("account_daily", "campaign_daily", "ad_group_daily")
+MetaSyncGrain = Literal["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"]
+_ALLOWED_SYNC_GRAINS: tuple[str, ...] = ("account_daily", "campaign_daily", "ad_group_daily", "ad_daily")
 
 
 class MetaAdsIntegrationError(RuntimeError):
@@ -36,6 +36,7 @@ class MetaAdsService:
         self._runtime_access_token = ""
         self._memory_campaign_daily_rows: list[dict[str, object]] = []
         self._memory_ad_group_daily_rows: list[dict[str, object]] = []
+        self._memory_ad_daily_rows: list[dict[str, object]] = []
         self._memory_lock = Lock()
 
     def _is_test_mode(self) -> bool:
@@ -464,6 +465,48 @@ class MetaAdsService:
             version=version,
         )
 
+    def _fetch_ad_daily_insights(
+        self,
+        *,
+        account_id: str,
+        start_date: date,
+        end_date: date,
+        access_token: str,
+    ) -> list[dict[str, object]]:
+        version = self._meta_api_version()
+        fields = [
+            "ad_id",
+            "ad_name",
+            "adset_id",
+            "adset_name",
+            "campaign_id",
+            "campaign_name",
+            "date_start",
+            "date_stop",
+            "spend",
+            "impressions",
+            "clicks",
+            "actions",
+            "action_values",
+            "outbound_clicks",
+            "inline_link_clicks",
+            "unique_clicks",
+            "reach",
+            "frequency",
+            "cpm",
+            "cpp",
+            "ctr",
+        ]
+        return self._fetch_insights_rows(
+            account_id=account_id,
+            start_date=start_date,
+            end_date=end_date,
+            access_token=access_token,
+            level="ad",
+            fields=fields,
+            version=version,
+        )
+
     def _fetch_insights_rows(
         self,
         *,
@@ -620,6 +663,44 @@ class MetaAdsService:
             conn.commit()
         return written
 
+
+    def _write_ad_daily_rows(self, *, rows: list[dict[str, object]]) -> int:
+        if len(rows) == 0:
+            return 0
+        if self._is_test_mode():
+            with self._memory_lock:
+                for row in rows:
+                    key = (
+                        str(row.get("platform") or ""),
+                        str(row.get("account_id") or ""),
+                        str(row.get("ad_id") or ""),
+                        str(row.get("report_date") or ""),
+                    )
+                    replace_idx = next(
+                        (
+                            idx
+                            for idx, existing in enumerate(self._memory_ad_daily_rows)
+                            if (
+                                str(existing.get("platform") or ""),
+                                str(existing.get("account_id") or ""),
+                                str(existing.get("ad_id") or ""),
+                                str(existing.get("report_date") or ""),
+                            )
+                            == key
+                        ),
+                        None,
+                    )
+                    if replace_idx is None:
+                        self._memory_ad_daily_rows.append(dict(row))
+                    else:
+                        self._memory_ad_daily_rows[replace_idx] = dict(row)
+            return len(rows)
+
+        with self._connect() as conn:
+            written = int(upsert_ad_unit_performance_reports(conn, rows) or 0)
+            conn.commit()
+        return written
+
     @staticmethod
     def _base_extra_metrics(item: dict[str, object]) -> dict[str, object]:
         return {
@@ -770,7 +851,7 @@ class MetaAdsService:
 
                 account_rows_written = self._write_campaign_daily_rows(rows=campaign_rows)
                 rows_written += account_rows_written
-            else:
+            elif resolved_grain == "ad_group_daily":
                 insights_rows = self._fetch_ad_group_daily_insights(
                     account_id=account_id,
                     start_date=resolved_start,
@@ -828,6 +909,69 @@ class MetaAdsService:
                     account_totals["conversion_value"] += conversion_value
 
                 account_rows_written = self._write_ad_group_daily_rows(rows=ad_group_rows)
+                rows_written += account_rows_written
+            else:
+                insights_rows = self._fetch_ad_daily_insights(
+                    account_id=account_id,
+                    start_date=resolved_start,
+                    end_date=resolved_end,
+                    access_token=access_token,
+                )
+                ad_rows: list[dict[str, object]] = []
+                for item in insights_rows:
+                    report_date_raw = str(item.get("date_start") or "").strip()
+                    ad_id = str(item.get("ad_id") or "").strip()
+                    if report_date_raw == "" or ad_id == "":
+                        continue
+                    try:
+                        report_date_value = date.fromisoformat(report_date_raw)
+                    except ValueError:
+                        continue
+
+                    spend = self._parse_numeric(item.get("spend"))
+                    impressions = self._parse_int(item.get("impressions"))
+                    clicks = self._parse_int(item.get("clicks"))
+                    conversions = self._derive_conversions(actions=item.get("actions"))
+                    conversion_value = self._derive_conversion_value(action_values=item.get("action_values"))
+                    campaign_id = str(item.get("campaign_id") or "").strip() or None
+                    ad_group_id = str(item.get("adset_id") or "").strip() or None
+
+                    ad_rows.append(
+                        {
+                            "platform": "meta_ads",
+                            "account_id": account_id,
+                            "ad_id": ad_id,
+                            "campaign_id": campaign_id,
+                            "ad_group_id": ad_group_id,
+                            "report_date": report_date_value,
+                            "spend": spend,
+                            "impressions": impressions,
+                            "clicks": clicks,
+                            "conversions": conversions,
+                            "conversion_value": conversion_value,
+                            "extra_metrics": {
+                                "meta_ads": {
+                                    **self._base_extra_metrics(item),
+                                    "ad_id": ad_id,
+                                    "ad_name": str(item.get("ad_name") or "").strip() or None,
+                                    "adset_id": ad_group_id,
+                                    "adset_name": str(item.get("adset_name") or "").strip() or None,
+                                    "campaign_id": campaign_id,
+                                    "campaign_name": str(item.get("campaign_name") or "").strip() or None,
+                                }
+                            },
+                            "source_window_start": resolved_start,
+                            "source_window_end": resolved_end,
+                            "source_job_id": None,
+                        }
+                    )
+                    account_totals["spend"] += spend
+                    account_totals["impressions"] += impressions
+                    account_totals["clicks"] += clicks
+                    account_totals["conversions"] += conversions
+                    account_totals["conversion_value"] += conversion_value
+
+                account_rows_written = self._write_ad_daily_rows(rows=ad_rows)
                 rows_written += account_rows_written
 
             totals["spend"] += account_totals["spend"]

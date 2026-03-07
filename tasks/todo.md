@@ -1,3 +1,17 @@
+# TODO — Meta Ads backend sync real ad_daily pentru ads-urile conturilor atașate clientului
+
+- [x] Inspectez implementarea curentă Meta (`account_daily`/`campaign_daily`/`ad_group_daily`), store-ul generic pentru `ad_daily` și contractul API sync.
+- [x] Extind backend-ul Meta sync cu suport `grain=ad_daily`, păstrând backward compatibility pentru default/account_daily, campaign_daily și ad_group_daily.
+- [x] Implementez fetch real Meta ad insights + persist idempotent în store-ul generic `ad_unit_performance_reports`, cu metadata minimă stabilă pentru ad/adset/campaign.
+- [x] Adaug teste backend focalizate pentru `ad_daily` (single/multi/idempotent/no accounts/env fallback/API error) + backward compatibility grains existente.
+- [x] Actualizez minimal README și rulez verificări backend relevante + smoke import; completez review.
+
+## Review
+- Sync-ul Meta suportă acum și `grain=ad_daily` în endpoint-ul existent, păstrând default `account_daily` și compatibilitate neschimbată pentru `campaign_daily` + `ad_group_daily`.
+- Pentru `ad_daily`, service-ul face fetch real de insights Meta la nivel `ad` și persistă idempotent în store-ul generic `ad_unit_performance_reports` (cheie: `platform, account_id, ad_id, report_date`).
+- Mapping-ul păstrează linkage-ul de ierarhie în `extra_metrics.meta_ads` (`ad_name`, `adset_id`, `adset_name`, `campaign_id`, `campaign_name`) fără schimbări de frontend/scheduler/workers.
+
+---
 # TODO — Meta Ads backend sync real ad_group_daily pentru ad set-urile conturilor atașate clientului
 
 - [x] Inspectez implementarea curentă Meta (`account_daily`/`campaign_daily`), store-ul generic de entity reporting și contractul API sync.
