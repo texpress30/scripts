@@ -78,6 +78,14 @@ class PlatformAccountEntityWatermarksContractTests(unittest.TestCase):
             sync_start_date=date(2024, 1, 9),
             historical_synced_through=date(2024, 1, 15),
         )
+        upsert_platform_account_watermark(
+            self._conn,
+            platform="google_ads",
+            account_id="A",
+            grain="keyword_daily",
+            sync_start_date=date(2024, 1, 10),
+            historical_synced_through=date(2024, 1, 16),
+        )
 
     def test_list_platform_accounts_includes_entity_watermarks_by_grain(self):
         service = ClientRegistryService()
@@ -103,12 +111,19 @@ class PlatformAccountEntityWatermarksContractTests(unittest.TestCase):
             str(account_a["entity_watermarks"]["campaign_daily"]["historical_synced_through"]),
             "2024-01-15",
         )
+        self.assertIsNotNone(account_a["entity_watermarks"]["keyword_daily"])
+        self.assertEqual(str(account_a["entity_watermarks"]["keyword_daily"]["sync_start_date"]), "2024-01-10")
+        self.assertEqual(
+            str(account_a["entity_watermarks"]["keyword_daily"]["historical_synced_through"]),
+            "2024-01-16",
+        )
         self.assertIsNone(account_a["entity_watermarks"]["ad_group_daily"])
         self.assertIsNone(account_a["entity_watermarks"]["ad_daily"])
 
         self.assertIsNone(account_b["entity_watermarks"]["campaign_daily"])
         self.assertIsNone(account_b["entity_watermarks"]["ad_group_daily"])
         self.assertIsNone(account_b["entity_watermarks"]["ad_daily"])
+        self.assertIsNone(account_b["entity_watermarks"]["keyword_daily"])
 
 
 if __name__ == "__main__":

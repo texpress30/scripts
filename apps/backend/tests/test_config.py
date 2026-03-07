@@ -39,6 +39,10 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.integration_secret_encryption_key, "")
         self.assertEqual(settings.google_ads_api_version, "v23")
         self.assertEqual(settings.meta_access_token, "")
+        self.assertEqual(settings.meta_app_id, "")
+        self.assertEqual(settings.meta_app_secret, "")
+        self.assertEqual(settings.meta_redirect_uri, "")
+        self.assertEqual(settings.meta_api_version, "v20.0")
         self.assertEqual(settings.bigquery_project_id, "")
         self.assertFalse(settings.ff_tiktok_integration)
         self.assertFalse(settings.ff_pinterest_integration)
@@ -170,6 +174,10 @@ class ConfigTests(unittest.TestCase):
         os.environ["INTEGRATION_SECRET_ENCRYPTION_KEY"] = "enc-key"
         os.environ["GOOGLE_ADS_API_VERSION"] = "v23"
         os.environ["META_ACCESS_TOKEN"] = "test-meta-token"
+        os.environ["META_APP_ID"] = "meta-app-id"
+        os.environ["META_APP_SECRET"] = "meta-secret"
+        os.environ["META_REDIRECT_URI"] = "https://app.example.com/agency/integrations/meta/callback"
+        os.environ["META_API_VERSION"] = "v21.0"
         os.environ["BIGQUERY_PROJECT_ID"] = "test-project"
         os.environ["DATABASE_URL"] = "postgresql://example"
         os.environ["REDIS_URL"] = "redis://example"
@@ -203,6 +211,10 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.integration_secret_encryption_key, "enc-key")
         self.assertEqual(settings.google_ads_api_version, "v23")
         self.assertEqual(settings.meta_access_token, "test-meta-token")
+        self.assertEqual(settings.meta_app_id, "meta-app-id")
+        self.assertEqual(settings.meta_app_secret, "meta-secret")
+        self.assertEqual(settings.meta_redirect_uri, "https://app.example.com/agency/integrations/meta/callback")
+        self.assertEqual(settings.meta_api_version, "v21.0")
         self.assertEqual(settings.bigquery_project_id, "test-project")
         self.assertEqual(settings.cors_origins, ("https://frontend.example.com", "https://admin.example.com"))
         self.assertEqual(settings.cors_origin_regex, r"https://.*\\.example\\.com")
