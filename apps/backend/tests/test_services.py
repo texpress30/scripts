@@ -1265,6 +1265,63 @@ class ServiceTests(unittest.TestCase):
 
 
 
+    def test_google_fetch_keyword_daily_metrics_uses_end_exclusive_window_maps_spend_and_keyword_id(self):
+        original_mode = google_ads_service._is_production_mode
+        original_access = google_ads_service._access_token_from_refresh
+        original_manager = google_ads_service._required_manager_customer_id
+        original_http = google_ads_service._http_json
+        captured: dict[str, object] = {}
+        try:
+            google_ads_service._is_production_mode = lambda: True
+            google_ads_service._access_token_from_refresh = lambda: "token"
+            google_ads_service._required_manager_customer_id = lambda: "1234567890"
+
+            def _fake_http_json(**kwargs):
+                captured["query"] = kwargs.get("payload", {}).get("query")
+                return [
+                    {
+                        "results": [
+                            {
+                                "segments": {"date": "2026-03-03"},
+                                "campaign": {"id": "201"},
+                                "adGroup": {"id": "301"},
+                                "adGroupCriterion": {
+                                    "criterionId": "555",
+                                    "status": "ENABLED",
+                                    "keyword": {"text": "brand shoes", "matchType": "EXACT"},
+                                },
+                                "metrics": {
+                                    "costMicros": 2700000,
+                                    "impressions": 111,
+                                    "clicks": 9,
+                                    "conversions": 1.0,
+                                    "conversionsValue": 22.0,
+                                },
+                            }
+                        ]
+                    }
+                ]
+
+            google_ads_service._http_json = _fake_http_json
+            rows = google_ads_service.fetch_keyword_daily_metrics(
+                customer_id="1234567890",
+                start_date=date(2026, 3, 1),
+                end_date_exclusive=date(2026, 3, 8),
+                source_job_id="job-kw-1",
+            )
+        finally:
+            google_ads_service._is_production_mode = original_mode
+            google_ads_service._access_token_from_refresh = original_access
+            google_ads_service._required_manager_customer_id = original_manager
+            google_ads_service._http_json = original_http
+
+        self.assertIn("FROM keyword_view WHERE segments.date >= '2026-03-01' AND segments.date <= '2026-03-07'", str(captured.get("query") or ""))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["keyword_id"], "301~555")
+        self.assertEqual(float(rows[0]["spend"]), 2.7)
+        self.assertEqual(int(rows[0]["extra_metrics"]["google_ads"]["cost_micros"]), 2700000)
+
+
     def test_report_formula_common_metrics_return_expected_values(self):
         derived = build_derived_metrics(
             platform="google_ads",

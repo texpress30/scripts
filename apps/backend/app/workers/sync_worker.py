@@ -7,8 +7,8 @@ import time
 
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
-from app.services.entity_performance_reports import upsert_ad_group_performance_reports, upsert_ad_unit_performance_reports, upsert_campaign_performance_reports
-from app.services.platform_entity_store import upsert_platform_ad_groups, upsert_platform_ads, upsert_platform_campaigns
+from app.services.entity_performance_reports import upsert_ad_group_performance_reports, upsert_ad_unit_performance_reports, upsert_campaign_performance_reports, upsert_keyword_performance_reports
+from app.services.platform_entity_store import upsert_platform_ad_groups, upsert_platform_ads, upsert_platform_campaigns, upsert_platform_keywords
 from app.services.google_ads import google_ads_service
 from app.services.platform_watermarks_reconcile import reconcile_platform_account_watermarks
 from app.services.sync_run_chunks_store import sync_run_chunks_store
@@ -16,7 +16,7 @@ from app.services.sync_runs_store import sync_runs_store
 
 logger = logging.getLogger(__name__)
 
-_SUPPORTED_GRAINS = {"account_daily", "campaign_daily", "ad_group_daily", "ad_daily"}
+_SUPPORTED_GRAINS = {"account_daily", "campaign_daily", "ad_group_daily", "ad_daily", "keyword_daily"}
 _GRAIN_NOT_SUPPORTED_ERROR = "grain_not_supported"
 
 
@@ -83,7 +83,7 @@ def _finalize_run_if_complete(run: dict[str, object]) -> None:
             else:
                 metadata_kwargs["rolling_synced_through"] = run_date_end
             client_registry_service.update_platform_account_operational_metadata(**metadata_kwargs)
-            if platform == "google_ads" and run_grain in ("campaign_daily", "ad_group_daily", "ad_daily"):
+            if platform == "google_ads" and run_grain in ("campaign_daily", "ad_group_daily", "ad_daily", "keyword_daily"):
                 with sync_runs_store._connect() as conn:
                     reconcile_platform_account_watermarks(
                         conn,
@@ -322,6 +322,56 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
             with sync_runs_store._connect() as conn:
                 upsert_platform_ads(conn, list(ad_entity_by_id.values()))
                 rows_written = int(upsert_ad_unit_performance_reports(conn, upsert_rows) or 0)
+                conn.commit()
+        elif grain == "keyword_daily":
+            chunk_end_exclusive = chunk_end + timedelta(days=1)
+            keyword_rows = google_ads_service.fetch_keyword_daily_metrics(
+                customer_id=account_id,
+                start_date=chunk_start,
+                end_date_exclusive=chunk_end_exclusive,
+                source_job_id=job_id,
+            )
+            keyword_entity_by_id: dict[str, dict[str, object]] = {}
+            for row in keyword_rows:
+                keyword_id = str(row.get("keyword_id") or "").strip()
+                if keyword_id == "":
+                    continue
+                keyword_entity_by_id[keyword_id] = {
+                    "platform": platform,
+                    "account_id": account_id,
+                    "keyword_id": keyword_id,
+                    "campaign_id": row.get("campaign_id"),
+                    "ad_group_id": row.get("ad_group_id"),
+                    "keyword_text": row.get("keyword_text"),
+                    "match_type": row.get("match_type"),
+                    "status": row.get("status"),
+                    "raw_payload": row.get("keyword_raw") if isinstance(row.get("keyword_raw"), dict) else {},
+                    "payload_hash": row.get("keyword_payload_hash"),
+                }
+
+            upsert_rows = [
+                {
+                    "platform": platform,
+                    "account_id": account_id,
+                    "keyword_id": row.get("keyword_id"),
+                    "campaign_id": row.get("campaign_id"),
+                    "ad_group_id": row.get("ad_group_id"),
+                    "report_date": row.get("report_date"),
+                    "spend": row.get("spend", 0),
+                    "impressions": row.get("impressions", 0),
+                    "clicks": row.get("clicks", 0),
+                    "conversions": row.get("conversions", 0),
+                    "conversion_value": row.get("conversion_value", 0),
+                    "extra_metrics": row.get("extra_metrics") if isinstance(row.get("extra_metrics"), dict) else {},
+                    "source_window_start": chunk_start,
+                    "source_window_end": chunk_end_exclusive,
+                    "source_job_id": job_id,
+                }
+                for row in keyword_rows
+            ]
+            with sync_runs_store._connect() as conn:
+                upsert_platform_keywords(conn, list(keyword_entity_by_id.values()))
+                rows_written = int(upsert_keyword_performance_reports(conn, upsert_rows) or 0)
                 conn.commit()
         elif job_type == "historical_backfill":
             response = google_ads_service.sync_customer_for_client_historical_range(

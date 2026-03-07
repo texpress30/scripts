@@ -1,3 +1,19 @@
+# TODO — Google Ads provider + worker: keyword_daily grain sync
+
+- [x] Adaug fetch provider `fetch_keyword_daily_metrics` cu window half-open și ID stabil pentru keyword (`{ad_group_id}~{criterion_id}`).
+- [x] Extind `sync_worker` pentru `grain=keyword_daily` cu upsert entity (`platform_keywords`) + facts (`keyword_performance_reports`) și traceability fields.
+- [x] Extind reconcile mapping pentru `keyword_daily` și invocarea reconcile la final de run Google entity-grain.
+- [x] Adaug/actualizez teste unitare pentru provider (window/mapping/id), worker (dispatch/upserts/error non-google) și reconcile keyword_daily.
+- [x] Rulez verificări target (`py_compile` + pytest relevant), completez review, commit + PR metadata.
+
+## Review
+- Providerul Google Ads include acum `fetch_keyword_daily_metrics(...)` cu fereastră half-open (`end_exclusive`) transformată în capăt inclusiv pentru GAQL și cu ID stabil `keyword_id = "{ad_group_id}~{criterion_id}"`.
+- Workerul tratează explicit `grain=keyword_daily`: fetch provider, dedupe/upsert entity în `platform_keywords`, upsert facts în `keyword_performance_reports`, cu `source_window_start/source_window_end/source_job_id`.
+- Reconcile mapping include `keyword_daily -> keyword_performance_reports`, iar finalizarea run-ului Google entity-grain invocă reconcile și pentru `keyword_daily`.
+- Testele adăugate verifică: conversie fereastră GAQL + `cost_micros -> spend` + construcție `keyword_id`, dispatch worker keyword_daily (inclusiv non-google terminal error), și reconcile coverage pentru keyword_daily (skip-safe DB).
+- Verificări rulate: `python -m py_compile ...`, `pytest -q ... -k keyword_daily` pentru services/worker/reconcile.
+
+---
 # TODO — Store helpers: keyword entities + keyword_daily facts upsert
 
 - [x] Extind `platform_entity_store.py` cu `upsert_platform_keywords(conn, rows)` pe PK compus `(platform, account_id, keyword_id)`.

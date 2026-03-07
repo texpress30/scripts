@@ -218,3 +218,5 @@
 - 2026-03-06: Pentru task-uri DB-only pe grain nou, livrează migrare aditivă cu partition parent+default+monthly și actualizează explicit toate grain check constraints relevante (`watermarks`, `sync_runs`) în aceeași migrare.
 
 - 2026-03-06: După migrarea unui nou grain entity/fact, adaugă imediat helper-ele de upsert idempotent în store modules + teste DB de overwrite pe aceeași cheie (entity text/metrici), nu lăsa schema fără write-path verificat.
+
+- 2026-03-06: Pentru grain-uri noi la provider Google, definește explicit cheia de entity fără coliziuni (ex. `ad_group_id~criterion_id` pentru keyword), propagă aceeași cheie în facts/store și validează în test că mapping-ul rămâne stabil.
