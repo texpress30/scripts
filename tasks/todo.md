@@ -1,3 +1,15 @@
+# TODO — Rebuild clean backend-only Meta PR from origin/main
+
+- [x] Recreate clean working branch from main baseline and reapply only backend/docs/test changes for Meta backend scope.
+- [x] Ensure no `apps/frontend/**` modifications are present.
+- [x] Run backend Meta/mapping/scheduler/worker API tests and report results.
+
+## Review
+- Rebuilt a backend-only change set including Meta OAuth/connect/exchange/status, import accounts, generic client-platform mappings, Meta sync grains (`account_daily`, `campaign_daily`, `ad_group_daily`, `ad_daily`), historical backfill, and rolling sync.
+- Verified changed paths contain backend, tests, migration, and docs only (no frontend files).
+
+---
+
 # TODO — Diagnostic E2E + Fix Google Ads Data Sync către Dashboard
 
 - [x] Audit repo end-to-end (pipeline OAuth/API/sync/DB/agregare/UI) pentru Google Ads în Agency/Sub-Account dashboard.
