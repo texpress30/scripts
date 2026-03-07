@@ -1,3 +1,17 @@
+# TODO — Store helpers: keyword entities + keyword_daily facts upsert
+
+- [x] Extind `platform_entity_store.py` cu `upsert_platform_keywords(conn, rows)` pe PK compus `(platform, account_id, keyword_id)`.
+- [x] Extind `entity_performance_reports.py` cu `upsert_keyword_performance_reports(conn, rows)` pe key `(platform, account_id, keyword_id, report_date)`.
+- [x] Adaug teste DB skip-safe pentru overwrite la upsert (keyword_text și spend) pe aceleași chei.
+- [x] Rulez verificări (`py_compile` + `pytest -q apps/backend/tests/test_*keyword*`) și completez review.
+
+## Review
+- `platform_entity_store` include acum `_KEYWORD_UPSERT_SQL` + `upsert_platform_keywords(...)` cu `ON CONFLICT (platform, account_id, keyword_id)` și update pentru câmpurile mutable (`campaign_id`, `ad_group_id`, `keyword_text`, `match_type`, `status`, payload + timestamps).
+- `entity_performance_reports` include `_KEYWORD_UPSERT_SQL` + `upsert_keyword_performance_reports(...)` cu `ON CONFLICT (platform, account_id, keyword_id, report_date)` și overwrite pentru metrici canonice + `extra_metrics` + câmpuri traceability, setând `ingested_at = NOW()` la update.
+- Testul nou DB skip-safe `test_keyword_store_upserts.py` validează explicit overwrite la a doua inserare pentru `keyword_text` (entity) și `spend` (fact) pe aceleași chei.
+- Verificări rulate: `python -m py_compile ...` și `pytest -q apps/backend/tests/test_*keyword*.py` (skip-safe în mediu fără DB).
+
+---
 # TODO — DB schema: Google keywords + keyword_daily facts + grain checks
 
 - [x] Adaug migrarea SQL `0018` pentru `platform_keywords` și `keyword_performance_reports` partitionat lunar + default partition.

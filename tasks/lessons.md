@@ -216,3 +216,5 @@
 - 2026-03-06: Pentru extinderi de grain-uri în API batch, diferențiază strict request-urile legacy (`grain`) de intenția explicită (`grains`) și aplică auto-expand doar pe legacy+flag pentru a evita surprize de contract.
 
 - 2026-03-06: Pentru task-uri DB-only pe grain nou, livrează migrare aditivă cu partition parent+default+monthly și actualizează explicit toate grain check constraints relevante (`watermarks`, `sync_runs`) în aceeași migrare.
+
+- 2026-03-06: După migrarea unui nou grain entity/fact, adaugă imediat helper-ele de upsert idempotent în store modules + teste DB de overwrite pe aceeași cheie (entity text/metrici), nu lăsa schema fără write-path verificat.
