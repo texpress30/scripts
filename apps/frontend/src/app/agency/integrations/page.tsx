@@ -39,17 +39,24 @@ type GoogleDiagnosticsResponse = {
   [key: string]: unknown;
 };
 
+type IntegrationStatusUi = {
+  toneClass: string;
+  label: string;
+};
+
+type MetaStatusResponse = {
+  provider?: string;
+  status?: string;
+  message?: string;
+  [key: string]: unknown;
+};
+
 function formatDate(value?: string | null): string {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
 }
-
-type IntegrationStatusUi = {
-  toneClass: string;
-  label: string;
-};
 
 function normalizeIntegrationStatus(value?: string | null): IntegrationStatusUi {
   const normalized = String(value || "").trim().toLowerCase();
