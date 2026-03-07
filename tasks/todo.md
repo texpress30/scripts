@@ -1,3 +1,16 @@
+# TODO — Consolidate cleanup into Meta Integrations PR (merge-readiness)
+
+- [x] Pornez din branch-ul curat de Integrations (`meta-frontend-integrations-clean`) și aduc cleanup-ul de dedup Meta card în același PR.
+- [x] Verific `agency/integrations/page.tsx` să randaze exact un singur `<MetaIntegrationCard />` și fără card Meta legacy inline.
+- [x] Rulez testele focusate pentru Integrations + callback și `pnpm build`.
+- [x] Verific că diff-ul acestui branch nu atinge backend sau Agency Accounts.
+
+## Review
+- Cleanup-ul de dedup este consolidat în branch-ul Integrations (nu mai necesită PR separat).
+- `page.tsx` rămâne layout/composition și există exact un singur heading/card Meta Ads prin componenta dedicată.
+
+---
+
 # TODO — Diagnostic E2E + Fix Google Ads Data Sync către Dashboard
 
 - [x] Audit repo end-to-end (pipeline OAuth/API/sync/DB/agregare/UI) pentru Google Ads în Agency/Sub-Account dashboard.
