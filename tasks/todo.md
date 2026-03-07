@@ -1,3 +1,17 @@
+# TODO — Meta Ads frontend connect flow + callback
+
+- [x] Inspectez flow-ul existent Agency Integrations + callback Google pentru a păstra convențiile UI/UX.
+- [x] Adaug buton Connect Meta Ads funcțional pe cardul Meta (GET `/integrations/meta-ads/connect` + redirect) cu loading/error local izolat.
+- [x] Respect `oauth_configured`: dacă este `false`, butonul Connect este disabled și UI afișează clar lipsa configurării backend.
+- [x] Adaug pagina frontend callback Meta OAuth, cu handling pentru `error` provider, lipsă `code/state`, exchange success și întoarcere la Integrations.
+- [x] Adaug teste frontend focalizate pentru card/connect și callback scenarios + rulez build.
+
+## Review
+- Cardul Meta din Agency Integrations are acum Connect real, independent de celelalte carduri; erorile Meta nu afectează Google/TikTok/Pinterest/Snapchat.
+- Callback-ul Meta (`/agency/integrations/meta/callback`) face exchange prin backend doar când `code/state` sunt valide, iar pe succes redirecționează automat spre Integrations.
+- După întoarcere, statusul Meta este reîncărcat la mount-ul paginii Integrations, astfel încât starea conectată se actualizează fără refresh manual explicit.
+
+---
 # TODO — Meta Ads backend OAuth connect foundation
 
 - [x] Inspectez flow-ul Google Ads (connect + exchange + secret store) și implementarea curentă Meta pentru a păstra convențiile.

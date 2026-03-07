@@ -37,10 +37,19 @@ type GoogleDiagnosticsResponse = {
   [key: string]: unknown;
 };
 
+type MetaConnectResponse = {
+  authorize_url: string;
+  state: string;
+};
+
 type MetaStatusResponse = {
   provider?: string;
   status?: string;
   message?: string;
+  token_source?: string;
+  token_updated_at?: string | null;
+  token_expires_at?: string | null;
+  oauth_configured?: boolean;
   [key: string]: unknown;
 };
 
@@ -49,7 +58,7 @@ type IntegrationStatusUi = {
   label: string;
 };
 
-function formatDate(value?: string): string {
+function formatDate(value?: string | null): string {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -98,11 +107,6 @@ export default function AgencyIntegrationsPage() {
     }
   }
 
-  useEffect(() => {
-    void loadGoogleStatus();
-    void loadMetaStatus();
-  }, []);
-
   async function loadMetaStatus() {
     setMetaLoading(true);
     setMetaStatusError("");
@@ -117,6 +121,11 @@ export default function AgencyIntegrationsPage() {
     }
   }
 
+  useEffect(() => {
+    void loadGoogleStatus();
+    void loadMetaStatus();
+  }, []);
+
   async function connectGoogle() {
     setGoogleError("");
     setGoogleMessage("");
@@ -129,6 +138,18 @@ export default function AgencyIntegrationsPage() {
       setGoogleError(err instanceof Error ? err.message : "Nu am putut iniția Google OAuth");
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function connectMetaAds() {
+    setMetaConnectError("");
+    setMetaBusy(true);
+    try {
+      const payload = await apiRequest<MetaConnectResponse>("/integrations/meta-ads/connect");
+      window.location.href = payload.authorize_url;
+    } catch (err) {
+      setMetaConnectError(err instanceof Error ? err.message : "Nu am putut iniția conectarea Meta Ads");
+      setMetaBusy(false);
     }
   }
 
@@ -185,6 +206,8 @@ export default function AgencyIntegrationsPage() {
   const metaStatusUi = metaStatusError
     ? { label: "Eroare", toneClass: "bg-red-100 text-red-700" }
     : normalizeIntegrationStatus(metaStatus?.status);
+  const metaOauthConfigured = Boolean(metaStatus?.oauth_configured);
+
   const warnings = useMemo(() => (Array.isArray(diagnosticsData?.warnings) ? diagnosticsData?.warnings : []), [diagnosticsData]);
 
   return (
@@ -238,12 +261,31 @@ export default function AgencyIntegrationsPage() {
             {metaLoading ? <p className="mt-3 text-xs text-slate-500">Se încarcă statusul Meta Ads...</p> : null}
             {!metaLoading ? <p className="mt-3 text-xs text-slate-600">{metaStatus?.message || "Status Meta Ads indisponibil momentan."}</p> : null}
             {metaStatusError ? <p className="mt-2 text-xs text-red-600">{metaStatusError}</p> : null}
+            {metaConnectError ? <p className="mt-2 text-xs text-red-600">{metaConnectError}</p> : null}
+
             {!metaLoading && metaStatus ? (
               <div className="mt-3 space-y-1 text-xs text-slate-500">
                 {typeof metaStatus.provider === "string" && metaStatus.provider.trim() ? <p>Provider: {metaStatus.provider}</p> : null}
                 {typeof metaStatus.status === "string" && metaStatus.status.trim() ? <p>Status raw: {metaStatus.status}</p> : null}
+                <p>Sursă token: {String(metaStatus.token_source || "missing")}</p>
+                <p>Actualizat la: {formatDate(metaStatus.token_updated_at)}</p>
+                <p>Expirare token: {formatDate(metaStatus.token_expires_at)}</p>
               </div>
             ) : null}
+
+            {!metaLoading && !metaOauthConfigured ? (
+              <p className="mt-3 text-xs text-amber-700">Meta OAuth nu este configurat complet în backend (META_APP_ID/META_APP_SECRET/META_REDIRECT_URI).</p>
+            ) : null}
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                onClick={() => void connectMetaAds()}
+                disabled={metaBusy !== null || metaLoading || !metaOauthConfigured}
+                className="wm-btn-primary disabled:opacity-50"
+              >
+                {metaBusy ? "Connecting..." : "Connect Meta Ads"}
+              </button>
+            </div>
           </article>
 
           <article className="wm-card p-4">

@@ -1,6 +1,6 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import AgencyIntegrationsPage from "./page";
 
@@ -20,43 +20,80 @@ describe("AgencyIntegrationsPage Meta card", () => {
     apiMock.apiRequest.mockReset();
   });
 
-  it("renders Google card and Meta card with connected Meta status from API", async () => {
+  it("shows Meta connect button enabled when oauth_configured is true", async () => {
     apiMock.apiRequest.mockImplementation((path: string) => {
       if (path === "/integrations/google-ads/status") {
         return Promise.resolve({ status: "connected", message: "ok", mode: "oauth", connected_accounts_count: 2 });
       }
       if (path === "/integrations/meta-ads/status") {
-        return Promise.resolve({ provider: "meta_ads", status: "connected", message: "Meta Ads token is available." });
+        return Promise.resolve({ provider: "meta_ads", status: "pending", message: "setup", oauth_configured: true });
+      }
+      if (path === "/integrations/meta-ads/connect") {
+        return Promise.resolve({ authorize_url: "https://facebook.com/dialog/oauth", state: "meta-state" });
       }
       return Promise.resolve({});
     });
 
+    const originalLocation = window.location;
+    // @ts-expect-error test override
+    delete window.location;
+    // @ts-expect-error test override
+    window.location = { href: "http://localhost/agency/integrations" };
+
     render(<AgencyIntegrationsPage />);
 
-    expect(await screen.findByText("Google Ads (Production Ready)")).toBeInTheDocument();
-    expect(await screen.findByText("Meta Ads")).toBeInTheDocument();
-    expect(await screen.findByText("Meta Ads token is available.")).toBeInTheDocument();
-    expect(screen.getByText("Status raw: connected")).toBeInTheDocument();
+    const button = await screen.findByRole("button", { name: "Connect Meta Ads" });
+    expect(button).toBeEnabled();
+
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      expect(apiMock.apiRequest).toHaveBeenCalledWith("/integrations/meta-ads/connect");
+      expect(window.location.href).toBe("https://facebook.com/dialog/oauth");
+    });
+
+    window.location = originalLocation;
   });
 
-  it("keeps Meta card visible with degraded error when Meta status request fails", async () => {
+  it("disables Meta connect button when oauth_configured is false", async () => {
     apiMock.apiRequest.mockImplementation((path: string) => {
       if (path === "/integrations/google-ads/status") {
         return Promise.resolve({ status: "connected", message: "ok", mode: "oauth", connected_accounts_count: 2 });
       }
       if (path === "/integrations/meta-ads/status") {
-        return Promise.reject(new Error("Meta status unavailable"));
+        return Promise.resolve({ provider: "meta_ads", status: "pending", message: "missing config", oauth_configured: false });
       }
       return Promise.resolve({});
     });
 
     render(<AgencyIntegrationsPage />);
 
-    expect(await screen.findByText("Google Ads (Production Ready)")).toBeInTheDocument();
-    expect(await screen.findByText("Meta Ads")).toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.getByText(/Meta status unavailable|Nu am putut încărca statusul Meta Ads/)).toBeInTheDocument();
+    const button = await screen.findByRole("button", { name: "Connect Meta Ads" });
+    expect(button).toBeDisabled();
+    expect(await screen.findByText(/Meta OAuth nu este configurat complet/i)).toBeInTheDocument();
+  });
+
+  it("shows Meta connect error when connect request fails", async () => {
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/integrations/google-ads/status") {
+        return Promise.resolve({ status: "connected", message: "ok", mode: "oauth", connected_accounts_count: 2 });
+      }
+      if (path === "/integrations/meta-ads/status") {
+        return Promise.resolve({ provider: "meta_ads", status: "pending", message: "setup", oauth_configured: true });
+      }
+      if (path === "/integrations/meta-ads/connect") {
+        return Promise.reject(new Error("Meta connect unavailable"));
+      }
+      return Promise.resolve({});
     });
-    expect(screen.getByText("Status Meta Ads indisponibil momentan.")).toBeInTheDocument();
+
+    render(<AgencyIntegrationsPage />);
+
+    const button = await screen.findByRole("button", { name: "Connect Meta Ads" });
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      expect(screen.getByText("Meta connect unavailable")).toBeInTheDocument();
+    });
   });
 });

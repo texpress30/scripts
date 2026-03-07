@@ -230,3 +230,5 @@
 - 2026-03-07: Pentru carduri noi de integrare în Agency Integrations, tratează request-urile independent per provider (state + error izolate), astfel încât un eșec Meta să nu afecteze cardul Google sau restul paginii.
 
 - 2026-03-07: Pentru migrarea unui provider din stub în OAuth real, păstrează compatibilitatea graduală prin resolver de token source (DB prioritar, env fallback, missing) și nu expune tokenuri în endpoint responses.
+
+- 2026-03-07: Pentru callback-uri OAuth în frontend, validează întâi query params (`error`/`code`/`state`) și evită apelul backend când providerul a trimis deja eroare, pentru UX clar și trafic inutil redus.
