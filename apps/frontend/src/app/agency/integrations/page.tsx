@@ -283,7 +283,7 @@ export default function AgencyIntegrationsPage() {
                 disabled={metaBusy !== null || metaLoading || !metaOauthConfigured}
                 className="wm-btn-primary disabled:opacity-50"
               >
-                {metaBusy === "connect" ? "Connecting..." : "Connect Meta Ads"}
+                {metaBusy ? "Connecting..." : "Connect Meta Ads"}
               </button>
             </div>
           </article>
