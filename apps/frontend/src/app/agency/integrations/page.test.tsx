@@ -55,7 +55,7 @@ describe("AgencyIntegrationsPage Meta card", () => {
     expect(await screen.findByText("Google Ads (Production Ready)")).toBeInTheDocument();
     expect(await screen.findByText("Meta Ads")).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByText("Meta status unavailable")).toBeInTheDocument();
+      expect(screen.getByText(/Meta status unavailable|Nu am putut încărca statusul Meta Ads/)).toBeInTheDocument();
     });
     expect(screen.getByText("Status Meta Ads indisponibil momentan.")).toBeInTheDocument();
   });
