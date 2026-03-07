@@ -226,6 +226,10 @@ export default function AgencyIntegrationsPage() {
 
   const isConnected = googleStatus?.status === "connected";
 
+  const metaStatusUi = metaStatusError
+    ? { label: "Eroare", toneClass: "bg-red-100 text-red-700" }
+    : normalizeIntegrationStatus(metaStatus?.status);
+
   const warnings = useMemo(() => (Array.isArray(diagnosticsData?.warnings) ? diagnosticsData?.warnings : []), [diagnosticsData]);
 
   return (
