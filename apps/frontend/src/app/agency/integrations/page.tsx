@@ -293,8 +293,8 @@ export default function AgencyIntegrationsPage() {
                 {typeof metaStatus.provider === "string" && metaStatus.provider.trim() ? <p>Provider: {metaStatus.provider}</p> : null}
                 {typeof metaStatus.status === "string" && metaStatus.status.trim() ? <p>Status raw: {metaStatus.status}</p> : null}
                 <p>Sursă token: {String(metaStatus.token_source || "missing")}</p>
-                <p>Actualizat la: {formatDate(metaStatus.token_updated_at)}</p>
-                <p>Expirare token: {formatDate(metaStatus.token_expires_at)}</p>
+                <p>Actualizat la: {formatDate(String(metaStatus.token_updated_at || ""))}</p>
+                <p>Expirare token: {formatDate(String(metaStatus.token_expires_at || ""))}</p>
               </div>
             ) : null}
 
