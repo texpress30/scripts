@@ -39,16 +39,23 @@ type GoogleDiagnosticsResponse = {
   [key: string]: unknown;
 };
 
-type IntegrationStatusUi = {
-  toneClass: string;
-  label: string;
-};
-
 type MetaStatusResponse = {
   provider?: string;
   status?: string;
   message?: string;
   [key: string]: unknown;
+};
+
+type MetaImportResponse = {
+  status: string;
+  imported_count: number;
+  accessible_accounts: string[];
+  last_import_at?: string;
+};
+
+type IntegrationStatusUi = {
+  toneClass: string;
+  label: string;
 };
 
 function formatDate(value?: string | null): string {
