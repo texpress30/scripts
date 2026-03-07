@@ -1,30 +1,13 @@
-# TODO — Cleanup dedup Meta card în Agency Integrations (merge-readiness)
+# TODO — Consolidate cleanup into Meta Integrations PR (merge-readiness)
 
-- [x] Verific `agency/integrations/page.tsx` și elimin orice card Meta legacy/placeholder inline.
-- [x] Păstrez exact un singur render Meta prin `<MetaIntegrationCard />` și fără logică Meta locală mare în page.
-- [x] Ajustez testul de pagină să valideze explicit existența unui singur heading "Meta Ads".
-- [x] Rulez testele cerute (integrations + agency-accounts meta) și build frontend.
-- [x] Verific explicit boundary-ul diff: doar frontend/docs/tests/tasks, fără backend și fără schimbări Agency Accounts.
-
-## Review
-- Agency Integrations randază acum exact un singur card Meta prin componenta dedicată `MetaIntegrationCard`.
-- Cardul legacy/placeholder Meta nu mai există inline în `page.tsx`; pagina rămâne compunere/layout.
-- Testul de pagină verifică explicit `Meta Ads` heading count = 1, prevenind recurența bug-ului de duplicate.
-
----
-
-# TODO — Frontend-only PR 2: Meta account mappings în Agency Accounts
-
-- [x] Rebuild branch curat din `origin/main` pentru `meta-frontend-agency-accounts-clean`, fără continuare branch-uri vechi.
-- [x] Mențin `agency-accounts/page.tsx` ca orchestrator/composition și extrag logica Meta în `MetaAgencyAccountsPanel.tsx`.
-- [x] Implementez listare `GET /clients/accounts/meta_ads`, attach/detach generic, stări busy/error/success și empty-state cu hint spre Agency Integrations.
-- [x] Adaug test de compunere pentru page + teste dedicate pentru `MetaAgencyAccountsPanel` (load, attached/unattached, attach, detach, error, empty).
-- [x] Rulez testele și build-ul frontend, apoi verific explicit diff-ul că nu include backend sau Agency Integrations.
+- [x] Pornez din branch-ul curat de Integrations (`meta-frontend-integrations-clean`) și aduc cleanup-ul de dedup Meta card în același PR.
+- [x] Verific `agency/integrations/page.tsx` să randaze exact un singur `<MetaIntegrationCard />` și fără card Meta legacy inline.
+- [x] Rulez testele focusate pentru Integrations + callback și `pnpm build`.
+- [x] Verific că diff-ul acestui branch nu atinge backend sau Agency Accounts.
 
 ## Review
-- `agency-accounts/page.tsx` rămâne container și comută la `MetaAgencyAccountsPanel` doar când platforma selectată este `meta_ads`.
-- `MetaAgencyAccountsPanel` acoperă complet flow-urile Meta Agency Accounts pe endpoint-urile backend existente (`/clients/accounts/meta_ads`, `/attach-account`, `/detach-account`) cu refresh automat după mutații.
-- Nu există modificări în `apps/backend/**` și nici în `apps/frontend/src/app/agency/integrations/**`.
+- Cleanup-ul de dedup este consolidat în branch-ul Integrations (nu mai necesită PR separat).
+- `page.tsx` rămâne layout/composition și există exact un singur heading/card Meta Ads prin componenta dedicată.
 
 ---
 
