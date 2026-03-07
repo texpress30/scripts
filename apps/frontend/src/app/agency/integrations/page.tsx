@@ -46,6 +46,11 @@ type MetaStatusResponse = {
   [key: string]: unknown;
 };
 
+type MetaConnectResponse = {
+  authorize_url: string;
+  state: string;
+};
+
 type MetaImportResponse = {
   status: string;
   imported_count: number;
