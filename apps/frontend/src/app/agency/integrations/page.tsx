@@ -92,6 +92,9 @@ export default function AgencyIntegrationsPage() {
   const [diagnosticsError, setDiagnosticsError] = useState("");
   const [diagnosticsData, setDiagnosticsData] = useState<GoogleDiagnosticsResponse | null>(null);
   const [copyMessage, setCopyMessage] = useState("");
+  const [metaStatus, setMetaStatus] = useState<MetaStatusResponse | null>(null);
+  const [metaLoading, setMetaLoading] = useState(true);
+  const [metaError, setMetaError] = useState("");
 
   const [metaStatus, setMetaStatus] = useState<MetaStatusResponse | null>(null);
   const [metaLoading, setMetaLoading] = useState(true);
@@ -126,6 +129,20 @@ export default function AgencyIntegrationsPage() {
     void loadGoogleStatus();
     void loadMetaStatus();
   }, []);
+
+  async function loadMetaStatus() {
+    setMetaLoading(true);
+    setMetaError("");
+    try {
+      const payload = await apiRequest<MetaStatusResponse>("/integrations/meta-ads/status");
+      setMetaStatus(payload);
+    } catch (err) {
+      setMetaStatus(null);
+      setMetaError(err instanceof Error ? err.message : "Nu am putut încărca statusul Meta Ads");
+    } finally {
+      setMetaLoading(false);
+    }
+  }
 
   async function connectGoogle() {
     setGoogleError("");
