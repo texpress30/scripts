@@ -1,3 +1,17 @@
+# TODO — Meta Ads backend sync real ad_group_daily pentru ad set-urile conturilor atașate clientului
+
+- [x] Inspectez implementarea curentă Meta (`account_daily`/`campaign_daily`), store-ul generic de entity reporting și contractul API sync.
+- [x] Extind backend-ul Meta (`/integrations/meta-ads/{client_id}/sync`) cu suport `grain=ad_group_daily` păstrând backward compatibility pentru default/account_daily și campaign_daily.
+- [x] Implementez fetch real Meta ad set insights + persist idempotent în store-ul generic `ad_group_performance_reports`, cu mapping stabil adset/campaign metadata.
+- [x] Adaug teste backend focalizate pentru ad_group_daily (single/multi/idempotent/no accounts/token fallback/API error) și backward compatibility API.
+- [x] Actualizez minimal README pentru noul grain și rulez verificările backend relevante + smoke import.
+
+## Review
+- Sync-ul Meta acceptă acum explicit `ad_group_daily` (în plus față de `account_daily` default și `campaign_daily`) și procesează toate conturile `meta_ads` atașate clientului.
+- Pentru `ad_group_daily`, service-ul face fetch real de insights la nivel `adset` și scrie idempotent în store-ul generic `ad_group_performance_reports` (cheie: `platform, account_id, ad_group_id, report_date`).
+- Metadata include explicit legătura ad set/campaign (`adset_id`, `adset_name`, `campaign_id`, `campaign_name`) în `extra_metrics.meta_ads` fără schimbări de frontend/scheduler/workers.
+
+---
 # TODO — Meta Ads backend sync real campaign_daily pentru conturile atașate
 
 - [x] Inspectez implementarea curentă Meta `account_daily`, modelul de reporting generic și pattern-urile existente pentru grains pe entități.
