@@ -46,7 +46,7 @@ class PlatformWatermarksReconcileTests(unittest.TestCase):
     def setUp(self):
         with self._conn.cursor() as cursor:
             cursor.execute(f"SET search_path TO {self._schema}, public")
-            cursor.execute("TRUNCATE campaign_performance_reports, platform_account_watermarks")
+            cursor.execute("TRUNCATE campaign_performance_reports, keyword_performance_reports, platform_account_watermarks")
 
     def _insert_campaign_fact(self, *, account_id: str, campaign_id: str, report_date: str) -> None:
         with self._conn.cursor() as cursor:
@@ -58,6 +58,19 @@ class PlatformWatermarksReconcileTests(unittest.TestCase):
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
                 """,
                 ("google_ads", account_id, campaign_id, report_date, 0, 0, 0, 0, 0, "{}"),
+            )
+
+
+    def _insert_keyword_fact(self, *, account_id: str, keyword_id: str, report_date: str) -> None:
+        with self._conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO keyword_performance_reports(
+                  platform, account_id, keyword_id, report_date,
+                  spend, impressions, clicks, conversions, conversion_value, extra_metrics
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                """,
+                ("google_ads", account_id, keyword_id, report_date, 0, 0, 0, 0, 0, "{}"),
             )
 
     def test_derive_fact_coverage_by_account_includes_accounts_without_data(self):
@@ -145,6 +158,39 @@ class PlatformWatermarksReconcileTests(unittest.TestCase):
         self.assertIsNotNone(a)
         self.assertEqual(str(a["sync_start_date"]), "2024-01-01")
         self.assertEqual(str(a["historical_synced_through"]), "2024-02-01")
+
+    def test_reconcile_keyword_daily_writes_keyword_watermark(self):
+        self._insert_keyword_fact(account_id="KW-A", keyword_id="ag-1~111", report_date="2024-02-03")
+        self._insert_keyword_fact(account_id="KW-A", keyword_id="ag-1~111", report_date="2024-02-10")
+
+        summary = reconcile_platform_account_watermarks_from_facts(
+            self._conn,
+            platform="google_ads",
+            account_ids=["KW-A", "KW-B"],
+            grains=["keyword_daily"],
+        )
+
+        self.assertEqual(summary["updated_count_by_grain"]["keyword_daily"], 1)
+        self.assertEqual(summary["skipped_no_data_by_grain"]["keyword_daily"], 1)
+
+        kw_a = get_platform_account_watermark(
+            self._conn,
+            platform="google_ads",
+            account_id="KW-A",
+            grain="keyword_daily",
+        )
+        self.assertIsNotNone(kw_a)
+        self.assertEqual(str(kw_a["sync_start_date"]), "2024-02-03")
+        self.assertEqual(str(kw_a["historical_synced_through"]), "2024-02-10")
+
+        kw_b = get_platform_account_watermark(
+            self._conn,
+            platform="google_ads",
+            account_id="KW-B",
+            grain="keyword_daily",
+        )
+        self.assertIsNone(kw_b)
+
 
 
 if __name__ == "__main__":
