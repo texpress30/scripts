@@ -1,3 +1,17 @@
+# TODO — Agency Accounts frontend: Meta mappings funcționale
+
+- [x] Inspectez pagina Agency Accounts, pattern-ul de listare clienți și endpointurile generice existente pentru mappings.
+- [x] Implementez panel interactiv Meta Ads în Agency Accounts (listare reală, state loading/error, empty state, metadata minimă).
+- [x] Adaug flow de attach/detach Meta per row cu endpointurile generice existente și refresh listă după succes.
+- [x] Gestionez state-uri tipate pentru busy attach/detach per row + disabled logic pentru cazurile fără clienți/date disponibile.
+- [x] Adaug teste frontend focalizate pentru listare/attach/detach/error/empty state și rulez testele + build frontend.
+
+## Review
+- Cardul Meta Ads din Agency Accounts deschide acum un panel funcțional cu date reale din `GET /clients/accounts/meta_ads` și indică explicit starea atașat/neatașat pe fiecare cont.
+- Conturile neatașate pot fi atașate direct la client prin `POST /clients/{client_id}/attach-account`, iar conturile atașate pot fi detașate prin `POST /clients/{client_id}/detach-account`; după fiecare acțiune, lista Meta se reîncarcă.
+- UI-ul blochează atașarea când lipsesc clienții sau selecția de client și păstrează restul platformelor informative fără refactor major.
+
+---
 # TODO — Generic client account mappings API (Meta + extensibil multi-platform)
 
 - [x] Inspectez endpointurile/serviciile Google legacy pentru attach/detach/list și structura mapping table + registry generic.

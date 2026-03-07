@@ -238,3 +238,5 @@
 - 2026-03-07: Când frontend-ul controlează acțiuni de import pe integrare, condiția de enable trebuie legată de token usability real (`token_source`/`status`), nu doar de `oauth_configured`, pentru a păstra compatibilitatea cu fallback-uri legacy.
 
 - 2026-03-07: În acest mediu, evită `exec_command` pentru patch-uri; aplică modificări cu mecanismul dedicat de patch/edit ca să eviți avertismente de tooling.
+
+- 2026-03-07: Când taskul cere explicit scope frontend-only, evită orice modificare backend chiar dacă există context conex; limitează patch-ul strict la paginile/UI/testele cerute.
