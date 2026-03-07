@@ -82,6 +82,14 @@ Variabile minime necesare:
 - `GOOGLE_ADS_REDIRECT_URI`
 - `INTEGRATION_SECRET_ENCRYPTION_KEY`
 
+
+### Meta Ads OAuth (connect foundation)
+- Variabile env noi (backend): `META_APP_ID`, `META_APP_SECRET`, `META_REDIRECT_URI`, opțional `META_API_VERSION` (default `v20.0`).
+- Endpoints:
+  - `GET /integrations/meta-ads/connect` → `{ authorize_url, state }`
+  - `POST /integrations/meta-ads/oauth/exchange` cu `{ code, state }` → persistă long-lived token securizat în `integration_secrets` (`provider=meta_ads`, `secret_key=access_token`).
+- Status-ul `GET /integrations/meta-ads/status` expune `token_source`, `token_updated_at`, `token_expires_at` (dacă există) și `oauth_configured`.
+
 ## Endpoint-uri cheie
 ### Core
 - `POST /auth/login`
@@ -98,6 +106,8 @@ Variabile minime necesare:
 - `POST /integrations/google-ads/sync-now`
 - `GET /integrations/google-ads/diagnostics`
 - `GET /integrations/meta-ads/status`
+- `GET /integrations/meta-ads/connect`
+- `POST /integrations/meta-ads/oauth/exchange`
 - `POST /integrations/meta-ads/{client_id}/sync`
 - `GET /integrations/tiktok-ads/status`
 - `POST /integrations/tiktok-ads/{client_id}/sync`

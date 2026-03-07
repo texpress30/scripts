@@ -1,3 +1,18 @@
+# TODO — Meta Ads backend OAuth connect foundation
+
+- [x] Inspectez flow-ul Google Ads (connect + exchange + secret store) și implementarea curentă Meta pentru a păstra convențiile.
+- [x] Extind config-ul cu variabile OAuth Meta (`META_APP_ID`, `META_APP_SECRET`, `META_REDIRECT_URI`, `META_API_VERSION`) fără a rupe fallback-ul `META_ACCESS_TOKEN`.
+- [x] Implementez în `MetaAdsService` resolver token source (database/env/missing), start connect URL + state și exchange code -> long-lived token cu persistență securizată.
+- [x] Adaug endpointuri `GET /integrations/meta-ads/connect` și `POST /integrations/meta-ads/oauth/exchange` + update status payload util UI.
+- [x] Adaug teste backend focalizate pentru happy paths/erori cerute și rulez verificări relevante (`pytest -q` target + `py_compile` + smoke import app).
+- [x] Actualizez minimal `.env.example` și `README.md` pentru noile variabile/endpointuri Meta.
+
+## Review
+- Backend-ul Meta are acum fundație OAuth reală: start connect (`authorize_url` + `state`), exchange de code, exchange long-lived token și stocare token criptat în `integration_secrets`.
+- `integration_status()` prioritizează token din DB, apoi fallback `META_ACCESS_TOKEN`, altfel `pending`, și expune metadate utile (`token_source`, `token_updated_at`, `token_expires_at`, `oauth_configured`).
+- Endpointurile noi păstrează pattern-ul existent de RBAC/audit/error handling și nu expun tokenul brut în răspuns.
+
+---
 # TODO — Agency Integrations: add Meta Ads status card (frontend)
 
 - [x] Inspectez pagina Agency Integrations și păstrez pattern-ul vizual existent (card Google + grid order).

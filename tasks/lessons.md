@@ -228,3 +228,5 @@
 - 2026-03-07: Când extinzi entity grains, actualizează și read-model-urile de observabilitate (ex. `entity_watermarks` din platform accounts) cu chei stabile + null defaults, nu doar pipeline-ul de ingestie.
 
 - 2026-03-07: Pentru carduri noi de integrare în Agency Integrations, tratează request-urile independent per provider (state + error izolate), astfel încât un eșec Meta să nu afecteze cardul Google sau restul paginii.
+
+- 2026-03-07: Pentru migrarea unui provider din stub în OAuth real, păstrează compatibilitatea graduală prin resolver de token source (DB prioritar, env fallback, missing) și nu expune tokenuri în endpoint responses.
