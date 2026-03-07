@@ -96,12 +96,6 @@ export default function AgencyIntegrationsPage() {
   const [metaLoading, setMetaLoading] = useState(true);
   const [metaStatusError, setMetaStatusError] = useState("");
   const [metaConnectError, setMetaConnectError] = useState("");
-  const [metaBusy, setMetaBusy] = useState(false);
-
-  const [metaStatus, setMetaStatus] = useState<MetaStatusResponse | null>(null);
-  const [metaLoading, setMetaLoading] = useState(true);
-  const [metaStatusError, setMetaStatusError] = useState("");
-  const [metaConnectError, setMetaConnectError] = useState("");
   const [metaBusy, setMetaBusy] = useState<"connect" | null>(null);
 
   async function loadGoogleStatus() {
