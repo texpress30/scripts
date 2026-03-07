@@ -83,9 +83,7 @@ export default function AgencyIntegrationsPage() {
   const [diagnosticsError, setDiagnosticsError] = useState("");
   const [diagnosticsData, setDiagnosticsData] = useState<GoogleDiagnosticsResponse | null>(null);
   const [copyMessage, setCopyMessage] = useState("");
-  const [metaStatus, setMetaStatus] = useState<MetaStatusResponse | null>(null);
   const [metaLoading, setMetaLoading] = useState(true);
-  const [metaError, setMetaError] = useState("");
 
   async function loadGoogleStatus() {
     try {
