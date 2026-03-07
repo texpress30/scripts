@@ -105,13 +105,13 @@ export default function AgencyIntegrationsPage() {
 
   async function loadMetaStatus() {
     setMetaLoading(true);
-    setMetaError("");
+    setMetaStatusError("");
     try {
       const payload = await apiRequest<MetaStatusResponse>("/integrations/meta-ads/status");
       setMetaStatus(payload);
     } catch (err) {
       setMetaStatus(null);
-      setMetaError(err instanceof Error ? err.message : "Nu am putut încărca statusul Meta Ads");
+      setMetaStatusError(err instanceof Error ? err.message : "Nu am putut încărca statusul Meta Ads");
     } finally {
       setMetaLoading(false);
     }
@@ -182,7 +182,7 @@ export default function AgencyIntegrationsPage() {
   }
 
   const isConnected = googleStatus?.status === "connected";
-  const metaStatusUi = metaError
+  const metaStatusUi = metaStatusError
     ? { label: "Eroare", toneClass: "bg-red-100 text-red-700" }
     : normalizeIntegrationStatus(metaStatus?.status);
   const warnings = useMemo(() => (Array.isArray(diagnosticsData?.warnings) ? diagnosticsData?.warnings : []), [diagnosticsData]);
@@ -237,7 +237,7 @@ export default function AgencyIntegrationsPage() {
             <p className="mt-2 text-sm text-slate-600">Status integrare Meta Ads pentru agency. OAuth/import/sync real vor fi activate în taskurile următoare.</p>
             {metaLoading ? <p className="mt-3 text-xs text-slate-500">Se încarcă statusul Meta Ads...</p> : null}
             {!metaLoading ? <p className="mt-3 text-xs text-slate-600">{metaStatus?.message || "Status Meta Ads indisponibil momentan."}</p> : null}
-            {metaError ? <p className="mt-2 text-xs text-red-600">{metaError}</p> : null}
+            {metaStatusError ? <p className="mt-2 text-xs text-red-600">{metaStatusError}</p> : null}
             {!metaLoading && metaStatus ? (
               <div className="mt-3 space-y-1 text-xs text-slate-500">
                 {typeof metaStatus.provider === "string" && metaStatus.provider.trim() ? <p>Provider: {metaStatus.provider}</p> : null}
