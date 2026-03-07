@@ -1,5 +1,6 @@
 # Lessons
 
+- 2026-03-07: Pentru pagini de compunere cu componente de integrare (ex. Agency Integrations), adaug test explicit pe numărul heading-urilor cheie (`Meta Ads` = 1) ca să previn duplicatele UI la merge/rebase.
 - 2026-03-07: Pentru taskuri split pe frontend (Integrations vs Agency Accounts), păstrez boundary strict pe folderele cerute și verific explicit cu diff că nu ating suprafețe excluse.
 - 2026-02-24: When user explicitly asks for workspace sync commands (`git fetch`, `git reset --hard`), run them first and report policy limitations immediately if a command is blocked, then apply the closest safe equivalent (`git checkout -B <branch> origin/main`).
 - 2026-02-24: For UI parity fixes, verify all affected surfaces (Agency + Sub-account) before reporting completion.

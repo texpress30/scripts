@@ -14,16 +14,13 @@ vi.mock("@/lib/api", () => ({
 
 vi.mock("@/components/ProtectedPage", () => ({ ProtectedPage: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
 vi.mock("@/components/AppShell", () => ({ AppShell: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(),
-}));
 
 describe("AgencyIntegrationsPage", () => {
   beforeEach(() => {
     apiMock.apiRequest.mockReset();
   });
 
-  it("renders Meta integration card", async () => {
+  it("renders exactly one Meta integration card heading", async () => {
     apiMock.apiRequest.mockImplementation((path: string) => {
       if (path === "/integrations/google-ads/status") {
         return Promise.resolve({ status: "connected", message: "ok", mode: "oauth", connected_accounts_count: 2 });
@@ -36,6 +33,7 @@ describe("AgencyIntegrationsPage", () => {
 
     render(<AgencyIntegrationsPage />);
 
-    expect(await screen.findByRole("heading", { name: "Meta Ads" })).toBeInTheDocument();
+    const headings = await screen.findAllByRole("heading", { name: "Meta Ads" });
+    expect(headings).toHaveLength(1);
   });
 });

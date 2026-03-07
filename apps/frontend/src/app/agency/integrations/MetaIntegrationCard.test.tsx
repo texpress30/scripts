@@ -12,10 +12,6 @@ vi.mock("@/lib/api", () => ({
   apiRequest: apiMock.apiRequest,
 }));
 
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(),
-}));
-
 describe("MetaIntegrationCard", () => {
   beforeEach(() => {
     apiMock.apiRequest.mockReset();

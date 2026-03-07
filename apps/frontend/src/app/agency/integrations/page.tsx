@@ -287,62 +287,6 @@ export default function AgencyIntegrationsPage() {
           <MetaIntegrationCard />
 
           <article className="wm-card p-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-slate-900">Meta Ads</h2>
-              <span className={`rounded-full px-3 py-1 text-xs font-medium ${metaStatusUi.toneClass}`}>{metaStatusUi.label}</span>
-            </div>
-            <p className="mt-2 text-sm text-slate-600">Status integrare Meta Ads pentru agency. OAuth/import/sync real vor fi activate în taskurile următoare.</p>
-            {metaLoading ? <p className="mt-3 text-xs text-slate-500">Se încarcă statusul Meta Ads...</p> : null}
-            {!metaLoading ? <p className="mt-3 text-xs text-slate-600">{metaStatus?.message || "Status Meta Ads indisponibil momentan."}</p> : null}
-            {metaStatusError ? <p className="mt-2 text-xs text-red-600">{metaStatusError}</p> : null}
-            {metaConnectError ? <p className="mt-2 text-xs text-red-600">{metaConnectError}</p> : null}
-            {metaImportError ? <p className="mt-2 text-xs text-red-600">{metaImportError}</p> : null}
-
-            {!metaLoading && metaStatus ? (
-              <div className="mt-3 space-y-1 text-xs text-slate-500">
-                {typeof metaStatus.provider === "string" && metaStatus.provider.trim() ? <p>Provider: {metaStatus.provider}</p> : null}
-                {typeof metaStatus.status === "string" && metaStatus.status.trim() ? <p>Status raw: {metaStatus.status}</p> : null}
-                <p>Sursă token: {String(metaStatus.token_source || "missing")}</p>
-                <p>Actualizat la: {formatDate(metaStatus.token_updated_at)}</p>
-                <p>Expirare token: {formatDate(metaStatus.token_expires_at)}</p>
-              </div>
-            ) : null}
-
-            {!metaLoading && !metaOauthConfigured ? (
-              <p className="mt-3 text-xs text-amber-700">Meta OAuth nu este configurat complet în backend (META_APP_ID/META_APP_SECRET/META_REDIRECT_URI).</p>
-            ) : null}
-            {!metaLoading && !metaHasUsableToken ? <p className="mt-2 text-xs text-amber-700">Importul conturilor Meta necesită un token activ (database sau env fallback).</p> : null}
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                onClick={() => void connectMetaAds()}
-                disabled={metaBusy !== null || metaLoading || !metaOauthConfigured}
-                className="wm-btn-primary disabled:opacity-50"
-              >
-                {metaBusy === "connect" ? "Connecting..." : "Connect Meta Ads"}
-              </button>
-              <button
-                onClick={() => void importMetaAccounts()}
-                disabled={metaBusy !== null || metaLoading || !metaHasUsableToken}
-                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                {metaBusy === "import" ? "Importing..." : "Import Accounts"}
-              </button>
-            </div>
-
-            {metaImportResult ? (
-              <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
-                <p className="font-medium text-slate-800">Ultimul import Meta</p>
-                <p className="mt-1">{metaImportResult.message || "Import Meta finalizat."}</p>
-                <p className="mt-1">
-                  Descoperite: {metaImportResult.accounts_discovered ?? 0} · Imported: {metaImportResult.imported ?? 0} · Updated: {metaImportResult.updated ?? 0} · Unchanged: {metaImportResult.unchanged ?? 0}
-                </p>
-                {metaImportResult.token_source ? <p className="mt-1">Token source: {metaImportResult.token_source}</p> : null}
-              </div>
-            ) : null}
-          </article>
-
-          <article className="wm-card p-4">
             <h2 className="text-base font-semibold text-slate-900">TikTok Ads (stabilized)</h2>
             <p className="mt-2 text-sm text-slate-600">Integrarea TikTok este activă pentru sync și vizibilitate în dashboard.</p>
           </article>

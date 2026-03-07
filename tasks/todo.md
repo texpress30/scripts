@@ -1,3 +1,18 @@
+# TODO — Cleanup dedup Meta card în Agency Integrations (merge-readiness)
+
+- [x] Verific `agency/integrations/page.tsx` și elimin orice card Meta legacy/placeholder inline.
+- [x] Păstrez exact un singur render Meta prin `<MetaIntegrationCard />` și fără logică Meta locală mare în page.
+- [x] Ajustez testul de pagină să valideze explicit existența unui singur heading "Meta Ads".
+- [x] Rulez testele cerute (integrations + agency-accounts meta) și build frontend.
+- [x] Verific explicit boundary-ul diff: doar frontend/docs/tests/tasks, fără backend și fără schimbări Agency Accounts.
+
+## Review
+- Agency Integrations randază acum exact un singur card Meta prin componenta dedicată `MetaIntegrationCard`.
+- Cardul legacy/placeholder Meta nu mai există inline în `page.tsx`; pagina rămâne compunere/layout.
+- Testul de pagină verifică explicit `Meta Ads` heading count = 1, prevenind recurența bug-ului de duplicate.
+
+---
+
 # TODO — Frontend-only PR 2: Meta account mappings în Agency Accounts
 
 - [x] Rebuild branch curat din `origin/main` pentru `meta-frontend-agency-accounts-clean`, fără continuare branch-uri vechi.

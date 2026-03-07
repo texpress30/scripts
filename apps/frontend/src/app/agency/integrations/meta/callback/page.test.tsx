@@ -55,6 +55,7 @@ describe("MetaOAuthCallbackPage", () => {
         body: JSON.stringify({ code: "abc", state: "state-1" }),
       });
     });
+
     await waitFor(() => {
       expect(navState.replace).toHaveBeenCalledWith("/agency/integrations?meta_connected=1");
     }, { timeout: 2500 });

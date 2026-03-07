@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+
 import { apiRequest } from "@/lib/api";
 
 type MetaStatusResponse = {
@@ -69,7 +70,6 @@ export function MetaIntegrationCard() {
   const [metaImportResult, setMetaImportResult] = useState<MetaImportResponse | null>(null);
   const [metaBusy, setMetaBusy] = useState<"connect" | "import" | null>(null);
 
-
   async function loadMetaStatus() {
     setMetaLoading(true);
     setMetaStatusError("");
@@ -132,10 +132,8 @@ export function MetaIntegrationCard() {
         <span className={`rounded-full px-3 py-1 text-xs font-medium ${metaStatusUi.toneClass}`}>{metaStatusUi.label}</span>
       </div>
       <p className="mt-2 text-sm text-slate-600">Status integrare Meta Ads pentru agency.</p>
-
       {metaLoading ? <p className="mt-3 text-xs text-slate-500">Se încarcă statusul Meta Ads...</p> : null}
       {!metaLoading ? <p className="mt-3 text-xs text-slate-600">{metaStatus?.message || "Status Meta Ads indisponibil momentan."}</p> : null}
-
       {metaStatusError ? <p className="mt-2 text-xs text-red-600">{metaStatusError}</p> : null}
       {metaConnectError ? <p className="mt-2 text-xs text-red-600">{metaConnectError}</p> : null}
       {metaImportError ? <p className="mt-2 text-xs text-red-600">{metaImportError}</p> : null}
