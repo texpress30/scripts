@@ -1,27 +1,13 @@
-# TODO — Agency Dashboard: status real Meta Ads în Integration health
+# TODO — Restore Agency Integrations cards + relax TikTok FF gating for OAuth/import
 
-- [x] Verific implementarea curentă din `agency/dashboard/page.tsx` și confirm hardcodarea Meta = disabled.
-- [x] Adaug state + tip Meta separat și extind `loadDashboard()` cu `GET /integrations/meta-ads/status`.
-- [x] Înlocuiesc rândul hardcodat Meta în `integrationSummary` cu mapare din payload-ul Meta real.
-- [x] Adaug test pentru dashboard care validează Meta connected (nu disabled hardcodat).
-- [x] Rulez testul cerut + build frontend.
-
-## Review
-- Agency Dashboard afișează acum statusul real Meta din `/integrations/meta-ads/status` în Integration health.
-- `Meta Ads` nu mai este hardcodat `disabled`; status/details/lastSyncAt/lastError sunt mapate din payload Meta.
-
----
-
-# TODO — Consolidate cleanup into Meta Integrations PR (merge-readiness)
-
-- [x] Pornez din branch-ul curat de Integrations (`meta-frontend-integrations-clean`) și aduc cleanup-ul de dedup Meta card în același PR.
-- [x] Verific `agency/integrations/page.tsx` să randaze exact un singur `<MetaIntegrationCard />` și fără card Meta legacy inline.
-- [x] Rulez testele focusate pentru Integrations + callback și `pnpm build`.
-- [x] Verific că diff-ul acestui branch nu atinge backend sau Agency Accounts.
+- [x] Audit current agency integrations composition and identify missing dedicated Meta card.
+- [x] Refactor agency integrations page to compose dedicated Meta + TikTok card components exactly once each.
+- [x] Relax TikTok service/API feature-flag behavior so status/connect/oauth exchange/import stay available while sync remains flag-guarded.
+- [x] Run targeted frontend/backend tests for integrations behavior and document result.
 
 ## Review
-- Cleanup-ul de dedup este consolidat în branch-ul Integrations (nu mai necesită PR separat).
-- `page.tsx` rămâne layout/composition și există exact un singur heading/card Meta Ads prin componenta dedicată.
+- Agency Integrations page now uses dedicated cards for Meta Ads and TikTok Ads, each rendered exactly once in page composition.
+- TikTok feature flag now gates only sync execution; status/connect/oauth exchange/import accounts remain callable and return operational payloads.
 
 ---
 
@@ -2247,18 +2233,3 @@
 - `agency/integrations/page.tsx` now delegates TikTok behavior to `TikTokIntegrationCard` and keeps layout/orchestration role.
 - TikTok card now consumes existing backend contracts (`status`, `connect`, `import-accounts`) with robust fallbacks and button gating by `oauth_configured` / `has_usable_token`.
 - TikTok callback page exchanges `code/state` via backend and redirects to `/agency/integrations?tiktok_connected=1` on success.
-
----
-
-# TODO — Frontend-only TikTok Agency Accounts mappings panel
-
-- [x] Start from clean local baseline branch and keep scope frontend-only.
-- [x] Keep `agency-accounts/page.tsx` as composition and mount dedicated TikTok panel component.
-- [x] Implement TikTok Agency Accounts panel with list/load/attach/detach flows and robust states.
-- [x] Add focused frontend tests for page composition and TikTok panel behavior.
-- [x] Run requested frontend tests and build.
-
-## Review
-- Added `TikTokAgencyAccountsPanel` with isolated TikTok logic for accounts listing, attach/detach and per-row busy/error handling.
-- `agency-accounts/page.tsx` remains composition-focused and renders TikTok panel only when TikTok platform card is selected.
-- Added empty state + unavailable-state messaging and guarded attach when client list is empty.

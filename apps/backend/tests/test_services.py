@@ -975,11 +975,44 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(payload.get("token_source"), "database")
         self.assertTrue(bool(payload.get("has_usable_token")))
 
-    def test_tiktok_status_disabled_when_feature_flag_off(self):
+    def test_tiktok_status_is_not_hard_disabled_when_feature_flag_off(self):
         os.environ["FF_TIKTOK_INTEGRATION"] = "0"
-        payload = tiktok_ads_service.integration_status()
+        os.environ["TIKTOK_APP_ID"] = "tt-app-id"
+        os.environ["TIKTOK_APP_SECRET"] = "tt-app-secret"
+        os.environ["TIKTOK_REDIRECT_URI"] = "https://app.example.com/agency/integrations/tiktok/callback"
+
+        original_get = tiktok_ads_service_module.integration_secrets_store.get_secret
+        try:
+            tiktok_ads_service_module.integration_secrets_store.get_secret = lambda **kwargs: None
+            payload = tiktok_ads_service.integration_status()
+        finally:
+            tiktok_ads_service_module.integration_secrets_store.get_secret = original_get
+
         self.assertEqual(payload.get("provider"), "tiktok_ads")
-        self.assertEqual(payload.get("status"), "disabled")
+        self.assertNotEqual(payload.get("status"), "disabled")
+
+
+    def test_tiktok_oauth_connect_allowed_when_feature_flag_off(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "0"
+        os.environ["TIKTOK_APP_ID"] = "tt-app-id"
+        os.environ["TIKTOK_APP_SECRET"] = "tt-app-secret"
+        os.environ["TIKTOK_REDIRECT_URI"] = "https://app.example.com/agency/integrations/tiktok/callback"
+
+        payload = tiktok_ads_service.build_oauth_authorize_url()
+
+        self.assertIn("authorize_url", payload)
+        self.assertTrue(str(payload.get("state") or ""))
+
+    def test_tiktok_import_requires_token_even_when_feature_flag_off(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "0"
+
+        original_get = tiktok_ads_service_module.integration_secrets_store.get_secret
+        try:
+            tiktok_ads_service_module.integration_secrets_store.get_secret = lambda **kwargs: None
+            with self.assertRaises(TikTokAdsIntegrationError):
+                tiktok_ads_service.import_accounts()
+        finally:
+            tiktok_ads_service_module.integration_secrets_store.get_secret = original_get
 
     def test_integration_secret_crypto_round_trip(self):
         os.environ["INTEGRATION_SECRET_ENCRYPTION_KEY"] = "integration-secret-key"

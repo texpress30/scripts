@@ -6,6 +6,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
 
+import { MetaIntegrationCard } from "./MetaIntegrationCard";
 import { TikTokIntegrationCard } from "./TikTokIntegrationCard";
 
 type GoogleConnectResponse = {
@@ -283,6 +284,8 @@ export default function AgencyIntegrationsPage() {
               După import, rulează sync pe fiecare sub-account pentru a popula dashboard-ul cu date reale.
             </p>
           </article>
+
+          <MetaIntegrationCard />
 
           <TikTokIntegrationCard />
 

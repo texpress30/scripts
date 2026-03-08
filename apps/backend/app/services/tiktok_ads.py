@@ -84,8 +84,6 @@ class TikTokAdsService:
 
     def build_oauth_authorize_url(self) -> dict[str, str]:
         settings = load_settings()
-        if not settings.ff_tiktok_integration:
-            raise TikTokAdsIntegrationError("TikTok integration is disabled by feature flag.")
         if not self._oauth_configured():
             raise TikTokAdsIntegrationError("TikTok OAuth is not configured. Set TIKTOK_APP_ID, TIKTOK_APP_SECRET, and TIKTOK_REDIRECT_URI.")
 
@@ -105,8 +103,6 @@ class TikTokAdsService:
 
     def exchange_oauth_code(self, *, code: str, state: str) -> dict[str, object]:
         settings = load_settings()
-        if not settings.ff_tiktok_integration:
-            raise TikTokAdsIntegrationError("TikTok integration is disabled by feature flag.")
         if not self._oauth_configured():
             raise TikTokAdsIntegrationError("TikTok OAuth is not configured. Set TIKTOK_APP_ID, TIKTOK_APP_SECRET, and TIKTOK_REDIRECT_URI.")
         if state not in self._oauth_state_cache:
@@ -157,20 +153,7 @@ class TikTokAdsService:
         }
 
     def integration_status(self) -> dict[str, object]:
-        settings = load_settings()
         oauth_configured = self._oauth_configured()
-
-        if not settings.ff_tiktok_integration:
-            return {
-                "provider": "tiktok_ads",
-                "status": "disabled",
-                "message": "TikTok integration is disabled by feature flag.",
-                "token_source": "missing",
-                "token_updated_at": None,
-                "token_expires_at": None,
-                "oauth_configured": oauth_configured,
-                "has_usable_token": False,
-            }
 
         token, token_source, token_updated_at = self._access_token_with_source()
         token_expires_at = self._token_expires_at()
@@ -209,6 +192,22 @@ class TikTokAdsService:
             "token_expires_at": token_expires_at,
             "oauth_configured": True,
             "has_usable_token": False,
+        }
+
+    def import_accounts(self) -> dict[str, object]:
+        token, token_source, _ = self._access_token_with_source()
+        if token == "":
+            raise TikTokAdsIntegrationError("TikTok import requires a usable OAuth token. Connect TikTok first.")
+
+        return {
+            "status": "ok",
+            "provider": "tiktok_ads",
+            "token_source": token_source,
+            "accounts_discovered": 0,
+            "imported": 0,
+            "updated": 0,
+            "unchanged": 0,
+            "message": "TikTok account import is enabled and awaiting account discovery implementation.",
         }
 
     def _provider_snapshot(self, *, client_id: int, attempt: int, forced_failures: int) -> dict[str, float | int | str]:
