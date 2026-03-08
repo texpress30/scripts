@@ -1,10 +1,13 @@
 import logging
 import time
 from datetime import date, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 
 from app.api.dependencies import enforce_action_scope, get_current_user
+from app.core.config import load_settings
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
 from app.services.client_registry import client_registry_service
@@ -18,6 +21,62 @@ from app.services.tiktok_observability import tiktok_sync_metrics
 
 router = APIRouter(prefix="/integrations/tiktok-ads", tags=["tiktok-ads"])
 logger = logging.getLogger("app.tiktok_ads")
+
+_TIKTOK_BACKFILL_DEFAULT_START = date(2024, 1, 9)
+_TIKTOK_BACKFILL_DEFAULT_GRAINS: tuple[str, ...] = ("account_daily", "campaign_daily", "ad_group_daily", "ad_daily")
+_TIKTOK_BACKFILL_CHUNK_DAYS = 30
+
+
+def _normalize_tiktok_backfill_grains(grains: list[str] | None) -> list[str]:
+    allowed = set(_TIKTOK_BACKFILL_DEFAULT_GRAINS)
+    values = grains if grains is not None and len(grains) > 0 else list(_TIKTOK_BACKFILL_DEFAULT_GRAINS)
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        grain = str(value or "").strip().lower()
+        if grain not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported TikTok backfill grain '{value}'. Allowed: {list(_TIKTOK_BACKFILL_DEFAULT_GRAINS)}",
+            )
+        if grain in seen:
+            continue
+        seen.add(grain)
+        normalized.append(grain)
+    return normalized
+
+
+def _build_tiktok_backfill_chunks(*, start_date: date, end_date: date, chunk_days: int = _TIKTOK_BACKFILL_CHUNK_DAYS) -> list[tuple[date, date]]:
+    if start_date > end_date:
+        return []
+    ranges: list[tuple[date, date]] = []
+    cursor = start_date
+    effective_chunk_days = max(1, int(chunk_days))
+    while cursor <= end_date:
+        chunk_end = min(end_date, cursor + timedelta(days=effective_chunk_days - 1))
+        ranges.append((cursor, chunk_end))
+        cursor = chunk_end + timedelta(days=1)
+    return ranges
+
+
+class TikTokSyncRequest(BaseModel):
+    start_date: date | None = None
+    end_date: date | None = None
+    grain: Literal["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"] | None = None
+
+
+class TikTokBackfillRequest(BaseModel):
+    start_date: date | None = None
+    end_date: date | None = None
+    grains: list[Literal["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"]] | None = None
+
+
+
+class TikTokSyncRequest(BaseModel):
+    start_date: date | None = None
+    end_date: date | None = None
+    grain: Literal["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"] | None = None
+
 
 
 def _log_best_effort_warning(
@@ -281,6 +340,59 @@ def _run_tiktok_sync_job(job_id: str, *, client_id: int, account_id: str | None 
         _mirror_sync_run_status(job_id=job_id, status_value=SYNC_STATUS_ERROR, error=safe_error, mark_finished=True)
 
 
+
+def _run_tiktok_historical_backfill_job(
+    job_id: str,
+    *,
+    client_id: int,
+    start_date: date,
+    end_date: date,
+    grains: list[str],
+    chunk_days: int = _TIKTOK_BACKFILL_CHUNK_DAYS,
+) -> None:
+    backfill_job_store.set_running(job_id)
+    chunks = _build_tiktok_backfill_chunks(start_date=start_date, end_date=end_date, chunk_days=chunk_days)
+
+    rows_written = 0
+    account_ids_seen: set[str] = set()
+    accounts_processed_max = 0
+
+    try:
+        for grain in grains:
+            for chunk_start, chunk_end in chunks:
+                result = tiktok_ads_service.sync_client(
+                    client_id=int(client_id),
+                    start_date=chunk_start,
+                    end_date=chunk_end,
+                    grain=grain,
+                )
+                rows_written += int(result.get("rows_written") or 0)
+                accounts_processed_max = max(accounts_processed_max, int(result.get("accounts_processed") or 0))
+                for account_id in (result.get("account_ids") or []):
+                    if isinstance(account_id, str) and account_id.strip() != "":
+                        account_ids_seen.add(account_id.strip())
+
+        result_payload = {
+            "status": "success",
+            "mode": "historical_backfill",
+            "message": "TikTok Ads historical backfill completed.",
+            "platform": PLATFORM_TIKTOK_ADS,
+            "client_id": int(client_id),
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "grains": grains,
+            "chunk_days": int(chunk_days),
+            "chunks_processed": len(chunks),
+            "jobs_enqueued": len(chunks) * len(grains),
+            "accounts_processed": accounts_processed_max,
+            "account_ids": sorted(account_ids_seen),
+            "rows_written": rows_written,
+        }
+        backfill_job_store.set_done(job_id, result=result_payload)
+    except Exception as exc:  # noqa: BLE001
+        backfill_job_store.set_error(job_id, error=str(exc)[:300])
+
+
 def _map_sync_run_to_job_status_payload(sync_run: dict[str, object]) -> dict[str, object]:
     metadata = sync_run.get("metadata") if isinstance(sync_run.get("metadata"), dict) else {}
     if not isinstance(metadata, dict):
@@ -305,7 +417,7 @@ def _map_sync_run_to_job_status_payload(sync_run: dict[str, object]) -> dict[str
 
 
 @router.get("/status")
-def tiktok_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, str]:
+def tiktok_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
         enforce_action_scope(user=user, action="integrations:tiktok:status", scope="agency")
         rate_limiter_service.check(f"tiktok_status:{user.email}", limit=60, window_seconds=60)
@@ -321,6 +433,68 @@ def tiktok_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, s
         details={"status": status_payload["status"]},
     )
     return status_payload
+
+
+@router.get("/connect")
+def connect_tiktok_ads(user: AuthUser = Depends(get_current_user)) -> dict[str, str]:
+    enforce_action_scope(user=user, action="integrations:tiktok:status", scope="agency")
+    try:
+        payload = tiktok_ads_service.build_oauth_authorize_url()
+    except TikTokAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="tiktok_ads.connect.start",
+        resource="integration:tiktok_ads",
+        details={"state": payload["state"]},
+    )
+    return payload
+
+
+@router.post("/oauth/exchange")
+def tiktok_ads_oauth_exchange(
+    payload: dict[str, str],
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:tiktok:status", scope="agency")
+    code = str(payload.get("code", "")).strip()
+    state = str(payload.get("state", "")).strip()
+    if not code or not state:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing code/state for OAuth exchange")
+
+    try:
+        response_payload = tiktok_ads_service.exchange_oauth_code(code=code, state=state)
+    except TikTokAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="tiktok_ads.connect.success",
+        resource="integration:tiktok_ads",
+        details={"status": response_payload.get("status")},
+    )
+    return response_payload
+
+
+@router.post("/import-accounts")
+def import_tiktok_accounts(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:tiktok:status", scope="agency")
+    try:
+        payload = tiktok_ads_service.import_accounts()
+    except TikTokAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="tiktok_ads.import_accounts",
+        resource="integration:tiktok_ads",
+        details={"status": payload.get("status"), "imported": payload.get("imported", 0)},
+    )
+    return payload
 
 
 @router.post("/sync-now")
@@ -380,7 +554,7 @@ def sync_now_job_status(job_id: str, user: AuthUser = Depends(get_current_user))
 
 
 @router.post("/{client_id}/sync")
-def sync_tiktok_ads(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, float | int | str]:
+def sync_tiktok_ads(client_id: int, payload: TikTokSyncRequest | None = None, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
         enforce_action_scope(user=user, action="integrations:tiktok:sync", scope="subaccount")
         rate_limiter_service.check(f"tiktok_sync:{user.email}", limit=30, window_seconds=60)
@@ -398,7 +572,12 @@ def sync_tiktok_ads(client_id: int, user: AuthUser = Depends(get_current_user)) 
     )
 
     try:
-        snapshot = tiktok_ads_service.sync_client(client_id=client_id)
+        snapshot = tiktok_ads_service.sync_client(
+            client_id=client_id,
+            start_date=(payload.start_date if payload is not None else None),
+            end_date=(payload.end_date if payload is not None else None),
+            grain=(str(payload.grain).strip().lower() if payload is not None and payload.grain is not None else "account_daily"),
+        )
     except TikTokAdsIntegrationError as exc:
         tiktok_sync_metrics.increment("sync_failed")
         duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
@@ -450,3 +629,97 @@ def sync_tiktok_ads(client_id: int, user: AuthUser = Depends(get_current_user)) 
         details={**snapshot, "duration_ms": duration_ms},
     )
     return snapshot
+
+
+@router.post("/{client_id}/backfill")
+def backfill_tiktok_ads(
+    client_id: int,
+    background_tasks: BackgroundTasks,
+    payload: TikTokBackfillRequest | None = None,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    try:
+        enforce_action_scope(user=user, action="integrations:tiktok:sync", scope="subaccount")
+        rate_limiter_service.check(f"tiktok_backfill:{user.email}", limit=10, window_seconds=60)
+    except RateLimitExceeded as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
+
+    settings = load_settings()
+    if not settings.ff_tiktok_integration:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TikTok integration is disabled by feature flag.")
+
+    today = datetime.utcnow().date()
+    default_end = today - timedelta(days=1)
+    resolved_start = payload.start_date if payload is not None and payload.start_date is not None else _TIKTOK_BACKFILL_DEFAULT_START
+    resolved_end = payload.end_date if payload is not None and payload.end_date is not None else default_end
+
+    if resolved_start > resolved_end:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="start_date cannot be after end_date")
+
+    grains_input = payload.grains if payload is not None else None
+    resolved_grains = _normalize_tiktok_backfill_grains(list(grains_input) if grains_input is not None else None)
+
+    status_payload = tiktok_ads_service.integration_status()
+    if not bool(status_payload.get("has_usable_token")):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TikTok backfill requires a usable OAuth token. Connect TikTok first.")
+
+    attached_accounts = client_registry_service.list_client_platform_accounts(platform=PLATFORM_TIKTOK_ADS, client_id=int(client_id))
+    account_ids = [str(item.get("id") or "").strip() for item in attached_accounts if isinstance(item, dict)]
+    account_ids = [item for item in account_ids if item != ""]
+    if len(account_ids) == 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No TikTok advertiser accounts are attached to this client.")
+
+    chunks = _build_tiktok_backfill_chunks(start_date=resolved_start, end_date=resolved_end, chunk_days=_TIKTOK_BACKFILL_CHUNK_DAYS)
+
+    job_id = backfill_job_store.create(
+        payload={
+            "platform": PLATFORM_TIKTOK_ADS,
+            "client_id": int(client_id),
+            "mode": "historical_backfill",
+            "start_date": resolved_start.isoformat(),
+            "end_date": resolved_end.isoformat(),
+            "grains": resolved_grains,
+            "chunk_days": _TIKTOK_BACKFILL_CHUNK_DAYS,
+            "chunks_enqueued": len(chunks),
+        }
+    )
+    background_tasks.add_task(
+        _run_tiktok_historical_backfill_job,
+        job_id,
+        client_id=int(client_id),
+        start_date=resolved_start,
+        end_date=resolved_end,
+        grains=resolved_grains,
+        chunk_days=_TIKTOK_BACKFILL_CHUNK_DAYS,
+    )
+
+    response = {
+        "status": "queued",
+        "mode": "enqueued",
+        "message": "TikTok Ads historical backfill enqueued.",
+        "platform": PLATFORM_TIKTOK_ADS,
+        "client_id": int(client_id),
+        "start_date": resolved_start.isoformat(),
+        "end_date": resolved_end.isoformat(),
+        "grains": resolved_grains,
+        "chunk_days": _TIKTOK_BACKFILL_CHUNK_DAYS,
+        "chunks_enqueued": len(chunks),
+        "jobs_enqueued": len(chunks) * len(resolved_grains),
+        "job_id": job_id,
+    }
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="tiktok_ads.backfill.enqueue",
+        resource=f"client:{client_id}",
+        details={
+            "job_id": job_id,
+            "start_date": resolved_start.isoformat(),
+            "end_date": resolved_end.isoformat(),
+            "grains": resolved_grains,
+            "chunks_enqueued": len(chunks),
+        },
+    )
+
+    return response
