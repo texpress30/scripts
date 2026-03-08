@@ -212,3 +212,4 @@
 - 2026-03-08: After user correction on branch hygiene, always start requested rework from fresh `origin/main` baseline branch before implementing frontend refactors.
 - 2026-03-08: When requested git baseline commands cannot run due missing remote/branch topology, continue from the clean available baseline branch and state the constraint explicitly before implementation.
 - 2026-03-08: For frontend-only PR requests, enforce explicit path guard before commit (`git diff --name-only`) to ensure no backend files are touched.
+- 2026-03-08: Before claiming a grain feature is ready-to-publish, re-verify the actual HEAD code/tests for that grain (service union + API schema + dedicated tests) to catch branch drift early.

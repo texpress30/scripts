@@ -2304,3 +2304,17 @@
 - `agency/integrations/page.tsx` now delegates TikTok behavior to `TikTokIntegrationCard` and keeps layout/orchestration role.
 - TikTok card now consumes existing backend contracts (`status`, `connect`, `import-accounts`) with robust fallbacks and button gating by `oauth_configured` / `has_usable_token`.
 - TikTok callback page exchanges `code/state` via backend and redirects to `/agency/integrations?tiktok_connected=1` on success.
+
+---
+
+# TODO — Publish TikTok ad_daily sync grain
+
+- [x] Verify ad_daily implementation state versus user report and identify missing pieces.
+- [x] Add missing `ad_daily` support in TikTok service + API contract.
+- [x] Add focused backend tests for ad_daily paths and schema acceptance.
+- [x] Run targeted compile/tests/smoke checks.
+- [x] Commit and prepare PR publishing metadata.
+
+## Review
+- The current branch was missing `ad_daily` in TikTok grain union, API schema, and dedicated tests; these were restored.
+- Sync now supports `ad_daily` with ad-level fetch + generic ad-unit upsert and idempotent test-mode key replacement.
