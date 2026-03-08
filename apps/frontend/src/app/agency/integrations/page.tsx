@@ -39,11 +39,60 @@ type GoogleDiagnosticsResponse = {
   [key: string]: unknown;
 };
 
-function formatDate(value?: string): string {
+type MetaConnectResponse = {
+  authorize_url: string;
+  state: string;
+};
+
+type MetaImportResponse = {
+  status?: string;
+  message?: string;
+  platform?: string;
+  token_source?: string;
+  accounts_discovered?: number;
+  imported?: number;
+  updated?: number;
+  unchanged?: number;
+};
+
+type MetaStatusResponse = {
+  provider?: string;
+  status?: string;
+  message?: string;
+  token_source?: string;
+  token_updated_at?: string | null;
+  token_expires_at?: string | null;
+  oauth_configured?: boolean;
+  [key: string]: unknown;
+};
+
+type IntegrationStatusUi = {
+  toneClass: string;
+  label: string;
+};
+
+function formatDate(value?: string | null): string {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
+}
+
+function normalizeIntegrationStatus(value?: string | null): IntegrationStatusUi {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["connected", "ok", "active", "enabled", "ready", "healthy", "success"].includes(normalized)) {
+    return { label: "Conectat", toneClass: "bg-emerald-100 text-emerald-700" };
+  }
+  if (["pending", "not_configured", "not_connected", "setup_required", "placeholder"].includes(normalized)) {
+    return { label: "În așteptare", toneClass: "bg-amber-100 text-amber-700" };
+  }
+  if (["disabled", "off", "inactive"].includes(normalized)) {
+    return { label: "Dezactivat", toneClass: "bg-slate-200 text-slate-700" };
+  }
+  if (["error", "failed", "failure", "unhealthy"].includes(normalized)) {
+    return { label: "Eroare", toneClass: "bg-red-100 text-red-700" };
+  }
+  return { label: "Necunoscut", toneClass: "bg-slate-200 text-slate-700" };
 }
 
 export default function AgencyIntegrationsPage() {
@@ -56,6 +105,13 @@ export default function AgencyIntegrationsPage() {
   const [diagnosticsError, setDiagnosticsError] = useState("");
   const [diagnosticsData, setDiagnosticsData] = useState<GoogleDiagnosticsResponse | null>(null);
   const [copyMessage, setCopyMessage] = useState("");
+  const [metaStatus, setMetaStatus] = useState<MetaStatusResponse | null>(null);
+  const [metaLoading, setMetaLoading] = useState(true);
+  const [metaStatusError, setMetaStatusError] = useState("");
+  const [metaConnectError, setMetaConnectError] = useState("");
+  const [metaImportError, setMetaImportError] = useState("");
+  const [metaImportResult, setMetaImportResult] = useState<MetaImportResponse | null>(null);
+  const [metaBusy, setMetaBusy] = useState<"connect" | "import" | null>(null);
 
   async function loadGoogleStatus() {
     try {
@@ -66,8 +122,23 @@ export default function AgencyIntegrationsPage() {
     }
   }
 
+  async function loadMetaStatus() {
+    setMetaLoading(true);
+    setMetaStatusError("");
+    try {
+      const payload = await apiRequest<MetaStatusResponse>("/integrations/meta-ads/status");
+      setMetaStatus(payload);
+    } catch (err) {
+      setMetaStatus(null);
+      setMetaStatusError(err instanceof Error ? err.message : "Nu am putut încărca statusul Meta Ads");
+    } finally {
+      setMetaLoading(false);
+    }
+  }
+
   useEffect(() => {
     void loadGoogleStatus();
+    void loadMetaStatus();
   }, []);
 
   async function connectGoogle() {
@@ -82,6 +153,33 @@ export default function AgencyIntegrationsPage() {
       setGoogleError(err instanceof Error ? err.message : "Nu am putut iniția Google OAuth");
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function connectMetaAds() {
+    setMetaConnectError("");
+    setMetaBusy("connect");
+    try {
+      const payload = await apiRequest<MetaConnectResponse>("/integrations/meta-ads/connect");
+      window.location.href = payload.authorize_url;
+    } catch (err) {
+      setMetaConnectError(err instanceof Error ? err.message : "Nu am putut iniția conectarea Meta Ads");
+      setMetaBusy(null);
+    }
+  }
+
+  async function importMetaAccounts() {
+    setMetaImportError("");
+    setMetaImportResult(null);
+    setMetaBusy("import");
+    try {
+      const payload = await apiRequest<MetaImportResponse>("/integrations/meta-ads/import-accounts", { method: "POST" });
+      setMetaImportResult(payload);
+      await loadMetaStatus();
+    } catch (err) {
+      setMetaImportError(err instanceof Error ? err.message : "Nu am putut importa conturile Meta Ads");
+    } finally {
+      setMetaBusy(null);
     }
   }
 
@@ -135,6 +233,13 @@ export default function AgencyIntegrationsPage() {
   }
 
   const isConnected = googleStatus?.status === "connected";
+  const metaStatusUi = metaStatusError
+    ? { label: "Eroare", toneClass: "bg-red-100 text-red-700" }
+    : normalizeIntegrationStatus(metaStatus?.status);
+  const metaOauthConfigured = Boolean(metaStatus?.oauth_configured);
+  const metaTokenSource = String(metaStatus?.token_source || "missing").trim().toLowerCase();
+  const metaHasUsableToken = metaStatus?.status === "connected" || ["database", "env_fallback", "runtime"].includes(metaTokenSource);
+
   const warnings = useMemo(() => (Array.isArray(diagnosticsData?.warnings) ? diagnosticsData?.warnings : []), [diagnosticsData]);
 
   return (
