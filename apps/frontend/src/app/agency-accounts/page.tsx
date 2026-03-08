@@ -8,7 +8,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest, postAccountSyncProgressBatch, type AccountSyncProgressBatchResult } from "@/lib/api";
 
-import { MetaAgencyAccountsPanel } from "./MetaAgencyAccountsPanel";
+import { TikTokAgencyAccountsPanel } from "./TikTokAgencyAccountsPanel";
 
 type ClientRecord = {
   id: number;
@@ -812,8 +812,8 @@ export default function AgencyAccountsPage() {
               })}
             </div>
 
-            {selectedPlatform === "meta_ads" ? (
-              <MetaAgencyAccountsPanel clients={clients.map((client) => ({ id: client.id, name: client.name, display_id: client.display_id }))} />
+            {selectedPlatform === "tiktok_ads" ? (
+              <TikTokAgencyAccountsPanel />
             ) : selectedPlatform !== "google_ads" ? (
               <div className="mt-4 wm-card p-4 text-sm text-slate-500">
                 Pentru acest task, doar Google Ads și Meta Ads sunt funcționale. Celelalte platforme rămân informative.
