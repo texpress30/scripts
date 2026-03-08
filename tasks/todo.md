@@ -1,3 +1,59 @@
+# TODO — TikTok backend sync real account_daily for attached advertiser accounts
+
+- [x] Audit TikTok service/api/reporting/client-account mapping paths and pick minimal integration points.
+- [x] Replace TikTok stub sync with real account_daily fetch + write to generic performance reports for all attached TikTok accounts.
+- [x] Keep connect/import/status behavior intact and retain feature flag guard only for sync execution.
+- [x] Add focused backend tests for happy paths, no-account, token/flag errors, API failure mapping, and idempotent rerun behavior.
+- [x] Run targeted backend checks (pytest + py_compile import smoke) and document review.
+
+## Review
+- TikTok sync now fetches real account_daily metrics from TikTok Business reporting API for every attached `tiktok_ads` advertiser account and writes idempotent daily rows to generic reporting store.
+- Existing OAuth/connect/import/status flows remain available; feature flag still guards sync execution only.
+
+---
+
+# TODO — Hotfix Railway startup crash (`Literal` import missing in meta_ads)
+
+- [x] Inspect backend crash context and target file for missing `Literal` typing import.
+- [x] Add `Literal` import in `apps/backend/app/services/meta_ads.py` without changing business logic.
+- [x] Run requested compile and pytest commands and capture outputs.
+- [x] Commit minimal hotfix and report results.
+
+## Review
+- Added missing `Literal` import to prevent startup `NameError` in Railway import path.
+- No other runtime logic changes were made in this hotfix.
+
+---
+
+# TODO — Fix TikTok business OAuth URL + restore Meta connect/import card + align callback URIs
+
+- [x] Audit current integrations frontend/backend files and identify URI/auth-flow mismatches for Meta and TikTok.
+- [x] Update TikTok backend authorize URL to TikTok Business advertiser auth endpoint and keep exchange/import/status contracts consistent.
+- [x] Restore Meta integration card actions (Connect Meta + Import Accounts) and add frontend Meta callback flow aligned to current callback route.
+- [x] Keep Agency Integrations page as composition-only with exactly one Meta card and one TikTok card.
+- [x] Add/update focused frontend and backend tests for Meta/TikTok connect/callback/import behavior, then run requested checks/build.
+- [x] Update minimal docs with exact production redirect URIs for Meta and TikTok callback pages.
+
+## Review
+- TikTok authorize now uses business advertiser auth (`https://business-api.tiktok.com/portal/auth`) with `app_id`, `redirect_uri`, and `state`, aligned to frontend callback route.
+- Meta integrations card now includes Connect + Import actions with robust status gating; frontend Meta callback page is implemented and wired to backend exchange endpoint.
+- Agency integrations composition preserves a single Meta card + single TikTok card.
+
+---
+
+# TODO — Restore Agency Integrations cards + relax TikTok FF gating for OAuth/import
+
+- [x] Audit current agency integrations composition and identify missing dedicated Meta card.
+- [x] Refactor agency integrations page to compose dedicated Meta + TikTok card components exactly once each.
+- [x] Relax TikTok service/API feature-flag behavior so status/connect/oauth exchange/import stay available while sync remains flag-guarded.
+- [x] Run targeted frontend/backend tests for integrations behavior and document result.
+
+## Review
+- Agency Integrations page now uses dedicated cards for Meta Ads and TikTok Ads, each rendered exactly once in page composition.
+- TikTok feature flag now gates only sync execution; status/connect/oauth exchange/import accounts remain callable and return operational payloads.
+
+---
+
 # TODO — Diagnostic E2E + Fix Google Ads Data Sync către Dashboard
 
 - [x] Audit repo end-to-end (pipeline OAuth/API/sync/DB/agregare/UI) pentru Google Ads în Agency/Sub-Account dashboard.
@@ -2172,3 +2228,51 @@
 - Baseline now inserts legacy migration IDs only when `schema_migrations` is empty, then regular application proceeds for pending migrations.
 - Existing installations with non-empty `schema_migrations` are unaffected (baseline no-op).
 - Added pure unit tests (no DB) validating baseline insert scope, no-op behavior, and that post-baseline migrations still execute.
+
+---
+
+# TODO — Agency Dashboard frontend consume summary.integration_health
+
+- [x] Rebase workspace on latest `origin/main` and start clean frontend branch.
+- [x] Remove provider-specific integration status requests from agency dashboard page.
+- [x] Consume only `summary.integration_health` in Integration health card with empty fallback.
+- [x] Add/update Agency Dashboard frontend tests for integration health rendering contract.
+- [x] Run required frontend test and build commands.
+
+## Review
+- Agency Dashboard now performs a single summary request and renders integration health from `summary.integration_health`.
+- Removed old Google-only status state/request and manual provider list construction.
+- Added frontend tests validating summary-driven integration health rendering and empty fallback.
+
+---
+
+# TODO — TikTok Ads backend connect foundation
+
+- [x] Start from clean baseline branch and inspect TikTok/Meta/secrets store implementation.
+- [x] Add TikTok OAuth config env support in backend settings.
+- [x] Implement TikTok service connect/exchange + real status based on persisted secrets.
+- [x] Add TikTok API endpoints for connect start and OAuth exchange.
+- [x] Add focused backend tests for connect/exchange/status scenarios.
+- [x] Update README minimally for TikTok OAuth env and endpoints.
+- [x] Run targeted pytest + backend import smoke checks.
+
+## Review
+- Added TikTok OAuth foundation (connect URL + code exchange) with state validation and secure token persistence in `integration_secrets`.
+- `GET /integrations/tiktok-ads/status` now reports operational fields for UI (`token_source`, token timestamps, oauth config, usable token) instead of mock-only connected status.
+- Existing TikTok sync endpoint remains compatible but explicitly marked stub in sync payload (`sync_mode=stub`) to avoid confusion about real metrics import scope.
+
+---
+
+# TODO — Frontend-only TikTok Integrations card + OAuth callback
+
+- [x] Create clean frontend branch from clean local baseline and verify scope constraints.
+- [x] Keep `agency/integrations/page.tsx` as composition page and render `<TikTokIntegrationCard />`.
+- [x] Implement TikTok integration UI logic in dedicated card component (status/connect/import).
+- [x] Implement TikTok OAuth callback page (provider error, missing code/state, exchange + redirect).
+- [x] Add focused frontend tests for page composition, TikTok card behaviors, and callback flows.
+- [x] Run required frontend tests and build.
+
+## Review
+- `agency/integrations/page.tsx` now delegates TikTok behavior to `TikTokIntegrationCard` and keeps layout/orchestration role.
+- TikTok card now consumes existing backend contracts (`status`, `connect`, `import-accounts`) with robust fallbacks and button gating by `oauth_configured` / `has_usable_token`.
+- TikTok callback page exchanges `code/state` via backend and redirects to `/agency/integrations?tiktok_connected=1` on success.
