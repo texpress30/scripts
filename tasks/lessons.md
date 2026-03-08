@@ -1,5 +1,10 @@
 # Lessons
 
+- 2026-03-08: When adding a new sync grain, keep prior grains behavior unchanged and add explicit regression tests for previous grain paths plus omitted-grain defaults.
+- 2026-03-08: When extending sync grain support, enforce grain validation at both request model and service layer, while keeping omitted-grain behavior strictly backward compatible.
+- 2026-03-08: When implementing provider sync upgrades, remove synthetic metric sources from the main write path and preserve only minimal compatibility snapshots derived from real fetched totals.
+- 2026-03-08: For urgent production startup crashes, apply the smallest import-only fix first and avoid bundling unrelated refactors in the same hotfix commit.
+- 2026-03-08: For OAuth provider fixes, validate authorize endpoint type (business vs consumer) and ensure backend redirect URI envs exactly match existing frontend callback routes before shipping UI card changes.
 - 2026-02-24: When user explicitly asks for workspace sync commands (`git fetch`, `git reset --hard`), run them first and report policy limitations immediately if a command is blocked, then apply the closest safe equivalent (`git checkout -B <branch> origin/main`).
 - 2026-02-24: For UI parity fixes, verify all affected surfaces (Agency + Sub-account) before reporting completion.
 - 2026-02-25: If user provides explicit terminal commands to repair git remotes, execute them exactly first, then handle any resulting divergence flags with the minimal extra git command needed (`git pull --no-rebase ...`) to complete sync.
@@ -204,3 +209,7 @@
 - 2026-03-06: Pentru extinderi pe grain-uri noi în worker, implementează branch explicit per grain+platform cu output canonic în store-ul de facts și finalizează cu reconcile watermark pe grain la succes, păstrând fallback/error code stabil pentru platforme neimplementate.
 - 2026-03-06: Pentru CLI-uri folosite în orchestratoare (Railway root_dir variabil), evită căi implicite hardcodate pe un singur cwd; implementează resolver cu candidate paths ordonate + mesaj de eroare diagnostic (cwd + tried candidates).
 - 2026-03-06: Când introduci migration runner pe DB-uri deja provisionate, adaugă explicit mecanism de baseline bootstrap (condiționat pe `schema_migrations` gol) pentru a evita crash loop-uri din conflicte pe tabele legacy existente.
+- 2026-03-08: After user correction on branch hygiene, always start requested rework from fresh `origin/main` baseline branch before implementing frontend refactors.
+- 2026-03-08: When requested git baseline commands cannot run due missing remote/branch topology, continue from the clean available baseline branch and state the constraint explicitly before implementation.
+- 2026-03-08: For frontend-only PR requests, enforce explicit path guard before commit (`git diff --name-only`) to ensure no backend files are touched.
+- 2026-03-08: Before claiming a grain feature is ready-to-publish, re-verify the actual HEAD code/tests for that grain (service union + API schema + dedicated tests) to catch branch drift early.
