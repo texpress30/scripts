@@ -305,7 +305,7 @@ def _map_sync_run_to_job_status_payload(sync_run: dict[str, object]) -> dict[str
 
 
 @router.get("/status")
-def tiktok_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, str]:
+def tiktok_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
         enforce_action_scope(user=user, action="integrations:tiktok:status", scope="agency")
         rate_limiter_service.check(f"tiktok_status:{user.email}", limit=60, window_seconds=60)
@@ -321,6 +321,73 @@ def tiktok_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, s
         details={"status": status_payload["status"]},
     )
     return status_payload
+
+
+@router.get("/connect")
+def connect_tiktok_ads(user: AuthUser = Depends(get_current_user)) -> dict[str, str]:
+    enforce_action_scope(user=user, action="integrations:tiktok:status", scope="agency")
+    try:
+        payload = tiktok_ads_service.build_oauth_authorize_url()
+    except TikTokAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="tiktok_ads.connect.start",
+        resource="integration:tiktok_ads",
+        details={"state": payload["state"]},
+    )
+    return payload
+
+
+@router.post("/oauth/exchange")
+def tiktok_ads_oauth_exchange(
+    payload: dict[str, str],
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:tiktok:status", scope="agency")
+    code = str(payload.get("code", "")).strip()
+    state = str(payload.get("state", "")).strip()
+    if not code or not state:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing code/state for OAuth exchange")
+
+    try:
+        response_payload = tiktok_ads_service.exchange_oauth_code(code=code, state=state)
+    except TikTokAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="tiktok_ads.connect.success",
+        resource="integration:tiktok_ads",
+        details={"status": response_payload.get("status")},
+    )
+    return response_payload
+
+
+@router.post("/import-accounts")
+def import_tiktok_accounts(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    try:
+        payload = tiktok_ads_service.import_advertiser_accounts()
+    except TikTokAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="tiktok_ads.import_accounts",
+        resource="integration:tiktok_ads",
+        details={
+            "accounts_discovered": payload.get("accounts_discovered", 0),
+            "imported": payload.get("imported", 0),
+            "updated": payload.get("updated", 0),
+            "unchanged": payload.get("unchanged", 0),
+        },
+    )
+    return payload
 
 
 @router.post("/sync-now")
