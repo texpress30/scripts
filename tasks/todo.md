@@ -2199,3 +2199,16 @@
 - Baseline now inserts legacy migration IDs only when `schema_migrations` is empty, then regular application proceeds for pending migrations.
 - Existing installations with non-empty `schema_migrations` are unaffected (baseline no-op).
 - Added pure unit tests (no DB) validating baseline insert scope, no-op behavior, and that post-baseline migrations still execute.
+
+---
+
+# TODO — Agency summary integration health contract
+
+- [x] Review modified backend files and keep change scope backend-only.
+- [x] Run targeted backend tests for integration health payload and dashboard compatibility.
+- [x] Prepare commit and PR message with test evidence.
+
+## Review
+- Added `integration_health` aggregation in unified agency summary response.
+- Added backend tests for Google/Meta mapping and disabled placeholders for other platforms.
+- Verified with targeted pytest runs; one broader dashboard test subset requires Google mapping env and is documented in test output.
