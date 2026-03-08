@@ -2172,3 +2172,18 @@
 - Baseline now inserts legacy migration IDs only when `schema_migrations` is empty, then regular application proceeds for pending migrations.
 - Existing installations with non-empty `schema_migrations` are unaffected (baseline no-op).
 - Added pure unit tests (no DB) validating baseline insert scope, no-op behavior, and that post-baseline migrations still execute.
+
+---
+
+# TODO — Agency Dashboard frontend consume summary.integration_health
+
+- [x] Rebase workspace on latest `origin/main` and start clean frontend branch.
+- [x] Remove provider-specific integration status requests from agency dashboard page.
+- [x] Consume only `summary.integration_health` in Integration health card with empty fallback.
+- [x] Add/update Agency Dashboard frontend tests for integration health rendering contract.
+- [x] Run required frontend test and build commands.
+
+## Review
+- Agency Dashboard now performs a single summary request and renders integration health from `summary.integration_health`.
+- Removed old Google-only status state/request and manual provider list construction.
+- Added frontend tests validating summary-driven integration health rendering and empty fallback.

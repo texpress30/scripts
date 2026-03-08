@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 import { format, startOfMonth, subDays } from "date-fns";
 import { DayPicker, type DateRange } from "react-day-picker";
@@ -12,9 +12,9 @@ import { apiRequest } from "@/lib/api";
 
 type IntegrationStatus = {
   platform: string;
+  label: string;
   status: string;
-  accounts_found?: number;
-  rows_in_db_last_30_days?: number;
+  details?: string | null;
   last_sync_at?: string | null;
   last_error?: string | null;
 };
@@ -32,6 +32,7 @@ type AgencySummaryResponse = {
   };
   top_clients: Array<{ client_id: number; name: string; spend: number; currency?: string; spend_ron?: number }>;
   currency?: string;
+  integration_health?: IntegrationStatus[];
 };
 
 type DatePresetKey = "today" | "yesterday" | "last7" | "last30" | "month" | "custom";
@@ -104,7 +105,6 @@ export default function AgencyDashboardPage() {
   const [draftPreset, setDraftPreset] = useState<DatePresetKey>("last30");
   const [draftRange, setDraftRange] = useState<DateRange>(initialRange);
 
-  const [googleStatus, setGoogleStatus] = useState<IntegrationStatus | null>(null);
   const [summary, setSummary] = useState<AgencySummaryResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -117,14 +117,10 @@ export default function AgencyDashboardPage() {
       setLoading(true);
       setError("");
       try {
-        const [google, agencySummary] = await Promise.all([
-          apiRequest<IntegrationStatus>("/integrations/google-ads/status"),
-          apiRequest<AgencySummaryResponse>(
-            `/dashboard/agency/summary?start_date=${toIso(appliedFrom)}&end_date=${toIso(appliedTo)}`
-          ),
-        ]);
+        const agencySummary = await apiRequest<AgencySummaryResponse>(
+          `/dashboard/agency/summary?start_date=${toIso(appliedFrom)}&end_date=${toIso(appliedTo)}`
+        );
 
-        setGoogleStatus(google);
         setSummary(agencySummary);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Nu am putut încărca dashboard-ul agency");
@@ -140,19 +136,15 @@ export default function AgencyDashboardPage() {
 
   const integrationSummary = useMemo(
     () => [
-      {
-        label: "Google Ads",
-        status: googleStatus?.status ?? "error",
-        details: `accounts=${googleStatus?.accounts_found ?? 0} · rows30=${googleStatus?.rows_in_db_last_30_days ?? 0}`,
-        lastSyncAt: googleStatus?.last_sync_at ?? null,
-        lastError: googleStatus?.last_error ?? null,
-      },
-      { label: "Meta Ads", status: "disabled", details: null, lastSyncAt: null, lastError: null },
-      { label: "TikTok Ads", status: "disabled", details: null, lastSyncAt: null, lastError: null },
-      { label: "Pinterest Ads", status: "disabled", details: null, lastSyncAt: null, lastError: null },
-      { label: "Snapchat Ads", status: "disabled", details: null, lastSyncAt: null, lastError: null },
+      ...(summary?.integration_health ?? []).map((item) => ({
+        label: item.label,
+        status: item.status,
+        details: item.details ?? null,
+        lastSyncAt: item.last_sync_at ?? null,
+        lastError: item.last_error ?? null,
+      })),
     ],
-    [googleStatus?.status, googleStatus?.accounts_found, googleStatus?.rows_in_db_last_30_days, googleStatus?.last_sync_at, googleStatus?.last_error]
+    [summary?.integration_health]
   );
 
   function handlePresetClick(nextPreset: DatePresetKey) {
@@ -251,6 +243,7 @@ export default function AgencyDashboardPage() {
           <article className="wm-card p-4">
             <h3 className="text-sm font-semibold text-slate-900">Integration health</h3>
             <ul className="mt-3 space-y-2 text-sm text-slate-600">
+              {!loading && integrationSummary.length === 0 ? <li>Date indisponibile pentru integration health.</li> : null}
               {integrationSummary.map((item) => (
                 <li key={item.label} className="flex items-start justify-between gap-3">
                   <div>
