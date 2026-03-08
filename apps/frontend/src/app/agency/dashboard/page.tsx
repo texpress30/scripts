@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 import { format, startOfMonth, subDays } from "date-fns";
 import { DayPicker, type DateRange } from "react-day-picker";
@@ -17,6 +17,18 @@ type IntegrationStatus = {
   rows_in_db_last_30_days?: number;
   last_sync_at?: string | null;
   last_error?: string | null;
+};
+
+type MetaIntegrationStatus = {
+  provider?: string;
+  status?: string;
+  message?: string;
+  token_source?: string;
+  token_updated_at?: string | null;
+  token_expires_at?: string | null;
+  oauth_configured?: boolean;
+  has_usable_token?: boolean;
+  [key: string]: unknown;
 };
 
 type AgencySummaryResponse = {
@@ -105,6 +117,7 @@ export default function AgencyDashboardPage() {
   const [draftRange, setDraftRange] = useState<DateRange>(initialRange);
 
   const [googleStatus, setGoogleStatus] = useState<IntegrationStatus | null>(null);
+  const [metaStatus, setMetaStatus] = useState<MetaIntegrationStatus | null>(null);
   const [summary, setSummary] = useState<AgencySummaryResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -117,14 +130,16 @@ export default function AgencyDashboardPage() {
       setLoading(true);
       setError("");
       try {
-        const [google, agencySummary] = await Promise.all([
+        const [google, meta, agencySummary] = await Promise.all([
           apiRequest<IntegrationStatus>("/integrations/google-ads/status"),
+          apiRequest<MetaIntegrationStatus>("/integrations/meta-ads/status"),
           apiRequest<AgencySummaryResponse>(
             `/dashboard/agency/summary?start_date=${toIso(appliedFrom)}&end_date=${toIso(appliedTo)}`
           ),
         ]);
 
         setGoogleStatus(google);
+        setMetaStatus(meta);
         setSummary(agencySummary);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Nu am putut încărca dashboard-ul agency");
@@ -147,12 +162,27 @@ export default function AgencyDashboardPage() {
         lastSyncAt: googleStatus?.last_sync_at ?? null,
         lastError: googleStatus?.last_error ?? null,
       },
-      { label: "Meta Ads", status: "disabled", details: null, lastSyncAt: null, lastError: null },
+      {
+        label: "Meta Ads",
+        status: metaStatus?.status ?? "disabled",
+        details: metaStatus?.message ?? null,
+        lastSyncAt: metaStatus?.token_updated_at ?? null,
+        lastError: String(metaStatus?.status || "").toLowerCase() === "error" ? metaStatus?.message ?? null : null,
+      },
       { label: "TikTok Ads", status: "disabled", details: null, lastSyncAt: null, lastError: null },
       { label: "Pinterest Ads", status: "disabled", details: null, lastSyncAt: null, lastError: null },
       { label: "Snapchat Ads", status: "disabled", details: null, lastSyncAt: null, lastError: null },
     ],
-    [googleStatus?.status, googleStatus?.accounts_found, googleStatus?.rows_in_db_last_30_days, googleStatus?.last_sync_at, googleStatus?.last_error]
+    [
+      googleStatus?.status,
+      googleStatus?.accounts_found,
+      googleStatus?.rows_in_db_last_30_days,
+      googleStatus?.last_sync_at,
+      googleStatus?.last_error,
+      metaStatus?.status,
+      metaStatus?.message,
+      metaStatus?.token_updated_at,
+    ]
   );
 
   function handlePresetClick(nextPreset: DatePresetKey) {

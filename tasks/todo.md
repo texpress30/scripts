@@ -1,3 +1,17 @@
+# TODO — Agency Dashboard: status real Meta Ads în Integration health
+
+- [x] Verific implementarea curentă din `agency/dashboard/page.tsx` și confirm hardcodarea Meta = disabled.
+- [x] Adaug state + tip Meta separat și extind `loadDashboard()` cu `GET /integrations/meta-ads/status`.
+- [x] Înlocuiesc rândul hardcodat Meta în `integrationSummary` cu mapare din payload-ul Meta real.
+- [x] Adaug test pentru dashboard care validează Meta connected (nu disabled hardcodat).
+- [x] Rulez testul cerut + build frontend.
+
+## Review
+- Agency Dashboard afișează acum statusul real Meta din `/integrations/meta-ads/status` în Integration health.
+- `Meta Ads` nu mai este hardcodat `disabled`; status/details/lastSyncAt/lastError sunt mapate din payload Meta.
+
+---
+
 # TODO — Consolidate cleanup into Meta Integrations PR (merge-readiness)
 
 - [x] Pornez din branch-ul curat de Integrations (`meta-frontend-integrations-clean`) și aduc cleanup-ul de dedup Meta card în același PR.
