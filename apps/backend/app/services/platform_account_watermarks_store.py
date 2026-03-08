@@ -8,6 +8,7 @@ ALLOWED_PLATFORM_ACCOUNT_WATERMARK_GRAINS: tuple[str, ...] = (
     "campaign_daily",
     "ad_group_daily",
     "ad_daily",
+    "keyword_daily",
 )
 
 
