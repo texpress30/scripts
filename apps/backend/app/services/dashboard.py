@@ -545,7 +545,25 @@ class UnifiedDashboardService:
             }
         )
 
-        for platform, label in (("tiktok_ads", "TikTok Ads"), ("pinterest_ads", "Pinterest Ads"), ("snapchat_ads", "Snapchat Ads")):
+        try:
+            tiktok_payload = tiktok_ads_service.integration_status()
+        except Exception:
+            tiktok_payload = {"status": "error", "message": "tiktok_ads status unavailable"}
+
+        tiktok_status = str(tiktok_payload.get("status") or "disabled").strip() or "disabled"
+        tiktok_message = str(tiktok_payload.get("message") or "").strip() or None
+        items.append(
+            {
+                "platform": "tiktok_ads",
+                "label": "TikTok Ads",
+                "status": tiktok_status,
+                "details": tiktok_message,
+                "last_sync_at": tiktok_payload.get("token_updated_at"),
+                "last_error": tiktok_message if tiktok_status.lower() == "error" else None,
+            }
+        )
+
+        for platform, label in (("pinterest_ads", "Pinterest Ads"), ("snapchat_ads", "Snapchat Ads")):
             items.append(
                 {
                     "platform": platform,

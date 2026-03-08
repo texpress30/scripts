@@ -9,6 +9,7 @@ def test_agency_dashboard_summary_includes_generic_integration_health_contract()
     original_list_clients = dashboard_service_module.client_registry_service.list_clients
     original_google_status = dashboard_service_module.google_ads_service.integration_status
     original_meta_status = dashboard_service_module.meta_ads_service.integration_status
+    original_tiktok_status = dashboard_service_module.tiktok_ads_service.integration_status
 
     try:
         unified_dashboard_service._is_test_mode = lambda: True
@@ -30,6 +31,14 @@ def test_agency_dashboard_summary_includes_generic_integration_health_contract()
             "oauth_configured": True,
             "has_usable_token": True,
         }
+        dashboard_service_module.tiktok_ads_service.integration_status = lambda: {
+            "provider": "tiktok_ads",
+            "status": "connected",
+            "message": "TikTok Business OAuth token is available.",
+            "token_updated_at": "2026-03-08T08:00:00Z",
+            "oauth_configured": True,
+            "has_usable_token": True,
+        }
 
         payload = unified_dashboard_service.get_agency_dashboard(start_date=date(2026, 3, 1), end_date=date(2026, 3, 7))
     finally:
@@ -37,6 +46,7 @@ def test_agency_dashboard_summary_includes_generic_integration_health_contract()
         dashboard_service_module.client_registry_service.list_clients = original_list_clients
         dashboard_service_module.google_ads_service.integration_status = original_google_status
         dashboard_service_module.meta_ads_service.integration_status = original_meta_status
+        dashboard_service_module.tiktok_ads_service.integration_status = original_tiktok_status
 
     # backward-compatible base fields
     assert "date_range" in payload
@@ -65,7 +75,12 @@ def test_agency_dashboard_summary_includes_generic_integration_health_contract()
     assert meta_item["last_sync_at"] == "2026-03-08T09:00:00Z"
     assert meta_item["last_error"] is None
 
-    assert by_platform["tiktok_ads"]["status"] == "disabled"
+    tiktok_item = by_platform["tiktok_ads"]
+    assert tiktok_item["status"] == "connected"
+    assert tiktok_item["details"] == "TikTok Business OAuth token is available."
+    assert tiktok_item["last_sync_at"] == "2026-03-08T08:00:00Z"
+    assert tiktok_item["last_error"] is None
+
     assert by_platform["pinterest_ads"]["status"] == "disabled"
     assert by_platform["snapchat_ads"]["status"] == "disabled"
 
@@ -75,6 +90,7 @@ def test_meta_last_error_is_only_set_when_meta_status_is_error():
     original_list_clients = dashboard_service_module.client_registry_service.list_clients
     original_google_status = dashboard_service_module.google_ads_service.integration_status
     original_meta_status = dashboard_service_module.meta_ads_service.integration_status
+    original_tiktok_status = dashboard_service_module.tiktok_ads_service.integration_status
 
     try:
         unified_dashboard_service._is_test_mode = lambda: True
@@ -85,6 +101,11 @@ def test_meta_last_error_is_only_set_when_meta_status_is_error():
             "message": "Meta token expired",
             "token_updated_at": "2026-03-08T09:00:00Z",
         }
+        dashboard_service_module.tiktok_ads_service.integration_status = lambda: {
+            "status": "pending",
+            "message": "TikTok Business OAuth is configured but no usable token is stored yet.",
+            "token_updated_at": None,
+        }
 
         payload = unified_dashboard_service.get_agency_dashboard(start_date=date(2026, 3, 1), end_date=date(2026, 3, 7))
     finally:
@@ -92,7 +113,45 @@ def test_meta_last_error_is_only_set_when_meta_status_is_error():
         dashboard_service_module.client_registry_service.list_clients = original_list_clients
         dashboard_service_module.google_ads_service.integration_status = original_google_status
         dashboard_service_module.meta_ads_service.integration_status = original_meta_status
+        dashboard_service_module.tiktok_ads_service.integration_status = original_tiktok_status
 
     meta_item = next(item for item in payload["integration_health"] if item.get("platform") == "meta_ads")
     assert meta_item["status"] == "error"
     assert meta_item["last_error"] == "Meta token expired"
+
+    tiktok_item = next(item for item in payload["integration_health"] if item.get("platform") == "tiktok_ads")
+    assert tiktok_item["status"] == "pending"
+    assert tiktok_item["details"] == "TikTok Business OAuth is configured but no usable token is stored yet."
+    assert tiktok_item["last_error"] is None
+
+
+def test_tiktok_last_error_is_only_set_when_tiktok_status_is_error():
+    original_is_test_mode = unified_dashboard_service._is_test_mode
+    original_list_clients = dashboard_service_module.client_registry_service.list_clients
+    original_google_status = dashboard_service_module.google_ads_service.integration_status
+    original_meta_status = dashboard_service_module.meta_ads_service.integration_status
+    original_tiktok_status = dashboard_service_module.tiktok_ads_service.integration_status
+
+    try:
+        unified_dashboard_service._is_test_mode = lambda: True
+        dashboard_service_module.client_registry_service.list_clients = lambda: []
+        dashboard_service_module.google_ads_service.integration_status = lambda: {"status": "connected"}
+        dashboard_service_module.meta_ads_service.integration_status = lambda: {"status": "connected", "message": "Meta connected"}
+        dashboard_service_module.tiktok_ads_service.integration_status = lambda: {
+            "status": "error",
+            "message": "TikTok token refresh failed",
+            "token_updated_at": "2026-03-08T08:00:00Z",
+        }
+
+        payload = unified_dashboard_service.get_agency_dashboard(start_date=date(2026, 3, 1), end_date=date(2026, 3, 7))
+    finally:
+        unified_dashboard_service._is_test_mode = original_is_test_mode
+        dashboard_service_module.client_registry_service.list_clients = original_list_clients
+        dashboard_service_module.google_ads_service.integration_status = original_google_status
+        dashboard_service_module.meta_ads_service.integration_status = original_meta_status
+        dashboard_service_module.tiktok_ads_service.integration_status = original_tiktok_status
+
+    tiktok_item = next(item for item in payload["integration_health"] if item.get("platform") == "tiktok_ads")
+    assert tiktok_item["status"] == "error"
+    assert tiktok_item["details"] == "TikTok token refresh failed"
+    assert tiktok_item["last_error"] == "TikTok token refresh failed"

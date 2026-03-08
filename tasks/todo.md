@@ -1,3 +1,18 @@
+# TODO — Agency dashboard summary: real TikTok integration_health status
+
+- [x] Inspect current dashboard integration_health mapping and TikTok status contract to define stable field mapping.
+- [x] Implement backend-only dashboard mapping for `tiktok_ads` using real TikTok status payload; keep Google/Meta mapping and Pinterest/Snapchat placeholders stable.
+- [x] Add/extend backend tests for TikTok connected/pending/error states and backward-compatible integration_health payload contract.
+- [x] Run targeted backend tests + backend import smoke checks and document results.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Dashboard summary now maps `tiktok_ads` integration_health from `tiktok_ads_service.integration_status()` (`status`, `message`, `token_updated_at`) while preserving Google/Meta mappings.
+- `pinterest_ads` and `snapchat_ads` remain stable placeholders (`disabled`).
+- Verified with focused pytest suite and backend import smoke command.
+
+---
+
 # TODO — TikTok backend sync real ad_group_daily for attached advertiser accounts
 
 - [x] Audit existing TikTok sync grains/account-campaign persistence and generic ad_group reporting upsert path.

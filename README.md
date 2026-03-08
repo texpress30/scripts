@@ -139,6 +139,8 @@ Variabile minime necesare:
 - `GET /integrations/snapchat-ads/status`
 - `POST /integrations/snapchat-ads/{client_id}/sync`
 
+`GET /dashboard/agency/summary` include în `integration_health` status real pentru `google_ads`, `meta_ads` și `tiktok_ads`; `pinterest_ads` și `snapchat_ads` rămân placeholder `disabled` până la integrare completă.
+
 
 ## Redirect URI alignment (production)
 - TikTok Developers (Advertiser redirect URL) + Railway `TIKTOK_REDIRECT_URI` trebuie setate la: `https://scripts-chi-nine.vercel.app/agency/integrations/tiktok/callback`.

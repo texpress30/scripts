@@ -215,3 +215,4 @@
 - 2026-03-08: Before claiming a grain feature is ready-to-publish, re-verify the actual HEAD code/tests for that grain (service union + API schema + dedicated tests) to catch branch drift early.
 - 2026-03-08: For historical backfill features, reuse existing sync entrypoints per chunk+grain instead of duplicating provider fetch logic; add explicit enqueue/run error-path tests before publish.
 - 2026-03-08: For rolling platform extensions, add platform support in both scheduler and worker together; otherwise runs enqueue successfully but fail at chunk execution with unsupported platform.
+- 2026-03-08: For backend-only dashboard requests, keep frontend untouched and update only dashboard summary mapping/tests/docs needed for the requested platform status source.
