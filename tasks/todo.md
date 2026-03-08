@@ -1,3 +1,18 @@
+# TODO — Agency Accounts UI unification (Google + Meta + TikTok shared shell)
+
+- [x] Audit current Agency Accounts Google layout and Meta/TikTok panel divergence.
+- [x] Extract/reuse a common workspace shell so Google/Meta/TikTok render the same table container/layout structure.
+- [x] Map Meta/TikTok rows into common view-model with placeholders for unavailable sync fields while preserving attach/detach behavior.
+- [x] Add/adjust frontend tests to verify Meta/TikTok shared shell parity (including empty states), then run requested tests and build.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Meta/TikTok in Agency Accounts now render in the same table-shell layout pattern as Google (summary + toolbar + table columns + pagination).
+- Meta/TikTok rows use consistent placeholders for unavailable sync fields (`-`) without reverting to separate card-list panels.
+- Requested frontend tests and build pass.
+
+---
+
 # TODO — Final hardening + smoke on main readiness for Meta/TikTok integrations
 
 - [x] Validate current UI/backend flows end-to-end for Agency Integrations, Agency Accounts, Dashboard integration health, Meta/TikTok API endpoints, and worker imports.
