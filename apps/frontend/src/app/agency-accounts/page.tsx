@@ -8,6 +8,8 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest, postAccountSyncProgressBatch, type AccountSyncProgressBatchResult } from "@/lib/api";
 
+import { TikTokAgencyAccountsPanel } from "./TikTokAgencyAccountsPanel";
+
 type ClientRecord = {
   id: number;
   name: string;
@@ -706,7 +708,9 @@ export default function AgencyAccountsPage() {
               })}
             </div>
 
-            {selectedPlatform !== "google_ads" ? (
+            {selectedPlatform === "tiktok_ads" ? (
+              <TikTokAgencyAccountsPanel />
+            ) : selectedPlatform !== "google_ads" ? (
               <div className="mt-4 wm-card p-4 text-sm text-slate-500">
                 Pentru acest task, doar Google Ads este funcțional complet. Celelalte platforme rămân informative.
               </div>
