@@ -80,6 +80,7 @@ def _empty_entity_watermarks_payload() -> dict[str, dict[str, object | None] | N
         "campaign_daily": None,
         "ad_group_daily": None,
         "ad_daily": None,
+        "keyword_daily": None,
     }
 
 
@@ -95,6 +96,15 @@ def _normalize_entity_watermark_payload(value: dict[str, object] | None) -> dict
         "last_job_id": value.get("last_job_id"),
     }
 
+
+
+
+class PlatformAccountAlreadyAttachedError(Exception):
+    def __init__(self, *, platform: str, account_id: str, existing_client_id: int) -> None:
+        self.platform = str(platform)
+        self.account_id = str(account_id)
+        self.existing_client_id = int(existing_client_id)
+        super().__init__(f"Account {self.platform}:{self.account_id} is already attached to client {self.existing_client_id}")
 
 @dataclass
 class ClientRecord:
@@ -442,7 +452,11 @@ class ClientRegistryService:
                 if account_id not in platform_accounts:
                     return None
                 mappings = self._memory_account_client_mappings.setdefault(platform, {})
-                mappings.setdefault(account_id, set()).add(client_id)
+                existing_client_ids = mappings.get(account_id, set())
+                if len(existing_client_ids) > 0 and client_id not in existing_client_ids:
+                    existing_client_id = sorted(existing_client_ids)[0]
+                    raise PlatformAccountAlreadyAttachedError(platform=platform, account_id=account_id, existing_client_id=existing_client_id)
+                mappings[account_id] = {client_id}
                 client = next(c for c in self._clients if c.id == client_id)
                 per_platform = self._memory_account_profiles.setdefault(platform, {})
                 per_account = per_platform.setdefault(account_id, {})
@@ -468,6 +482,20 @@ class ClientRegistryService:
                 exists_row = cur.fetchone()
                 if exists_row is None:
                     return None
+
+                cur.execute(
+                    """
+                    SELECT client_id
+                    FROM agency_account_client_mappings
+                    WHERE platform = %s AND account_id = %s
+                    ORDER BY updated_at DESC, created_at DESC
+                    LIMIT 1
+                    """,
+                    (platform, account_id),
+                )
+                mapping_row = cur.fetchone()
+                if mapping_row is not None and int(mapping_row[0]) != int(client_id):
+                    raise PlatformAccountAlreadyAttachedError(platform=platform, account_id=account_id, existing_client_id=int(mapping_row[0]))
 
                 cur.execute(
                     """
@@ -933,7 +961,7 @@ class ClientRegistryService:
                 conn,
                 platform=str(platform),
                 account_ids=account_ids,
-                grains=["campaign_daily", "ad_group_daily", "ad_daily"],
+                grains=["campaign_daily", "ad_group_daily", "ad_daily", "keyword_daily"],
             )
             for item in result:
                 account_id = str(item.get("account_id") or "")
@@ -942,6 +970,7 @@ class ClientRegistryService:
                     "campaign_daily": _normalize_entity_watermark_payload(by_grain.get("campaign_daily")),
                     "ad_group_daily": _normalize_entity_watermark_payload(by_grain.get("ad_group_daily")),
                     "ad_daily": _normalize_entity_watermark_payload(by_grain.get("ad_daily")),
+                    "keyword_daily": _normalize_entity_watermark_payload(by_grain.get("keyword_daily")),
                 }
             return result
 
@@ -1138,7 +1167,7 @@ class ClientRegistryService:
             )
         return payload
 
-    def list_client_platform_accounts(self, *, platform: str, client_id: int) -> list[dict[str, str]]:
+    def list_client_platform_accounts(self, *, platform: str, client_id: int) -> list[dict[str, object]]:
         if self._is_test_mode():
             with self._lock:
                 mappings = self._memory_account_client_mappings.get(platform, {})
@@ -1175,6 +1204,47 @@ class ClientRegistryService:
                 )
                 rows = cur.fetchall()
         return [{"id": str(row[0]), "name": str(row[1]), "client_type": str(row[2]) if row[2] else "lead", "account_manager": str(row[3]) if row[3] else "", "currency": str(row[4]) if row[4] else "USD"} for row in rows]
+
+    def list_client_accounts(self, *, client_id: int, platform: str | None = None) -> list[dict[str, object]]:
+        target_platforms = [str(platform)] if platform else ["google_ads", "meta_ads", "tiktok_ads", "pinterest_ads", "snapchat_ads", "reddit_ads"]
+        rows: list[dict[str, object]] = []
+        for platform_name in target_platforms:
+            accounts = self.list_client_platform_accounts(platform=platform_name, client_id=client_id)
+            for item in accounts:
+                account_id = str(item.get("id") or item.get("account_id") or "")
+                account_name = str(item.get("name") or item.get("account_name") or account_id)
+                rows.append({
+                    "platform": platform_name,
+                    "account_id": account_id,
+                    "account_name": account_name,
+                    "id": account_id,
+                    "name": account_name,
+                    "is_attached": True,
+                    "client_type": item.get("client_type"),
+                    "account_manager": item.get("account_manager"),
+                    "currency": item.get("currency"),
+                })
+        return rows
+
+    def list_platform_accounts_for_mapping(self, *, platform: str) -> list[dict[str, object]]:
+        items = self.list_platform_accounts(platform=platform)
+        rows: list[dict[str, object]] = []
+        for item in items:
+            account_id = str(item.get("account_id") or item.get("id") or "")
+            account_name = str(item.get("display_name") or item.get("name") or account_id)
+            attached_client_id = item.get("attached_client_id")
+            rows.append({
+                "platform": str(platform),
+                "account_id": account_id,
+                "account_name": account_name,
+                "client_id": int(attached_client_id) if attached_client_id is not None else None,
+                "client_name": item.get("attached_client_name"),
+                "is_attached": attached_client_id is not None,
+                "status": item.get("status"),
+                "currency": item.get("currency"),
+                "timezone": item.get("timezone"),
+            })
+        return rows
 
     def get_last_import_at(self, *, platform: str) -> str | None:
         if self._is_test_mode():
