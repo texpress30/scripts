@@ -19,6 +19,18 @@ type IntegrationStatus = {
   last_error?: string | null;
 };
 
+type MetaIntegrationStatus = {
+  provider?: string;
+  status?: string;
+  message?: string;
+  token_source?: string;
+  token_updated_at?: string | null;
+  token_expires_at?: string | null;
+  oauth_configured?: boolean;
+  has_usable_token?: boolean;
+  [key: string]: unknown;
+};
+
 type AgencySummaryResponse = {
   date_range: { start_date: string; end_date: string };
   active_clients: number;
