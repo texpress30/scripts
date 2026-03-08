@@ -37,6 +37,12 @@ Variabile importante:
   - `GOOGLE_ADS_MANAGER_CUSTOMER_ID`
   - `GOOGLE_ADS_REDIRECT_URI`
   - `INTEGRATION_SECRET_ENCRYPTION_KEY` (secret pentru criptarea token-urilor integration în DB; dacă lipsește se folosește `APP_AUTH_SECRET`)
+  - TikTok OAuth flow:
+    - `TIKTOK_APP_ID`
+    - `TIKTOK_APP_SECRET`
+    - `TIKTOK_REDIRECT_URI`
+    - opțional: `TIKTOK_API_BASE_URL` (default `https://business-api.tiktok.com`)
+    - opțional: `TIKTOK_API_VERSION` (default `v1.3`)
 
 Feature flags:
 - `FF_TIKTOK_INTEGRATION`
@@ -100,6 +106,8 @@ Variabile minime necesare:
 - `GET /integrations/meta-ads/status`
 - `POST /integrations/meta-ads/{client_id}/sync`
 - `GET /integrations/tiktok-ads/status`
+- `GET /integrations/tiktok-ads/connect`
+- `POST /integrations/tiktok-ads/oauth/exchange`
 - `POST /integrations/tiktok-ads/{client_id}/sync`
 - `GET /integrations/pinterest-ads/status`
 - `POST /integrations/pinterest-ads/{client_id}/sync`
