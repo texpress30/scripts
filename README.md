@@ -133,6 +133,7 @@ Variabile minime necesare:
 - `POST /integrations/tiktok-ads/oauth/exchange`
 - `POST /integrations/tiktok-ads/import-accounts`
 - `POST /integrations/tiktok-ads/{client_id}/sync` (opțional body: `start_date`, `end_date`, `grain` in {`account_daily`,`campaign_daily`,`ad_group_daily`,`ad_daily`}; fără body => `grain=account_daily` + ultimele 7 zile complete)
+- `POST /integrations/tiktok-ads/{client_id}/backfill` (opțional body: `start_date`, `end_date`, `grains`; default: `2024-01-09` → ieri, toate grain-urile TikTok, chunked 30 zile)
 - `GET /integrations/pinterest-ads/status`
 - `POST /integrations/pinterest-ads/{client_id}/sync`
 - `GET /integrations/snapchat-ads/status`

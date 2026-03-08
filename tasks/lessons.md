@@ -213,3 +213,4 @@
 - 2026-03-08: When requested git baseline commands cannot run due missing remote/branch topology, continue from the clean available baseline branch and state the constraint explicitly before implementation.
 - 2026-03-08: For frontend-only PR requests, enforce explicit path guard before commit (`git diff --name-only`) to ensure no backend files are touched.
 - 2026-03-08: Before claiming a grain feature is ready-to-publish, re-verify the actual HEAD code/tests for that grain (service union + API schema + dedicated tests) to catch branch drift early.
+- 2026-03-08: For historical backfill features, reuse existing sync entrypoints per chunk+grain instead of duplicating provider fetch logic; add explicit enqueue/run error-path tests before publish.

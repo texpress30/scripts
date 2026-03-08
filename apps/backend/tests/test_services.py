@@ -3368,6 +3368,188 @@ class ServiceTests(unittest.TestCase):
         payload = tiktok_ads_api.TikTokSyncRequest(grain="ad_daily")
         self.assertEqual(payload.grain, "ad_daily")
 
+    def test_tiktok_backfill_enqueue_defaults(self):
+        user = AuthUser(email="owner@example.com", role="agency_admin")
+        background_tasks = BackgroundTasks()
+        captured: dict[str, object] = {}
+
+        original_enforce = tiktok_ads_api.enforce_action_scope
+        original_rate = tiktok_ads_api.rate_limiter_service.check
+        original_settings = tiktok_ads_api.load_settings
+        original_status = tiktok_ads_api.tiktok_ads_service.integration_status
+        original_accounts = tiktok_ads_api.client_registry_service.list_client_platform_accounts
+        original_create = tiktok_ads_api.backfill_job_store.create
+        original_add = background_tasks.add_task
+        original_audit = tiktok_ads_api.audit_log_service.log
+        try:
+            tiktok_ads_api.enforce_action_scope = lambda **kwargs: None
+            tiktok_ads_api.rate_limiter_service.check = lambda *args, **kwargs: None
+            tiktok_ads_api.load_settings = lambda: type("S", (), {"ff_tiktok_integration": True})()
+            tiktok_ads_api.tiktok_ads_service.integration_status = lambda: {"has_usable_token": True}
+            tiktok_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "tt-1"}]
+            tiktok_ads_api.backfill_job_store.create = lambda payload: captured.setdefault("create_payload", payload) or "tt-bf-1"
+            background_tasks.add_task = lambda func, *args, **kwargs: captured.update({"task": getattr(func, "__name__", ""), "task_kwargs": kwargs})
+            tiktok_ads_api.audit_log_service.log = lambda **kwargs: None
+
+            response = tiktok_ads_api.backfill_tiktok_ads(client_id=7, background_tasks=background_tasks, payload=None, user=user)
+        finally:
+            tiktok_ads_api.enforce_action_scope = original_enforce
+            tiktok_ads_api.rate_limiter_service.check = original_rate
+            tiktok_ads_api.load_settings = original_settings
+            tiktok_ads_api.tiktok_ads_service.integration_status = original_status
+            tiktok_ads_api.client_registry_service.list_client_platform_accounts = original_accounts
+            tiktok_ads_api.backfill_job_store.create = original_create
+            background_tasks.add_task = original_add
+            tiktok_ads_api.audit_log_service.log = original_audit
+
+        self.assertEqual(response.get("status"), "queued")
+        self.assertEqual(response.get("mode"), "enqueued")
+        self.assertEqual(response.get("grains"), ["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"])
+        self.assertEqual(captured.get("task"), "_run_tiktok_historical_backfill_job")
+        self.assertEqual(response.get("chunks_enqueued"), captured.get("create_payload", {}).get("chunks_enqueued"))
+
+    def test_tiktok_backfill_enqueue_custom_range_and_grains(self):
+        user = AuthUser(email="owner@example.com", role="agency_admin")
+        background_tasks = BackgroundTasks()
+        captured: dict[str, object] = {}
+
+        original_enforce = tiktok_ads_api.enforce_action_scope
+        original_rate = tiktok_ads_api.rate_limiter_service.check
+        original_settings = tiktok_ads_api.load_settings
+        original_status = tiktok_ads_api.tiktok_ads_service.integration_status
+        original_accounts = tiktok_ads_api.client_registry_service.list_client_platform_accounts
+        original_create = tiktok_ads_api.backfill_job_store.create
+        original_add = background_tasks.add_task
+        original_audit = tiktok_ads_api.audit_log_service.log
+        try:
+            tiktok_ads_api.enforce_action_scope = lambda **kwargs: None
+            tiktok_ads_api.rate_limiter_service.check = lambda *args, **kwargs: None
+            tiktok_ads_api.load_settings = lambda: type("S", (), {"ff_tiktok_integration": True})()
+            tiktok_ads_api.tiktok_ads_service.integration_status = lambda: {"has_usable_token": True}
+            tiktok_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "tt-1"}]
+            tiktok_ads_api.backfill_job_store.create = lambda payload: captured.setdefault("create_payload", payload) or "tt-bf-2"
+            background_tasks.add_task = lambda func, *args, **kwargs: captured.update({"task_kwargs": kwargs})
+            tiktok_ads_api.audit_log_service.log = lambda **kwargs: None
+
+            payload = tiktok_ads_api.TikTokBackfillRequest(
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 1, 31),
+                grains=["ad_daily", "account_daily"],
+            )
+            response = tiktok_ads_api.backfill_tiktok_ads(client_id=9, background_tasks=background_tasks, payload=payload, user=user)
+        finally:
+            tiktok_ads_api.enforce_action_scope = original_enforce
+            tiktok_ads_api.rate_limiter_service.check = original_rate
+            tiktok_ads_api.load_settings = original_settings
+            tiktok_ads_api.tiktok_ads_service.integration_status = original_status
+            tiktok_ads_api.client_registry_service.list_client_platform_accounts = original_accounts
+            tiktok_ads_api.backfill_job_store.create = original_create
+            background_tasks.add_task = original_add
+            tiktok_ads_api.audit_log_service.log = original_audit
+
+        self.assertEqual(response.get("grains"), ["ad_daily", "account_daily"])
+        self.assertEqual(response.get("start_date"), "2026-01-01")
+        self.assertEqual(response.get("end_date"), "2026-01-31")
+        self.assertEqual(captured.get("task_kwargs", {}).get("grains"), ["ad_daily", "account_daily"])
+
+    def test_tiktok_backfill_rejects_invalid_grain(self):
+        with self.assertRaises(HTTPException) as ctx:
+            tiktok_ads_api._normalize_tiktok_backfill_grains(["invalid"])
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_tiktok_backfill_rejects_no_accounts_or_missing_token_or_flag_off(self):
+        user = AuthUser(email="owner@example.com", role="agency_admin")
+        background_tasks = BackgroundTasks()
+
+        original_enforce = tiktok_ads_api.enforce_action_scope
+        original_rate = tiktok_ads_api.rate_limiter_service.check
+        original_settings = tiktok_ads_api.load_settings
+        original_status = tiktok_ads_api.tiktok_ads_service.integration_status
+        original_accounts = tiktok_ads_api.client_registry_service.list_client_platform_accounts
+        try:
+            tiktok_ads_api.enforce_action_scope = lambda **kwargs: None
+            tiktok_ads_api.rate_limiter_service.check = lambda *args, **kwargs: None
+
+            tiktok_ads_api.load_settings = lambda: type("S", (), {"ff_tiktok_integration": False})()
+            with self.assertRaises(HTTPException) as ctx_flag:
+                tiktok_ads_api.backfill_tiktok_ads(client_id=1, background_tasks=background_tasks, payload=None, user=user)
+
+            tiktok_ads_api.load_settings = lambda: type("S", (), {"ff_tiktok_integration": True})()
+            tiktok_ads_api.tiktok_ads_service.integration_status = lambda: {"has_usable_token": False}
+            with self.assertRaises(HTTPException) as ctx_token:
+                tiktok_ads_api.backfill_tiktok_ads(client_id=1, background_tasks=background_tasks, payload=None, user=user)
+
+            tiktok_ads_api.tiktok_ads_service.integration_status = lambda: {"has_usable_token": True}
+            tiktok_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: []
+            with self.assertRaises(HTTPException) as ctx_accounts:
+                tiktok_ads_api.backfill_tiktok_ads(client_id=1, background_tasks=background_tasks, payload=None, user=user)
+        finally:
+            tiktok_ads_api.enforce_action_scope = original_enforce
+            tiktok_ads_api.rate_limiter_service.check = original_rate
+            tiktok_ads_api.load_settings = original_settings
+            tiktok_ads_api.tiktok_ads_service.integration_status = original_status
+            tiktok_ads_api.client_registry_service.list_client_platform_accounts = original_accounts
+
+        self.assertEqual(ctx_flag.exception.status_code, 400)
+        self.assertEqual(ctx_token.exception.status_code, 400)
+        self.assertEqual(ctx_accounts.exception.status_code, 400)
+
+    def test_tiktok_historical_backfill_runner_reuses_sync_and_maps_errors(self):
+        done_payload: dict[str, object] = {}
+        error_payload: dict[str, object] = {}
+        calls: list[tuple[date, date, str]] = []
+
+        original_set_running = tiktok_ads_api.backfill_job_store.set_running
+        original_set_done = tiktok_ads_api.backfill_job_store.set_done
+        original_set_error = tiktok_ads_api.backfill_job_store.set_error
+        original_sync = tiktok_ads_api.tiktok_ads_service.sync_client
+        try:
+            tiktok_ads_api.backfill_job_store.set_running = lambda job_id: None
+            tiktok_ads_api.backfill_job_store.set_done = lambda job_id, result: done_payload.update({"job_id": job_id, "result": result})
+            tiktok_ads_api.backfill_job_store.set_error = lambda job_id, error: error_payload.update({"job_id": job_id, "error": error})
+
+            def fake_sync(**kwargs):
+                calls.append((kwargs.get("start_date"), kwargs.get("end_date"), kwargs.get("grain")))
+                return {
+                    "rows_written": 1,
+                    "accounts_processed": 2,
+                    "account_ids": ["tt-1", "tt-2"],
+                }
+
+            tiktok_ads_api.tiktok_ads_service.sync_client = fake_sync
+            tiktok_ads_api._run_tiktok_historical_backfill_job(
+                "tt-hb-ok",
+                client_id=55,
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 1, 31),
+                grains=["account_daily", "ad_daily"],
+                chunk_days=15,
+            )
+
+            def boom_sync(**kwargs):
+                raise TikTokAdsIntegrationError("TikTok reporting API failed")
+
+            tiktok_ads_api.tiktok_ads_service.sync_client = boom_sync
+            tiktok_ads_api._run_tiktok_historical_backfill_job(
+                "tt-hb-fail",
+                client_id=55,
+                start_date=date(2026, 2, 1),
+                end_date=date(2026, 2, 10),
+                grains=["account_daily"],
+                chunk_days=10,
+            )
+        finally:
+            tiktok_ads_api.backfill_job_store.set_running = original_set_running
+            tiktok_ads_api.backfill_job_store.set_done = original_set_done
+            tiktok_ads_api.backfill_job_store.set_error = original_set_error
+            tiktok_ads_api.tiktok_ads_service.sync_client = original_sync
+
+        self.assertEqual(done_payload.get("job_id"), "tt-hb-ok")
+        self.assertEqual(done_payload.get("result", {}).get("status"), "success")
+        self.assertTrue(len(calls) > 0)
+        self.assertEqual(error_payload.get("job_id"), "tt-hb-fail")
+        self.assertIn("TikTok reporting API failed", str(error_payload.get("error") or ""))
+
     def test_tiktok_ads_sync_now_async_mirrors_sync_run_create(self):
         user = AuthUser(email="admin@example.com", role="agency_owner")
         background_tasks = BackgroundTasks()

@@ -2318,3 +2318,19 @@
 ## Review
 - The current branch was missing `ad_daily` in TikTok grain union, API schema, and dedicated tests; these were restored.
 - Sync now supports `ad_daily` with ad-level fetch + generic ad-unit upsert and idempotent test-mode key replacement.
+
+---
+
+# TODO — TikTok historical backfill endpoint (chunked, all grains)
+
+- [x] Inspect TikTok sync API/service and Meta backfill orchestration pattern for reuse.
+- [x] Add TikTok backfill defaults, grain normalization, and chunk builder (30-day windows).
+- [x] Implement async historical backfill runner that reuses `tiktok_ads_service.sync_client` per grain+chunk.
+- [x] Add `POST /integrations/tiktok-ads/{client_id}/backfill` with default range/grains and enqueue response.
+- [x] Add focused backend tests for enqueue defaults/custom, validation, flag/token/no-accounts, and runner error mapping.
+- [x] Update README minimally and run targeted compile/tests/smoke checks.
+
+## Review
+- Added queue-based TikTok historical backfill orchestration with defaults `2024-01-09 -> yesterday`, grains `[account_daily,campaign_daily,ad_group_daily,ad_daily]`, and 30-day chunks.
+- Backfill runner delegates every chunk to existing `sync_client` (no duplicate fetch/persist logic) and records done/error in `backfill_job_store`.
+- Endpoint validates flag/token/attached-accounts early and returns stable enqueue payload (`mode`, `chunks_enqueued`, `jobs_enqueued`, `job_id`).
