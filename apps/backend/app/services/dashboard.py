@@ -492,6 +492,73 @@ class UnifiedDashboardService:
                     FROM perf
                     """
 
+    def _format_google_integration_details(self, payload: dict[str, object]) -> str | None:
+        parts: list[str] = []
+        accounts = payload.get("accounts_found")
+        if isinstance(accounts, (int, float)):
+            parts.append(f"accounts={int(accounts)}")
+        rows = payload.get("rows_in_db_last_30_days")
+        if isinstance(rows, (int, float)):
+            parts.append(f"rows30={int(rows)}")
+        message = str(payload.get("message") or "").strip()
+        if message:
+            parts.append(message)
+        if not parts:
+            return None
+        return " · ".join(parts)
+
+    def _build_integration_health(self) -> list[dict[str, object | None]]:
+        items: list[dict[str, object | None]] = []
+
+        try:
+            google_payload = google_ads_service.integration_status()
+        except Exception:
+            google_payload = {"status": "error", "last_error": "google_ads status unavailable"}
+
+        google_status = str(google_payload.get("status") or "disabled").strip() or "disabled"
+        items.append(
+            {
+                "platform": "google_ads",
+                "label": "Google Ads",
+                "status": google_status,
+                "details": self._format_google_integration_details(google_payload),
+                "last_sync_at": google_payload.get("last_sync_at"),
+                "last_error": google_payload.get("last_error") if google_status.lower() == "error" else None,
+            }
+        )
+
+        try:
+            meta_payload = meta_ads_service.integration_status()
+        except Exception:
+            meta_payload = {"status": "error", "message": "meta_ads status unavailable"}
+
+        meta_status = str(meta_payload.get("status") or "disabled").strip() or "disabled"
+        meta_message = str(meta_payload.get("message") or "").strip() or None
+        items.append(
+            {
+                "platform": "meta_ads",
+                "label": "Meta Ads",
+                "status": meta_status,
+                "details": meta_message,
+                "last_sync_at": meta_payload.get("token_updated_at"),
+                "last_error": meta_message if meta_status.lower() == "error" else None,
+            }
+        )
+
+        for platform, label in (("tiktok_ads", "TikTok Ads"), ("pinterest_ads", "Pinterest Ads"), ("snapchat_ads", "Snapchat Ads")):
+            items.append(
+                {
+                    "platform": platform,
+                    "label": label,
+                    "status": "disabled",
+                    "details": None,
+                    "last_sync_at": None,
+                    "last_error": None,
+                }
+            )
+
+        return items
+
     def get_agency_dashboard(self, *, start_date: date, end_date: date) -> dict[str, object]:
         if self._is_test_mode():
             clients = client_registry_service.list_clients()
@@ -523,6 +590,7 @@ class UnifiedDashboardService:
                 },
                 "top_clients": top_clients[:5],
                 "currency": "RON",
+                "integration_health": self._build_integration_health(),
             }
 
         performance_reports_store.initialize_schema()
@@ -621,6 +689,7 @@ class UnifiedDashboardService:
                 "roas": round(total_revenue / total_spend, 2) if total_spend > 0 else 0.0,
             },
             "top_clients": top_clients,
+            "integration_health": self._build_integration_health(),
         }
 
 

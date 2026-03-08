@@ -1,7 +1,9 @@
 from datetime import date, datetime, timedelta
+from typing import Literal
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 
 from app.api.dependencies import enforce_action_scope, get_current_user
 from app.services.audit import audit_log_service
@@ -16,6 +18,54 @@ from app.services.sync_constants import PLATFORM_META_ADS, SYNC_GRAIN_ACCOUNT_DA
 
 router = APIRouter(prefix="/integrations/meta-ads", tags=["meta-ads"])
 logger = logging.getLogger(__name__)
+
+_META_BACKFILL_DEFAULT_START = date(2024, 1, 9)
+_META_BACKFILL_DEFAULT_GRAINS: tuple[str, ...] = ("account_daily", "campaign_daily", "ad_group_daily", "ad_daily")
+_META_BACKFILL_CHUNK_DAYS = 30
+
+
+def _normalize_meta_backfill_grains(grains: list[str] | None) -> list[str]:
+    allowed = set(_META_BACKFILL_DEFAULT_GRAINS)
+    values = grains if grains is not None and len(grains) > 0 else list(_META_BACKFILL_DEFAULT_GRAINS)
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        grain = str(value or "").strip().lower()
+        if grain not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported Meta backfill grain '{value}'. Allowed: {list(_META_BACKFILL_DEFAULT_GRAINS)}",
+            )
+        if grain in seen:
+            continue
+        seen.add(grain)
+        normalized.append(grain)
+    return normalized
+
+
+def _build_meta_backfill_chunks(*, start_date: date, end_date: date, chunk_days: int = _META_BACKFILL_CHUNK_DAYS) -> list[tuple[date, date]]:
+    if start_date > end_date:
+        return []
+    ranges: list[tuple[date, date]] = []
+    cursor = start_date
+    effective_chunk_days = max(1, int(chunk_days))
+    while cursor <= end_date:
+        chunk_end = min(end_date, cursor + timedelta(days=effective_chunk_days - 1))
+        ranges.append((cursor, chunk_end))
+        cursor = chunk_end + timedelta(days=1)
+    return ranges
+
+
+class MetaSyncRequest(BaseModel):
+    start_date: date | None = None
+    end_date: date | None = None
+    grain: Literal["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"] | None = None
+
+
+class MetaBackfillRequest(BaseModel):
+    start_date: date | None = None
+    end_date: date | None = None
+    grains: list[Literal["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"]] | None = None
 
 
 def _log_best_effort_warning(
@@ -215,7 +265,7 @@ def _run_meta_sync_job(job_id: str, *, client_id: int, account_context: dict[str
         )
 
     try:
-        snapshot = meta_ads_service.sync_client(client_id=client_id)
+        snapshot = meta_ads_service.sync_client(client_id=client_id, start_date=payload.start_date if payload else None, end_date=payload.end_date if payload else None, grain=payload.grain if payload else None)
         success_now = datetime.utcnow()
         payload = {
             "status": SYNC_STATUS_DONE,
@@ -266,6 +316,71 @@ def _run_meta_sync_job(job_id: str, *, client_id: int, account_context: dict[str
         _mirror_sync_run_status(job_id=job_id, status_value=SYNC_STATUS_ERROR, error=safe_error, mark_finished=True)
 
 
+def _run_meta_historical_backfill_job(
+    job_id: str,
+    *,
+    client_id: int,
+    start_date: date,
+    end_date: date,
+    grains: list[str],
+    chunk_days: int = _META_BACKFILL_CHUNK_DAYS,
+) -> None:
+    backfill_job_store.set_running(job_id)
+    chunks = _build_meta_backfill_chunks(start_date=start_date, end_date=end_date, chunk_days=chunk_days)
+
+    rows_written_total = 0
+    accounts_processed_max = 0
+    token_source: str | None = None
+    execution_log: list[dict[str, object]] = []
+
+    try:
+        for grain in grains:
+            for chunk_start, chunk_end in chunks:
+                snapshot = meta_ads_service.sync_client(
+                    client_id=int(client_id),
+                    start_date=chunk_start,
+                    end_date=chunk_end,
+                    grain=grain,
+                )
+                rows_written = int(snapshot.get("rows_written") or 0)
+                accounts_processed = int(snapshot.get("accounts_processed") or 0)
+                rows_written_total += rows_written
+                accounts_processed_max = max(accounts_processed_max, accounts_processed)
+                if token_source is None:
+                    token_source = str(snapshot.get("token_source") or "") or None
+                execution_log.append(
+                    {
+                        "grain": grain,
+                        "start_date": chunk_start.isoformat(),
+                        "end_date": chunk_end.isoformat(),
+                        "rows_written": rows_written,
+                        "accounts_processed": accounts_processed,
+                    }
+                )
+
+        result = {
+            "status": SYNC_STATUS_DONE,
+            "mode": "historical_backfill",
+            "message": "Meta Ads historical backfill completed.",
+            "job_id": job_id,
+            "platform": PLATFORM_META_ADS,
+            "client_id": int(client_id),
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "grains": grains,
+            "chunk_days": int(max(1, int(chunk_days))),
+            "chunks_total": len(chunks),
+            "chunks_processed": len(execution_log),
+            "rows_written": rows_written_total,
+            "accounts_processed": accounts_processed_max,
+            "token_source": token_source,
+            "runs": execution_log,
+        }
+        backfill_job_store.set_done(job_id, result=result)
+    except Exception as exc:  # noqa: BLE001
+        backfill_job_store.set_error(job_id, error=str(exc)[:300])
+
+
 def _map_sync_run_to_job_status_payload(sync_run: dict[str, object]) -> dict[str, object]:
     metadata = sync_run.get("metadata") if isinstance(sync_run.get("metadata"), dict) else {}
     if not isinstance(metadata, dict):
@@ -290,7 +405,7 @@ def _map_sync_run_to_job_status_payload(sync_run: dict[str, object]) -> dict[str
 
 
 @router.get("/status")
-def meta_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, str]:
+def meta_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
         enforce_action_scope(user=user, action="integrations:status", scope="agency")
         rate_limiter_service.check(f"meta_status:{user.email}", limit=60, window_seconds=60)
@@ -307,6 +422,126 @@ def meta_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, str
     )
     return status_payload
 
+
+
+
+@router.get("/connect")
+def connect_meta_ads(user: AuthUser = Depends(get_current_user)) -> dict[str, str]:
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+    try:
+        payload = meta_ads_service.build_oauth_authorize_url()
+    except MetaAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="meta_ads.connect.start",
+        resource="integration:meta_ads",
+        details={"state": payload["state"]},
+    )
+    return payload
+
+
+@router.post("/oauth/exchange")
+def meta_ads_oauth_exchange(payload: dict[str, str], user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+    code = str(payload.get("code", "")).strip()
+    state = str(payload.get("state", "")).strip()
+    if not code or not state:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing code/state for OAuth exchange")
+
+    try:
+        response_payload = meta_ads_service.exchange_oauth_code(code=code, state=state)
+    except MetaAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="meta_ads.connect.success",
+        resource="integration:meta_ads",
+        details={"token_source": response_payload.get("token_source")},
+    )
+    return response_payload
+
+
+
+@router.post("/import-accounts")
+def import_meta_accounts(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+
+    try:
+        discovered_accounts = meta_ads_service.list_accessible_ad_accounts()
+    except MetaAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    token_source = str(meta_ads_service.integration_status().get("token_source") or "missing")
+
+    existing_accounts = client_registry_service.list_platform_accounts(platform=PLATFORM_META_ADS)
+    existing_by_id = {str(item.get("account_id") or item.get("id") or ""): item for item in existing_accounts}
+
+    imported = 0
+    updated = 0
+    unchanged = 0
+
+    accounts_to_upsert = [{"id": str(item["id"]), "name": str(item.get("name") or item["id"])} for item in discovered_accounts]
+    if len(accounts_to_upsert) > 0:
+        client_registry_service.upsert_platform_accounts(platform=PLATFORM_META_ADS, accounts=accounts_to_upsert)
+
+    for item in discovered_accounts:
+        account_id = str(item.get("id") or "").strip()
+        if account_id == "":
+            continue
+
+        name = str(item.get("name") or account_id)
+        status_value = str(item.get("account_status") or "").strip() or None
+        currency_code = str(item.get("currency_code") or "").strip().upper() or None
+        account_timezone = str(item.get("account_timezone") or "").strip() or None
+
+        existing = existing_by_id.get(account_id)
+        if existing is None:
+            imported += 1
+            has_changes = True
+        else:
+            name_changed = str(existing.get("name") or "") != name
+            status_changed = str(existing.get("status") or "").strip() != str(status_value or "")
+            currency_changed = str(existing.get("currency") or "").strip().upper() != str(currency_code or "")
+            timezone_changed = str(existing.get("timezone") or "").strip() != str(account_timezone or "")
+            has_changes = name_changed or status_changed or currency_changed or timezone_changed
+            if has_changes:
+                updated += 1
+            else:
+                unchanged += 1
+
+        if has_changes:
+            client_registry_service.update_platform_account_operational_metadata(
+                platform=PLATFORM_META_ADS,
+                account_id=account_id,
+                status=status_value,
+                currency_code=currency_code,
+                account_timezone=account_timezone,
+            )
+
+    summary = {
+        "status": "ok",
+        "message": "Meta Ads accounts import completed.",
+        "platform": PLATFORM_META_ADS,
+        "token_source": token_source,
+        "accounts_discovered": len(discovered_accounts),
+        "imported": imported,
+        "updated": updated,
+        "unchanged": unchanged,
+    }
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="meta_ads.accounts.import",
+        resource="integration:meta_ads",
+        details=summary,
+    )
+    return summary
 
 @router.post("/sync-now")
 def sync_meta_ads_now(
@@ -365,8 +600,95 @@ def sync_now_job_status(job_id: str, user: AuthUser = Depends(get_current_user))
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
 
 
+@router.post("/{client_id}/backfill")
+def backfill_meta_ads(
+    client_id: int,
+    background_tasks: BackgroundTasks,
+    payload: MetaBackfillRequest | None = None,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    try:
+        enforce_action_scope(user=user, action="integrations:sync", scope="subaccount")
+        rate_limiter_service.check(f"meta_backfill:{user.email}", limit=10, window_seconds=60)
+    except RateLimitExceeded as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
+
+    resolved_start = payload.start_date if payload is not None and payload.start_date is not None else _META_BACKFILL_DEFAULT_START
+    resolved_end = payload.end_date if payload is not None and payload.end_date is not None else (datetime.utcnow().date() - timedelta(days=1))
+    if resolved_start > resolved_end:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="start_date must be before or equal to end_date")
+
+    grains_input = payload.grains if payload is not None and payload.grains is not None else None
+    resolved_grains = _normalize_meta_backfill_grains(list(grains_input) if grains_input is not None else None)
+
+    integration_status = meta_ads_service.integration_status()
+    if str(integration_status.get("token_source") or "missing") == "missing":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Meta Ads token is missing or placeholder.")
+
+    attached_accounts = client_registry_service.list_client_platform_accounts(platform=PLATFORM_META_ADS, client_id=int(client_id))
+    attached_ids = sorted(
+        {
+            str(item.get("id") or item.get("account_id") or "").strip()
+            for item in attached_accounts
+            if isinstance(item, dict) and str(item.get("id") or item.get("account_id") or "").strip() != ""
+        }
+    )
+    if len(attached_ids) == 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No Meta Ads accounts attached to this client.")
+
+    chunks = _build_meta_backfill_chunks(start_date=resolved_start, end_date=resolved_end, chunk_days=_META_BACKFILL_CHUNK_DAYS)
+    job_id = backfill_job_store.create(
+        payload={
+            "platform": PLATFORM_META_ADS,
+            "client_id": int(client_id),
+            "mode": "historical_backfill",
+            "start_date": resolved_start.isoformat(),
+            "end_date": resolved_end.isoformat(),
+            "grains": resolved_grains,
+            "chunk_days": _META_BACKFILL_CHUNK_DAYS,
+        }
+    )
+    background_tasks.add_task(
+        _run_meta_historical_backfill_job,
+        job_id,
+        client_id=int(client_id),
+        start_date=resolved_start,
+        end_date=resolved_end,
+        grains=resolved_grains,
+        chunk_days=_META_BACKFILL_CHUNK_DAYS,
+    )
+
+    summary = {
+        "status": SYNC_STATUS_QUEUED,
+        "mode": "enqueued",
+        "message": "Meta Ads historical backfill enqueued.",
+        "job_id": job_id,
+        "client_id": int(client_id),
+        "start_date": resolved_start.isoformat(),
+        "end_date": resolved_end.isoformat(),
+        "grains": resolved_grains,
+        "chunk_days": _META_BACKFILL_CHUNK_DAYS,
+        "chunks_enqueued": len(chunks),
+        "jobs_enqueued": len(chunks) * len(resolved_grains),
+        "accounts_detected": len(attached_ids),
+        "token_source": str(integration_status.get("token_source") or "missing"),
+    }
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="meta_ads.backfill.enqueue",
+        resource=f"client:{client_id}",
+        details=summary,
+    )
+    return summary
+
+
 @router.post("/{client_id}/sync")
-def sync_meta_ads(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, float | int | str]:
+def sync_meta_ads(
+    client_id: int,
+    payload: MetaSyncRequest | None = None,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
     try:
         enforce_action_scope(user=user, action="integrations:sync", scope="subaccount")
         rate_limiter_service.check(f"meta_sync:{user.email}", limit=30, window_seconds=60)
@@ -374,7 +696,7 @@ def sync_meta_ads(client_id: int, user: AuthUser = Depends(get_current_user)) ->
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
     try:
-        snapshot = meta_ads_service.sync_client(client_id=client_id)
+        snapshot = meta_ads_service.sync_client(client_id=client_id, start_date=payload.start_date if payload else None, end_date=payload.end_date if payload else None, grain=payload.grain if payload else None)
     except MetaAdsIntegrationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
