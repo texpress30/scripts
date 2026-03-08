@@ -32,6 +32,10 @@ class Settings:
     google_ads_ui_rolling_chunk_days: int
     google_ads_historical_backfill_start_date: date
     meta_access_token: str
+    meta_app_id: str
+    meta_app_secret: str
+    meta_redirect_uri: str
+    meta_api_version: str
     bigquery_project_id: str
     database_url: str
     redis_url: str
@@ -136,6 +140,10 @@ def load_settings() -> Settings:
         google_ads_ui_rolling_chunk_days=_parse_positive_int_env("GOOGLE_ADS_UI_ROLLING_CHUNK_DAYS", default=7),
         google_ads_historical_backfill_start_date=_parse_iso_date_env("GOOGLE_ADS_HISTORICAL_BACKFILL_START_DATE", default="2024-01-09"),
         meta_access_token=_get_env("META_ACCESS_TOKEN", default=""),
+        meta_app_id=_get_env("META_APP_ID", default=""),
+        meta_app_secret=_get_env("META_APP_SECRET", default=""),
+        meta_redirect_uri=_get_env("META_REDIRECT_URI", default=""),
+        meta_api_version=_get_env("META_API_VERSION", default="v20.0"),
         bigquery_project_id=_get_env("BIGQUERY_PROJECT_ID", default=""),
         database_url=_get_env("DATABASE_URL", default="postgresql://postgres:postgres@localhost:5432/mcc"),
         redis_url=_get_env("REDIS_URL", default="redis://localhost:6379/0"),
