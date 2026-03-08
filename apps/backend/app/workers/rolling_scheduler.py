@@ -89,6 +89,8 @@ def _resolve_rolling_grains(*, platform: str) -> list[str]:
         grains.extend(["campaign_daily", "ad_group_daily", "ad_daily", "keyword_daily"])
     elif normalized_platform == "meta_ads":
         grains.extend(["campaign_daily", "ad_group_daily", "ad_daily"])
+    elif normalized_platform == "tiktok_ads":
+        grains.extend(["campaign_daily", "ad_group_daily", "ad_daily"])
     return grains
 
 
@@ -100,8 +102,8 @@ def enqueue_rolling_sync_runs(
     force: bool = False,
 ) -> dict[str, object]:
     normalized_platform = str(platform).strip().lower()
-    if normalized_platform not in {"google_ads", "meta_ads"}:
-        raise ValueError("rolling scheduler currently supports only platform='google_ads' or platform='meta_ads'")
+    if normalized_platform not in {"google_ads", "meta_ads", "tiktok_ads"}:
+        raise ValueError("rolling scheduler currently supports only platform='google_ads', platform='meta_ads', or platform='tiktok_ads'")
 
     rows = client_registry_service.list_platform_accounts(platform=normalized_platform)
     effective_rows = rows[: max(1, int(limit))]

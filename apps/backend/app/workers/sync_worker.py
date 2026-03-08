@@ -11,6 +11,7 @@ from app.services.entity_performance_reports import upsert_ad_group_performance_
 from app.services.platform_entity_store import upsert_platform_ad_groups, upsert_platform_ads, upsert_platform_campaigns, upsert_platform_keywords
 from app.services.google_ads import google_ads_service
 from app.services.meta_ads import MetaAdsIntegrationError, meta_ads_service
+from app.services.tiktok_ads import TikTokAdsIntegrationError, tiktok_ads_service
 from app.services.platform_watermarks_reconcile import reconcile_platform_account_watermarks
 from app.services.sync_run_chunks_store import sync_run_chunks_store
 from app.services.sync_runs_store import sync_runs_store
@@ -179,6 +180,17 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
                 )
                 rows_written = int(snapshot.get("rows_written") or 0)
             except MetaAdsIntegrationError as exc:
+                raise RuntimeError(str(exc)[:300]) from exc
+        elif platform == "tiktok_ads":
+            try:
+                snapshot = tiktok_ads_service.sync_client(
+                    client_id=client_id,
+                    start_date=chunk_start,
+                    end_date=chunk_end,
+                    grain=grain,
+                )
+                rows_written = int(snapshot.get("rows_written") or 0)
+            except TikTokAdsIntegrationError as exc:
                 raise RuntimeError(str(exc)[:300]) from exc
         elif platform != "google_ads":
             raise RuntimeError(f"unsupported platform '{platform}'")

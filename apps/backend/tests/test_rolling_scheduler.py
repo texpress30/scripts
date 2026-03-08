@@ -119,6 +119,29 @@ class RollingSchedulerTests(unittest.TestCase):
         self.assertEqual(summary["enqueued_count_by_grain"]["ad_daily"], 1)
         self.assertEqual(summary["enqueued_count_by_grain"]["keyword_daily"], 0)
 
+
+
+    def test_flag_off_tiktok_enqueues_only_account_daily(self):
+        summary, state = self._run_scheduler(account=self._base_account(platform="tiktok_ads"), env_value="0")
+
+        grains = [call["grain"] for call in state["run_calls"]]
+        self.assertEqual(grains, ["account_daily"])
+        self.assertEqual(summary["enqueued_count_by_grain"]["account_daily"], 1)
+        self.assertEqual(summary["enqueued_count_by_grain"]["campaign_daily"], 0)
+        self.assertEqual(summary["enqueued_count_by_grain"]["ad_group_daily"], 0)
+        self.assertEqual(summary["enqueued_count_by_grain"]["ad_daily"], 0)
+
+    def test_flag_on_tiktok_platform_enqueues_tiktok_entity_grains(self):
+        summary, state = self._run_scheduler(account=self._base_account(platform="tiktok_ads"), env_value="1")
+
+        grains = [call["grain"] for call in state["run_calls"]]
+        self.assertEqual(grains, ["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"])
+        self.assertEqual(summary["enqueued_count_by_grain"]["account_daily"], 1)
+        self.assertEqual(summary["enqueued_count_by_grain"]["campaign_daily"], 1)
+        self.assertEqual(summary["enqueued_count_by_grain"]["ad_group_daily"], 1)
+        self.assertEqual(summary["enqueued_count_by_grain"]["ad_daily"], 1)
+        self.assertEqual(summary["enqueued_count_by_grain"]["keyword_daily"], 0)
+
     def test_flag_on_dedupe_skips_existing_campaign_daily(self):
         summary, state = self._run_scheduler(
             account=self._base_account(platform="google_ads"),
@@ -136,7 +159,7 @@ class RollingSchedulerTests(unittest.TestCase):
         self.assertEqual(summary["enqueued_count_by_grain"]["keyword_daily"], 0)
     def test_invalid_platform_raises_value_error(self):
         with self.assertRaisesRegex(ValueError, "supports only platform"):
-            rolling_scheduler.enqueue_rolling_sync_runs(platform="tiktok_ads", limit=10, chunk_days=7, force=False)
+            rolling_scheduler.enqueue_rolling_sync_runs(platform="pinterest_ads", limit=10, chunk_days=7, force=False)
 
 
 if __name__ == "__main__":

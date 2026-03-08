@@ -947,6 +947,135 @@ class SyncWorkerTests(unittest.TestCase):
         self.assertEqual(meta_sync_mock.call_args.kwargs["grain"], "campaign_daily")
         self.assertEqual(google_fetch_mock.call_count, 0)
 
+    def test_process_next_chunk_tiktok_ad_daily_uses_tiktok_sync_service(self):
+        state = self._build_state(job_type="rolling_refresh", grain="ad_daily", platform="tiktok_ads")
+
+        def _claim_any(**kwargs):
+            if state["claimed"]:
+                return None
+            state["claimed"] = True
+            state["chunk"]["status"] = "running"
+            return dict(state["chunk"])
+
+        def _get_run(job_id):
+            return dict(state["run"]) if job_id == "job-1" else None
+
+        def _update_run_status(**kwargs):
+            if kwargs.get("status") is not None:
+                state["run"]["status"] = kwargs["status"]
+            if kwargs.get("error") is not None:
+                state["run"]["error"] = kwargs["error"]
+            return dict(state["run"])
+
+        def _update_chunk_status(**kwargs):
+            state["chunk"]["status"] = kwargs["status"]
+            if kwargs.get("error") is not None:
+                state["chunk"]["error"] = kwargs["error"]
+            if kwargs.get("rows_written") is not None:
+                state["chunk"]["rows_written"] = int(kwargs.get("rows_written") or 0)
+            return dict(state["chunk"])
+
+        def _update_progress(**kwargs):
+            state["run"]["chunks_done"] = int(state["run"].get("chunks_done") or 0) + int(kwargs.get("chunks_done_delta") or 0)
+            state["run"]["rows_written"] = int(state["run"].get("rows_written") or 0) + int(kwargs.get("rows_written_delta") or 0)
+            return dict(state["run"])
+
+        def _counts(job_id):
+            return {"remaining": 0 if state["chunk"]["status"] in ("done", "error") else 1, "errors": 0}
+
+        with patch.object(sync_worker.sync_run_chunks_store, "claim_next_queued_chunk_any", side_effect=_claim_any), patch.object(
+            sync_worker.sync_runs_store,
+            "get_sync_run",
+            side_effect=_get_run,
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_status", side_effect=_update_run_status), patch.object(
+            sync_worker.sync_run_chunks_store,
+            "update_sync_run_chunk_status",
+            side_effect=_update_chunk_status,
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_progress", side_effect=_update_progress), patch.object(
+            sync_worker.sync_run_chunks_store,
+            "get_sync_run_chunk_status_counts",
+            side_effect=_counts,
+        ), patch.object(
+            sync_worker.client_registry_service,
+            "update_platform_account_operational_metadata",
+            return_value=None,
+        ), patch.object(
+            sync_worker.tiktok_ads_service,
+            "sync_client",
+            return_value={"rows_written": 5, "grain": "ad_daily", "accounts_processed": 1, "token_source": "database"},
+        ) as tiktok_sync_mock:
+            processed = sync_worker.process_next_chunk()
+
+        self.assertTrue(processed)
+        self.assertEqual(state["chunk"]["status"], "done")
+        self.assertEqual(state["chunk"]["rows_written"], 5)
+        self.assertEqual(state["run"]["status"], "done")
+        self.assertEqual(state["run"]["rows_written"], 5)
+        self.assertEqual(tiktok_sync_mock.call_count, 1)
+        self.assertEqual(tiktok_sync_mock.call_args.kwargs["grain"], "ad_daily")
+
+    def test_process_next_chunk_tiktok_error_maps_to_run_status(self):
+        state = self._build_state(job_type="rolling_refresh", grain="campaign_daily", platform="tiktok_ads")
+
+        def _claim_any(**kwargs):
+            if state["claimed"]:
+                return None
+            state["claimed"] = True
+            state["chunk"]["status"] = "running"
+            return dict(state["chunk"])
+
+        def _get_run(job_id):
+            return dict(state["run"]) if job_id == "job-1" else None
+
+        def _update_run_status(**kwargs):
+            if kwargs.get("status") is not None:
+                state["run"]["status"] = kwargs["status"]
+            if kwargs.get("error") is not None:
+                state["run"]["error"] = kwargs["error"]
+            return dict(state["run"])
+
+        def _update_chunk_status(**kwargs):
+            state["chunk"]["status"] = kwargs["status"]
+            if kwargs.get("error") is not None:
+                state["chunk"]["error"] = kwargs["error"]
+            return dict(state["chunk"])
+
+        def _update_progress(**kwargs):
+            state["run"]["chunks_done"] = int(state["run"].get("chunks_done") or 0) + int(kwargs.get("chunks_done_delta") or 0)
+            return dict(state["run"])
+
+        def _counts(job_id):
+            return {"remaining": 0 if state["chunk"]["status"] in ("done", "error") else 1, "errors": 1}
+
+        with patch.object(sync_worker.sync_run_chunks_store, "claim_next_queued_chunk_any", side_effect=_claim_any), patch.object(
+            sync_worker.sync_runs_store,
+            "get_sync_run",
+            side_effect=_get_run,
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_status", side_effect=_update_run_status), patch.object(
+            sync_worker.sync_run_chunks_store,
+            "update_sync_run_chunk_status",
+            side_effect=_update_chunk_status,
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_progress", side_effect=_update_progress), patch.object(
+            sync_worker.sync_run_chunks_store,
+            "get_sync_run_chunk_status_counts",
+            side_effect=_counts,
+        ), patch.object(
+            sync_worker.client_registry_service,
+            "update_platform_account_operational_metadata",
+            return_value=None,
+        ), patch.object(
+            sync_worker.tiktok_ads_service,
+            "sync_client",
+            side_effect=sync_worker.TikTokAdsIntegrationError("TikTok reporting API failed: code=401"),
+        ):
+            processed = sync_worker.process_next_chunk()
+
+        self.assertTrue(processed)
+        self.assertEqual(state["chunk"]["status"], "error")
+        self.assertIn("TikTok reporting API failed", str(state["chunk"].get("error") or ""))
+        self.assertEqual(state["run"]["status"], "error")
+        self.assertIn("TikTok reporting API failed", str(state["run"].get("error") or ""))
+
     def test_process_next_chunk_meta_campaign_daily_error_maps_to_run_status(self):
         state = self._build_state(job_type="rolling_refresh", grain="campaign_daily", platform="meta_ads")
 

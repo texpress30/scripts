@@ -3387,7 +3387,11 @@ class ServiceTests(unittest.TestCase):
             tiktok_ads_api.load_settings = lambda: type("S", (), {"ff_tiktok_integration": True})()
             tiktok_ads_api.tiktok_ads_service.integration_status = lambda: {"has_usable_token": True}
             tiktok_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "tt-1"}]
-            tiktok_ads_api.backfill_job_store.create = lambda payload: captured.setdefault("create_payload", payload) or "tt-bf-1"
+            
+            def _create_job(payload):
+                captured["create_payload"] = payload
+                return "tt-bf-1"
+            tiktok_ads_api.backfill_job_store.create = _create_job
             background_tasks.add_task = lambda func, *args, **kwargs: captured.update({"task": getattr(func, "__name__", ""), "task_kwargs": kwargs})
             tiktok_ads_api.audit_log_service.log = lambda **kwargs: None
 
@@ -3427,7 +3431,11 @@ class ServiceTests(unittest.TestCase):
             tiktok_ads_api.load_settings = lambda: type("S", (), {"ff_tiktok_integration": True})()
             tiktok_ads_api.tiktok_ads_service.integration_status = lambda: {"has_usable_token": True}
             tiktok_ads_api.client_registry_service.list_client_platform_accounts = lambda **kwargs: [{"id": "tt-1"}]
-            tiktok_ads_api.backfill_job_store.create = lambda payload: captured.setdefault("create_payload", payload) or "tt-bf-2"
+            
+            def _create_job(payload):
+                captured["create_payload"] = payload
+                return "tt-bf-2"
+            tiktok_ads_api.backfill_job_store.create = _create_job
             background_tasks.add_task = lambda func, *args, **kwargs: captured.update({"task_kwargs": kwargs})
             tiktok_ads_api.audit_log_service.log = lambda **kwargs: None
 

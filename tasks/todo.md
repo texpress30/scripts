@@ -2334,3 +2334,18 @@
 - Added queue-based TikTok historical backfill orchestration with defaults `2024-01-09 -> yesterday`, grains `[account_daily,campaign_daily,ad_group_daily,ad_daily]`, and 30-day chunks.
 - Backfill runner delegates every chunk to existing `sync_client` (no duplicate fetch/persist logic) and records done/error in `backfill_job_store`.
 - Endpoint validates flag/token/attached-accounts early and returns stable enqueue payload (`mode`, `chunks_enqueued`, `jobs_enqueued`, `job_id`).
+
+---
+
+# TODO — TikTok rolling daily sync (7-day window)
+
+- [x] Extend rolling scheduler platform support to include `tiktok_ads` without breaking Google/Meta.
+- [x] Include TikTok entity grains in rolling expansion when `ROLLING_ENTITY_GRAINS_ENABLED` is ON.
+- [x] Ensure sync worker processes TikTok rolling runs through existing `tiktok_ads_service.sync_client` path.
+- [x] Add focused tests for scheduler grain expansion/flag behavior and worker success/error mapping for TikTok.
+- [x] Update README rolling section minimally and run compile/tests/smoke checks.
+
+## Review
+- Rolling scheduler now accepts `platform=tiktok_ads` and enqueues `account_daily` (+ entity grains under flag) on the same 7-day complete window.
+- Worker now supports TikTok platform runs by reusing existing TikTok sync service for chunk execution; no duplicate fetch/persist logic added.
+- Existing Google/Meta rolling behavior remained compatible in scheduler tests.
