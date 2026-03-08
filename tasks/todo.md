@@ -1,3 +1,16 @@
+# TODO — Hotfix Railway startup crash (`Literal` import missing in meta_ads)
+
+- [x] Inspect backend crash context and target file for missing `Literal` typing import.
+- [x] Add `Literal` import in `apps/backend/app/services/meta_ads.py` without changing business logic.
+- [x] Run requested compile and pytest commands and capture outputs.
+- [x] Commit minimal hotfix and report results.
+
+## Review
+- Added missing `Literal` import to prevent startup `NameError` in Railway import path.
+- No other runtime logic changes were made in this hotfix.
+
+---
+
 # TODO — Fix TikTok business OAuth URL + restore Meta connect/import card + align callback URIs
 
 - [x] Audit current integrations frontend/backend files and identify URI/auth-flow mismatches for Meta and TikTok.

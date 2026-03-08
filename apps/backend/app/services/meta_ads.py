@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import secrets
+from typing import Literal
 from datetime import datetime, timezone
 from urllib import error, parse, request
 
