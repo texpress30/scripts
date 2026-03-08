@@ -2202,13 +2202,15 @@
 
 ---
 
-# TODO — Agency summary integration health contract
+# TODO — Agency Dashboard frontend consume summary.integration_health
 
-- [x] Review modified backend files and keep change scope backend-only.
-- [x] Run targeted backend tests for integration health payload and dashboard compatibility.
-- [x] Prepare commit and PR message with test evidence.
+- [x] Rebase workspace on latest `origin/main` and start clean frontend branch.
+- [x] Remove provider-specific integration status requests from agency dashboard page.
+- [x] Consume only `summary.integration_health` in Integration health card with empty fallback.
+- [x] Add/update Agency Dashboard frontend tests for integration health rendering contract.
+- [x] Run required frontend test and build commands.
 
 ## Review
-- Added `integration_health` aggregation in unified agency summary response.
-- Added backend tests for Google/Meta mapping and disabled placeholders for other platforms.
-- Verified with targeted pytest runs; one broader dashboard test subset requires Google mapping env and is documented in test output.
+- Agency Dashboard now performs a single summary request and renders integration health from `summary.integration_health`.
+- Removed old Google-only status state/request and manual provider list construction.
+- Added frontend tests validating summary-driven integration health rendering and empty fallback.
