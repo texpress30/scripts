@@ -287,16 +287,148 @@ class TikTokAdsService:
         if token == "":
             raise TikTokAdsIntegrationError("TikTok import requires a usable Business OAuth token. Connect TikTok first.")
 
+        discovered_accounts = self.list_accessible_advertiser_accounts(access_token=token)
+        existing_accounts = client_registry_service.list_platform_accounts(platform="tiktok_ads")
+        existing_by_id: dict[str, dict[str, object]] = {
+            str(item.get("id") or "").strip(): item for item in existing_accounts if isinstance(item, dict)
+        }
+
+        if len(discovered_accounts) > 0:
+            client_registry_service.upsert_platform_accounts(
+                platform="tiktok_ads",
+                accounts=[{"id": str(item["account_id"]), "name": str(item["account_name"])} for item in discovered_accounts],
+            )
+
+        imported = 0
+        updated = 0
+        unchanged = 0
+        for account in discovered_accounts:
+            account_id = str(account["account_id"])
+            account_name = str(account["account_name"])
+            status = str(account.get("status") or "").strip() or None
+            currency_code = str(account.get("currency_code") or "").strip().upper() or None
+            account_timezone = str(account.get("account_timezone") or "").strip() or None
+
+            existing = existing_by_id.get(account_id)
+            if existing is None:
+                imported += 1
+                client_registry_service.update_platform_account_operational_metadata(
+                    platform="tiktok_ads",
+                    account_id=account_id,
+                    status=status,
+                    currency_code=currency_code,
+                    account_timezone=account_timezone,
+                )
+                continue
+
+            existing_name = str(existing.get("name") or "").strip()
+            existing_status = str(existing.get("status") or "").strip() or None
+            existing_currency = str(existing.get("currency") or "").strip().upper() or None
+            existing_timezone = str(existing.get("timezone") or "").strip() or None
+
+            changed = (
+                existing_name != account_name
+                or existing_status != status
+                or existing_currency != currency_code
+                or existing_timezone != account_timezone
+            )
+            if changed:
+                updated += 1
+                client_registry_service.update_platform_account_operational_metadata(
+                    platform="tiktok_ads",
+                    account_id=account_id,
+                    status=status,
+                    currency_code=currency_code,
+                    account_timezone=account_timezone,
+                )
+            else:
+                unchanged += 1
+
         return {
             "status": "ok",
             "provider": "tiktok_ads",
+            "platform": "tiktok_ads",
             "token_source": token_source,
-            "accounts_discovered": 0,
-            "imported": 0,
-            "updated": 0,
-            "unchanged": 0,
-            "message": "TikTok account import is enabled and awaiting account discovery implementation.",
+            "accounts_discovered": len(discovered_accounts),
+            "imported": imported,
+            "updated": updated,
+            "unchanged": unchanged,
+            "message": f"TikTok advertiser import completed: discovered={len(discovered_accounts)}, imported={imported}, updated={updated}, unchanged={unchanged}.",
         }
+
+    def list_accessible_advertiser_accounts(self, *, access_token: str | None = None) -> list[dict[str, object]]:
+        resolved_access_token = str(access_token or "").strip()
+        if resolved_access_token == "":
+            token, _, _ = self._access_token_with_source()
+            resolved_access_token = token
+        if resolved_access_token == "":
+            raise TikTokAdsIntegrationError("TikTok advertiser discovery requires a usable Business OAuth token.")
+
+        settings = load_settings()
+        app_id = str(settings.tiktok_app_id or "").strip()
+        secret = str(settings.tiktok_app_secret or "").strip()
+        if self._is_placeholder(app_id) or self._is_placeholder(secret):
+            raise TikTokAdsIntegrationError("TikTok advertiser discovery requires configured TIKTOK_APP_ID and TIKTOK_APP_SECRET.")
+
+        accounts: list[dict[str, object]] = []
+        page = 1
+        page_size = 100
+        max_pages = 1000
+        while page <= max_pages:
+            query = parse.urlencode({"app_id": app_id, "secret": secret, "page": page, "page_size": page_size})
+            raw = self._http_json(
+                method="GET",
+                url=f"{settings.tiktok_api_base_url.rstrip('/')}/open_api/{settings.tiktok_api_version.strip('/')}/oauth2/advertiser/get/?{query}",
+                headers={"Access-Token": resolved_access_token},
+            )
+            api_code = raw.get("code")
+            if isinstance(api_code, int) and api_code != 0:
+                raise TikTokAdsIntegrationError(f"TikTok advertiser discovery failed: code={api_code}, message={raw.get('message')}")
+
+            data = raw.get("data") if isinstance(raw.get("data"), dict) else {}
+            rows = data.get("list")
+            if not isinstance(rows, list):
+                rows = data.get("advertisers") if isinstance(data.get("advertisers"), list) else []
+
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                advertiser_id = str(row.get("advertiser_id") or row.get("id") or "").strip()
+                if advertiser_id == "":
+                    continue
+                advertiser_name = str(row.get("advertiser_name") or row.get("name") or "").strip() or f"TikTok Advertiser {advertiser_id}"
+                status = str(row.get("status") or row.get("advertiser_status") or "").strip() or None
+                currency_code = str(row.get("currency_code") or row.get("currency") or "").strip().upper() or None
+                account_timezone = str(row.get("account_timezone") or row.get("timezone") or "").strip() or None
+                accounts.append(
+                    {
+                        "account_id": advertiser_id,
+                        "account_name": advertiser_name,
+                        "status": status,
+                        "currency_code": currency_code,
+                        "account_timezone": account_timezone,
+                    }
+                )
+
+            page_info = data.get("page_info") if isinstance(data.get("page_info"), dict) else {}
+            has_next_page = bool(page_info.get("has_next_page"))
+            total_page_raw = page_info.get("total_page")
+            total_page = int(total_page_raw) if isinstance(total_page_raw, (int, float)) else None
+            current_page_raw = page_info.get("page")
+            current_page = int(current_page_raw) if isinstance(current_page_raw, (int, float)) else page
+
+            if has_next_page:
+                page = current_page + 1
+                continue
+            if total_page is not None and current_page < total_page:
+                page = current_page + 1
+                continue
+            break
+
+        deduped: dict[str, dict[str, object]] = {}
+        for item in accounts:
+            deduped[str(item["account_id"])] = item
+        return [deduped[key] for key in sorted(deduped.keys())]
 
     def _resolve_sync_window(self, *, start_date: date | None, end_date: date | None) -> tuple[date, date]:
         if start_date is not None and end_date is not None:

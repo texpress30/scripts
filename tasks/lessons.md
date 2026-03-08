@@ -218,3 +218,4 @@
 - 2026-03-08: For backend-only dashboard requests, keep frontend untouched and update only dashboard summary mapping/tests/docs needed for the requested platform status source.
 - 2026-03-08: For final hardening requests, execute the full requested smoke matrix first and only then patch small confirmed defects; avoid speculative changes.
 - 2026-03-08: For UI parity requests across providers, enforce a shared container/table shell and provider mappers instead of separate bespoke panels.
+- 2026-03-08: For provider imports, never ship placeholder summaries; implement real discovery+registry upsert and prove idempotency with rerun tests.

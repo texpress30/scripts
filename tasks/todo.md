@@ -1,3 +1,18 @@
+# TODO — Fix TikTok real advertiser account import (backend)
+
+- [x] Audit TikTok import stub, Meta import reference, and generic platform registry upsert path.
+- [x] Implement real TikTok advertiser discovery (paginated) and idempotent generic registry upsert in `TikTokAdsService.import_accounts()`.
+- [x] Add backend tests for happy path, pagination, idempotent rerun, missing token, API error mapping, and API endpoint summary contract.
+- [x] Run targeted pytest + py_compile + backend import smoke checks and document results.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Removed TikTok import stub and implemented real advertiser discovery via TikTok Business API `/open_api/{version}/oauth2/advertiser/get/` with pagination support.
+- Import now upserts discovered advertisers into generic platform registry and computes idempotent summary counters (`imported/updated/unchanged`).
+- Added focused backend tests for service and API import contract/error mapping, all passing in targeted run.
+
+---
+
 # TODO — Agency Accounts UI unification (Google + Meta + TikTok shared shell)
 
 - [x] Audit current Agency Accounts Google layout and Meta/TikTok panel divergence.
