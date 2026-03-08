@@ -8,6 +8,9 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest, postAccountSyncProgressBatch, type AccountSyncProgressBatchResult } from "@/lib/api";
 
+import { MetaAgencyAccountsPanel } from "./MetaAgencyAccountsPanel";
+import { TikTokAgencyAccountsPanel } from "./TikTokAgencyAccountsPanel";
+
 type ClientRecord = {
   id: number;
   name: string;
@@ -50,6 +53,25 @@ type GoogleAccount = {
 
 type GoogleAccountsResponse = {
   items: GoogleAccount[];
+  count: number;
+  last_import_at?: string | null;
+};
+
+type MetaAccount = {
+  platform: string;
+  account_id: string;
+  account_name?: string;
+  client_id?: number | null;
+  client_name?: string | null;
+  is_attached?: boolean;
+  status?: string | null;
+  currency?: string | null;
+  timezone?: string | null;
+};
+
+type MetaAccountsResponse = {
+  platform: string;
+  items: MetaAccount[];
   count: number;
   last_import_at?: string | null;
 };
@@ -139,6 +161,12 @@ function accountDisplayName(account: GoogleAccount): string {
   return clean ? clean : `Google Account ${account.id}`;
 }
 
+function metaAccountDisplayName(account: MetaAccount): string {
+  const clean = String(account.account_name || "").trim();
+  if (clean !== "") return clean;
+  return `Meta Account ${account.account_id}`;
+}
+
 function actionButtonClass(variant: "historical" | "ghost"): string {
   const base = "inline-flex items-center rounded-md px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50";
   if (variant === "historical") {
@@ -154,6 +182,14 @@ export default function AgencyAccountsPage() {
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [summary, setSummary] = useState<AccountSummaryItem[]>([]);
   const [googleAccounts, setGoogleAccounts] = useState<GoogleAccount[]>([]);
+  const [metaAccounts, setMetaAccounts] = useState<MetaAccount[]>([]);
+  const [metaLastImportAt, setMetaLastImportAt] = useState<string | null>(null);
+  const [metaLoading, setMetaLoading] = useState(false);
+  const [metaLoadError, setMetaLoadError] = useState("");
+  const [metaActionError, setMetaActionError] = useState("");
+  const [metaActionMessage, setMetaActionMessage] = useState("");
+  const [metaAttachClientByAccount, setMetaAttachClientByAccount] = useState<Record<string, string>>({});
+  const [metaBusyByAccount, setMetaBusyByAccount] = useState<Record<string, "attach" | "detach">>({});
   const [selectedPlatform, setSelectedPlatform] = useState("google_ads");
 
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
@@ -397,6 +433,21 @@ export default function AgencyAccountsPage() {
     }
   }
 
+  async function loadMetaAccounts() {
+    setMetaLoading(true);
+    setMetaLoadError("");
+    try {
+      const payload = await apiRequest<MetaAccountsResponse>("/clients/accounts/meta_ads");
+      setMetaAccounts(Array.isArray(payload.items) ? payload.items : []);
+      setMetaLastImportAt(payload.last_import_at ?? null);
+    } catch (err) {
+      setMetaAccounts([]);
+      setMetaLoadError(err instanceof Error ? err.message : "Nu am putut încărca conturile Meta Ads.");
+    } finally {
+      setMetaLoading(false);
+    }
+  }
+
   useEffect(() => {
     void loadData();
   }, []);
@@ -405,6 +456,11 @@ export default function AgencyAccountsPage() {
     setSelectedAccountIds(new Set());
     setExpandedClientRows(new Set());
     setAccountsPage(1);
+  }, [selectedPlatform]);
+
+  useEffect(() => {
+    if (selectedPlatform !== "meta_ads") return;
+    void loadMetaAccounts();
   }, [selectedPlatform]);
 
   useEffect(() => {
@@ -499,6 +555,57 @@ export default function AgencyAccountsPage() {
       setAttachStatus(err instanceof Error ? err.message : "Nu am putut detașa contul Google.");
     } finally {
       setActionBusy(false);
+    }
+  }
+
+  async function attachMetaAccount(clientId: number, accountId: string) {
+    setMetaActionError("");
+    setMetaActionMessage("");
+    setMetaBusyByAccount((current) => ({ ...current, [accountId]: "attach" }));
+    try {
+      await apiRequest(`/clients/${clientId}/attach-account`, {
+        method: "POST",
+        body: JSON.stringify({ platform: "meta_ads", account_id: accountId }),
+      });
+      const targetClient = clients.find((item) => item.id === clientId);
+      setMetaActionMessage(`Contul ${accountId} a fost atașat clientului ${targetClient?.name ?? `#${clientId}`}.`);
+      await loadMetaAccounts();
+    } catch (err) {
+      setMetaActionError(err instanceof Error ? err.message : "Nu am putut atașa contul Meta Ads.");
+    } finally {
+      setMetaBusyByAccount((current) => {
+        const next = { ...current };
+        delete next[accountId];
+        return next;
+      });
+    }
+  }
+
+  async function detachMetaAccount(clientId: number, accountId: string) {
+    setMetaActionError("");
+    setMetaActionMessage("");
+    setMetaBusyByAccount((current) => ({ ...current, [accountId]: "detach" }));
+    try {
+      await apiRequest(`/clients/${clientId}/detach-account`, {
+        method: "POST",
+        body: JSON.stringify({ platform: "meta_ads", account_id: accountId }),
+      });
+      const targetClient = clients.find((item) => item.id === clientId);
+      setMetaActionMessage(`Contul ${accountId} a fost detașat de la clientul ${targetClient?.name ?? `#${clientId}`}.`);
+      setMetaAttachClientByAccount((current) => {
+        const next = { ...current };
+        delete next[accountId];
+        return next;
+      });
+      await loadMetaAccounts();
+    } catch (err) {
+      setMetaActionError(err instanceof Error ? err.message : "Nu am putut detașa contul Meta Ads.");
+    } finally {
+      setMetaBusyByAccount((current) => {
+        const next = { ...current };
+        delete next[accountId];
+        return next;
+      });
     }
   }
 
@@ -706,9 +813,13 @@ export default function AgencyAccountsPage() {
               })}
             </div>
 
-            {selectedPlatform !== "google_ads" ? (
+            {selectedPlatform === "tiktok_ads" ? (
+              <TikTokAgencyAccountsPanel />
+            ) : selectedPlatform === "meta_ads" ? (
+              <MetaAgencyAccountsPanel clients={clients} />
+            ) : selectedPlatform !== "google_ads" ? (
               <div className="mt-4 wm-card p-4 text-sm text-slate-500">
-                Pentru acest task, doar Google Ads este funcțional complet. Celelalte platforme rămân informative.
+                Pentru acest task, Google Ads, Meta Ads și TikTok Ads sunt funcționale. Celelalte platforme rămân informative.
               </div>
             ) : (
               <div className="mt-4 wm-card p-4">
