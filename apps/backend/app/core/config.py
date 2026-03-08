@@ -42,6 +42,11 @@ class Settings:
     cors_origins: tuple[str, ...]
     cors_origin_regex: str | None
     ff_tiktok_integration: bool
+    tiktok_app_id: str
+    tiktok_app_secret: str
+    tiktok_redirect_uri: str
+    tiktok_api_base_url: str
+    tiktok_api_version: str
     ff_pinterest_integration: bool
     ff_snapchat_integration: bool
     tiktok_sync_retry_attempts: int
@@ -145,6 +150,11 @@ def load_settings() -> Settings:
         cors_origins=_parse_csv_env("APP_CORS_ORIGINS", default="http://localhost:3000,http://127.0.0.1:3000"),
         cors_origin_regex=_safe_regex_env("APP_CORS_ORIGIN_REGEX", default=r"https://.*\.vercel\.app"),
         ff_tiktok_integration=_parse_bool_env("FF_TIKTOK_INTEGRATION", default=False),
+        tiktok_app_id=_get_env("TIKTOK_APP_ID", default=""),
+        tiktok_app_secret=_get_env("TIKTOK_APP_SECRET", default=""),
+        tiktok_redirect_uri=_get_env("TIKTOK_REDIRECT_URI", default=""),
+        tiktok_api_base_url=_get_env("TIKTOK_API_BASE_URL", default="https://business-api.tiktok.com"),
+        tiktok_api_version=_get_env("TIKTOK_API_VERSION", default="v1.3"),
         ff_pinterest_integration=_parse_bool_env("FF_PINTEREST_INTEGRATION", default=False),
         ff_snapchat_integration=_parse_bool_env("FF_SNAPCHAT_INTEGRATION", default=False),
         tiktok_sync_retry_attempts=_parse_int_env("TIKTOK_SYNC_RETRY_ATTEMPTS", default=2),

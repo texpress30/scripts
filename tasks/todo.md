@@ -2214,3 +2214,20 @@
 - Agency Dashboard now performs a single summary request and renders integration health from `summary.integration_health`.
 - Removed old Google-only status state/request and manual provider list construction.
 - Added frontend tests validating summary-driven integration health rendering and empty fallback.
+
+---
+
+# TODO — TikTok Ads backend connect foundation
+
+- [x] Start from clean baseline branch and inspect TikTok/Meta/secrets store implementation.
+- [x] Add TikTok OAuth config env support in backend settings.
+- [x] Implement TikTok service connect/exchange + real status based on persisted secrets.
+- [x] Add TikTok API endpoints for connect start and OAuth exchange.
+- [x] Add focused backend tests for connect/exchange/status scenarios.
+- [x] Update README minimally for TikTok OAuth env and endpoints.
+- [x] Run targeted pytest + backend import smoke checks.
+
+## Review
+- Added TikTok OAuth foundation (connect URL + code exchange) with state validation and secure token persistence in `integration_secrets`.
+- `GET /integrations/tiktok-ads/status` now reports operational fields for UI (`token_source`, token timestamps, oauth config, usable token) instead of mock-only connected status.
+- Existing TikTok sync endpoint remains compatible but explicitly marked stub in sync payload (`sync_mode=stub`) to avoid confusion about real metrics import scope.

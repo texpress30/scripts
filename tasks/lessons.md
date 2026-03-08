@@ -207,3 +207,4 @@
 - 2026-03-06: Pentru CLI-uri folosite în orchestratoare (Railway root_dir variabil), evită căi implicite hardcodate pe un singur cwd; implementează resolver cu candidate paths ordonate + mesaj de eroare diagnostic (cwd + tried candidates).
 - 2026-03-06: Când introduci migration runner pe DB-uri deja provisionate, adaugă explicit mecanism de baseline bootstrap (condiționat pe `schema_migrations` gol) pentru a evita crash loop-uri din conflicte pe tabele legacy existente.
 - 2026-03-08: After user correction on branch hygiene, always start requested rework from fresh `origin/main` baseline branch before implementing frontend refactors.
+- 2026-03-08: When requested git baseline commands cannot run due missing remote/branch topology, continue from the clean available baseline branch and state the constraint explicitly before implementation.
