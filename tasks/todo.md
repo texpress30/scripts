@@ -2231,3 +2231,20 @@
 - Added TikTok OAuth foundation (connect URL + code exchange) with state validation and secure token persistence in `integration_secrets`.
 - `GET /integrations/tiktok-ads/status` now reports operational fields for UI (`token_source`, token timestamps, oauth config, usable token) instead of mock-only connected status.
 - Existing TikTok sync endpoint remains compatible but explicitly marked stub in sync payload (`sync_mode=stub`) to avoid confusion about real metrics import scope.
+
+---
+
+# TODO — TikTok backend import advertiser accounts into generic registry
+
+- [x] Inspect TikTok service/API and generic platform account registry patterns.
+- [x] Implement TikTok advertiser listing with pagination using connected OAuth token.
+- [x] Persist imported advertisers idempotently in generic `agency_platform_accounts` flow.
+- [x] Add `POST /integrations/tiktok-ads/import-accounts` endpoint with summary payload.
+- [x] Add focused tests for happy path, pagination, idempotency, and error scenarios.
+- [x] Update README minimally for TikTok import endpoint.
+- [x] Run targeted backend tests and smoke checks.
+
+## Review
+- TikTok import now fetches advertiser accounts from TikTok API using DB-backed token and paginates until completion.
+- Import persists into generic platform registry (`upsert_platform_accounts` + operational metadata updates) using canonical `advertiser_id` as `account_id`.
+- Import response reports stable summary fields (`accounts_discovered/imported/updated/unchanged`) and keeps sync stub scope unchanged.

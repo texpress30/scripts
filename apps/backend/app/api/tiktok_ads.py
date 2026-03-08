@@ -367,6 +367,29 @@ def tiktok_ads_oauth_exchange(
     return response_payload
 
 
+@router.post("/import-accounts")
+def import_tiktok_accounts(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    try:
+        payload = tiktok_ads_service.import_advertiser_accounts()
+    except TikTokAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="tiktok_ads.import_accounts",
+        resource="integration:tiktok_ads",
+        details={
+            "accounts_discovered": payload.get("accounts_discovered", 0),
+            "imported": payload.get("imported", 0),
+            "updated": payload.get("updated", 0),
+            "unchanged": payload.get("unchanged", 0),
+        },
+    )
+    return payload
+
+
 @router.post("/sync-now")
 def sync_tiktok_ads_now(
     background_tasks: BackgroundTasks,

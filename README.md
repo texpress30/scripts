@@ -126,6 +126,7 @@ Variabile minime necesare:
 - `GET /integrations/tiktok-ads/status`
 - `GET /integrations/tiktok-ads/connect`
 - `POST /integrations/tiktok-ads/oauth/exchange`
+- `POST /integrations/tiktok-ads/import-accounts`
 - `POST /integrations/tiktok-ads/{client_id}/sync`
 - `GET /integrations/pinterest-ads/status`
 - `POST /integrations/pinterest-ads/{client_id}/sync`
