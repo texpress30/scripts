@@ -1,3 +1,17 @@
+# TODO — TikTok backend sync real ad_group_daily for attached advertiser accounts
+
+- [x] Audit existing TikTok sync grains/account-campaign persistence and generic ad_group reporting upsert path.
+- [x] Extend TikTok sync contract to accept `ad_group_daily` grain while preserving defaults/backward compatibility.
+- [x] Implement real TikTok ad_group_daily fetch + normalization + idempotent persistence for all attached advertiser accounts.
+- [x] Add focused backend tests for ad_group_daily happy paths, idempotency, failures, and grain/date validation/backward compatibility.
+- [x] Run targeted backend compile/tests/import-smoke checks and document results.
+
+## Review
+- Added `ad_group_daily` grain to TikTok sync with real reporting fetch and idempotent upsert in generic entity reporting store.
+- Existing behavior remains backward compatible: omitted grain defaults to `account_daily`, existing `campaign_daily` path unchanged.
+
+---
+
 # TODO — TikTok backend sync real campaign_daily for attached advertiser accounts
 
 - [x] Audit current TikTok account_daily sync and generic entity reporting persistence options.

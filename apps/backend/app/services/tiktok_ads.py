@@ -10,7 +10,7 @@ from urllib import error, parse, request
 
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
-from app.services.entity_performance_reports import upsert_campaign_performance_reports
+from app.services.entity_performance_reports import upsert_ad_group_performance_reports, upsert_campaign_performance_reports
 from app.services.integration_secrets_store import integration_secrets_store
 from app.services.performance_reports import performance_reports_store
 from app.services.tiktok_store import tiktok_snapshot_store
@@ -25,7 +25,7 @@ class TikTokAdsIntegrationError(RuntimeError):
     pass
 
 
-TikTokSyncGrain = Literal["account_daily", "campaign_daily"]
+TikTokSyncGrain = Literal["account_daily", "campaign_daily", "ad_group_daily"]
 
 
 @dataclass(frozen=True)
@@ -53,6 +53,21 @@ class TikTokCampaignDailyMetric:
     conversion_value: float
     extra_metrics: dict[str, object]
 
+@dataclass(frozen=True)
+class TikTokAdGroupDailyMetric:
+    report_date: date
+    account_id: str
+    ad_group_id: str
+    ad_group_name: str
+    campaign_id: str
+    campaign_name: str
+    spend: float
+    impressions: int
+    clicks: int
+    conversions: float
+    conversion_value: float
+    extra_metrics: dict[str, object]
+
 
 class TikTokAdsService:
     _oauth_state_cache: set[str]
@@ -60,6 +75,7 @@ class TikTokAdsService:
     def __init__(self) -> None:
         self._oauth_state_cache = set()
         self._memory_campaign_rows: dict[tuple[str, str, str, str], dict[str, object]] = {}
+        self._memory_ad_group_rows: dict[tuple[str, str, str, str], dict[str, object]] = {}
 
     def _is_test_mode(self) -> bool:
         settings = load_settings()
@@ -68,7 +84,7 @@ class TikTokAdsService:
     def _connect(self):
         settings = load_settings()
         if psycopg is None:
-            raise TikTokAdsIntegrationError("psycopg is required for campaign_daily persistence")
+            raise TikTokAdsIntegrationError("psycopg is required for campaign/ad_group daily persistence")
         return psycopg.connect(settings.database_url)
 
     def _http_json(
@@ -472,6 +488,148 @@ class TikTokAdsService:
 
         return rows
 
+    def _fetch_ad_group_daily_metrics(self, *, account_id: str, access_token: str, start_date: date, end_date: date) -> list[TikTokAdGroupDailyMetric]:
+        settings = load_settings()
+        payload = {
+            "advertiser_id": account_id,
+            "report_type": "BASIC",
+            "data_level": "AUCTION_ADGROUP",
+            "dimensions": ["stat_time_day", "adgroup_id", "adgroup_name", "campaign_id", "campaign_name"],
+            "metrics": [
+                "spend",
+                "impressions",
+                "clicks",
+                "conversion",
+                "conversion_value",
+                "total_purchase_value",
+            ],
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "page": 1,
+            "page_size": 1000,
+        }
+        raw = self._http_json(
+            method="POST",
+            url=f"{settings.tiktok_api_base_url.rstrip('/')}/open_api/{settings.tiktok_api_version.strip('/')}/report/integrated/get/",
+            headers={"Access-Token": access_token},
+            payload=payload,
+        )
+
+        api_code = raw.get("code")
+        if isinstance(api_code, int) and api_code != 0:
+            raise TikTokAdsIntegrationError(f"TikTok reporting API failed for account {account_id}: code={api_code}, message={raw.get('message')}")
+
+        data = raw.get("data")
+        if not isinstance(data, dict):
+            raise TikTokAdsIntegrationError(f"TikTok reporting API returned invalid data container for account {account_id}")
+
+        rows_raw = data.get("list")
+        if not isinstance(rows_raw, list):
+            return []
+
+        rows: list[TikTokAdGroupDailyMetric] = []
+        for item in rows_raw:
+            if not isinstance(item, dict):
+                continue
+            dimensions = item.get("dimensions") if isinstance(item.get("dimensions"), dict) else {}
+            metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
+
+            raw_day = str(dimensions.get("stat_time_day") or "").strip()
+            ad_group_id = str(dimensions.get("adgroup_id") or item.get("adgroup_id") or "").strip()
+            ad_group_name = str(dimensions.get("adgroup_name") or item.get("adgroup_name") or "").strip()
+            campaign_id = str(dimensions.get("campaign_id") or item.get("campaign_id") or "").strip()
+            campaign_name = str(dimensions.get("campaign_name") or item.get("campaign_name") or "").strip()
+            if raw_day == "" or ad_group_id == "":
+                continue
+            try:
+                report_day = date.fromisoformat(raw_day)
+            except ValueError:
+                continue
+
+            spend = self._to_float(metrics.get("spend"))
+            impressions = self._to_int(metrics.get("impressions"))
+            clicks = self._to_int(metrics.get("clicks"))
+            conversions = self._extract_conversions(metrics)
+            conversion_value = self._extract_conversion_value(metrics)
+
+            rows.append(
+                TikTokAdGroupDailyMetric(
+                    report_date=report_day,
+                    account_id=account_id,
+                    ad_group_id=ad_group_id,
+                    ad_group_name=ad_group_name,
+                    campaign_id=campaign_id,
+                    campaign_name=campaign_name,
+                    spend=spend,
+                    impressions=impressions,
+                    clicks=clicks,
+                    conversions=conversions,
+                    conversion_value=conversion_value,
+                    extra_metrics={
+                        "tiktok_ads": {
+                            "dimensions": dimensions,
+                            "metrics": metrics,
+                            "ad_group_name": ad_group_name,
+                            "campaign_id": campaign_id,
+                            "campaign_name": campaign_name,
+                            "source": "report.integrated.get",
+                            "grain": "ad_group_daily",
+                        }
+                    },
+                )
+            )
+
+        return rows
+
+    def _upsert_ad_group_rows(self, rows: list[TikTokAdGroupDailyMetric], *, source_window_start: date, source_window_end: date) -> int:
+        if len(rows) == 0:
+            return 0
+
+        if self._is_test_mode():
+            for row in rows:
+                key = ("tiktok_ads", row.account_id, row.ad_group_id, row.report_date.isoformat())
+                self._memory_ad_group_rows[key] = {
+                    "platform": "tiktok_ads",
+                    "account_id": row.account_id,
+                    "ad_group_id": row.ad_group_id,
+                    "ad_group_name": row.ad_group_name,
+                    "campaign_id": row.campaign_id,
+                    "campaign_name": row.campaign_name,
+                    "report_date": row.report_date.isoformat(),
+                    "spend": row.spend,
+                    "impressions": row.impressions,
+                    "clicks": row.clicks,
+                    "conversions": row.conversions,
+                    "conversion_value": row.conversion_value,
+                    "extra_metrics": row.extra_metrics,
+                    "source_window_start": source_window_start.isoformat(),
+                    "source_window_end": source_window_end.isoformat(),
+                }
+            return len(rows)
+
+        payload_rows = [
+            {
+                "platform": "tiktok_ads",
+                "account_id": row.account_id,
+                "ad_group_id": row.ad_group_id,
+                "campaign_id": row.campaign_id or None,
+                "report_date": row.report_date,
+                "spend": row.spend,
+                "impressions": row.impressions,
+                "clicks": row.clicks,
+                "conversions": row.conversions,
+                "conversion_value": row.conversion_value,
+                "extra_metrics": row.extra_metrics,
+                "source_window_start": source_window_start,
+                "source_window_end": source_window_end,
+            }
+            for row in rows
+        ]
+        with self._connect() as conn:
+            written = int(upsert_ad_group_performance_reports(conn, payload_rows) or 0)
+            conn.commit()
+            return written
+
     def _upsert_campaign_rows(self, rows: list[TikTokCampaignDailyMetric], *, source_window_start: date, source_window_end: date) -> int:
         if len(rows) == 0:
             return 0
@@ -540,7 +698,7 @@ class TikTokAdsService:
             raise TikTokAdsIntegrationError("Client id must be a positive integer.")
 
         resolved_grain = str(grain).strip().lower()
-        if resolved_grain not in {"account_daily", "campaign_daily"}:
+        if resolved_grain not in {"account_daily", "campaign_daily", "ad_group_daily"}:
             raise TikTokAdsIntegrationError(f"grain invalid: {resolved_grain}")
 
         range_start, range_end = self._resolve_sync_window(start_date=start_date, end_date=end_date)
@@ -602,7 +760,7 @@ class TikTokAdsService:
                     totals["clicks"] += row.clicks
                     totals["conversions"] += row.conversions
                     totals["revenue"] += row.conversion_value
-        else:
+        elif resolved_grain == "campaign_daily":
             for account_id in account_ids:
                 campaign_rows = self._fetch_campaign_daily_metrics(
                     account_id=account_id,
@@ -616,6 +774,25 @@ class TikTokAdsService:
                     source_window_end=range_end,
                 )
                 for row in campaign_rows:
+                    totals["spend"] += row.spend
+                    totals["impressions"] += row.impressions
+                    totals["clicks"] += row.clicks
+                    totals["conversions"] += row.conversions
+                    totals["revenue"] += row.conversion_value
+        else:
+            for account_id in account_ids:
+                ad_group_rows = self._fetch_ad_group_daily_metrics(
+                    account_id=account_id,
+                    access_token=access_token,
+                    start_date=range_start,
+                    end_date=range_end,
+                )
+                rows_written += self._upsert_ad_group_rows(
+                    ad_group_rows,
+                    source_window_start=range_start,
+                    source_window_end=range_end,
+                )
+                for row in ad_group_rows:
                     totals["spend"] += row.spend
                     totals["impressions"] += row.impressions
                     totals["clicks"] += row.clicks

@@ -1433,6 +1433,127 @@ class ServiceTests(unittest.TestCase):
 
         self.assertEqual(len(tiktok_ads_service._memory_campaign_rows), 1)
 
+    def test_tiktok_ad_group_daily_happy_path_single_account(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        tiktok_ads_service._memory_ad_group_rows.clear()
+
+        client = client_registry_service.create_client(name="TikTok Ad Group One", owner_email="owner@example.com")
+        client_id = int(client["id"])
+        client_registry_service.upsert_platform_accounts(platform="tiktok_ads", accounts=[{"id": "tt-ag-1", "name": "Ad Group One"}])
+        client_registry_service.attach_platform_account_to_client(platform="tiktok_ads", client_id=client_id, account_id="tt-ag-1")
+
+        original_get_secret = tiktok_ads_service_module.integration_secrets_store.get_secret
+        original_fetch = tiktok_ads_service._fetch_ad_group_daily_metrics
+        try:
+            tiktok_ads_service_module.integration_secrets_store.get_secret = lambda **kwargs: IntegrationSecretValue(provider="tiktok_ads", secret_key="access_token", scope="agency_default", value="tt-token", updated_at=None)
+            tiktok_ads_service._fetch_ad_group_daily_metrics = lambda **kwargs: [
+                tiktok_ads_service_module.TikTokAdGroupDailyMetric(
+                    report_date=date(2026, 3, 8),
+                    account_id="tt-ag-1",
+                    ad_group_id="ag-101",
+                    ad_group_name="Retargeting A",
+                    campaign_id="cmp-201",
+                    campaign_name="Campaign A",
+                    spend=45.0,
+                    impressions=450,
+                    clicks=22,
+                    conversions=4.0,
+                    conversion_value=80.0,
+                    extra_metrics={"tiktok_ads": {"metrics": {"conversion": "4", "conversion_value": "80"}}},
+                )
+            ]
+            snapshot = tiktok_ads_service.sync_client(client_id=client_id, grain="ad_group_daily", start_date=date(2026, 3, 8), end_date=date(2026, 3, 8))
+        finally:
+            tiktok_ads_service_module.integration_secrets_store.get_secret = original_get_secret
+            tiktok_ads_service._fetch_ad_group_daily_metrics = original_fetch
+
+        self.assertEqual(snapshot["grain"], "ad_group_daily")
+        self.assertEqual(snapshot["rows_written"], 1)
+        self.assertEqual(len(tiktok_ads_service._memory_ad_group_rows), 1)
+        stored = next(iter(tiktok_ads_service._memory_ad_group_rows.values()))
+        self.assertEqual(stored.get("ad_group_id"), "ag-101")
+        self.assertEqual(stored.get("campaign_id"), "cmp-201")
+
+    def test_tiktok_ad_group_daily_happy_path_multiple_accounts(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        tiktok_ads_service._memory_ad_group_rows.clear()
+
+        client = client_registry_service.create_client(name="TikTok Ad Group Multi", owner_email="owner@example.com")
+        client_id = int(client["id"])
+        client_registry_service.upsert_platform_accounts(platform="tiktok_ads", accounts=[{"id": "tt-aga", "name": "AGA"}, {"id": "tt-agb", "name": "AGB"}])
+        client_registry_service.attach_platform_account_to_client(platform="tiktok_ads", client_id=client_id, account_id="tt-aga")
+        client_registry_service.attach_platform_account_to_client(platform="tiktok_ads", client_id=client_id, account_id="tt-agb")
+
+        original_get_secret = tiktok_ads_service_module.integration_secrets_store.get_secret
+        original_fetch = tiktok_ads_service._fetch_ad_group_daily_metrics
+        try:
+            tiktok_ads_service_module.integration_secrets_store.get_secret = lambda **kwargs: IntegrationSecretValue(provider="tiktok_ads", secret_key="access_token", scope="agency_default", value="tt-token", updated_at=None)
+
+            def fake_fetch(**kwargs):
+                aid = str(kwargs.get("account_id") or "")
+                return [
+                    tiktok_ads_service_module.TikTokAdGroupDailyMetric(
+                        report_date=date(2026, 3, 9),
+                        account_id=aid,
+                        ad_group_id=f"ag-{aid}",
+                        ad_group_name=f"AG {aid}",
+                        campaign_id=f"cmp-{aid}",
+                        campaign_name=f"Camp {aid}",
+                        spend=12.0,
+                        impressions=120,
+                        clicks=12,
+                        conversions=1.0,
+                        conversion_value=24.0,
+                        extra_metrics={"tiktok_ads": {"metrics": {"conversion": "1"}}},
+                    )
+                ]
+
+            tiktok_ads_service._fetch_ad_group_daily_metrics = fake_fetch
+            snapshot = tiktok_ads_service.sync_client(client_id=client_id, grain="ad_group_daily", start_date=date(2026, 3, 9), end_date=date(2026, 3, 9))
+        finally:
+            tiktok_ads_service_module.integration_secrets_store.get_secret = original_get_secret
+            tiktok_ads_service._fetch_ad_group_daily_metrics = original_fetch
+
+        self.assertEqual(snapshot["accounts_processed"], 2)
+        self.assertEqual(snapshot["rows_written"], 2)
+
+    def test_tiktok_ad_group_daily_is_idempotent_same_interval(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        tiktok_ads_service._memory_ad_group_rows.clear()
+
+        client = client_registry_service.create_client(name="TikTok Ad Group Idem", owner_email="owner@example.com")
+        client_id = int(client["id"])
+        client_registry_service.upsert_platform_accounts(platform="tiktok_ads", accounts=[{"id": "tt-ag-idem", "name": "Idem"}])
+        client_registry_service.attach_platform_account_to_client(platform="tiktok_ads", client_id=client_id, account_id="tt-ag-idem")
+
+        original_get_secret = tiktok_ads_service_module.integration_secrets_store.get_secret
+        original_fetch = tiktok_ads_service._fetch_ad_group_daily_metrics
+        try:
+            tiktok_ads_service_module.integration_secrets_store.get_secret = lambda **kwargs: IntegrationSecretValue(provider="tiktok_ads", secret_key="access_token", scope="agency_default", value="tt-token", updated_at=None)
+            tiktok_ads_service._fetch_ad_group_daily_metrics = lambda **kwargs: [
+                tiktok_ads_service_module.TikTokAdGroupDailyMetric(
+                    report_date=date(2026, 3, 10),
+                    account_id="tt-ag-idem",
+                    ad_group_id="ag-idem",
+                    ad_group_name="Idem AG",
+                    campaign_id="cmp-idem",
+                    campaign_name="Idem Campaign",
+                    spend=10.0,
+                    impressions=100,
+                    clicks=10,
+                    conversions=2.0,
+                    conversion_value=40.0,
+                    extra_metrics={"tiktok_ads": {"metrics": {"conversion": "2"}}},
+                )
+            ]
+            tiktok_ads_service.sync_client(client_id=client_id, grain="ad_group_daily", start_date=date(2026, 3, 10), end_date=date(2026, 3, 10))
+            tiktok_ads_service.sync_client(client_id=client_id, grain="ad_group_daily", start_date=date(2026, 3, 10), end_date=date(2026, 3, 10))
+        finally:
+            tiktok_ads_service_module.integration_secrets_store.get_secret = original_get_secret
+            tiktok_ads_service._fetch_ad_group_daily_metrics = original_fetch
+
+        self.assertEqual(len(tiktok_ads_service._memory_ad_group_rows), 1)
+
     def test_tiktok_sync_rejects_invalid_grain(self):
         os.environ["FF_TIKTOK_INTEGRATION"] = "1"
         client = client_registry_service.create_client(name="TikTok Invalid Grain", owner_email="owner@example.com")
@@ -3109,6 +3230,10 @@ class ServiceTests(unittest.TestCase):
     def test_tiktok_sync_endpoint_validates_grain_value(self):
         with self.assertRaises(Exception):
             tiktok_ads_api.TikTokSyncRequest(grain="invalid")
+
+    def test_tiktok_sync_endpoint_accepts_ad_group_daily_grain(self):
+        payload = tiktok_ads_api.TikTokSyncRequest(grain="ad_group_daily")
+        self.assertEqual(payload.grain, "ad_group_daily")
 
     def test_tiktok_ads_sync_now_async_mirrors_sync_run_create(self):
         user = AuthUser(email="admin@example.com", role="agency_owner")
