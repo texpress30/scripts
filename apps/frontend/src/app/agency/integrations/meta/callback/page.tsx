@@ -1,7 +1,6 @@
 "use client";
 
 import React, { Suspense, useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { AppShell } from "@/components/AppShell";
@@ -10,17 +9,23 @@ import { apiRequest } from "@/lib/api";
 
 type MetaExchangeResponse = {
   status?: string;
-  message?: string;
-  token_source?: string;
   provider?: string;
+  message?: string;
 };
 
-function CallbackBody() {
-  const router = useRouter();
+function MetaOAuthCallbackBody() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const replace = router.replace;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState<MetaExchangeResponse | null>(null);
+  const [success, setSuccess] = useState("");
+
+  const providerError = searchParams.get("error") ?? "";
+  const errorReason = searchParams.get("error_reason") ?? "";
+  const errorDescription = searchParams.get("error_description") ?? "";
+  const code = searchParams.get("code") ?? "";
+  const state = searchParams.get("state") ?? "";
 
   useEffect(() => {
     let ignore = false;
@@ -28,25 +33,20 @@ function CallbackBody() {
     async function run() {
       setLoading(true);
       setError("");
-      setSuccess(null);
+      setSuccess("");
 
-      const providerError = searchParams.get("error");
-      const errorReason = searchParams.get("error_reason");
-      const errorDescription = searchParams.get("error_description");
       if (providerError) {
-        const parts = [providerError, errorReason, errorDescription].filter(Boolean);
+        const details = [providerError, errorReason, errorDescription].filter((item) => item.trim() !== "").join(" · ");
         if (!ignore) {
-          setError(`Meta OAuth error: ${parts.join(" | ")}`);
+          setError(`Meta OAuth returned an error: ${details || providerError}`);
           setLoading(false);
         }
         return;
       }
 
-      const code = (searchParams.get("code") || "").trim();
-      const state = (searchParams.get("state") || "").trim();
       if (!code || !state) {
         if (!ignore) {
-          setError("Callback invalid: lipsesc code/state pentru Meta OAuth exchange.");
+          setError("Missing code/state in Meta OAuth callback.");
           setLoading(false);
         }
         return;
@@ -57,12 +57,14 @@ function CallbackBody() {
           method: "POST",
           body: JSON.stringify({ code, state }),
         });
-        if (ignore) return;
-        setSuccess(payload);
-        setLoading(false);
-        window.setTimeout(() => {
-          router.replace("/agency/integrations?meta_connected=1");
-        }, 1000);
+
+        if (!ignore) {
+          setSuccess(payload.message ?? "Meta OAuth connected successfully.");
+          setLoading(false);
+          window.setTimeout(() => {
+            replace("/agency/integrations?meta_connected=1");
+          }, 800);
+        }
       } catch (err) {
         if (!ignore) {
           setError(err instanceof Error ? err.message : "Meta OAuth exchange failed");
@@ -72,28 +74,18 @@ function CallbackBody() {
     }
 
     void run();
+
     return () => {
       ignore = true;
     };
-  }, [router, searchParams]);
+  }, [replace, providerError, errorReason, errorDescription, code, state]);
 
   return (
     <>
       {loading ? <p className="text-sm text-slate-600">Finalizăm conectarea Meta...</p> : null}
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      {success ? (
-        <article className="wm-card p-4">
-          <h2 className="text-base font-semibold text-slate-900">Meta conectat cu succes</h2>
-          <p className="mt-2 text-sm text-emerald-700">{success.message || "Token-ul Meta a fost salvat automat."}</p>
-          <p className="mt-2 text-xs text-slate-600">Token source: {success.token_source || "database"}</p>
-          <p className="mt-1 text-xs text-slate-500">Redirecționare către Integrations...</p>
-          <div className="mt-3">
-            <Link href="/agency/integrations?meta_connected=1" className="text-sm text-indigo-600 hover:underline">
-              Mergi acum la Integrations
-            </Link>
-          </div>
-        </article>
-      ) : null}
+      {success ? <p className="text-sm text-emerald-700">{success}</p> : null}
+      {!loading && !error ? <p className="mt-2 text-xs text-slate-500">Redirecționăm către Agency Integrations...</p> : null}
     </>
   );
 }
@@ -102,8 +94,8 @@ export default function MetaOAuthCallbackPage() {
   return (
     <ProtectedPage>
       <AppShell title="Meta OAuth Callback">
-        <Suspense fallback={<p className="text-sm text-slate-600">Pregătim callback-ul Meta OAuth...</p>}>
-          <CallbackBody />
+        <Suspense fallback={<p className="text-sm text-slate-600">Pregătim callback-ul Meta...</p>}>
+          <MetaOAuthCallbackBody />
         </Suspense>
       </AppShell>
     </ProtectedPage>

@@ -21,6 +21,7 @@ from app.services import google_ads as google_ads_service_module
 from app.services.google_ads import GoogleAdsIntegrationError, google_ads_service
 from app.services.integration_secrets_store import IntegrationSecretValue, integration_secrets_store
 from app.services.meta_ads import MetaAdsIntegrationError, meta_ads_service
+from app.services import meta_ads as meta_ads_service_module
 from app.services.google_store import google_snapshot_store
 from app.services.meta_store import meta_snapshot_store
 from app.services.pinterest_ads import PinterestAdsIntegrationError, pinterest_ads_service
@@ -846,6 +847,31 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(persisted.get("secret_key"), "refresh_token")
 
 
+    def test_meta_connect_start_happy_path(self):
+        os.environ["META_APP_ID"] = "meta-app-id"
+        os.environ["META_APP_SECRET"] = "meta-app-secret"
+        os.environ["META_REDIRECT_URI"] = "https://scripts-chi-nine.vercel.app/agency/integrations/meta/callback"
+
+        original_enforce = meta_ads_api.enforce_action_scope
+        try:
+            meta_ads_api.enforce_action_scope = lambda **kwargs: None
+            payload = meta_ads_api.connect_meta_ads(user=AuthUser(email="owner@example.com", role="agency_admin"))
+        finally:
+            meta_ads_api.enforce_action_scope = original_enforce
+
+        self.assertTrue(str(payload.get("authorize_url") or "").startswith("https://www.facebook.com/"))
+        self.assertTrue(bool(payload.get("state")))
+
+    def test_meta_import_requires_token(self):
+        os.environ["META_ACCESS_TOKEN"] = "your_meta_access_token"
+        original_get = meta_ads_service_module.integration_secrets_store.get_secret
+        try:
+            meta_ads_service_module.integration_secrets_store.get_secret = lambda **kwargs: None
+            with self.assertRaises(MetaAdsIntegrationError):
+                meta_ads_service.import_accounts()
+        finally:
+            meta_ads_service_module.integration_secrets_store.get_secret = original_get
+
     def test_tiktok_connect_start_happy_path(self):
         os.environ["FF_TIKTOK_INTEGRATION"] = "1"
         os.environ["TIKTOK_APP_ID"] = "tt-app-id"
@@ -859,7 +885,7 @@ class ServiceTests(unittest.TestCase):
         finally:
             tiktok_ads_api.enforce_action_scope = original_enforce
 
-        self.assertTrue(str(payload.get("authorize_url") or "").startswith("https://www.tiktok.com/v2/auth/authorize/?"))
+        self.assertTrue(str(payload.get("authorize_url") or "").startswith("https://business-api.tiktok.com/portal/auth?"))
         self.assertTrue(bool(payload.get("state")))
 
     def test_tiktok_oauth_exchange_happy_path_with_http_mock(self):

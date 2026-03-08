@@ -90,14 +90,12 @@ class TikTokAdsService:
         state = base64.urlsafe_b64encode(secrets.token_bytes(24)).decode("utf-8").rstrip("=")
         self._oauth_state_cache.add(state)
         params = {
-            "client_key": settings.tiktok_app_id,
+            "app_id": settings.tiktok_app_id,
             "redirect_uri": settings.tiktok_redirect_uri,
-            "response_type": "code",
-            "scope": "user.info.basic,advertiser.info.basic",
             "state": state,
         }
         return {
-            "authorize_url": f"https://www.tiktok.com/v2/auth/authorize/?{parse.urlencode(params)}",
+            "authorize_url": f"https://business-api.tiktok.com/portal/auth?{parse.urlencode(params)}",
             "state": state,
         }
 
@@ -163,7 +161,7 @@ class TikTokAdsService:
             return {
                 "provider": "tiktok_ads",
                 "status": "pending",
-                "message": "TikTok OAuth configuration is incomplete.",
+                "message": "TikTok Business OAuth configuration is incomplete. Set app id/secret/redirect URI.",
                 "token_source": token_source,
                 "token_updated_at": token_updated_at,
                 "token_expires_at": token_expires_at,
@@ -175,7 +173,7 @@ class TikTokAdsService:
             return {
                 "provider": "tiktok_ads",
                 "status": "connected",
-                "message": "TikTok OAuth token is available.",
+                "message": "TikTok Business OAuth token is available.",
                 "token_source": token_source,
                 "token_updated_at": token_updated_at,
                 "token_expires_at": token_expires_at,
@@ -186,7 +184,7 @@ class TikTokAdsService:
         return {
             "provider": "tiktok_ads",
             "status": "pending",
-            "message": "TikTok OAuth is configured but no usable token is stored yet.",
+            "message": "TikTok Business OAuth is configured but no usable token is stored yet.",
             "token_source": token_source,
             "token_updated_at": token_updated_at,
             "token_expires_at": token_expires_at,
@@ -197,7 +195,7 @@ class TikTokAdsService:
     def import_accounts(self) -> dict[str, object]:
         token, token_source, _ = self._access_token_with_source()
         if token == "":
-            raise TikTokAdsIntegrationError("TikTok import requires a usable OAuth token. Connect TikTok first.")
+            raise TikTokAdsIntegrationError("TikTok import requires a usable Business OAuth token. Connect TikTok first.")
 
         return {
             "status": "ok",

@@ -1,3 +1,19 @@
+# TODO — Fix TikTok business OAuth URL + restore Meta connect/import card + align callback URIs
+
+- [x] Audit current integrations frontend/backend files and identify URI/auth-flow mismatches for Meta and TikTok.
+- [x] Update TikTok backend authorize URL to TikTok Business advertiser auth endpoint and keep exchange/import/status contracts consistent.
+- [x] Restore Meta integration card actions (Connect Meta + Import Accounts) and add frontend Meta callback flow aligned to current callback route.
+- [x] Keep Agency Integrations page as composition-only with exactly one Meta card and one TikTok card.
+- [x] Add/update focused frontend and backend tests for Meta/TikTok connect/callback/import behavior, then run requested checks/build.
+- [x] Update minimal docs with exact production redirect URIs for Meta and TikTok callback pages.
+
+## Review
+- TikTok authorize now uses business advertiser auth (`https://business-api.tiktok.com/portal/auth`) with `app_id`, `redirect_uri`, and `state`, aligned to frontend callback route.
+- Meta integrations card now includes Connect + Import actions with robust status gating; frontend Meta callback page is implemented and wired to backend exchange endpoint.
+- Agency integrations composition preserves a single Meta card + single TikTok card.
+
+---
+
 # TODO — Restore Agency Integrations cards + relax TikTok FF gating for OAuth/import
 
 - [x] Audit current agency integrations composition and identify missing dedicated Meta card.

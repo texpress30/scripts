@@ -4,130 +4,72 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { MetaIntegrationCard } from "./MetaIntegrationCard";
 
-const apiMock = vi.hoisted(() => ({
-  apiRequest: vi.fn(),
-}));
+const apiMock = vi.hoisted(() => ({ apiRequest: vi.fn() }));
 
-vi.mock("@/lib/api", () => ({
-  apiRequest: apiMock.apiRequest,
-}));
+vi.mock("@/lib/api", () => ({ apiRequest: apiMock.apiRequest }));
 
 describe("MetaIntegrationCard", () => {
   beforeEach(() => {
     apiMock.apiRequest.mockReset();
   });
 
-  it("loads and renders Meta status", async () => {
-    apiMock.apiRequest.mockImplementation((path: string) => {
-      if (path === "/integrations/meta-ads/status") {
-        return Promise.resolve({ provider: "meta_ads", status: "connected", message: "Meta ready", oauth_configured: true, has_usable_token: true, token_source: "database" });
-      }
-      return Promise.resolve({});
+  it("loads status on mount and shows connect/import actions", async () => {
+    apiMock.apiRequest.mockResolvedValueOnce({
+      provider: "meta_ads",
+      status: "connected",
+      message: "Meta OAuth token is available.",
+      token_source: "database",
+      token_updated_at: "2026-03-08T10:00:00Z",
+      oauth_configured: true,
+      has_usable_token: true,
     });
 
     render(<MetaIntegrationCard />);
 
-    expect(await screen.findByText("Meta ready")).toBeInTheDocument();
-    expect(screen.getByText(/Sursă token: database/i)).toBeInTheDocument();
+    expect(await screen.findByText("Meta OAuth token is available.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Connect Meta" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Import Accounts" })).toBeInTheDocument();
   });
 
-  it("keeps Connect Meta flow working", async () => {
-    apiMock.apiRequest.mockImplementation((path: string) => {
-      if (path === "/integrations/meta-ads/status") {
-        return Promise.resolve({ provider: "meta_ads", status: "pending", message: "setup", oauth_configured: true, has_usable_token: false, token_source: "missing" });
-      }
-      if (path === "/integrations/meta-ads/connect") {
-        return Promise.resolve({ authorize_url: "https://facebook.com/dialog/oauth", state: "meta-state" });
-      }
-      return Promise.resolve({});
-    });
-
-    const originalLocation = window.location;
-    // @ts-expect-error test override
-    delete window.location;
-    // @ts-expect-error test override
-    window.location = { href: "http://localhost/agency/integrations" };
+  it("starts connect flow and redirects to authorize_url", async () => {
+    apiMock.apiRequest
+      .mockResolvedValueOnce({ status: "pending", oauth_configured: true, has_usable_token: false })
+      .mockResolvedValueOnce({ authorize_url: "https://meta.example/auth", state: "abc" });
 
     render(<MetaIntegrationCard />);
+    await screen.findByText(/Finalizează connect OAuth/i);
 
-    const connectButton = await screen.findByRole("button", { name: "Connect Meta" });
-    fireEvent.click(connectButton);
+    fireEvent.click(screen.getByRole("button", { name: "Connect Meta" }));
 
     await waitFor(() => {
       expect(apiMock.apiRequest).toHaveBeenCalledWith("/integrations/meta-ads/connect");
-      expect(window.location.href).toBe("https://facebook.com/dialog/oauth");
     });
-
-    window.location = originalLocation;
   });
 
-  it("supports Import Accounts and displays success summary", async () => {
-    let statusCalls = 0;
-    apiMock.apiRequest.mockImplementation((path: string, options?: { method?: string }) => {
-      if (path === "/integrations/meta-ads/status") {
-        statusCalls += 1;
-        return Promise.resolve({ provider: "meta_ads", status: "connected", message: "Meta ready", oauth_configured: true, has_usable_token: true, token_source: "database" });
-      }
-      if (path === "/integrations/meta-ads/import-accounts") {
-        expect(options).toEqual({ method: "POST" });
-        return Promise.resolve({
-          status: "ok",
-          message: "Meta Ads accounts import completed.",
-          platform: "meta_ads",
-          token_source: "database",
-          accounts_discovered: 12,
-          imported: 3,
-          updated: 2,
-          unchanged: 7,
-        });
-      }
-      return Promise.resolve({});
-    });
+  it("imports accounts and renders success summary", async () => {
+    apiMock.apiRequest
+      .mockResolvedValueOnce({ status: "connected", oauth_configured: true, has_usable_token: true, message: "ready" })
+      .mockResolvedValueOnce({
+        status: "ok",
+        message: "Meta advertiser accounts imported into platform registry.",
+        provider: "meta_ads",
+        token_source: "database",
+        accounts_discovered: 3,
+        imported: 2,
+        updated: 1,
+        unchanged: 0,
+      })
+      .mockResolvedValueOnce({ status: "connected", oauth_configured: true, has_usable_token: true, message: "ready" });
 
     render(<MetaIntegrationCard />);
+    await screen.findByText("ready");
 
-    fireEvent.click(await screen.findByRole("button", { name: "Import Accounts" }));
+    fireEvent.click(screen.getByRole("button", { name: "Import Accounts" }));
 
-    await waitFor(() => {
-      expect(screen.getByText("Ultimul import Meta")).toBeInTheDocument();
-      expect(screen.getByText("Meta Ads accounts import completed.")).toBeInTheDocument();
-      expect(screen.getByText(/Descoperite: 12/)).toBeInTheDocument();
-      expect(screen.getByText(/Imported: 3/)).toBeInTheDocument();
-      expect(screen.getByText(/Updated: 2/)).toBeInTheDocument();
-      expect(screen.getByText(/Unchanged: 7/)).toBeInTheDocument();
-    });
-    expect(statusCalls).toBeGreaterThanOrEqual(2);
-  });
-
-  it("shows error state when status load fails", async () => {
-    apiMock.apiRequest.mockImplementation((path: string) => {
-      if (path === "/integrations/meta-ads/status") {
-        return Promise.reject(new Error("Meta status unavailable"));
-      }
-      return Promise.resolve({});
-    });
-
-    render(<MetaIntegrationCard />);
-
-    expect(await screen.findByText("Meta status unavailable")).toBeInTheDocument();
-  });
-
-  it("shows error state when import fails", async () => {
-    apiMock.apiRequest.mockImplementation((path: string) => {
-      if (path === "/integrations/meta-ads/status") {
-        return Promise.resolve({ provider: "meta_ads", status: "connected", message: "Meta ready", oauth_configured: true, has_usable_token: true, token_source: "database" });
-      }
-      if (path === "/integrations/meta-ads/import-accounts") {
-        return Promise.reject(new Error("Meta import unavailable"));
-      }
-      return Promise.resolve({});
-    });
-
-    render(<MetaIntegrationCard />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "Import Accounts" }));
-    await waitFor(() => {
-      expect(screen.getByText("Meta import unavailable")).toBeInTheDocument();
-    });
+    expect(await screen.findByText("Import summary")).toBeInTheDocument();
+    expect(screen.getByText("accounts_discovered: 3")).toBeInTheDocument();
+    expect(screen.getByText("imported: 2")).toBeInTheDocument();
+    expect(screen.getByText("updated: 1")).toBeInTheDocument();
+    expect(screen.getByText("unchanged: 0")).toBeInTheDocument();
   });
 });

@@ -37,12 +37,17 @@ Variabile importante:
   - `GOOGLE_ADS_MANAGER_CUSTOMER_ID`
   - `GOOGLE_ADS_REDIRECT_URI`
   - `INTEGRATION_SECRET_ENCRYPTION_KEY` (secret pentru criptarea token-urilor integration în DB; dacă lipsește se folosește `APP_AUTH_SECRET`)
-  - TikTok OAuth flow:
+  - TikTok OAuth flow (Business advertiser auth):
     - `TIKTOK_APP_ID`
     - `TIKTOK_APP_SECRET`
-    - `TIKTOK_REDIRECT_URI`
+    - `TIKTOK_REDIRECT_URI` = `https://scripts-chi-nine.vercel.app/agency/integrations/tiktok/callback`
     - opțional: `TIKTOK_API_BASE_URL` (default `https://business-api.tiktok.com`)
     - opțional: `TIKTOK_API_VERSION` (default `v1.3`)
+  - Meta OAuth flow:
+    - `META_APP_ID`
+    - `META_APP_SECRET`
+    - `META_REDIRECT_URI` = `https://scripts-chi-nine.vercel.app/agency/integrations/meta/callback`
+    - opțional: `META_API_VERSION` (default `v20.0`)
 
 Feature flags:
 - `FF_TIKTOK_INTEGRATION`
@@ -126,11 +131,20 @@ Variabile minime necesare:
 - `GET /integrations/tiktok-ads/status`
 - `GET /integrations/tiktok-ads/connect`
 - `POST /integrations/tiktok-ads/oauth/exchange`
+- `POST /integrations/tiktok-ads/import-accounts`
 - `POST /integrations/tiktok-ads/{client_id}/sync`
 - `GET /integrations/pinterest-ads/status`
 - `POST /integrations/pinterest-ads/{client_id}/sync`
 - `GET /integrations/snapchat-ads/status`
 - `POST /integrations/snapchat-ads/{client_id}/sync`
+
+
+## Redirect URI alignment (production)
+- TikTok Developers (Advertiser redirect URL) + Railway `TIKTOK_REDIRECT_URI` trebuie setate la: `https://scripts-chi-nine.vercel.app/agency/integrations/tiktok/callback`.
+- Meta Developers (OAuth Valid Redirect URI) + Railway `META_REDIRECT_URI` trebuie setate la: `https://scripts-chi-nine.vercel.app/agency/integrations/meta/callback`.
+- Callback pages frontend folosite în aplicație:
+  - TikTok: `/agency/integrations/tiktok/callback`
+  - Meta: `/agency/integrations/meta/callback`
 
 ## Verificare locală
 ```bash
