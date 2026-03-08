@@ -8,6 +8,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest, postAccountSyncProgressBatch, type AccountSyncProgressBatchResult } from "@/lib/api";
 
+import { MetaAgencyAccountsPanel } from "./MetaAgencyAccountsPanel";
 import { TikTokAgencyAccountsPanel } from "./TikTokAgencyAccountsPanel";
 
 type ClientRecord = {
@@ -814,9 +815,11 @@ export default function AgencyAccountsPage() {
 
             {selectedPlatform === "tiktok_ads" ? (
               <TikTokAgencyAccountsPanel />
+            ) : selectedPlatform === "meta_ads" ? (
+              <MetaAgencyAccountsPanel clients={clients} />
             ) : selectedPlatform !== "google_ads" ? (
               <div className="mt-4 wm-card p-4 text-sm text-slate-500">
-                Pentru acest task, doar Google Ads și Meta Ads sunt funcționale. Celelalte platforme rămân informative.
+                Pentru acest task, Google Ads, Meta Ads și TikTok Ads sunt funcționale. Celelalte platforme rămân informative.
               </div>
             ) : (
               <div className="mt-4 wm-card p-4">

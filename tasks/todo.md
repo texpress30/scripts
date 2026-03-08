@@ -1,3 +1,18 @@
+# TODO — Final hardening + smoke on main readiness for Meta/TikTok integrations
+
+- [x] Validate current UI/backend flows end-to-end for Agency Integrations, Agency Accounts, Dashboard integration health, Meta/TikTok API endpoints, and worker imports.
+- [x] Apply only small, safe bugfixes discovered during smoke checks (no feature additions, no major refactors).
+- [x] Run requested frontend build/tests and backend targeted test/smoke suites.
+- [x] Document findings (bugs found, fixes, risks/limits) and confirm working tree cleanliness.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Fixed Agency Accounts regression where selecting Meta card rendered generic placeholder instead of Meta panel.
+- Frontend requested build/tests now pass for integrations/accounts/dashboard target suites.
+- Backend smoke imports and worker/scheduler/dashboard targeted tests pass; dedicated Meta backend suites currently fail on pre-existing larger regressions in `meta_ads` service (documented in final report).
+
+---
+
 # TODO — Agency dashboard summary: real TikTok integration_health status
 
 - [x] Inspect current dashboard integration_health mapping and TikTok status contract to define stable field mapping.
