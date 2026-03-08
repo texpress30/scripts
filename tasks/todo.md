@@ -2234,17 +2234,16 @@
 
 ---
 
-# TODO — TikTok backend import advertiser accounts into generic registry
+# TODO — Frontend-only TikTok Integrations card + OAuth callback
 
-- [x] Inspect TikTok service/API and generic platform account registry patterns.
-- [x] Implement TikTok advertiser listing with pagination using connected OAuth token.
-- [x] Persist imported advertisers idempotently in generic `agency_platform_accounts` flow.
-- [x] Add `POST /integrations/tiktok-ads/import-accounts` endpoint with summary payload.
-- [x] Add focused tests for happy path, pagination, idempotency, and error scenarios.
-- [x] Update README minimally for TikTok import endpoint.
-- [x] Run targeted backend tests and smoke checks.
+- [x] Create clean frontend branch from clean local baseline and verify scope constraints.
+- [x] Keep `agency/integrations/page.tsx` as composition page and render `<TikTokIntegrationCard />`.
+- [x] Implement TikTok integration UI logic in dedicated card component (status/connect/import).
+- [x] Implement TikTok OAuth callback page (provider error, missing code/state, exchange + redirect).
+- [x] Add focused frontend tests for page composition, TikTok card behaviors, and callback flows.
+- [x] Run required frontend tests and build.
 
 ## Review
-- TikTok import now fetches advertiser accounts from TikTok API using DB-backed token and paginates until completion.
-- Import persists into generic platform registry (`upsert_platform_accounts` + operational metadata updates) using canonical `advertiser_id` as `account_id`.
-- Import response reports stable summary fields (`accounts_discovered/imported/updated/unchanged`) and keeps sync stub scope unchanged.
+- `agency/integrations/page.tsx` now delegates TikTok behavior to `TikTokIntegrationCard` and keeps layout/orchestration role.
+- TikTok card now consumes existing backend contracts (`status`, `connect`, `import-accounts`) with robust fallbacks and button gating by `oauth_configured` / `has_usable_token`.
+- TikTok callback page exchanges `code/state` via backend and redirects to `/agency/integrations?tiktok_connected=1` on success.

@@ -6,7 +6,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
 
-import { MetaIntegrationCard } from "./MetaIntegrationCard";
+import { TikTokIntegrationCard } from "./TikTokIntegrationCard";
 
 type GoogleConnectResponse = {
   authorize_url: string;
@@ -284,12 +284,7 @@ export default function AgencyIntegrationsPage() {
             </p>
           </article>
 
-          <MetaIntegrationCard />
-
-          <article className="wm-card p-4">
-            <h2 className="text-base font-semibold text-slate-900">TikTok Ads (stabilized)</h2>
-            <p className="mt-2 text-sm text-slate-600">Integrarea TikTok este activă pentru sync și vizibilitate în dashboard.</p>
-          </article>
+          <TikTokIntegrationCard />
 
           <article className="wm-card p-4">
             <h2 className="text-base font-semibold text-slate-900">Pinterest Ads</h2>
