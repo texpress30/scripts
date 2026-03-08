@@ -1,6 +1,7 @@
 import logging
 import time
 from datetime import date, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import BaseModel
@@ -24,6 +25,7 @@ logger = logging.getLogger("app.tiktok_ads")
 class TikTokSyncRequest(BaseModel):
     start_date: date | None = None
     end_date: date | None = None
+    grain: Literal["account_daily", "campaign_daily"] | None = None
 
 
 
@@ -471,6 +473,7 @@ def sync_tiktok_ads(client_id: int, payload: TikTokSyncRequest | None = None, us
             client_id=client_id,
             start_date=(payload.start_date if payload is not None else None),
             end_date=(payload.end_date if payload is not None else None),
+            grain=(str(payload.grain).strip().lower() if payload is not None and payload.grain is not None else "account_daily"),
         )
     except TikTokAdsIntegrationError as exc:
         tiktok_sync_metrics.increment("sync_failed")

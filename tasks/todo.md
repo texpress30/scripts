@@ -1,3 +1,17 @@
+# TODO — TikTok backend sync real campaign_daily for attached advertiser accounts
+
+- [x] Audit current TikTok account_daily sync and generic entity reporting persistence options.
+- [x] Extend TikTok sync contract with optional grain (`account_daily` default, `campaign_daily` supported).
+- [x] Implement real campaign_daily fetch + idempotent upsert path for attached TikTok advertiser accounts.
+- [x] Add focused backend tests for campaign_daily paths, grain validation, idempotency, and backward compatibility.
+- [x] Run backend compile/tests + import smoke and record results.
+
+## Review
+- TikTok sync now supports `campaign_daily` in addition to `account_daily`, with default backward-compatible behavior when grain is omitted.
+- Campaign daily rows are persisted idempotently to campaign reporting store using existing upsert semantics keyed by platform/account/campaign/date.
+
+---
+
 # TODO — TikTok backend sync real account_daily for attached advertiser accounts
 
 - [x] Audit TikTok service/api/reporting/client-account mapping paths and pick minimal integration points.

@@ -1,5 +1,6 @@
 # Lessons
 
+- 2026-03-08: When extending sync grain support, enforce grain validation at both request model and service layer, while keeping omitted-grain behavior strictly backward compatible.
 - 2026-03-08: When implementing provider sync upgrades, remove synthetic metric sources from the main write path and preserve only minimal compatibility snapshots derived from real fetched totals.
 - 2026-03-08: For urgent production startup crashes, apply the smallest import-only fix first and avoid bundling unrelated refactors in the same hotfix commit.
 - 2026-03-08: For OAuth provider fixes, validate authorize endpoint type (business vs consumer) and ensure backend redirect URI envs exactly match existing frontend callback routes before shipping UI card changes.
