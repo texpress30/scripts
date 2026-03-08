@@ -3,6 +3,7 @@ import time
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 
 from app.api.dependencies import enforce_action_scope, get_current_user
 from app.services.audit import audit_log_service
@@ -18,6 +19,12 @@ from app.services.tiktok_observability import tiktok_sync_metrics
 
 router = APIRouter(prefix="/integrations/tiktok-ads", tags=["tiktok-ads"])
 logger = logging.getLogger("app.tiktok_ads")
+
+
+class TikTokSyncRequest(BaseModel):
+    start_date: date | None = None
+    end_date: date | None = None
+
 
 
 def _log_best_effort_warning(
@@ -442,7 +449,7 @@ def sync_now_job_status(job_id: str, user: AuthUser = Depends(get_current_user))
 
 
 @router.post("/{client_id}/sync")
-def sync_tiktok_ads(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, float | int | str]:
+def sync_tiktok_ads(client_id: int, payload: TikTokSyncRequest | None = None, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
         enforce_action_scope(user=user, action="integrations:tiktok:sync", scope="subaccount")
         rate_limiter_service.check(f"tiktok_sync:{user.email}", limit=30, window_seconds=60)
@@ -460,7 +467,11 @@ def sync_tiktok_ads(client_id: int, user: AuthUser = Depends(get_current_user)) 
     )
 
     try:
-        snapshot = tiktok_ads_service.sync_client(client_id=client_id)
+        snapshot = tiktok_ads_service.sync_client(
+            client_id=client_id,
+            start_date=(payload.start_date if payload is not None else None),
+            end_date=(payload.end_date if payload is not None else None),
+        )
     except TikTokAdsIntegrationError as exc:
         tiktok_sync_metrics.increment("sync_failed")
         duration_ms = round((time.perf_counter() - started_at) * 1000, 2)

@@ -1,5 +1,6 @@
 # Lessons
 
+- 2026-03-08: When implementing provider sync upgrades, remove synthetic metric sources from the main write path and preserve only minimal compatibility snapshots derived from real fetched totals.
 - 2026-03-08: For urgent production startup crashes, apply the smallest import-only fix first and avoid bundling unrelated refactors in the same hotfix commit.
 - 2026-03-08: For OAuth provider fixes, validate authorize endpoint type (business vs consumer) and ensure backend redirect URI envs exactly match existing frontend callback routes before shipping UI card changes.
 - 2026-02-24: When user explicitly asks for workspace sync commands (`git fetch`, `git reset --hard`), run them first and report policy limitations immediately if a command is blocked, then apply the closest safe equivalent (`git checkout -B <branch> origin/main`).

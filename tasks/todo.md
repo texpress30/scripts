@@ -1,3 +1,17 @@
+# TODO — TikTok backend sync real account_daily for attached advertiser accounts
+
+- [x] Audit TikTok service/api/reporting/client-account mapping paths and pick minimal integration points.
+- [x] Replace TikTok stub sync with real account_daily fetch + write to generic performance reports for all attached TikTok accounts.
+- [x] Keep connect/import/status behavior intact and retain feature flag guard only for sync execution.
+- [x] Add focused backend tests for happy paths, no-account, token/flag errors, API failure mapping, and idempotent rerun behavior.
+- [x] Run targeted backend checks (pytest + py_compile import smoke) and document review.
+
+## Review
+- TikTok sync now fetches real account_daily metrics from TikTok Business reporting API for every attached `tiktok_ads` advertiser account and writes idempotent daily rows to generic reporting store.
+- Existing OAuth/connect/import/status flows remain available; feature flag still guards sync execution only.
+
+---
+
 # TODO — Hotfix Railway startup crash (`Literal` import missing in meta_ads)
 
 - [x] Inspect backend crash context and target file for missing `Literal` typing import.

@@ -1158,29 +1158,164 @@ class ServiceTests(unittest.TestCase):
         with self.assertRaises(TikTokAdsIntegrationError):
             tiktok_ads_service.sync_client(client_id=2)
 
-    def test_tiktok_ads_sync_persists_snapshot(self):
+    def test_tiktok_ads_sync_real_account_daily_single_account(self):
         os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        performance_reports_store._memory_rows.clear()
 
-        snapshot = tiktok_ads_service.sync_client(client_id=9)
-        metrics = tiktok_ads_service.get_metrics(client_id=9)
+        client = client_registry_service.create_client(name="TikTok One", owner_email="owner@example.com")
+        client_id = int(client["id"])
+        client_registry_service.upsert_platform_accounts(platform="tiktok_ads", accounts=[{"id": "tt-acc-1", "name": "TikTok Acc 1"}])
+        client_registry_service.attach_platform_account_to_client(platform="tiktok_ads", client_id=client_id, account_id="tt-acc-1")
+
+        original_get_secret = tiktok_ads_service_module.integration_secrets_store.get_secret
+        original_fetch = tiktok_ads_service._fetch_account_daily_metrics
+        try:
+            tiktok_ads_service_module.integration_secrets_store.get_secret = lambda **kwargs: IntegrationSecretValue(provider="tiktok_ads", secret_key="access_token", scope="agency_default", value="tt-token", updated_at=None)
+            tiktok_ads_service._fetch_account_daily_metrics = lambda **kwargs: [
+                tiktok_ads_service_module.TikTokDailyMetric(
+                    report_date=date(2026, 3, 1),
+                    account_id="tt-acc-1",
+                    spend=12.5,
+                    impressions=100,
+                    clicks=7,
+                    conversions=2.0,
+                    conversion_value=20.0,
+                    extra_metrics={"tiktok_ads": {"metrics": {"conversion": "2", "conversion_value": "20"}}},
+                )
+            ]
+
+            snapshot = tiktok_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 1))
+        finally:
+            tiktok_ads_service_module.integration_secrets_store.get_secret = original_get_secret
+            tiktok_ads_service._fetch_account_daily_metrics = original_fetch
 
         self.assertEqual(snapshot["status"], "success")
-        self.assertEqual(metrics["platform"], "tiktok_ads")
-        self.assertTrue(metrics["is_synced"])
-        self.assertGreater(float(metrics["spend"]), 0.0)
+        self.assertEqual(snapshot["accounts_processed"], 1)
+        self.assertEqual(snapshot["rows_written"], 1)
+        self.assertEqual(len(performance_reports_store._memory_rows), 1)
+        row = performance_reports_store._memory_rows[0]
+        self.assertEqual(str(row.get("platform")), "tiktok_ads")
+        self.assertEqual(str(row.get("customer_id")), "tt-acc-1")
+        self.assertEqual(float(row.get("conversions") or 0), 2.0)
+        self.assertEqual(float(row.get("conversion_value") or 0), 20.0)
 
-
-    def test_tiktok_ads_retry_succeeds_after_transient_failures(self):
+    def test_tiktok_ads_sync_real_account_daily_multiple_accounts(self):
         os.environ["FF_TIKTOK_INTEGRATION"] = "1"
-        os.environ["TIKTOK_SYNC_RETRY_ATTEMPTS"] = "3"
-        os.environ["TIKTOK_SYNC_FORCE_TRANSIENT_FAILURES"] = "2"
+        performance_reports_store._memory_rows.clear()
 
-        snapshot = tiktok_ads_service.sync_client(client_id=10)
+        client = client_registry_service.create_client(name="TikTok Multi", owner_email="owner@example.com")
+        client_id = int(client["id"])
+        client_registry_service.upsert_platform_accounts(platform="tiktok_ads", accounts=[{"id": "tt-acc-a", "name": "A"}, {"id": "tt-acc-b", "name": "B"}])
+        client_registry_service.attach_platform_account_to_client(platform="tiktok_ads", client_id=client_id, account_id="tt-acc-a")
+        client_registry_service.attach_platform_account_to_client(platform="tiktok_ads", client_id=client_id, account_id="tt-acc-b")
 
-        self.assertEqual(snapshot["status"], "success")
-        self.assertEqual(snapshot["attempts"], 3)
+        original_get_secret = tiktok_ads_service_module.integration_secrets_store.get_secret
+        original_fetch = tiktok_ads_service._fetch_account_daily_metrics
+        try:
+            tiktok_ads_service_module.integration_secrets_store.get_secret = lambda **kwargs: IntegrationSecretValue(provider="tiktok_ads", secret_key="access_token", scope="agency_default", value="tt-token", updated_at=None)
 
+            def fake_fetch(**kwargs):
+                account_id = str(kwargs.get("account_id") or "")
+                return [
+                    tiktok_ads_service_module.TikTokDailyMetric(
+                        report_date=date(2026, 3, 2),
+                        account_id=account_id,
+                        spend=5.0 if account_id == "tt-acc-a" else 7.0,
+                        impressions=50,
+                        clicks=4,
+                        conversions=1.0,
+                        conversion_value=9.0,
+                        extra_metrics={"tiktok_ads": {"metrics": {"conversion": "1"}}},
+                    )
+                ]
 
+            tiktok_ads_service._fetch_account_daily_metrics = fake_fetch
+            snapshot = tiktok_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 2), end_date=date(2026, 3, 2))
+        finally:
+            tiktok_ads_service_module.integration_secrets_store.get_secret = original_get_secret
+            tiktok_ads_service._fetch_account_daily_metrics = original_fetch
+
+        self.assertEqual(snapshot["accounts_processed"], 2)
+        self.assertEqual(snapshot["rows_written"], 2)
+        self.assertEqual(len(performance_reports_store._memory_rows), 2)
+
+    def test_tiktok_ads_sync_is_idempotent_for_same_range(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        performance_reports_store._memory_rows.clear()
+
+        client = client_registry_service.create_client(name="TikTok Idempotent", owner_email="owner@example.com")
+        client_id = int(client["id"])
+        client_registry_service.upsert_platform_accounts(platform="tiktok_ads", accounts=[{"id": "tt-acc-idem", "name": "Idem"}])
+        client_registry_service.attach_platform_account_to_client(platform="tiktok_ads", client_id=client_id, account_id="tt-acc-idem")
+
+        original_get_secret = tiktok_ads_service_module.integration_secrets_store.get_secret
+        original_fetch = tiktok_ads_service._fetch_account_daily_metrics
+        try:
+            tiktok_ads_service_module.integration_secrets_store.get_secret = lambda **kwargs: IntegrationSecretValue(provider="tiktok_ads", secret_key="access_token", scope="agency_default", value="tt-token", updated_at=None)
+            tiktok_ads_service._fetch_account_daily_metrics = lambda **kwargs: [
+                tiktok_ads_service_module.TikTokDailyMetric(
+                    report_date=date(2026, 3, 3),
+                    account_id="tt-acc-idem",
+                    spend=8.0,
+                    impressions=80,
+                    clicks=8,
+                    conversions=2.0,
+                    conversion_value=16.0,
+                    extra_metrics={"tiktok_ads": {"metrics": {"conversion": "2"}}},
+                )
+            ]
+            tiktok_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 3), end_date=date(2026, 3, 3))
+            tiktok_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 3), end_date=date(2026, 3, 3))
+        finally:
+            tiktok_ads_service_module.integration_secrets_store.get_secret = original_get_secret
+            tiktok_ads_service._fetch_account_daily_metrics = original_fetch
+
+        self.assertEqual(len(performance_reports_store._memory_rows), 1)
+
+    def test_tiktok_ads_sync_returns_clear_payload_when_no_attached_accounts(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        performance_reports_store._memory_rows.clear()
+        client = client_registry_service.create_client(name="TikTok Empty", owner_email="owner@example.com")
+
+        original_get_secret = tiktok_ads_service_module.integration_secrets_store.get_secret
+        try:
+            tiktok_ads_service_module.integration_secrets_store.get_secret = lambda **kwargs: IntegrationSecretValue(provider="tiktok_ads", secret_key="access_token", scope="agency_default", value="tt-token", updated_at=None)
+            snapshot = tiktok_ads_service.sync_client(client_id=int(client["id"]), start_date=date(2026, 3, 1), end_date=date(2026, 3, 2))
+        finally:
+            tiktok_ads_service_module.integration_secrets_store.get_secret = original_get_secret
+
+        self.assertEqual(snapshot["status"], "no_accounts")
+        self.assertEqual(snapshot["accounts_processed"], 0)
+
+    def test_tiktok_ads_sync_fails_when_token_missing(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        client = client_registry_service.create_client(name="TikTok Missing Token", owner_email="owner@example.com")
+        with self.assertRaises(TikTokAdsIntegrationError):
+            tiktok_ads_service.sync_client(client_id=int(client["id"]))
+
+    def test_tiktok_ads_sync_maps_reporting_api_error(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        client = client_registry_service.create_client(name="TikTok API Err", owner_email="owner@example.com")
+        client_id = int(client["id"])
+        client_registry_service.upsert_platform_accounts(platform="tiktok_ads", accounts=[{"id": "tt-acc-err", "name": "Err"}])
+        client_registry_service.attach_platform_account_to_client(platform="tiktok_ads", client_id=client_id, account_id="tt-acc-err")
+
+        original_get_secret = tiktok_ads_service_module.integration_secrets_store.get_secret
+        original_fetch = tiktok_ads_service._fetch_account_daily_metrics
+        try:
+            tiktok_ads_service_module.integration_secrets_store.get_secret = lambda **kwargs: IntegrationSecretValue(provider="tiktok_ads", secret_key="access_token", scope="agency_default", value="tt-token", updated_at=None)
+
+            def boom_fetch(**kwargs):
+                raise TikTokAdsIntegrationError("TikTok reporting API failed for account tt-acc-err: code=401, message=Unauthorized")
+
+            tiktok_ads_service._fetch_account_daily_metrics = boom_fetch
+            with self.assertRaises(TikTokAdsIntegrationError) as ctx:
+                tiktok_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 2), end_date=date(2026, 3, 2))
+        finally:
+            tiktok_ads_service_module.integration_secrets_store.get_secret = original_get_secret
+            tiktok_ads_service._fetch_account_daily_metrics = original_fetch
+
+        self.assertIn("code=401", str(ctx.exception))
 
     def test_pinterest_ads_sync_fails_when_feature_flag_disabled(self):
         os.environ["FF_PINTEREST_INTEGRATION"] = "0"
@@ -2800,6 +2935,27 @@ class ServiceTests(unittest.TestCase):
         done_call = next((call for call in status_calls if call.get("job_id") == "meta-job-no-account" and call.get("status") == "done"), None)
         self.assertIsNotNone(done_call)
         self.assertNotIn("account_id", (done_call or {}).get("metadata") or {})
+
+    def test_tiktok_sync_endpoint_validates_start_end_range(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        user = AuthUser(email="owner@example.com", role="agency_admin")
+        original_enforce = tiktok_ads_api.enforce_action_scope
+        original_rate_limit = tiktok_ads_api.rate_limiter_service.check
+        try:
+            tiktok_ads_api.enforce_action_scope = lambda **kwargs: None
+            tiktok_ads_api.rate_limiter_service.check = lambda *args, **kwargs: None
+            with self.assertRaises(HTTPException) as ctx:
+                tiktok_ads_api.sync_tiktok_ads(
+                    client_id=99,
+                    payload=tiktok_ads_api.TikTokSyncRequest(start_date=date(2026, 3, 10), end_date=date(2026, 3, 2)),
+                    user=user,
+                )
+        finally:
+            tiktok_ads_api.enforce_action_scope = original_enforce
+            tiktok_ads_api.rate_limiter_service.check = original_rate_limit
+
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("start_date", str(ctx.exception.detail))
 
     def test_tiktok_ads_sync_now_async_mirrors_sync_run_create(self):
         user = AuthUser(email="admin@example.com", role="agency_owner")
