@@ -1,8 +1,10 @@
 import logging
 import time
 from datetime import date, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 
 from app.api.dependencies import enforce_action_scope, get_current_user
 from app.services.audit import audit_log_service
@@ -18,6 +20,13 @@ from app.services.tiktok_observability import tiktok_sync_metrics
 
 router = APIRouter(prefix="/integrations/tiktok-ads", tags=["tiktok-ads"])
 logger = logging.getLogger("app.tiktok_ads")
+
+
+class TikTokSyncRequest(BaseModel):
+    start_date: date | None = None
+    end_date: date | None = None
+    grain: Literal["account_daily", "campaign_daily"] | None = None
+
 
 
 def _log_best_effort_warning(
@@ -305,7 +314,7 @@ def _map_sync_run_to_job_status_payload(sync_run: dict[str, object]) -> dict[str
 
 
 @router.get("/status")
-def tiktok_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, str]:
+def tiktok_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
         enforce_action_scope(user=user, action="integrations:tiktok:status", scope="agency")
         rate_limiter_service.check(f"tiktok_status:{user.email}", limit=60, window_seconds=60)
@@ -321,6 +330,68 @@ def tiktok_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, s
         details={"status": status_payload["status"]},
     )
     return status_payload
+
+
+@router.get("/connect")
+def connect_tiktok_ads(user: AuthUser = Depends(get_current_user)) -> dict[str, str]:
+    enforce_action_scope(user=user, action="integrations:tiktok:status", scope="agency")
+    try:
+        payload = tiktok_ads_service.build_oauth_authorize_url()
+    except TikTokAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="tiktok_ads.connect.start",
+        resource="integration:tiktok_ads",
+        details={"state": payload["state"]},
+    )
+    return payload
+
+
+@router.post("/oauth/exchange")
+def tiktok_ads_oauth_exchange(
+    payload: dict[str, str],
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:tiktok:status", scope="agency")
+    code = str(payload.get("code", "")).strip()
+    state = str(payload.get("state", "")).strip()
+    if not code or not state:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing code/state for OAuth exchange")
+
+    try:
+        response_payload = tiktok_ads_service.exchange_oauth_code(code=code, state=state)
+    except TikTokAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="tiktok_ads.connect.success",
+        resource="integration:tiktok_ads",
+        details={"status": response_payload.get("status")},
+    )
+    return response_payload
+
+
+@router.post("/import-accounts")
+def import_tiktok_accounts(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:tiktok:status", scope="agency")
+    try:
+        payload = tiktok_ads_service.import_accounts()
+    except TikTokAdsIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="tiktok_ads.import_accounts",
+        resource="integration:tiktok_ads",
+        details={"status": payload.get("status"), "imported": payload.get("imported", 0)},
+    )
+    return payload
 
 
 @router.post("/sync-now")
@@ -380,7 +451,7 @@ def sync_now_job_status(job_id: str, user: AuthUser = Depends(get_current_user))
 
 
 @router.post("/{client_id}/sync")
-def sync_tiktok_ads(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, float | int | str]:
+def sync_tiktok_ads(client_id: int, payload: TikTokSyncRequest | None = None, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
         enforce_action_scope(user=user, action="integrations:tiktok:sync", scope="subaccount")
         rate_limiter_service.check(f"tiktok_sync:{user.email}", limit=30, window_seconds=60)
@@ -398,7 +469,12 @@ def sync_tiktok_ads(client_id: int, user: AuthUser = Depends(get_current_user)) 
     )
 
     try:
-        snapshot = tiktok_ads_service.sync_client(client_id=client_id)
+        snapshot = tiktok_ads_service.sync_client(
+            client_id=client_id,
+            start_date=(payload.start_date if payload is not None else None),
+            end_date=(payload.end_date if payload is not None else None),
+            grain=(str(payload.grain).strip().lower() if payload is not None and payload.grain is not None else "account_daily"),
+        )
     except TikTokAdsIntegrationError as exc:
         tiktok_sync_metrics.increment("sync_failed")
         duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
