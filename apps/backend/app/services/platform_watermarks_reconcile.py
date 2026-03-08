@@ -12,9 +12,10 @@ FACT_TABLE_BY_GRAIN: dict[str, str] = {
     "campaign_daily": "campaign_performance_reports",
     "ad_group_daily": "ad_group_performance_reports",
     "ad_daily": "ad_unit_performance_reports",
+    "keyword_daily": "keyword_performance_reports",
 }
 
-_DEFAULT_RECONCILE_GRAINS: tuple[str, ...] = ("campaign_daily", "ad_group_daily", "ad_daily")
+_DEFAULT_RECONCILE_GRAINS: tuple[str, ...] = ("campaign_daily", "ad_group_daily", "ad_daily", "keyword_daily")
 
 
 def _validate_reconcile_grain(grain: str) -> None:
