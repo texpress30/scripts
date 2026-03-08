@@ -25,7 +25,7 @@ logger = logging.getLogger("app.tiktok_ads")
 class TikTokSyncRequest(BaseModel):
     start_date: date | None = None
     end_date: date | None = None
-    grain: Literal["account_daily", "campaign_daily", "ad_group_daily"] | None = None
+    grain: Literal["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"] | None = None
 
 
 
