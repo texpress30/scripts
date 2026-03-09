@@ -181,6 +181,49 @@ class ClientsPlatformAccountMappingsApiTests(unittest.TestCase):
         self.assertEqual(row["last_success_at"], "2026-02-10T10:00:00+00:00")
 
 
+    def test_meta_multigrain_updates_keep_coherent_max_coverage_out_of_order(self):
+        updates = [
+            ("2026-02-12", "2026-02-12T10:00:00+00:00"),
+            ("2026-02-08", "2026-02-08T10:00:00+00:00"),
+            ("2026-02-14", "2026-02-14T10:00:00+00:00"),
+            ("2026-02-11", "2026-02-11T10:00:00+00:00"),
+        ]
+        for backfill_end, success_at in updates:
+            client_registry_service.update_platform_account_operational_metadata(
+                platform="meta_ads",
+                account_id="act_101",
+                backfill_completed_through=backfill_end,
+                last_success_at=success_at,
+            )
+
+        listed = clients_api.list_platform_accounts(platform="meta_ads", user=self.user)
+        row = listed["items"][0]
+        self.assertEqual(row["backfill_completed_through"], "2026-02-14")
+        self.assertEqual(row["last_success_at"], "2026-02-14T10:00:00+00:00")
+
+    def test_meta_retry_success_clears_error_and_keeps_best_coverage(self):
+        client_registry_service.update_platform_account_operational_metadata(
+            platform="meta_ads",
+            account_id="act_101",
+            backfill_completed_through="2026-02-09",
+            last_success_at="2026-02-09T09:00:00+00:00",
+            last_error="initial failure",
+        )
+        client_registry_service.update_platform_account_operational_metadata(
+            platform="meta_ads",
+            account_id="act_101",
+            backfill_completed_through="2026-02-14",
+            last_success_at="2026-02-14T10:00:00+00:00",
+            last_error=None,
+        )
+
+        listed = clients_api.list_platform_accounts(platform="meta_ads", user=self.user)
+        row = listed["items"][0]
+        self.assertEqual(row["backfill_completed_through"], "2026-02-14")
+        self.assertEqual(row["last_success_at"], "2026-02-14T10:00:00+00:00")
+        self.assertIsNone(row["last_error"])
+
+
     def test_google_legacy_endpoints_still_function(self):
         client_id = self._create_client("Client A")
 

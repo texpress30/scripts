@@ -93,8 +93,21 @@ class RollingEnqueueRequest(BaseModel):
     chunk_days: int = Field(default=7, ge=1, le=31)
     force: bool = False
 
-def _normalize_account_id(value: str) -> str:
-    return str(value).strip().replace("-", "")
+def _normalize_account_id(value: str, *, platform: str | None = None) -> str:
+    raw = str(value).strip()
+    if raw == "":
+        return ""
+
+    normalized = raw.replace("-", "")
+    normalized_platform = str(platform or "").strip().lower()
+    if normalized_platform == "meta_ads":
+        lowered = normalized.lower()
+        if lowered.startswith("act_"):
+            normalized = normalized[4:]
+            lowered = normalized.lower()
+        elif lowered.startswith("act") and normalized[3:].isdigit():
+            normalized = normalized[3:]
+    return normalized
 
 
 def _resolve_date_range(payload: CreateBatchSyncRunsRequest) -> tuple[date, date]:
@@ -334,7 +347,7 @@ def create_batch_sync_runs(payload: CreateBatchSyncRunsRequest, user: AuthUser =
 
     normalized_account_ids: list[str] = []
     for raw in payload.account_ids:
-        normalized = _normalize_account_id(raw)
+        normalized = _normalize_account_id(raw, platform=payload.platform)
         if normalized != "" and normalized not in normalized_account_ids:
             normalized_account_ids.append(normalized)
 
@@ -346,12 +359,15 @@ def create_batch_sync_runs(payload: CreateBatchSyncRunsRequest, user: AuthUser =
 
     platform_accounts = client_registry_service.list_platform_accounts(platform=payload.platform)
     accounts_map: dict[str, int | None] = {}
+    canonical_to_stored_account_id: dict[str, str] = {}
     for item in platform_accounts:
-        normalized = _normalize_account_id(str(item.get("id") or ""))
+        stored_account_id = str(item.get("id") or item.get("account_id") or "").strip()
+        normalized = _normalize_account_id(stored_account_id, platform=payload.platform)
         if normalized == "":
             continue
         attached = item.get("attached_client_id")
         accounts_map[normalized] = int(attached) if attached is not None else None
+        canonical_to_stored_account_id[normalized] = stored_account_id
 
     valid_account_ids = [account_id for account_id in normalized_account_ids if account_id in accounts_map and accounts_map.get(account_id) is not None]
     invalid_account_ids = [account_id for account_id in normalized_account_ids if account_id not in accounts_map or accounts_map.get(account_id) is None]
@@ -365,6 +381,7 @@ def create_batch_sync_runs(payload: CreateBatchSyncRunsRequest, user: AuthUser =
     already_exists_count = 0
 
     for account_id in valid_account_ids:
+        stored_account_id = canonical_to_stored_account_id.get(account_id, account_id)
         for grain in grains:
             job_id = uuid4().hex
             chunks = _build_chunks(start_date=start_date, end_date=end_date, chunk_days=payload.chunk_days)
@@ -383,7 +400,7 @@ def create_batch_sync_runs(payload: CreateBatchSyncRunsRequest, user: AuthUser =
                     date_end=end_date,
                     chunk_days=int(payload.chunk_days),
                     client_id=accounts_map.get(account_id),
-                    account_id=account_id,
+                    account_id=stored_account_id,
                     metadata=create_metadata,
                     batch_id=batch_id,
                     grain=grain,
@@ -402,7 +419,7 @@ def create_batch_sync_runs(payload: CreateBatchSyncRunsRequest, user: AuthUser =
                     date_end=end_date,
                     chunk_days=int(payload.chunk_days),
                     client_id=accounts_map.get(account_id),
-                    account_id=account_id,
+                    account_id=stored_account_id,
                     metadata=create_metadata,
                     batch_id=batch_id,
                     job_type=payload.job_type,
@@ -429,7 +446,7 @@ def create_batch_sync_runs(payload: CreateBatchSyncRunsRequest, user: AuthUser =
                 account_results.append(
                     {
                         "platform": payload.platform,
-                        "account_id": account_id,
+                        "account_id": stored_account_id,
                         "grain": grain,
                         "client_id": created.get("client_id") if isinstance(created, dict) else accounts_map.get(account_id),
                         "result": "already_exists",
@@ -472,7 +489,7 @@ def create_batch_sync_runs(payload: CreateBatchSyncRunsRequest, user: AuthUser =
             created_runs.append(
                 {
                     "job_id": str(created.get("job_id") if created is not None else job_id),
-                    "account_id": account_id,
+                    "account_id": stored_account_id,
                     "grain": grain,
                     "client_id": created.get("client_id") if created is not None else accounts_map.get(account_id),
                     "status": "queued",
@@ -482,7 +499,7 @@ def create_batch_sync_runs(payload: CreateBatchSyncRunsRequest, user: AuthUser =
             account_results.append(
                 {
                     "platform": payload.platform,
-                    "account_id": account_id,
+                    "account_id": stored_account_id,
                     "grain": grain,
                     "client_id": created.get("client_id") if created is not None else accounts_map.get(account_id),
                     "result": "created",
