@@ -13,6 +13,9 @@ type TikTokAccount = {
   name?: string;
   account_id?: string;
   account_name?: string;
+  client_id?: number | null;
+  client_name?: string | null;
+  is_attached?: boolean | null;
   attached_client_id?: number | null;
   attached_client_name?: string | null;
   status?: string | null;
@@ -358,8 +361,8 @@ export default function AgencyAccountsPage() {
       return tiktokAccounts.map((account) => ({
         id: String(account.id || account.account_id || "").trim(),
         name: tiktokAccountDisplayName(account),
-        attachedClientId: account.attached_client_id ?? null,
-        attachedClientName: account.attached_client_name ?? null,
+        attachedClientId: account.client_id ?? account.attached_client_id ?? null,
+        attachedClientName: account.client_name ?? account.attached_client_name ?? null,
         lastSuccessAt: account.last_success_at ?? null,
         lastError: account.last_error ?? null,
         lastRunStatus: account.last_run_status ?? null,

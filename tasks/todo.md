@@ -1,3 +1,18 @@
+# TODO — Fix TikTok attached-client refresh rendering in Agency Accounts
+
+- [x] Audit current TikTok row mapping in `agency-accounts/page.tsx` for attached client fields.
+- [x] Apply minimal fallback mapping for TikTok attached fields (`client_id/client_name` then `attached_client_id/attached_client_name`).
+- [x] Update TikTok Agency Accounts tests to cover both payload shapes, unattached rendering, and attach+reload attached rendering.
+- [x] Run requested frontend tests and build; document results.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Added mapper fallback in TikTok normalization to read `client_id/client_name` first and preserve legacy `attached_client_*` compatibility.
+- Added tests for both payload aliases, explicit unattached rendering, and attach-triggered reload that re-renders attached client state.
+- Verification: `npm test -- page.tiktok.test.tsx` (pass) and `npm run build` (pass) in `apps/frontend`.
+
+---
+
 # TODO — TikTok import diagnostics + zero-account handling
 
 - [x] Audit current TikTok advertiser discovery/import flow and identify safe diagnostic fields.
