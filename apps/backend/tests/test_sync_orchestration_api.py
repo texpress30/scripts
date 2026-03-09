@@ -37,12 +37,16 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.original_list_chunks = sync_orchestration.sync_run_chunks_store.list_sync_run_chunks
 
         def _list_platform_accounts(*, platform: str):
-            if platform != "google_ads":
-                return []
-            return [
-                {"id": "3986597205", "name": "A", "attached_client_id": 11},
-                {"id": "1234567890", "name": "B", "attached_client_id": None},
-            ]
+            if platform == "google_ads":
+                return [
+                    {"id": "3986597205", "name": "A", "attached_client_id": 11},
+                    {"id": "1234567890", "name": "B", "attached_client_id": None},
+                ]
+            if platform == "meta_ads":
+                return [
+                    {"id": "act_123", "name": "Meta A", "attached_client_id": 21},
+                ]
+            return []
 
         def _create_sync_run(**kwargs):
             run = {
@@ -384,6 +388,55 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         token = response.json()["access_token"]
         return {"Authorization": f"Bearer {token}"}
+
+
+
+    def test_meta_batch_accepts_numeric_or_prefixed_account_id_and_creates_four_grains(self):
+        headers = {"Authorization": "Bearer test-token"}
+
+        numeric_payload = self.client.post(
+            "/agency/sync-runs/batch",
+            headers=headers,
+            json={
+                "platform": "meta_ads",
+                "account_ids": ["123"],
+                "job_type": "historical_backfill",
+                "start_date": "2026-02-01",
+                "end_date": "2026-02-07",
+                "chunk_days": 7,
+                "grains": ["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"],
+            },
+        )
+        self.assertEqual(numeric_payload.status_code, 200)
+        payload = numeric_payload.json()
+        self.assertEqual(payload["created_count"], 4)
+        self.assertEqual(payload["invalid_account_ids"], [])
+        self.assertEqual(sorted(payload["grains"]), sorted(["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"]))
+
+        created_meta_runs = [
+            r for r in self.state["runs"].values()
+            if r.get("platform") == "meta_ads" and r.get("batch_id") == payload["batch_id"]
+        ]
+        self.assertEqual(len(created_meta_runs), 4)
+        self.assertEqual({str(r.get("account_id")) for r in created_meta_runs}, {"act_123"})
+
+        prefixed_payload = self.client.post(
+            "/agency/sync-runs/batch",
+            headers=headers,
+            json={
+                "platform": "meta_ads",
+                "account_ids": ["act_123"],
+                "job_type": "historical_backfill",
+                "start_date": "2026-02-01",
+                "end_date": "2026-02-07",
+                "chunk_days": 7,
+                "grains": ["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"],
+            },
+        )
+        self.assertEqual(prefixed_payload.status_code, 200)
+        second = prefixed_payload.json()
+        self.assertEqual(second["created_count"], 0)
+        self.assertEqual(second["already_exists_count"], 4)
 
     def test_batch_enqueue_and_status_polling(self):
         headers = self._auth_headers()

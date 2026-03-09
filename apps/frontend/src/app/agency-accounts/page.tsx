@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest, postAccountSyncProgressBatch, type AccountSyncProgressBatchResult } from "@/lib/api";
+import { getEffectiveAccountStatus } from "./sync-runs";
 
 type TikTokAccount = {
   id?: string;
@@ -137,6 +138,7 @@ type RowChunkProgress = {
   status?: string | null;
   dateStart?: string | null;
   dateEnd?: string | null;
+  lastErrorSummary?: string | null;
 };
 
 type UnifiedProviderAccount = {
@@ -179,6 +181,10 @@ function formatDateTime(value?: string | null): string {
 
 function isValidIsoDate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function accountDetailUrl(platform: string, accountId: string): string {
+  return `/agency-accounts/${encodeURIComponent(platform)}/${encodeURIComponent(accountId)}`;
 }
 
 function toIsoDateLocal(date: Date): string {
@@ -314,12 +320,12 @@ export default function AgencyAccountsPage() {
 
 
   function getEffectiveStatus(account: GoogleAccount): string {
-    const rowStatus = String(batchRunsByAccount[account.id] ?? "").toLowerCase();
-    if (rowStatus) return rowStatus;
-    const runStatus = String(account.last_run_status ?? "").toLowerCase();
-    if (runStatus) return runStatus;
-    if (account.has_active_sync) return "running";
-    return "idle";
+    return getEffectiveAccountStatus({
+      rowStatus: batchRunsByAccount[account.id] ?? null,
+      lastRunStatus: account.last_run_status ?? null,
+      hasActiveSync: account.has_active_sync ?? false,
+      lastSuccessAt: account.last_success_at ?? null,
+    });
   }
 
   function isActiveAccount(account: GoogleAccount): boolean {
@@ -527,7 +533,7 @@ export default function AgencyAccountsPage() {
   }
 
   function renderSyncProgress(
-    account: Pick<GoogleAccount, "id" | "last_run_status" | "last_run_type" | "has_active_sync">,
+    account: Pick<GoogleAccount, "id" | "last_run_status" | "last_run_type" | "has_active_sync" | "last_success_at">,
     rowStatus?: string | null,
     chunkProgress?: RowChunkProgress | null,
   ): JSX.Element {
@@ -536,7 +542,12 @@ export default function AgencyAccountsPage() {
     const hasStandaloneActiveSync = !rowStatus && Boolean(account.has_active_sync);
     const isActiveSyncRow = isBatchActiveRow || hasStandaloneActiveSync;
 
-    const statusText = rowStatus || account.last_run_status || (account.has_active_sync ? "running" : "idle");
+    const statusText = getEffectiveAccountStatus({
+      rowStatus: rowStatus ?? null,
+      lastRunStatus: account.last_run_status ?? null,
+      hasActiveSync: account.has_active_sync ?? false,
+      lastSuccessAt: account.last_success_at ?? null,
+    });
     const normalizedStatusText = String(statusText).toLowerCase();
 
     const fallbackPercent = normalizedRowStatus === "queued" ? 14 : 52;
@@ -554,9 +565,12 @@ export default function AgencyAccountsPage() {
           ) : null}
         </div>
         {chunkProgress && chunkProgress.chunksTotal > 0 ? (
+          <>
+          {chunkProgress?.lastErrorSummary ? <p className="mt-1 text-xs text-red-600">Eroare sync: {chunkProgress.lastErrorSummary}</p> : null}
           <p className="mt-1 text-xs text-slate-600" data-testid={`sync-progress-chunks-${account.id}`}>
             {chunkProgress.chunksDone}/{chunkProgress.chunksTotal} chunks ({chunkProgress.percent}%)
           </p>
+        </>
         ) : isActiveSyncRow ? (
           <p className="mt-1 text-xs text-slate-500">Chunk progress în curs de actualizare...</p>
         ) : null}
@@ -1044,6 +1058,7 @@ export default function AgencyAccountsPage() {
             status: item.active_run.status ?? null,
             dateStart: item.active_run.date_start ?? null,
             dateEnd: item.active_run.date_end ?? null,
+            lastErrorSummary: item.active_run.last_error_summary ?? null,
           } satisfies RowChunkProgress;
         }
 
@@ -1222,10 +1237,10 @@ export default function AgencyAccountsPage() {
                           </div>
                           <div className="min-w-0">
                             <p className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Cont</p>
-                            <p className="truncate text-sm font-medium text-slate-900">{account.name}</p>
+                            <p className="truncate text-sm font-medium text-slate-900"><Link href={accountDetailUrl(selectedPlatform, accountId)} className="hover:underline">{account.name}</Link></p>
                             <p className="text-xs text-slate-500">ID: {accountId || "-"}</p>
                             <p className="text-xs text-slate-500">Ultimul sync reușit: {account.lastSuccessAt ? formatDateTime(account.lastSuccessAt) : "-"}</p>
-                            <p className="text-xs text-slate-500">Eroare recentă: {account.lastError || "-"}</p>
+                            {account.lastError ? <p className="text-xs text-red-600">Eroare recentă: {account.lastError}</p> : <p className="text-xs text-slate-500">Eroare recentă: -</p>}
                           </div>
                           <div>
                             <p className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Sync progress</p>
@@ -1482,7 +1497,7 @@ export default function AgencyAccountsPage() {
                             <div className="min-w-0">
                               <p className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Cont</p>
                               <p className="truncate text-sm font-medium text-slate-900">
-                                <Link href={`/agency-accounts/google_ads/${encodeURIComponent(account.id)}`} className="hover:underline">
+                                <Link href={accountDetailUrl("google_ads", account.id)} className="hover:underline">
                                   {accountDisplayName(account)}
                                 </Link>
                               </p>
@@ -1522,7 +1537,7 @@ export default function AgencyAccountsPage() {
                                       <ul className="space-y-1">
                                         {(accountsByClient.get(account.attached_client_id ?? 0) ?? []).slice(0, 5).map((related) => (
                                           <li key={`${account.id}-related-${related.id}`} className="text-xs text-slate-700">
-                                            <Link href={`/agency-accounts/google_ads/${encodeURIComponent(related.id)}`} className="hover:underline">
+                                            <Link href={accountDetailUrl("google_ads", related.id)} className="hover:underline">
                                               {accountDisplayName(related)}
                                             </Link>{" "}
                                             <span className="text-slate-500">({related.id})</span>
