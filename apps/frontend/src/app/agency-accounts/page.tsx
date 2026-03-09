@@ -141,6 +141,8 @@ type RowChunkProgress = {
 
 
 const DEFAULT_HISTORICAL_START = "2024-01-09";
+const DEFAULT_META_TIKTOK_HISTORICAL_START = "2024-09-01";
+const META_TIKTOK_HISTORICAL_GRAINS = ["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"] as const;
 const _PROGRESS_BATCH_ACCOUNT_IDS_MAX = 200;
 
 function prettyPlatform(platform: string): string {
@@ -205,6 +207,38 @@ function actionButtonClass(variant: "historical" | "ghost"): string {
     return `${base} bg-emerald-600 text-white hover:bg-emerald-700`;
   }
   return `${base} border border-slate-300 bg-white text-slate-700 hover:bg-slate-50`;
+}
+
+function getHistoricalStartDate(platform: string): string {
+  if (platform === "meta_ads" || platform === "tiktok_ads") return DEFAULT_META_TIKTOK_HISTORICAL_START;
+  return DEFAULT_HISTORICAL_START;
+}
+
+function buildHistoricalBatchPayload(platform: string, accountIds: string[]): Record<string, unknown> {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  if (platform === "meta_ads" || platform === "tiktok_ads") {
+    return {
+      platform,
+      account_ids: accountIds,
+      job_type: "historical_backfill",
+      start_date: getHistoricalStartDate(platform),
+      end_date: toIsoDateLocal(yesterday),
+      chunk_days: 30,
+      grains: [...META_TIKTOK_HISTORICAL_GRAINS],
+    };
+  }
+
+  return {
+    platform: "google_ads",
+    account_ids: accountIds,
+    chunk_days: 7,
+    grain: "account_daily",
+    job_type: "historical_backfill",
+    start_date: getHistoricalStartDate("google_ads"),
+    end_date: toIsoDateLocal(yesterday),
+  };
 }
 
 export default function AgencyAccountsPage() {
@@ -393,15 +427,19 @@ export default function AgencyAccountsPage() {
     return filteredUnifiedProviderAccounts.slice(start, start + accountsPageSize);
   }, [filteredUnifiedProviderAccounts, accountsPage, accountsPageSize]);
 
-  const selectablePageAccountIds = useMemo(
-    () => pagedGoogleAccounts.filter((item) => Boolean(item.attached_client_id)).map((item) => item.id),
-    [pagedGoogleAccounts],
-  );
+  const selectablePageAccountIds = useMemo(() => {
+    if (selectedPlatform === "google_ads") {
+      return pagedGoogleAccounts.filter((item) => Boolean(item.attached_client_id)).map((item) => item.id);
+    }
+    return pagedUnifiedProviderAccounts.filter((item) => Boolean(item.attachedClientId)).map((item) => item.id);
+  }, [selectedPlatform, pagedGoogleAccounts, pagedUnifiedProviderAccounts]);
 
-  const selectableFilteredAccountIds = useMemo(
-    () => filteredGoogleAccounts.filter((item) => Boolean(item.attached_client_id)).map((item) => item.id),
-    [filteredGoogleAccounts],
-  );
+  const selectableFilteredAccountIds = useMemo(() => {
+    if (selectedPlatform === "google_ads") {
+      return filteredGoogleAccounts.filter((item) => Boolean(item.attached_client_id)).map((item) => item.id);
+    }
+    return filteredUnifiedProviderAccounts.filter((item) => Boolean(item.attachedClientId)).map((item) => item.id);
+  }, [selectedPlatform, filteredGoogleAccounts, filteredUnifiedProviderAccounts]);
 
   const allSelectableOnPageSelected =
     selectablePageAccountIds.length > 0 && selectablePageAccountIds.every((id) => selectedAccountIds.has(id));
@@ -409,10 +447,16 @@ export default function AgencyAccountsPage() {
   const allSelectableFilteredSelected =
     selectableFilteredAccountIds.length > 0 && selectableFilteredAccountIds.every((id) => selectedAccountIds.has(id));
 
-  const selectedMappedAccounts = useMemo(
-    () => googleAccounts.filter((account) => selectedAccountIds.has(account.id) && Boolean(account.attached_client_id)),
-    [googleAccounts, selectedAccountIds],
-  );
+  const selectedEligibleAccounts = useMemo(() => {
+    if (selectedPlatform === "google_ads") {
+      return googleAccounts
+        .filter((account) => selectedAccountIds.has(account.id) && Boolean(account.attached_client_id))
+        .map((account) => ({ id: account.id }));
+    }
+    return unifiedProviderAccounts
+      .filter((account) => selectedAccountIds.has(account.id) && Boolean(account.attachedClientId))
+      .map((account) => ({ id: account.id }));
+  }, [selectedPlatform, googleAccounts, unifiedProviderAccounts, selectedAccountIds]);
 
   const accountsByClient = useMemo(() => {
     const grouped = new Map<number, GoogleAccount[]>();
@@ -792,7 +836,7 @@ export default function AgencyAccountsPage() {
   }
 
   async function startBatchSyncHistorical() {
-    if (selectedMappedAccounts.length <= 0) {
+    if (selectedEligibleAccounts.length <= 0) {
       setSyncError("Selectează cel puțin un cont atașat la client.");
       return;
     }
@@ -802,19 +846,9 @@ export default function AgencyAccountsPage() {
     setBatchProgress(null);
     setBatchRunsByAccount({});
 
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const historicalStartDateUsed = DEFAULT_HISTORICAL_START;
-
-    const body: Record<string, unknown> = {
-      platform: "google_ads",
-      account_ids: selectedMappedAccounts.map((item) => item.id),
-      chunk_days: 7,
-      grain: "account_daily",
-      job_type: "historical_backfill",
-      start_date: historicalStartDateUsed,
-      end_date: toIsoDateLocal(yesterday),
-    };
+    const platform = selectedPlatform === "google_ads" ? "google_ads" : selectedPlatform;
+    const historicalStartDateUsed = getHistoricalStartDate(platform);
+    const body = buildHistoricalBatchPayload(platform, selectedEligibleAccounts.map((item) => item.id));
 
     setActionBusy(true);
     setRunningAction("historical");
@@ -996,13 +1030,22 @@ export default function AgencyAccountsPage() {
                     >
                       {(selectedPlatform === "meta_ads" ? metaLoading : tiktokLoading) ? "Refreshing..." : "Refresh"}
                     </button>
-                    <button type="button" className={actionButtonClass("historical")} disabled title="Disponibil pentru Google Ads.">
-                      Download historical
+                    <button
+                      type="button"
+                      className={actionButtonClass("historical")}
+                      onClick={() => void startBatchSyncHistorical()}
+                      disabled={controlsDisabled || selectedEligibleAccounts.length === 0}
+                    >
+                      {runningAction === "historical" || isBatchActive ? "Downloading..." : "Download historical"}
                     </button>
                   </div>
                 </div>
 
-                <div className="mt-2 text-xs text-slate-600">Selectate: <span className="font-semibold text-slate-900">0</span> conturi</div>
+                <div className="mt-2 text-xs text-slate-600">
+                  Selectate: <span className="font-semibold text-slate-900">{selectedAccountIds.size}</span> conturi
+                  {` (din ${selectableFilteredAccountIds.length} filtrate)`}
+                  {selectedEligibleAccounts.length !== selectedAccountIds.size ? ` · ${selectedEligibleAccounts.length} eligibile pentru sync` : ""}
+                </div>
                 {selectedPlatform === "meta_ads" && metaActionMessage ? <p className="mt-2 text-sm text-emerald-700">{metaActionMessage}</p> : null}
                 {selectedPlatform === "meta_ads" && metaActionError ? <p className="mt-2 text-sm text-red-600">{metaActionError}</p> : null}
                 {selectedPlatform === "tiktok_ads" && tiktokActionMessage ? <p className="mt-2 text-sm text-emerald-700">{tiktokActionMessage}</p> : null}
@@ -1015,9 +1058,31 @@ export default function AgencyAccountsPage() {
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                     <div className="flex flex-wrap items-center gap-3">
                       <label className="flex items-center gap-2">
-                        <input type="checkbox" disabled />
+                        <input
+                          type="checkbox"
+                          checked={allSelectableOnPageSelected}
+                          onChange={(event) => toggleSelectAllOnPage(event.target.checked)}
+                          disabled={selectablePageAccountIds.length === 0 || controlsDisabled}
+                        />
                         Select all pe pagina curentă
                       </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={allSelectableFilteredSelected}
+                          onChange={(event) => toggleSelectAllFiltered(event.target.checked)}
+                          disabled={selectableFilteredAccountIds.length === 0 || controlsDisabled}
+                        />
+                        Selectează toate filtrate ({selectableFilteredAccountIds.length})
+                      </label>
+                      <button
+                        type="button"
+                        onClick={clearSelection}
+                        disabled={selectedAccountIds.size === 0 || controlsDisabled}
+                        className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Clear selection
+                      </button>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <label htmlFor="client-filter" className="text-xs font-medium text-slate-600">Filtru client</label>
@@ -1053,7 +1118,13 @@ export default function AgencyAccountsPage() {
                         <div key={accountId} className="grid gap-3 px-3 py-3 lg:grid-cols-[48px_minmax(220px,2fr)_minmax(180px,1.2fr)_minmax(180px,1.2fr)_minmax(220px,1.4fr)_110px] lg:items-start">
                           <div className="flex items-start justify-between lg:justify-center">
                             <span className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Selecție</span>
-                            <input type="checkbox" disabled data-testid={`row-select-${accountId}`} />
+                            <input
+                              type="checkbox"
+                              checked={selectedAccountIds.has(accountId)}
+                              disabled={!attached || controlsDisabled}
+                              onChange={(event) => toggleAccountSelection(accountId, event.target.checked)}
+                              data-testid={`row-select-${accountId}`}
+                            />
                           </div>
                           <div className="min-w-0">
                             <p className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Cont</p>
@@ -1183,7 +1254,7 @@ export default function AgencyAccountsPage() {
                       type="button"
                       className={actionButtonClass("historical")}
                       onClick={() => void startBatchSyncHistorical()}
-                      disabled={controlsDisabled || selectedMappedAccounts.length === 0}
+                      disabled={controlsDisabled || selectedEligibleAccounts.length === 0}
                     >
                       {runningAction === "historical" || isBatchActive ? "Downloading..." : "Download historical"}
                     </button>
@@ -1193,7 +1264,7 @@ export default function AgencyAccountsPage() {
                 <div className="mt-2 text-xs text-slate-600">
                   Selectate: <span className="font-semibold text-slate-900">{selectedAccountIds.size}</span> conturi
                   {` (din ${selectableFilteredAccountIds.length} filtrate)`}
-                  {selectedMappedAccounts.length !== selectedAccountIds.size ? ` · ${selectedMappedAccounts.length} eligibile pentru sync` : ""}
+                  {selectedEligibleAccounts.length !== selectedAccountIds.size ? ` · ${selectedEligibleAccounts.length} eligibile pentru sync` : ""}
                 </div>
 
                 {isBatchActive && batchProgress ? (

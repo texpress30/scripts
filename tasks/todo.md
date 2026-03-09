@@ -1,3 +1,20 @@
+# TODO — Enable Meta/TikTok historical download selection in Agency Accounts
+
+- [x] Rebaseline branch from available clean local baseline (remote `origin/main` unavailable in this environment) and scope to frontend-only files.
+- [x] Make selection + historical batch payload provider-aware in `agency-accounts/page.tsx` while preserving Google behavior.
+- [x] Enable Meta/TikTok row/select-all/selected-count UX for attached accounts and keep unattached rows non-selectable.
+- [x] Add/extend Meta + TikTok tests for checkbox enablement, historical button enablement, and explicit batch payload assertions.
+- [x] Run requested frontend tests and build; record outcomes.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Meta/TikTok now share active historical selection controls and batch-trigger UX in the unified table shell with attached-only eligibility.
+- Meta/TikTok historical payloads now send explicit `grains` and `start_date=2024-09-01` to `/agency/sync-runs/batch` (`chunk_days=30`, `job_type=historical_backfill`, `end_date=yesterday`).
+- Google historical payload remains unchanged (`start_date=2024-01-09`, `grain=account_daily`).
+- Verification: `pnpm --dir apps/frontend test src/app/agency-accounts/page.meta.test.tsx`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx`, `pnpm --dir apps/frontend build`.
+
+---
+
 # TODO — Fix TikTok attached-client refresh rendering in Agency Accounts
 
 - [x] Audit current TikTok row mapping in `agency-accounts/page.tsx` for attached client fields.

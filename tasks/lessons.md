@@ -221,3 +221,5 @@
 - 2026-03-08: For provider imports, never ship placeholder summaries; implement real discovery+registry upsert and prove idempotency with rerun tests.
 - 2026-03-08: For zero-result imports, return explicit diagnostic context (safe fields only) so ops can distinguish no-grant vs parser/deploy issues.
 - 2026-03-08: For generic account endpoints reused across providers, frontend mappers must support both `client_*` and `attached_client_*` aliases to avoid stale unattached UI after reload.
+- 2026-03-09: In constrained git environments (missing remote/main), explicitly report the baseline limitation and proceed from the clean local branch instead of pretending the requested reset succeeded.
+
