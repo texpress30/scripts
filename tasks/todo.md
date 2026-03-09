@@ -2510,3 +2510,13 @@
 - Rolling scheduler now accepts `platform=tiktok_ads` and enqueues `account_daily` (+ entity grains under flag) on the same 7-day complete window.
 - Worker now supports TikTok platform runs by reusing existing TikTok sync service for chunk execution; no duplicate fetch/persist logic added.
 - Existing Google/Meta rolling behavior remained compatible in scheduler tests.
+
+# TODO — Reconnect git remote and sync latest main
+
+- [x] Create plan/checklist for remote reconnection task.
+- [x] Run exact remote/fetch/pull commands provided by user.
+- [x] Record outcomes and constraints.
+- [x] Commit task tracking updates and open PR record.
+
+## Review
+- [x] Executed exact commands in current workspace terminal; remote `origin` added, `fetch` succeeded, and `pull origin main` reported `Already up to date`.
