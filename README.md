@@ -192,6 +192,19 @@ cd apps/frontend && npm run build
 - Siguranță concurență: runner-ul folosește advisory lock Postgres global, deci rulări paralele nu aplică dublu migrațiile.
 - Recomandare Railway (web start command): `python -m app.db.migrate --migrations-dir db/migrations --baseline-before 0015_ && uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
 
+
+## Meta/TikTok sync diagnostics (real errors)
+- Eroarea reală pentru run-urile Meta/TikTok este expusă în progresul sync (`/agency/sync-runs/accounts/{platform}/progress`) prin câmpurile additive:
+  - `active_run.last_error_summary`
+  - `active_run.last_error_details`
+- `last_error_details` include (când există): `platform`, `account_id`, `client_id`, `grain`, `chunk_index`, `start_date`, `end_date`, `provider_error_code`, `provider_error_message`, `http_status`, `endpoint`, `retryable`.
+- UI Agency Accounts afișează sumarul real sub statusul de eroare, fără redesign.
+- Repro rapid diagnostic:
+  1. Pornește un historical batch pentru Meta/TikTok din Agency Accounts.
+  2. Urmărește polling-ul batch/progress și verifică `last_error_summary` + `last_error_details`.
+  3. În logs backend caută `sync_worker.chunk_failed` pentru `job_id/chunk_index` + metadatele sanitizate.
+- Sanitizare: token-urile/secretele sunt mascate (`***`) în snippets/metadata/log strings pentru a evita expunerea credentialelor.
+
 ## Railway: rolling sync zilnic (cron)
 - **Comandă cron Railway (daily enqueue):** `cd apps/backend && PYTHONPATH=. python -m app.workers.rolling_scheduler`
 - **Worker de procesare chunk-uri (service separat, continuu):** `cd apps/backend && PYTHONPATH=. python -m app.workers.sync_worker`
