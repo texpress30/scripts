@@ -2554,3 +2554,19 @@
 - [x] Implemented parity updates in Agency Accounts list and detail page for Meta/TikTok, preserving Google behavior and existing run/chunk logs UX.
 
 - [x] Detailed parity verification passed: targeted vitest suite for list/detail pages and `pnpm --dir apps/frontend build`.
+
+---
+
+# TODO — Fix Meta historical sync contract + account scoping
+
+- [x] Update workspace to latest remote baseline before analysis/code changes.
+- [x] Trace Meta batch/run/chunk flow and locate contract mismatch in `MetaAdsService.sync_client` usage.
+- [x] Fix Meta service sync contract (`client_id/start_date/end_date/grain/account_id`) and implement robust window+grain+account scoping behavior.
+- [x] Apply minimal worker plumbing change to pass selected `account_id` context into Meta sync call.
+- [x] Add backend tests for keyword-arg regression, account scoping, invalid grain/date window, and missing/unattached account errors.
+- [x] Run targeted backend tests and document outcomes.
+
+## Review
+- [x] Root cause fixed: Meta service signature/implementation is now aligned with worker chunk call contract and no longer fails on unexpected keyword arguments.
+
+- [x] Verified with targeted backend suite covering Meta sync service contract + sync worker Meta path + existing Meta account_daily scenarios.

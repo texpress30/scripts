@@ -225,3 +225,4 @@
 - 2026-03-09: For cross-provider historical UX, don't stop at enabling selection; wire Meta/TikTok into the same live batch banner, row progress polling, and completion refresh lifecycle as Google.
 - 2026-03-09: After user dissatisfaction on prior delivery, prioritize requested product fix over repo bookkeeping-only changes; always ship the concrete code/test changes asked before closing.
 - 2026-03-09: For parity requests on existing pages, validate end-to-end UX parity against the Google baseline (list link -> detail metadata -> sync runs/logs -> terminal errors), not only API plumbing fields.
+- 2026-03-09: When fixing provider-sync production bugs, prioritize executable backend contract alignment (service signature + worker call) before adding further UI parity changes.

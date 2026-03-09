@@ -3,11 +3,12 @@ from __future__ import annotations
 import base64
 import json
 import secrets
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal
-from datetime import datetime, timezone
 from urllib import error, parse, request
 
 from app.core.config import load_settings
+from app.services.client_registry import client_registry_service
 from app.services.error_observability import safe_body_snippet, sanitize_payload, sanitize_text
 from app.services.integration_secrets_store import integration_secrets_store
 from app.services.meta_store import meta_snapshot_store
@@ -59,6 +60,13 @@ class MetaAdsService:
 
     def __init__(self) -> None:
         self._oauth_state_cache = set()
+        self._memory_campaign_daily_rows: list[dict[str, object]] = []
+        self._memory_ad_group_daily_rows: list[dict[str, object]] = []
+        self._memory_ad_daily_rows: list[dict[str, object]] = []
+
+    def _is_test_mode(self) -> bool:
+        settings = load_settings()
+        return settings.app_env == "test"
 
     def _is_placeholder(self, value: str) -> bool:
         normalized = value.strip().lower()
@@ -147,6 +155,189 @@ class MetaAdsService:
         if env_token != "" and not env_token.lower().startswith("your_"):
             return env_token, "env_fallback", None
         return "", "missing", None
+
+    def _resolve_active_access_token_with_source(self) -> tuple[str, str, str | None, str | None]:
+        token, source, updated_at = self._access_token_with_source()
+        if token == "":
+            return "", source, updated_at, "Meta Ads token is missing or placeholder."
+        return token, source, updated_at, None
+
+    def _normalize_sync_grain(self, grain: str | None) -> MetaSyncGrain:
+        resolved = str(grain or "account_daily").strip().lower()
+        if resolved == "":
+            resolved = "account_daily"
+        if resolved not in _ALLOWED_SYNC_GRAINS:
+            raise MetaAdsIntegrationError(f"grain invalid: {resolved}")
+        return resolved  # type: ignore[return-value]
+
+    def _resolve_sync_window(self, *, start_date: date | None, end_date: date | None) -> tuple[date, date]:
+        if start_date is None and end_date is None:
+            utc_today = datetime.now(timezone.utc).date()
+            resolved_end = utc_today - timedelta(days=1)
+            resolved_start = resolved_end - timedelta(days=6)
+            return resolved_start, resolved_end
+        if start_date is None or end_date is None:
+            raise MetaAdsIntegrationError("start_date and end_date must be provided together")
+        if start_date > end_date:
+            raise MetaAdsIntegrationError("start_date cannot be after end_date")
+        return start_date, end_date
+
+    def _list_client_meta_account_ids(self, *, client_id: int) -> list[str]:
+        accounts = client_registry_service.list_client_platform_accounts(platform="meta_ads", client_id=int(client_id))
+        ids: list[str] = []
+        for item in accounts:
+            account_id = str(item.get("id") or item.get("account_id") or "").strip()
+            if account_id != "" and account_id not in ids:
+                ids.append(account_id)
+        return ids
+
+    def _resolve_target_account_ids(self, *, client_id: int, account_id: str | None = None) -> list[str]:
+        account_ids = self._list_client_meta_account_ids(client_id=int(client_id))
+        if len(account_ids) <= 0:
+            raise MetaAdsIntegrationError("No Meta Ads accounts attached to this client.")
+        selected = str(account_id or "").strip()
+        if selected == "":
+            return account_ids
+        if selected not in account_ids:
+            raise MetaAdsIntegrationError("Selected account_id is not attached to this client.")
+        return [selected]
+
+    def _parse_numeric(self, value: object) -> float:
+        try:
+            return float(value or 0)
+        except Exception:  # noqa: BLE001
+            return 0.0
+
+    def _parse_int(self, value: object) -> int:
+        try:
+            return int(float(value or 0))
+        except Exception:  # noqa: BLE001
+            return 0
+
+    def _derive_conversions(self, *, actions: object) -> float:
+        if not isinstance(actions, list):
+            return 0.0
+        total = 0.0
+        for item in actions:
+            if not isinstance(item, dict):
+                continue
+            total += self._parse_numeric(item.get("value"))
+        return total
+
+    def _derive_conversion_value(self, *, action_values: object) -> float:
+        if not isinstance(action_values, list):
+            return 0.0
+        total = 0.0
+        for item in action_values:
+            if not isinstance(item, dict):
+                continue
+            total += self._parse_numeric(item.get("value"))
+        return total
+
+    def _base_extra_metrics(self, item: dict[str, object]) -> dict[str, object]:
+        return {
+            "date_stop": item.get("date_stop"),
+            "reach": item.get("reach"),
+            "inline_link_clicks": item.get("inline_link_clicks"),
+        }
+
+    def _fetch_insights(
+        self,
+        *,
+        account_id: str,
+        start_date: date,
+        end_date: date,
+        access_token: str,
+        level: str,
+        fields: list[str],
+    ) -> list[dict[str, object]]:
+        params = {
+            "access_token": access_token,
+            "level": level,
+            "fields": ",".join(fields),
+            "time_range": json.dumps({"since": start_date.isoformat(), "until": end_date.isoformat()}),
+            "limit": 500,
+        }
+        query = parse.urlencode(params)
+        settings = load_settings()
+        payload = self._http_json(
+            method="GET",
+            url=f"https://graph.facebook.com/{settings.meta_api_version.strip('/')}/act_{account_id}/insights?{query}",
+        )
+        data = payload.get("data")
+        if not isinstance(data, list):
+            raise MetaAdsIntegrationError("Meta API returned invalid data container")
+        return [item for item in data if isinstance(item, dict)]
+
+    def _fetch_account_daily_insights(self, *, account_id: str, start_date: date, end_date: date, access_token: str) -> list[dict[str, object]]:
+        return self._fetch_insights(
+            account_id=account_id,
+            start_date=start_date,
+            end_date=end_date,
+            access_token=access_token,
+            level="account",
+            fields=["date_start", "date_stop", "spend", "impressions", "clicks", "actions", "action_values", "reach", "inline_link_clicks"],
+        )
+
+    def _fetch_campaign_daily_insights(self, *, account_id: str, start_date: date, end_date: date, access_token: str) -> list[dict[str, object]]:
+        return self._fetch_insights(
+            account_id=account_id,
+            start_date=start_date,
+            end_date=end_date,
+            access_token=access_token,
+            level="campaign",
+            fields=["campaign_id", "campaign_name", "date_start", "date_stop", "spend", "impressions", "clicks", "actions", "action_values", "reach", "inline_link_clicks"],
+        )
+
+    def _fetch_ad_group_daily_insights(self, *, account_id: str, start_date: date, end_date: date, access_token: str) -> list[dict[str, object]]:
+        return self._fetch_insights(
+            account_id=account_id,
+            start_date=start_date,
+            end_date=end_date,
+            access_token=access_token,
+            level="adset",
+            fields=["campaign_id", "campaign_name", "adset_id", "adset_name", "date_start", "date_stop", "spend", "impressions", "clicks", "actions", "action_values", "reach", "inline_link_clicks"],
+        )
+
+    def _fetch_ad_daily_insights(self, *, account_id: str, start_date: date, end_date: date, access_token: str) -> list[dict[str, object]]:
+        return self._fetch_insights(
+            account_id=account_id,
+            start_date=start_date,
+            end_date=end_date,
+            access_token=access_token,
+            level="ad",
+            fields=["campaign_id", "campaign_name", "adset_id", "adset_name", "ad_id", "ad_name", "date_start", "date_stop", "spend", "impressions", "clicks", "actions", "action_values", "reach", "inline_link_clicks"],
+        )
+
+    def _upsert_memory_row(self, target: list[dict[str, object]], key_fields: tuple[str, ...], row: dict[str, object]) -> None:
+        key = tuple(str(row.get(field) or "") for field in key_fields)
+        for index, existing in enumerate(target):
+            existing_key = tuple(str(existing.get(field) or "") for field in key_fields)
+            if existing_key == key:
+                target[index] = dict(row)
+                return
+        target.append(dict(row))
+
+    def _write_campaign_daily_rows(self, *, rows: list[dict[str, object]]) -> int:
+        if self._is_test_mode():
+            for row in rows:
+                self._upsert_memory_row(self._memory_campaign_daily_rows, ("platform", "account_id", "campaign_id", "report_date"), row)
+            return len(rows)
+        return 0
+
+    def _write_ad_group_daily_rows(self, *, rows: list[dict[str, object]]) -> int:
+        if self._is_test_mode():
+            for row in rows:
+                self._upsert_memory_row(self._memory_ad_group_daily_rows, ("platform", "account_id", "ad_group_id", "report_date"), row)
+            return len(rows)
+        return 0
+
+    def _write_ad_daily_rows(self, *, rows: list[dict[str, object]]) -> int:
+        if self._is_test_mode():
+            for row in rows:
+                self._upsert_memory_row(self._memory_ad_daily_rows, ("platform", "account_id", "ad_id", "report_date"), row)
+            return len(rows)
+        return 0
 
     def build_oauth_authorize_url(self) -> dict[str, str]:
         settings = load_settings()
@@ -261,14 +452,26 @@ class MetaAdsService:
             "message": "Meta account import is enabled and awaiting account discovery implementation.",
         }
 
-    def sync_client(self, client_id: int) -> dict[str, float | int | str]:
-        token, _, _ = self._access_token_with_source()
-        if token == "":
-            raise MetaAdsIntegrationError("Meta Ads token is missing or placeholder.")
+    def sync_client(
+        self,
+        *,
+        client_id: int,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        grain: MetaSyncGrain | str | None = None,
+        account_id: str | None = None,
+    ) -> dict[str, float | int | str]:
+        if int(client_id) <= 0:
+            raise MetaAdsIntegrationError("Client id must be a positive integer.")
 
-        account_ids = self._list_client_meta_account_ids(client_id=int(client_id))
-        if len(account_ids) == 0:
-            raise MetaAdsIntegrationError("No Meta Ads accounts attached to this client.")
+        resolved_grain = self._normalize_sync_grain(grain)
+        resolved_start, resolved_end = self._resolve_sync_window(start_date=start_date, end_date=end_date)
+
+        access_token, token_source, _, token_error = self._resolve_active_access_token_with_source()
+        if token_error:
+            raise MetaAdsIntegrationError(token_error)
+
+        account_ids = self._resolve_target_account_ids(client_id=int(client_id), account_id=account_id)
 
         rows_written = 0
         totals = {

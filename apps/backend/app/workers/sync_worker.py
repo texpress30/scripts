@@ -184,6 +184,7 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
                 start_date=chunk_start,
                 end_date=chunk_end,
                 grain=grain,
+                account_id=account_id,
             )
             rows_written = int(snapshot.get("rows_written") or 0)
         elif platform == "tiktok_ads":

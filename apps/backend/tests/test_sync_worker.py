@@ -945,6 +945,7 @@ class SyncWorkerTests(unittest.TestCase):
         self.assertEqual(state["run"]["rows_written"], 7)
         self.assertEqual(meta_sync_mock.call_count, 1)
         self.assertEqual(meta_sync_mock.call_args.kwargs["grain"], "campaign_daily")
+        self.assertEqual(meta_sync_mock.call_args.kwargs["account_id"], "3986597205")
         self.assertEqual(google_fetch_mock.call_count, 0)
 
     def test_process_next_chunk_tiktok_ad_daily_uses_tiktok_sync_service(self):
