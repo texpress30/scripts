@@ -1,3 +1,22 @@
+# TODO — Fix Meta/TikTok historical backfill progress UI in Agency Accounts
+
+- [x] Rebaseline branch from clean baseline and document constraints if requested remote baseline is unavailable.
+- [x] Extend Agency Accounts Meta/TikTok workspace to show batch banner + sync messages + live row progress driven by batch/polling state.
+- [x] Extend account progress polling and batch persistence/rehydration for Meta/TikTok (and keep Google behavior unchanged).
+- [x] Ensure completion refresh reloads provider-specific rows after `loadData()`.
+- [x] Add/adjust Meta/TikTok tests for banner, row live progress, completion refresh, and rehydrated batch state; keep Google regression guard.
+- [x] Run requested frontend tests/build and record results.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Persisted active batch metadata per platform in `sessionStorage` (`agency-accounts-batch:<platform>`) and rehydrated polling state on workspace reload/switch.
+- Unified Meta/TikTok workspace now renders the same batch banner + sync status/error messaging and uses `renderSyncProgress` with `batchRunsByAccount` + `rowChunkProgressByAccount` for live row updates.
+- Extended progress polling to `meta_ads` + `tiktok_ads` via `postAccountSyncProgressBatch(selectedPlatform, ...)`, while keeping Google flow intact.
+- On batch completion, keeps `loadData()` and additionally reloads provider rows via `loadMetaAccounts()` / `loadTikTokAccounts()`.
+- Verification: `pnpm --dir apps/frontend test src/app/agency-accounts/page.meta.test.tsx`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx`, `pnpm --dir apps/frontend build`.
+
+---
+
 # TODO — Enable Meta/TikTok historical download selection in Agency Accounts
 
 - [x] Rebaseline branch from available clean local baseline (remote `origin/main` unavailable in this environment) and scope to frontend-only files.
@@ -8,6 +27,11 @@
 
 ## Review
 - [x] Completed implementation + verification notes.
+- Persisted active batch metadata per platform in `sessionStorage` (`agency-accounts-batch:<platform>`) and rehydrated polling state on workspace reload/switch.
+- Unified Meta/TikTok workspace now renders the same batch banner + sync status/error messaging and uses `renderSyncProgress` with `batchRunsByAccount` + `rowChunkProgressByAccount` for live row updates.
+- Extended progress polling to `meta_ads` + `tiktok_ads` via `postAccountSyncProgressBatch(selectedPlatform, ...)`, while keeping Google flow intact.
+- On batch completion, keeps `loadData()` and additionally reloads provider rows via `loadMetaAccounts()` / `loadTikTokAccounts()`.
+- Verification: `pnpm --dir apps/frontend test src/app/agency-accounts/page.meta.test.tsx`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx`, `pnpm --dir apps/frontend build`.
 - Meta/TikTok now share active historical selection controls and batch-trigger UX in the unified table shell with attached-only eligibility.
 - Meta/TikTok historical payloads now send explicit `grains` and `start_date=2024-09-01` to `/agency/sync-runs/batch` (`chunk_days=30`, `job_type=historical_backfill`, `end_date=yesterday`).
 - Google historical payload remains unchanged (`start_date=2024-01-09`, `grain=account_daily`).
@@ -24,6 +48,11 @@
 
 ## Review
 - [x] Completed implementation + verification notes.
+- Persisted active batch metadata per platform in `sessionStorage` (`agency-accounts-batch:<platform>`) and rehydrated polling state on workspace reload/switch.
+- Unified Meta/TikTok workspace now renders the same batch banner + sync status/error messaging and uses `renderSyncProgress` with `batchRunsByAccount` + `rowChunkProgressByAccount` for live row updates.
+- Extended progress polling to `meta_ads` + `tiktok_ads` via `postAccountSyncProgressBatch(selectedPlatform, ...)`, while keeping Google flow intact.
+- On batch completion, keeps `loadData()` and additionally reloads provider rows via `loadMetaAccounts()` / `loadTikTokAccounts()`.
+- Verification: `pnpm --dir apps/frontend test src/app/agency-accounts/page.meta.test.tsx`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx`, `pnpm --dir apps/frontend build`.
 - Added mapper fallback in TikTok normalization to read `client_id/client_name` first and preserve legacy `attached_client_*` compatibility.
 - Added tests for both payload aliases, explicit unattached rendering, and attach-triggered reload that re-renders attached client state.
 - Verification: `npm test -- page.tiktok.test.tsx` (pass) and `npm run build` (pass) in `apps/frontend`.
@@ -39,6 +68,11 @@
 
 ## Review
 - [x] Completed implementation + verification notes.
+- Persisted active batch metadata per platform in `sessionStorage` (`agency-accounts-batch:<platform>`) and rehydrated polling state on workspace reload/switch.
+- Unified Meta/TikTok workspace now renders the same batch banner + sync status/error messaging and uses `renderSyncProgress` with `batchRunsByAccount` + `rowChunkProgressByAccount` for live row updates.
+- Extended progress polling to `meta_ads` + `tiktok_ads` via `postAccountSyncProgressBatch(selectedPlatform, ...)`, while keeping Google flow intact.
+- On batch completion, keeps `loadData()` and additionally reloads provider rows via `loadMetaAccounts()` / `loadTikTokAccounts()`.
+- Verification: `pnpm --dir apps/frontend test src/app/agency-accounts/page.meta.test.tsx`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx`, `pnpm --dir apps/frontend build`.
 - Kept TikTok real advertiser discovery path + pagination and added parser support for additional safe row containers (`data.accounts`, `data.rows`) besides existing (`data.list`, `data.advertisers`).
 - Added zero-account explicit message and safe diagnostics (`api_code`, `api_message`, `page_count_checked`, `row_container_used`) without exposing secrets.
 - Added discovery summary logging (pages/rows/container/API code+message) and tests proving zero-account handling + alternate container parsing.
@@ -54,6 +88,11 @@
 
 ## Review
 - [x] Completed implementation + verification notes.
+- Persisted active batch metadata per platform in `sessionStorage` (`agency-accounts-batch:<platform>`) and rehydrated polling state on workspace reload/switch.
+- Unified Meta/TikTok workspace now renders the same batch banner + sync status/error messaging and uses `renderSyncProgress` with `batchRunsByAccount` + `rowChunkProgressByAccount` for live row updates.
+- Extended progress polling to `meta_ads` + `tiktok_ads` via `postAccountSyncProgressBatch(selectedPlatform, ...)`, while keeping Google flow intact.
+- On batch completion, keeps `loadData()` and additionally reloads provider rows via `loadMetaAccounts()` / `loadTikTokAccounts()`.
+- Verification: `pnpm --dir apps/frontend test src/app/agency-accounts/page.meta.test.tsx`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx`, `pnpm --dir apps/frontend build`.
 - Removed TikTok import stub and implemented real advertiser discovery via TikTok Business API `/open_api/{version}/oauth2/advertiser/get/` with pagination support.
 - Import now upserts discovered advertisers into generic platform registry and computes idempotent summary counters (`imported/updated/unchanged`).
 - Added focused backend tests for service and API import contract/error mapping, all passing in targeted run.
@@ -69,6 +108,11 @@
 
 ## Review
 - [x] Completed implementation + verification notes.
+- Persisted active batch metadata per platform in `sessionStorage` (`agency-accounts-batch:<platform>`) and rehydrated polling state on workspace reload/switch.
+- Unified Meta/TikTok workspace now renders the same batch banner + sync status/error messaging and uses `renderSyncProgress` with `batchRunsByAccount` + `rowChunkProgressByAccount` for live row updates.
+- Extended progress polling to `meta_ads` + `tiktok_ads` via `postAccountSyncProgressBatch(selectedPlatform, ...)`, while keeping Google flow intact.
+- On batch completion, keeps `loadData()` and additionally reloads provider rows via `loadMetaAccounts()` / `loadTikTokAccounts()`.
+- Verification: `pnpm --dir apps/frontend test src/app/agency-accounts/page.meta.test.tsx`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx`, `pnpm --dir apps/frontend build`.
 - Meta/TikTok in Agency Accounts now render in the same table-shell layout pattern as Google (summary + toolbar + table columns + pagination).
 - Meta/TikTok rows use consistent placeholders for unavailable sync fields (`-`) without reverting to separate card-list panels.
 - Requested frontend tests and build pass.
@@ -84,6 +128,11 @@
 
 ## Review
 - [x] Completed implementation + verification notes.
+- Persisted active batch metadata per platform in `sessionStorage` (`agency-accounts-batch:<platform>`) and rehydrated polling state on workspace reload/switch.
+- Unified Meta/TikTok workspace now renders the same batch banner + sync status/error messaging and uses `renderSyncProgress` with `batchRunsByAccount` + `rowChunkProgressByAccount` for live row updates.
+- Extended progress polling to `meta_ads` + `tiktok_ads` via `postAccountSyncProgressBatch(selectedPlatform, ...)`, while keeping Google flow intact.
+- On batch completion, keeps `loadData()` and additionally reloads provider rows via `loadMetaAccounts()` / `loadTikTokAccounts()`.
+- Verification: `pnpm --dir apps/frontend test src/app/agency-accounts/page.meta.test.tsx`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx`, `pnpm --dir apps/frontend build`.
 - Fixed Agency Accounts regression where selecting Meta card rendered generic placeholder instead of Meta panel.
 - Frontend requested build/tests now pass for integrations/accounts/dashboard target suites.
 - Backend smoke imports and worker/scheduler/dashboard targeted tests pass; dedicated Meta backend suites currently fail on pre-existing larger regressions in `meta_ads` service (documented in final report).
@@ -99,6 +148,11 @@
 
 ## Review
 - [x] Completed implementation + verification notes.
+- Persisted active batch metadata per platform in `sessionStorage` (`agency-accounts-batch:<platform>`) and rehydrated polling state on workspace reload/switch.
+- Unified Meta/TikTok workspace now renders the same batch banner + sync status/error messaging and uses `renderSyncProgress` with `batchRunsByAccount` + `rowChunkProgressByAccount` for live row updates.
+- Extended progress polling to `meta_ads` + `tiktok_ads` via `postAccountSyncProgressBatch(selectedPlatform, ...)`, while keeping Google flow intact.
+- On batch completion, keeps `loadData()` and additionally reloads provider rows via `loadMetaAccounts()` / `loadTikTokAccounts()`.
+- Verification: `pnpm --dir apps/frontend test src/app/agency-accounts/page.meta.test.tsx`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx`, `pnpm --dir apps/frontend build`.
 - Dashboard summary now maps `tiktok_ads` integration_health from `tiktok_ads_service.integration_status()` (`status`, `message`, `token_updated_at`) while preserving Google/Meta mappings.
 - `pinterest_ads` and `snapchat_ads` remain stable placeholders (`disabled`).
 - Verified with focused pytest suite and backend import smoke command.

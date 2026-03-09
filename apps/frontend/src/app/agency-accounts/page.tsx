@@ -139,11 +139,25 @@ type RowChunkProgress = {
   dateEnd?: string | null;
 };
 
+type UnifiedProviderAccount = {
+  id: string;
+  name: string;
+  attachedClientId: number | null;
+  attachedClientName: string | null;
+  lastSuccessAt: string | null;
+  lastError: string | null;
+  lastRunStatus: string | null;
+  lastRunType: string | null;
+  syncStartDate: string | null;
+  backfillCompletedThrough: string | null;
+  rollingSyncedThrough: string | null;
+};
 
 const DEFAULT_HISTORICAL_START = "2024-01-09";
 const DEFAULT_META_TIKTOK_HISTORICAL_START = "2024-09-01";
 const META_TIKTOK_HISTORICAL_GRAINS = ["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"] as const;
 const _PROGRESS_BATCH_ACCOUNT_IDS_MAX = 200;
+const BATCH_STORAGE_PREFIX = "agency-accounts-batch";
 
 function prettyPlatform(platform: string): string {
   const map: Record<string, string> = {
@@ -214,6 +228,10 @@ function getHistoricalStartDate(platform: string): string {
   return DEFAULT_HISTORICAL_START;
 }
 
+function getBatchStorageKey(platform: string): string {
+  return `${BATCH_STORAGE_PREFIX}:${platform}`;
+}
+
 function buildHistoricalBatchPayload(platform: string, accountIds: string[]): Record<string, unknown> {
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
@@ -281,6 +299,7 @@ export default function AgencyAccountsPage() {
   const [syncStatusMessage, setSyncStatusMessage] = useState("");
 
   const [currentBatchId, setCurrentBatchId] = useState<string | null>(null);
+  const [currentBatchPlatform, setCurrentBatchPlatform] = useState<string | null>(null);
   const [currentJobType, setCurrentJobType] = useState<"historical_backfill" | null>(null);
   const [currentHistoricalStartDate, setCurrentHistoricalStartDate] = useState<string | null>(null);
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
@@ -375,7 +394,7 @@ export default function AgencyAccountsPage() {
     return filteredGoogleAccounts.slice(start, start + accountsPageSize);
   }, [filteredGoogleAccounts, accountsPage, accountsPageSize]);
 
-  const unifiedProviderAccounts = useMemo(() => {
+  const unifiedProviderAccounts = useMemo<UnifiedProviderAccount[]>(() => {
     if (selectedPlatform === "meta_ads") {
       return metaAccounts.map((account) => ({
         id: String(account.account_id || "").trim(),
@@ -508,7 +527,7 @@ export default function AgencyAccountsPage() {
   }
 
   function renderSyncProgress(
-    account: GoogleAccount,
+    account: Pick<GoogleAccount, "id" | "last_run_status" | "last_run_type" | "has_active_sync">,
     rowStatus?: string | null,
     chunkProgress?: RowChunkProgress | null,
   ): JSX.Element {
@@ -618,6 +637,52 @@ export default function AgencyAccountsPage() {
     if (selectedPlatform !== "tiktok_ads") return;
     void loadTikTokAccounts();
   }, [selectedPlatform]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.sessionStorage.getItem(getBatchStorageKey(selectedPlatform));
+      if (!raw) return;
+      const stored = JSON.parse(raw) as { batchId?: string; platform?: string; jobType?: "historical_backfill" | null; historicalStartDate?: string | null };
+      if (!stored.batchId || !stored.platform) return;
+      setCurrentBatchId(stored.batchId);
+      setCurrentBatchPlatform(stored.platform);
+      setCurrentJobType(stored.jobType ?? "historical_backfill");
+      setCurrentHistoricalStartDate(stored.historicalStartDate ?? getHistoricalStartDate(stored.platform));
+      setRunningAction("historical");
+    } catch {
+      // ignore malformed storage
+    }
+  }, [selectedPlatform]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const storagePlatforms = ["google_ads", "meta_ads", "tiktok_ads"];
+    if (!currentBatchId || !currentBatchPlatform) {
+      for (const platform of storagePlatforms) {
+        const raw = window.sessionStorage.getItem(getBatchStorageKey(platform));
+        if (!raw) continue;
+        try {
+          const stored = JSON.parse(raw) as { batchId?: string };
+          if (!stored.batchId || stored.batchId === currentBatchId) {
+            window.sessionStorage.removeItem(getBatchStorageKey(platform));
+          }
+        } catch {
+          window.sessionStorage.removeItem(getBatchStorageKey(platform));
+        }
+      }
+      return;
+    }
+    window.sessionStorage.setItem(
+      getBatchStorageKey(currentBatchPlatform),
+      JSON.stringify({
+        batchId: currentBatchId,
+        platform: currentBatchPlatform,
+        jobType: currentJobType,
+        historicalStartDate: currentHistoricalStartDate,
+      }),
+    );
+  }, [currentBatchId, currentBatchPlatform, currentJobType, currentHistoricalStartDate]);
 
   useEffect(() => {
     setAccountsPage(1);
@@ -853,6 +918,7 @@ export default function AgencyAccountsPage() {
     setActionBusy(true);
     setRunningAction("historical");
     setCurrentJobType("historical_backfill");
+    setCurrentBatchPlatform(platform);
     setCurrentHistoricalStartDate(historicalStartDateUsed);
     try {
       const payload = await apiRequest<BatchCreateResponse>("/agency/sync-runs/batch", {
@@ -867,6 +933,7 @@ export default function AgencyAccountsPage() {
       }
     } catch (err) {
       setCurrentBatchId(null);
+      setCurrentBatchPlatform(null);
       setRunningAction(null);
       setSyncError(err instanceof Error ? err.message : "Nu am putut porni backfill-ul istoric.");
     } finally {
@@ -894,6 +961,7 @@ export default function AgencyAccountsPage() {
         const activeCount = Number(payload.progress.queued || 0) + Number(payload.progress.running || 0);
         if (activeCount <= 0) {
           setCurrentBatchId(null);
+          setCurrentBatchPlatform(null);
           setRunningAction(null);
           if (Number(payload.progress.error || 0) > 0) {
             setSyncStatusMessage(`Sync finalizat cu erori: ${payload.progress.error} conturi`);
@@ -901,10 +969,13 @@ export default function AgencyAccountsPage() {
             setSyncStatusMessage(`Date istorice descarcate începând cu ${formatRoDate(currentHistoricalStartDate)}`);
           }
           void loadData();
+          if (currentBatchPlatform === "meta_ads") void loadMetaAccounts();
+          if (currentBatchPlatform === "tiktok_ads") void loadTikTokAccounts();
         }
       } catch (err) {
         if (cancelled) return;
         setCurrentBatchId(null);
+        setCurrentBatchPlatform(null);
         setRunningAction(null);
         setSyncError(err instanceof Error ? err.message : "Polling batch eșuat.");
       }
@@ -919,11 +990,21 @@ export default function AgencyAccountsPage() {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [currentBatchId, currentHistoricalStartDate, currentJobType]);
+  }, [currentBatchId, currentHistoricalStartDate, currentJobType, currentBatchPlatform]);
 
 
   useEffect(() => {
-    if (selectedPlatform !== "google_ads" || activeSyncAccountIds.length <= 0) {
+    const supportedPlatform = selectedPlatform === "google_ads" || selectedPlatform === "meta_ads" || selectedPlatform === "tiktok_ads";
+    if (!supportedPlatform) {
+      setRowChunkProgressByAccount({});
+      return;
+    }
+
+    const pollAccountIds = selectedPlatform === "google_ads"
+      ? activeSyncAccountIds
+      : selectableFilteredAccountIds;
+
+    if (pollAccountIds.length <= 0) {
       setRowChunkProgressByAccount({});
       return;
     }
@@ -933,12 +1014,12 @@ export default function AgencyAccountsPage() {
     async function refreshActiveRunsProgress() {
       try {
         const chunks: string[][] = [];
-        for (let index = 0; index < activeSyncAccountIds.length; index += _PROGRESS_BATCH_ACCOUNT_IDS_MAX) {
-          chunks.push(activeSyncAccountIds.slice(index, index + _PROGRESS_BATCH_ACCOUNT_IDS_MAX));
+        for (let index = 0; index < pollAccountIds.length; index += _PROGRESS_BATCH_ACCOUNT_IDS_MAX) {
+          chunks.push(pollAccountIds.slice(index, index + _PROGRESS_BATCH_ACCOUNT_IDS_MAX));
         }
 
         const batchResponses = await Promise.all(
-          chunks.map((accountIdsChunk) => postAccountSyncProgressBatch("google_ads", accountIdsChunk, true)),
+          chunks.map((accountIdsChunk) => postAccountSyncProgressBatch(selectedPlatform, accountIdsChunk, true)),
         );
 
         if (cancelled) return;
@@ -981,7 +1062,7 @@ export default function AgencyAccountsPage() {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [activeSyncAccountIds, selectedPlatform]);
+  }, [activeSyncAccountIds, selectableFilteredAccountIds, selectedPlatform]);
 
   const isBatchActive = Boolean(currentBatchId);
   const controlsDisabled = loading || actionBusy || isBatchActive;
@@ -1046,6 +1127,19 @@ export default function AgencyAccountsPage() {
                   {` (din ${selectableFilteredAccountIds.length} filtrate)`}
                   {selectedEligibleAccounts.length !== selectedAccountIds.size ? ` · ${selectedEligibleAccounts.length} eligibile pentru sync` : ""}
                 </div>
+                {isBatchActive && batchProgress ? (
+                  <div className="mt-3 rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900">
+                    <p className="font-medium">Batch în progres ({batchProgress.percent.toFixed(0)}%)</p>
+                    <p className="mt-1 text-xs">
+                      {batchProgress.done}/{batchProgress.total_runs} done · {batchProgress.running} running · {batchProgress.queued} queued · {batchProgress.error} errors
+                    </p>
+                    <div className="mt-2 h-2 w-full overflow-hidden rounded bg-indigo-100">
+                      <div className="h-full bg-indigo-600 transition-all" style={{ width: `${Math.max(0, Math.min(100, Number(batchProgress.percent || 0)))}%` }} />
+                    </div>
+                  </div>
+                ) : null}
+                {syncError ? <p className="mt-2 text-sm text-red-600">{syncError}</p> : null}
+                {syncStatusMessage ? <p className="mt-2 text-sm text-indigo-700">{syncStatusMessage}</p> : null}
                 {selectedPlatform === "meta_ads" && metaActionMessage ? <p className="mt-2 text-sm text-emerald-700">{metaActionMessage}</p> : null}
                 {selectedPlatform === "meta_ads" && metaActionError ? <p className="mt-2 text-sm text-red-600">{metaActionError}</p> : null}
                 {selectedPlatform === "tiktok_ads" && tiktokActionMessage ? <p className="mt-2 text-sm text-emerald-700">{tiktokActionMessage}</p> : null}
@@ -1135,9 +1229,16 @@ export default function AgencyAccountsPage() {
                           </div>
                           <div>
                             <p className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Sync progress</p>
-                            <p className="text-xs font-medium text-slate-700">Status: {account.lastRunStatus || "-"}</p>
-                            <div className="mt-1 h-2 w-full overflow-hidden rounded bg-slate-200" />
-                            <p className="mt-1 text-xs text-slate-500">Tip run: {account.lastRunType || "-"}</p>
+                            {renderSyncProgress(
+                              {
+                                id: account.id,
+                                last_run_status: account.lastRunStatus,
+                                last_run_type: account.lastRunType,
+                                has_active_sync: false,
+                              },
+                              batchRunsByAccount[account.id],
+                              rowChunkProgressByAccount[account.id],
+                            )}
                             <p className="mt-1 text-xs text-slate-500">Istoric până la: {account.backfillCompletedThrough || "-"}</p>
                             <p className="text-xs text-slate-500">Rolling până la: {account.rollingSyncedThrough || "-"}</p>
                           </div>
