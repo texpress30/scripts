@@ -83,6 +83,8 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
 
 export type AccountSyncRun = {
   job_id: string;
+  platform?: string | null;
+  account_id?: string | null;
   batch_id?: string | null;
   job_type?: string | null;
   grain?: string | null;
@@ -94,6 +96,9 @@ export type AccountSyncRun = {
   rows_written?: number | null;
   error_count?: number | null;
   error?: string | null;
+  last_error_summary?: string | null;
+  last_error_details?: Record<string, unknown> | null;
+  last_error_category?: string | null;
   created_at?: string | null;
   started_at?: string | null;
   finished_at?: string | null;
@@ -126,6 +131,9 @@ export type AccountSyncProgressActiveRun = {
   chunks_total?: number | null;
   errors_count?: number | null;
   error_chunks?: number | null;
+  last_error_summary?: string | null;
+  last_error_details?: Record<string, unknown> | null;
+  last_error_category?: string | null;
 };
 
 export type AccountSyncProgressBatchResult = {
