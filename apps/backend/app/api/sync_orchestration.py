@@ -275,6 +275,9 @@ def _serialize_run(item: dict[str, object]) -> dict[str, object]:
         trigger_source = "manual"
     elif str(trigger_source) in {"rolling_scheduler", "cron"}:
         trigger_source = "cron"
+    last_error_summary = metadata.get("last_error_summary") or item.get("error")
+    last_error_details = metadata.get("last_error_details") if isinstance(metadata.get("last_error_details"), dict) else None
+
     return {
         "job_id": item.get("job_id"),
         "batch_id": item.get("batch_id"),
@@ -294,6 +297,8 @@ def _serialize_run(item: dict[str, object]) -> dict[str, object]:
         "active_chunks": item.get("active_chunks"),
         "percent_complete": item.get("percent_complete"),
         "error": item.get("error"),
+        "last_error_summary": last_error_summary,
+        "last_error_details": last_error_details,
         "created_at": item.get("created_at"),
         "updated_at": item.get("updated_at"),
         "started_at": item.get("started_at"),
