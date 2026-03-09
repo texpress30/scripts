@@ -187,4 +187,63 @@ describe("Agency Account detail Meta/TikTok parity", () => {
     expect(screen.getAllByText(/still failing/i).length).toBeGreaterThanOrEqual(1);
   });
 
+
+  it("renders grain in run title when grain exists", async () => {
+    paramsState.platform = "meta_ads";
+    paramsState.accountId = "act_1";
+
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients/accounts/meta_ads") {
+        return Promise.resolve({ items: [{ account_id: "act_1", account_name: "Meta One", platform: "meta_ads", client_name: "Client A" }] });
+      }
+      if (path.includes("/accounts/meta_ads/act_1")) {
+        return Promise.resolve({
+          runs: [
+            {
+              job_id: "m-run-grain",
+              job_type: "historical_backfill",
+              grain: "campaign_daily",
+              status: "done",
+              created_at: "2026-03-09T10:00:00Z",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountDetailPage />);
+
+    expect(await screen.findByText(/historical_backfill · campaign_daily ·/i)).toBeInTheDocument();
+  });
+
+  it("keeps title fallback format when grain is missing", async () => {
+    paramsState.platform = "meta_ads";
+    paramsState.accountId = "act_1";
+
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients/accounts/meta_ads") {
+        return Promise.resolve({ items: [{ account_id: "act_1", account_name: "Meta One", platform: "meta_ads", client_name: "Client A" }] });
+      }
+      if (path.includes("/accounts/meta_ads/act_1")) {
+        return Promise.resolve({
+          runs: [
+            {
+              job_id: "m-run-no-grain",
+              job_type: "historical_backfill",
+              status: "done",
+              created_at: "2026-03-09T10:00:00Z",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountDetailPage />);
+
+    expect(await screen.findByText(/historical_backfill ·/i)).toBeInTheDocument();
+    expect(screen.queryByText(/historical_backfill ·\s*·/i)).not.toBeInTheDocument();
+  });
+
 });

@@ -130,6 +130,16 @@ function hasRetryFailedSignals(run: SyncRun): boolean {
   return String(run.error ?? "").trim().length > 0;
 }
 
+
+function runTitle(run: SyncRun): string {
+  const jobType = String(run.job_type ?? "unknown").trim() || "unknown";
+  const grain = String(run.grain ?? "").trim();
+  const parts = [jobType];
+  if (grain) parts.push(grain);
+  parts.push(formatDate(run.created_at));
+  return parts.join(" · ");
+}
+
 function toRunTimestamp(run?: SyncRun | null): number {
   if (!run) return 0;
   const raw = run.finished_at ?? run.started_at ?? run.created_at ?? null;
@@ -610,7 +620,7 @@ export default function AgencyAccountDetailPage() {
                         onClick={() => toggleRunExpanded(run.job_id)}
                       >
                         <div className="min-w-0">
-                          <p className="text-sm font-medium text-slate-900">{run.job_type ?? "unknown"} · {formatDate(run.created_at)}</p>
+                          <p className="text-sm font-medium text-slate-900">{runTitle(run)}</p>
                           <p className="text-xs text-slate-600">{run.date_start ?? "-"} → {run.date_end ?? "-"} · start: {formatDate(run.started_at)} · end: {formatDate(run.finished_at)}</p>
                         </div>
                         <div className="flex items-center gap-2">
