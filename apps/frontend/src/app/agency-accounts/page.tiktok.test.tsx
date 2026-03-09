@@ -185,4 +185,22 @@ describe("AgencyAccountsPage TikTok historical progress UX", () => {
     expect(button).toBeDisabled();
   });
 
+  it("keeps Download historical enabled when backend summary reports TikTok enabled", async () => {
+    vi.stubEnv("NEXT_PUBLIC_FF_TIKTOK_INTEGRATION", "0");
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients") return Promise.resolve({ items: [{ id: 1, name: "Client A", owner_email: "a@x.com", display_id: 1 }] });
+      if (path === "/clients/accounts/summary") return Promise.resolve({ items: [{ platform: "google_ads", connected_count: 1, last_import_at: null }, { platform: "tiktok_ads", connected_count: 1, last_import_at: null, sync_enabled: true }] });
+      if (path === "/clients/accounts/google") return Promise.resolve({ items: [{ id: "g_1", name: "G1", attached_client_id: 1, attached_client_name: "Client A" }], count: 1 });
+      if (path === "/clients/accounts/tiktok_ads") return Promise.resolve({ items: [{ id: "tt_attached", name: "TikTok One", client_id: 1, client_name: "Client A" }], count: 1, sync_enabled: true });
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /TikTok Ads/i }));
+    fireEvent.click(await screen.findByTestId("row-select-tt_attached"));
+    expect(screen.queryByText(/TikTok sync este dezactivat în acest environment/i)).not.toBeInTheDocument();
+    const button = await screen.findByRole("button", { name: "Download historical" });
+    expect(button).not.toBeDisabled();
+  });
+
 });

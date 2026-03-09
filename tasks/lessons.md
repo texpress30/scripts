@@ -232,3 +232,4 @@
 - 2026-03-09: After explicit user correction about scope quality, prioritize concrete backend contract+scoping bug fixes with executable tests over broad parity/generalization work; ship minimal code-path changes first.
 - 2026-03-09: For provider preflight/error-taxonomy tasks, avoid passing classification labels containing 'token' through generic secret-mask sanitizers; preserve enum values explicitly after payload sanitization.
 - 2026-03-09: When adding provider-specific UI logic in shared pages, verify both provider and Google-only sections separately to avoid accidental type narrowing regressions.
+- 2026-03-09: When user provides exact git sync commands (including auth remote), execute them first and then complete reconciliation (--rebase/merge) if pull requires explicit strategy.

@@ -97,6 +97,27 @@ describe("Agency Account detail Meta/TikTok parity", () => {
     expect(screen.getByText(/Sync runs/)).toBeInTheDocument();
   });
 
+  it("shows disabled TikTok sync banner when platform sync_enabled is false", async () => {
+    paramsState.platform = "tiktok_ads";
+    paramsState.accountId = "tt_1";
+
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients/accounts/tiktok_ads") {
+        return Promise.resolve({
+          sync_enabled: false,
+          items: [{ id: "tt_1", name: "TikTok One", platform: "tiktok_ads", client_name: "Client B" }],
+        });
+      }
+      if (path.includes("/accounts/tiktok_ads/tt_1")) {
+        return Promise.resolve({ runs: [] });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountDetailPage />);
+    expect(await screen.findByText(/TikTok sync este dezactivat în acest environment/i)).toBeInTheDocument();
+  });
+
   it("renders TikTok error category title and safe details in detail banner and run card", async () => {
     paramsState.platform = "tiktok_ads";
     paramsState.accountId = "tt_1";

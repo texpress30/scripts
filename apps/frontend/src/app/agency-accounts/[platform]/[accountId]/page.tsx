@@ -45,6 +45,7 @@ type EffectiveSyncHeader = {
 };
 
 type AccountsListResponse = {
+  sync_enabled?: boolean | null;
   items: AccountMeta[];
 };
 
@@ -178,6 +179,7 @@ export default function AgencyAccountDetailPage() {
   const [repairNotice, setRepairNotice] = useState<RepairNotice | null>(null);
   const [retryingJobId, setRetryingJobId] = useState<string | null>(null);
   const [retryNotice, setRetryNotice] = useState<RetryNotice | null>(null);
+  const [platformSyncEnabled, setPlatformSyncEnabled] = useState<boolean | null>(null);
 
   const runsSorted = useMemo(() => {
     return [...runs].sort((a, b) => {
@@ -305,6 +307,7 @@ export default function AgencyAccountDetailPage() {
     setMetaError("");
     try {
       const payload = await apiRequest<AccountsListResponse>(endpoint);
+      setPlatformSyncEnabled(typeof payload.sync_enabled === "boolean" ? payload.sync_enabled : null);
       const normalizedTarget = normalizeAccountId(accountId);
       const normalizedItems = (payload.items ?? []).map((item) => normalizeAccountMetaForPlatform(platform, item));
       const found = normalizedItems.find((item) => normalizeAccountId(String(item.id ?? item.account_id ?? "")) === normalizedTarget);
@@ -616,6 +619,11 @@ export default function AgencyAccountDetailPage() {
                   <p className="mt-1 text-xs text-red-600">Detalii: {latestTikTokErrorPresentation.details}</p>
                 ) : null}
               </div>
+            ) : null}
+            {platform === "tiktok_ads" && platformSyncEnabled === false ? (
+              <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                TikTok sync este dezactivat în acest environment.
+              </p>
             ) : null}
 
             {visibleRuns.length > 0 ? (

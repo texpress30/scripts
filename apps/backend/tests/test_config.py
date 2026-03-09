@@ -69,6 +69,24 @@ class ConfigTests(unittest.TestCase):
         self.assertTrue(settings.ff_pinterest_integration)
         self.assertTrue(settings.ff_snapchat_integration)
 
+    def test_tiktok_sync_enabled_alias_overrides_legacy_flag(self):
+        os.environ.clear()
+        os.environ["APP_AUTH_SECRET"] = "test-auth-secret"
+        os.environ["FF_TIKTOK_INTEGRATION"] = "0"
+        os.environ["TIKTOK_SYNC_ENABLED"] = "1"
+
+        settings = load_settings()
+        self.assertTrue(settings.ff_tiktok_integration)
+
+    def test_tiktok_sync_enabled_alias_false_disables_even_if_legacy_true(self):
+        os.environ.clear()
+        os.environ["APP_AUTH_SECRET"] = "test-auth-secret"
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        os.environ["TIKTOK_SYNC_ENABLED"] = "0"
+
+        settings = load_settings()
+        self.assertFalse(settings.ff_tiktok_integration)
+
     def test_tiktok_retry_settings_are_configurable(self):
         os.environ.clear()
         os.environ["APP_AUTH_SECRET"] = "test-auth-secret"
