@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest, listAccountSyncRuns, repairSyncRun, retryFailedSyncRun, type AccountSyncRun } from "@/lib/api";
+import { getEffectiveAccountStatus, isRunActive, isRunFailure, isRunSupersededByLaterSuccess, normalizeJobType, normalizeStatus } from "../../sync-runs";
 
 type AccountMeta = {
   id: string;
@@ -112,13 +113,6 @@ function normalizeAccountMetaForPlatform(platform: string, item: AccountMeta): A
   };
 }
 
-function normalizeStatus(status?: string | null): string {
-  return String(status ?? "queued").toLowerCase();
-}
-
-function normalizeJobType(jobType?: string | null): string {
-  return String(jobType ?? "").trim().toLowerCase();
-}
 
 function statusBadge(status?: string | null): string {
   const normalized = normalizeStatus(status);
@@ -129,47 +123,11 @@ function statusBadge(status?: string | null): string {
   return "bg-slate-100 text-slate-700";
 }
 
-function isRunActive(status?: string | null): boolean {
-  return ["queued", "running", "pending"].includes(normalizeStatus(status));
-}
-
-function isRunTerminal(status?: string | null): boolean {
-  return ["done", "success", "completed", "error", "failed", "partial", "cancelled"].includes(normalizeStatus(status));
-}
-
 function hasRetryFailedSignals(run: SyncRun): boolean {
   const status = normalizeStatus(run.status);
   if (["error", "failed", "partial"].includes(status)) return true;
   if (Number(run.error_count ?? 0) > 0) return true;
   return String(run.error ?? "").trim().length > 0;
-}
-
-function parseDateOnly(value?: string | null): number | null {
-  const raw = String(value ?? "").trim();
-  if (!raw) return null;
-  const parsed = Date.parse(raw.length <= 10 ? `${raw}T00:00:00Z` : raw);
-  if (Number.isNaN(parsed)) return null;
-  return parsed;
-}
-
-function isSuccessStatus(status?: string | null): boolean {
-  return ["done", "success", "completed"].includes(normalizeStatus(status));
-}
-
-function retrySourceJobId(run: SyncRun): string {
-  const metadata = run.metadata && typeof run.metadata === "object" ? run.metadata : {};
-  const retryReason = String((metadata as { retry_reason?: unknown }).retry_reason ?? "").trim();
-  if (retryReason !== "failed_chunks") return "";
-  return String((metadata as { retry_of_job_id?: unknown }).retry_of_job_id ?? "").trim();
-}
-
-function coversRunRangeByAccountMeta(run: SyncRun, accountMeta: AccountMeta | null): boolean {
-  const accountStart = parseDateOnly(accountMeta?.sync_start_date);
-  const accountEnd = parseDateOnly(accountMeta?.backfill_completed_through);
-  const runStart = parseDateOnly(run.date_start);
-  const runEnd = parseDateOnly(run.date_end);
-  if (accountStart === null || accountEnd === null || runStart === null || runEnd === null) return false;
-  return accountStart <= runStart && accountEnd >= runEnd;
 }
 
 function toRunTimestamp(run?: SyncRun | null): number {
@@ -228,35 +186,20 @@ export default function AgencyAccountDetailPage() {
     () => runsSorted.find((run) => isRunActive(run.status) && normalizeJobType(run.job_type) === "historical_backfill") ?? null,
     [runsSorted],
   );
-  const successfulRetrySourceIds = useMemo(() => {
+  const supersededRunIds = useMemo(() => {
     const ids = new Set<string>();
     for (const run of runsSorted) {
-      if (normalizeJobType(run.job_type) !== "historical_backfill") continue;
-      if (!isSuccessStatus(run.status)) continue;
-      const sourceJobId = retrySourceJobId(run);
-      if (sourceJobId) ids.add(sourceJobId);
+      if (isRunSupersededByLaterSuccess(run, runsSorted, { accountSyncStart: accountMeta?.sync_start_date, accountBackfillThrough: accountMeta?.backfill_completed_through })) ids.add(run.job_id);
     }
     return ids;
-  }, [runsSorted]);
-  const fullyRecoveredSourceRunIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const run of runsSorted) {
-      if (normalizeJobType(run.job_type) !== "historical_backfill") continue;
-      if (!isRunTerminal(run.status)) continue;
-      if (!hasRetryFailedSignals(run)) continue;
-      if (!successfulRetrySourceIds.has(run.job_id)) continue;
-      if (!coversRunRangeByAccountMeta(run, accountMeta)) continue;
-      ids.add(run.job_id);
-    }
-    return ids;
-  }, [accountMeta, runsSorted, successfulRetrySourceIds]);
+  }, [accountMeta?.backfill_completed_through, accountMeta?.sync_start_date, runsSorted]);
+  const visibleRuns = useMemo(
+    () => runsSorted.filter((run) => !supersededRunIds.has(run.job_id)),
+    [runsSorted, supersededRunIds],
+  );
 
   const latestTerminalError = useMemo(() => {
-    const failedRun = runsSorted.find(
-      (run) =>
-        ["error", "failed", "partial"].includes(normalizeStatus(run.status)) &&
-        !fullyRecoveredSourceRunIds.has(run.job_id),
-    );
+    const failedRun = visibleRuns.find((run) => isRunFailure(run.status));
     if (!failedRun) return "";
     const summary = String((failedRun as { last_error_summary?: unknown }).last_error_summary ?? "").trim();
     if (summary) return summary;
@@ -268,17 +211,17 @@ export default function AgencyAccountDetailPage() {
       if (providerMessage) return providerMessage;
     }
     return "run failed";
-  }, [fullyRecoveredSourceRunIds, runsSorted]);
+  }, [visibleRuns]);
   const retryableFailedRun = useMemo(
     () =>
-      runsSorted.find(
+      visibleRuns.find(
         (run) =>
           normalizeJobType(run.job_type) === "historical_backfill" &&
-          isRunTerminal(run.status) &&
-          hasRetryFailedSignals(run) &&
-          !fullyRecoveredSourceRunIds.has(run.job_id),
+          !supersededRunIds.has(run.job_id) &&
+          ["error", "failed", "partial"].includes(normalizeStatus(run.status)) &&
+          hasRetryFailedSignals(run),
       ) ?? null,
-    [fullyRecoveredSourceRunIds, runsSorted],
+    [supersededRunIds, visibleRuns],
   );
   const retryActionRun = useMemo(() => {
     if (hasActiveHistoricalRun) return null;
@@ -286,13 +229,19 @@ export default function AgencyAccountDetailPage() {
   }, [hasActiveHistoricalRun, retryableFailedRun]);
   const latestRun = runsSorted[0] ?? null;
   const effectiveSyncHeader = useMemo<EffectiveSyncHeader>(() => {
+    const baseStatus = getEffectiveAccountStatus({
+      rowStatus: null,
+      lastRunStatus: accountMeta?.last_run_status ?? null,
+      hasActiveSync: accountMeta?.has_active_sync ?? false,
+      lastSuccessAt: accountMeta?.last_success_at ?? null,
+    });
     const metaBased: EffectiveSyncHeader = {
       hasActiveSync: Boolean(accountMeta?.has_active_sync),
-      lastRunStatus: accountMeta?.last_run_status ?? null,
+      lastRunStatus: baseStatus,
       lastRunType: accountMeta?.last_run_type ?? null,
       lastRunStartedAt: accountMeta?.last_run_started_at ?? null,
       lastRunFinishedAt: accountMeta?.last_run_finished_at ?? null,
-      lastError: accountMeta?.last_error ?? null,
+      lastError: latestTerminalError || null,
     };
     if (!latestRun) return metaBased;
 
@@ -301,17 +250,21 @@ export default function AgencyAccountDetailPage() {
       return { ...metaBased, hasActiveSync: hasActiveRun };
     }
 
-    const runStatus = latestRun.status ?? metaBased.lastRunStatus ?? null;
-    const runError = String(latestRun.error ?? "").trim();
+    const runStatus = getEffectiveAccountStatus({
+      rowStatus: latestRun.status ?? null,
+      lastRunStatus: metaBased.lastRunStatus ?? null,
+      hasActiveSync: hasActiveRun,
+      lastSuccessAt: accountMeta?.last_success_at ?? null,
+    });
     return {
       hasActiveSync: hasActiveRun,
       lastRunStatus: runStatus,
       lastRunType: latestRun.job_type ?? metaBased.lastRunType ?? null,
       lastRunStartedAt: latestRun.started_at ?? metaBased.lastRunStartedAt ?? null,
       lastRunFinishedAt: latestRun.finished_at ?? metaBased.lastRunFinishedAt ?? null,
-      lastError: runError || metaBased.lastError || null,
+      lastError: latestTerminalError || null,
     };
-  }, [accountMeta, hasActiveRun, latestRun]);
+  }, [accountMeta, hasActiveRun, latestRun, latestTerminalError]);
 
   const hadActiveRunRef = useRef(false);
 
@@ -629,7 +582,7 @@ export default function AgencyAccountDetailPage() {
             ) : null}
             {runsError ? <p className="mt-2 text-sm text-red-600">{runsError}</p> : null}
             {runsLoading ? <p className="mt-2 text-sm text-slate-500">Se încarcă sync runs...</p> : null}
-            {!runsLoading && runsSorted.length <= 0 && !runsError ? (
+            {!runsLoading && visibleRuns.length <= 0 && !runsError ? (
               <p className="mt-2 text-sm text-slate-500">Nu există sync runs pentru acest cont încă.</p>
             ) : null}
             {!hasActiveRun && latestTerminalError ? (
@@ -638,9 +591,9 @@ export default function AgencyAccountDetailPage() {
               </p>
             ) : null}
 
-            {runsSorted.length > 0 ? (
+            {visibleRuns.length > 0 ? (
               <div className="mt-3 space-y-3">
-                {runsSorted.map((run) => {
+                {visibleRuns.map((run) => {
                   const expanded = expandedRunIds.has(run.job_id);
                   const chunks = chunksByRun[run.job_id] ?? [];
                   const chunksLoading = Boolean(chunksLoadingByRun[run.job_id]);

@@ -96,4 +96,95 @@ describe("Agency Account detail Meta/TikTok parity", () => {
     });
     expect(screen.getByText(/Sync runs/)).toBeInTheDocument();
   });
+
+  it("hides superseded failed historical runs and clears false terminal banner", async () => {
+    paramsState.platform = "meta_ads";
+    paramsState.accountId = "act_1";
+
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients/accounts/meta_ads") {
+        return Promise.resolve({
+          items: [{ account_id: "act_1", account_name: "Meta One", platform: "meta_ads", client_name: "Client A", last_run_status: "done" }],
+        });
+      }
+      if (path.includes("/accounts/meta_ads/act_1")) {
+        return Promise.resolve({
+          runs: [
+            {
+              job_id: "m-old-failed",
+              job_type: "historical_backfill",
+              grain: "account_daily",
+              date_start: "2025-01-01",
+              date_end: "2025-01-31",
+              status: "error",
+              last_error_summary: "old historical failure",
+              created_at: "2026-03-09T08:00:00Z",
+            },
+            {
+              job_id: "m-new-success",
+              job_type: "historical_backfill",
+              grain: "account_daily",
+              date_start: "2025-01-01",
+              date_end: "2025-01-31",
+              status: "done",
+              created_at: "2026-03-09T10:00:00Z",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountDetailPage />);
+
+    await screen.findByText(/Account: Meta One/);
+    expect(screen.queryByText(/Ultimul run a eșuat/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/old historical failure/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/old historical failure/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^failed$/i)).not.toBeInTheDocument();
+    expect((await screen.findAllByText(/done/i)).length).toBeGreaterThan(0);
+  });
+
+  it("keeps unresolved failed runs visible and keeps banner", async () => {
+    paramsState.platform = "meta_ads";
+    paramsState.accountId = "act_1";
+
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients/accounts/meta_ads") {
+        return Promise.resolve({ items: [{ account_id: "act_1", account_name: "Meta One", platform: "meta_ads", client_name: "Client A" }] });
+      }
+      if (path.includes("/accounts/meta_ads/act_1")) {
+        return Promise.resolve({
+          runs: [
+            {
+              job_id: "m-failed-unresolved",
+              job_type: "historical_backfill",
+              grain: "campaign_daily",
+              date_start: "2025-02-01",
+              date_end: "2025-02-28",
+              status: "failed",
+              last_error_summary: "still failing",
+              created_at: "2026-03-09T09:00:00Z",
+            },
+            {
+              job_id: "m-success-different-scope",
+              job_type: "historical_backfill",
+              grain: "ad_daily",
+              date_start: "2025-02-01",
+              date_end: "2025-02-28",
+              status: "done",
+              created_at: "2026-03-09T10:00:00Z",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountDetailPage />);
+
+    expect(await screen.findByText(/Ultimul run a eșuat: still failing/)).toBeInTheDocument();
+    expect(screen.getAllByText(/still failing/i).length).toBeGreaterThanOrEqual(1);
+  });
+
 });

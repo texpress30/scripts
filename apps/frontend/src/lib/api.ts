@@ -83,6 +83,8 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
 
 export type AccountSyncRun = {
   job_id: string;
+  platform?: string | null;
+  account_id?: string | null;
   batch_id?: string | null;
   job_type?: string | null;
   grain?: string | null;

@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest, postAccountSyncProgressBatch, type AccountSyncProgressBatchResult } from "@/lib/api";
+import { getEffectiveAccountStatus } from "./sync-runs";
 
 type TikTokAccount = {
   id?: string;
@@ -319,12 +320,12 @@ export default function AgencyAccountsPage() {
 
 
   function getEffectiveStatus(account: GoogleAccount): string {
-    const rowStatus = String(batchRunsByAccount[account.id] ?? "").toLowerCase();
-    if (rowStatus) return rowStatus;
-    const runStatus = String(account.last_run_status ?? "").toLowerCase();
-    if (runStatus) return runStatus;
-    if (account.has_active_sync) return "running";
-    return "idle";
+    return getEffectiveAccountStatus({
+      rowStatus: batchRunsByAccount[account.id] ?? null,
+      lastRunStatus: account.last_run_status ?? null,
+      hasActiveSync: account.has_active_sync ?? false,
+      lastSuccessAt: account.last_success_at ?? null,
+    });
   }
 
   function isActiveAccount(account: GoogleAccount): boolean {
@@ -532,7 +533,7 @@ export default function AgencyAccountsPage() {
   }
 
   function renderSyncProgress(
-    account: Pick<GoogleAccount, "id" | "last_run_status" | "last_run_type" | "has_active_sync">,
+    account: Pick<GoogleAccount, "id" | "last_run_status" | "last_run_type" | "has_active_sync" | "last_success_at">,
     rowStatus?: string | null,
     chunkProgress?: RowChunkProgress | null,
   ): JSX.Element {
@@ -541,7 +542,12 @@ export default function AgencyAccountsPage() {
     const hasStandaloneActiveSync = !rowStatus && Boolean(account.has_active_sync);
     const isActiveSyncRow = isBatchActiveRow || hasStandaloneActiveSync;
 
-    const statusText = rowStatus || account.last_run_status || (account.has_active_sync ? "running" : "idle");
+    const statusText = getEffectiveAccountStatus({
+      rowStatus: rowStatus ?? null,
+      lastRunStatus: account.last_run_status ?? null,
+      hasActiveSync: account.has_active_sync ?? false,
+      lastSuccessAt: account.last_success_at ?? null,
+    });
     const normalizedStatusText = String(statusText).toLowerCase();
 
     const fallbackPercent = normalizedRowStatus === "queued" ? 14 : 52;
