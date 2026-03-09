@@ -8,6 +8,34 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest, postAccountSyncProgressBatch, type AccountSyncProgressBatchResult } from "@/lib/api";
 
+type TikTokAccount = {
+  id?: string;
+  name?: string;
+  account_id?: string;
+  account_name?: string;
+  client_id?: number | null;
+  client_name?: string | null;
+  is_attached?: boolean | null;
+  attached_client_id?: number | null;
+  attached_client_name?: string | null;
+  status?: string | null;
+  currency?: string | null;
+  timezone?: string | null;
+  last_success_at?: string | null;
+  last_error?: string | null;
+  sync_start_date?: string | null;
+  backfill_completed_through?: string | null;
+  rolling_synced_through?: string | null;
+  last_run_status?: string | null;
+  last_run_type?: string | null;
+};
+
+type TikTokAccountsResponse = {
+  items?: TikTokAccount[];
+  count?: number;
+  last_import_at?: string | null;
+};
+
 type ClientRecord = {
   id: number;
   name: string;
@@ -54,6 +82,25 @@ type GoogleAccountsResponse = {
   last_import_at?: string | null;
 };
 
+type MetaAccount = {
+  platform: string;
+  account_id: string;
+  account_name?: string;
+  client_id?: number | null;
+  client_name?: string | null;
+  is_attached?: boolean;
+  status?: string | null;
+  currency?: string | null;
+  timezone?: string | null;
+};
+
+type MetaAccountsResponse = {
+  platform: string;
+  items: MetaAccount[];
+  count: number;
+  last_import_at?: string | null;
+};
+
 type BatchRun = {
   account_id?: string | null;
   status?: string | null;
@@ -94,6 +141,8 @@ type RowChunkProgress = {
 
 
 const DEFAULT_HISTORICAL_START = "2024-01-09";
+const DEFAULT_META_TIKTOK_HISTORICAL_START = "2024-09-01";
+const META_TIKTOK_HISTORICAL_GRAINS = ["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"] as const;
 const _PROGRESS_BATCH_ACCOUNT_IDS_MAX = 200;
 
 function prettyPlatform(platform: string): string {
@@ -139,12 +188,57 @@ function accountDisplayName(account: GoogleAccount): string {
   return clean ? clean : `Google Account ${account.id}`;
 }
 
+function metaAccountDisplayName(account: MetaAccount): string {
+  const clean = String(account.account_name || "").trim();
+  if (clean !== "") return clean;
+  return `Meta Account ${account.account_id}`;
+}
+
+function tiktokAccountDisplayName(account: TikTokAccount): string {
+  const clean = String(account.name || account.account_name || "").trim();
+  if (clean !== "") return clean;
+  const id = String(account.id || account.account_id || "").trim();
+  return `TikTok Account ${id || "unknown"}`;
+}
+
 function actionButtonClass(variant: "historical" | "ghost"): string {
   const base = "inline-flex items-center rounded-md px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50";
   if (variant === "historical") {
     return `${base} bg-emerald-600 text-white hover:bg-emerald-700`;
   }
   return `${base} border border-slate-300 bg-white text-slate-700 hover:bg-slate-50`;
+}
+
+function getHistoricalStartDate(platform: string): string {
+  if (platform === "meta_ads" || platform === "tiktok_ads") return DEFAULT_META_TIKTOK_HISTORICAL_START;
+  return DEFAULT_HISTORICAL_START;
+}
+
+function buildHistoricalBatchPayload(platform: string, accountIds: string[]): Record<string, unknown> {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  if (platform === "meta_ads" || platform === "tiktok_ads") {
+    return {
+      platform,
+      account_ids: accountIds,
+      job_type: "historical_backfill",
+      start_date: getHistoricalStartDate(platform),
+      end_date: toIsoDateLocal(yesterday),
+      chunk_days: 30,
+      grains: [...META_TIKTOK_HISTORICAL_GRAINS],
+    };
+  }
+
+  return {
+    platform: "google_ads",
+    account_ids: accountIds,
+    chunk_days: 7,
+    grain: "account_daily",
+    job_type: "historical_backfill",
+    start_date: getHistoricalStartDate("google_ads"),
+    end_date: toIsoDateLocal(yesterday),
+  };
 }
 
 export default function AgencyAccountsPage() {
@@ -154,6 +248,22 @@ export default function AgencyAccountsPage() {
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [summary, setSummary] = useState<AccountSummaryItem[]>([]);
   const [googleAccounts, setGoogleAccounts] = useState<GoogleAccount[]>([]);
+  const [metaAccounts, setMetaAccounts] = useState<MetaAccount[]>([]);
+  const [metaLastImportAt, setMetaLastImportAt] = useState<string | null>(null);
+  const [metaLoading, setMetaLoading] = useState(false);
+  const [metaLoadError, setMetaLoadError] = useState("");
+  const [metaActionError, setMetaActionError] = useState("");
+  const [metaActionMessage, setMetaActionMessage] = useState("");
+  const [metaAttachClientByAccount, setMetaAttachClientByAccount] = useState<Record<string, string>>({});
+  const [metaBusyByAccount, setMetaBusyByAccount] = useState<Record<string, "attach" | "detach">>({});
+  const [tiktokAccounts, setTikTokAccounts] = useState<TikTokAccount[]>([]);
+  const [tiktokLastImportAt, setTikTokLastImportAt] = useState<string | null>(null);
+  const [tiktokLoading, setTikTokLoading] = useState(false);
+  const [tiktokLoadError, setTikTokLoadError] = useState("");
+  const [tiktokActionError, setTikTokActionError] = useState("");
+  const [tiktokActionMessage, setTikTokActionMessage] = useState("");
+  const [tiktokAttachClientByAccount, setTikTokAttachClientByAccount] = useState<Record<string, string>>({});
+  const [tiktokBusyByAccount, setTikTokBusyByAccount] = useState<Record<string, "attach" | "detach">>({});
   const [selectedPlatform, setSelectedPlatform] = useState("google_ads");
 
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
@@ -265,15 +375,71 @@ export default function AgencyAccountsPage() {
     return filteredGoogleAccounts.slice(start, start + accountsPageSize);
   }, [filteredGoogleAccounts, accountsPage, accountsPageSize]);
 
-  const selectablePageAccountIds = useMemo(
-    () => pagedGoogleAccounts.filter((item) => Boolean(item.attached_client_id)).map((item) => item.id),
-    [pagedGoogleAccounts],
+  const unifiedProviderAccounts = useMemo(() => {
+    if (selectedPlatform === "meta_ads") {
+      return metaAccounts.map((account) => ({
+        id: String(account.account_id || "").trim(),
+        name: metaAccountDisplayName(account),
+        attachedClientId: account.client_id ?? null,
+        attachedClientName: account.client_name ?? null,
+        lastSuccessAt: null,
+        lastError: null,
+        lastRunStatus: null,
+        lastRunType: null,
+        syncStartDate: null,
+        backfillCompletedThrough: null,
+        rollingSyncedThrough: null,
+      }));
+    }
+    if (selectedPlatform === "tiktok_ads") {
+      return tiktokAccounts.map((account) => ({
+        id: String(account.id || account.account_id || "").trim(),
+        name: tiktokAccountDisplayName(account),
+        attachedClientId: account.client_id ?? account.attached_client_id ?? null,
+        attachedClientName: account.client_name ?? account.attached_client_name ?? null,
+        lastSuccessAt: account.last_success_at ?? null,
+        lastError: account.last_error ?? null,
+        lastRunStatus: account.last_run_status ?? null,
+        lastRunType: account.last_run_type ?? null,
+        syncStartDate: account.sync_start_date ?? null,
+        backfillCompletedThrough: account.backfill_completed_through ?? null,
+        rollingSyncedThrough: account.rolling_synced_through ?? null,
+      }));
+    }
+    return [];
+  }, [selectedPlatform, metaAccounts, tiktokAccounts]);
+
+  const filteredUnifiedProviderAccounts = useMemo(() => {
+    const needle = clientFilter.trim().toLowerCase();
+    return unifiedProviderAccounts.filter((account) => {
+      if (!needle) return true;
+      return String(account.attachedClientName || "").toLowerCase().includes(needle);
+    });
+  }, [unifiedProviderAccounts, clientFilter]);
+
+  const totalUnifiedAccountsPages = useMemo(
+    () => Math.max(1, Math.ceil(filteredUnifiedProviderAccounts.length / accountsPageSize)),
+    [filteredUnifiedProviderAccounts.length, accountsPageSize],
   );
 
-  const selectableFilteredAccountIds = useMemo(
-    () => filteredGoogleAccounts.filter((item) => Boolean(item.attached_client_id)).map((item) => item.id),
-    [filteredGoogleAccounts],
-  );
+  const pagedUnifiedProviderAccounts = useMemo(() => {
+    const start = (accountsPage - 1) * accountsPageSize;
+    return filteredUnifiedProviderAccounts.slice(start, start + accountsPageSize);
+  }, [filteredUnifiedProviderAccounts, accountsPage, accountsPageSize]);
+
+  const selectablePageAccountIds = useMemo(() => {
+    if (selectedPlatform === "google_ads") {
+      return pagedGoogleAccounts.filter((item) => Boolean(item.attached_client_id)).map((item) => item.id);
+    }
+    return pagedUnifiedProviderAccounts.filter((item) => Boolean(item.attachedClientId)).map((item) => item.id);
+  }, [selectedPlatform, pagedGoogleAccounts, pagedUnifiedProviderAccounts]);
+
+  const selectableFilteredAccountIds = useMemo(() => {
+    if (selectedPlatform === "google_ads") {
+      return filteredGoogleAccounts.filter((item) => Boolean(item.attached_client_id)).map((item) => item.id);
+    }
+    return filteredUnifiedProviderAccounts.filter((item) => Boolean(item.attachedClientId)).map((item) => item.id);
+  }, [selectedPlatform, filteredGoogleAccounts, filteredUnifiedProviderAccounts]);
 
   const allSelectableOnPageSelected =
     selectablePageAccountIds.length > 0 && selectablePageAccountIds.every((id) => selectedAccountIds.has(id));
@@ -281,10 +447,16 @@ export default function AgencyAccountsPage() {
   const allSelectableFilteredSelected =
     selectableFilteredAccountIds.length > 0 && selectableFilteredAccountIds.every((id) => selectedAccountIds.has(id));
 
-  const selectedMappedAccounts = useMemo(
-    () => googleAccounts.filter((account) => selectedAccountIds.has(account.id) && Boolean(account.attached_client_id)),
-    [googleAccounts, selectedAccountIds],
-  );
+  const selectedEligibleAccounts = useMemo(() => {
+    if (selectedPlatform === "google_ads") {
+      return googleAccounts
+        .filter((account) => selectedAccountIds.has(account.id) && Boolean(account.attached_client_id))
+        .map((account) => ({ id: account.id }));
+    }
+    return unifiedProviderAccounts
+      .filter((account) => selectedAccountIds.has(account.id) && Boolean(account.attachedClientId))
+      .map((account) => ({ id: account.id }));
+  }, [selectedPlatform, googleAccounts, unifiedProviderAccounts, selectedAccountIds]);
 
   const accountsByClient = useMemo(() => {
     const grouped = new Map<number, GoogleAccount[]>();
@@ -397,6 +569,36 @@ export default function AgencyAccountsPage() {
     }
   }
 
+  async function loadMetaAccounts() {
+    setMetaLoading(true);
+    setMetaLoadError("");
+    try {
+      const payload = await apiRequest<MetaAccountsResponse>("/clients/accounts/meta_ads");
+      setMetaAccounts(Array.isArray(payload.items) ? payload.items : []);
+      setMetaLastImportAt(payload.last_import_at ?? null);
+    } catch (err) {
+      setMetaAccounts([]);
+      setMetaLoadError(err instanceof Error ? err.message : "Nu am putut încărca conturile Meta Ads.");
+    } finally {
+      setMetaLoading(false);
+    }
+  }
+
+  async function loadTikTokAccounts() {
+    setTikTokLoading(true);
+    setTikTokLoadError("");
+    try {
+      const payload = await apiRequest<TikTokAccountsResponse>("/clients/accounts/tiktok_ads");
+      setTikTokAccounts(Array.isArray(payload.items) ? payload.items : []);
+      setTikTokLastImportAt(payload.last_import_at ?? null);
+    } catch (err) {
+      setTikTokAccounts([]);
+      setTikTokLoadError(err instanceof Error ? err.message : "Nu am putut încărca conturile TikTok Ads.");
+    } finally {
+      setTikTokLoading(false);
+    }
+  }
+
   useEffect(() => {
     void loadData();
   }, []);
@@ -408,14 +610,25 @@ export default function AgencyAccountsPage() {
   }, [selectedPlatform]);
 
   useEffect(() => {
+    if (selectedPlatform !== "meta_ads") return;
+    void loadMetaAccounts();
+  }, [selectedPlatform]);
+
+  useEffect(() => {
+    if (selectedPlatform !== "tiktok_ads") return;
+    void loadTikTokAccounts();
+  }, [selectedPlatform]);
+
+  useEffect(() => {
     setAccountsPage(1);
   }, [accountsPageSize]);
 
   useEffect(() => {
-    if (accountsPage > totalAccountsPages) {
-      setAccountsPage(totalAccountsPages);
+    const maxPages = selectedPlatform === "google_ads" ? totalAccountsPages : totalUnifiedAccountsPages;
+    if (accountsPage > maxPages) {
+      setAccountsPage(maxPages);
     }
-  }, [accountsPage, totalAccountsPages]);
+  }, [accountsPage, selectedPlatform, totalAccountsPages, totalUnifiedAccountsPages]);
 
   useEffect(() => {
     setExpandedClientRows((current) => {
@@ -502,6 +715,108 @@ export default function AgencyAccountsPage() {
     }
   }
 
+  async function attachMetaAccount(clientId: number, accountId: string) {
+    setMetaActionError("");
+    setMetaActionMessage("");
+    setMetaBusyByAccount((current) => ({ ...current, [accountId]: "attach" }));
+    try {
+      await apiRequest(`/clients/${clientId}/attach-account`, {
+        method: "POST",
+        body: JSON.stringify({ platform: "meta_ads", account_id: accountId }),
+      });
+      const targetClient = clients.find((item) => item.id === clientId);
+      setMetaActionMessage(`Contul ${accountId} a fost atașat clientului ${targetClient?.name ?? `#${clientId}`}.`);
+      await loadMetaAccounts();
+    } catch (err) {
+      setMetaActionError(err instanceof Error ? err.message : "Nu am putut atașa contul Meta Ads.");
+    } finally {
+      setMetaBusyByAccount((current) => {
+        const next = { ...current };
+        delete next[accountId];
+        return next;
+      });
+    }
+  }
+
+  async function detachMetaAccount(clientId: number, accountId: string) {
+    setMetaActionError("");
+    setMetaActionMessage("");
+    setMetaBusyByAccount((current) => ({ ...current, [accountId]: "detach" }));
+    try {
+      await apiRequest(`/clients/${clientId}/detach-account`, {
+        method: "POST",
+        body: JSON.stringify({ platform: "meta_ads", account_id: accountId }),
+      });
+      const targetClient = clients.find((item) => item.id === clientId);
+      setMetaActionMessage(`Contul ${accountId} a fost detașat de la clientul ${targetClient?.name ?? `#${clientId}`}.`);
+      setMetaAttachClientByAccount((current) => {
+        const next = { ...current };
+        delete next[accountId];
+        return next;
+      });
+      await loadMetaAccounts();
+    } catch (err) {
+      setMetaActionError(err instanceof Error ? err.message : "Nu am putut detașa contul Meta Ads.");
+    } finally {
+      setMetaBusyByAccount((current) => {
+        const next = { ...current };
+        delete next[accountId];
+        return next;
+      });
+    }
+  }
+
+  async function attachTikTokAccount(clientId: number, accountId: string) {
+    setTikTokActionError("");
+    setTikTokActionMessage("");
+    setTikTokBusyByAccount((current) => ({ ...current, [accountId]: "attach" }));
+    try {
+      await apiRequest(`/clients/${clientId}/attach-account`, {
+        method: "POST",
+        body: JSON.stringify({ platform: "tiktok_ads", account_id: accountId }),
+      });
+      const targetClient = clients.find((item) => item.id === clientId);
+      setTikTokActionMessage(`Contul ${accountId} a fost atașat clientului ${targetClient?.name ?? `#${clientId}`}.`);
+      await loadTikTokAccounts();
+    } catch (err) {
+      setTikTokActionError(err instanceof Error ? err.message : "Nu am putut atașa contul TikTok Ads.");
+    } finally {
+      setTikTokBusyByAccount((current) => {
+        const next = { ...current };
+        delete next[accountId];
+        return next;
+      });
+    }
+  }
+
+  async function detachTikTokAccount(clientId: number, accountId: string) {
+    setTikTokActionError("");
+    setTikTokActionMessage("");
+    setTikTokBusyByAccount((current) => ({ ...current, [accountId]: "detach" }));
+    try {
+      await apiRequest(`/clients/${clientId}/detach-account`, {
+        method: "POST",
+        body: JSON.stringify({ platform: "tiktok_ads", account_id: accountId }),
+      });
+      const targetClient = clients.find((item) => item.id === clientId);
+      setTikTokActionMessage(`Contul ${accountId} a fost detașat de la clientul ${targetClient?.name ?? `#${clientId}`}.`);
+      setTikTokAttachClientByAccount((current) => {
+        const next = { ...current };
+        delete next[accountId];
+        return next;
+      });
+      await loadTikTokAccounts();
+    } catch (err) {
+      setTikTokActionError(err instanceof Error ? err.message : "Nu am putut detașa contul TikTok Ads.");
+    } finally {
+      setTikTokBusyByAccount((current) => {
+        const next = { ...current };
+        delete next[accountId];
+        return next;
+      });
+    }
+  }
+
   async function refreshGoogleAccountNames() {
     setAttachStatus("");
     setActionBusy(true);
@@ -521,7 +836,7 @@ export default function AgencyAccountsPage() {
   }
 
   async function startBatchSyncHistorical() {
-    if (selectedMappedAccounts.length <= 0) {
+    if (selectedEligibleAccounts.length <= 0) {
       setSyncError("Selectează cel puțin un cont atașat la client.");
       return;
     }
@@ -531,19 +846,9 @@ export default function AgencyAccountsPage() {
     setBatchProgress(null);
     setBatchRunsByAccount({});
 
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const historicalStartDateUsed = DEFAULT_HISTORICAL_START;
-
-    const body: Record<string, unknown> = {
-      platform: "google_ads",
-      account_ids: selectedMappedAccounts.map((item) => item.id),
-      chunk_days: 7,
-      grain: "account_daily",
-      job_type: "historical_backfill",
-      start_date: historicalStartDateUsed,
-      end_date: toIsoDateLocal(yesterday),
-    };
+    const platform = selectedPlatform === "google_ads" ? "google_ads" : selectedPlatform;
+    const historicalStartDateUsed = getHistoricalStartDate(platform);
+    const body = buildHistoricalBatchPayload(platform, selectedEligibleAccounts.map((item) => item.id));
 
     setActionBusy(true);
     setRunningAction("historical");
@@ -706,9 +1011,228 @@ export default function AgencyAccountsPage() {
               })}
             </div>
 
-            {selectedPlatform !== "google_ads" ? (
+            {selectedPlatform === "meta_ads" || selectedPlatform === "tiktok_ads" ? (
+              <div className="mt-4 wm-card p-4" data-testid={`platform-workspace-${selectedPlatform}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm text-slate-600">
+                    Total {prettyPlatform(selectedPlatform)} Accounts: <span className="font-semibold text-slate-900">{unifiedProviderAccounts.length}</span>
+                    {selectedSummary ? ` · Conectate: ${selectedSummary.connected_count}` : ""}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      className={actionButtonClass("ghost")}
+                      onClick={() => {
+                        if (selectedPlatform === "meta_ads") void loadMetaAccounts();
+                        if (selectedPlatform === "tiktok_ads") void loadTikTokAccounts();
+                      }}
+                      disabled={selectedPlatform === "meta_ads" ? metaLoading : tiktokLoading}
+                    >
+                      {(selectedPlatform === "meta_ads" ? metaLoading : tiktokLoading) ? "Refreshing..." : "Refresh"}
+                    </button>
+                    <button
+                      type="button"
+                      className={actionButtonClass("historical")}
+                      onClick={() => void startBatchSyncHistorical()}
+                      disabled={controlsDisabled || selectedEligibleAccounts.length === 0}
+                    >
+                      {runningAction === "historical" || isBatchActive ? "Downloading..." : "Download historical"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-2 text-xs text-slate-600">
+                  Selectate: <span className="font-semibold text-slate-900">{selectedAccountIds.size}</span> conturi
+                  {` (din ${selectableFilteredAccountIds.length} filtrate)`}
+                  {selectedEligibleAccounts.length !== selectedAccountIds.size ? ` · ${selectedEligibleAccounts.length} eligibile pentru sync` : ""}
+                </div>
+                {selectedPlatform === "meta_ads" && metaActionMessage ? <p className="mt-2 text-sm text-emerald-700">{metaActionMessage}</p> : null}
+                {selectedPlatform === "meta_ads" && metaActionError ? <p className="mt-2 text-sm text-red-600">{metaActionError}</p> : null}
+                {selectedPlatform === "tiktok_ads" && tiktokActionMessage ? <p className="mt-2 text-sm text-emerald-700">{tiktokActionMessage}</p> : null}
+                {selectedPlatform === "tiktok_ads" && tiktokActionError ? <p className="mt-2 text-sm text-red-600">{tiktokActionError}</p> : null}
+
+                {(selectedPlatform === "meta_ads" ? metaLoading : tiktokLoading) ? <p className="mt-3 text-sm text-slate-500">Se încarcă conturile...</p> : null}
+                {(selectedPlatform === "meta_ads" ? metaLoadError : tiktokLoadError) ? <p className="mt-3 text-sm text-red-600">{selectedPlatform === "meta_ads" ? metaLoadError : tiktokLoadError}</p> : null}
+
+                <div className="mt-3 overflow-hidden rounded-md border border-slate-200">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={allSelectableOnPageSelected}
+                          onChange={(event) => toggleSelectAllOnPage(event.target.checked)}
+                          disabled={selectablePageAccountIds.length === 0 || controlsDisabled}
+                        />
+                        Select all pe pagina curentă
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={allSelectableFilteredSelected}
+                          onChange={(event) => toggleSelectAllFiltered(event.target.checked)}
+                          disabled={selectableFilteredAccountIds.length === 0 || controlsDisabled}
+                        />
+                        Selectează toate filtrate ({selectableFilteredAccountIds.length})
+                      </label>
+                      <button
+                        type="button"
+                        onClick={clearSelection}
+                        disabled={selectedAccountIds.size === 0 || controlsDisabled}
+                        className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Clear selection
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label htmlFor="client-filter" className="text-xs font-medium text-slate-600">Filtru client</label>
+                      <input
+                        id="client-filter"
+                        value={clientFilter}
+                        onChange={(event) => setClientFilter(event.target.value)}
+                        placeholder="Caută după numele clientului"
+                        className="w-56 rounded-md border border-slate-300 px-2 py-1 text-xs"
+                      />
+                      <span>Pagina {accountsPage}/{totalUnifiedAccountsPages}</span>
+                    </div>
+                  </div>
+
+                  <div className="hidden grid-cols-[48px_minmax(220px,2fr)_minmax(180px,1.2fr)_minmax(180px,1.2fr)_minmax(220px,1.4fr)_110px] gap-3 border-b border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 lg:grid">
+                    <span>Selecție</span>
+                    <span>Cont</span>
+                    <span>Sync progress</span>
+                    <span>Client atașat</span>
+                    <span>Acțiuni</span>
+                    <span>Detach</span>
+                  </div>
+
+                  <div className="divide-y divide-slate-100" data-testid="provider-unified-table-shell">
+                    {pagedUnifiedProviderAccounts.map((account) => {
+                      const attached = Boolean(account.attachedClientId);
+                      const accountId = account.id;
+                      const busyMap = selectedPlatform === "meta_ads" ? metaBusyByAccount : tiktokBusyByAccount;
+                      const busyState = busyMap[accountId];
+                      const selectedClientValue = selectedPlatform === "meta_ads" ? (metaAttachClientByAccount[accountId] ?? "") : (tiktokAttachClientByAccount[accountId] ?? "");
+
+                      return (
+                        <div key={accountId} className="grid gap-3 px-3 py-3 lg:grid-cols-[48px_minmax(220px,2fr)_minmax(180px,1.2fr)_minmax(180px,1.2fr)_minmax(220px,1.4fr)_110px] lg:items-start">
+                          <div className="flex items-start justify-between lg:justify-center">
+                            <span className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Selecție</span>
+                            <input
+                              type="checkbox"
+                              checked={selectedAccountIds.has(accountId)}
+                              disabled={!attached || controlsDisabled}
+                              onChange={(event) => toggleAccountSelection(accountId, event.target.checked)}
+                              data-testid={`row-select-${accountId}`}
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Cont</p>
+                            <p className="truncate text-sm font-medium text-slate-900">{account.name}</p>
+                            <p className="text-xs text-slate-500">ID: {accountId || "-"}</p>
+                            <p className="text-xs text-slate-500">Ultimul sync reușit: {account.lastSuccessAt ? formatDateTime(account.lastSuccessAt) : "-"}</p>
+                            <p className="text-xs text-slate-500">Eroare recentă: {account.lastError || "-"}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Sync progress</p>
+                            <p className="text-xs font-medium text-slate-700">Status: {account.lastRunStatus || "-"}</p>
+                            <div className="mt-1 h-2 w-full overflow-hidden rounded bg-slate-200" />
+                            <p className="mt-1 text-xs text-slate-500">Tip run: {account.lastRunType || "-"}</p>
+                            <p className="mt-1 text-xs text-slate-500">Istoric până la: {account.backfillCompletedThrough || "-"}</p>
+                            <p className="text-xs text-slate-500">Rolling până la: {account.rollingSyncedThrough || "-"}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Client atașat</p>
+                            {attached ? (
+                              <>
+                                <p className="text-sm font-medium text-emerald-700">{account.attachedClientName || `#${account.attachedClientId}`}</p>
+                                {account.syncStartDate ? <p className="text-xs text-slate-500">Start istoric: {account.syncStartDate}</p> : null}
+                              </>
+                            ) : (
+                              <p className="text-sm text-amber-700">Neatașat la client</p>
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Acțiuni</p>
+                            <select
+                              className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+                              value={selectedClientValue}
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                if (selectedPlatform === "meta_ads") {
+                                  setMetaAttachClientByAccount((current) => ({ ...current, [accountId]: value }));
+                                } else {
+                                  setTikTokAttachClientByAccount((current) => ({ ...current, [accountId]: value }));
+                                }
+                              }}
+                              disabled={Boolean(busyState)}
+                            >
+                              <option value="">Atașează la client...</option>
+                              {clients.map((client) => (
+                                <option key={client.id} value={client.id}>#{client.display_id ?? client.id} {client.name}</option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              className="mt-2 inline-flex w-full items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                              disabled={Boolean(busyState) || Number(selectedClientValue || 0) <= 0}
+                              onClick={() => {
+                                const cid = Number(selectedClientValue || 0);
+                                if (cid <= 0) return;
+                                if (selectedPlatform === "meta_ads") void attachMetaAccount(cid, accountId);
+                                else void attachTikTokAccount(cid, accountId);
+                              }}
+                            >
+                              {busyState === "attach" ? "Attaching..." : "Attach"}
+                            </button>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Detach</p>
+                            {account.attachedClientId ? (
+                              <button
+                                type="button"
+                                className="inline-flex w-full items-center justify-center rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                onClick={() => {
+                                  if (selectedPlatform === "meta_ads") void detachMetaAccount(account.attachedClientId ?? 0, accountId);
+                                  else void detachTikTokAccount(account.attachedClientId ?? 0, accountId);
+                                }}
+                                disabled={busyState === "detach"}
+                              >
+                                {busyState === "detach" ? "Detaching..." : "Detach"}
+                              </button>
+                            ) : (
+                              <span className="inline-flex w-full items-center justify-center rounded-md border border-dashed border-slate-200 px-3 py-2 text-xs text-slate-400">-</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {pagedUnifiedProviderAccounts.length === 0 ? (
+                      <div className="px-3 py-6 text-sm text-slate-500" data-testid="provider-unified-empty-state">
+                        Nu există conturi {prettyPlatform(selectedPlatform)} care să corespundă filtrului de client.
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-col gap-2 border-t border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
+                    <p>Afișare {filteredUnifiedProviderAccounts.length === 0 ? 0 : (accountsPage - 1) * accountsPageSize + 1}-{Math.min(accountsPage * accountsPageSize, filteredUnifiedProviderAccounts.length)} din {filteredUnifiedProviderAccounts.length}</p>
+                    <div className="flex items-center gap-2">
+                      <span>Rânduri/pagină</span>
+                      <select
+                        className="rounded-md border border-slate-300 px-2 py-1"
+                        value={accountsPageSize}
+                        onChange={(event) => setAccountsPageSize(Number(event.target.value))}
+                      >
+                        {[25, 50, 100, 200].map((size) => (<option key={size} value={size}>{size}</option>))}
+                      </select>
+                      <button type="button" className="rounded border border-slate-300 px-2 py-1 disabled:opacity-50" disabled={accountsPage <= 1} onClick={() => setAccountsPage((current) => Math.max(1, current - 1))}>Anterior</button>
+                      <button type="button" className="rounded border border-slate-300 px-2 py-1 disabled:opacity-50" disabled={accountsPage >= totalUnifiedAccountsPages} onClick={() => setAccountsPage((current) => Math.min(totalUnifiedAccountsPages, current + 1))}>Următor</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : selectedPlatform !== "google_ads" ? (
               <div className="mt-4 wm-card p-4 text-sm text-slate-500">
-                Pentru acest task, doar Google Ads este funcțional complet. Celelalte platforme rămân informative.
+                Pentru acest task, Google Ads, Meta Ads și TikTok Ads sunt funcționale. Celelalte platforme rămân informative.
               </div>
             ) : (
               <div className="mt-4 wm-card p-4">
@@ -730,7 +1254,7 @@ export default function AgencyAccountsPage() {
                       type="button"
                       className={actionButtonClass("historical")}
                       onClick={() => void startBatchSyncHistorical()}
-                      disabled={controlsDisabled || selectedMappedAccounts.length === 0}
+                      disabled={controlsDisabled || selectedEligibleAccounts.length === 0}
                     >
                       {runningAction === "historical" || isBatchActive ? "Downloading..." : "Download historical"}
                     </button>
@@ -740,7 +1264,7 @@ export default function AgencyAccountsPage() {
                 <div className="mt-2 text-xs text-slate-600">
                   Selectate: <span className="font-semibold text-slate-900">{selectedAccountIds.size}</span> conturi
                   {` (din ${selectableFilteredAccountIds.length} filtrate)`}
-                  {selectedMappedAccounts.length !== selectedAccountIds.size ? ` · ${selectedMappedAccounts.length} eligibile pentru sync` : ""}
+                  {selectedEligibleAccounts.length !== selectedAccountIds.size ? ` · ${selectedEligibleAccounts.length} eligibile pentru sync` : ""}
                 </div>
 
                 {isBatchActive && batchProgress ? (
