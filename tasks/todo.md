@@ -2520,6 +2520,7 @@
 
 ## Review
 - [x] Executed exact commands in current workspace terminal; remote `origin` added, `fetch` succeeded, and `pull origin main` reported `Already up to date`.
+<<<<<<< codex/setup-new-workspace-and-fetch-updates-el5gg9
 
 
 ---
@@ -2538,3 +2539,5 @@
 
 - [x] Added structured error metadata plumbing in worker/chunk/run, additive progress fields, and service-level HTTP error enrichment with token-safe sanitization.
 - [x] Verified with targeted backend tests and frontend build.
+=======
+>>>>>>> main
