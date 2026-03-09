@@ -460,7 +460,7 @@ describe("AgencyAccountsPage list redesign + same-client quick view", () => {
     await screen.findByText("Account One");
 
     fireEvent.click(screen.getByLabelText("Select all pe pagina curentă"));
-    fireEvent.click(screen.getByRole("button", { name: /Download historical/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Download/i }));
 
     await waitFor(() => {
       expect(screen.getByTestId("sync-progress-fill-1001")).toBeInTheDocument();
@@ -537,7 +537,7 @@ describe("AgencyAccountsPage list redesign + same-client quick view", () => {
     await screen.findByText("Account One");
 
     fireEvent.click(screen.getByLabelText("Select all pe pagina curentă"));
-    fireEvent.click(screen.getByRole("button", { name: /Download historical/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Download/i }));
 
     await waitFor(() => {
       expect(apiMock.postAccountSyncProgressBatch).toHaveBeenCalledWith("google_ads", ["1001"], true);
@@ -617,4 +617,34 @@ describe("AgencyAccountsPage list redesign + same-client quick view", () => {
       expect(screen.getByText("Nu există conturi care să corespundă filtrului de client.")).toBeInTheDocument();
     });
   });
+
+  it("keeps done status when last_success_at exists and active/batch status is absent", async () => {
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients") return Promise.resolve({ items: [{ id: 11, name: "Client A", owner_email: "a@x.com", display_id: 1 }] });
+      if (path === "/clients/accounts/summary") return Promise.resolve({ items: [{ platform: "google_ads", connected_count: 1, last_import_at: null }] });
+      if (path === "/clients/accounts/google") {
+        return Promise.resolve({
+          count: 1,
+          items: [
+            {
+              id: "1001",
+              name: "Account One",
+              attached_client_id: 11,
+              attached_client_name: "Client A",
+              last_run_status: null,
+              has_active_sync: false,
+              last_success_at: "2026-03-09T10:00:00Z",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountsPage />);
+
+    expect(await screen.findByText(/Status: done/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Status: idle/i)).not.toBeInTheDocument();
+  });
+
 });

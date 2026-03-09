@@ -8,15 +8,19 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest, listAccountSyncRuns, repairSyncRun, retryFailedSyncRun, type AccountSyncRun } from "@/lib/api";
+import { getEffectiveAccountStatus, isRunActive, isRunFailure, isRunSupersededByLaterSuccess, normalizeJobType, normalizeStatus } from "../../sync-runs";
 
-type GoogleAccount = {
+type AccountMeta = {
   id: string;
   name: string;
   platform?: string;
   account_id?: string;
   display_name?: string;
+  account_name?: string;
   attached_client_id?: number | null;
   attached_client_name?: string | null;
+  client_id?: number | null;
+  client_name?: string | null;
   timezone?: string | null;
   currency?: string | null;
   sync_start_date?: string | null;
@@ -40,8 +44,8 @@ type EffectiveSyncHeader = {
   lastError?: string | null;
 };
 
-type GoogleAccountsResponse = {
-  items: GoogleAccount[];
+type AccountsListResponse = {
+  items: AccountMeta[];
 };
 
 type SyncRun = AccountSyncRun;
@@ -80,16 +84,35 @@ function formatDate(value?: string | null): string {
 }
 
 function normalizeAccountId(value: string): string {
-  return value.replace(/-/g, "").trim();
+  return value.replace(/[-_]/g, "").trim();
 }
 
-function normalizeStatus(status?: string | null): string {
-  return String(status ?? "queued").toLowerCase();
+function accountListEndpoint(platform: string): string | null {
+  const normalized = String(platform).trim();
+  if (normalized === "google_ads") return "/clients/accounts/google";
+  if (normalized === "meta_ads") return "/clients/accounts/meta_ads";
+  if (normalized === "tiktok_ads") return "/clients/accounts/tiktok_ads";
+  return null;
 }
 
-function normalizeJobType(jobType?: string | null): string {
-  return String(jobType ?? "").trim().toLowerCase();
+function normalizeAccountMetaForPlatform(platform: string, item: AccountMeta): AccountMeta {
+  const normalizedPlatform = String(platform).trim();
+  const accountId = String(item.id ?? item.account_id ?? "").trim();
+  const name = String(item.display_name ?? item.name ?? item.account_name ?? accountId).trim() || accountId;
+  const attachedClientId = item.attached_client_id ?? (typeof item.client_id === "number" ? Number(item.client_id) : null);
+  const attachedClientName = item.attached_client_name ?? (String(item.client_name ?? "").trim() || null);
+
+  return {
+    ...item,
+    id: accountId,
+    platform: String(item.platform ?? normalizedPlatform),
+    name,
+    display_name: name,
+    attached_client_id: attachedClientId,
+    attached_client_name: attachedClientName,
+  };
 }
+
 
 function statusBadge(status?: string | null): string {
   const normalized = normalizeStatus(status);
@@ -100,14 +123,6 @@ function statusBadge(status?: string | null): string {
   return "bg-slate-100 text-slate-700";
 }
 
-function isRunActive(status?: string | null): boolean {
-  return ["queued", "running", "pending"].includes(normalizeStatus(status));
-}
-
-function isRunTerminal(status?: string | null): boolean {
-  return ["done", "success", "completed", "error", "failed", "partial", "cancelled"].includes(normalizeStatus(status));
-}
-
 function hasRetryFailedSignals(run: SyncRun): boolean {
   const status = normalizeStatus(run.status);
   if (["error", "failed", "partial"].includes(status)) return true;
@@ -115,32 +130,14 @@ function hasRetryFailedSignals(run: SyncRun): boolean {
   return String(run.error ?? "").trim().length > 0;
 }
 
-function parseDateOnly(value?: string | null): number | null {
-  const raw = String(value ?? "").trim();
-  if (!raw) return null;
-  const parsed = Date.parse(raw.length <= 10 ? `${raw}T00:00:00Z` : raw);
-  if (Number.isNaN(parsed)) return null;
-  return parsed;
-}
 
-function isSuccessStatus(status?: string | null): boolean {
-  return ["done", "success", "completed"].includes(normalizeStatus(status));
-}
-
-function retrySourceJobId(run: SyncRun): string {
-  const metadata = run.metadata && typeof run.metadata === "object" ? run.metadata : {};
-  const retryReason = String((metadata as { retry_reason?: unknown }).retry_reason ?? "").trim();
-  if (retryReason !== "failed_chunks") return "";
-  return String((metadata as { retry_of_job_id?: unknown }).retry_of_job_id ?? "").trim();
-}
-
-function coversRunRangeByAccountMeta(run: SyncRun, accountMeta: GoogleAccount | null): boolean {
-  const accountStart = parseDateOnly(accountMeta?.sync_start_date);
-  const accountEnd = parseDateOnly(accountMeta?.backfill_completed_through);
-  const runStart = parseDateOnly(run.date_start);
-  const runEnd = parseDateOnly(run.date_end);
-  if (accountStart === null || accountEnd === null || runStart === null || runEnd === null) return false;
-  return accountStart <= runStart && accountEnd >= runEnd;
+function runTitle(run: SyncRun): string {
+  const jobType = String(run.job_type ?? "unknown").trim() || "unknown";
+  const grain = String(run.grain ?? "").trim();
+  const parts = [jobType];
+  if (grain) parts.push(grain);
+  parts.push(formatDate(run.created_at));
+  return parts.join(" · ");
 }
 
 function toRunTimestamp(run?: SyncRun | null): number {
@@ -151,7 +148,7 @@ function toRunTimestamp(run?: SyncRun | null): number {
   return Number.isFinite(ts) ? ts : 0;
 }
 
-function toMetaTimestamp(meta?: GoogleAccount | null): number {
+function toMetaTimestamp(meta?: AccountMeta | null): number {
   if (!meta) return 0;
   const raw = meta.last_run_finished_at ?? meta.last_run_started_at ?? meta.last_success_at ?? null;
   if (!raw) return 0;
@@ -164,7 +161,7 @@ export default function AgencyAccountDetailPage() {
   const platform = decodeURIComponent(String(params?.platform ?? "")).trim();
   const accountId = decodeURIComponent(String(params?.accountId ?? "")).trim();
 
-  const [accountMeta, setAccountMeta] = useState<GoogleAccount | null>(null);
+  const [accountMeta, setAccountMeta] = useState<AccountMeta | null>(null);
   const [metaLoading, setMetaLoading] = useState(true);
   const [metaError, setMetaError] = useState("");
 
@@ -199,48 +196,42 @@ export default function AgencyAccountDetailPage() {
     () => runsSorted.find((run) => isRunActive(run.status) && normalizeJobType(run.job_type) === "historical_backfill") ?? null,
     [runsSorted],
   );
-  const successfulRetrySourceIds = useMemo(() => {
+  const supersededRunIds = useMemo(() => {
     const ids = new Set<string>();
     for (const run of runsSorted) {
-      if (normalizeJobType(run.job_type) !== "historical_backfill") continue;
-      if (!isSuccessStatus(run.status)) continue;
-      const sourceJobId = retrySourceJobId(run);
-      if (sourceJobId) ids.add(sourceJobId);
+      if (isRunSupersededByLaterSuccess(run, runsSorted, { accountSyncStart: accountMeta?.sync_start_date, accountBackfillThrough: accountMeta?.backfill_completed_through })) ids.add(run.job_id);
     }
     return ids;
-  }, [runsSorted]);
-  const fullyRecoveredSourceRunIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const run of runsSorted) {
-      if (normalizeJobType(run.job_type) !== "historical_backfill") continue;
-      if (!isRunTerminal(run.status)) continue;
-      if (!hasRetryFailedSignals(run)) continue;
-      if (!successfulRetrySourceIds.has(run.job_id)) continue;
-      if (!coversRunRangeByAccountMeta(run, accountMeta)) continue;
-      ids.add(run.job_id);
-    }
-    return ids;
-  }, [accountMeta, runsSorted, successfulRetrySourceIds]);
+  }, [accountMeta?.backfill_completed_through, accountMeta?.sync_start_date, runsSorted]);
+  const visibleRuns = useMemo(
+    () => runsSorted.filter((run) => !supersededRunIds.has(run.job_id)),
+    [runsSorted, supersededRunIds],
+  );
 
   const latestTerminalError = useMemo(() => {
-    const failedRun = runsSorted.find(
-      (run) =>
-        ["error", "failed", "partial"].includes(normalizeStatus(run.status)) &&
-        String(run.error ?? "").trim() !== "" &&
-        !fullyRecoveredSourceRunIds.has(run.job_id),
-    );
-    return failedRun?.error ?? "";
-  }, [fullyRecoveredSourceRunIds, runsSorted]);
+    const failedRun = visibleRuns.find((run) => isRunFailure(run.status));
+    if (!failedRun) return "";
+    const summary = String((failedRun as { last_error_summary?: unknown }).last_error_summary ?? "").trim();
+    if (summary) return summary;
+    const runError = String(failedRun.error ?? "").trim();
+    if (runError) return runError;
+    const details = (failedRun as { last_error_details?: unknown }).last_error_details;
+    if (details && typeof details === "object") {
+      const providerMessage = String((details as { provider_error_message?: unknown }).provider_error_message ?? "").trim();
+      if (providerMessage) return providerMessage;
+    }
+    return "run failed";
+  }, [visibleRuns]);
   const retryableFailedRun = useMemo(
     () =>
-      runsSorted.find(
+      visibleRuns.find(
         (run) =>
           normalizeJobType(run.job_type) === "historical_backfill" &&
-          isRunTerminal(run.status) &&
-          hasRetryFailedSignals(run) &&
-          !fullyRecoveredSourceRunIds.has(run.job_id),
+          !supersededRunIds.has(run.job_id) &&
+          ["error", "failed", "partial"].includes(normalizeStatus(run.status)) &&
+          hasRetryFailedSignals(run),
       ) ?? null,
-    [fullyRecoveredSourceRunIds, runsSorted],
+    [supersededRunIds, visibleRuns],
   );
   const retryActionRun = useMemo(() => {
     if (hasActiveHistoricalRun) return null;
@@ -248,13 +239,19 @@ export default function AgencyAccountDetailPage() {
   }, [hasActiveHistoricalRun, retryableFailedRun]);
   const latestRun = runsSorted[0] ?? null;
   const effectiveSyncHeader = useMemo<EffectiveSyncHeader>(() => {
+    const baseStatus = getEffectiveAccountStatus({
+      rowStatus: null,
+      lastRunStatus: accountMeta?.last_run_status ?? null,
+      hasActiveSync: accountMeta?.has_active_sync ?? false,
+      lastSuccessAt: accountMeta?.last_success_at ?? null,
+    });
     const metaBased: EffectiveSyncHeader = {
       hasActiveSync: Boolean(accountMeta?.has_active_sync),
-      lastRunStatus: accountMeta?.last_run_status ?? null,
+      lastRunStatus: baseStatus,
       lastRunType: accountMeta?.last_run_type ?? null,
       lastRunStartedAt: accountMeta?.last_run_started_at ?? null,
       lastRunFinishedAt: accountMeta?.last_run_finished_at ?? null,
-      lastError: accountMeta?.last_error ?? null,
+      lastError: latestTerminalError || null,
     };
     if (!latestRun) return metaBased;
 
@@ -263,22 +260,27 @@ export default function AgencyAccountDetailPage() {
       return { ...metaBased, hasActiveSync: hasActiveRun };
     }
 
-    const runStatus = latestRun.status ?? metaBased.lastRunStatus ?? null;
-    const runError = String(latestRun.error ?? "").trim();
+    const runStatus = getEffectiveAccountStatus({
+      rowStatus: latestRun.status ?? null,
+      lastRunStatus: metaBased.lastRunStatus ?? null,
+      hasActiveSync: hasActiveRun,
+      lastSuccessAt: accountMeta?.last_success_at ?? null,
+    });
     return {
       hasActiveSync: hasActiveRun,
       lastRunStatus: runStatus,
       lastRunType: latestRun.job_type ?? metaBased.lastRunType ?? null,
       lastRunStartedAt: latestRun.started_at ?? metaBased.lastRunStartedAt ?? null,
       lastRunFinishedAt: latestRun.finished_at ?? metaBased.lastRunFinishedAt ?? null,
-      lastError: runError || metaBased.lastError || null,
+      lastError: latestTerminalError || null,
     };
-  }, [accountMeta, hasActiveRun, latestRun]);
+  }, [accountMeta, hasActiveRun, latestRun, latestTerminalError]);
 
   const hadActiveRunRef = useRef(false);
 
   async function loadAccountMeta() {
-    if (platform !== "google_ads") {
+    const endpoint = accountListEndpoint(platform);
+    if (!endpoint) {
       setAccountMeta(null);
       setMetaLoading(false);
       setMetaError("");
@@ -288,9 +290,10 @@ export default function AgencyAccountDetailPage() {
     setMetaLoading(true);
     setMetaError("");
     try {
-      const payload = await apiRequest<GoogleAccountsResponse>("/clients/accounts/google");
+      const payload = await apiRequest<AccountsListResponse>(endpoint);
       const normalizedTarget = normalizeAccountId(accountId);
-      const found = payload.items.find((item) => normalizeAccountId(item.id) === normalizedTarget);
+      const normalizedItems = (payload.items ?? []).map((item) => normalizeAccountMetaForPlatform(platform, item));
+      const found = normalizedItems.find((item) => normalizeAccountId(String(item.id ?? item.account_id ?? "")) === normalizedTarget);
       setAccountMeta(found ?? null);
     } catch (err) {
       setMetaError(err instanceof Error ? err.message : "Nu am putut încărca metadata contului.");
@@ -589,7 +592,7 @@ export default function AgencyAccountDetailPage() {
             ) : null}
             {runsError ? <p className="mt-2 text-sm text-red-600">{runsError}</p> : null}
             {runsLoading ? <p className="mt-2 text-sm text-slate-500">Se încarcă sync runs...</p> : null}
-            {!runsLoading && runsSorted.length <= 0 && !runsError ? (
+            {!runsLoading && visibleRuns.length <= 0 && !runsError ? (
               <p className="mt-2 text-sm text-slate-500">Nu există sync runs pentru acest cont încă.</p>
             ) : null}
             {!hasActiveRun && latestTerminalError ? (
@@ -598,9 +601,9 @@ export default function AgencyAccountDetailPage() {
               </p>
             ) : null}
 
-            {runsSorted.length > 0 ? (
+            {visibleRuns.length > 0 ? (
               <div className="mt-3 space-y-3">
-                {runsSorted.map((run) => {
+                {visibleRuns.map((run) => {
                   const expanded = expandedRunIds.has(run.job_id);
                   const chunks = chunksByRun[run.job_id] ?? [];
                   const chunksLoading = Boolean(chunksLoadingByRun[run.job_id]);
@@ -617,7 +620,7 @@ export default function AgencyAccountDetailPage() {
                         onClick={() => toggleRunExpanded(run.job_id)}
                       >
                         <div className="min-w-0">
-                          <p className="text-sm font-medium text-slate-900">{run.job_type ?? "unknown"} · {formatDate(run.created_at)}</p>
+                          <p className="text-sm font-medium text-slate-900">{runTitle(run)}</p>
                           <p className="text-xs text-slate-600">{run.date_start ?? "-"} → {run.date_end ?? "-"} · start: {formatDate(run.started_at)} · end: {formatDate(run.finished_at)}</p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -639,6 +642,12 @@ export default function AgencyAccountDetailPage() {
                       ) : null}
 
                       {run.error ? <p className="px-3 pb-2 text-xs text-red-600">Error: {run.error}</p> : null}
+                      {String((run as { last_error_summary?: unknown }).last_error_summary ?? "").trim() ? (
+                        <p className="px-3 pb-2 text-xs text-red-600">Summary: {String((run as { last_error_summary?: unknown }).last_error_summary ?? "")}</p>
+                      ) : null}
+                      {(run as { last_error_details?: unknown }).last_error_details && typeof (run as { last_error_details?: unknown }).last_error_details === "object" ? (
+                        <p className="px-3 pb-2 text-xs text-red-600">Details: {String(((run as { last_error_details?: Record<string, unknown> }).last_error_details?.provider_error_message as string | undefined) || ((run as { last_error_details?: Record<string, unknown> }).last_error_details?.provider_error_code as string | undefined) || "available")}</p>
+                      ) : null}
 
                       {expanded ? (
                         <div className="border-t border-slate-100 bg-slate-50 px-3 py-3">
