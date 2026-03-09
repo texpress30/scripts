@@ -77,6 +77,65 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
         self.assertEqual(rows[1]["account_id"], "1002")
         self.assertEqual(rows[1]["status"], "STATUS_DISABLE")
 
+    def test_service_list_accessible_advertiser_accounts_supports_alternate_rows_container(self):
+        service = TikTokAdsService()
+
+        original_http = service._http_json
+        try:
+            service._http_json = lambda **kwargs: {
+                "code": 0,
+                "message": "OK",
+                "data": {
+                    "rows": [
+                        {
+                            "advertiser_id": "2201",
+                            "advertiser_name": "Alt Container Advertiser",
+                            "status": "STATUS_ENABLE",
+                        }
+                    ],
+                    "page_info": {"page": 1, "total_page": 1},
+                },
+            }
+            rows = service.list_accessible_advertiser_accounts(access_token="tok")
+        finally:
+            service._http_json = original_http
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["account_id"], "2201")
+
+    def test_import_accounts_zero_advertisers_returns_diagnostics_message(self):
+        service = TikTokAdsService()
+
+        original_access = service._access_token_with_source
+        original_discover = service._discover_accessible_advertiser_accounts
+        original_list = tiktok_ads_api.client_registry_service.list_platform_accounts
+        original_upsert = tiktok_ads_api.client_registry_service.upsert_platform_accounts
+        try:
+            service._access_token_with_source = lambda: ("tok", "database", None)
+            service._discover_accessible_advertiser_accounts = lambda **kwargs: ([], {
+                "last_api_code": 0,
+                "last_api_message": "OK",
+                "page_count_checked": 1,
+                "row_container_used": "data.list",
+            })
+            tiktok_ads_api.client_registry_service.list_platform_accounts = lambda **kwargs: []
+            tiktok_ads_api.client_registry_service.upsert_platform_accounts = lambda **kwargs: None
+
+            payload = service.import_accounts()
+        finally:
+            service._access_token_with_source = original_access
+            service._discover_accessible_advertiser_accounts = original_discover
+            tiktok_ads_api.client_registry_service.list_platform_accounts = original_list
+            tiktok_ads_api.client_registry_service.upsert_platform_accounts = original_upsert
+
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["accounts_discovered"], 0)
+        self.assertIn("returned zero accounts", str(payload["message"]))
+        self.assertEqual(payload["api_code"], 0)
+        self.assertEqual(payload["api_message"], "OK")
+        self.assertEqual(payload["page_count_checked"], 1)
+        self.assertEqual(payload["row_container_used"], "data.list")
+
     def test_import_accounts_happy_path_and_idempotent_rerun(self):
         service = TikTokAdsService()
         discovered = [
@@ -113,7 +172,7 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
         ]
 
         original_access = service._access_token_with_source
-        original_discover = service.list_accessible_advertiser_accounts
+        original_discover = service._discover_accessible_advertiser_accounts
         original_list = tiktok_ads_api.client_registry_service.list_platform_accounts
         original_upsert = tiktok_ads_api.client_registry_service.upsert_platform_accounts
         original_update = tiktok_ads_api.client_registry_service.update_platform_account_operational_metadata
@@ -127,7 +186,7 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
 
         try:
             service._access_token_with_source = lambda: ("tok", "database", None)
-            service.list_accessible_advertiser_accounts = lambda **kwargs: discovered
+            service._discover_accessible_advertiser_accounts = lambda **kwargs: (discovered, {"page_count_checked": 1, "row_container_used": "data.list", "last_api_code": 0, "last_api_message": "OK"})
             tiktok_ads_api.client_registry_service.list_platform_accounts = _list_platform_accounts
             tiktok_ads_api.client_registry_service.upsert_platform_accounts = lambda **kwargs: None
             tiktok_ads_api.client_registry_service.update_platform_account_operational_metadata = lambda **kwargs: updates.append(kwargs) or kwargs
@@ -136,7 +195,7 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
             second = service.import_accounts()
         finally:
             service._access_token_with_source = original_access
-            service.list_accessible_advertiser_accounts = original_discover
+            service._discover_accessible_advertiser_accounts = original_discover
             tiktok_ads_api.client_registry_service.list_platform_accounts = original_list
             tiktok_ads_api.client_registry_service.upsert_platform_accounts = original_upsert
             tiktok_ads_api.client_registry_service.update_platform_account_operational_metadata = original_update

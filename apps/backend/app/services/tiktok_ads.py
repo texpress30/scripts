@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import secrets
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -23,6 +24,9 @@ try:
     import psycopg
 except Exception:  # noqa: BLE001
     psycopg = None
+
+
+logger = logging.getLogger(__name__)
 
 
 class TikTokAdsIntegrationError(RuntimeError):
@@ -287,7 +291,7 @@ class TikTokAdsService:
         if token == "":
             raise TikTokAdsIntegrationError("TikTok import requires a usable Business OAuth token. Connect TikTok first.")
 
-        discovered_accounts = self.list_accessible_advertiser_accounts(access_token=token)
+        discovered_accounts, diagnostics = self._discover_accessible_advertiser_accounts(access_token=token)
         existing_accounts = client_registry_service.list_platform_accounts(platform="tiktok_ads")
         existing_by_id: dict[str, dict[str, object]] = {
             str(item.get("id") or "").strip(): item for item in existing_accounts if isinstance(item, dict)
@@ -344,7 +348,7 @@ class TikTokAdsService:
             else:
                 unchanged += 1
 
-        return {
+        response: dict[str, object] = {
             "status": "ok",
             "provider": "tiktok_ads",
             "platform": "tiktok_ads",
@@ -355,8 +359,19 @@ class TikTokAdsService:
             "unchanged": unchanged,
             "message": f"TikTok advertiser import completed: discovered={len(discovered_accounts)}, imported={imported}, updated={updated}, unchanged={unchanged}.",
         }
+        if len(discovered_accounts) == 0:
+            response["message"] = "TikTok advertiser discovery returned zero accounts. The token is valid, but no advertiser accounts appear to have granted access to this app."
+            response["api_code"] = diagnostics.get("last_api_code")
+            response["api_message"] = diagnostics.get("last_api_message")
+            response["page_count_checked"] = diagnostics.get("page_count_checked")
+            response["row_container_used"] = diagnostics.get("row_container_used")
+        return response
 
     def list_accessible_advertiser_accounts(self, *, access_token: str | None = None) -> list[dict[str, object]]:
+        rows, _ = self._discover_accessible_advertiser_accounts(access_token=access_token)
+        return rows
+
+    def _discover_accessible_advertiser_accounts(self, *, access_token: str | None = None) -> tuple[list[dict[str, object]], dict[str, object]]:
         resolved_access_token = str(access_token or "").strip()
         if resolved_access_token == "":
             token, _, _ = self._access_token_with_source()
@@ -374,7 +389,12 @@ class TikTokAdsService:
         page = 1
         page_size = 100
         max_pages = 1000
+        page_count_checked = 0
+        row_container_used = "none"
+        last_api_code: int | None = None
+        last_api_message: str | None = None
         while page <= max_pages:
+            page_count_checked += 1
             query = parse.urlencode({"app_id": app_id, "secret": secret, "page": page, "page_size": page_size})
             raw = self._http_json(
                 method="GET",
@@ -382,6 +402,9 @@ class TikTokAdsService:
                 headers={"Access-Token": resolved_access_token},
             )
             api_code = raw.get("code")
+            last_api_code = int(api_code) if isinstance(api_code, int) else None
+            raw_message = raw.get("message")
+            last_api_message = str(raw_message) if raw_message is not None else None
             if isinstance(api_code, int) and api_code != 0:
                 raise TikTokAdsIntegrationError(f"TikTok advertiser discovery failed: code={api_code}, message={raw.get('message')}")
 
@@ -389,6 +412,28 @@ class TikTokAdsService:
             rows = data.get("list")
             if not isinstance(rows, list):
                 rows = data.get("advertisers") if isinstance(data.get("advertisers"), list) else []
+                if isinstance(rows, list) and len(rows) > 0:
+                    row_container_used = "data.advertisers"
+            else:
+                if len(rows) > 0:
+                    row_container_used = "data.list"
+
+            if not isinstance(rows, list) or len(rows) == 0:
+                fallback_rows = data.get("accounts") if isinstance(data.get("accounts"), list) else None
+                if isinstance(fallback_rows, list):
+                    rows = fallback_rows
+                    if len(rows) > 0:
+                        row_container_used = "data.accounts"
+
+            if not isinstance(rows, list) or len(rows) == 0:
+                fallback_rows = data.get("rows") if isinstance(data.get("rows"), list) else None
+                if isinstance(fallback_rows, list):
+                    rows = fallback_rows
+                    if len(rows) > 0:
+                        row_container_used = "data.rows"
+
+            if not isinstance(rows, list):
+                rows = []
 
             for row in rows:
                 if not isinstance(row, dict):
@@ -428,7 +473,27 @@ class TikTokAdsService:
         deduped: dict[str, dict[str, object]] = {}
         for item in accounts:
             deduped[str(item["account_id"])] = item
-        return [deduped[key] for key in sorted(deduped.keys())]
+        deduped_rows = [deduped[key] for key in sorted(deduped.keys())]
+        diagnostics: dict[str, object] = {
+            "page_count_checked": page_count_checked,
+            "row_container_used": row_container_used,
+            "last_api_code": last_api_code,
+            "last_api_message": last_api_message,
+            "rows_before_dedupe": len(accounts),
+            "rows_after_dedupe": len(deduped_rows),
+        }
+        logger.info(
+            "tiktok_advertiser_discovery_summary",
+            extra={
+                "page_count_checked": page_count_checked,
+                "row_container_used": row_container_used,
+                "rows_before_dedupe": len(accounts),
+                "rows_after_dedupe": len(deduped_rows),
+                "api_code": last_api_code,
+                "api_message": last_api_message,
+            },
+        )
+        return deduped_rows, diagnostics
 
     def _resolve_sync_window(self, *, start_date: date | None, end_date: date | None) -> tuple[date, date]:
         if start_date is not None and end_date is not None:

@@ -1,3 +1,18 @@
+# TODO — TikTok import diagnostics + zero-account handling
+
+- [x] Audit current TikTok advertiser discovery/import flow and identify safe diagnostic fields.
+- [x] Improve TikTok discovery parsing robustness and add zero-account-specific message + diagnostics while preserving endpoint/pagination.
+- [x] Add focused backend tests for zero-advertiser diagnostics, alternate container parsing, happy path continuity, and missing-token error.
+- [x] Run targeted backend tests and smoke checks, then document results.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Kept TikTok real advertiser discovery path + pagination and added parser support for additional safe row containers (`data.accounts`, `data.rows`) besides existing (`data.list`, `data.advertisers`).
+- Added zero-account explicit message and safe diagnostics (`api_code`, `api_message`, `page_count_checked`, `row_container_used`) without exposing secrets.
+- Added discovery summary logging (pages/rows/container/API code+message) and tests proving zero-account handling + alternate container parsing.
+
+---
+
 # TODO — Fix TikTok real advertiser account import (backend)
 
 - [x] Audit TikTok import stub, Meta import reference, and generic platform registry upsert path.
