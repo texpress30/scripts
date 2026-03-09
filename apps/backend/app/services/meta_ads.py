@@ -163,6 +163,13 @@ class MetaAdsService:
             return "", source, updated_at, "Meta Ads token is missing or placeholder."
         return token, source, updated_at, None
 
+    def graph_api_version(self) -> str:
+        settings = load_settings()
+        configured = str(settings.meta_api_version or "").strip()
+        if configured.lower() == "v20.0" or configured == "":
+            return "v24.0"
+        return configured
+
     def _normalize_sync_grain(self, grain: str | None) -> MetaSyncGrain:
         resolved = str(grain or "account_daily").strip().lower()
         if resolved == "":
@@ -199,6 +206,12 @@ class MetaAdsService:
         if re.fullmatch(r"\d+", normalized):
             return f"act_{normalized}"
         return normalized
+
+    def _build_graph_account_url(self, *, account_id: str, access_token: str, suffix: str = "") -> str:
+        query = parse.urlencode({"access_token": access_token})
+        path = self.meta_graph_account_path(account_id)
+        normalized_suffix = suffix if suffix.startswith("/") or suffix == "" else f"/{suffix}"
+        return f"https://graph.facebook.com/{self.graph_api_version()}/{path}{normalized_suffix}?{query}"
 
     def meta_account_ids_match(self, left: str | None, right: str | None) -> bool:
         left_numeric = self.meta_account_numeric_id(left)
@@ -292,22 +305,47 @@ class MetaAdsService:
         fields: list[str],
     ) -> list[dict[str, object]]:
         params = {
-            "access_token": access_token,
             "level": level,
             "fields": ",".join(fields),
             "time_range": json.dumps({"since": start_date.isoformat(), "until": end_date.isoformat()}),
             "limit": 500,
         }
         query = parse.urlencode(params)
-        settings = load_settings()
+        base_url = self._build_graph_account_url(account_id=account_id, access_token=access_token, suffix="/insights")
+        joiner = "&" if "?" in base_url else "?"
         payload = self._http_json(
             method="GET",
-            url=f"https://graph.facebook.com/{settings.meta_api_version.strip('/')}/{self.meta_graph_account_path(account_id)}/insights?{query}",
+            url=f"{base_url}{joiner}{query}",
         )
         data = payload.get("data")
         if not isinstance(data, list):
             raise MetaAdsIntegrationError("Meta API returned invalid data container")
         return [item for item in data if isinstance(item, dict)]
+
+    def _probe_account_access(self, *, account_id: str, access_token: str, token_source: str) -> dict[str, object]:
+        url = self._build_graph_account_url(account_id=account_id, access_token=access_token)
+        payload = self._http_json(method="GET", url=url)
+        account_id_payload = str(payload.get("account_id") or "").strip()
+        id_payload = str(payload.get("id") or "").strip()
+        if account_id_payload == "" or id_payload == "" or not id_payload.startswith("act_"):
+            raise MetaAdsIntegrationError(
+                "Meta account probe returned invalid response shape",
+                endpoint=url,
+                provider_error_message=sanitize_text({"graph_version": self.graph_api_version(), "account_path": self.meta_graph_account_path(account_id), "token_source": token_source, "payload": payload}, max_len=250),
+            )
+        if not self.meta_account_ids_match(id_payload, account_id):
+            raise MetaAdsIntegrationError(
+                "Meta account probe response does not match requested account",
+                endpoint=url,
+                provider_error_message=f"graph_version={self.graph_api_version()} token_source={token_source} requested={self.meta_graph_account_path(account_id)} response={id_payload}",
+            )
+        return {
+            "account_id": account_id_payload,
+            "id": id_payload,
+            "account_path": self.meta_graph_account_path(account_id),
+            "graph_version": self.graph_api_version(),
+            "token_source": token_source,
+        }
 
     def _fetch_account_daily_insights(self, *, account_id: str, start_date: date, end_date: date, access_token: str) -> list[dict[str, object]]:
         return self._fetch_insights(
@@ -524,6 +562,9 @@ class MetaAdsService:
         account_summaries: list[dict[str, object]] = []
 
         for account_id in account_ids:
+            probe = {"account_path": self.meta_graph_account_path(account_id), "graph_version": self.graph_api_version(), "token_source": token_source}
+            if not self._is_test_mode():
+                probe = self._probe_account_access(account_id=account_id, access_token=access_token, token_source=token_source)
             account_rows_written = 0
             account_totals = {
                 "spend": 0.0,
@@ -761,6 +802,7 @@ class MetaAdsService:
             account_summaries.append(
                 {
                     "account_id": account_id,
+                    "account_path": probe.get("account_path"),
                     "rows_written": account_rows_written,
                     "spend": round(account_totals["spend"], 2),
                     "impressions": account_totals["impressions"],
@@ -775,6 +817,7 @@ class MetaAdsService:
             "message": f"Meta Ads {resolved_grain} sync completed.",
             "platform": "meta_ads",
             "grain": resolved_grain,
+            "graph_version": self.graph_api_version(),
             "client_id": int(client_id),
             "start_date": resolved_start.isoformat(),
             "end_date": resolved_end.isoformat(),

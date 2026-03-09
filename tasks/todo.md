@@ -2586,3 +2586,19 @@
 - [x] Root cause fixed: Graph endpoint construction now uses normalized account path helper, eliminating `act_act_` double-prefix requests and robustly matching `act_123` with `123` in selected-account scoping.
 
 - [x] Verified with backend tests for normalization regressions + existing Meta sync service/worker suites.
+
+
+---
+
+# TODO — Align Meta backend requests with Graph Explorer valid shape
+
+- [x] Update workspace to latest remote baseline before modifications.
+- [x] Audit Meta backend request construction for account path, graph version, token source, and selected-account scoping parity with Explorer.
+- [x] Implement small helpers for account path/version/token-source/account-probe and reuse them in validation + insights requests.
+- [x] Extend backend tests for URL parity (numeric/prefixed), no `act_act_`, v24.0 usage, probe response validation, and path reuse in sync calls.
+- [x] Run targeted backend tests and record outcomes.
+
+## Review
+- [x] Implemented Graph Explorer parity helpers and request-shape alignment for Meta account probe + insights URL construction.
+
+- [x] Verified backend regressions with targeted pytest suite for Meta contract + existing Meta sync/worker tests.

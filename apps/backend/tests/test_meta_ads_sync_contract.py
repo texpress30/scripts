@@ -139,6 +139,7 @@ class MetaAdsSyncContractTests(unittest.TestCase):
             self.assertEqual(len(captured_urls), 1)
             self.assertIn("/act_1810211459482188/insights", captured_urls[0])
             self.assertNotIn("act_act_", captured_urls[0])
+            self.assertIn("/v24.0/", captured_urls[0])
         finally:
             meta_ads_service._http_json = original_http_json
 
@@ -161,6 +162,63 @@ class MetaAdsSyncContractTests(unittest.TestCase):
         )
         self.assertEqual(payload["accounts_processed"], 1)
         self.assertEqual(calls, ["act_123"])
+
+    def test_account_probe_validates_explorer_like_response_shape(self):
+        captured_urls: list[str] = []
+
+        def _fake_http_json(*, method: str, url: str):
+            captured_urls.append(url)
+            return {"account_id": "1666914214322527", "id": "act_1666914214322527"}
+
+        original_http_json = meta_ads_service._http_json
+        try:
+            meta_ads_service._http_json = _fake_http_json
+            probe = meta_ads_service._probe_account_access(
+                account_id="act_1666914214322527",
+                access_token="token-ok",
+                token_source="database",
+            )
+            self.assertEqual(probe["id"], "act_1666914214322527")
+            self.assertEqual(probe["account_id"], "1666914214322527")
+            self.assertEqual(probe["account_path"], "act_1666914214322527")
+            self.assertEqual(probe["graph_version"], "v24.0")
+            self.assertEqual(probe["token_source"], "database")
+            self.assertIn("/v24.0/act_1666914214322527?", captured_urls[0])
+            self.assertNotIn("act_act_", captured_urls[0])
+        finally:
+            meta_ads_service._http_json = original_http_json
+
+    def test_sync_client_reuses_same_account_path_for_probe_and_insights(self):
+        client_id = self._create_client_with_accounts(["act_1666914214322527"])
+        meta_ads_service._resolve_active_access_token_with_source = lambda: ("token-ok", "database", None, None)
+
+        captured_urls: list[str] = []
+
+        def _fake_http_json(*, method: str, url: str):
+            captured_urls.append(url)
+            if "/insights" in url:
+                return {"data": []}
+            return {"account_id": "1666914214322527", "id": "act_1666914214322527"}
+
+        original_http_json = meta_ads_service._http_json
+        try:
+            meta_ads_service._http_json = _fake_http_json
+            payload = meta_ads_service.sync_client(
+                client_id=client_id,
+                start_date=date(2026, 3, 1),
+                end_date=date(2026, 3, 1),
+                grain="campaign_daily",
+                account_id="1666914214322527",
+            )
+            self.assertEqual(payload["graph_version"], "v24.0")
+            self.assertEqual(payload["token_source"], "database")
+            self.assertEqual(len(captured_urls), 1)
+            self.assertIn("/act_1666914214322527/insights?", captured_urls[0])
+            self.assertNotIn("act_act_", " ".join(captured_urls))
+            self.assertEqual(payload["accounts"][0]["account_path"], "act_1666914214322527")
+            self.assertNotIn("token-ok", str(payload))
+        finally:
+            meta_ads_service._http_json = original_http_json
 
 
 if __name__ == "__main__":

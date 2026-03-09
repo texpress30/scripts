@@ -227,3 +227,4 @@
 - 2026-03-09: For parity requests on existing pages, validate end-to-end UX parity against the Google baseline (list link -> detail metadata -> sync runs/logs -> terminal errors), not only API plumbing fields.
 - 2026-03-09: When fixing provider-sync production bugs, prioritize executable backend contract alignment (service signature + worker call) before adding further UI parity changes.
 - 2026-03-09: For provider account IDs with prefixed variants (e.g., `act_123` vs `123`), centralize normalization/matching helpers and use them for both API path building and scoping checks to avoid drift bugs.
+- 2026-03-09: When provider Explorer gives a known-good minimal request, add an explicit backend probe using that exact shape before deeper sync calls to isolate request-construction mismatches quickly.
