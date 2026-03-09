@@ -945,6 +945,7 @@ class SyncWorkerTests(unittest.TestCase):
         self.assertEqual(state["run"]["rows_written"], 7)
         self.assertEqual(meta_sync_mock.call_count, 1)
         self.assertEqual(meta_sync_mock.call_args.kwargs["grain"], "campaign_daily")
+        self.assertEqual(meta_sync_mock.call_args.kwargs["account_id"], "3986597205")
         self.assertEqual(google_fetch_mock.call_count, 0)
 
     def test_process_next_chunk_tiktok_ad_daily_uses_tiktok_sync_service(self):
@@ -1137,6 +1138,81 @@ class SyncWorkerTests(unittest.TestCase):
         self.assertIn("Meta API request failed", str(state["chunk"].get("error") or ""))
         self.assertEqual(state["run"]["status"], "error")
         self.assertIn("Meta API request failed", str(state["run"].get("error") or ""))
+
+
+    def test_process_next_chunk_tiktok_error_stores_structured_details(self):
+        state = self._build_state(job_type="historical_backfill", grain="ad_daily", platform="tiktok_ads")
+        captured_chunk_updates = []
+
+        def _claim_any(**kwargs):
+            if state["claimed"]:
+                return None
+            state["claimed"] = True
+            return dict(state["chunk"])
+
+        def _get_run(job_id):
+            return dict(state["run"]) if job_id == "job-1" else None
+
+        def _update_run_status(**kwargs):
+            if kwargs.get("status") is not None:
+                state["run"]["status"] = kwargs["status"]
+            if kwargs.get("error") is not None:
+                state["run"]["error"] = kwargs["error"]
+            return dict(state["run"])
+
+        def _update_chunk_status(**kwargs):
+            captured_chunk_updates.append(dict(kwargs))
+            state["chunk"]["status"] = kwargs["status"]
+            if kwargs.get("error") is not None:
+                state["chunk"]["error"] = kwargs["error"]
+            return dict(state["chunk"])
+
+        def _update_progress(**kwargs):
+            state["run"]["chunks_done"] = int(state["run"].get("chunks_done") or 0) + int(kwargs.get("chunks_done_delta") or 0)
+            return dict(state["run"])
+
+        def _counts(job_id):
+            return {"remaining": 0 if state["chunk"]["status"] in ("done", "error") else 1, "errors": 1}
+
+        with patch.object(sync_worker.sync_run_chunks_store, "claim_next_queued_chunk_any", side_effect=_claim_any), patch.object(
+            sync_worker.sync_runs_store,
+            "get_sync_run",
+            side_effect=_get_run,
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_status", side_effect=_update_run_status), patch.object(
+            sync_worker.sync_run_chunks_store,
+            "update_sync_run_chunk_status",
+            side_effect=_update_chunk_status,
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_progress", side_effect=_update_progress), patch.object(
+            sync_worker.sync_run_chunks_store,
+            "get_sync_run_chunk_status_counts",
+            side_effect=_counts,
+        ), patch.object(
+            sync_worker.client_registry_service,
+            "update_platform_account_operational_metadata",
+            return_value=None,
+        ), patch.object(
+            sync_worker.tiktok_ads_service,
+            "sync_client",
+            side_effect=sync_worker.TikTokAdsIntegrationError(
+                "TikTok HTTP request failed: status=401",
+                endpoint="https://business-api.tiktok.com/open_api/v1.3/report/integrated/get/?access_token=tok_abcdefghijklmnopqrstuvwxyz123456",
+                http_status=401,
+                provider_error_code="40100",
+                provider_error_message="Unauthorized access_token tok_abcdefghijklmnopqrstuvwxyz123456",
+                retryable=False,
+            ),
+        ):
+            processed = sync_worker.process_next_chunk()
+
+        self.assertTrue(processed)
+        self.assertEqual(state["chunk"]["status"], "error")
+        error_update = next(item for item in captured_chunk_updates if item.get("status") == "error")
+        details = error_update["metadata"]["last_error_details"]
+        self.assertEqual(details["provider_error_code"], "40100")
+        self.assertEqual(details["http_status"], 401)
+        self.assertEqual(details["platform"], "tiktok_ads")
+        self.assertEqual(details["grain"], "ad_daily")
+        self.assertNotIn("tok_abcdefghijklmnopqrstuvwxyz123456", str(details))
 
 
 if __name__ == "__main__":
