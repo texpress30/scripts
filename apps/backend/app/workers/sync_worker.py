@@ -37,6 +37,32 @@ def _normalize_run_grain(run: dict[str, object]) -> str:
     return grain
 
 
+
+
+def _resolve_successful_coverage_end(*, job_id: str, fallback_date_end: date) -> date:
+    try:
+        chunks = sync_run_chunks_store.list_sync_run_chunks(job_id)
+    except Exception:
+        return fallback_date_end
+
+    successful_ends: list[date] = []
+    for chunk in chunks:
+        status = str(chunk.get("status") or "").strip().lower()
+        if status not in {"done", "success", "completed"}:
+            continue
+        raw_end = chunk.get("date_end")
+        if raw_end is None:
+            continue
+        try:
+            successful_ends.append(_as_date(raw_end))
+        except Exception:
+            continue
+
+    if not successful_ends:
+        return fallback_date_end
+    return max(successful_ends)
+
+
 def _finalize_run_if_complete(run: dict[str, object]) -> None:
     job_id = str(run.get("job_id") or "")
     counts = sync_run_chunks_store.get_sync_run_chunk_status_counts(job_id)
@@ -88,7 +114,10 @@ def _finalize_run_if_complete(run: dict[str, object]) -> None:
                 "last_run_id": job_id,
             }
             if job_type == "historical_backfill":
-                metadata_kwargs["backfill_completed_through"] = run_date_end
+                metadata_kwargs["backfill_completed_through"] = _resolve_successful_coverage_end(
+                    job_id=job_id,
+                    fallback_date_end=run_date_end,
+                )
             else:
                 metadata_kwargs["rolling_synced_through"] = run_date_end
             client_registry_service.update_platform_account_operational_metadata(**metadata_kwargs)

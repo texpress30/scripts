@@ -1215,5 +1215,75 @@ class SyncWorkerTests(unittest.TestCase):
         self.assertNotIn("tok_abcdefghijklmnopqrstuvwxyz123456", str(details))
 
 
+    def test_meta_historical_success_uses_chunk_coverage_end_for_backfill_metadata(self):
+        state = self._build_state(job_type="historical_backfill", platform="meta_ads")
+        state["run"]["account_id"] = "act_123"
+        state["run"]["date_end"] = str(date(2026, 2, 7))
+
+        metadata_calls = []
+
+        def _claim_any(**kwargs):
+            if state["claimed"]:
+                return None
+            state["claimed"] = True
+            state["chunk"]["status"] = "running"
+            return dict(state["chunk"])
+
+        def _get_run(job_id):
+            return dict(state["run"]) if job_id == "job-1" else None
+
+        def _update_run_status(**kwargs):
+            if kwargs.get("status") is not None:
+                state["run"]["status"] = kwargs["status"]
+            return dict(state["run"])
+
+        def _update_chunk_status(**kwargs):
+            state["chunk"]["status"] = kwargs["status"]
+            return dict(state["chunk"])
+
+        def _update_progress(**kwargs):
+            state["run"]["chunks_done"] = int(state["run"].get("chunks_done") or 0) + int(kwargs.get("chunks_done_delta") or 0)
+            return dict(state["run"])
+
+        def _counts(job_id):
+            return {"remaining": 0 if state["chunk"]["status"] in ("done", "error") else 1, "errors": 0}
+
+        with patch.object(sync_worker.sync_run_chunks_store, "claim_next_queued_chunk_any", side_effect=_claim_any), patch.object(
+            sync_worker.sync_runs_store,
+            "get_sync_run",
+            side_effect=_get_run,
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_status", side_effect=_update_run_status), patch.object(
+            sync_worker.sync_run_chunks_store,
+            "update_sync_run_chunk_status",
+            side_effect=_update_chunk_status,
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_progress", side_effect=_update_progress), patch.object(
+            sync_worker.sync_run_chunks_store,
+            "get_sync_run_chunk_status_counts",
+            side_effect=_counts,
+        ), patch.object(
+            sync_worker.sync_run_chunks_store,
+            "list_sync_run_chunks",
+            return_value=[
+                {"chunk_index": 0, "status": "done", "date_end": str(date(2026, 2, 12))},
+                {"chunk_index": 1, "status": "done", "date_end": str(date(2026, 2, 14))},
+            ],
+        ), patch.object(
+            sync_worker.client_registry_service,
+            "update_platform_account_operational_metadata",
+            side_effect=lambda **kwargs: metadata_calls.append(kwargs) or kwargs,
+        ), patch.object(
+            sync_worker.meta_ads_service,
+            "sync_client",
+            return_value={"rows_upserted": 0},
+        ):
+            processed = sync_worker.process_next_chunk()
+
+        self.assertTrue(processed)
+        self.assertEqual(state["run"]["status"], "done")
+        self.assertEqual(len(metadata_calls), 1)
+        self.assertEqual(str(metadata_calls[0].get("backfill_completed_through")), "2026-02-14")
+        self.assertNotIn("rolling_synced_through", metadata_calls[0])
+
+
 if __name__ == "__main__":
     unittest.main()
