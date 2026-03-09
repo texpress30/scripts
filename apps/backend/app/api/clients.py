@@ -1,20 +1,77 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.dependencies import enforce_action_scope, get_current_user
 from app.schemas.client import (
     AttachGoogleAccountRequest,
+    AttachPlatformAccountRequest,
     BusinessInputsImportRequest,
     BusinessInputsImportResponse,
     CreateClientRequest,
     DetachGoogleAccountRequest,
+    DetachPlatformAccountRequest,
     UpdateClientProfileRequest,
 )
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
-from app.services.client_registry import client_registry_service
+from app.services.client_registry import PlatformAccountAlreadyAttachedError, client_registry_service
 from app.services.client_business_inputs_import_service import client_business_inputs_import_service
+from app.services.sync_constants import (
+    PLATFORM_GOOGLE_ADS,
+    PLATFORM_META_ADS,
+    PLATFORM_PINTEREST_ADS,
+    PLATFORM_SNAPCHAT_ADS,
+    PLATFORM_TIKTOK_ADS,
+)
 
 router = APIRouter(prefix="/clients", tags=["clients"])
+
+_SUPPORTED_PLATFORMS = {
+    PLATFORM_GOOGLE_ADS,
+    PLATFORM_META_ADS,
+    PLATFORM_TIKTOK_ADS,
+    PLATFORM_PINTEREST_ADS,
+    PLATFORM_SNAPCHAT_ADS,
+    "reddit_ads",
+}
+
+
+def _normalize_platform_or_422(platform: str) -> str:
+    normalized = str(platform or "").strip().lower()
+    if normalized not in _SUPPORTED_PLATFORMS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unsupported platform '{platform}'. Allowed values: {sorted(_SUPPORTED_PLATFORMS)}",
+        )
+    return normalized
+
+
+def _attach_platform_account(*, client_id: int, platform: str, account_id: str) -> dict[str, str | int | None]:
+    normalized_platform = _normalize_platform_or_422(platform)
+    normalized_account_id = str(account_id).strip()
+    if normalized_account_id == "":
+        raise HTTPException(status_code=400, detail="account_id is required")
+
+    try:
+        updated = client_registry_service.attach_platform_account_to_client(
+            platform=normalized_platform,
+            client_id=client_id,
+            account_id=normalized_account_id,
+        )
+    except PlatformAccountAlreadyAttachedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "Platform account is already attached to another client",
+                "platform": exc.platform,
+                "account_id": exc.account_id,
+                "client_id": exc.existing_client_id,
+            },
+        ) from exc
+
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Client or platform account not found")
+
+    return updated
 
 
 @router.get("")
@@ -57,24 +114,91 @@ def platform_account_summary(user: AuthUser = Depends(get_current_user)) -> dict
 @router.get("/accounts/google")
 def list_google_accounts(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
-    items = client_registry_service.list_platform_accounts(platform="google_ads")
+    items = client_registry_service.list_platform_accounts(platform=PLATFORM_GOOGLE_ADS)
     return {
         "items": items,
         "count": len(items),
-        "last_import_at": client_registry_service.get_last_import_at(platform="google_ads"),
+        "last_import_at": client_registry_service.get_last_import_at(platform=PLATFORM_GOOGLE_ADS),
     }
+
+
+@router.get("/accounts/{platform}")
+def list_platform_accounts(platform: str, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    normalized_platform = _normalize_platform_or_422(platform)
+    items = client_registry_service.list_platform_accounts_for_mapping(platform=normalized_platform)
+    return {
+        "platform": normalized_platform,
+        "items": items,
+        "count": len(items),
+        "last_import_at": client_registry_service.get_last_import_at(platform=normalized_platform),
+    }
+
+
+@router.post("/{client_id}/attach-account")
+def attach_platform_account(
+    client_id: int,
+    payload: AttachPlatformAccountRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    updated = _attach_platform_account(
+        client_id=client_id,
+        platform=payload.platform,
+        account_id=payload.account_id,
+    )
+
+    normalized_platform = _normalize_platform_or_422(payload.platform)
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="clients.attach_platform_account",
+        resource=f"client:{client_id}",
+        details={"platform": normalized_platform, "account_id": payload.account_id},
+    )
+    return {
+        "status": "ok",
+        "client_id": client_id,
+        "platform": normalized_platform,
+        "account_id": payload.account_id,
+        "client": updated,
+    }
+
+
+@router.post("/{client_id}/detach-account")
+def detach_platform_account(
+    client_id: int,
+    payload: DetachPlatformAccountRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    normalized_platform = _normalize_platform_or_422(payload.platform)
+    deleted = client_registry_service.detach_platform_account_from_client(
+        platform=normalized_platform,
+        client_id=client_id,
+        account_id=payload.account_id,
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Platform account mapping not found")
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="clients.detach_platform_account",
+        resource=f"client:{client_id}",
+        details={"platform": normalized_platform, "account_id": payload.account_id},
+    )
+    return {"status": "ok", "client_id": client_id, "platform": normalized_platform, "account_id": payload.account_id}
 
 
 @router.post("/{client_id}/attach-google-account")
 def attach_google_account(client_id: int, payload: AttachGoogleAccountRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, str | int | None]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
-    updated = client_registry_service.attach_platform_account_to_client(
-        platform="google_ads",
+    updated = _attach_platform_account(
         client_id=client_id,
+        platform=PLATFORM_GOOGLE_ADS,
         account_id=payload.customer_id,
     )
-    if updated is None:
-        raise HTTPException(status_code=404, detail="Client or Google account not found")
 
     audit_log_service.log(
         actor_email=user.email,
@@ -90,7 +214,7 @@ def attach_google_account(client_id: int, payload: AttachGoogleAccountRequest, u
 def detach_google_account(client_id: int, payload: DetachGoogleAccountRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
     deleted = client_registry_service.detach_platform_account_from_client(
-        platform="google_ads",
+        platform=PLATFORM_GOOGLE_ADS,
         client_id=client_id,
         account_id=payload.customer_id,
     )
@@ -174,7 +298,12 @@ def import_client_business_inputs(
 
 
 @router.get("/{client_id}/accounts")
-def list_client_google_accounts(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+def list_client_accounts(
+    client_id: int,
+    platform: str | None = Query(default=None),
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
-    items = client_registry_service.list_client_platform_accounts(platform="google_ads", client_id=client_id)
-    return {"items": items, "count": len(items)}
+    normalized_platform = _normalize_platform_or_422(platform) if platform is not None else None
+    items = client_registry_service.list_client_accounts(client_id=client_id, platform=normalized_platform)
+    return {"items": items, "count": len(items), "platform": normalized_platform}
