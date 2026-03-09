@@ -4,6 +4,7 @@ import base64
 import json
 import secrets
 from datetime import date, datetime, timedelta, timezone
+import re
 from typing import Literal
 from urllib import error, parse, request
 
@@ -170,6 +171,42 @@ class MetaAdsService:
             raise MetaAdsIntegrationError(f"grain invalid: {resolved}")
         return resolved  # type: ignore[return-value]
 
+    def normalize_meta_account_id(self, raw: str | None) -> str:
+        value = str(raw or "").strip()
+        if value == "":
+            return ""
+        lowered = value.lower()
+        suffix = value[4:] if lowered.startswith("act_") else value
+        suffix = suffix.strip()
+        if suffix == "":
+            return ""
+        if re.fullmatch(r"\d+", suffix):
+            return f"act_{suffix}"
+        return f"act_{suffix}" if lowered.startswith("act_") else suffix
+
+    def meta_account_numeric_id(self, raw: str | None) -> str:
+        normalized = self.normalize_meta_account_id(raw)
+        if normalized.startswith("act_"):
+            return normalized[4:]
+        return normalized
+
+    def meta_graph_account_path(self, raw: str | None) -> str:
+        normalized = self.normalize_meta_account_id(raw)
+        if normalized == "":
+            return ""
+        if normalized.startswith("act_"):
+            return normalized
+        if re.fullmatch(r"\d+", normalized):
+            return f"act_{normalized}"
+        return normalized
+
+    def meta_account_ids_match(self, left: str | None, right: str | None) -> bool:
+        left_numeric = self.meta_account_numeric_id(left)
+        right_numeric = self.meta_account_numeric_id(right)
+        if re.fullmatch(r"\d+", left_numeric) and re.fullmatch(r"\d+", right_numeric):
+            return left_numeric == right_numeric
+        return self.normalize_meta_account_id(left).lower() == self.normalize_meta_account_id(right).lower()
+
     def _resolve_sync_window(self, *, start_date: date | None, end_date: date | None) -> tuple[date, date]:
         if start_date is None and end_date is None:
             utc_today = datetime.now(timezone.utc).date()
@@ -186,8 +223,10 @@ class MetaAdsService:
         accounts = client_registry_service.list_client_platform_accounts(platform="meta_ads", client_id=int(client_id))
         ids: list[str] = []
         for item in accounts:
-            account_id = str(item.get("id") or item.get("account_id") or "").strip()
-            if account_id != "" and account_id not in ids:
+            account_id = self.normalize_meta_account_id(str(item.get("id") or item.get("account_id") or ""))
+            if account_id == "":
+                continue
+            if not any(self.meta_account_ids_match(account_id, existing) for existing in ids):
                 ids.append(account_id)
         return ids
 
@@ -198,9 +237,10 @@ class MetaAdsService:
         selected = str(account_id or "").strip()
         if selected == "":
             return account_ids
-        if selected not in account_ids:
+        matched = [candidate for candidate in account_ids if self.meta_account_ids_match(candidate, selected)]
+        if len(matched) <= 0:
             raise MetaAdsIntegrationError("Selected account_id is not attached to this client.")
-        return [selected]
+        return [matched[0]]
 
     def _parse_numeric(self, value: object) -> float:
         try:
@@ -262,7 +302,7 @@ class MetaAdsService:
         settings = load_settings()
         payload = self._http_json(
             method="GET",
-            url=f"https://graph.facebook.com/{settings.meta_api_version.strip('/')}/act_{account_id}/insights?{query}",
+            url=f"https://graph.facebook.com/{settings.meta_api_version.strip('/')}/{self.meta_graph_account_path(account_id)}/insights?{query}",
         )
         data = payload.get("data")
         if not isinstance(data, list):

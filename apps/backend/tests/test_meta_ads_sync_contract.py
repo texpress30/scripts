@@ -110,6 +110,58 @@ class MetaAdsSyncContractTests(unittest.TestCase):
         with self.assertRaisesRegex(MetaAdsIntegrationError, "No Meta Ads accounts attached"):
             meta_ads_service.sync_client(client_id=client_id, grain="campaign_daily")
 
+    def test_meta_account_id_helpers_normalize_and_match_numeric_and_prefixed(self):
+        self.assertEqual(meta_ads_service.normalize_meta_account_id("123456789"), "act_123456789")
+        self.assertEqual(meta_ads_service.normalize_meta_account_id("act_123456789"), "act_123456789")
+        self.assertEqual(meta_ads_service.meta_account_numeric_id("act_123456789"), "123456789")
+        self.assertEqual(meta_ads_service.meta_graph_account_path("123456789"), "act_123456789")
+        self.assertEqual(meta_ads_service.meta_graph_account_path("act_123456789"), "act_123456789")
+        self.assertNotIn("act_act_", meta_ads_service.meta_graph_account_path("act_123456789"))
+        self.assertTrue(meta_ads_service.meta_account_ids_match("act_123", "123"))
+        self.assertTrue(meta_ads_service.meta_account_ids_match("123", "act_123"))
+
+    def test_fetch_insights_never_generates_double_act_prefix(self):
+        captured_urls: list[str] = []
+
+        def _fake_http_json(*, method: str, url: str):
+            captured_urls.append(url)
+            return {"data": []}
+
+        original_http_json = meta_ads_service._http_json
+        try:
+            meta_ads_service._http_json = _fake_http_json
+            meta_ads_service._fetch_campaign_daily_insights(
+                account_id="act_1810211459482188",
+                start_date=date(2026, 3, 1),
+                end_date=date(2026, 3, 1),
+                access_token="token-ok",
+            )
+            self.assertEqual(len(captured_urls), 1)
+            self.assertIn("/act_1810211459482188/insights", captured_urls[0])
+            self.assertNotIn("act_act_", captured_urls[0])
+        finally:
+            meta_ads_service._http_json = original_http_json
+
+    def test_selected_account_matching_accepts_numeric_against_attached_prefixed(self):
+        client_id = self._create_client_with_accounts(["act_123"]) 
+        meta_ads_service._resolve_active_access_token_with_source = lambda: ("token-ok", "database", None, None)
+        calls: list[str] = []
+
+        def _fetch_campaign(**kwargs):
+            calls.append(str(kwargs["account_id"]))
+            return []
+
+        meta_ads_service._fetch_campaign_daily_insights = _fetch_campaign
+        payload = meta_ads_service.sync_client(
+            client_id=client_id,
+            start_date=date(2026, 3, 1),
+            end_date=date(2026, 3, 1),
+            grain="campaign_daily",
+            account_id="123",
+        )
+        self.assertEqual(payload["accounts_processed"], 1)
+        self.assertEqual(calls, ["act_123"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2570,3 +2570,19 @@
 - [x] Root cause fixed: Meta service signature/implementation is now aligned with worker chunk call contract and no longer fails on unexpected keyword arguments.
 
 - [x] Verified with targeted backend suite covering Meta sync service contract + sync worker Meta path + existing Meta account_daily scenarios.
+
+
+---
+
+# TODO — Normalize Meta account_id and prevent act_act_ Graph paths
+
+- [x] Update workspace to latest remote baseline before changes.
+- [x] Trace Meta account_id flow for mapping/scoping/Graph endpoint construction and identify double-prefix risk.
+- [x] Add focused Meta account-id helpers (normalize, numeric, graph path, match) and wire them into scoping + API calls.
+- [x] Add backend regression tests for numeric/prefixed IDs, no `act_act_` endpoint generation, and normalized selected-account matching.
+- [x] Run targeted backend tests and document outcomes.
+
+## Review
+- [x] Root cause fixed: Graph endpoint construction now uses normalized account path helper, eliminating `act_act_` double-prefix requests and robustly matching `act_123` with `123` in selected-account scoping.
+
+- [x] Verified with backend tests for normalization regressions + existing Meta sync service/worker suites.
