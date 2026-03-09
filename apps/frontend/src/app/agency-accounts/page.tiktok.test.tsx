@@ -109,4 +109,22 @@ describe("AgencyAccountsPage TikTok historical progress UX", () => {
     });
     expect(await screen.findByText(/Batch în progres/i)).toBeInTheDocument();
   });
+
+  it("renders clickable account name to detail route and keeps terminal error visible", async () => {
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients") return Promise.resolve({ items: [{ id: 1, name: "Client A", owner_email: "a@x.com", display_id: 1 }] });
+      if (path === "/clients/accounts/summary") return Promise.resolve({ items: [{ platform: "google_ads", connected_count: 1, last_import_at: null }, { platform: "tiktok_ads", connected_count: 1, last_import_at: null }] });
+      if (path === "/clients/accounts/google") return Promise.resolve({ items: [{ id: "g_1", name: "G1", attached_client_id: 1, attached_client_name: "Client A" }], count: 1 });
+      if (path === "/clients/accounts/tiktok_ads") return Promise.resolve({ items: [{ id: "tt_attached", name: "TikTok One", client_id: 1, client_name: "Client A", last_error: "tiktok terminal failure" }], count: 1 });
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /TikTok Ads/i }));
+
+    const link = await screen.findByRole("link", { name: "TikTok One" });
+    expect(link).toHaveAttribute("href", "/agency-accounts/tiktok_ads/tt_attached");
+    expect(await screen.findByText(/Eroare recentă:/i)).toBeInTheDocument();
+  });
+
 });
