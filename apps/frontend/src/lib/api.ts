@@ -126,6 +126,8 @@ export type AccountSyncProgressActiveRun = {
   chunks_total?: number | null;
   errors_count?: number | null;
   error_chunks?: number | null;
+  last_error_summary?: string | null;
+  last_error_details?: Record<string, unknown> | null;
 };
 
 export type AccountSyncProgressBatchResult = {
