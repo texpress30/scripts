@@ -96,6 +96,9 @@ export type AccountSyncRun = {
   rows_written?: number | null;
   error_count?: number | null;
   error?: string | null;
+  last_error_summary?: string | null;
+  last_error_details?: Record<string, unknown> | null;
+  last_error_category?: string | null;
   created_at?: string | null;
   started_at?: string | null;
   finished_at?: string | null;
@@ -130,6 +133,7 @@ export type AccountSyncProgressActiveRun = {
   error_chunks?: number | null;
   last_error_summary?: string | null;
   last_error_details?: Record<string, unknown> | null;
+  last_error_category?: string | null;
 };
 
 export type AccountSyncProgressBatchResult = {

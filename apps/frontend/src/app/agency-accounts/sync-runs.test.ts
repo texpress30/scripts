@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getEffectiveAccountStatus, isRunSupersededByLaterSuccess, shouldDisplayRunByDefault } from "./sync-runs";
+import { getEffectiveAccountStatus, getTikTokErrorPresentation, isRunSupersededByLaterSuccess, shouldDisplayRunByDefault } from "./sync-runs";
 
 describe("sync-runs helpers", () => {
   it("marks failed historical run superseded by later success on same scope", () => {
@@ -60,5 +60,17 @@ describe("sync-runs helpers", () => {
         lastSuccessAt: "2026-03-09T10:00:00Z",
       }),
     ).toBe("done");
+  });
+
+  it("maps TikTok error category to clear UX message", () => {
+    const presentation = getTikTokErrorPresentation("provider_access_denied", "provider technical message");
+    expect(presentation.title).toBe("Acces refuzat de TikTok la advertiser");
+    expect(presentation.details).toBe("provider technical message");
+  });
+
+  it("falls back to legacy message when TikTok error category is missing", () => {
+    const presentation = getTikTokErrorPresentation(undefined, "legacy fallback error");
+    expect(presentation.title).toBe("legacy fallback error");
+    expect(presentation.details).toBeNull();
   });
 });

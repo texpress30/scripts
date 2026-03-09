@@ -97,6 +97,45 @@ describe("Agency Account detail Meta/TikTok parity", () => {
     expect(screen.getByText(/Sync runs/)).toBeInTheDocument();
   });
 
+  it("renders TikTok error category title and safe details in detail banner and run card", async () => {
+    paramsState.platform = "tiktok_ads";
+    paramsState.accountId = "tt_1";
+
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients/accounts/tiktok_ads") {
+        return Promise.resolve({ items: [{ id: "tt_1", name: "TikTok One", platform: "tiktok_ads", client_name: "Client B" }] });
+      }
+      if (path.includes("/accounts/tiktok_ads/tt_1")) {
+        return Promise.resolve({
+          runs: [
+            {
+              job_id: "tt-run-err",
+              job_type: "historical_backfill",
+              status: "error",
+              last_error_summary: "provider denied",
+              last_error_category: "provider_access_denied",
+              last_error_details: { provider_error_message: "Advertiser access denied", provider_error_code: "40300" },
+              chunks_total: 1,
+              chunks_done: 0,
+              created_at: "2026-03-09T09:00:00Z",
+            },
+          ],
+        });
+      }
+      if (path.includes("/agency/sync-runs/tt-run-err/chunks")) {
+        return Promise.resolve({ chunks: [] });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountDetailPage />);
+
+    expect(await screen.findByText(/Ultimul run a eșuat: Acces refuzat de TikTok la advertiser/i)).toBeInTheDocument();
+    fireEvent.click(await screen.findByText("Show logs"));
+    expect(await screen.findByText(/Category: Acces refuzat de TikTok la advertiser/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Details: Advertiser access denied/i)).toBeInTheDocument();
+  });
+
   it("hides superseded failed historical runs and clears false terminal banner", async () => {
     paramsState.platform = "meta_ads";
     paramsState.accountId = "act_1";

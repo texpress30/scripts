@@ -222,6 +222,7 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
                 start_date=chunk_start,
                 end_date=chunk_end,
                 grain=grain,
+                account_id=account_id,
             )
             rows_written = int(snapshot.get("rows_written") or 0)
         elif platform != "google_ads":
@@ -458,12 +459,18 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
         http_status = None
         endpoint = None
         retryable = None
+        error_category = None
+        token_source = None
+        advertiser_id = None
         if isinstance(exc, (MetaAdsIntegrationError, TikTokAdsIntegrationError)):
             provider_error_code = exc.provider_error_code
             provider_error_message = exc.provider_error_message
             http_status = exc.http_status
             endpoint = exc.endpoint
             retryable = exc.retryable
+            error_category = getattr(exc, "error_category", None)
+            token_source = getattr(exc, "token_source", None)
+            advertiser_id = getattr(exc, "advertiser_id", None)
             if provider_error_message and chunk_error == "":
                 chunk_error = sanitize_text(provider_error_message, max_len=300)
         chunk_error_details = sanitize_payload(
@@ -481,8 +488,15 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
                 "http_status": http_status,
                 "endpoint": endpoint,
                 "retryable": retryable,
+                "error_category": error_category,
+                "token_source": token_source,
+                "advertiser_id": advertiser_id,
             }
         )
+        if isinstance(chunk_error_details, dict):
+            chunk_error_details["error_category"] = error_category
+            chunk_error_details["token_source"] = token_source
+            chunk_error_details["advertiser_id"] = advertiser_id
 
     duration_ms = int((time.monotonic() - started) * 1000)
 

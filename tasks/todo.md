@@ -2616,3 +2616,51 @@
 
 ## Review
 - [ ] Pending implementation.
+
+---
+
+# TODO — Stabilizare TikTok pasul 2: contract sync + advertiser scoping
+
+- [x] Sync workspace to latest available repo state before implementation.
+- [x] Trace TikTok flow end-to-end (orchestration -> runs/chunks -> worker -> service sync contract).
+- [x] Align `TikTokAdsService.sync_client` contract to explicit worker params (`client_id`, window, grain, optional `account_id`).
+- [x] Pass selected run `account_id` from worker into TikTok sync call.
+- [x] Enforce strict advertiser scoping in TikTok service for selected `account_id`, including normalize+ownership validation.
+- [x] Add regression tests for worker passthrough + service scoping/validation errors.
+- [x] Run targeted backend tests and record outcomes.
+
+## Review
+- [x] TikTok worker/service contract now includes selected advertiser `account_id`; service no longer fans out to all attached accounts when a specific advertiser is selected.
+- [x] Error paths now return explicit `TikTokAdsIntegrationError` for no attached accounts, unattached selected advertiser, invalid date window, invalid grain, and missing token.
+
+---
+
+# TODO — Stabilizare TikTok pasul 3: preflight advertiser access probe
+
+- [x] Sync workspace to latest available repo state before modifications.
+- [x] Analyze TikTok flow (orchestration -> worker -> service contract -> provider call -> error observability).
+- [x] Add lightweight preflight advertiser probe before reporting (`oauth2/advertiser/get`) for selected/target advertiser(s).
+- [x] Implement error classification for TikTok sync/probe paths (`local_attachment_error`, `provider_access_denied`, `token_missing_or_invalid`, `provider_http_error_generic`).
+- [x] Ensure worker observability details include safe debug fields (`platform`, `advertiser_id`, `endpoint`, `http_status`, `provider_error_code`, `provider_error_message`, `token_source`, `error_category`) without token leaks.
+- [x] Add/update backend tests for probe deny, token classification, probe-success continuation, worker metadata propagation, and local attachment/token validation.
+- [x] Run targeted backend tests (service + worker + orchestration subset) and capture outcomes.
+
+## Review
+- [x] TikTok sync now performs provider-side preflight access validation before reporting and fails fast with classified, sanitized errors when advertiser access/token is invalid.
+- [x] Existing local attachment validation remains distinct from provider access failures, and worker-level error details now expose safe classification context for UI/ops debugging.
+
+---
+
+# TODO — TikTok UX + API wiring pentru error_category
+
+- [x] Sync workspace to latest available repo state and confirm branch/remote constraints.
+- [x] Expose stable TikTok error category field from backend sync payloads used by frontend (`last_error_category`).
+- [x] Add centralized frontend mapping helper for TikTok error categories to user-facing safe labels.
+- [x] Wire TikTok category messaging in Agency Accounts list + Agency Account Detail (banner + run cards) with safe fallback.
+- [x] Disable TikTok historical trigger in UI when frontend TikTok feature flag is off and show explicit unavailable message.
+- [x] Add/update frontend tests for category mapping, list/detail rendering, fallback behavior, and disabled button behavior.
+- [x] Run targeted frontend tests, frontend build, and relevant backend tests.
+
+## Review
+- [x] TikTok error categories are now displayed explicitly in UI without fragile free-text parsing.
+- [x] Existing fallback behavior remains for missing categories, and non-TikTok flows are unchanged.

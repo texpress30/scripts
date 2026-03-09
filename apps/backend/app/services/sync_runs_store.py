@@ -1350,6 +1350,11 @@ class SyncRunsStore:
                             if isinstance(row[7], dict)
                             else None
                         ),
+                        "last_error_category": (
+                            str((((row[7] or {}).get("last_error_details") or {}).get("error_category") or "")).strip() or None
+                            if isinstance(row[7], dict) and isinstance((row[7] or {}).get("last_error_details"), dict)
+                            else None
+                        ),
                         "chunks_done": int(row[8]) if row[8] is not None else 0,
                         "chunks_total": int(row[9]) if row[9] is not None else 0,
                         "errors_count": int(row[10]) if row[10] is not None else 0,

@@ -21,6 +21,7 @@ vi.mock("next/link", () => ({
 
 describe("AgencyAccountsPage TikTok historical progress UX", () => {
   beforeEach(() => {
+    vi.stubEnv("NEXT_PUBLIC_FF_TIKTOK_INTEGRATION", "1");
     window.sessionStorage.clear();
     apiMock.apiRequest.mockReset();
     apiMock.postAccountSyncProgressBatch.mockReset();
@@ -125,6 +126,63 @@ describe("AgencyAccountsPage TikTok historical progress UX", () => {
     const link = await screen.findByRole("link", { name: "TikTok One" });
     expect(link).toHaveAttribute("href", "/agency-accounts/tiktok_ads/tt_attached");
     expect(await screen.findByText(/Eroare recentă:/i)).toBeInTheDocument();
+  });
+
+  it("shows TikTok categorized error in list row when error_category is present", async () => {
+    apiMock.postAccountSyncProgressBatch.mockResolvedValue({
+      platform: "tiktok_ads",
+      requested_count: 1,
+      results: [
+        {
+          account_id: "tt_attached",
+          active_run: {
+            job_id: "j-err",
+            status: "running",
+            chunks_done: 0,
+            chunks_total: 1,
+            last_error_summary: "provider said no",
+            last_error_category: "provider_access_denied",
+          },
+        },
+      ],
+    });
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients") return Promise.resolve({ items: [{ id: 1, name: "Client A", owner_email: "a@x.com", display_id: 1 }] });
+      if (path === "/clients/accounts/summary") return Promise.resolve({ items: [{ platform: "google_ads", connected_count: 1, last_import_at: null }, { platform: "tiktok_ads", connected_count: 1, last_import_at: null }] });
+      if (path === "/clients/accounts/google") return Promise.resolve({ items: [{ id: "g_1", name: "G1", attached_client_id: 1, attached_client_name: "Client A" }], count: 1 });
+      if (path === "/clients/accounts/tiktok_ads") return Promise.resolve({ items: [{ id: "tt_attached", name: "TikTok One", client_id: 1, client_name: "Client A", last_error: "provider said no", last_error_category: "provider_access_denied" }], count: 1 });
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /TikTok Ads/i }));
+
+    expect(await screen.findByText(/Eroare recentă: Acces refuzat de TikTok la advertiser/i)).toBeInTheDocument();
+  });
+
+  it("keeps fallback error text when TikTok error category is missing", async () => {
+    apiMock.postAccountSyncProgressBatch.mockResolvedValue({ platform: "tiktok_ads", requested_count: 0, results: [] });
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients") return Promise.resolve({ items: [{ id: 1, name: "Client A", owner_email: "a@x.com", display_id: 1 }] });
+      if (path === "/clients/accounts/summary") return Promise.resolve({ items: [{ platform: "google_ads", connected_count: 1, last_import_at: null }, { platform: "tiktok_ads", connected_count: 1, last_import_at: null }] });
+      if (path === "/clients/accounts/google") return Promise.resolve({ items: [{ id: "g_1", name: "G1", attached_client_id: 1, attached_client_name: "Client A" }], count: 1 });
+      if (path === "/clients/accounts/tiktok_ads") return Promise.resolve({ items: [{ id: "tt_attached", name: "TikTok One", client_id: 1, client_name: "Client A", last_error: "legacy tiktok error" }], count: 1 });
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /TikTok Ads/i }));
+    expect(await screen.findByText(/Eroare recentă: legacy tiktok error/i)).toBeInTheDocument();
+  });
+
+  it("disables Download historical when TikTok feature flag is off", async () => {
+    vi.stubEnv("NEXT_PUBLIC_FF_TIKTOK_INTEGRATION", "0");
+    render(<AgencyAccountsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /TikTok Ads/i }));
+
+    expect(await screen.findByText(/TikTok sync este dezactivat în acest environment/i)).toBeInTheDocument();
+    const button = await screen.findByRole("button", { name: "Download historical" });
+    expect(button).toBeDisabled();
   });
 
 });

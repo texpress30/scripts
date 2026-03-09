@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest, listAccountSyncRuns, repairSyncRun, retryFailedSyncRun, type AccountSyncRun } from "@/lib/api";
-import { getEffectiveAccountStatus, isRunActive, isRunFailure, isRunSupersededByLaterSuccess, normalizeJobType, normalizeStatus } from "../../sync-runs";
+import { getEffectiveAccountStatus, getTikTokErrorPresentation, isRunActive, isRunFailure, isRunSupersededByLaterSuccess, normalizeJobType, normalizeStatus } from "../../sync-runs";
 
 type AccountMeta = {
   id: string;
@@ -208,9 +208,23 @@ export default function AgencyAccountDetailPage() {
     [runsSorted, supersededRunIds],
   );
 
+  const latestTikTokErrorPresentation = useMemo(() => {
+    if (platform !== "tiktok_ads") return null;
+    const failedRun = visibleRuns.find((run) => isRunFailure(run.status));
+    if (!failedRun) return null;
+    const details = (failedRun as { last_error_details?: unknown }).last_error_details;
+    const category = String((failedRun as { last_error_category?: unknown }).last_error_category ?? (details && typeof details === "object" ? (details as { error_category?: unknown }).error_category : "") ?? "").trim();
+    const summary = String((failedRun as { last_error_summary?: unknown }).last_error_summary ?? "").trim();
+    const fallback = summary || String(failedRun.error ?? "").trim() || (details && typeof details === "object" ? String((details as { provider_error_message?: unknown }).provider_error_message ?? "").trim() : "") || "run failed";
+    return getTikTokErrorPresentation(category, fallback);
+  }, [platform, visibleRuns]);
+
   const latestTerminalError = useMemo(() => {
     const failedRun = visibleRuns.find((run) => isRunFailure(run.status));
     if (!failedRun) return "";
+    if (platform === "tiktok_ads") {
+      return latestTikTokErrorPresentation?.title ?? "run failed";
+    }
     const summary = String((failedRun as { last_error_summary?: unknown }).last_error_summary ?? "").trim();
     if (summary) return summary;
     const runError = String(failedRun.error ?? "").trim();
@@ -221,7 +235,7 @@ export default function AgencyAccountDetailPage() {
       if (providerMessage) return providerMessage;
     }
     return "run failed";
-  }, [visibleRuns]);
+  }, [latestTikTokErrorPresentation?.title, platform, visibleRuns]);
   const retryableFailedRun = useMemo(
     () =>
       visibleRuns.find(
@@ -596,9 +610,12 @@ export default function AgencyAccountDetailPage() {
               <p className="mt-2 text-sm text-slate-500">Nu există sync runs pentru acest cont încă.</p>
             ) : null}
             {!hasActiveRun && latestTerminalError ? (
-              <p className="mt-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                Ultimul run a eșuat: {latestTerminalError}
-              </p>
+              <div className="mt-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                <p>Ultimul run a eșuat: {latestTerminalError}</p>
+                {platform === "tiktok_ads" && latestTikTokErrorPresentation?.details ? (
+                  <p className="mt-1 text-xs text-red-600">Detalii: {latestTikTokErrorPresentation.details}</p>
+                ) : null}
+              </div>
             ) : null}
 
             {visibleRuns.length > 0 ? (
@@ -642,12 +659,32 @@ export default function AgencyAccountDetailPage() {
                       ) : null}
 
                       {run.error ? <p className="px-3 pb-2 text-xs text-red-600">Error: {run.error}</p> : null}
-                      {String((run as { last_error_summary?: unknown }).last_error_summary ?? "").trim() ? (
-                        <p className="px-3 pb-2 text-xs text-red-600">Summary: {String((run as { last_error_summary?: unknown }).last_error_summary ?? "")}</p>
-                      ) : null}
-                      {(run as { last_error_details?: unknown }).last_error_details && typeof (run as { last_error_details?: unknown }).last_error_details === "object" ? (
-                        <p className="px-3 pb-2 text-xs text-red-600">Details: {String(((run as { last_error_details?: Record<string, unknown> }).last_error_details?.provider_error_message as string | undefined) || ((run as { last_error_details?: Record<string, unknown> }).last_error_details?.provider_error_code as string | undefined) || "available")}</p>
-                      ) : null}
+                      {(() => {
+                        const summary = String((run as { last_error_summary?: unknown }).last_error_summary ?? "").trim();
+                        const details = (run as { last_error_details?: unknown }).last_error_details;
+                        const category = String((run as { last_error_category?: unknown }).last_error_category ?? (details && typeof details === "object" ? (details as { error_category?: unknown }).error_category : "") ?? "").trim();
+                        if (platform === "tiktok_ads") {
+                          const fallback = summary || String(run.error ?? "").trim() || (details && typeof details === "object" ? String((details as { provider_error_message?: unknown }).provider_error_message ?? "").trim() : "") || "run failed";
+                          const presentation = getTikTokErrorPresentation(category, fallback);
+                          return (
+                            <>
+                              <p className="px-3 pb-2 text-xs text-red-700">Category: {presentation.title}</p>
+                              {presentation.details ? <p className="px-3 pb-2 text-xs text-red-600">Summary: {presentation.details}</p> : null}
+                              {details && typeof details === "object" ? (
+                                <p className="px-3 pb-2 text-xs text-red-600">Details: {String(((details as Record<string, unknown>).provider_error_message as string | undefined) || ((details as Record<string, unknown>).provider_error_code as string | undefined) || "available")}</p>
+                              ) : null}
+                            </>
+                          );
+                        }
+                        return (
+                          <>
+                            {summary ? <p className="px-3 pb-2 text-xs text-red-600">Summary: {summary}</p> : null}
+                            {details && typeof details === "object" ? (
+                              <p className="px-3 pb-2 text-xs text-red-600">Details: {String(((details as Record<string, unknown>).provider_error_message as string | undefined) || ((details as Record<string, unknown>).provider_error_code as string | undefined) || "available")}</p>
+                            ) : null}
+                          </>
+                        );
+                      })()}
 
                       {expanded ? (
                         <div className="border-t border-slate-100 bg-slate-50 px-3 py-3">

@@ -34,7 +34,6 @@ function parseDateOnly(value?: string | null): number | null {
   return parsed;
 }
 
-
 function retrySourceJobId(run: AccountSyncRun): string {
   const metadata = run.metadata && typeof run.metadata === "object" ? run.metadata : {};
   const retryReason = String((metadata as { retry_reason?: unknown }).retry_reason ?? "").trim();
@@ -77,7 +76,6 @@ function matchesScopeConservatively(failed: AccountSyncRun, success: AccountSync
 
   return true;
 }
-
 
 function rangeCoveredByAccountMeta(run: AccountSyncRun, accountSyncStart?: string | null, accountBackfillThrough?: string | null): boolean {
   const accountStart = parseDateOnly(accountSyncStart);
@@ -138,4 +136,29 @@ export function getEffectiveAccountStatus(input: {
   if (input.hasActiveSync) return "running";
   if (String(input.lastSuccessAt ?? "").trim()) return "done";
   return "idle";
+}
+
+export type TikTokErrorPresentation = {
+  title: string;
+  details: string | null;
+};
+
+export function getTikTokErrorPresentation(errorCategory?: string | null, fallbackMessage?: string | null): TikTokErrorPresentation {
+  const normalizedCategory = String(errorCategory ?? "").trim().toLowerCase();
+  const fallback = String(fallbackMessage ?? "").trim();
+
+  const titleByCategory: Record<string, string> = {
+    local_attachment_error: "Cont TikTok neatașat clientului",
+    provider_access_denied: "Acces refuzat de TikTok la advertiser",
+    token_missing_or_invalid: "Token TikTok lipsă sau invalid",
+    provider_http_error_generic: "Eroare TikTok API",
+    integration_disabled: "TikTok sync este dezactivat în acest environment",
+  };
+
+  const title = titleByCategory[normalizedCategory] ?? (fallback || "Eroare TikTok API");
+  if (!fallback || fallback === title) {
+    return { title, details: null };
+  }
+
+  return { title, details: fallback };
 }

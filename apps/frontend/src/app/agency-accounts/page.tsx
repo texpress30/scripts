@@ -7,7 +7,8 @@ import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest, postAccountSyncProgressBatch, type AccountSyncProgressBatchResult } from "@/lib/api";
-import { getEffectiveAccountStatus } from "./sync-runs";
+import { isTikTokIntegrationEnabled } from "@/lib/featureFlags";
+import { getEffectiveAccountStatus, getTikTokErrorPresentation } from "./sync-runs";
 
 type TikTokAccount = {
   id?: string;
@@ -24,6 +25,8 @@ type TikTokAccount = {
   timezone?: string | null;
   last_success_at?: string | null;
   last_error?: string | null;
+  last_error_category?: string | null;
+  last_error_details?: Record<string, unknown> | null;
   sync_start_date?: string | null;
   backfill_completed_through?: string | null;
   rolling_synced_through?: string | null;
@@ -139,6 +142,8 @@ type RowChunkProgress = {
   dateStart?: string | null;
   dateEnd?: string | null;
   lastErrorSummary?: string | null;
+  lastErrorCategory?: string | null;
+  lastErrorDetails?: Record<string, unknown> | null;
 };
 
 type UnifiedProviderAccount = {
@@ -148,6 +153,8 @@ type UnifiedProviderAccount = {
   attachedClientName: string | null;
   lastSuccessAt: string | null;
   lastError: string | null;
+  lastErrorCategory?: string | null;
+  lastErrorDetails?: Record<string, unknown> | null;
   lastRunStatus: string | null;
   lastRunType: string | null;
   syncStartDate: string | null;
@@ -424,6 +431,8 @@ export default function AgencyAccountsPage() {
         attachedClientName: account.client_name ?? account.attached_client_name ?? null,
         lastSuccessAt: account.last_success_at ?? null,
         lastError: account.last_error ?? null,
+        lastErrorCategory: account.last_error_category ?? null,
+        lastErrorDetails: account.last_error_details ?? null,
         lastRunStatus: account.last_run_status ?? null,
         lastRunType: account.last_run_type ?? null,
         syncStartDate: account.sync_start_date ?? null,
@@ -1059,6 +1068,8 @@ export default function AgencyAccountsPage() {
             dateStart: item.active_run.date_start ?? null,
             dateEnd: item.active_run.date_end ?? null,
             lastErrorSummary: item.active_run.last_error_summary ?? null,
+            lastErrorCategory: (item.active_run as { last_error_category?: unknown }).last_error_category ? String((item.active_run as { last_error_category?: unknown }).last_error_category) : null,
+            lastErrorDetails: item.active_run.last_error_details ?? null,
           } satisfies RowChunkProgress;
         }
 
@@ -1081,6 +1092,7 @@ export default function AgencyAccountsPage() {
 
   const isBatchActive = Boolean(currentBatchId);
   const controlsDisabled = loading || actionBusy || isBatchActive;
+  const isTikTokSyncAvailable = selectedPlatform !== "tiktok_ads" || isTikTokIntegrationEnabled();
 
   return (
     <ProtectedPage>
@@ -1130,7 +1142,7 @@ export default function AgencyAccountsPage() {
                       type="button"
                       className={actionButtonClass("historical")}
                       onClick={() => void startBatchSyncHistorical()}
-                      disabled={controlsDisabled || selectedEligibleAccounts.length === 0}
+                      disabled={controlsDisabled || selectedEligibleAccounts.length === 0 || !isTikTokSyncAvailable}
                     >
                       {runningAction === "historical" || isBatchActive ? "Downloading..." : "Download historical"}
                     </button>
@@ -1157,6 +1169,9 @@ export default function AgencyAccountsPage() {
                 {syncStatusMessage ? <p className="mt-2 text-sm text-indigo-700">{syncStatusMessage}</p> : null}
                 {selectedPlatform === "meta_ads" && metaActionMessage ? <p className="mt-2 text-sm text-emerald-700">{metaActionMessage}</p> : null}
                 {selectedPlatform === "meta_ads" && metaActionError ? <p className="mt-2 text-sm text-red-600">{metaActionError}</p> : null}
+                {selectedPlatform === "tiktok_ads" && !isTikTokSyncAvailable ? (
+                  <p className="mt-2 text-sm text-amber-700">TikTok sync este dezactivat în acest environment</p>
+                ) : null}
                 {selectedPlatform === "tiktok_ads" && tiktokActionMessage ? <p className="mt-2 text-sm text-emerald-700">{tiktokActionMessage}</p> : null}
                 {selectedPlatform === "tiktok_ads" && tiktokActionError ? <p className="mt-2 text-sm text-red-600">{tiktokActionError}</p> : null}
 
@@ -1240,7 +1255,22 @@ export default function AgencyAccountsPage() {
                             <p className="truncate text-sm font-medium text-slate-900"><Link href={accountDetailUrl(selectedPlatform, accountId)} className="hover:underline">{account.name}</Link></p>
                             <p className="text-xs text-slate-500">ID: {accountId || "-"}</p>
                             <p className="text-xs text-slate-500">Ultimul sync reușit: {account.lastSuccessAt ? formatDateTime(account.lastSuccessAt) : "-"}</p>
-                            {account.lastError ? <p className="text-xs text-red-600">Eroare recentă: {account.lastError}</p> : <p className="text-xs text-slate-500">Eroare recentă: -</p>}
+                            {(() => {
+                              if (!account.lastError) return <p className="text-xs text-slate-500">Eroare recentă: -</p>;
+                              if (selectedPlatform !== "tiktok_ads") return <p className="text-xs text-red-600">Eroare recentă: {account.lastError}</p>;
+                              const progressErrorCategory = rowChunkProgressByAccount[account.id]?.lastErrorCategory
+                                ?? (typeof rowChunkProgressByAccount[account.id]?.lastErrorDetails === "object"
+                                  ? String(((rowChunkProgressByAccount[account.id]?.lastErrorDetails as Record<string, unknown>)?.error_category as string | undefined) ?? "").trim() || null
+                                  : null);
+                              const accountErrorCategory = String(account.lastErrorCategory ?? (account.lastErrorDetails && typeof account.lastErrorDetails === "object" ? (account.lastErrorDetails as Record<string, unknown>).error_category : "") ?? "").trim() || null;
+                              const presentation = getTikTokErrorPresentation(progressErrorCategory ?? accountErrorCategory, account.lastError);
+                              return (
+                                <>
+                                  <p className="text-xs text-red-600">Eroare recentă: {presentation.title}</p>
+                                  {presentation.details ? <p className="text-xs text-red-500">Detalii: {presentation.details}</p> : null}
+                                </>
+                              );
+                            })()}
                           </div>
                           <div>
                             <p className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Sync progress</p>
@@ -1370,7 +1400,7 @@ export default function AgencyAccountsPage() {
                       type="button"
                       className={actionButtonClass("historical")}
                       onClick={() => void startBatchSyncHistorical()}
-                      disabled={controlsDisabled || selectedEligibleAccounts.length === 0}
+                      disabled={controlsDisabled || selectedEligibleAccounts.length === 0 || !isTikTokSyncAvailable}
                     >
                       {runningAction === "historical" || isBatchActive ? "Downloading..." : "Download historical"}
                     </button>

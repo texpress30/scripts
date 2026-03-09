@@ -229,3 +229,6 @@
 - 2026-03-09: For provider account IDs with prefixed variants (e.g., `act_123` vs `123`), centralize normalization/matching helpers and use them for both API path building and scoping checks to avoid drift bugs.
 - 2026-03-09: When provider Explorer gives a known-good minimal request, add an explicit backend probe using that exact shape before deeper sync calls to isolate request-construction mismatches quickly.
 - 2026-03-09: For sync-history UX, separate "active/last effective status" from raw historical runs and hide superseded failures by default so old errors don't override current success state.
+- 2026-03-09: After explicit user correction about scope quality, prioritize concrete backend contract+scoping bug fixes with executable tests over broad parity/generalization work; ship minimal code-path changes first.
+- 2026-03-09: For provider preflight/error-taxonomy tasks, avoid passing classification labels containing 'token' through generic secret-mask sanitizers; preserve enum values explicitly after payload sanitization.
+- 2026-03-09: When adding provider-specific UI logic in shared pages, verify both provider and Google-only sections separately to avoid accidental type narrowing regressions.

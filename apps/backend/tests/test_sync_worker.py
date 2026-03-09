@@ -1014,6 +1014,7 @@ class SyncWorkerTests(unittest.TestCase):
         self.assertEqual(state["run"]["rows_written"], 5)
         self.assertEqual(tiktok_sync_mock.call_count, 1)
         self.assertEqual(tiktok_sync_mock.call_args.kwargs["grain"], "ad_daily")
+        self.assertEqual(tiktok_sync_mock.call_args.kwargs["account_id"], "3986597205")
 
     def test_process_next_chunk_tiktok_error_maps_to_run_status(self):
         state = self._build_state(job_type="rolling_refresh", grain="campaign_daily", platform="tiktok_ads")
@@ -1194,12 +1195,15 @@ class SyncWorkerTests(unittest.TestCase):
             sync_worker.tiktok_ads_service,
             "sync_client",
             side_effect=sync_worker.TikTokAdsIntegrationError(
-                "TikTok HTTP request failed: status=401",
-                endpoint="https://business-api.tiktok.com/open_api/v1.3/report/integrated/get/?access_token=tok_abcdefghijklmnopqrstuvwxyz123456",
+                "TikTok advertiser access probe failed for advertiser 3986597205.",
+                endpoint="https://business-api.tiktok.com/open_api/v1.3/oauth2/advertiser/get/?access_token=tok_abcdefghijklmnopqrstuvwxyz123456",
                 http_status=401,
                 provider_error_code="40100",
                 provider_error_message="Unauthorized access_token tok_abcdefghijklmnopqrstuvwxyz123456",
                 retryable=False,
+                error_category="token_missing_or_invalid",
+                token_source="database",
+                advertiser_id="3986597205",
             ),
         ):
             processed = sync_worker.process_next_chunk()
@@ -1212,6 +1216,9 @@ class SyncWorkerTests(unittest.TestCase):
         self.assertEqual(details["http_status"], 401)
         self.assertEqual(details["platform"], "tiktok_ads")
         self.assertEqual(details["grain"], "ad_daily")
+        self.assertEqual(details.get("error_category"), "token_missing_or_invalid")
+        self.assertEqual(details.get("token_source"), "database")
+        self.assertEqual(details.get("advertiser_id"), "3986597205")
         self.assertNotIn("tok_abcdefghijklmnopqrstuvwxyz123456", str(details))
 
 
