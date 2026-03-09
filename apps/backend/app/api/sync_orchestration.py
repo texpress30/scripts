@@ -110,6 +110,18 @@ def _normalize_account_id(value: str, *, platform: str | None = None) -> str:
     return normalized
 
 
+def _is_platform_sync_enabled(platform: str) -> tuple[bool, str | None]:
+    normalized = str(platform or "").strip().lower()
+    settings = load_settings()
+    if normalized == "tiktok_ads" and not settings.ff_tiktok_integration:
+        return False, "TikTok integration is disabled by feature flag."
+    if normalized == "pinterest_ads" and not settings.ff_pinterest_integration:
+        return False, "Pinterest integration is disabled by feature flag."
+    if normalized == "snapchat_ads" and not settings.ff_snapchat_integration:
+        return False, "Snapchat integration is disabled by feature flag."
+    return True, None
+
+
 def _resolve_date_range(payload: CreateBatchSyncRunsRequest) -> tuple[date, date]:
     if payload.start_date is not None or payload.end_date is not None:
         if payload.start_date is None or payload.end_date is None:
@@ -344,6 +356,10 @@ def _serialize_chunk(item: dict[str, object]) -> dict[str, object]:
 @router.post("/batch")
 def create_batch_sync_runs(payload: CreateBatchSyncRunsRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="integrations:sync", scope="agency")
+
+    enabled, disabled_reason = _is_platform_sync_enabled(payload.platform)
+    if not enabled:
+        raise HTTPException(status_code=400, detail=str(disabled_reason or "Platform integration is disabled by feature flag."))
 
     normalized_account_ids: list[str] = []
     for raw in payload.account_ids:

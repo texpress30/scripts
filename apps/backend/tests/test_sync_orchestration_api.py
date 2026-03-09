@@ -867,6 +867,49 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.assertEqual(payload["grains"], ["account_daily"])
         self.assertNotIn("keyword_daily", payload["grains"])
 
+    def test_batch_tiktok_disabled_flag_rejects_without_side_effects(self):
+        headers = self._auth_headers()
+        with patch.dict(os.environ, {"FF_TIKTOK_INTEGRATION": "0"}, clear=False):
+            response = self.client.post(
+                "/agency/sync-runs/batch",
+                headers=headers,
+                json={
+                    "platform": "tiktok_ads",
+                    "account_ids": ["123456789"],
+                    "job_type": "historical_backfill",
+                    "start_date": str(date(2026, 1, 1)),
+                    "end_date": str(date(2026, 1, 3)),
+                    "chunk_days": 1,
+                },
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json().get("detail"), "TikTok integration is disabled by feature flag.")
+        self.assertEqual(len(self.state["runs"]), 0)
+        self.assertEqual(len(self.state["chunks"]), 0)
+
+    def test_batch_tiktok_enabled_flag_allows_creation(self):
+        headers = self._auth_headers()
+        with patch.dict(os.environ, {"FF_TIKTOK_INTEGRATION": "1"}, clear=False):
+            response = self.client.post(
+                "/agency/sync-runs/batch",
+                headers=headers,
+                json={
+                    "platform": "tiktok_ads",
+                    "account_ids": ["123456789"],
+                    "job_type": "historical_backfill",
+                    "start_date": str(date(2026, 1, 1)),
+                    "end_date": str(date(2026, 1, 3)),
+                    "chunk_days": 1,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["created_count"], 1)
+        self.assertEqual(len(self.state["runs"]), 1)
+        self.assertGreater(len(self.state["chunks"]), 0)
+
     def test_batch_creates_one_run_per_requested_grain(self):
         headers = self._auth_headers()
         response = self.client.post(
