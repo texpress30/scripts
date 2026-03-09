@@ -2602,3 +2602,17 @@
 - [x] Implemented Graph Explorer parity helpers and request-shape alignment for Meta account probe + insights URL construction.
 
 - [x] Verified backend regressions with targeted pytest suite for Meta contract + existing Meta sync/worker tests.
+
+
+---
+
+# TODO — Keep effective done status and hide superseded historical failures
+
+- [x] Update workspace to latest remote baseline before changes.
+- [ ] Audit Agency Accounts list/detail status reconciliation and historical failure visibility rules.
+- [ ] Add a shared effective sync status + superseded historical helper and apply it consistently in list/detail flows.
+- [ ] Hide superseded historical failures by default (no hard delete), keep unresolved failures visible, and ensure latest error banner uses unresolved latest failure only.
+- [ ] Add/adjust frontend tests for done-vs-idle, superseded filtering, and banner behavior; run required tests/build.
+
+## Review
+- [ ] Pending implementation.
