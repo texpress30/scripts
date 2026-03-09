@@ -2520,7 +2520,6 @@
 
 ## Review
 - [x] Executed exact commands in current workspace terminal; remote `origin` added, `fetch` succeeded, and `pull origin main` reported `Already up to date`.
-<<<<<<< codex/setup-new-workspace-and-fetch-updates-el5gg9
 
 
 ---
@@ -2539,5 +2538,19 @@
 
 - [x] Added structured error metadata plumbing in worker/chunk/run, additive progress fields, and service-level HTTP error enrichment with token-safe sanitization.
 - [x] Verified with targeted backend tests and frontend build.
-=======
->>>>>>> main
+
+
+---
+
+# TODO — Meta/TikTok full parity in Agency Accounts detail + logs
+
+- [x] Sync workspace to latest remote baseline before edits.
+- [x] Audit Agency Accounts list + detail flows for Google-vs-Meta/TikTok parity gaps (linking, metadata, sync runs, logs, terminal errors).
+- [x] Implement minimal frontend parity changes for clickable names, generic metadata loading, and terminal error visibility in list/detail for Meta/TikTok.
+- [x] Add focused frontend tests for link behavior, detail metadata/error rendering, and list terminal-error summaries.
+- [x] Run relevant frontend tests + frontend build and record results.
+
+## Review
+- [x] Implemented parity updates in Agency Accounts list and detail page for Meta/TikTok, preserving Google behavior and existing run/chunk logs UX.
+
+- [x] Detailed parity verification passed: targeted vitest suite for list/detail pages and `pnpm --dir apps/frontend build`.
