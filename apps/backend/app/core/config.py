@@ -32,12 +32,21 @@ class Settings:
     google_ads_ui_rolling_chunk_days: int
     google_ads_historical_backfill_start_date: date
     meta_access_token: str
+    meta_app_id: str
+    meta_app_secret: str
+    meta_redirect_uri: str
+    meta_api_version: str
     bigquery_project_id: str
     database_url: str
     redis_url: str
     cors_origins: tuple[str, ...]
     cors_origin_regex: str | None
     ff_tiktok_integration: bool
+    tiktok_app_id: str
+    tiktok_app_secret: str
+    tiktok_redirect_uri: str
+    tiktok_api_base_url: str
+    tiktok_api_version: str
     ff_pinterest_integration: bool
     ff_snapchat_integration: bool
     tiktok_sync_retry_attempts: int
@@ -131,12 +140,21 @@ def load_settings() -> Settings:
         google_ads_ui_rolling_chunk_days=_parse_positive_int_env("GOOGLE_ADS_UI_ROLLING_CHUNK_DAYS", default=7),
         google_ads_historical_backfill_start_date=_parse_iso_date_env("GOOGLE_ADS_HISTORICAL_BACKFILL_START_DATE", default="2024-01-09"),
         meta_access_token=_get_env("META_ACCESS_TOKEN", default=""),
+        meta_app_id=_get_env("META_APP_ID", default=""),
+        meta_app_secret=_get_env("META_APP_SECRET", default=""),
+        meta_redirect_uri=_get_env("META_REDIRECT_URI", default=""),
+        meta_api_version=_get_env("META_API_VERSION", default="v20.0"),
         bigquery_project_id=_get_env("BIGQUERY_PROJECT_ID", default=""),
         database_url=_get_env("DATABASE_URL", default="postgresql://postgres:postgres@localhost:5432/mcc"),
         redis_url=_get_env("REDIS_URL", default="redis://localhost:6379/0"),
         cors_origins=_parse_csv_env("APP_CORS_ORIGINS", default="http://localhost:3000,http://127.0.0.1:3000"),
         cors_origin_regex=_safe_regex_env("APP_CORS_ORIGIN_REGEX", default=r"https://.*\.vercel\.app"),
         ff_tiktok_integration=_parse_bool_env("FF_TIKTOK_INTEGRATION", default=False),
+        tiktok_app_id=_get_env("TIKTOK_APP_ID", default=""),
+        tiktok_app_secret=_get_env("TIKTOK_APP_SECRET", default=""),
+        tiktok_redirect_uri=_get_env("TIKTOK_REDIRECT_URI", default=""),
+        tiktok_api_base_url=_get_env("TIKTOK_API_BASE_URL", default="https://business-api.tiktok.com"),
+        tiktok_api_version=_get_env("TIKTOK_API_VERSION", default="v1.3"),
         ff_pinterest_integration=_parse_bool_env("FF_PINTEREST_INTEGRATION", default=False),
         ff_snapchat_integration=_parse_bool_env("FF_SNAPCHAT_INTEGRATION", default=False),
         tiktok_sync_retry_attempts=_parse_int_env("TIKTOK_SYNC_RETRY_ATTEMPTS", default=2),

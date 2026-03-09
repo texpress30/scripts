@@ -1,3 +1,248 @@
+# TODO — Fix Meta/TikTok historical backfill progress UI in Agency Accounts
+
+- [x] Rebaseline branch from clean baseline and document constraints if requested remote baseline is unavailable.
+- [x] Extend Agency Accounts Meta/TikTok workspace to show batch banner + sync messages + live row progress driven by batch/polling state.
+- [x] Extend account progress polling and batch persistence/rehydration for Meta/TikTok (and keep Google behavior unchanged).
+- [x] Ensure completion refresh reloads provider-specific rows after `loadData()`.
+- [x] Add/adjust Meta/TikTok tests for banner, row live progress, completion refresh, and rehydrated batch state; keep Google regression guard.
+- [x] Run requested frontend tests/build and record results.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Persisted active batch metadata per platform in `sessionStorage` (`agency-accounts-batch:<platform>`) and rehydrated polling state on workspace reload/switch.
+- Unified Meta/TikTok workspace now renders the same batch banner + sync status/error messaging and uses `renderSyncProgress` with `batchRunsByAccount` + `rowChunkProgressByAccount` for live row updates.
+- Extended progress polling to `meta_ads` + `tiktok_ads` via `postAccountSyncProgressBatch(selectedPlatform, ...)`, while keeping Google flow intact.
+- On batch completion, keeps `loadData()` and additionally reloads provider rows via `loadMetaAccounts()` / `loadTikTokAccounts()`.
+- Verification: `pnpm --dir apps/frontend test src/app/agency-accounts/page.meta.test.tsx`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx`, `pnpm --dir apps/frontend build`.
+
+---
+
+# TODO — Enable Meta/TikTok historical download selection in Agency Accounts
+
+- [x] Rebaseline branch from available clean local baseline (remote `origin/main` unavailable in this environment) and scope to frontend-only files.
+- [x] Make selection + historical batch payload provider-aware in `agency-accounts/page.tsx` while preserving Google behavior.
+- [x] Enable Meta/TikTok row/select-all/selected-count UX for attached accounts and keep unattached rows non-selectable.
+- [x] Add/extend Meta + TikTok tests for checkbox enablement, historical button enablement, and explicit batch payload assertions.
+- [x] Run requested frontend tests and build; record outcomes.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Persisted active batch metadata per platform in `sessionStorage` (`agency-accounts-batch:<platform>`) and rehydrated polling state on workspace reload/switch.
+- Unified Meta/TikTok workspace now renders the same batch banner + sync status/error messaging and uses `renderSyncProgress` with `batchRunsByAccount` + `rowChunkProgressByAccount` for live row updates.
+- Extended progress polling to `meta_ads` + `tiktok_ads` via `postAccountSyncProgressBatch(selectedPlatform, ...)`, while keeping Google flow intact.
+- On batch completion, keeps `loadData()` and additionally reloads provider rows via `loadMetaAccounts()` / `loadTikTokAccounts()`.
+- Verification: `pnpm --dir apps/frontend test src/app/agency-accounts/page.meta.test.tsx`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx`, `pnpm --dir apps/frontend build`.
+- Meta/TikTok now share active historical selection controls and batch-trigger UX in the unified table shell with attached-only eligibility.
+- Meta/TikTok historical payloads now send explicit `grains` and `start_date=2024-09-01` to `/agency/sync-runs/batch` (`chunk_days=30`, `job_type=historical_backfill`, `end_date=yesterday`).
+- Google historical payload remains unchanged (`start_date=2024-01-09`, `grain=account_daily`).
+- Verification: `pnpm --dir apps/frontend test src/app/agency-accounts/page.meta.test.tsx`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx`, `pnpm --dir apps/frontend build`.
+
+---
+
+# TODO — Fix TikTok attached-client refresh rendering in Agency Accounts
+
+- [x] Audit current TikTok row mapping in `agency-accounts/page.tsx` for attached client fields.
+- [x] Apply minimal fallback mapping for TikTok attached fields (`client_id/client_name` then `attached_client_id/attached_client_name`).
+- [x] Update TikTok Agency Accounts tests to cover both payload shapes, unattached rendering, and attach+reload attached rendering.
+- [x] Run requested frontend tests and build; document results.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Persisted active batch metadata per platform in `sessionStorage` (`agency-accounts-batch:<platform>`) and rehydrated polling state on workspace reload/switch.
+- Unified Meta/TikTok workspace now renders the same batch banner + sync status/error messaging and uses `renderSyncProgress` with `batchRunsByAccount` + `rowChunkProgressByAccount` for live row updates.
+- Extended progress polling to `meta_ads` + `tiktok_ads` via `postAccountSyncProgressBatch(selectedPlatform, ...)`, while keeping Google flow intact.
+- On batch completion, keeps `loadData()` and additionally reloads provider rows via `loadMetaAccounts()` / `loadTikTokAccounts()`.
+- Verification: `pnpm --dir apps/frontend test src/app/agency-accounts/page.meta.test.tsx`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx`, `pnpm --dir apps/frontend build`.
+- Added mapper fallback in TikTok normalization to read `client_id/client_name` first and preserve legacy `attached_client_*` compatibility.
+- Added tests for both payload aliases, explicit unattached rendering, and attach-triggered reload that re-renders attached client state.
+- Verification: `npm test -- page.tiktok.test.tsx` (pass) and `npm run build` (pass) in `apps/frontend`.
+
+---
+
+# TODO — TikTok import diagnostics + zero-account handling
+
+- [x] Audit current TikTok advertiser discovery/import flow and identify safe diagnostic fields.
+- [x] Improve TikTok discovery parsing robustness and add zero-account-specific message + diagnostics while preserving endpoint/pagination.
+- [x] Add focused backend tests for zero-advertiser diagnostics, alternate container parsing, happy path continuity, and missing-token error.
+- [x] Run targeted backend tests and smoke checks, then document results.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Persisted active batch metadata per platform in `sessionStorage` (`agency-accounts-batch:<platform>`) and rehydrated polling state on workspace reload/switch.
+- Unified Meta/TikTok workspace now renders the same batch banner + sync status/error messaging and uses `renderSyncProgress` with `batchRunsByAccount` + `rowChunkProgressByAccount` for live row updates.
+- Extended progress polling to `meta_ads` + `tiktok_ads` via `postAccountSyncProgressBatch(selectedPlatform, ...)`, while keeping Google flow intact.
+- On batch completion, keeps `loadData()` and additionally reloads provider rows via `loadMetaAccounts()` / `loadTikTokAccounts()`.
+- Verification: `pnpm --dir apps/frontend test src/app/agency-accounts/page.meta.test.tsx`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx`, `pnpm --dir apps/frontend build`.
+- Kept TikTok real advertiser discovery path + pagination and added parser support for additional safe row containers (`data.accounts`, `data.rows`) besides existing (`data.list`, `data.advertisers`).
+- Added zero-account explicit message and safe diagnostics (`api_code`, `api_message`, `page_count_checked`, `row_container_used`) without exposing secrets.
+- Added discovery summary logging (pages/rows/container/API code+message) and tests proving zero-account handling + alternate container parsing.
+
+---
+
+# TODO — Fix TikTok real advertiser account import (backend)
+
+- [x] Audit TikTok import stub, Meta import reference, and generic platform registry upsert path.
+- [x] Implement real TikTok advertiser discovery (paginated) and idempotent generic registry upsert in `TikTokAdsService.import_accounts()`.
+- [x] Add backend tests for happy path, pagination, idempotent rerun, missing token, API error mapping, and API endpoint summary contract.
+- [x] Run targeted pytest + py_compile + backend import smoke checks and document results.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Persisted active batch metadata per platform in `sessionStorage` (`agency-accounts-batch:<platform>`) and rehydrated polling state on workspace reload/switch.
+- Unified Meta/TikTok workspace now renders the same batch banner + sync status/error messaging and uses `renderSyncProgress` with `batchRunsByAccount` + `rowChunkProgressByAccount` for live row updates.
+- Extended progress polling to `meta_ads` + `tiktok_ads` via `postAccountSyncProgressBatch(selectedPlatform, ...)`, while keeping Google flow intact.
+- On batch completion, keeps `loadData()` and additionally reloads provider rows via `loadMetaAccounts()` / `loadTikTokAccounts()`.
+- Verification: `pnpm --dir apps/frontend test src/app/agency-accounts/page.meta.test.tsx`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx`, `pnpm --dir apps/frontend build`.
+- Removed TikTok import stub and implemented real advertiser discovery via TikTok Business API `/open_api/{version}/oauth2/advertiser/get/` with pagination support.
+- Import now upserts discovered advertisers into generic platform registry and computes idempotent summary counters (`imported/updated/unchanged`).
+- Added focused backend tests for service and API import contract/error mapping, all passing in targeted run.
+
+---
+
+# TODO — Agency Accounts UI unification (Google + Meta + TikTok shared shell)
+
+- [x] Audit current Agency Accounts Google layout and Meta/TikTok panel divergence.
+- [x] Extract/reuse a common workspace shell so Google/Meta/TikTok render the same table container/layout structure.
+- [x] Map Meta/TikTok rows into common view-model with placeholders for unavailable sync fields while preserving attach/detach behavior.
+- [x] Add/adjust frontend tests to verify Meta/TikTok shared shell parity (including empty states), then run requested tests and build.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Persisted active batch metadata per platform in `sessionStorage` (`agency-accounts-batch:<platform>`) and rehydrated polling state on workspace reload/switch.
+- Unified Meta/TikTok workspace now renders the same batch banner + sync status/error messaging and uses `renderSyncProgress` with `batchRunsByAccount` + `rowChunkProgressByAccount` for live row updates.
+- Extended progress polling to `meta_ads` + `tiktok_ads` via `postAccountSyncProgressBatch(selectedPlatform, ...)`, while keeping Google flow intact.
+- On batch completion, keeps `loadData()` and additionally reloads provider rows via `loadMetaAccounts()` / `loadTikTokAccounts()`.
+- Verification: `pnpm --dir apps/frontend test src/app/agency-accounts/page.meta.test.tsx`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx`, `pnpm --dir apps/frontend build`.
+- Meta/TikTok in Agency Accounts now render in the same table-shell layout pattern as Google (summary + toolbar + table columns + pagination).
+- Meta/TikTok rows use consistent placeholders for unavailable sync fields (`-`) without reverting to separate card-list panels.
+- Requested frontend tests and build pass.
+
+---
+
+# TODO — Final hardening + smoke on main readiness for Meta/TikTok integrations
+
+- [x] Validate current UI/backend flows end-to-end for Agency Integrations, Agency Accounts, Dashboard integration health, Meta/TikTok API endpoints, and worker imports.
+- [x] Apply only small, safe bugfixes discovered during smoke checks (no feature additions, no major refactors).
+- [x] Run requested frontend build/tests and backend targeted test/smoke suites.
+- [x] Document findings (bugs found, fixes, risks/limits) and confirm working tree cleanliness.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Persisted active batch metadata per platform in `sessionStorage` (`agency-accounts-batch:<platform>`) and rehydrated polling state on workspace reload/switch.
+- Unified Meta/TikTok workspace now renders the same batch banner + sync status/error messaging and uses `renderSyncProgress` with `batchRunsByAccount` + `rowChunkProgressByAccount` for live row updates.
+- Extended progress polling to `meta_ads` + `tiktok_ads` via `postAccountSyncProgressBatch(selectedPlatform, ...)`, while keeping Google flow intact.
+- On batch completion, keeps `loadData()` and additionally reloads provider rows via `loadMetaAccounts()` / `loadTikTokAccounts()`.
+- Verification: `pnpm --dir apps/frontend test src/app/agency-accounts/page.meta.test.tsx`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx`, `pnpm --dir apps/frontend build`.
+- Fixed Agency Accounts regression where selecting Meta card rendered generic placeholder instead of Meta panel.
+- Frontend requested build/tests now pass for integrations/accounts/dashboard target suites.
+- Backend smoke imports and worker/scheduler/dashboard targeted tests pass; dedicated Meta backend suites currently fail on pre-existing larger regressions in `meta_ads` service (documented in final report).
+
+---
+
+# TODO — Agency dashboard summary: real TikTok integration_health status
+
+- [x] Inspect current dashboard integration_health mapping and TikTok status contract to define stable field mapping.
+- [x] Implement backend-only dashboard mapping for `tiktok_ads` using real TikTok status payload; keep Google/Meta mapping and Pinterest/Snapchat placeholders stable.
+- [x] Add/extend backend tests for TikTok connected/pending/error states and backward-compatible integration_health payload contract.
+- [x] Run targeted backend tests + backend import smoke checks and document results.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Persisted active batch metadata per platform in `sessionStorage` (`agency-accounts-batch:<platform>`) and rehydrated polling state on workspace reload/switch.
+- Unified Meta/TikTok workspace now renders the same batch banner + sync status/error messaging and uses `renderSyncProgress` with `batchRunsByAccount` + `rowChunkProgressByAccount` for live row updates.
+- Extended progress polling to `meta_ads` + `tiktok_ads` via `postAccountSyncProgressBatch(selectedPlatform, ...)`, while keeping Google flow intact.
+- On batch completion, keeps `loadData()` and additionally reloads provider rows via `loadMetaAccounts()` / `loadTikTokAccounts()`.
+- Verification: `pnpm --dir apps/frontend test src/app/agency-accounts/page.meta.test.tsx`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx`, `pnpm --dir apps/frontend build`.
+- Dashboard summary now maps `tiktok_ads` integration_health from `tiktok_ads_service.integration_status()` (`status`, `message`, `token_updated_at`) while preserving Google/Meta mappings.
+- `pinterest_ads` and `snapchat_ads` remain stable placeholders (`disabled`).
+- Verified with focused pytest suite and backend import smoke command.
+
+---
+
+# TODO — TikTok backend sync real ad_group_daily for attached advertiser accounts
+
+- [x] Audit existing TikTok sync grains/account-campaign persistence and generic ad_group reporting upsert path.
+- [x] Extend TikTok sync contract to accept `ad_group_daily` grain while preserving defaults/backward compatibility.
+- [x] Implement real TikTok ad_group_daily fetch + normalization + idempotent persistence for all attached advertiser accounts.
+- [x] Add focused backend tests for ad_group_daily happy paths, idempotency, failures, and grain/date validation/backward compatibility.
+- [x] Run targeted backend compile/tests/import-smoke checks and document results.
+
+## Review
+- Added `ad_group_daily` grain to TikTok sync with real reporting fetch and idempotent upsert in generic entity reporting store.
+- Existing behavior remains backward compatible: omitted grain defaults to `account_daily`, existing `campaign_daily` path unchanged.
+
+---
+
+# TODO — TikTok backend sync real campaign_daily for attached advertiser accounts
+
+- [x] Audit current TikTok account_daily sync and generic entity reporting persistence options.
+- [x] Extend TikTok sync contract with optional grain (`account_daily` default, `campaign_daily` supported).
+- [x] Implement real campaign_daily fetch + idempotent upsert path for attached TikTok advertiser accounts.
+- [x] Add focused backend tests for campaign_daily paths, grain validation, idempotency, and backward compatibility.
+- [x] Run backend compile/tests + import smoke and record results.
+
+## Review
+- TikTok sync now supports `campaign_daily` in addition to `account_daily`, with default backward-compatible behavior when grain is omitted.
+- Campaign daily rows are persisted idempotently to campaign reporting store using existing upsert semantics keyed by platform/account/campaign/date.
+
+---
+
+# TODO — TikTok backend sync real account_daily for attached advertiser accounts
+
+- [x] Audit TikTok service/api/reporting/client-account mapping paths and pick minimal integration points.
+- [x] Replace TikTok stub sync with real account_daily fetch + write to generic performance reports for all attached TikTok accounts.
+- [x] Keep connect/import/status behavior intact and retain feature flag guard only for sync execution.
+- [x] Add focused backend tests for happy paths, no-account, token/flag errors, API failure mapping, and idempotent rerun behavior.
+- [x] Run targeted backend checks (pytest + py_compile import smoke) and document review.
+
+## Review
+- TikTok sync now fetches real account_daily metrics from TikTok Business reporting API for every attached `tiktok_ads` advertiser account and writes idempotent daily rows to generic reporting store.
+- Existing OAuth/connect/import/status flows remain available; feature flag still guards sync execution only.
+
+---
+
+# TODO — Hotfix Railway startup crash (`Literal` import missing in meta_ads)
+
+- [x] Inspect backend crash context and target file for missing `Literal` typing import.
+- [x] Add `Literal` import in `apps/backend/app/services/meta_ads.py` without changing business logic.
+- [x] Run requested compile and pytest commands and capture outputs.
+- [x] Commit minimal hotfix and report results.
+
+## Review
+- Added missing `Literal` import to prevent startup `NameError` in Railway import path.
+- No other runtime logic changes were made in this hotfix.
+
+---
+
+# TODO — Fix TikTok business OAuth URL + restore Meta connect/import card + align callback URIs
+
+- [x] Audit current integrations frontend/backend files and identify URI/auth-flow mismatches for Meta and TikTok.
+- [x] Update TikTok backend authorize URL to TikTok Business advertiser auth endpoint and keep exchange/import/status contracts consistent.
+- [x] Restore Meta integration card actions (Connect Meta + Import Accounts) and add frontend Meta callback flow aligned to current callback route.
+- [x] Keep Agency Integrations page as composition-only with exactly one Meta card and one TikTok card.
+- [x] Add/update focused frontend and backend tests for Meta/TikTok connect/callback/import behavior, then run requested checks/build.
+- [x] Update minimal docs with exact production redirect URIs for Meta and TikTok callback pages.
+
+## Review
+- TikTok authorize now uses business advertiser auth (`https://business-api.tiktok.com/portal/auth`) with `app_id`, `redirect_uri`, and `state`, aligned to frontend callback route.
+- Meta integrations card now includes Connect + Import actions with robust status gating; frontend Meta callback page is implemented and wired to backend exchange endpoint.
+- Agency integrations composition preserves a single Meta card + single TikTok card.
+
+---
+
+# TODO — Restore Agency Integrations cards + relax TikTok FF gating for OAuth/import
+
+- [x] Audit current agency integrations composition and identify missing dedicated Meta card.
+- [x] Refactor agency integrations page to compose dedicated Meta + TikTok card components exactly once each.
+- [x] Relax TikTok service/API feature-flag behavior so status/connect/oauth exchange/import stay available while sync remains flag-guarded.
+- [x] Run targeted frontend/backend tests for integrations behavior and document result.
+
+## Review
+- Agency Integrations page now uses dedicated cards for Meta Ads and TikTok Ads, each rendered exactly once in page composition.
+- TikTok feature flag now gates only sync execution; status/connect/oauth exchange/import accounts remain callable and return operational payloads.
+
+---
+
 # TODO — Diagnostic E2E + Fix Google Ads Data Sync către Dashboard
 
 - [x] Audit repo end-to-end (pipeline OAuth/API/sync/DB/agregare/UI) pentru Google Ads în Agency/Sub-Account dashboard.
@@ -2172,3 +2417,96 @@
 - Baseline now inserts legacy migration IDs only when `schema_migrations` is empty, then regular application proceeds for pending migrations.
 - Existing installations with non-empty `schema_migrations` are unaffected (baseline no-op).
 - Added pure unit tests (no DB) validating baseline insert scope, no-op behavior, and that post-baseline migrations still execute.
+
+---
+
+# TODO — Agency Dashboard frontend consume summary.integration_health
+
+- [x] Rebase workspace on latest `origin/main` and start clean frontend branch.
+- [x] Remove provider-specific integration status requests from agency dashboard page.
+- [x] Consume only `summary.integration_health` in Integration health card with empty fallback.
+- [x] Add/update Agency Dashboard frontend tests for integration health rendering contract.
+- [x] Run required frontend test and build commands.
+
+## Review
+- Agency Dashboard now performs a single summary request and renders integration health from `summary.integration_health`.
+- Removed old Google-only status state/request and manual provider list construction.
+- Added frontend tests validating summary-driven integration health rendering and empty fallback.
+
+---
+
+# TODO — TikTok Ads backend connect foundation
+
+- [x] Start from clean baseline branch and inspect TikTok/Meta/secrets store implementation.
+- [x] Add TikTok OAuth config env support in backend settings.
+- [x] Implement TikTok service connect/exchange + real status based on persisted secrets.
+- [x] Add TikTok API endpoints for connect start and OAuth exchange.
+- [x] Add focused backend tests for connect/exchange/status scenarios.
+- [x] Update README minimally for TikTok OAuth env and endpoints.
+- [x] Run targeted pytest + backend import smoke checks.
+
+## Review
+- Added TikTok OAuth foundation (connect URL + code exchange) with state validation and secure token persistence in `integration_secrets`.
+- `GET /integrations/tiktok-ads/status` now reports operational fields for UI (`token_source`, token timestamps, oauth config, usable token) instead of mock-only connected status.
+- Existing TikTok sync endpoint remains compatible but explicitly marked stub in sync payload (`sync_mode=stub`) to avoid confusion about real metrics import scope.
+
+---
+
+# TODO — Frontend-only TikTok Integrations card + OAuth callback
+
+- [x] Create clean frontend branch from clean local baseline and verify scope constraints.
+- [x] Keep `agency/integrations/page.tsx` as composition page and render `<TikTokIntegrationCard />`.
+- [x] Implement TikTok integration UI logic in dedicated card component (status/connect/import).
+- [x] Implement TikTok OAuth callback page (provider error, missing code/state, exchange + redirect).
+- [x] Add focused frontend tests for page composition, TikTok card behaviors, and callback flows.
+- [x] Run required frontend tests and build.
+
+## Review
+- `agency/integrations/page.tsx` now delegates TikTok behavior to `TikTokIntegrationCard` and keeps layout/orchestration role.
+- TikTok card now consumes existing backend contracts (`status`, `connect`, `import-accounts`) with robust fallbacks and button gating by `oauth_configured` / `has_usable_token`.
+- TikTok callback page exchanges `code/state` via backend and redirects to `/agency/integrations?tiktok_connected=1` on success.
+
+---
+
+# TODO — Publish TikTok ad_daily sync grain
+
+- [x] Verify ad_daily implementation state versus user report and identify missing pieces.
+- [x] Add missing `ad_daily` support in TikTok service + API contract.
+- [x] Add focused backend tests for ad_daily paths and schema acceptance.
+- [x] Run targeted compile/tests/smoke checks.
+- [x] Commit and prepare PR publishing metadata.
+
+## Review
+- The current branch was missing `ad_daily` in TikTok grain union, API schema, and dedicated tests; these were restored.
+- Sync now supports `ad_daily` with ad-level fetch + generic ad-unit upsert and idempotent test-mode key replacement.
+
+---
+
+# TODO — TikTok historical backfill endpoint (chunked, all grains)
+
+- [x] Inspect TikTok sync API/service and Meta backfill orchestration pattern for reuse.
+- [x] Add TikTok backfill defaults, grain normalization, and chunk builder (30-day windows).
+- [x] Implement async historical backfill runner that reuses `tiktok_ads_service.sync_client` per grain+chunk.
+- [x] Add `POST /integrations/tiktok-ads/{client_id}/backfill` with default range/grains and enqueue response.
+- [x] Add focused backend tests for enqueue defaults/custom, validation, flag/token/no-accounts, and runner error mapping.
+- [x] Update README minimally and run targeted compile/tests/smoke checks.
+
+## Review
+- Added queue-based TikTok historical backfill orchestration with defaults `2024-01-09 -> yesterday`, grains `[account_daily,campaign_daily,ad_group_daily,ad_daily]`, and 30-day chunks.
+- Backfill runner delegates every chunk to existing `sync_client` (no duplicate fetch/persist logic) and records done/error in `backfill_job_store`.
+- Endpoint validates flag/token/attached-accounts early and returns stable enqueue payload (`mode`, `chunks_enqueued`, `jobs_enqueued`, `job_id`).
+
+---
+
+# TODO — TikTok rolling daily sync (7-day window)
+
+- [x] Extend rolling scheduler platform support to include `tiktok_ads` without breaking Google/Meta.
+- [x] Include TikTok entity grains in rolling expansion when `ROLLING_ENTITY_GRAINS_ENABLED` is ON.
+- [x] Ensure sync worker processes TikTok rolling runs through existing `tiktok_ads_service.sync_client` path.
+- [x] Add focused tests for scheduler grain expansion/flag behavior and worker success/error mapping for TikTok.
+- [x] Update README rolling section minimally and run compile/tests/smoke checks.
+
+## Review
+- Rolling scheduler now accepts `platform=tiktok_ads` and enqueues `account_daily` (+ entity grains under flag) on the same 7-day complete window.
+- Worker now supports TikTok platform runs by reusing existing TikTok sync service for chunk execution; no duplicate fetch/persist logic added.
+- Existing Google/Meta rolling behavior remained compatible in scheduler tests.
