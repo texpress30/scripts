@@ -137,6 +137,7 @@ type RowChunkProgress = {
   status?: string | null;
   dateStart?: string | null;
   dateEnd?: string | null;
+  lastErrorSummary?: string | null;
 };
 
 type UnifiedProviderAccount = {
@@ -554,9 +555,12 @@ export default function AgencyAccountsPage() {
           ) : null}
         </div>
         {chunkProgress && chunkProgress.chunksTotal > 0 ? (
+          <>
+          {chunkProgress?.lastErrorSummary ? <p className="mt-1 text-xs text-red-600">Eroare sync: {chunkProgress.lastErrorSummary}</p> : null}
           <p className="mt-1 text-xs text-slate-600" data-testid={`sync-progress-chunks-${account.id}`}>
             {chunkProgress.chunksDone}/{chunkProgress.chunksTotal} chunks ({chunkProgress.percent}%)
           </p>
+        </>
         ) : isActiveSyncRow ? (
           <p className="mt-1 text-xs text-slate-500">Chunk progress în curs de actualizare...</p>
         ) : null}
@@ -1044,6 +1048,7 @@ export default function AgencyAccountsPage() {
             status: item.active_run.status ?? null,
             dateStart: item.active_run.date_start ?? null,
             dateEnd: item.active_run.date_end ?? null,
+            lastErrorSummary: item.active_run.last_error_summary ?? null,
           } satisfies RowChunkProgress;
         }
 

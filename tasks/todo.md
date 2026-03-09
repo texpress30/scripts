@@ -2520,3 +2520,24 @@
 
 ## Review
 - [x] Executed exact commands in current workspace terminal; remote `origin` added, `fetch` succeeded, and `pull origin main` reported `Already up to date`.
+<<<<<<< codex/setup-new-workspace-and-fetch-updates-el5gg9
+
+
+---
+
+# TODO — Meta/TikTok sync real error observability
+
+- [x] Re-sync workspace to latest `origin/main` before code changes (remote add/fetch + rebase) and document constraints if any.
+- [x] Trace full Meta/TikTok batch flow (API create -> worker -> provider service -> progress API -> Agency Accounts) and pinpoint where root errors become generic.
+- [x] Implement minimal backend structured + sanitized error propagation to progress response (`last_error_summary`, `last_error_details`) without changing Google business flow.
+- [x] Add targeted backend tests for structured propagation, secret sanitization, and safe fallback when provider error fields are missing.
+- [x] Apply minimal Agency Accounts UI change to display real error summary under existing error status, if available.
+- [x] Update README with short diagnostics section and run required backend tests (+ frontend build if touched).
+
+## Review
+- [x] Root-cause loss point identified: worker wrapped provider exceptions into generic RuntimeError and progress payload lacked additive error fields.
+
+- [x] Added structured error metadata plumbing in worker/chunk/run, additive progress fields, and service-level HTTP error enrichment with token-safe sanitization.
+- [x] Verified with targeted backend tests and frontend build.
+=======
+>>>>>>> main
