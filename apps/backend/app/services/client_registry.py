@@ -49,6 +49,34 @@ def _safe_row_value(row: tuple[object, ...], index: int) -> object | None:
     return row[index]
 
 
+
+
+def _coalesce_iso_date_max(existing: object | None, candidate: object | None) -> object | None:
+    if candidate is None:
+        return existing
+    if existing is None:
+        return candidate
+    try:
+        existing_date = date.fromisoformat(str(existing))
+        candidate_date = date.fromisoformat(str(candidate))
+        return str(max(existing_date, candidate_date))
+    except Exception:
+        return candidate
+
+
+def _coalesce_iso_datetime_max(existing: object | None, candidate: object | None) -> object | None:
+    if candidate is None:
+        return existing
+    if existing is None:
+        return candidate
+    try:
+        existing_dt = datetime.fromisoformat(str(existing))
+        candidate_dt = datetime.fromisoformat(str(candidate))
+        return candidate if candidate_dt >= existing_dt else existing
+    except Exception:
+        return candidate
+
+
 def _normalize_account_sync_metadata_payload(*, platform: str, account_id: str, display_name: str, attached_client_id: int | None, attached_client_name: str | None, timezone_value: str | None, currency_value: str | None, account_status: object | None, sync_start_date: object | None, backfill_completed_through: object | None, rolling_synced_through: object | None, last_success_at: object | None, last_error: object | None, last_run_status: object | None, last_run_type: object | None, last_run_started_at: object | None, last_run_finished_at: object | None, has_active_sync: bool) -> dict[str, object]:
     return {
         "id": str(account_id),
@@ -735,19 +763,19 @@ class ClientRegistryService:
                             display_name=display_name,
                             attached_client_id=mapped_client.id if mapped_client else None,
                             attached_client_name=mapped_client.name if mapped_client else None,
-                            timezone_value=None,
-                            currency_value=None,
-                            account_status=None,
-                            sync_start_date=None,
-                            backfill_completed_through=None,
-                            rolling_synced_through=None,
-                            last_success_at=None,
-                            last_error=None,
-                            last_run_status=None,
-                            last_run_type=None,
-                            last_run_started_at=None,
-                            last_run_finished_at=None,
-                            has_active_sync=False,
+                            timezone_value=item.get("account_timezone"),
+                            currency_value=item.get("currency_code"),
+                            account_status=item.get("status"),
+                            sync_start_date=item.get("sync_start_date"),
+                            backfill_completed_through=item.get("backfill_completed_through"),
+                            rolling_synced_through=item.get("rolling_synced_through"),
+                            last_success_at=item.get("last_success_at"),
+                            last_error=item.get("last_error"),
+                            last_run_status=item.get("last_run_status"),
+                            last_run_type=item.get("last_run_type"),
+                            last_run_started_at=item.get("last_run_started_at"),
+                            last_run_finished_at=item.get("last_run_finished_at"),
+                            has_active_sync=bool(item.get("has_active_sync") or False),
                         )
                     )
                 return result
@@ -1013,11 +1041,29 @@ class ClientRegistryService:
                 if rolling_window_days is not _UNSET:
                     existing["rolling_window_days"] = None if rolling_window_days is None else int(rolling_window_days)
                 if backfill_completed_through is not _UNSET:
-                    existing["backfill_completed_through"] = None if backfill_completed_through is None else str(backfill_completed_through)
+                    if backfill_completed_through is None:
+                        existing["backfill_completed_through"] = None
+                    else:
+                        existing["backfill_completed_through"] = _coalesce_iso_date_max(
+                            existing.get("backfill_completed_through"),
+                            str(backfill_completed_through),
+                        )
                 if rolling_synced_through is not _UNSET:
-                    existing["rolling_synced_through"] = None if rolling_synced_through is None else str(rolling_synced_through)
+                    if rolling_synced_through is None:
+                        existing["rolling_synced_through"] = None
+                    else:
+                        existing["rolling_synced_through"] = _coalesce_iso_date_max(
+                            existing.get("rolling_synced_through"),
+                            str(rolling_synced_through),
+                        )
                 if last_success_at is not _UNSET:
-                    existing["last_success_at"] = None if last_success_at is None else str(last_success_at)
+                    if last_success_at is None:
+                        existing["last_success_at"] = None
+                    else:
+                        existing["last_success_at"] = _coalesce_iso_datetime_max(
+                            existing.get("last_success_at"),
+                            str(last_success_at),
+                        )
                 if last_error is not _UNSET:
                     existing["last_error"] = None if last_error is None else str(last_error)
                 if last_run_id is not _UNSET:
@@ -1243,6 +1289,16 @@ class ClientRegistryService:
                 "status": item.get("status"),
                 "currency": item.get("currency"),
                 "timezone": item.get("timezone"),
+                "sync_start_date": item.get("sync_start_date"),
+                "backfill_completed_through": item.get("backfill_completed_through"),
+                "rolling_synced_through": item.get("rolling_synced_through"),
+                "last_success_at": item.get("last_success_at"),
+                "last_error": item.get("last_error"),
+                "last_run_status": item.get("last_run_status"),
+                "last_run_type": item.get("last_run_type"),
+                "last_run_started_at": item.get("last_run_started_at"),
+                "last_run_finished_at": item.get("last_run_finished_at"),
+                "has_active_sync": item.get("has_active_sync"),
             })
         return rows
 

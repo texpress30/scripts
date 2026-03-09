@@ -15,6 +15,9 @@ class ClientsPlatformAccountMappingsApiTests(unittest.TestCase):
         os.environ["APP_ENV"] = "test"
         os.environ["APP_AUTH_SECRET"] = "test-secret"
 
+        self.original_is_test_mode = client_registry_service._is_test_mode
+        client_registry_service._is_test_mode = lambda: True
+
         client_registry_service._clients = []
         client_registry_service._next_id = 1
         client_registry_service._memory_platform_accounts = {}
@@ -31,6 +34,7 @@ class ClientsPlatformAccountMappingsApiTests(unittest.TestCase):
 
     def tearDown(self):
         clients_api.enforce_action_scope = self.original_enforce
+        client_registry_service._is_test_mode = self.original_is_test_mode
         os.environ.clear()
         os.environ.update(self.original_env)
 
@@ -133,6 +137,92 @@ class ClientsPlatformAccountMappingsApiTests(unittest.TestCase):
         self.assertEqual(listed["items"][0]["client_id"], client_id)
         self.assertEqual(listed["items"][0]["client_name"], "Client A")
         self.assertTrue(listed["items"][0]["is_attached"])
+
+    def test_meta_platform_accounts_expose_sync_coverage_metadata_fields(self):
+        client_id = self._create_client("Client A")
+        clients_api.attach_platform_account(
+            client_id=client_id,
+            payload=AttachPlatformAccountRequest(platform="meta_ads", account_id="act_101"),
+            user=self.user,
+        )
+
+        client_registry_service.update_platform_account_operational_metadata(
+            platform="meta_ads",
+            account_id="act_101",
+            sync_start_date="2026-01-01",
+            backfill_completed_through="2026-02-10",
+            last_success_at="2026-02-10T10:00:00+00:00",
+            last_error=None,
+        )
+
+        listed = clients_api.list_platform_accounts(platform="meta_ads", user=self.user)
+        row = listed["items"][0]
+        self.assertEqual(row["sync_start_date"], "2026-01-01")
+        self.assertEqual(row["backfill_completed_through"], "2026-02-10")
+        self.assertEqual(row["last_success_at"], "2026-02-10T10:00:00+00:00")
+
+    def test_operational_backfill_metadata_keeps_max_value_in_test_mode(self):
+        client_registry_service.update_platform_account_operational_metadata(
+            platform="meta_ads",
+            account_id="act_101",
+            backfill_completed_through="2026-02-10",
+            last_success_at="2026-02-10T10:00:00+00:00",
+        )
+        client_registry_service.update_platform_account_operational_metadata(
+            platform="meta_ads",
+            account_id="act_101",
+            backfill_completed_through="2026-02-03",
+            last_success_at="2026-02-03T10:00:00+00:00",
+        )
+
+        listed = clients_api.list_platform_accounts(platform="meta_ads", user=self.user)
+        row = listed["items"][0]
+        self.assertEqual(row["backfill_completed_through"], "2026-02-10")
+        self.assertEqual(row["last_success_at"], "2026-02-10T10:00:00+00:00")
+
+
+    def test_meta_multigrain_updates_keep_coherent_max_coverage_out_of_order(self):
+        updates = [
+            ("2026-02-12", "2026-02-12T10:00:00+00:00"),
+            ("2026-02-08", "2026-02-08T10:00:00+00:00"),
+            ("2026-02-14", "2026-02-14T10:00:00+00:00"),
+            ("2026-02-11", "2026-02-11T10:00:00+00:00"),
+        ]
+        for backfill_end, success_at in updates:
+            client_registry_service.update_platform_account_operational_metadata(
+                platform="meta_ads",
+                account_id="act_101",
+                backfill_completed_through=backfill_end,
+                last_success_at=success_at,
+            )
+
+        listed = clients_api.list_platform_accounts(platform="meta_ads", user=self.user)
+        row = listed["items"][0]
+        self.assertEqual(row["backfill_completed_through"], "2026-02-14")
+        self.assertEqual(row["last_success_at"], "2026-02-14T10:00:00+00:00")
+
+    def test_meta_retry_success_clears_error_and_keeps_best_coverage(self):
+        client_registry_service.update_platform_account_operational_metadata(
+            platform="meta_ads",
+            account_id="act_101",
+            backfill_completed_through="2026-02-09",
+            last_success_at="2026-02-09T09:00:00+00:00",
+            last_error="initial failure",
+        )
+        client_registry_service.update_platform_account_operational_metadata(
+            platform="meta_ads",
+            account_id="act_101",
+            backfill_completed_through="2026-02-14",
+            last_success_at="2026-02-14T10:00:00+00:00",
+            last_error=None,
+        )
+
+        listed = clients_api.list_platform_accounts(platform="meta_ads", user=self.user)
+        row = listed["items"][0]
+        self.assertEqual(row["backfill_completed_through"], "2026-02-14")
+        self.assertEqual(row["last_success_at"], "2026-02-14T10:00:00+00:00")
+        self.assertIsNone(row["last_error"])
+
 
     def test_google_legacy_endpoints_still_function(self):
         client_id = self._create_client("Client A")
