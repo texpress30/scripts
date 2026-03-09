@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.dependencies import enforce_action_scope, get_current_user
+from app.core.config import load_settings
 from app.schemas.client import (
     AttachGoogleAccountRequest,
     AttachPlatformAccountRequest,
@@ -43,6 +44,18 @@ def _normalize_platform_or_422(platform: str) -> str:
             detail=f"Unsupported platform '{platform}'. Allowed values: {sorted(_SUPPORTED_PLATFORMS)}",
         )
     return normalized
+
+
+def _is_platform_sync_enabled(platform: str) -> bool:
+    normalized = _normalize_platform_or_422(platform)
+    settings = load_settings()
+    if normalized == PLATFORM_TIKTOK_ADS:
+        return bool(settings.ff_tiktok_integration)
+    if normalized == PLATFORM_PINTEREST_ADS:
+        return bool(settings.ff_pinterest_integration)
+    if normalized == PLATFORM_SNAPCHAT_ADS:
+        return bool(settings.ff_snapchat_integration)
+    return True
 
 
 def _attach_platform_account(*, client_id: int, platform: str, account_id: str) -> dict[str, str | int | None]:
@@ -108,6 +121,9 @@ def create_client(payload: CreateClientRequest, user: AuthUser = Depends(get_cur
 def platform_account_summary(user: AuthUser = Depends(get_current_user)) -> dict[str, list[dict[str, str | int | None]]]:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
     items = client_registry_service.platform_account_summary()
+    for item in items:
+        if isinstance(item, dict):
+            item["sync_enabled"] = _is_platform_sync_enabled(str(item.get("platform") or ""))
     return {"items": items}
 
 
@@ -129,6 +145,7 @@ def list_platform_accounts(platform: str, user: AuthUser = Depends(get_current_u
     items = client_registry_service.list_platform_accounts_for_mapping(platform=normalized_platform)
     return {
         "platform": normalized_platform,
+        "sync_enabled": _is_platform_sync_enabled(normalized_platform),
         "items": items,
         "count": len(items),
         "last_import_at": client_registry_service.get_last_import_at(platform=normalized_platform),

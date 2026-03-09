@@ -106,6 +106,14 @@ export type AccountSyncRun = {
   metadata?: Record<string, unknown> | null;
 };
 
+export type PlatformAccountsResponse = {
+  platform: string;
+  sync_enabled?: boolean | null;
+  items?: Record<string, unknown>[];
+  count?: number;
+  last_import_at?: string | null;
+};
+
 type AccountRunsResponse = {
   platform: string;
   account_id: string;

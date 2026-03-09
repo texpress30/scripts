@@ -35,6 +35,8 @@ type TikTokAccount = {
 };
 
 type TikTokAccountsResponse = {
+  platform?: string;
+  sync_enabled?: boolean | null;
   items?: TikTokAccount[];
   count?: number;
   last_import_at?: string | null;
@@ -54,6 +56,7 @@ type AccountSummaryItem = {
   platform: string;
   connected_count: number;
   last_import_at?: string | null;
+  sync_enabled?: boolean | null;
 };
 
 type AccountSummaryResponse = { items: AccountSummaryItem[] };
@@ -1092,7 +1095,10 @@ export default function AgencyAccountsPage() {
 
   const isBatchActive = Boolean(currentBatchId);
   const controlsDisabled = loading || actionBusy || isBatchActive;
-  const isTikTokSyncAvailable = selectedPlatform !== "tiktok_ads" || isTikTokIntegrationEnabled();
+  const isTikTokSyncAvailable =
+    selectedPlatform !== "tiktok_ads"
+      ? true
+      : (typeof selectedSummary?.sync_enabled === "boolean" ? selectedSummary.sync_enabled : isTikTokIntegrationEnabled());
 
   return (
     <ProtectedPage>

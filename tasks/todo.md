@@ -2664,3 +2664,18 @@
 ## Review
 - [x] TikTok error categories are now displayed explicitly in UI without fragile free-text parsing.
 - [x] Existing fallback behavior remains for missing categories, and non-TikTok flows are unchanged.
+
+---
+
+# TODO — Stabilizare TikTok pasul 4: enablement configurabil + UI wiring
+
+- [x] Run requested git remote/fetch/pull commands and reconcile local branch with `origin/main`.
+- [x] Make TikTok enablement configurable via explicit env alias (`TIKTOK_SYNC_ENABLED`) while keeping legacy compatibility.
+- [x] Expose platform sync availability (`sync_enabled`) in clients summary and platform accounts payloads.
+- [x] Wire Agency Accounts TikTok availability from backend payload (with env fallback) for disabled/enabled historical button behavior.
+- [x] Wire Agency Account Detail TikTok disabled banner from backend availability payload.
+- [x] Add/update backend and frontend tests for config/orchestration/UI enablement behavior.
+- [x] Run targeted backend tests, frontend tests, and frontend build.
+
+## Review
+- [x] TikTok is no longer effectively hard-disabled when explicit enablement env is set; UI now reflects backend availability signal and keeps safe fallback behavior.
