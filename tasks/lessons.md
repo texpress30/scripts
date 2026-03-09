@@ -223,3 +223,5 @@
 - 2026-03-08: For generic account endpoints reused across providers, frontend mappers must support both `client_*` and `attached_client_*` aliases to avoid stale unattached UI after reload.
 - 2026-03-09: In constrained git environments (missing remote/main), explicitly report the baseline limitation and proceed from the clean local branch instead of pretending the requested reset succeeded.
 - 2026-03-09: For cross-provider historical UX, don't stop at enabling selection; wire Meta/TikTok into the same live batch banner, row progress polling, and completion refresh lifecycle as Google.
+- 2026-03-09: After user dissatisfaction on prior delivery, prioritize requested product fix over repo bookkeeping-only changes; always ship the concrete code/test changes asked before closing.
+- 2026-03-09: For parity requests on existing pages, validate end-to-end UX parity against the Google baseline (list link -> detail metadata -> sync runs/logs -> terminal errors), not only API plumbing fields.

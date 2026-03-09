@@ -2510,3 +2510,48 @@
 - Rolling scheduler now accepts `platform=tiktok_ads` and enqueues `account_daily` (+ entity grains under flag) on the same 7-day complete window.
 - Worker now supports TikTok platform runs by reusing existing TikTok sync service for chunk execution; no duplicate fetch/persist logic added.
 - Existing Google/Meta rolling behavior remained compatible in scheduler tests.
+
+# TODO — Reconnect git remote and sync latest main
+
+- [x] Create plan/checklist for remote reconnection task.
+- [x] Run exact remote/fetch/pull commands provided by user.
+- [x] Record outcomes and constraints.
+- [x] Commit task tracking updates and open PR record.
+
+## Review
+- [x] Executed exact commands in current workspace terminal; remote `origin` added, `fetch` succeeded, and `pull origin main` reported `Already up to date`.
+<<<<<<< codex/setup-new-workspace-and-fetch-updates-el5gg9
+
+
+---
+
+# TODO — Meta/TikTok sync real error observability
+
+- [x] Re-sync workspace to latest `origin/main` before code changes (remote add/fetch + rebase) and document constraints if any.
+- [x] Trace full Meta/TikTok batch flow (API create -> worker -> provider service -> progress API -> Agency Accounts) and pinpoint where root errors become generic.
+- [x] Implement minimal backend structured + sanitized error propagation to progress response (`last_error_summary`, `last_error_details`) without changing Google business flow.
+- [x] Add targeted backend tests for structured propagation, secret sanitization, and safe fallback when provider error fields are missing.
+- [x] Apply minimal Agency Accounts UI change to display real error summary under existing error status, if available.
+- [x] Update README with short diagnostics section and run required backend tests (+ frontend build if touched).
+
+## Review
+- [x] Root-cause loss point identified: worker wrapped provider exceptions into generic RuntimeError and progress payload lacked additive error fields.
+
+- [x] Added structured error metadata plumbing in worker/chunk/run, additive progress fields, and service-level HTTP error enrichment with token-safe sanitization.
+- [x] Verified with targeted backend tests and frontend build.
+
+
+---
+
+# TODO — Meta/TikTok full parity in Agency Accounts detail + logs
+
+- [x] Sync workspace to latest remote baseline before edits.
+- [x] Audit Agency Accounts list + detail flows for Google-vs-Meta/TikTok parity gaps (linking, metadata, sync runs, logs, terminal errors).
+- [x] Implement minimal frontend parity changes for clickable names, generic metadata loading, and terminal error visibility in list/detail for Meta/TikTok.
+- [x] Add focused frontend tests for link behavior, detail metadata/error rendering, and list terminal-error summaries.
+- [x] Run relevant frontend tests + frontend build and record results.
+
+## Review
+- [x] Implemented parity updates in Agency Accounts list and detail page for Meta/TikTok, preserving Google behavior and existing run/chunk logs UX.
+
+- [x] Detailed parity verification passed: targeted vitest suite for list/detail pages and `pnpm --dir apps/frontend build`.

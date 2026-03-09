@@ -11,6 +11,7 @@ from urllib import error, parse, request
 
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
+from app.services.error_observability import safe_body_snippet, sanitize_payload, sanitize_text
 from app.services.entity_performance_reports import (
     upsert_ad_group_performance_reports,
     upsert_ad_unit_performance_reports,
@@ -30,7 +31,35 @@ logger = logging.getLogger(__name__)
 
 
 class TikTokAdsIntegrationError(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        endpoint: str | None = None,
+        http_status: int | None = None,
+        provider_error_code: str | None = None,
+        provider_error_message: str | None = None,
+        body_snippet: str | None = None,
+        retryable: bool | None = None,
+    ) -> None:
+        super().__init__(sanitize_text(message, max_len=400))
+        self.endpoint = sanitize_text(endpoint or "", max_len=200) or None
+        self.http_status = int(http_status) if http_status is not None else None
+        self.provider_error_code = sanitize_text(provider_error_code, max_len=80) if provider_error_code is not None else None
+        self.provider_error_message = sanitize_text(provider_error_message, max_len=300) if provider_error_message is not None else None
+        self.body_snippet = sanitize_text(body_snippet, max_len=400) if body_snippet is not None else None
+        self.retryable = retryable
+
+    def to_details(self) -> dict[str, object]:
+        return {
+            "error_summary": sanitize_text(str(self), max_len=300),
+            "provider_error_code": self.provider_error_code,
+            "provider_error_message": self.provider_error_message,
+            "http_status": self.http_status,
+            "endpoint": self.endpoint,
+            "retryable": self.retryable,
+            "body_snippet": self.body_snippet,
+        }
 
 
 TikTokSyncGrain = Literal["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"]
@@ -132,8 +161,39 @@ class TikTokAdsService:
         try:
             with request.urlopen(req, timeout=30) as response:  # noqa: S310
                 data = response.read().decode("utf-8")
-        except (error.HTTPError, error.URLError, TimeoutError) as exc:
-            raise TikTokAdsIntegrationError(f"TikTok HTTP request failed: {exc}") from exc
+        except error.HTTPError as exc:
+            raw_body = ""
+            try:
+                raw_body = exc.read().decode("utf-8", errors="replace")
+            except Exception:  # noqa: BLE001
+                raw_body = ""
+            provider_code = None
+            provider_message = None
+            if raw_body:
+                try:
+                    parsed = json.loads(raw_body)
+                    if isinstance(parsed, dict):
+                        provider_code = parsed.get("code")
+                        provider_message = parsed.get("message") or parsed.get("msg")
+                except Exception:  # noqa: BLE001
+                    provider_code = None
+                    provider_message = None
+
+            raise TikTokAdsIntegrationError(
+                f"TikTok HTTP request failed: status={exc.code}",
+                endpoint=url,
+                http_status=exc.code,
+                provider_error_code=sanitize_text(provider_code, max_len=80) if provider_code is not None else None,
+                provider_error_message=sanitize_text(provider_message, max_len=300) if provider_message is not None else None,
+                body_snippet=safe_body_snippet(raw_body),
+                retryable=exc.code >= 500,
+            ) from exc
+        except (error.URLError, TimeoutError) as exc:
+            raise TikTokAdsIntegrationError(
+                f"TikTok HTTP request failed: {sanitize_text(exc, max_len=200)}",
+                endpoint=url,
+                retryable=True,
+            ) from exc
 
         try:
             parsed = json.loads(data) if data else {}
@@ -142,6 +202,15 @@ class TikTokAdsService:
 
         if not isinstance(parsed, dict):
             raise TikTokAdsIntegrationError("TikTok API response shape is invalid")
+        if isinstance(parsed.get("code"), int) and int(parsed.get("code") or 0) != 0:
+            raise TikTokAdsIntegrationError(
+                "TikTok API returned error payload",
+                endpoint=url,
+                provider_error_code=sanitize_text(parsed.get("code"), max_len=80),
+                provider_error_message=sanitize_text(parsed.get("message") or parsed.get("msg"), max_len=300),
+                body_snippet=safe_body_snippet(json.dumps(sanitize_payload(parsed))),
+                retryable=False,
+            )
         return parsed
 
     def _is_placeholder(self, value: str) -> bool:

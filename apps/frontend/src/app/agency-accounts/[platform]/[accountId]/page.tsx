@@ -9,14 +9,17 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest, listAccountSyncRuns, repairSyncRun, retryFailedSyncRun, type AccountSyncRun } from "@/lib/api";
 
-type GoogleAccount = {
+type AccountMeta = {
   id: string;
   name: string;
   platform?: string;
   account_id?: string;
   display_name?: string;
+  account_name?: string;
   attached_client_id?: number | null;
   attached_client_name?: string | null;
+  client_id?: number | null;
+  client_name?: string | null;
   timezone?: string | null;
   currency?: string | null;
   sync_start_date?: string | null;
@@ -40,8 +43,8 @@ type EffectiveSyncHeader = {
   lastError?: string | null;
 };
 
-type GoogleAccountsResponse = {
-  items: GoogleAccount[];
+type AccountsListResponse = {
+  items: AccountMeta[];
 };
 
 type SyncRun = AccountSyncRun;
@@ -80,7 +83,33 @@ function formatDate(value?: string | null): string {
 }
 
 function normalizeAccountId(value: string): string {
-  return value.replace(/-/g, "").trim();
+  return value.replace(/[-_]/g, "").trim();
+}
+
+function accountListEndpoint(platform: string): string | null {
+  const normalized = String(platform).trim();
+  if (normalized === "google_ads") return "/clients/accounts/google";
+  if (normalized === "meta_ads") return "/clients/accounts/meta_ads";
+  if (normalized === "tiktok_ads") return "/clients/accounts/tiktok_ads";
+  return null;
+}
+
+function normalizeAccountMetaForPlatform(platform: string, item: AccountMeta): AccountMeta {
+  const normalizedPlatform = String(platform).trim();
+  const accountId = String(item.id ?? item.account_id ?? "").trim();
+  const name = String(item.display_name ?? item.name ?? item.account_name ?? accountId).trim() || accountId;
+  const attachedClientId = item.attached_client_id ?? (typeof item.client_id === "number" ? Number(item.client_id) : null);
+  const attachedClientName = item.attached_client_name ?? (String(item.client_name ?? "").trim() || null);
+
+  return {
+    ...item,
+    id: accountId,
+    platform: String(item.platform ?? normalizedPlatform),
+    name,
+    display_name: name,
+    attached_client_id: attachedClientId,
+    attached_client_name: attachedClientName,
+  };
 }
 
 function normalizeStatus(status?: string | null): string {
@@ -134,7 +163,7 @@ function retrySourceJobId(run: SyncRun): string {
   return String((metadata as { retry_of_job_id?: unknown }).retry_of_job_id ?? "").trim();
 }
 
-function coversRunRangeByAccountMeta(run: SyncRun, accountMeta: GoogleAccount | null): boolean {
+function coversRunRangeByAccountMeta(run: SyncRun, accountMeta: AccountMeta | null): boolean {
   const accountStart = parseDateOnly(accountMeta?.sync_start_date);
   const accountEnd = parseDateOnly(accountMeta?.backfill_completed_through);
   const runStart = parseDateOnly(run.date_start);
@@ -151,7 +180,7 @@ function toRunTimestamp(run?: SyncRun | null): number {
   return Number.isFinite(ts) ? ts : 0;
 }
 
-function toMetaTimestamp(meta?: GoogleAccount | null): number {
+function toMetaTimestamp(meta?: AccountMeta | null): number {
   if (!meta) return 0;
   const raw = meta.last_run_finished_at ?? meta.last_run_started_at ?? meta.last_success_at ?? null;
   if (!raw) return 0;
@@ -164,7 +193,7 @@ export default function AgencyAccountDetailPage() {
   const platform = decodeURIComponent(String(params?.platform ?? "")).trim();
   const accountId = decodeURIComponent(String(params?.accountId ?? "")).trim();
 
-  const [accountMeta, setAccountMeta] = useState<GoogleAccount | null>(null);
+  const [accountMeta, setAccountMeta] = useState<AccountMeta | null>(null);
   const [metaLoading, setMetaLoading] = useState(true);
   const [metaError, setMetaError] = useState("");
 
@@ -226,10 +255,19 @@ export default function AgencyAccountDetailPage() {
     const failedRun = runsSorted.find(
       (run) =>
         ["error", "failed", "partial"].includes(normalizeStatus(run.status)) &&
-        String(run.error ?? "").trim() !== "" &&
         !fullyRecoveredSourceRunIds.has(run.job_id),
     );
-    return failedRun?.error ?? "";
+    if (!failedRun) return "";
+    const summary = String((failedRun as { last_error_summary?: unknown }).last_error_summary ?? "").trim();
+    if (summary) return summary;
+    const runError = String(failedRun.error ?? "").trim();
+    if (runError) return runError;
+    const details = (failedRun as { last_error_details?: unknown }).last_error_details;
+    if (details && typeof details === "object") {
+      const providerMessage = String((details as { provider_error_message?: unknown }).provider_error_message ?? "").trim();
+      if (providerMessage) return providerMessage;
+    }
+    return "run failed";
   }, [fullyRecoveredSourceRunIds, runsSorted]);
   const retryableFailedRun = useMemo(
     () =>
@@ -278,7 +316,8 @@ export default function AgencyAccountDetailPage() {
   const hadActiveRunRef = useRef(false);
 
   async function loadAccountMeta() {
-    if (platform !== "google_ads") {
+    const endpoint = accountListEndpoint(platform);
+    if (!endpoint) {
       setAccountMeta(null);
       setMetaLoading(false);
       setMetaError("");
@@ -288,9 +327,10 @@ export default function AgencyAccountDetailPage() {
     setMetaLoading(true);
     setMetaError("");
     try {
-      const payload = await apiRequest<GoogleAccountsResponse>("/clients/accounts/google");
+      const payload = await apiRequest<AccountsListResponse>(endpoint);
       const normalizedTarget = normalizeAccountId(accountId);
-      const found = payload.items.find((item) => normalizeAccountId(item.id) === normalizedTarget);
+      const normalizedItems = (payload.items ?? []).map((item) => normalizeAccountMetaForPlatform(platform, item));
+      const found = normalizedItems.find((item) => normalizeAccountId(String(item.id ?? item.account_id ?? "")) === normalizedTarget);
       setAccountMeta(found ?? null);
     } catch (err) {
       setMetaError(err instanceof Error ? err.message : "Nu am putut încărca metadata contului.");
@@ -639,6 +679,12 @@ export default function AgencyAccountDetailPage() {
                       ) : null}
 
                       {run.error ? <p className="px-3 pb-2 text-xs text-red-600">Error: {run.error}</p> : null}
+                      {String((run as { last_error_summary?: unknown }).last_error_summary ?? "").trim() ? (
+                        <p className="px-3 pb-2 text-xs text-red-600">Summary: {String((run as { last_error_summary?: unknown }).last_error_summary ?? "")}</p>
+                      ) : null}
+                      {(run as { last_error_details?: unknown }).last_error_details && typeof (run as { last_error_details?: unknown }).last_error_details === "object" ? (
+                        <p className="px-3 pb-2 text-xs text-red-600">Details: {String(((run as { last_error_details?: Record<string, unknown> }).last_error_details?.provider_error_message as string | undefined) || ((run as { last_error_details?: Record<string, unknown> }).last_error_details?.provider_error_code as string | undefined) || "available")}</p>
+                      ) : null}
 
                       {expanded ? (
                         <div className="border-t border-slate-100 bg-slate-50 px-3 py-3">

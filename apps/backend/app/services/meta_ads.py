@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from urllib import error, parse, request
 
 from app.core.config import load_settings
+from app.services.error_observability import safe_body_snippet, sanitize_payload, sanitize_text
 from app.services.integration_secrets_store import integration_secrets_store
 from app.services.meta_store import meta_snapshot_store
 from app.services.performance_reports import performance_reports_store
@@ -22,7 +23,35 @@ _ALLOWED_SYNC_GRAINS: tuple[str, ...] = ("account_daily", "campaign_daily", "ad_
 
 
 class MetaAdsIntegrationError(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        endpoint: str | None = None,
+        http_status: int | None = None,
+        provider_error_code: str | None = None,
+        provider_error_message: str | None = None,
+        body_snippet: str | None = None,
+        retryable: bool | None = None,
+    ) -> None:
+        super().__init__(sanitize_text(message, max_len=400))
+        self.endpoint = sanitize_text(endpoint or "", max_len=200) or None
+        self.http_status = int(http_status) if http_status is not None else None
+        self.provider_error_code = sanitize_text(provider_error_code, max_len=80) if provider_error_code is not None else None
+        self.provider_error_message = sanitize_text(provider_error_message, max_len=300) if provider_error_message is not None else None
+        self.body_snippet = sanitize_text(body_snippet, max_len=400) if body_snippet is not None else None
+        self.retryable = retryable
+
+    def to_details(self) -> dict[str, object]:
+        return {
+            "error_summary": sanitize_text(str(self), max_len=300),
+            "provider_error_code": self.provider_error_code,
+            "provider_error_message": self.provider_error_message,
+            "http_status": self.http_status,
+            "endpoint": self.endpoint,
+            "retryable": self.retryable,
+            "body_snippet": self.body_snippet,
+        }
 
 
 class MetaAdsService:
@@ -48,8 +77,39 @@ class MetaAdsService:
         try:
             with request.urlopen(req, timeout=20) as response:  # noqa: S310
                 data = response.read().decode("utf-8")
-        except (error.HTTPError, error.URLError, TimeoutError) as exc:
-            raise MetaAdsIntegrationError(f"Meta HTTP request failed: {exc}") from exc
+        except error.HTTPError as exc:
+            raw_body = ""
+            try:
+                raw_body = exc.read().decode("utf-8", errors="replace")
+            except Exception:  # noqa: BLE001
+                raw_body = ""
+            provider_code = None
+            provider_message = None
+            if raw_body:
+                try:
+                    parsed = json.loads(raw_body)
+                    error_payload = parsed.get("error") if isinstance(parsed, dict) else None
+                    if isinstance(error_payload, dict):
+                        provider_code = error_payload.get("code")
+                        provider_message = error_payload.get("message")
+                except Exception:  # noqa: BLE001
+                    provider_code = None
+                    provider_message = None
+            raise MetaAdsIntegrationError(
+                f"Meta HTTP request failed: status={exc.code}",
+                endpoint=url,
+                http_status=exc.code,
+                provider_error_code=sanitize_text(provider_code, max_len=80) if provider_code is not None else None,
+                provider_error_message=sanitize_text(provider_message, max_len=300) if provider_message is not None else None,
+                body_snippet=safe_body_snippet(raw_body),
+                retryable=exc.code >= 500,
+            ) from exc
+        except (error.URLError, TimeoutError) as exc:
+            raise MetaAdsIntegrationError(
+                f"Meta HTTP request failed: {sanitize_text(exc, max_len=200)}",
+                endpoint=url,
+                retryable=True,
+            ) from exc
 
         try:
             parsed = json.loads(data) if data else {}
@@ -58,6 +118,16 @@ class MetaAdsService:
 
         if not isinstance(parsed, dict):
             raise MetaAdsIntegrationError("Meta API response shape is invalid")
+        if isinstance(parsed.get("error"), dict):
+            err = parsed.get("error") or {}
+            raise MetaAdsIntegrationError(
+                "Meta API returned error payload",
+                endpoint=url,
+                provider_error_code=sanitize_text(err.get("code"), max_len=80) if err.get("code") is not None else None,
+                provider_error_message=sanitize_text(err.get("message"), max_len=300) if err.get("message") is not None else None,
+                body_snippet=safe_body_snippet(json.dumps(sanitize_payload(parsed))),
+                retryable=False,
+            )
         return parsed
 
     def _get_secret(self, key: str):
