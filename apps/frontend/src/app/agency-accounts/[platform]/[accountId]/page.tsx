@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest, listAccountSyncRuns, repairSyncRun, retryFailedSyncRun, type AccountSyncRun } from "@/lib/api";
-import { getEffectiveAccountStatus, getTikTokErrorPresentation, isRunActive, isRunFailure, isRunSupersededByLaterSuccess, normalizeJobType, normalizeStatus } from "../../sync-runs";
+import { getEffectiveAccountStatus, getTikTokErrorPresentation, shouldSuppressStaleTikTokFeatureFlagError, isRunActive, isRunFailure, isRunSupersededByLaterSuccess, normalizeJobType, normalizeStatus } from "../../sync-runs";
 
 type AccountMeta = {
   id: string;
@@ -218,14 +218,23 @@ export default function AgencyAccountDetailPage() {
     const category = String((failedRun as { last_error_category?: unknown }).last_error_category ?? (details && typeof details === "object" ? (details as { error_category?: unknown }).error_category : "") ?? "").trim();
     const summary = String((failedRun as { last_error_summary?: unknown }).last_error_summary ?? "").trim();
     const fallback = summary || String(failedRun.error ?? "").trim() || (details && typeof details === "object" ? String((details as { provider_error_message?: unknown }).provider_error_message ?? "").trim() : "") || "run failed";
+    const staleFeatureFlagError = shouldSuppressStaleTikTokFeatureFlagError({
+      platform,
+      syncEnabled: platformSyncEnabled,
+      hasActiveSync: hasActiveRun,
+      lastRunStatus: failedRun.status,
+      errorCategory: category,
+      errorMessage: fallback,
+    });
+    if (staleFeatureFlagError) return null;
     return getTikTokErrorPresentation(category, fallback);
-  }, [platform, visibleRuns]);
+  }, [hasActiveRun, platform, platformSyncEnabled, visibleRuns]);
 
   const latestTerminalError = useMemo(() => {
     const failedRun = visibleRuns.find((run) => isRunFailure(run.status));
     if (!failedRun) return "";
     if (platform === "tiktok_ads") {
-      return latestTikTokErrorPresentation?.title ?? "run failed";
+      return latestTikTokErrorPresentation?.title ?? "";
     }
     const summary = String((failedRun as { last_error_summary?: unknown }).last_error_summary ?? "").trim();
     if (summary) return summary;

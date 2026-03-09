@@ -8,7 +8,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest, postAccountSyncProgressBatch, type AccountSyncProgressBatchResult } from "@/lib/api";
 import { isTikTokIntegrationEnabled } from "@/lib/featureFlags";
-import { getEffectiveAccountStatus, getTikTokErrorPresentation } from "./sync-runs";
+import { getEffectiveAccountStatus, getTikTokErrorPresentation, shouldSuppressStaleTikTokFeatureFlagError } from "./sync-runs";
 
 type TikTokAccount = {
   id?: string;
@@ -1269,7 +1269,17 @@ export default function AgencyAccountsPage() {
                                   ? String(((rowChunkProgressByAccount[account.id]?.lastErrorDetails as Record<string, unknown>)?.error_category as string | undefined) ?? "").trim() || null
                                   : null);
                               const accountErrorCategory = String(account.lastErrorCategory ?? (account.lastErrorDetails && typeof account.lastErrorDetails === "object" ? (account.lastErrorDetails as Record<string, unknown>).error_category : "") ?? "").trim() || null;
-                              const presentation = getTikTokErrorPresentation(progressErrorCategory ?? accountErrorCategory, account.lastError);
+                              const effectiveCategory = progressErrorCategory ?? accountErrorCategory;
+                              const suppressStaleFeatureFlagError = shouldSuppressStaleTikTokFeatureFlagError({
+                                platform: selectedPlatform,
+                                syncEnabled: isTikTokSyncAvailable,
+                                hasActiveSync: false,
+                                lastRunStatus: batchRunsByAccount[account.id] ?? account.lastRunStatus,
+                                errorCategory: effectiveCategory,
+                                errorMessage: account.lastError,
+                              });
+                              if (suppressStaleFeatureFlagError) return <p className="text-xs text-slate-500">Eroare recentă: -</p>;
+                              const presentation = getTikTokErrorPresentation(effectiveCategory, account.lastError);
                               return (
                                 <>
                                   <p className="text-xs text-red-600">Eroare recentă: {presentation.title}</p>

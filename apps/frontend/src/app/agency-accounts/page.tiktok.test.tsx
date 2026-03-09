@@ -203,4 +203,47 @@ describe("AgencyAccountsPage TikTok historical progress UX", () => {
     expect(button).not.toBeDisabled();
   });
 
+  it("hides stale feature-flag recent error when TikTok sync is currently enabled", async () => {
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients") return Promise.resolve({ items: [{ id: 1, name: "Client A", owner_email: "a@x.com", display_id: 1 }] });
+      if (path === "/clients/accounts/summary") return Promise.resolve({ items: [{ platform: "google_ads", connected_count: 1, last_import_at: null }, { platform: "tiktok_ads", connected_count: 1, last_import_at: null, sync_enabled: true }] });
+      if (path === "/clients/accounts/google") return Promise.resolve({ items: [{ id: "g_1", name: "G1", attached_client_id: 1, attached_client_name: "Client A" }], count: 1 });
+      if (path === "/clients/accounts/tiktok_ads") {
+        return Promise.resolve({
+          sync_enabled: true,
+          items: [{ id: "tt_attached", name: "TikTok One", client_id: 1, client_name: "Client A", last_error: "TikTok integration is disabled by feature flag." }],
+          count: 1,
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /TikTok Ads/i }));
+
+    expect(await screen.findByText(/Eroare recentă: -/i)).toBeInTheDocument();
+    expect(screen.queryByText(/TikTok integration is disabled by feature flag/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps feature-flag recent error visible when TikTok sync is disabled", async () => {
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients") return Promise.resolve({ items: [{ id: 1, name: "Client A", owner_email: "a@x.com", display_id: 1 }] });
+      if (path === "/clients/accounts/summary") return Promise.resolve({ items: [{ platform: "google_ads", connected_count: 1, last_import_at: null }, { platform: "tiktok_ads", connected_count: 1, last_import_at: null, sync_enabled: false }] });
+      if (path === "/clients/accounts/google") return Promise.resolve({ items: [{ id: "g_1", name: "G1", attached_client_id: 1, attached_client_name: "Client A" }], count: 1 });
+      if (path === "/clients/accounts/tiktok_ads") {
+        return Promise.resolve({
+          sync_enabled: false,
+          items: [{ id: "tt_attached", name: "TikTok One", client_id: 1, client_name: "Client A", last_error: "TikTok integration is disabled by feature flag." }],
+          count: 1,
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /TikTok Ads/i }));
+
+    expect(await screen.findByText(/Eroare recentă: TikTok integration is disabled by feature flag/i)).toBeInTheDocument();
+  });
+
 });

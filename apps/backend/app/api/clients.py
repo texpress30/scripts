@@ -36,6 +36,29 @@ _SUPPORTED_PLATFORMS = {
 }
 
 
+def _looks_like_feature_flag_disabled_error(value: object | None) -> bool:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return False
+    return "disabled by feature flag" in normalized
+
+
+def _suppress_stale_tiktok_feature_flag_errors(*, items: list[dict[str, object]], sync_enabled: bool) -> None:
+    if not sync_enabled:
+        return
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if bool(item.get("has_active_sync")):
+            continue
+        if _looks_like_feature_flag_disabled_error(item.get("last_error")):
+            item["last_error"] = None
+            if "last_error_category" in item:
+                item["last_error_category"] = None
+            if "last_error_details" in item:
+                item["last_error_details"] = None
+
+
 def _normalize_platform_or_422(platform: str) -> str:
     normalized = str(platform or "").strip().lower()
     if normalized not in _SUPPORTED_PLATFORMS:
@@ -142,10 +165,13 @@ def list_google_accounts(user: AuthUser = Depends(get_current_user)) -> dict[str
 def list_platform_accounts(platform: str, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
     normalized_platform = _normalize_platform_or_422(platform)
+    sync_enabled = _is_platform_sync_enabled(normalized_platform)
     items = client_registry_service.list_platform_accounts_for_mapping(platform=normalized_platform)
+    if normalized_platform == PLATFORM_TIKTOK_ADS:
+        _suppress_stale_tiktok_feature_flag_errors(items=items, sync_enabled=sync_enabled)
     return {
         "platform": normalized_platform,
-        "sync_enabled": _is_platform_sync_enabled(normalized_platform),
+        "sync_enabled": sync_enabled,
         "items": items,
         "count": len(items),
         "last_import_at": client_registry_service.get_last_import_at(platform=normalized_platform),

@@ -233,3 +233,5 @@
 - 2026-03-09: For provider preflight/error-taxonomy tasks, avoid passing classification labels containing 'token' through generic secret-mask sanitizers; preserve enum values explicitly after payload sanitization.
 - 2026-03-09: When adding provider-specific UI logic in shared pages, verify both provider and Google-only sections separately to avoid accidental type narrowing regressions.
 - 2026-03-09: When user provides exact git sync commands (including auth remote), execute them first and then complete reconciliation (--rebase/merge) if pull requires explicit strategy.
+
+- When introducing feature-flag-dependent UI error messaging, always add stale-state guards so historical "disabled by feature flag" errors do not override current enabled availability.

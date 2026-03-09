@@ -27,6 +27,7 @@ class ClientsPlatformAccountMappingsApiTests(unittest.TestCase):
 
         client_registry_service.upsert_platform_accounts(platform="meta_ads", accounts=[{"id": "act_101", "name": "Meta One"}])
         client_registry_service.upsert_platform_accounts(platform="google_ads", accounts=[{"id": "1234567890", "name": "Google One"}])
+        client_registry_service.upsert_platform_accounts(platform="tiktok_ads", accounts=[{"id": "tt_101", "name": "TikTok One"}])
 
         self.user = AuthUser(email="owner@example.com", role="admin")
         self.original_enforce = clients_api.enforce_action_scope
@@ -223,6 +224,33 @@ class ClientsPlatformAccountMappingsApiTests(unittest.TestCase):
         self.assertEqual(row["last_success_at"], "2026-02-14T10:00:00+00:00")
         self.assertIsNone(row["last_error"])
 
+
+
+    def test_tiktok_enabled_suppresses_stale_feature_flag_recent_error(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        client_registry_service.update_platform_account_operational_metadata(
+            platform="tiktok_ads",
+            account_id="tt_101",
+            last_error="TikTok integration is disabled by feature flag.",
+        )
+
+        listed = clients_api.list_platform_accounts(platform="tiktok_ads", user=self.user)
+        self.assertTrue(bool(listed.get("sync_enabled")))
+        self.assertEqual(listed["count"], 1)
+        self.assertIsNone(listed["items"][0]["last_error"])
+
+    def test_tiktok_disabled_keeps_feature_flag_recent_error_visible(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "0"
+        client_registry_service.update_platform_account_operational_metadata(
+            platform="tiktok_ads",
+            account_id="tt_101",
+            last_error="TikTok integration is disabled by feature flag.",
+        )
+
+        listed = clients_api.list_platform_accounts(platform="tiktok_ads", user=self.user)
+        self.assertFalse(bool(listed.get("sync_enabled")))
+        self.assertEqual(listed["count"], 1)
+        self.assertEqual(listed["items"][0]["last_error"], "TikTok integration is disabled by feature flag.")
 
     def test_google_legacy_endpoints_still_function(self):
         client_id = self._create_client("Client A")

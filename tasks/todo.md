@@ -2679,3 +2679,22 @@
 
 ## Review
 - [x] TikTok is no longer effectively hard-disabled when explicit enablement env is set; UI now reflects backend availability signal and keeps safe fallback behavior.
+
+---
+
+# TODO — Clear stale TikTok feature-flag recent errors when sync is enabled
+
+- [x] Re-check current backend/frontend derivation for TikTok recent error and status fallback sources.
+- [x] Implement minimal stale-error suppression rule for TikTok `integration_disabled`/feature-flag-disabled when platform is currently enabled.
+- [x] Ensure new runs still clear/replace recent error state correctly (success clears, new real failures replace).
+- [x] Add/adjust targeted backend and frontend tests for stale-vs-real disabled scenarios and recent-error transitions.
+- [x] Run requested backend tests, frontend tests, and frontend build; record outcomes.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Stale TikTok feature-flag errors are now suppressed when `sync_enabled=true` and no active run confirms disabled state, without deleting sync history.
+- Backend list payload (`/clients/accounts/tiktok_ads`) now clears derived `last_error` only for stale feature-flag strings when TikTok sync is enabled.
+- Frontend list/detail now use shared stale-error guard helper to avoid rendering stale "disabled by feature flag" as current recent error.
+- Added backend + frontend tests for enabled stale suppression and disabled-state preservation.
+- Verification: `pytest -q apps/backend/tests/test_clients_platform_account_mappings.py apps/backend/tests/test_account_sync_metadata_contract.py`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx src/app/agency-accounts/[platform]/[accountId]/page.platform-parity.test.tsx src/app/agency-accounts/sync-runs.test.ts`, `pnpm --dir apps/frontend build`.

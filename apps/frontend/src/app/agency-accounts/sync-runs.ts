@@ -138,6 +138,29 @@ export function getEffectiveAccountStatus(input: {
   return "idle";
 }
 
+
+export function isFeatureFlagDisabledError(errorCategory?: string | null, message?: string | null): boolean {
+  const category = String(errorCategory ?? "").trim().toLowerCase();
+  if (category === "integration_disabled") return true;
+  const normalizedMessage = String(message ?? "").trim().toLowerCase();
+  return normalizedMessage.includes("disabled by feature flag");
+}
+
+export function shouldSuppressStaleTikTokFeatureFlagError(input: {
+  platform?: string | null;
+  syncEnabled?: boolean | null;
+  hasActiveSync?: boolean | null;
+  lastRunStatus?: string | null;
+  errorCategory?: string | null;
+  errorMessage?: string | null;
+}): boolean {
+  if (String(input.platform ?? "").trim().toLowerCase() !== "tiktok_ads") return false;
+  if (input.syncEnabled !== true) return false;
+  if (input.hasActiveSync) return false;
+  if (isRunActive(input.lastRunStatus)) return false;
+  return isFeatureFlagDisabledError(input.errorCategory, input.errorMessage);
+}
+
 export type TikTokErrorPresentation = {
   title: string;
   details: string | null;

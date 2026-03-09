@@ -306,4 +306,40 @@ describe("Agency Account detail Meta/TikTok parity", () => {
     expect(screen.queryByText(/historical_backfill ·\s*·/i)).not.toBeInTheDocument();
   });
 
+  it("suppresses stale TikTok feature-flag run error when platform is enabled", async () => {
+    paramsState.platform = "tiktok_ads";
+    paramsState.accountId = "tt_1";
+
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients/accounts/tiktok_ads") {
+        return Promise.resolve({
+          sync_enabled: true,
+          items: [{ id: "tt_1", name: "TikTok One", platform: "tiktok_ads", client_name: "Client B" }],
+        });
+      }
+      if (path.includes("/accounts/tiktok_ads/tt_1")) {
+        return Promise.resolve({
+          runs: [
+            {
+              job_id: "tt-old-disabled",
+              job_type: "historical_backfill",
+              status: "error",
+              last_error_summary: "TikTok integration is disabled by feature flag.",
+              last_error_category: "integration_disabled",
+              chunks_total: 1,
+              chunks_done: 0,
+              created_at: "2026-03-09T09:00:00Z",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountDetailPage />);
+
+    await screen.findByText(/Account: TikTok One/);
+    expect(screen.queryByText(/Ultimul run a eșuat/i)).not.toBeInTheDocument();
+  });
+
 });
