@@ -2914,3 +2914,27 @@
 - Strengthened JSON-safe helper with secret masking for token-like keys/query params while preserving observability counters/markers in response payload.
 - Added API-level regression test that hits `/chunks`, asserts 200, validates TikTok observability fields, and verifies no token leakage in response body.
 - Verification: `pytest -q apps/backend/tests/test_sync_orchestration_json_safe.py apps/backend/tests/test_sync_orchestration_api.py`, `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py::TikTokAdsImportAccountsTests::test_sync_client_records_provider_empty_list_observability`.
+
+---
+
+# TODO — TikTok parser deep-dive: nested mapping + parser_failure semantics
+
+- [x] Attempt workspace update before edits and record git topology blocker when tracking remote is unavailable.
+- [x] Audit current TikTok fetch parser for nested `dimensions`/`metrics` handling and date extraction per grain.
+- [x] Implement row normalization helpers for dimensions/metrics map extraction across dict/list/simple shapes.
+- [x] Map per-grain fields from normalized dimensions/metrics (stat_time_day, entity ids, metrics) and reduce false skipped_invalid_date.
+- [x] Add deeper parser observability (`sample_dimension_keys`, `sample_metric_keys`, `date_source_used`, skip reasons) without secret leaks.
+- [x] Introduce parser_failure semantics distinct from no_data_success and prevent success/backfill advancement on parser_failure.
+- [x] Apply minimal API/UI status adjustments only if needed so parser_failure is not shown as clean success.
+- [x] Add/adjust tests for nested row mapping, date parsing, parser_failure vs no_data_success, backfill semantics, and no token leak.
+- [x] Run relevant backend tests (and frontend tests/build only if UI touched).
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Workspace update attempted first (`git pull --rebase`), blocked by missing tracking remote on local `work` branch.
+- TikTok parser now normalizes nested `dimensions`/`metrics` payloads from dict/list/entry-shapes and performs robust report date parsing (ISO date, datetime, `YYYYMMDD`, `...Z`).
+- Parser observability now includes `sample_dimension_keys`, `sample_metric_keys`, `date_source_used`, and `skip_reason_counts` while retaining existing row counters/zero-row markers.
+- Worker finalization now classifies `provider_row_count>0 && rows_mapped=0` as parser failure (terminal error), preventing `last_success_at` and backfill advancement; true provider-empty remains `no_data_success`.
+- Added backend tests for nested row shape mapping, parser observability/date source, parser_failure finalization semantics, and operational status serialization.
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py apps/backend/tests/test_sync_worker.py apps/backend/tests/test_sync_orchestration_api.py`.

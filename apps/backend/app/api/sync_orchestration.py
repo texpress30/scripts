@@ -418,7 +418,11 @@ def _serialize_run(item: dict[str, object]) -> dict[str, object]:
     last_error_summary = None if is_success else raw_last_error_summary
     last_error_details = None if is_success else raw_last_error_details
     last_error_category = None if is_success else (str((last_error_details or {}).get("error_category") or "").strip() or None)
-    operational_status = "no_data_success" if is_success and bool(metadata.get("no_data_success")) else run_status
+    operational_status = run_status
+    if bool(metadata.get("parser_failure")):
+        operational_status = "parser_failure"
+    elif is_success and bool(metadata.get("no_data_success")):
+        operational_status = "no_data_success"
 
     return {
         "job_id": item.get("job_id"),

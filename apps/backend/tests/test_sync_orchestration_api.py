@@ -657,6 +657,33 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.assertEqual(metadata.get("access_token"), "***")
         self.assertNotIn("super-secret-token", json.dumps(payload))
 
+
+    def test_account_runs_serializes_operational_status_parser_failure(self):
+        headers = self._auth_headers()
+        created = self.client.post(
+            "/agency/sync-runs/batch",
+            headers=headers,
+            json={
+                "platform": "google_ads",
+                "account_ids": ["3986597205"],
+                "job_type": "manual",
+                "start_date": str(date(2026, 2, 1)),
+                "end_date": str(date(2026, 2, 2)),
+                "chunk_days": 1,
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        job_id = created.json()["runs"][0]["job_id"]
+        run = self.state["runs"][job_id]
+        run["status"] = "error"
+        run["error"] = "parser failure"
+        run["metadata"] = {"parser_failure": True}
+
+        response = self.client.get("/agency/sync-runs/accounts/google_ads/3986597205?limit=10", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        runs = response.json().get("runs") or []
+        self.assertEqual(runs[0].get("operational_status"), "parser_failure")
+
     def test_account_runs_and_chunk_details_shape(self):
         headers = self._auth_headers()
         created = self.client.post(

@@ -752,6 +752,121 @@ class TikTokAdsService:
         return 0.0
 
 
+
+    def _normalize_nested_map(self, value: object) -> dict[str, object]:
+        if isinstance(value, dict):
+            normalized: dict[str, object] = {}
+            for key, item in value.items():
+                key_text = str(key or "").strip()
+                if key_text == "":
+                    continue
+                normalized[key_text] = item
+            return normalized
+        if not isinstance(value, list):
+            return {}
+
+        normalized: dict[str, object] = {}
+        for entry in value:
+            if isinstance(entry, dict):
+                key_text = str(entry.get("key") or entry.get("name") or entry.get("field") or entry.get("dimension") or entry.get("metric") or "").strip()
+                resolved_value: object | None = None
+                if "value" in entry:
+                    resolved_value = entry.get("value")
+                elif "val" in entry:
+                    resolved_value = entry.get("val")
+                elif "data" in entry:
+                    resolved_value = entry.get("data")
+                elif len(entry) == 1:
+                    only_key, only_value = next(iter(entry.items()))
+                    key_text = str(only_key or "").strip()
+                    resolved_value = only_value
+                else:
+                    for candidate_key, candidate_value in entry.items():
+                        candidate_text = str(candidate_key or "").strip().lower()
+                        if candidate_text in {"key", "name", "field", "dimension", "metric"}:
+                            continue
+                        resolved_value = candidate_value
+                        break
+                if key_text != "" and resolved_value is not None:
+                    normalized[key_text] = resolved_value
+                continue
+            if isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                key_text = str(entry[0] or "").strip()
+                if key_text != "":
+                    normalized[key_text] = entry[1]
+        return normalized
+
+    def _parse_tiktok_report_date(self, *, row: dict[str, object], dimensions_map: dict[str, object]) -> tuple[date | None, str, str | None]:
+        candidates: list[tuple[str, object]] = [
+            ("dimensions.stat_time_day", dimensions_map.get("stat_time_day")),
+            ("row.stat_time_day", row.get("stat_time_day")),
+            ("row.date", row.get("date")),
+            ("dimensions.date", dimensions_map.get("date")),
+        ]
+        raw_value = None
+        source = ""
+        for candidate_source, candidate_value in candidates:
+            if candidate_value is None:
+                continue
+            candidate_text = str(candidate_value).strip()
+            if candidate_text == "":
+                continue
+            source = candidate_source
+            raw_value = candidate_value
+            break
+
+        if raw_value is None:
+            return None, source, "missing_stat_time_day"
+        if isinstance(raw_value, datetime):
+            return raw_value.date(), source, None
+        if isinstance(raw_value, date):
+            return raw_value, source, None
+
+        value = str(raw_value).strip()
+        if value == "":
+            return None, source, "missing_stat_time_day"
+
+        normalized = value.replace("/", "-")
+        if normalized.endswith("Z"):
+            normalized = normalized[:-1] + "+00:00"
+        try:
+            if len(normalized) == 8 and normalized.isdigit():
+                return datetime.strptime(normalized, "%Y%m%d").date(), source, None
+            if "T" in normalized:
+                return datetime.fromisoformat(normalized).date(), source, None
+            if " " in normalized and ":" in normalized:
+                return datetime.fromisoformat(normalized.replace(" ", "T", 1)).date(), source, None
+            return date.fromisoformat(normalized), source, None
+        except Exception:
+            return None, source, "invalid_stat_time_day"
+
+    def _dimensions_metrics_for_row(self, *, row: dict[str, object]) -> tuple[dict[str, object], dict[str, object]]:
+        dimensions_map = self._normalize_nested_map(row.get("dimensions"))
+        metrics_map = self._normalize_nested_map(row.get("metrics"))
+
+        if len(dimensions_map) <= 0:
+            for key in ("stat_time_day", "campaign_id", "campaign_name", "adgroup_id", "adgroup_name", "ad_id", "ad_name"):
+                if key in row:
+                    dimensions_map[key] = row.get(key)
+
+        if len(metrics_map) <= 0:
+            for key in (
+                "spend",
+                "impressions",
+                "clicks",
+                "conversion",
+                "conversions",
+                "total_purchase_value",
+                "conversion_value",
+                "total_sales_lead_value",
+                "real_time_conversion_value",
+                "skan_total_purchase_value",
+            ):
+                if key in row:
+                    metrics_map[key] = row.get(key)
+
+        return dimensions_map, metrics_map
+
     def _report_schema_for_grain(self, grain: TikTokSyncGrain) -> TikTokReportingSchema:
         if grain == "account_daily":
             return TikTokReportingSchema(
@@ -792,6 +907,10 @@ class TikTokAdsService:
         skipped_missing_required: int,
         skipped_invalid_date: int,
         missing_required_breakdown: dict[str, int] | None = None,
+        sample_dimension_keys: list[str] | None = None,
+        sample_metric_keys: list[str] | None = None,
+        date_source_used: str | None = None,
+        skip_reason_counts: dict[str, int] | None = None,
     ) -> None:
         list_value = data.get("list")
         sample_row_keys: list[str] = []
@@ -827,10 +946,14 @@ class TikTokAdsService:
             "response_top_level_keys": sorted([str(key) for key in raw_response.keys()][:20]),
             "data_container_keys": sorted([str(key) for key in data.keys()][:20]),
             "sample_row_keys": sample_row_keys,
+            "sample_dimension_keys": list(sample_dimension_keys or []),
+            "sample_metric_keys": list(sample_metric_keys or []),
+            "date_source_used": str(date_source_used or ""),
             "skipped_non_dict": int(skipped_non_dict),
             "skipped_missing_required": int(skipped_missing_required),
             "skipped_invalid_date": int(skipped_invalid_date),
             "missing_required_breakdown": dict(missing_required_breakdown or {}),
+            "skip_reason_counts": dict(skip_reason_counts or {}),
         }
 
     def _consume_reporting_fetch_observability(self, *, grain: TikTokSyncGrain, account_id: str, rows_mapped: int) -> dict[str, object]:
@@ -859,10 +982,14 @@ class TikTokAdsService:
             "response_top_level_keys": [],
             "data_container_keys": [],
             "sample_row_keys": [],
+            "sample_dimension_keys": [],
+            "sample_metric_keys": [],
+            "date_source_used": "",
             "skipped_non_dict": 0,
             "skipped_missing_required": 0,
             "skipped_invalid_date": 0,
             "missing_required_breakdown": {},
+            "skip_reason_counts": {},
         }
 
     def _report_integrated_endpoint(self, *, query: str | None = None) -> str:
@@ -1016,6 +1143,10 @@ class TikTokAdsService:
                 skipped_missing_required=0,
                 skipped_invalid_date=0,
                 missing_required_breakdown={},
+                sample_dimension_keys=[],
+                sample_metric_keys=[],
+                date_source_used="",
+                skip_reason_counts={},
             )
             return []
 
@@ -1024,22 +1155,35 @@ class TikTokAdsService:
         skipped_missing_required = 0
         skipped_invalid_date = 0
         missing_required_breakdown: dict[str, int] = {}
+        skip_reason_counts: dict[str, int] = {}
+        sample_dimension_keys: list[str] = []
+        sample_metric_keys: list[str] = []
+        date_source_used = ""
         for item in rows_raw:
             if not isinstance(item, dict):
                 skipped_non_dict += 1
                 continue
-            dimensions = item.get("dimensions") if isinstance(item.get("dimensions"), dict) else {}
-            metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
-            raw_day = str(dimensions.get("stat_time_day") or "").strip()
-            if raw_day == "":
-                skipped_missing_required += 1
-                missing_required_breakdown["stat_time_day"] = int(missing_required_breakdown.get("stat_time_day") or 0) + 1
+            dimensions, metrics = self._dimensions_metrics_for_row(row=item)
+            if len(sample_dimension_keys) <= 0:
+                sample_dimension_keys = sorted([str(key) for key in dimensions.keys()][:20])
+            if len(sample_metric_keys) <= 0:
+                sample_metric_keys = sorted([str(key) for key in metrics.keys()][:20])
+
+            report_day, resolved_date_source, date_error = self._parse_tiktok_report_date(row=item, dimensions_map=dimensions)
+            if date_error is not None:
+                if date_error == "missing_stat_time_day":
+                    skipped_missing_required += 1
+                    missing_required_breakdown["stat_time_day"] = int(missing_required_breakdown.get("stat_time_day") or 0) + 1
+                else:
+                    skipped_invalid_date += 1
+                skip_reason_counts[date_error] = int(skip_reason_counts.get(date_error) or 0) + 1
                 continue
-            try:
-                report_day = date.fromisoformat(raw_day)
-            except ValueError:
+            if report_day is None:
                 skipped_invalid_date += 1
+                skip_reason_counts["invalid_stat_time_day"] = int(skip_reason_counts.get("invalid_stat_time_day") or 0) + 1
                 continue
+            if date_source_used == "" and resolved_date_source != "":
+                date_source_used = resolved_date_source
 
             spend = self._to_float(metrics.get("spend"))
             impressions = self._to_int(metrics.get("impressions"))
@@ -1080,6 +1224,10 @@ class TikTokAdsService:
             skipped_missing_required=skipped_missing_required,
             skipped_invalid_date=skipped_invalid_date,
             missing_required_breakdown=missing_required_breakdown,
+            sample_dimension_keys=sample_dimension_keys,
+            sample_metric_keys=sample_metric_keys,
+            date_source_used=date_source_used,
+            skip_reason_counts=skip_reason_counts,
         )
 
         return rows
@@ -1149,6 +1297,10 @@ class TikTokAdsService:
                 skipped_missing_required=0,
                 skipped_invalid_date=0,
                 missing_required_breakdown={},
+                sample_dimension_keys=[],
+                sample_metric_keys=[],
+                date_source_used="",
+                skip_reason_counts={},
             )
             return []
 
@@ -1157,28 +1309,43 @@ class TikTokAdsService:
         skipped_missing_required = 0
         skipped_invalid_date = 0
         missing_required_breakdown: dict[str, int] = {}
+        skip_reason_counts: dict[str, int] = {}
+        sample_dimension_keys: list[str] = []
+        sample_metric_keys: list[str] = []
+        date_source_used = ""
         for item in rows_raw:
             if not isinstance(item, dict):
                 skipped_non_dict += 1
                 continue
-            dimensions = item.get("dimensions") if isinstance(item.get("dimensions"), dict) else {}
-            metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
+            dimensions, metrics = self._dimensions_metrics_for_row(row=item)
+            if len(sample_dimension_keys) <= 0:
+                sample_dimension_keys = sorted([str(key) for key in dimensions.keys()][:20])
+            if len(sample_metric_keys) <= 0:
+                sample_metric_keys = sorted([str(key) for key in metrics.keys()][:20])
 
-            raw_day = str(dimensions.get("stat_time_day") or "").strip()
+            report_day, resolved_date_source, date_error = self._parse_tiktok_report_date(row=item, dimensions_map=dimensions)
             campaign_id = str(dimensions.get("campaign_id") or item.get("campaign_id") or "").strip()
             campaign_name = str(dimensions.get("campaign_name") or item.get("campaign_name") or "").strip()
-            if raw_day == "" or campaign_id == "":
+            if date_error is not None or campaign_id == "":
                 skipped_missing_required += 1
-                if raw_day == "":
+                if date_error == "missing_stat_time_day":
                     missing_required_breakdown["stat_time_day"] = int(missing_required_breakdown.get("stat_time_day") or 0) + 1
+                elif date_error == "invalid_stat_time_day":
+                    skipped_missing_required -= 1
+                    skipped_invalid_date += 1
                 if campaign_id == "":
                     missing_required_breakdown["campaign_id"] = int(missing_required_breakdown.get("campaign_id") or 0) + 1
+                reason = date_error or "missing_campaign_id"
+                if campaign_id == "" and date_error is not None:
+                    reason = f"{reason}+missing_campaign_id"
+                skip_reason_counts[reason] = int(skip_reason_counts.get(reason) or 0) + 1
                 continue
-            try:
-                report_day = date.fromisoformat(raw_day)
-            except ValueError:
+            if report_day is None:
                 skipped_invalid_date += 1
+                skip_reason_counts["invalid_stat_time_day"] = int(skip_reason_counts.get("invalid_stat_time_day") or 0) + 1
                 continue
+            if date_source_used == "" and resolved_date_source != "":
+                date_source_used = resolved_date_source
 
             spend = self._to_float(metrics.get("spend"))
             impressions = self._to_int(metrics.get("impressions"))
@@ -1222,6 +1389,10 @@ class TikTokAdsService:
             skipped_missing_required=skipped_missing_required,
             skipped_invalid_date=skipped_invalid_date,
             missing_required_breakdown=missing_required_breakdown,
+            sample_dimension_keys=sample_dimension_keys,
+            sample_metric_keys=sample_metric_keys,
+            date_source_used=date_source_used,
+            skip_reason_counts=skip_reason_counts,
         )
 
         return rows
@@ -1291,6 +1462,10 @@ class TikTokAdsService:
                 skipped_missing_required=0,
                 skipped_invalid_date=0,
                 missing_required_breakdown={},
+                sample_dimension_keys=[],
+                sample_metric_keys=[],
+                date_source_used="",
+                skip_reason_counts={},
             )
             return []
 
@@ -1299,30 +1474,45 @@ class TikTokAdsService:
         skipped_missing_required = 0
         skipped_invalid_date = 0
         missing_required_breakdown: dict[str, int] = {}
+        skip_reason_counts: dict[str, int] = {}
+        sample_dimension_keys: list[str] = []
+        sample_metric_keys: list[str] = []
+        date_source_used = ""
         for item in rows_raw:
             if not isinstance(item, dict):
                 skipped_non_dict += 1
                 continue
-            dimensions = item.get("dimensions") if isinstance(item.get("dimensions"), dict) else {}
-            metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
+            dimensions, metrics = self._dimensions_metrics_for_row(row=item)
+            if len(sample_dimension_keys) <= 0:
+                sample_dimension_keys = sorted([str(key) for key in dimensions.keys()][:20])
+            if len(sample_metric_keys) <= 0:
+                sample_metric_keys = sorted([str(key) for key in metrics.keys()][:20])
 
-            raw_day = str(dimensions.get("stat_time_day") or "").strip()
+            report_day, resolved_date_source, date_error = self._parse_tiktok_report_date(row=item, dimensions_map=dimensions)
             ad_group_id = str(dimensions.get("adgroup_id") or item.get("adgroup_id") or "").strip()
             ad_group_name = str(dimensions.get("adgroup_name") or item.get("adgroup_name") or "").strip()
             campaign_id = str(dimensions.get("campaign_id") or item.get("campaign_id") or "").strip()
             campaign_name = str(dimensions.get("campaign_name") or item.get("campaign_name") or "").strip()
-            if raw_day == "" or ad_group_id == "":
+            if date_error is not None or ad_group_id == "":
                 skipped_missing_required += 1
-                if raw_day == "":
+                if date_error == "missing_stat_time_day":
                     missing_required_breakdown["stat_time_day"] = int(missing_required_breakdown.get("stat_time_day") or 0) + 1
+                elif date_error == "invalid_stat_time_day":
+                    skipped_missing_required -= 1
+                    skipped_invalid_date += 1
                 if ad_group_id == "":
                     missing_required_breakdown["adgroup_id"] = int(missing_required_breakdown.get("adgroup_id") or 0) + 1
+                reason = date_error or "missing_adgroup_id"
+                if ad_group_id == "" and date_error is not None:
+                    reason = f"{reason}+missing_adgroup_id"
+                skip_reason_counts[reason] = int(skip_reason_counts.get(reason) or 0) + 1
                 continue
-            try:
-                report_day = date.fromisoformat(raw_day)
-            except ValueError:
+            if report_day is None:
                 skipped_invalid_date += 1
+                skip_reason_counts["invalid_stat_time_day"] = int(skip_reason_counts.get("invalid_stat_time_day") or 0) + 1
                 continue
+            if date_source_used == "" and resolved_date_source != "":
+                date_source_used = resolved_date_source
 
             spend = self._to_float(metrics.get("spend"))
             impressions = self._to_int(metrics.get("impressions"))
@@ -1370,6 +1560,10 @@ class TikTokAdsService:
             skipped_missing_required=skipped_missing_required,
             skipped_invalid_date=skipped_invalid_date,
             missing_required_breakdown=missing_required_breakdown,
+            sample_dimension_keys=sample_dimension_keys,
+            sample_metric_keys=sample_metric_keys,
+            date_source_used=date_source_used,
+            skip_reason_counts=skip_reason_counts,
         )
 
         return rows
@@ -1439,6 +1633,10 @@ class TikTokAdsService:
                 skipped_missing_required=0,
                 skipped_invalid_date=0,
                 missing_required_breakdown={},
+                sample_dimension_keys=[],
+                sample_metric_keys=[],
+                date_source_used="",
+                skip_reason_counts={},
             )
             return []
 
@@ -1447,32 +1645,47 @@ class TikTokAdsService:
         skipped_missing_required = 0
         skipped_invalid_date = 0
         missing_required_breakdown: dict[str, int] = {}
+        skip_reason_counts: dict[str, int] = {}
+        sample_dimension_keys: list[str] = []
+        sample_metric_keys: list[str] = []
+        date_source_used = ""
         for item in rows_raw:
             if not isinstance(item, dict):
                 skipped_non_dict += 1
                 continue
-            dimensions = item.get("dimensions") if isinstance(item.get("dimensions"), dict) else {}
-            metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
+            dimensions, metrics = self._dimensions_metrics_for_row(row=item)
+            if len(sample_dimension_keys) <= 0:
+                sample_dimension_keys = sorted([str(key) for key in dimensions.keys()][:20])
+            if len(sample_metric_keys) <= 0:
+                sample_metric_keys = sorted([str(key) for key in metrics.keys()][:20])
 
-            raw_day = str(dimensions.get("stat_time_day") or "").strip()
+            report_day, resolved_date_source, date_error = self._parse_tiktok_report_date(row=item, dimensions_map=dimensions)
             ad_id = str(dimensions.get("ad_id") or item.get("ad_id") or "").strip()
             ad_name = str(dimensions.get("ad_name") or item.get("ad_name") or "").strip()
             ad_group_id = str(dimensions.get("adgroup_id") or item.get("adgroup_id") or "").strip()
             ad_group_name = str(dimensions.get("adgroup_name") or item.get("adgroup_name") or "").strip()
             campaign_id = str(dimensions.get("campaign_id") or item.get("campaign_id") or "").strip()
             campaign_name = str(dimensions.get("campaign_name") or item.get("campaign_name") or "").strip()
-            if raw_day == "" or ad_id == "":
+            if date_error is not None or ad_id == "":
                 skipped_missing_required += 1
-                if raw_day == "":
+                if date_error == "missing_stat_time_day":
                     missing_required_breakdown["stat_time_day"] = int(missing_required_breakdown.get("stat_time_day") or 0) + 1
+                elif date_error == "invalid_stat_time_day":
+                    skipped_missing_required -= 1
+                    skipped_invalid_date += 1
                 if ad_id == "":
                     missing_required_breakdown["ad_id"] = int(missing_required_breakdown.get("ad_id") or 0) + 1
+                reason = date_error or "missing_ad_id"
+                if ad_id == "" and date_error is not None:
+                    reason = f"{reason}+missing_ad_id"
+                skip_reason_counts[reason] = int(skip_reason_counts.get(reason) or 0) + 1
                 continue
-            try:
-                report_day = date.fromisoformat(raw_day)
-            except ValueError:
+            if report_day is None:
                 skipped_invalid_date += 1
+                skip_reason_counts["invalid_stat_time_day"] = int(skip_reason_counts.get("invalid_stat_time_day") or 0) + 1
                 continue
+            if date_source_used == "" and resolved_date_source != "":
+                date_source_used = resolved_date_source
 
             spend = self._to_float(metrics.get("spend"))
             impressions = self._to_int(metrics.get("impressions"))
@@ -1524,6 +1737,10 @@ class TikTokAdsService:
             skipped_missing_required=skipped_missing_required,
             skipped_invalid_date=skipped_invalid_date,
             missing_required_breakdown=missing_required_breakdown,
+            sample_dimension_keys=sample_dimension_keys,
+            sample_metric_keys=sample_metric_keys,
+            date_source_used=date_source_used,
+            skip_reason_counts=skip_reason_counts,
         )
 
         return rows

@@ -121,6 +121,43 @@ def _tiktok_empty_success_summary(*, job_id: str) -> dict[str, object]:
     }
 
 
+
+
+def _tiktok_parser_failure_summary(*, job_id: str) -> dict[str, object]:
+    try:
+        chunks = sync_run_chunks_store.list_sync_run_chunks(job_id)
+    except Exception:
+        return {"is_parser_failure": False, "rows_downloaded": 0, "rows_mapped": 0, "zero_row_marker": None}
+
+    rows_downloaded = 0
+    rows_mapped = 0
+    zero_row_marker = None
+    has_success_chunk = False
+    for chunk in chunks:
+        status = str(chunk.get("status") or "").strip().lower()
+        if status in {"done", "success", "completed"}:
+            has_success_chunk = True
+        metadata = chunk.get("metadata") if isinstance(chunk.get("metadata"), dict) else {}
+        rows_downloaded += int(metadata.get("rows_downloaded") or metadata.get("provider_row_count") or 0)
+        rows_mapped += int(metadata.get("rows_mapped") or 0)
+        if zero_row_marker is None:
+            marker_candidate = str(metadata.get("zero_row_marker") or "").strip()
+            if marker_candidate != "":
+                zero_row_marker = marker_candidate
+            else:
+                nested = metadata.get("zero_row_observability")
+                if isinstance(nested, list) and len(nested) > 0 and isinstance(nested[0], dict):
+                    nested_marker = str((nested[0] or {}).get("zero_row_marker") or "").strip()
+                    if nested_marker != "":
+                        zero_row_marker = nested_marker
+
+    return {
+        "is_parser_failure": bool(has_success_chunk and rows_downloaded > 0 and rows_mapped == 0),
+        "rows_downloaded": int(rows_downloaded),
+        "rows_mapped": int(rows_mapped),
+        "zero_row_marker": zero_row_marker,
+    }
+
 def _finalize_run_if_complete(run: dict[str, object]) -> None:
     job_id = str(run.get("job_id") or "")
     counts = sync_run_chunks_store.get_sync_run_chunk_status_counts(job_id)
@@ -157,6 +194,47 @@ def _finalize_run_if_complete(run: dict[str, object]) -> None:
                 last_run_id=job_id,
             )
     else:
+        if platform == "tiktok_ads":
+            parser_failure_summary = _tiktok_parser_failure_summary(job_id=job_id)
+            if bool(parser_failure_summary.get("is_parser_failure")):
+                parser_error = "parser_failure: provider returned rows but none were mapped"
+                metadata = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
+                metadata_patch = dict(metadata)
+                metadata_patch["parser_failure"] = True
+                metadata_patch["mapping_failure"] = True
+                metadata_patch["rows_downloaded"] = int(parser_failure_summary.get("rows_downloaded") or 0)
+                metadata_patch["rows_mapped"] = int(parser_failure_summary.get("rows_mapped") or 0)
+                metadata_patch["zero_row_marker"] = parser_failure_summary.get("zero_row_marker")
+                metadata_patch["last_error_summary"] = parser_error
+                metadata_patch["last_error_details"] = {
+                    "error_category": "parser_failure",
+                    "provider_row_count": int(parser_failure_summary.get("rows_downloaded") or 0),
+                    "rows_mapped": int(parser_failure_summary.get("rows_mapped") or 0),
+                    "zero_row_marker": parser_failure_summary.get("zero_row_marker"),
+                }
+                sync_runs_store.update_sync_run_status(
+                    job_id=job_id,
+                    status="error",
+                    mark_finished=True,
+                    error=parser_error,
+                    metadata=metadata_patch,
+                )
+                if account_id != "":
+                    client_registry_service.update_platform_account_operational_metadata(
+                        platform=platform,
+                        account_id=account_id,
+                        last_synced_at=now_utc,
+                        last_error=parser_error,
+                        last_run_id=job_id,
+                    )
+                logger.warning(
+                    "sync_worker.tiktok_parser_failure job_id=%s account_id=%s rows_downloaded=%s",
+                    job_id,
+                    account_id,
+                    parser_failure_summary.get("rows_downloaded"),
+                )
+                return
+
         sync_runs_store.update_sync_run_status(
             job_id=job_id,
             status="done",

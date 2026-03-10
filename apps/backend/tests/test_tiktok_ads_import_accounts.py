@@ -464,6 +464,57 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertAlmostEqual(rows[0].conversion_value, 44.2)
 
+    def test_account_daily_maps_nested_dimensions_metrics_list_shape(self):
+        service = TikTokAdsService()
+
+        def _fake_http_json(*, method: str, url: str, payload=None, headers=None):
+            return {
+                "code": 0,
+                "message": "OK",
+                "request_id": "req-1",
+                "data": {
+                    "list": [
+                        {
+                            "dimensions": [
+                                {"key": "stat_time_day", "value": "2026-03-01T00:00:00Z"},
+                                {"key": "campaign_id", "value": "cmp-1"},
+                            ],
+                            "metrics": [
+                                {"key": "spend", "value": "11.2"},
+                                {"key": "impressions", "value": "101"},
+                                {"key": "clicks", "value": "9"},
+                                {"key": "conversion", "value": "2"},
+                                {"key": "total_purchase_value", "value": "7.5"},
+                            ],
+                        }
+                    ],
+                    "page_info": {"page": 1, "total_page": 1},
+                },
+            }
+
+        original_http = service._http_json
+        try:
+            service._http_json = _fake_http_json
+            rows = service._fetch_campaign_daily_metrics(
+                account_id="401",
+                access_token="tok",
+                start_date=date(2026, 3, 1),
+                end_date=date(2026, 3, 1),
+            )
+            fetch_stats = service._consume_reporting_fetch_observability(grain="campaign_daily", account_id="401", rows_mapped=len(rows))
+        finally:
+            service._http_json = original_http
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].report_date.isoformat(), "2026-03-01")
+        self.assertEqual(rows[0].campaign_id, "cmp-1")
+        self.assertEqual(rows[0].clicks, 9)
+        self.assertEqual(fetch_stats.get("rows_mapped"), 1)
+        self.assertEqual(fetch_stats.get("skipped_invalid_date"), 0)
+        self.assertEqual(fetch_stats.get("date_source_used"), "dimensions.stat_time_day")
+        self.assertIn("campaign_id", fetch_stats.get("sample_dimension_keys") or [])
+        self.assertIn("spend", fetch_stats.get("sample_metric_keys") or [])
+
     def test_reporting_request_shape_avoids_405_method_mismatch(self):
         service = TikTokAdsService()
 
