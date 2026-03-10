@@ -7,6 +7,7 @@ from urllib import parse as urlparse
 from app.api import tiktok_ads as tiktok_ads_api
 from app.services.auth import AuthUser
 from app.services.tiktok_ads import TikTokAdsIntegrationError, TikTokAdsService
+from app.services.tiktok_store import tiktok_snapshot_store
 
 
 class TikTokAdsImportAccountsTests(unittest.TestCase):
@@ -649,6 +650,98 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
 
         self.assertEqual(ctx.exception.status_code, 400)
         self.assertIn("discovery failed", str(ctx.exception.detail).lower())
+
+    def test_sync_client_records_provider_empty_list_observability(self):
+        service = TikTokAdsService()
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+
+        original_access = service._access_token_with_source
+        original_resolve_ids = service._resolve_target_account_ids
+        original_probe = service._probe_selected_advertiser_access
+        original_http = service._http_json
+        original_upsert = service._upsert_campaign_rows
+        original_snapshot_upsert = tiktok_snapshot_store.upsert_snapshot
+        try:
+            service._access_token_with_source = lambda: ("tok", "database", None)
+            service._resolve_target_account_ids = lambda **kwargs: ["401"]
+            service._probe_selected_advertiser_access = lambda **kwargs: {"status": "ok"}
+            service._upsert_campaign_rows = lambda *args, **kwargs: 0
+            service._http_json = lambda **kwargs: {"code": 0, "data": {"list": []}}
+            tiktok_snapshot_store.upsert_snapshot = lambda **kwargs: None
+
+            payload = service.sync_client(
+                client_id=1,
+                start_date=date(2026, 3, 1),
+                end_date=date(2026, 3, 1),
+                grain="campaign_daily",
+                account_id="401",
+            )
+        finally:
+            service._access_token_with_source = original_access
+            service._resolve_target_account_ids = original_resolve_ids
+            service._probe_selected_advertiser_access = original_probe
+            service._http_json = original_http
+            service._upsert_campaign_rows = original_upsert
+            tiktok_snapshot_store.upsert_snapshot = original_snapshot_upsert
+
+        self.assertEqual(payload.get("provider_row_count"), 0)
+        self.assertEqual(payload.get("rows_downloaded"), 0)
+        self.assertEqual(payload.get("rows_mapped"), 0)
+        self.assertEqual(payload.get("rows_written"), 0)
+        observability = payload.get("zero_row_observability")
+        self.assertIsInstance(observability, list)
+        self.assertEqual(observability[0].get("zero_row_marker"), "provider_returned_empty_list")
+
+    def test_sync_client_records_parsed_but_zero_mapped_observability(self):
+        service = TikTokAdsService()
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+
+        original_access = service._access_token_with_source
+        original_resolve_ids = service._resolve_target_account_ids
+        original_probe = service._probe_selected_advertiser_access
+        original_http = service._http_json
+        original_upsert = service._upsert_ad_rows
+        original_snapshot_upsert = tiktok_snapshot_store.upsert_snapshot
+        try:
+            service._access_token_with_source = lambda: ("tok", "database", None)
+            service._resolve_target_account_ids = lambda **kwargs: ["401"]
+            service._probe_selected_advertiser_access = lambda **kwargs: {"status": "ok"}
+            service._upsert_ad_rows = lambda *args, **kwargs: 0
+            tiktok_snapshot_store.upsert_snapshot = lambda **kwargs: None
+            service._http_json = lambda **kwargs: {
+                "code": 0,
+                "data": {
+                    "list": [
+                        {
+                            "dimensions": {"stat_time_day": "2026-03-01"},
+                            "metrics": {"spend": "5", "impressions": "50", "clicks": "2", "total_purchase_value": "0"},
+                        }
+                    ]
+                },
+            }
+
+            payload = service.sync_client(
+                client_id=1,
+                start_date=date(2026, 3, 1),
+                end_date=date(2026, 3, 1),
+                grain="ad_daily",
+                account_id="401",
+            )
+        finally:
+            service._access_token_with_source = original_access
+            service._resolve_target_account_ids = original_resolve_ids
+            service._probe_selected_advertiser_access = original_probe
+            service._http_json = original_http
+            service._upsert_ad_rows = original_upsert
+            tiktok_snapshot_store.upsert_snapshot = original_snapshot_upsert
+
+        self.assertEqual(payload.get("provider_row_count"), 1)
+        self.assertEqual(payload.get("rows_downloaded"), 1)
+        self.assertEqual(payload.get("rows_mapped"), 0)
+        self.assertEqual(payload.get("rows_written"), 0)
+        observability = payload.get("zero_row_observability")
+        self.assertIsInstance(observability, list)
+        self.assertEqual(observability[0].get("zero_row_marker"), "response_parsed_but_zero_rows_mapped")
 
 
 if __name__ == "__main__":

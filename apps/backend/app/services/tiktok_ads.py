@@ -169,6 +169,7 @@ class TikTokAdsService:
         self._memory_campaign_rows: dict[tuple[str, str, str, str], dict[str, object]] = {}
         self._memory_ad_group_rows: dict[tuple[str, str, str, str], dict[str, object]] = {}
         self._memory_ad_rows: dict[tuple[str, str, str, str], dict[str, object]] = {}
+        self._last_reporting_fetch_observability: dict[tuple[str, str], dict[str, object]] = {}
 
     def _is_test_mode(self) -> bool:
         settings = load_settings()
@@ -776,6 +777,66 @@ class TikTokAdsService:
             metrics=("spend", "impressions", "clicks", "conversion", "total_purchase_value"),
         )
 
+    def _record_reporting_fetch_observability(
+        self,
+        *,
+        grain: TikTokSyncGrain,
+        account_id: str,
+        provider_row_count: int,
+        rows_mapped: int,
+        data: dict[str, object],
+        skipped_non_dict: int,
+        skipped_missing_required: int,
+        skipped_invalid_date: int,
+    ) -> None:
+        list_value = data.get("list")
+        sample_row_keys: list[str] = []
+        if isinstance(list_value, list):
+            for candidate in list_value:
+                if isinstance(candidate, dict):
+                    sample_row_keys = sorted([str(key) for key in candidate.keys()][:12])
+                    break
+
+        marker: str | None = None
+        if provider_row_count == 0:
+            marker = "provider_returned_empty_list"
+        elif rows_mapped == 0:
+            marker = "response_parsed_but_zero_rows_mapped"
+
+        self._last_reporting_fetch_observability[(str(grain), str(account_id))] = {
+            "grain": str(grain),
+            "account_id": str(account_id),
+            "provider_row_count": int(provider_row_count),
+            "rows_downloaded": int(provider_row_count),
+            "rows_mapped": int(rows_mapped),
+            "zero_row_marker": marker,
+            "data_keys": sorted([str(key) for key in data.keys()][:12]),
+            "sample_row_keys": sample_row_keys,
+            "skipped_non_dict": int(skipped_non_dict),
+            "skipped_missing_required": int(skipped_missing_required),
+            "skipped_invalid_date": int(skipped_invalid_date),
+        }
+
+    def _consume_reporting_fetch_observability(self, *, grain: TikTokSyncGrain, account_id: str, rows_mapped: int) -> dict[str, object]:
+        key = (str(grain), str(account_id))
+        existing = self._last_reporting_fetch_observability.pop(key, None)
+        if isinstance(existing, dict):
+            return dict(existing)
+        provider_rows = int(rows_mapped)
+        return {
+            "grain": str(grain),
+            "account_id": str(account_id),
+            "provider_row_count": provider_rows,
+            "rows_downloaded": provider_rows,
+            "rows_mapped": int(rows_mapped),
+            "zero_row_marker": "provider_returned_empty_list" if provider_rows == 0 else None,
+            "data_keys": [],
+            "sample_row_keys": [],
+            "skipped_non_dict": 0,
+            "skipped_missing_required": 0,
+            "skipped_invalid_date": 0,
+        }
+
     def _report_integrated_endpoint(self, *, query: str | None = None) -> str:
         settings = load_settings()
         base = f"{settings.tiktok_api_base_url.rstrip('/')}/open_api/{settings.tiktok_api_version.strip('/')}/report/integrated/get/"
@@ -839,20 +900,36 @@ class TikTokAdsService:
 
         rows_raw = data.get("list")
         if not isinstance(rows_raw, list):
+            self._record_reporting_fetch_observability(
+                grain="account_daily",
+                account_id=account_id,
+                provider_row_count=0,
+                rows_mapped=0,
+                data=data,
+                skipped_non_dict=0,
+                skipped_missing_required=0,
+                skipped_invalid_date=0,
+            )
             return []
 
         rows: list[TikTokDailyMetric] = []
+        skipped_non_dict = 0
+        skipped_missing_required = 0
+        skipped_invalid_date = 0
         for item in rows_raw:
             if not isinstance(item, dict):
+                skipped_non_dict += 1
                 continue
             dimensions = item.get("dimensions") if isinstance(item.get("dimensions"), dict) else {}
             metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
             raw_day = str(dimensions.get("stat_time_day") or "").strip()
             if raw_day == "":
+                skipped_missing_required += 1
                 continue
             try:
                 report_day = date.fromisoformat(raw_day)
             except ValueError:
+                skipped_invalid_date += 1
                 continue
 
             spend = self._to_float(metrics.get("spend"))
@@ -881,6 +958,17 @@ class TikTokAdsService:
                 )
             )
 
+        self._record_reporting_fetch_observability(
+            grain="account_daily",
+            account_id=account_id,
+            provider_row_count=len(rows_raw),
+            rows_mapped=len(rows),
+            data=data,
+            skipped_non_dict=skipped_non_dict,
+            skipped_missing_required=skipped_missing_required,
+            skipped_invalid_date=skipped_invalid_date,
+        )
+
         return rows
 
     def _fetch_campaign_daily_metrics(self, *, account_id: str, access_token: str, start_date: date, end_date: date) -> list[TikTokCampaignDailyMetric]:
@@ -906,11 +994,25 @@ class TikTokAdsService:
 
         rows_raw = data.get("list")
         if not isinstance(rows_raw, list):
+            self._record_reporting_fetch_observability(
+                grain="campaign_daily",
+                account_id=account_id,
+                provider_row_count=0,
+                rows_mapped=0,
+                data=data,
+                skipped_non_dict=0,
+                skipped_missing_required=0,
+                skipped_invalid_date=0,
+            )
             return []
 
         rows: list[TikTokCampaignDailyMetric] = []
+        skipped_non_dict = 0
+        skipped_missing_required = 0
+        skipped_invalid_date = 0
         for item in rows_raw:
             if not isinstance(item, dict):
+                skipped_non_dict += 1
                 continue
             dimensions = item.get("dimensions") if isinstance(item.get("dimensions"), dict) else {}
             metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
@@ -919,10 +1021,12 @@ class TikTokAdsService:
             campaign_id = str(dimensions.get("campaign_id") or item.get("campaign_id") or "").strip()
             campaign_name = str(dimensions.get("campaign_name") or item.get("campaign_name") or "").strip()
             if raw_day == "" or campaign_id == "":
+                skipped_missing_required += 1
                 continue
             try:
                 report_day = date.fromisoformat(raw_day)
             except ValueError:
+                skipped_invalid_date += 1
                 continue
 
             spend = self._to_float(metrics.get("spend"))
@@ -954,6 +1058,17 @@ class TikTokAdsService:
                 )
             )
 
+        self._record_reporting_fetch_observability(
+            grain="campaign_daily",
+            account_id=account_id,
+            provider_row_count=len(rows_raw),
+            rows_mapped=len(rows),
+            data=data,
+            skipped_non_dict=skipped_non_dict,
+            skipped_missing_required=skipped_missing_required,
+            skipped_invalid_date=skipped_invalid_date,
+        )
+
         return rows
 
     def _fetch_ad_group_daily_metrics(self, *, account_id: str, access_token: str, start_date: date, end_date: date) -> list[TikTokAdGroupDailyMetric]:
@@ -979,11 +1094,25 @@ class TikTokAdsService:
 
         rows_raw = data.get("list")
         if not isinstance(rows_raw, list):
+            self._record_reporting_fetch_observability(
+                grain="ad_group_daily",
+                account_id=account_id,
+                provider_row_count=0,
+                rows_mapped=0,
+                data=data,
+                skipped_non_dict=0,
+                skipped_missing_required=0,
+                skipped_invalid_date=0,
+            )
             return []
 
         rows: list[TikTokAdGroupDailyMetric] = []
+        skipped_non_dict = 0
+        skipped_missing_required = 0
+        skipped_invalid_date = 0
         for item in rows_raw:
             if not isinstance(item, dict):
+                skipped_non_dict += 1
                 continue
             dimensions = item.get("dimensions") if isinstance(item.get("dimensions"), dict) else {}
             metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
@@ -994,10 +1123,12 @@ class TikTokAdsService:
             campaign_id = str(dimensions.get("campaign_id") or item.get("campaign_id") or "").strip()
             campaign_name = str(dimensions.get("campaign_name") or item.get("campaign_name") or "").strip()
             if raw_day == "" or ad_group_id == "":
+                skipped_missing_required += 1
                 continue
             try:
                 report_day = date.fromisoformat(raw_day)
             except ValueError:
+                skipped_invalid_date += 1
                 continue
 
             spend = self._to_float(metrics.get("spend"))
@@ -1033,6 +1164,17 @@ class TikTokAdsService:
                 )
             )
 
+        self._record_reporting_fetch_observability(
+            grain="ad_group_daily",
+            account_id=account_id,
+            provider_row_count=len(rows_raw),
+            rows_mapped=len(rows),
+            data=data,
+            skipped_non_dict=skipped_non_dict,
+            skipped_missing_required=skipped_missing_required,
+            skipped_invalid_date=skipped_invalid_date,
+        )
+
         return rows
 
     def _fetch_ad_daily_metrics(self, *, account_id: str, access_token: str, start_date: date, end_date: date) -> list[TikTokAdDailyMetric]:
@@ -1058,11 +1200,25 @@ class TikTokAdsService:
 
         rows_raw = data.get("list")
         if not isinstance(rows_raw, list):
+            self._record_reporting_fetch_observability(
+                grain="ad_daily",
+                account_id=account_id,
+                provider_row_count=0,
+                rows_mapped=0,
+                data=data,
+                skipped_non_dict=0,
+                skipped_missing_required=0,
+                skipped_invalid_date=0,
+            )
             return []
 
         rows: list[TikTokAdDailyMetric] = []
+        skipped_non_dict = 0
+        skipped_missing_required = 0
+        skipped_invalid_date = 0
         for item in rows_raw:
             if not isinstance(item, dict):
+                skipped_non_dict += 1
                 continue
             dimensions = item.get("dimensions") if isinstance(item.get("dimensions"), dict) else {}
             metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
@@ -1075,10 +1231,12 @@ class TikTokAdsService:
             campaign_id = str(dimensions.get("campaign_id") or item.get("campaign_id") or "").strip()
             campaign_name = str(dimensions.get("campaign_name") or item.get("campaign_name") or "").strip()
             if raw_day == "" or ad_id == "":
+                skipped_missing_required += 1
                 continue
             try:
                 report_day = date.fromisoformat(raw_day)
             except ValueError:
+                skipped_invalid_date += 1
                 continue
 
             spend = self._to_float(metrics.get("spend"))
@@ -1117,6 +1275,17 @@ class TikTokAdsService:
                     },
                 )
             )
+
+        self._record_reporting_fetch_observability(
+            grain="ad_daily",
+            account_id=account_id,
+            provider_row_count=len(rows_raw),
+            rows_mapped=len(rows),
+            data=data,
+            skipped_non_dict=skipped_non_dict,
+            skipped_missing_required=skipped_missing_required,
+            skipped_invalid_date=skipped_invalid_date,
+        )
 
         return rows
 
@@ -1343,6 +1512,9 @@ class TikTokAdsService:
             )
 
         rows_written = 0
+        rows_downloaded = 0
+        rows_mapped = 0
+        zero_row_observability: list[dict[str, object]] = []
         totals = {
             "spend": 0.0,
             "impressions": 0,
@@ -1359,6 +1531,15 @@ class TikTokAdsService:
                     start_date=range_start,
                     end_date=range_end,
                 )
+                fetch_stats = self._consume_reporting_fetch_observability(
+                    grain="account_daily",
+                    account_id=account_id,
+                    rows_mapped=len(daily_rows),
+                )
+                rows_downloaded += int(fetch_stats.get("rows_downloaded") or 0)
+                rows_mapped += int(fetch_stats.get("rows_mapped") or 0)
+                if fetch_stats.get("zero_row_marker") is not None:
+                    zero_row_observability.append(fetch_stats)
                 for row in daily_rows:
                     performance_reports_store.write_daily_report(
                         report_date=row.report_date,
@@ -1386,6 +1567,15 @@ class TikTokAdsService:
                     start_date=range_start,
                     end_date=range_end,
                 )
+                fetch_stats = self._consume_reporting_fetch_observability(
+                    grain="campaign_daily",
+                    account_id=account_id,
+                    rows_mapped=len(campaign_rows),
+                )
+                rows_downloaded += int(fetch_stats.get("rows_downloaded") or 0)
+                rows_mapped += int(fetch_stats.get("rows_mapped") or 0)
+                if fetch_stats.get("zero_row_marker") is not None:
+                    zero_row_observability.append(fetch_stats)
                 rows_written += self._upsert_campaign_rows(
                     campaign_rows,
                     source_window_start=range_start,
@@ -1405,6 +1595,15 @@ class TikTokAdsService:
                     start_date=range_start,
                     end_date=range_end,
                 )
+                fetch_stats = self._consume_reporting_fetch_observability(
+                    grain="ad_group_daily",
+                    account_id=account_id,
+                    rows_mapped=len(ad_group_rows),
+                )
+                rows_downloaded += int(fetch_stats.get("rows_downloaded") or 0)
+                rows_mapped += int(fetch_stats.get("rows_mapped") or 0)
+                if fetch_stats.get("zero_row_marker") is not None:
+                    zero_row_observability.append(fetch_stats)
                 rows_written += self._upsert_ad_group_rows(
                     ad_group_rows,
                     source_window_start=range_start,
@@ -1424,6 +1623,15 @@ class TikTokAdsService:
                     start_date=range_start,
                     end_date=range_end,
                 )
+                fetch_stats = self._consume_reporting_fetch_observability(
+                    grain="ad_daily",
+                    account_id=account_id,
+                    rows_mapped=len(ad_rows),
+                )
+                rows_downloaded += int(fetch_stats.get("rows_downloaded") or 0)
+                rows_mapped += int(fetch_stats.get("rows_mapped") or 0)
+                if fetch_stats.get("zero_row_marker") is not None:
+                    zero_row_observability.append(fetch_stats)
                 rows_written += self._upsert_ad_rows(
                     ad_rows,
                     source_window_start=range_start,
@@ -1458,7 +1666,11 @@ class TikTokAdsService:
             "date_end": range_end.isoformat(),
             "accounts_processed": len(account_ids),
             "account_ids": account_ids,
+            "provider_row_count": rows_downloaded,
+            "rows_downloaded": rows_downloaded,
+            "rows_mapped": rows_mapped,
             "rows_written": rows_written,
+            "zero_row_observability": zero_row_observability,
             "token_source": token_source,
             **snapshot,
         }
