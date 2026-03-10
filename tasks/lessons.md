@@ -240,3 +240,4 @@
 - For TikTok reporting API parity bugs, assert HTTP method at test level (mock rejects non-GET) so 405 regressions are caught before runtime.
 - 2026-03-10: După feedback "unsatisfied", evită PR-uri de bookkeeping/docs-only; livrează fixul tehnic cerut cu modificări reale de cod + teste înainte de commit/PR.
 - 2026-03-10: Pentru TikTok report/integrated/get, validează strict compatibilitatea `data_level` + `dimensions` din erorile runtime reale; evită dimensiuni descriptive (nume/ierarhii) în request dacă providerul le respinge.
+- 2026-03-10: Pentru TikTok reporting pe mai multe iterații, verifică explicit la fiecare grain atât dimensions cât și metrics (nu doar una din axe), pe baza ultimelor erori runtime observate.

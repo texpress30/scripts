@@ -2787,3 +2787,22 @@
 - Kept entity name hierarchy handling safe by retaining existing item/dimensions fallback extraction without forcing unsupported provider-side dimensions.
 - Added tests to assert runtime-invalid dimensions are excluded per grain and to regress known production error messages.
 - Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py` and `pytest -q apps/backend/tests/test_tiktok_* apps/backend/tests/test_services.py::ServiceTests::test_tiktok_ads_sync_real_account_daily_single_account`.
+
+---
+
+# TODO — TikTok reporting schema fix pasul 3 (remove conversion_value for campaign/ad_group/ad)
+
+- [x] Audit current TikTok per-grain metrics and confirm where `conversion_value` is still sent provider-side.
+- [x] Update centralized TikTok reporting schema helper to remove `conversion_value` from `campaign_daily`, `ad_group_daily`, and `ad_daily` only.
+- [x] Keep `account_daily` request schema unchanged and valid.
+- [x] Preserve internal conversion value field via safe fallback extraction from allowed metrics.
+- [x] Add/update backend tests for per-grain metric exclusions and runtime error regression (`Invalid metric fields: ['conversion_value']`).
+- [x] Run targeted backend TikTok tests and document results.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Removed provider-side `conversion_value` metric from `campaign_daily`, `ad_group_daily`, and `ad_daily` schemas while leaving `account_daily` unchanged.
+- Kept internal `conversion_value` pipeline intact via `_extract_conversion_value(...)` fallback from allowed keys (e.g. `total_purchase_value`).
+- Added tests to assert no remaining grain requests `conversion_value` and to regress real provider error payload (`Invalid metric fields: ['conversion_value']`).
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py` and `pytest -q apps/backend/tests/test_tiktok_* apps/backend/tests/test_services.py::ServiceTests::test_tiktok_ads_sync_real_account_daily_single_account`.
