@@ -203,6 +203,8 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
                 account_id="401",
                 access_token="tt-token",
                 report_type="BASIC",
+                service_type="AUCTION",
+                query_mode="REGULAR",
                 data_level="AUCTION_ADVERTISER",
                 dimensions=["stat_time_day"],
                 metrics=["spend", "clicks"],
@@ -220,6 +222,8 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
         params = urlparse.parse_qs(parsed_url.query)
         self.assertEqual(params.get("advertiser_id"), ["401"])
         self.assertEqual(params.get("report_type"), ["BASIC"])
+        self.assertEqual(params.get("service_type"), ["AUCTION"])
+        self.assertEqual(params.get("query_mode"), ["REGULAR"])
         self.assertEqual(params.get("data_level"), ["AUCTION_ADVERTISER"])
         self.assertEqual(params.get("start_date"), ["2026-03-01"])
         self.assertEqual(params.get("end_date"), ["2026-03-02"])
@@ -227,6 +231,27 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
         self.assertEqual(params.get("page_size"), ["1000"])
         self.assertEqual(json.loads(str(params.get("dimensions", ["[]"])[0])), ["stat_time_day"])
         self.assertEqual(json.loads(str(params.get("metrics", ["[]"])[0])), ["spend", "clicks"])
+
+
+    def test_build_report_integrated_query_params_sets_explicit_parity_defaults(self):
+        service = TikTokAdsService()
+
+        params = service._build_report_integrated_query_params(
+            account_id="401",
+            report_type="BASIC",
+            service_type="AUCTION",
+            query_mode="REGULAR",
+            data_level="AUCTION_ADVERTISER",
+            dimensions=["stat_time_day"],
+            metrics=["spend"],
+            start_date=date(2026, 3, 1),
+            end_date=date(2026, 3, 2),
+        )
+
+        self.assertEqual(params["report_type"], "BASIC")
+        self.assertEqual(params["service_type"], "AUCTION")
+        self.assertEqual(params["query_mode"], "REGULAR")
+        self.assertEqual(params["advertiser_id"], "401")
 
     def test_all_reporting_grains_use_common_report_integrated_get_helper(self):
         service = TikTokAdsService()
@@ -691,6 +716,10 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
         observability = payload.get("zero_row_observability")
         self.assertIsInstance(observability, list)
         self.assertEqual(observability[0].get("zero_row_marker"), "provider_returned_empty_list")
+        self.assertEqual(observability[0].get("report_type"), "BASIC")
+        self.assertEqual(observability[0].get("service_type"), "AUCTION")
+        self.assertEqual(observability[0].get("query_mode"), "REGULAR")
+        self.assertNotIn("Access-Token", json.dumps(observability[0]))
 
     def test_sync_client_records_parsed_but_zero_mapped_observability(self):
         service = TikTokAdsService()
@@ -742,6 +771,9 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
         observability = payload.get("zero_row_observability")
         self.assertIsInstance(observability, list)
         self.assertEqual(observability[0].get("zero_row_marker"), "response_parsed_but_zero_rows_mapped")
+        self.assertEqual((observability[0].get("missing_required_breakdown") or {}).get("ad_id"), 1)
+        self.assertIn("code", observability[0].get("response_top_level_keys") or [])
+        self.assertIn("list", observability[0].get("data_container_keys") or [])
 
 
 if __name__ == "__main__":

@@ -2851,3 +2851,25 @@
 - Empty-success finalization path persists explicit no-data metadata (`no_data_success`, `empty_success`, row counters, zero_row_marker) and skips coverage advancement for zero-row historical completions.
 - Added regression tests for TikTok 1-year clamp + chunk cap, non-TikTok unchanged chunk sizing, and empty-success no-data marker propagation.
 - Verification: `pytest -q apps/backend/tests/test_sync_orchestration_api.py apps/backend/tests/test_sync_worker.py`.
+
+---
+
+# TODO — TikTok deep-dive parity + zero-row diagnostics + no-data success semantics
+
+- [x] Sync workspace against latest repo state before edits (or record exact git topology blocker).
+- [x] Add explicit TikTok reporting request parity helper parameters (`report_type`, `service_type`, `query_mode`) and keep request shape testable.
+- [x] Expand reporting observability with safe request/response diagnostics (endpoint/query + keys + row markers) without leaking tokens.
+- [x] Differentiate provider empty-list vs parsed-but-zero-mapped with mapper missing-key diagnostics.
+- [x] Ensure all-zero TikTok historical outcomes are not treated as full operational success/backfill-valid completion semantics.
+- [x] Add minimal UI messaging for TikTok all-zero last-run diagnostics without redesign.
+- [x] Add/update backend + frontend tests for request parity, diagnostics differentiation, all-zero semantics, and secret safety.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Git sync attempt executed first (`git pull --rebase`) and blocked by repository topology (`work` has no tracking remote configured); continued from current up-to-date local HEAD.
+- TikTok reporting now uses explicit parity parameters through a shared helper (`report_type=BASIC`, `service_type=AUCTION`, `query_mode=REGULAR`) and stores sanitized request+response diagnostics per fetch.
+- Zero-row diagnostics now include provider-empty vs parser-zero-mapped markers plus `missing_required_breakdown` for mapper-required keys.
+- Sync run serialization now exposes `operational_status=no_data_success` for successful no-data TikTok runs; batch progress surfaces `operational_status=completed_with_no_data` when all batch runs are no-data success.
+- Agency account detail keeps minimal UI change: shows explicit `no_data_success` badge while retaining neutral no-data diagnostics messages.
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py apps/backend/tests/test_sync_orchestration_api.py apps/backend/tests/test_sync_worker.py`, `pnpm --dir apps/frontend test src/app/agency-accounts/[platform]/[accountId]/page.platform-parity.test.tsx`, `pnpm --dir apps/frontend build`.

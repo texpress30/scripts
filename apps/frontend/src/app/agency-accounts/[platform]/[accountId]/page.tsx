@@ -647,6 +647,7 @@ export default function AgencyAccountDetailPage() {
                   const total = Number(run.chunks_total ?? 0);
                   const progressPercent = total > 0 ? Math.round((done / total) * 100) : 0;
                   const runMetadata = run.metadata && typeof run.metadata === "object" ? run.metadata : null;
+                  const runOperationalStatus = String((run as { operational_status?: unknown }).operational_status ?? "").trim().toLowerCase();
                   const runRowsDownloaded = runMetadata ? Number((runMetadata as Record<string, unknown>).rows_downloaded ?? (runMetadata as Record<string, unknown>).provider_row_count ?? 0) : 0;
                   const runRowsMapped = runMetadata ? Number((runMetadata as Record<string, unknown>).rows_mapped ?? 0) : 0;
                   const runZeroMarker = runMetadata ? String((runMetadata as Record<string, unknown>).zero_row_marker ?? "").trim() : "";
@@ -663,7 +664,7 @@ export default function AgencyAccountDetailPage() {
                           <p className="text-xs text-slate-600">{run.date_start ?? "-"} → {run.date_end ?? "-"} · start: {formatDate(run.started_at)} · end: {formatDate(run.finished_at)}</p>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className={`rounded px-2 py-1 text-xs font-medium ${statusBadge(run.status)}`}>{run.status ?? "queued"}</span>
+                          <span className={`rounded px-2 py-1 text-xs font-medium ${runOperationalStatus === "no_data_success" ? "bg-amber-100 text-amber-700" : statusBadge(run.status)}`}>{runOperationalStatus === "no_data_success" ? "no_data_success" : (run.status ?? "queued")}</span>
                           <span className="rounded bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">{run.trigger_source === "cron" ? "cron" : "manual"}</span>
                           <span className="text-xs text-slate-600">{done}/{total || "-"} chunks</span>
                           <span className="text-xs text-slate-600">errors: {run.error_count ?? (run.error ? 1 : 0)}</span>

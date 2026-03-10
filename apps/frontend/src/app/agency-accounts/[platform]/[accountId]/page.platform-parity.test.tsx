@@ -112,6 +112,7 @@ describe("Agency Account detail Meta/TikTok parity", () => {
               job_id: "tt-run-1",
               job_type: "historical_backfill",
               status: "done",
+              operational_status: "no_data_success",
               chunks_total: 1,
               chunks_done: 1,
               rows_written: 0,
@@ -143,6 +144,7 @@ describe("Agency Account detail Meta/TikTok parity", () => {
 
     render(<AgencyAccountDetailPage />);
     expect(await screen.findByText(/Rows downloaded: 3 · rows mapped: 0/i)).toBeInTheDocument();
+    expect(await screen.findByText("no_data_success")).toBeInTheDocument();
     expect(await screen.findByText(/TikTok a returnat răspuns, dar nu s-au mapat rânduri pentru persistare/i)).toBeInTheDocument();
     expect(screen.queryByText(/Category:\s*run failed/i)).not.toBeInTheDocument();
     fireEvent.click(await screen.findByText("Show logs"));

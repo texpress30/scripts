@@ -307,6 +307,7 @@ def _summarize_batch_from_runs(runs: list[dict[str, object]]) -> dict[str, objec
     chunks_total = 0
     chunks_done = 0
     rows_written = 0
+    no_data_success_runs = 0
 
     for run in runs:
         status = _normalize_status(run.get("status"), default="queued")
@@ -317,14 +318,21 @@ def _summarize_batch_from_runs(runs: list[dict[str, object]]) -> dict[str, objec
         chunks_total += max(0, int(run.get("chunks_total") or 0))
         chunks_done += max(0, int(run.get("chunks_done") or 0))
         rows_written += max(0, int(run.get("rows_written") or 0))
+        metadata = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
+        if _is_success_status(status) and bool(metadata.get("no_data_success")):
+            no_data_success_runs += 1
 
     percent = 0.0 if chunks_total <= 0 else round((chunks_done / chunks_total) * 100.0, 2)
+    is_all_done = len(runs) > 0 and status_counts.get("done", 0) == len(runs)
+    operational_status = "completed_with_no_data" if is_all_done and no_data_success_runs == len(runs) else "normal"
     return {
         "total_runs": len(runs),
         "status_counts": status_counts,
         "chunks_total_sum": chunks_total,
         "chunks_done_sum": chunks_done,
         "rows_written_sum": rows_written,
+        "no_data_success_runs": no_data_success_runs,
+        "operational_status": operational_status,
         "percent": percent,
     }
 
@@ -346,6 +354,7 @@ def _serialize_run(item: dict[str, object]) -> dict[str, object]:
     last_error_summary = None if is_success else raw_last_error_summary
     last_error_details = None if is_success else raw_last_error_details
     last_error_category = None if is_success else (str((last_error_details or {}).get("error_category") or "").strip() or None)
+    operational_status = "no_data_success" if is_success and bool(metadata.get("no_data_success")) else run_status
 
     return {
         "job_id": item.get("job_id"),
@@ -356,6 +365,7 @@ def _serialize_run(item: dict[str, object]) -> dict[str, object]:
         "account_id": item.get("account_id"),
         "client_id": item.get("client_id"),
         "status": item.get("status"),
+        "operational_status": operational_status,
         "date_start": item.get("date_start"),
         "date_end": item.get("date_end"),
         "chunk_days": item.get("chunk_days"),
@@ -621,6 +631,8 @@ def get_batch_sync_runs_status(batch_id: str, user: AuthUser = Depends(get_curre
         "chunks_total": int(batch_progress.get("chunks_total_sum") or 0),
         "chunks_done": int(batch_progress.get("chunks_done_sum") or 0),
         "rows_written": int(batch_progress.get("rows_written_sum") or 0),
+        "no_data_success_runs": int(batch_progress.get("no_data_success_runs") or 0),
+        "operational_status": str(batch_progress.get("operational_status") or "normal"),
         "percent": float(batch_progress.get("percent") or 0.0),
     }
 

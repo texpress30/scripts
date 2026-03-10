@@ -782,12 +782,16 @@ class TikTokAdsService:
         *,
         grain: TikTokSyncGrain,
         account_id: str,
+        request_params: dict[str, object],
+        endpoint: str,
+        raw_response: dict[str, object],
+        data: dict[str, object],
         provider_row_count: int,
         rows_mapped: int,
-        data: dict[str, object],
         skipped_non_dict: int,
         skipped_missing_required: int,
         skipped_invalid_date: int,
+        missing_required_breakdown: dict[str, int] | None = None,
     ) -> None:
         list_value = data.get("list")
         sample_row_keys: list[str] = []
@@ -806,15 +810,27 @@ class TikTokAdsService:
         self._last_reporting_fetch_observability[(str(grain), str(account_id))] = {
             "grain": str(grain),
             "account_id": str(account_id),
+            "endpoint": _sanitize_endpoint(endpoint),
+            "report_type": str(request_params.get("report_type") or ""),
+            "service_type": str(request_params.get("service_type") or ""),
+            "query_mode": str(request_params.get("query_mode") or ""),
+            "data_level": str(request_params.get("data_level") or ""),
+            "dimensions": list(request_params.get("dimensions") or []),
+            "metrics": list(request_params.get("metrics") or []),
+            "advertiser_id": str(request_params.get("advertiser_id") or ""),
+            "start_date": str(request_params.get("start_date") or ""),
+            "end_date": str(request_params.get("end_date") or ""),
             "provider_row_count": int(provider_row_count),
             "rows_downloaded": int(provider_row_count),
             "rows_mapped": int(rows_mapped),
             "zero_row_marker": marker,
-            "data_keys": sorted([str(key) for key in data.keys()][:12]),
+            "response_top_level_keys": sorted([str(key) for key in raw_response.keys()][:20]),
+            "data_container_keys": sorted([str(key) for key in data.keys()][:20]),
             "sample_row_keys": sample_row_keys,
             "skipped_non_dict": int(skipped_non_dict),
             "skipped_missing_required": int(skipped_missing_required),
             "skipped_invalid_date": int(skipped_invalid_date),
+            "missing_required_breakdown": dict(missing_required_breakdown or {}),
         }
 
     def _consume_reporting_fetch_observability(self, *, grain: TikTokSyncGrain, account_id: str, rows_mapped: int) -> dict[str, object]:
@@ -826,15 +842,27 @@ class TikTokAdsService:
         return {
             "grain": str(grain),
             "account_id": str(account_id),
+            "endpoint": None,
+            "report_type": "BASIC",
+            "service_type": "AUCTION",
+            "query_mode": "REGULAR",
+            "data_level": "",
+            "dimensions": [],
+            "metrics": [],
+            "advertiser_id": str(account_id),
+            "start_date": "",
+            "end_date": "",
             "provider_row_count": provider_rows,
             "rows_downloaded": provider_rows,
             "rows_mapped": int(rows_mapped),
             "zero_row_marker": "provider_returned_empty_list" if provider_rows == 0 else None,
-            "data_keys": [],
+            "response_top_level_keys": [],
+            "data_container_keys": [],
             "sample_row_keys": [],
             "skipped_non_dict": 0,
             "skipped_missing_required": 0,
             "skipped_invalid_date": 0,
+            "missing_required_breakdown": {},
         }
 
     def _report_integrated_endpoint(self, *, query: str | None = None) -> str:
@@ -844,12 +872,13 @@ class TikTokAdsService:
             return f"{base}?{query}"
         return base
 
-    def _report_integrated_get(
+    def _build_report_integrated_query_params(
         self,
         *,
         account_id: str,
-        access_token: str,
         report_type: str,
+        service_type: str,
+        query_mode: str,
         data_level: str,
         dimensions: list[str],
         metrics: list[str],
@@ -858,17 +887,62 @@ class TikTokAdsService:
         page: int = 1,
         page_size: int = 1000,
     ) -> dict[str, object]:
+        return {
+            "advertiser_id": str(account_id),
+            "report_type": str(report_type or "BASIC"),
+            "service_type": str(service_type or "AUCTION"),
+            "query_mode": str(query_mode or "REGULAR"),
+            "data_level": str(data_level),
+            "dimensions": list(dimensions),
+            "metrics": list(metrics),
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "page": int(page),
+            "page_size": int(page_size),
+        }
+
+    def _report_integrated_get(
+        self,
+        *,
+        account_id: str,
+        access_token: str,
+        report_type: str,
+        service_type: str,
+        query_mode: str,
+        data_level: str,
+        dimensions: list[str],
+        metrics: list[str],
+        start_date: date,
+        end_date: date,
+        page: int = 1,
+        page_size: int = 1000,
+    ) -> dict[str, object]:
+        params = self._build_report_integrated_query_params(
+            account_id=account_id,
+            report_type=report_type,
+            service_type=service_type,
+            query_mode=query_mode,
+            data_level=data_level,
+            dimensions=dimensions,
+            metrics=metrics,
+            start_date=start_date,
+            end_date=end_date,
+            page=page,
+            page_size=page_size,
+        )
         query = parse.urlencode(
             {
-                "advertiser_id": account_id,
-                "report_type": report_type,
-                "data_level": data_level,
-                "dimensions": json.dumps(dimensions, separators=(",", ":")),
-                "metrics": json.dumps(metrics, separators=(",", ":")),
-                "start_date": start_date.isoformat(),
-                "end_date": end_date.isoformat(),
-                "page": page,
-                "page_size": page_size,
+                "advertiser_id": params["advertiser_id"],
+                "report_type": params["report_type"],
+                "service_type": params["service_type"],
+                "query_mode": params["query_mode"],
+                "data_level": params["data_level"],
+                "dimensions": json.dumps(params["dimensions"], separators=(",", ":")),
+                "metrics": json.dumps(params["metrics"], separators=(",", ":")),
+                "start_date": params["start_date"],
+                "end_date": params["end_date"],
+                "page": params["page"],
+                "page_size": params["page_size"],
             }
         )
         return self._http_json(
@@ -879,10 +953,39 @@ class TikTokAdsService:
 
     def _fetch_account_daily_metrics(self, *, account_id: str, access_token: str, start_date: date, end_date: date) -> list[TikTokDailyMetric]:
         schema = self._report_schema_for_grain("account_daily")
+        request_params = self._build_report_integrated_query_params(
+            account_id=account_id,
+            report_type="BASIC",
+            service_type="AUCTION",
+            query_mode="REGULAR",
+            data_level=schema.data_level,
+            dimensions=list(schema.dimensions),
+            metrics=list(schema.metrics),
+            start_date=start_date,
+            end_date=end_date,
+        )
+        query = parse.urlencode(
+            {
+                "advertiser_id": request_params["advertiser_id"],
+                "report_type": request_params["report_type"],
+                "service_type": request_params["service_type"],
+                "query_mode": request_params["query_mode"],
+                "data_level": request_params["data_level"],
+                "dimensions": json.dumps(request_params["dimensions"], separators=(",", ":")),
+                "metrics": json.dumps(request_params["metrics"], separators=(",", ":")),
+                "start_date": request_params["start_date"],
+                "end_date": request_params["end_date"],
+                "page": request_params["page"],
+                "page_size": request_params["page_size"],
+            }
+        )
+        report_endpoint = self._report_integrated_endpoint(query=query)
         raw = self._report_integrated_get(
             account_id=account_id,
             access_token=access_token,
-            report_type="BASIC",
+            report_type=str(request_params["report_type"]),
+            service_type=str(request_params["service_type"]),
+            query_mode=str(request_params["query_mode"]),
             data_level=schema.data_level,
             dimensions=list(schema.dimensions),
             metrics=list(schema.metrics),
@@ -903,12 +1006,16 @@ class TikTokAdsService:
             self._record_reporting_fetch_observability(
                 grain="account_daily",
                 account_id=account_id,
+                request_params=request_params,
+                endpoint=report_endpoint,
+                raw_response=raw,
                 provider_row_count=0,
                 rows_mapped=0,
                 data=data,
                 skipped_non_dict=0,
                 skipped_missing_required=0,
                 skipped_invalid_date=0,
+                missing_required_breakdown={},
             )
             return []
 
@@ -916,6 +1023,7 @@ class TikTokAdsService:
         skipped_non_dict = 0
         skipped_missing_required = 0
         skipped_invalid_date = 0
+        missing_required_breakdown: dict[str, int] = {}
         for item in rows_raw:
             if not isinstance(item, dict):
                 skipped_non_dict += 1
@@ -925,6 +1033,7 @@ class TikTokAdsService:
             raw_day = str(dimensions.get("stat_time_day") or "").strip()
             if raw_day == "":
                 skipped_missing_required += 1
+                missing_required_breakdown["stat_time_day"] = int(missing_required_breakdown.get("stat_time_day") or 0) + 1
                 continue
             try:
                 report_day = date.fromisoformat(raw_day)
@@ -961,22 +1070,55 @@ class TikTokAdsService:
         self._record_reporting_fetch_observability(
             grain="account_daily",
             account_id=account_id,
+            request_params=request_params,
+            endpoint=report_endpoint,
+            raw_response=raw,
             provider_row_count=len(rows_raw),
             rows_mapped=len(rows),
             data=data,
             skipped_non_dict=skipped_non_dict,
             skipped_missing_required=skipped_missing_required,
             skipped_invalid_date=skipped_invalid_date,
+            missing_required_breakdown=missing_required_breakdown,
         )
 
         return rows
 
     def _fetch_campaign_daily_metrics(self, *, account_id: str, access_token: str, start_date: date, end_date: date) -> list[TikTokCampaignDailyMetric]:
         schema = self._report_schema_for_grain("campaign_daily")
+        request_params = self._build_report_integrated_query_params(
+            account_id=account_id,
+            report_type="BASIC",
+            service_type="AUCTION",
+            query_mode="REGULAR",
+            data_level=schema.data_level,
+            dimensions=list(schema.dimensions),
+            metrics=list(schema.metrics),
+            start_date=start_date,
+            end_date=end_date,
+        )
+        query = parse.urlencode(
+            {
+                "advertiser_id": request_params["advertiser_id"],
+                "report_type": request_params["report_type"],
+                "service_type": request_params["service_type"],
+                "query_mode": request_params["query_mode"],
+                "data_level": request_params["data_level"],
+                "dimensions": json.dumps(request_params["dimensions"], separators=(",", ":")),
+                "metrics": json.dumps(request_params["metrics"], separators=(",", ":")),
+                "start_date": request_params["start_date"],
+                "end_date": request_params["end_date"],
+                "page": request_params["page"],
+                "page_size": request_params["page_size"],
+            }
+        )
+        report_endpoint = self._report_integrated_endpoint(query=query)
         raw = self._report_integrated_get(
             account_id=account_id,
             access_token=access_token,
-            report_type="BASIC",
+            report_type=str(request_params["report_type"]),
+            service_type=str(request_params["service_type"]),
+            query_mode=str(request_params["query_mode"]),
             data_level=schema.data_level,
             dimensions=list(schema.dimensions),
             metrics=list(schema.metrics),
@@ -997,12 +1139,16 @@ class TikTokAdsService:
             self._record_reporting_fetch_observability(
                 grain="campaign_daily",
                 account_id=account_id,
+                request_params=request_params,
+                endpoint=report_endpoint,
+                raw_response=raw,
                 provider_row_count=0,
                 rows_mapped=0,
                 data=data,
                 skipped_non_dict=0,
                 skipped_missing_required=0,
                 skipped_invalid_date=0,
+                missing_required_breakdown={},
             )
             return []
 
@@ -1010,6 +1156,7 @@ class TikTokAdsService:
         skipped_non_dict = 0
         skipped_missing_required = 0
         skipped_invalid_date = 0
+        missing_required_breakdown: dict[str, int] = {}
         for item in rows_raw:
             if not isinstance(item, dict):
                 skipped_non_dict += 1
@@ -1022,6 +1169,10 @@ class TikTokAdsService:
             campaign_name = str(dimensions.get("campaign_name") or item.get("campaign_name") or "").strip()
             if raw_day == "" or campaign_id == "":
                 skipped_missing_required += 1
+                if raw_day == "":
+                    missing_required_breakdown["stat_time_day"] = int(missing_required_breakdown.get("stat_time_day") or 0) + 1
+                if campaign_id == "":
+                    missing_required_breakdown["campaign_id"] = int(missing_required_breakdown.get("campaign_id") or 0) + 1
                 continue
             try:
                 report_day = date.fromisoformat(raw_day)
@@ -1061,22 +1212,55 @@ class TikTokAdsService:
         self._record_reporting_fetch_observability(
             grain="campaign_daily",
             account_id=account_id,
+            request_params=request_params,
+            endpoint=report_endpoint,
+            raw_response=raw,
             provider_row_count=len(rows_raw),
             rows_mapped=len(rows),
             data=data,
             skipped_non_dict=skipped_non_dict,
             skipped_missing_required=skipped_missing_required,
             skipped_invalid_date=skipped_invalid_date,
+            missing_required_breakdown=missing_required_breakdown,
         )
 
         return rows
 
     def _fetch_ad_group_daily_metrics(self, *, account_id: str, access_token: str, start_date: date, end_date: date) -> list[TikTokAdGroupDailyMetric]:
         schema = self._report_schema_for_grain("ad_group_daily")
+        request_params = self._build_report_integrated_query_params(
+            account_id=account_id,
+            report_type="BASIC",
+            service_type="AUCTION",
+            query_mode="REGULAR",
+            data_level=schema.data_level,
+            dimensions=list(schema.dimensions),
+            metrics=list(schema.metrics),
+            start_date=start_date,
+            end_date=end_date,
+        )
+        query = parse.urlencode(
+            {
+                "advertiser_id": request_params["advertiser_id"],
+                "report_type": request_params["report_type"],
+                "service_type": request_params["service_type"],
+                "query_mode": request_params["query_mode"],
+                "data_level": request_params["data_level"],
+                "dimensions": json.dumps(request_params["dimensions"], separators=(",", ":")),
+                "metrics": json.dumps(request_params["metrics"], separators=(",", ":")),
+                "start_date": request_params["start_date"],
+                "end_date": request_params["end_date"],
+                "page": request_params["page"],
+                "page_size": request_params["page_size"],
+            }
+        )
+        report_endpoint = self._report_integrated_endpoint(query=query)
         raw = self._report_integrated_get(
             account_id=account_id,
             access_token=access_token,
-            report_type="BASIC",
+            report_type=str(request_params["report_type"]),
+            service_type=str(request_params["service_type"]),
+            query_mode=str(request_params["query_mode"]),
             data_level=schema.data_level,
             dimensions=list(schema.dimensions),
             metrics=list(schema.metrics),
@@ -1097,12 +1281,16 @@ class TikTokAdsService:
             self._record_reporting_fetch_observability(
                 grain="ad_group_daily",
                 account_id=account_id,
+                request_params=request_params,
+                endpoint=report_endpoint,
+                raw_response=raw,
                 provider_row_count=0,
                 rows_mapped=0,
                 data=data,
                 skipped_non_dict=0,
                 skipped_missing_required=0,
                 skipped_invalid_date=0,
+                missing_required_breakdown={},
             )
             return []
 
@@ -1110,6 +1298,7 @@ class TikTokAdsService:
         skipped_non_dict = 0
         skipped_missing_required = 0
         skipped_invalid_date = 0
+        missing_required_breakdown: dict[str, int] = {}
         for item in rows_raw:
             if not isinstance(item, dict):
                 skipped_non_dict += 1
@@ -1124,6 +1313,10 @@ class TikTokAdsService:
             campaign_name = str(dimensions.get("campaign_name") or item.get("campaign_name") or "").strip()
             if raw_day == "" or ad_group_id == "":
                 skipped_missing_required += 1
+                if raw_day == "":
+                    missing_required_breakdown["stat_time_day"] = int(missing_required_breakdown.get("stat_time_day") or 0) + 1
+                if ad_group_id == "":
+                    missing_required_breakdown["adgroup_id"] = int(missing_required_breakdown.get("adgroup_id") or 0) + 1
                 continue
             try:
                 report_day = date.fromisoformat(raw_day)
@@ -1167,22 +1360,55 @@ class TikTokAdsService:
         self._record_reporting_fetch_observability(
             grain="ad_group_daily",
             account_id=account_id,
+            request_params=request_params,
+            endpoint=report_endpoint,
+            raw_response=raw,
             provider_row_count=len(rows_raw),
             rows_mapped=len(rows),
             data=data,
             skipped_non_dict=skipped_non_dict,
             skipped_missing_required=skipped_missing_required,
             skipped_invalid_date=skipped_invalid_date,
+            missing_required_breakdown=missing_required_breakdown,
         )
 
         return rows
 
     def _fetch_ad_daily_metrics(self, *, account_id: str, access_token: str, start_date: date, end_date: date) -> list[TikTokAdDailyMetric]:
         schema = self._report_schema_for_grain("ad_daily")
+        request_params = self._build_report_integrated_query_params(
+            account_id=account_id,
+            report_type="BASIC",
+            service_type="AUCTION",
+            query_mode="REGULAR",
+            data_level=schema.data_level,
+            dimensions=list(schema.dimensions),
+            metrics=list(schema.metrics),
+            start_date=start_date,
+            end_date=end_date,
+        )
+        query = parse.urlencode(
+            {
+                "advertiser_id": request_params["advertiser_id"],
+                "report_type": request_params["report_type"],
+                "service_type": request_params["service_type"],
+                "query_mode": request_params["query_mode"],
+                "data_level": request_params["data_level"],
+                "dimensions": json.dumps(request_params["dimensions"], separators=(",", ":")),
+                "metrics": json.dumps(request_params["metrics"], separators=(",", ":")),
+                "start_date": request_params["start_date"],
+                "end_date": request_params["end_date"],
+                "page": request_params["page"],
+                "page_size": request_params["page_size"],
+            }
+        )
+        report_endpoint = self._report_integrated_endpoint(query=query)
         raw = self._report_integrated_get(
             account_id=account_id,
             access_token=access_token,
-            report_type="BASIC",
+            report_type=str(request_params["report_type"]),
+            service_type=str(request_params["service_type"]),
+            query_mode=str(request_params["query_mode"]),
             data_level=schema.data_level,
             dimensions=list(schema.dimensions),
             metrics=list(schema.metrics),
@@ -1203,12 +1429,16 @@ class TikTokAdsService:
             self._record_reporting_fetch_observability(
                 grain="ad_daily",
                 account_id=account_id,
+                request_params=request_params,
+                endpoint=report_endpoint,
+                raw_response=raw,
                 provider_row_count=0,
                 rows_mapped=0,
                 data=data,
                 skipped_non_dict=0,
                 skipped_missing_required=0,
                 skipped_invalid_date=0,
+                missing_required_breakdown={},
             )
             return []
 
@@ -1216,6 +1446,7 @@ class TikTokAdsService:
         skipped_non_dict = 0
         skipped_missing_required = 0
         skipped_invalid_date = 0
+        missing_required_breakdown: dict[str, int] = {}
         for item in rows_raw:
             if not isinstance(item, dict):
                 skipped_non_dict += 1
@@ -1232,6 +1463,10 @@ class TikTokAdsService:
             campaign_name = str(dimensions.get("campaign_name") or item.get("campaign_name") or "").strip()
             if raw_day == "" or ad_id == "":
                 skipped_missing_required += 1
+                if raw_day == "":
+                    missing_required_breakdown["stat_time_day"] = int(missing_required_breakdown.get("stat_time_day") or 0) + 1
+                if ad_id == "":
+                    missing_required_breakdown["ad_id"] = int(missing_required_breakdown.get("ad_id") or 0) + 1
                 continue
             try:
                 report_day = date.fromisoformat(raw_day)
@@ -1279,12 +1514,16 @@ class TikTokAdsService:
         self._record_reporting_fetch_observability(
             grain="ad_daily",
             account_id=account_id,
+            request_params=request_params,
+            endpoint=report_endpoint,
+            raw_response=raw,
             provider_row_count=len(rows_raw),
             rows_mapped=len(rows),
             data=data,
             skipped_non_dict=skipped_non_dict,
             skipped_missing_required=skipped_missing_required,
             skipped_invalid_date=skipped_invalid_date,
+            missing_required_breakdown=missing_required_breakdown,
         )
 
         return rows
