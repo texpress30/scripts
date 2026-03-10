@@ -2831,3 +2831,23 @@
 - Added explicit empty-success handling in worker finalization for TikTok historical: when chunk observability shows `rows_downloaded=0` and `rows_mapped=0`, we keep run `done` but do not advance `backfill_completed_through`.
 - Detail UI now shows neutral no-data diagnostics for successful TikTok runs (`provider_returned_empty_list` / `response_parsed_but_zero_rows_mapped`) instead of failure category messaging.
 - Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py apps/backend/tests/test_clients_platform_account_mappings.py apps/backend/tests/test_sync_worker.py`, `APP_AUTH_SECRET=test-auth-secret pytest -q apps/backend/tests/test_sync_orchestration_meta_ids.py apps/backend/tests/test_account_sync_metadata_contract.py`, `pnpm --dir apps/frontend test src/app/agency-accounts/[platform]/[accountId]/page.platform-parity.test.tsx`, `pnpm --dir apps/frontend build`.
+
+---
+
+# TODO — TikTok historical 1-year cap + short chunks + empty-success coverage semantics
+
+- [x] Audit current TikTok batch orchestration for effective start date/chunk sizing and identify hooks for platform-specific clamp.
+- [x] Implement TikTok-only historical start-date cap to max(last 365 days, original sync start) without impacting other platforms.
+- [x] Enforce short TikTok historical chunk windows (max 30 days) while preserving existing chunk behavior for other platforms.
+- [x] Keep empty-success semantics: do not advance TikTok `backfill_completed_through` when done+zero downloaded/mapped, and mark no-data success explicitly in metadata.
+- [x] Ensure run/detail payload/UI derivation shows neutral no-data state (not false error and not misleading full-success coverage).
+- [x] Add/update backend/frontend tests for 1-year cap, chunk size, empty-success semantics, and non-TikTok regressions.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Batch orchestration now derives TikTok historical effective start using max(requested start, account sync_start_date, today-365d), keeping non-TikTok behavior unchanged.
+- TikTok historical chunk sizing now clamps to 30 days while preserving requested chunk size semantics for other platforms/jobs.
+- Empty-success finalization path persists explicit no-data metadata (`no_data_success`, `empty_success`, row counters, zero_row_marker) and skips coverage advancement for zero-row historical completions.
+- Added regression tests for TikTok 1-year clamp + chunk cap, non-TikTok unchanged chunk sizing, and empty-success no-data marker propagation.
+- Verification: `pytest -q apps/backend/tests/test_sync_orchestration_api.py apps/backend/tests/test_sync_worker.py`.
