@@ -743,14 +743,55 @@ class TikTokAdsService:
                 return self._to_float(metrics.get(key))
         return 0.0
 
-    def _fetch_account_daily_metrics(self, *, account_id: str, access_token: str, start_date: date, end_date: date) -> list[TikTokDailyMetric]:
+
+    def _report_integrated_endpoint(self, *, query: str | None = None) -> str:
         settings = load_settings()
-        payload = {
-            "advertiser_id": account_id,
-            "report_type": "BASIC",
-            "data_level": "AUCTION_ADVERTISER",
-            "dimensions": ["stat_time_day"],
-            "metrics": [
+        base = f"{settings.tiktok_api_base_url.rstrip('/')}/open_api/{settings.tiktok_api_version.strip('/')}/report/integrated/get/"
+        if query:
+            return f"{base}?{query}"
+        return base
+
+    def _report_integrated_get(
+        self,
+        *,
+        account_id: str,
+        access_token: str,
+        report_type: str,
+        data_level: str,
+        dimensions: list[str],
+        metrics: list[str],
+        start_date: date,
+        end_date: date,
+        page: int = 1,
+        page_size: int = 1000,
+    ) -> dict[str, object]:
+        query = parse.urlencode(
+            {
+                "advertiser_id": account_id,
+                "report_type": report_type,
+                "data_level": data_level,
+                "dimensions": json.dumps(dimensions, separators=(",", ":")),
+                "metrics": json.dumps(metrics, separators=(",", ":")),
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "page": page,
+                "page_size": page_size,
+            }
+        )
+        return self._http_json(
+            method="GET",
+            url=self._report_integrated_endpoint(query=query),
+            headers={"Access-Token": access_token},
+        )
+
+    def _fetch_account_daily_metrics(self, *, account_id: str, access_token: str, start_date: date, end_date: date) -> list[TikTokDailyMetric]:
+        raw = self._report_integrated_get(
+            account_id=account_id,
+            access_token=access_token,
+            report_type="BASIC",
+            data_level="AUCTION_ADVERTISER",
+            dimensions=["stat_time_day"],
+            metrics=[
                 "spend",
                 "impressions",
                 "clicks",
@@ -758,16 +799,8 @@ class TikTokAdsService:
                 "conversion_value",
                 "total_purchase_value",
             ],
-            "start_date": start_date.isoformat(),
-            "end_date": end_date.isoformat(),
-            "page": 1,
-            "page_size": 1000,
-        }
-        raw = self._http_json(
-            method="POST",
-            url=f"{settings.tiktok_api_base_url.rstrip('/')}/open_api/{settings.tiktok_api_version.strip('/')}/report/integrated/get/",
-            headers={"Access-Token": access_token},
-            payload=payload,
+            start_date=start_date,
+            end_date=end_date,
         )
 
         api_code = raw.get("code")
@@ -825,13 +858,13 @@ class TikTokAdsService:
         return rows
 
     def _fetch_campaign_daily_metrics(self, *, account_id: str, access_token: str, start_date: date, end_date: date) -> list[TikTokCampaignDailyMetric]:
-        settings = load_settings()
-        payload = {
-            "advertiser_id": account_id,
-            "report_type": "BASIC",
-            "data_level": "AUCTION_CAMPAIGN",
-            "dimensions": ["stat_time_day", "campaign_id", "campaign_name"],
-            "metrics": [
+        raw = self._report_integrated_get(
+            account_id=account_id,
+            access_token=access_token,
+            report_type="BASIC",
+            data_level="AUCTION_CAMPAIGN",
+            dimensions=["stat_time_day", "campaign_id", "campaign_name"],
+            metrics=[
                 "spend",
                 "impressions",
                 "clicks",
@@ -839,16 +872,8 @@ class TikTokAdsService:
                 "conversion_value",
                 "total_purchase_value",
             ],
-            "start_date": start_date.isoformat(),
-            "end_date": end_date.isoformat(),
-            "page": 1,
-            "page_size": 1000,
-        }
-        raw = self._http_json(
-            method="POST",
-            url=f"{settings.tiktok_api_base_url.rstrip('/')}/open_api/{settings.tiktok_api_version.strip('/')}/report/integrated/get/",
-            headers={"Access-Token": access_token},
-            payload=payload,
+            start_date=start_date,
+            end_date=end_date,
         )
 
         api_code = raw.get("code")
@@ -912,13 +937,13 @@ class TikTokAdsService:
         return rows
 
     def _fetch_ad_group_daily_metrics(self, *, account_id: str, access_token: str, start_date: date, end_date: date) -> list[TikTokAdGroupDailyMetric]:
-        settings = load_settings()
-        payload = {
-            "advertiser_id": account_id,
-            "report_type": "BASIC",
-            "data_level": "AUCTION_ADGROUP",
-            "dimensions": ["stat_time_day", "adgroup_id", "adgroup_name", "campaign_id", "campaign_name"],
-            "metrics": [
+        raw = self._report_integrated_get(
+            account_id=account_id,
+            access_token=access_token,
+            report_type="BASIC",
+            data_level="AUCTION_ADGROUP",
+            dimensions=["stat_time_day", "adgroup_id", "adgroup_name", "campaign_id", "campaign_name"],
+            metrics=[
                 "spend",
                 "impressions",
                 "clicks",
@@ -926,16 +951,8 @@ class TikTokAdsService:
                 "conversion_value",
                 "total_purchase_value",
             ],
-            "start_date": start_date.isoformat(),
-            "end_date": end_date.isoformat(),
-            "page": 1,
-            "page_size": 1000,
-        }
-        raw = self._http_json(
-            method="POST",
-            url=f"{settings.tiktok_api_base_url.rstrip('/')}/open_api/{settings.tiktok_api_version.strip('/')}/report/integrated/get/",
-            headers={"Access-Token": access_token},
-            payload=payload,
+            start_date=start_date,
+            end_date=end_date,
         )
 
         api_code = raw.get("code")
@@ -1005,13 +1022,13 @@ class TikTokAdsService:
         return rows
 
     def _fetch_ad_daily_metrics(self, *, account_id: str, access_token: str, start_date: date, end_date: date) -> list[TikTokAdDailyMetric]:
-        settings = load_settings()
-        payload = {
-            "advertiser_id": account_id,
-            "report_type": "BASIC",
-            "data_level": "AUCTION_AD",
-            "dimensions": ["stat_time_day", "ad_id", "ad_name", "adgroup_id", "adgroup_name", "campaign_id", "campaign_name"],
-            "metrics": [
+        raw = self._report_integrated_get(
+            account_id=account_id,
+            access_token=access_token,
+            report_type="BASIC",
+            data_level="AUCTION_AD",
+            dimensions=["stat_time_day", "ad_id", "ad_name", "adgroup_id", "adgroup_name", "campaign_id", "campaign_name"],
+            metrics=[
                 "spend",
                 "impressions",
                 "clicks",
@@ -1019,16 +1036,8 @@ class TikTokAdsService:
                 "conversion_value",
                 "total_purchase_value",
             ],
-            "start_date": start_date.isoformat(),
-            "end_date": end_date.isoformat(),
-            "page": 1,
-            "page_size": 1000,
-        }
-        raw = self._http_json(
-            method="POST",
-            url=f"{settings.tiktok_api_base_url.rstrip('/')}/open_api/{settings.tiktok_api_version.strip('/')}/report/integrated/get/",
-            headers={"Access-Token": access_token},
-            payload=payload,
+            start_date=start_date,
+            end_date=end_date,
         )
 
         api_code = raw.get("code")

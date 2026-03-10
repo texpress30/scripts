@@ -2718,3 +2718,22 @@
 - Probe now validates selected advertiser by membership in discovered accessible advertiser list and raises `provider_access_denied` when missing.
 - Added tests for probe/discovery helper reuse, present/absent advertiser outcomes, import+probe endpoint parity, and explicit config override of `TIKTOK_API_BASE_URL`/`TIKTOK_API_VERSION`.
 - Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py apps/backend/tests/test_config.py apps/backend/tests/test_services.py::ServiceTests::test_tiktok_ads_sync_provider_access_denied_on_probe`.
+
+---
+
+# TODO — TikTok reporting parity: report/integrated/get via GET + query params
+
+- [x] Inspect TikTok reporting fetch paths for account/campaign/ad_group/ad grains and locate POST usages.
+- [x] Implement shared `_report_integrated_get(...)` helper with GET + query serialization + Access-Token header.
+- [x] Migrate all four TikTok reporting grains to helper without changing sync contract/scoping.
+- [x] Preserve structured observability fields and sanitization behavior.
+- [x] Add tests for method/query/header parity across grains + no token leak + 405 regression guard.
+- [x] Run targeted backend test suites and record outcomes.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- TikTok reporting now uses `GET /report/integrated/get/` with query params via shared `_report_integrated_get(...)` helper across account/campaign/ad_group/ad daily fetches.
+- Access token remains in `Access-Token` header; query string contains reporting params only (`advertiser_id`, `report_type`, `data_level`, `dimensions`, `metrics`, `start_date`, `end_date`, `page`, `page_size`).
+- Added tests for GET method/query serialization/header, shared helper reuse across all 4 grains, and a 405 regression guard (non-GET fails in mock).
+- Verification: `pytest -q apps/backend/tests/test_tiktok_*` and `pytest -q apps/backend/tests/test_config.py apps/backend/tests/test_services.py::ServiceTests::test_tiktok_ads_sync_provider_access_denied_on_probe`.
