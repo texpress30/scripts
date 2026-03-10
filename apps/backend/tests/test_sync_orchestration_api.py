@@ -35,6 +35,7 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.original_get_run = sync_orchestration.sync_runs_store.get_sync_run
         self.original_repair_run = sync_orchestration.sync_runs_store.repair_historical_sync_run
         self.original_retry_failed_run = sync_orchestration.sync_runs_store.retry_failed_historical_run
+        self.original_cleanup_tiktok_runs = sync_orchestration.sync_runs_store.cleanup_superseded_tiktok_failed_runs
         self.original_create_chunk = sync_orchestration.sync_run_chunks_store.create_sync_run_chunk
         self.original_list_chunks = sync_orchestration.sync_run_chunks_store.list_sync_run_chunks
 
@@ -353,6 +354,20 @@ class SyncOrchestrationApiTests(unittest.TestCase):
                 "run": retry_run,
             }
 
+        def _cleanup_superseded_tiktok_failed_runs(*, account_ids=None, dry_run: bool = False):
+            normalized_account_ids = [str(value) for value in (account_ids or []) if str(value).strip() != ""]
+            return {
+                "status": "ok",
+                "platform": "tiktok_ads",
+                "dry_run": bool(dry_run),
+                "superseded_run_count": 0,
+                "superseded_job_ids": [],
+                "affected_account_ids": normalized_account_ids,
+                "deleted_runs": 0,
+                "deleted_chunks": 0,
+                "metadata_updates": [],
+            }
+
         sync_orchestration.client_registry_service.list_platform_accounts = _list_platform_accounts
         sync_orchestration.sync_runs_store.create_sync_run = _create_sync_run
         sync_orchestration.sync_runs_store.create_historical_sync_run_if_not_active = _create_historical_sync_run_if_not_active
@@ -363,6 +378,7 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         sync_orchestration.sync_runs_store.get_batch_progress = _get_batch_progress
         sync_orchestration.sync_runs_store.repair_historical_sync_run = _repair_historical_sync_run
         sync_orchestration.sync_runs_store.retry_failed_historical_run = _retry_failed_historical_run
+        sync_orchestration.sync_runs_store.cleanup_superseded_tiktok_failed_runs = _cleanup_superseded_tiktok_failed_runs
         sync_orchestration.sync_run_chunks_store.create_sync_run_chunk = _create_chunk
         sync_orchestration.sync_run_chunks_store.list_sync_run_chunks = _list_sync_run_chunks
 
@@ -377,6 +393,7 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         sync_orchestration.sync_runs_store.get_sync_run = self.original_get_run
         sync_orchestration.sync_runs_store.repair_historical_sync_run = self.original_repair_run
         sync_orchestration.sync_runs_store.retry_failed_historical_run = self.original_retry_failed_run
+        sync_orchestration.sync_runs_store.cleanup_superseded_tiktok_failed_runs = self.original_cleanup_tiktok_runs
         sync_orchestration.sync_run_chunks_store.create_sync_run_chunk = self.original_create_chunk
         sync_orchestration.sync_run_chunks_store.list_sync_run_chunks = self.original_list_chunks
         os.environ.clear()
@@ -1612,6 +1629,42 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         response = self.client.post("/agency/sync-runs/source-done-run/retry-failed", headers=headers)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["outcome"], "no_failed_chunks")
+
+    def test_tiktok_cleanup_endpoint_returns_store_payload(self):
+        headers = self._auth_headers()
+        captured: dict[str, object] = {}
+
+        def _cleanup(*, account_ids=None, dry_run: bool = False):
+            captured["account_ids"] = list(account_ids or [])
+            captured["dry_run"] = bool(dry_run)
+            return {
+                "status": "ok",
+                "platform": "tiktok_ads",
+                "dry_run": bool(dry_run),
+                "superseded_run_count": 2,
+                "superseded_job_ids": ["f1", "f2"],
+                "affected_account_ids": ["123"],
+                "deleted_runs": 2,
+                "deleted_chunks": 5,
+                "metadata_updates": [{"account_id": "123", "last_run_status": "done", "last_error": None}],
+            }
+
+        original_cleanup = sync_orchestration.sync_runs_store.cleanup_superseded_tiktok_failed_runs
+        sync_orchestration.sync_runs_store.cleanup_superseded_tiktok_failed_runs = _cleanup
+        try:
+            response = self.client.post(
+                "/agency/sync-runs/tiktok/cleanup-superseded-failed-historical",
+                headers=headers,
+                json={"dry_run": False, "account_ids": ["123"]},
+            )
+        finally:
+            sync_orchestration.sync_runs_store.cleanup_superseded_tiktok_failed_runs = original_cleanup
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["superseded_run_count"], 2)
+        self.assertEqual(payload["deleted_runs"], 2)
+        self.assertEqual(captured, {"account_ids": ["123"], "dry_run": False})
 
 
 if __name__ == "__main__":

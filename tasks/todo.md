@@ -2961,3 +2961,25 @@
 - Agency Accounts TikTok historical text now reflects effective capped window (`ultimul an`) instead of raw `sync_start_date`; completion banner for TikTok historical also states last-year cap.
 - Added backend API regression test for aggregated run summary rows and frontend tests for TikTok effective historical window label + completion banner text.
 - Verification: `pytest -q apps/backend/tests/test_sync_orchestration_api.py apps/backend/tests/test_tiktok_ads_import_accounts.py apps/backend/tests/test_sync_worker.py`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx src/app/agency-accounts/[platform]/[accountId]/page.platform-parity.test.tsx`, `pnpm --dir apps/frontend build`.
+
+---
+
+# TODO — TikTok historical failed-run cleanup + operational metadata reconciliation
+
+- [x] Attempt workspace sync before edits and record git topology blocker if tracking remote is unavailable.
+- [x] Implement backend cleanup for superseded TikTok historical_backfill failed runs + associated chunks (safe scope only).
+- [x] Recompute TikTok account operational metadata for affected accounts after cleanup (last run fields, success/error, backfill coverage).
+- [x] Expose a safe one-off trigger path for existing data cleanup.
+- [x] Add backend tests for cleanup deletion semantics, metadata reconciliation, and non-impact guarantees.
+- [x] Run targeted backend tests for sync cleanup and metadata behavior.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Workspace update was attempted first via `git pull --rebase`; blocked because branch `work` has no upstream tracking remote in this environment.
+- Added `cleanup_superseded_tiktok_failed_runs(...)` in `sync_runs_store` to hard-delete only superseded TikTok `historical_backfill` failed/error runs plus their chunks, scoped by same platform/account and superseded by later successful historical run (grain-aware with null fallback).
+- Added run/account metadata reconciliation for affected TikTok accounts in the same cleanup transaction (recompute `last_run_status`, `last_run_type`, `last_run_started_at`, `last_run_finished_at`, `last_success_at`, `backfill_completed_through`, `last_error`).
+- Exposed a safe one-off backend trigger endpoint `POST /agency/sync-runs/tiktok/cleanup-superseded-failed-historical` with optional `dry_run` and `account_ids` scope.
+- Wired automatic cleanup after successful TikTok historical chunk finalization in worker, with exception guard so cleanup failures do not fail the sync job itself.
+- Added backend tests for store cleanup semantics, endpoint wiring, and worker auto-cleanup invocation.
+- Verification: `pytest -q apps/backend/tests/test_sync_runs_store_tiktok_cleanup.py apps/backend/tests/test_sync_orchestration_api.py apps/backend/tests/test_sync_worker.py apps/backend/tests/test_clients_platform_account_mappings.py`.

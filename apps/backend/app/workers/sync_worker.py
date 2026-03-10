@@ -283,6 +283,18 @@ def _finalize_run_if_complete(run: dict[str, object]) -> None:
                     status="done",
                     metadata=status_metadata_patch,
                 )
+            if platform == "tiktok_ads" and job_type == "historical_backfill":
+                try:
+                    cleanup_result = sync_runs_store.cleanup_superseded_tiktok_failed_runs(account_ids=[account_id])
+                    logger.info(
+                        "sync_worker.tiktok_cleanup account_id=%s superseded=%s deleted_runs=%s deleted_chunks=%s",
+                        account_id,
+                        cleanup_result.get("superseded_run_count"),
+                        cleanup_result.get("deleted_runs"),
+                        cleanup_result.get("deleted_chunks"),
+                    )
+                except Exception:
+                    logger.exception("sync_worker.tiktok_cleanup_failed account_id=%s job_id=%s", account_id, job_id)
             if platform == "google_ads" and run_grain in ("campaign_daily", "ad_group_daily", "ad_daily", "keyword_daily"):
                 with sync_runs_store._connect() as conn:
                     reconcile_platform_account_watermarks(

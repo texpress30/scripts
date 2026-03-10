@@ -97,6 +97,11 @@ class RollingEnqueueRequest(BaseModel):
     chunk_days: int = Field(default=7, ge=1, le=31)
     force: bool = False
 
+
+class TikTokCleanupRequest(BaseModel):
+    dry_run: bool = False
+    account_ids: list[str] | None = None
+
 def _normalize_account_id(value: str, *, platform: str | None = None) -> str:
     raw = str(value).strip()
     if raw == "":
@@ -933,6 +938,28 @@ def retry_failed_sync_run(job_id: str, user: AuthUser = Depends(get_current_user
         response["run"] = _serialize_run(_reconcile_run_payload(run_payload))
 
     return response
+
+
+@router.post("/tiktok/cleanup-superseded-failed-historical")
+def cleanup_superseded_tiktok_failed_historical_runs(
+    payload: TikTokCleanupRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:sync", scope="agency")
+
+    result = sync_runs_store.cleanup_superseded_tiktok_failed_runs(
+        account_ids=payload.account_ids,
+        dry_run=bool(payload.dry_run),
+    )
+    logger.info(
+        "sync_runs.tiktok_cleanup superseded=%s deleted_runs=%s deleted_chunks=%s accounts=%s dry_run=%s",
+        result.get("superseded_run_count"),
+        result.get("deleted_runs"),
+        result.get("deleted_chunks"),
+        len(result.get("affected_account_ids") or []),
+        result.get("dry_run"),
+    )
+    return result
 
 
 @router.get("/{job_id}/chunks")
