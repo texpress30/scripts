@@ -2737,3 +2737,14 @@
 - Access token remains in `Access-Token` header; query string contains reporting params only (`advertiser_id`, `report_type`, `data_level`, `dimensions`, `metrics`, `start_date`, `end_date`, `page`, `page_size`).
 - Added tests for GET method/query serialization/header, shared helper reuse across all 4 grains, and a 405 regression guard (non-GET fails in mock).
 - Verification: `pytest -q apps/backend/tests/test_tiktok_*` and `pytest -q apps/backend/tests/test_config.py apps/backend/tests/test_services.py::ServiceTests::test_tiktok_ads_sync_provider_access_denied_on_probe`.
+
+---
+
+# TODO — Sync remote origin and fetch/pull from GitHub
+
+- [x] Run provided `git remote add ... || git remote set-url ...` command exactly as requested.
+- [x] Run `git fetch origin`.
+- [x] Run `git pull origin main --allow-unrelated-histories`.
+
+## Review
+- [x] Executed all requested git connectivity/sync commands in terminal and captured outputs.
