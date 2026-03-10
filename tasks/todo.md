@@ -2510,3 +2510,211 @@
 - Rolling scheduler now accepts `platform=tiktok_ads` and enqueues `account_daily` (+ entity grains under flag) on the same 7-day complete window.
 - Worker now supports TikTok platform runs by reusing existing TikTok sync service for chunk execution; no duplicate fetch/persist logic added.
 - Existing Google/Meta rolling behavior remained compatible in scheduler tests.
+
+# TODO — Reconnect git remote and sync latest main
+
+- [x] Create plan/checklist for remote reconnection task.
+- [x] Run exact remote/fetch/pull commands provided by user.
+- [x] Record outcomes and constraints.
+- [x] Commit task tracking updates and open PR record.
+
+## Review
+- [x] Executed exact commands in current workspace terminal; remote `origin` added, `fetch` succeeded, and `pull origin main` reported `Already up to date`.
+
+
+---
+
+# TODO — Meta/TikTok sync real error observability
+
+- [x] Re-sync workspace to latest `origin/main` before code changes (remote add/fetch + rebase) and document constraints if any.
+- [x] Trace full Meta/TikTok batch flow (API create -> worker -> provider service -> progress API -> Agency Accounts) and pinpoint where root errors become generic.
+- [x] Implement minimal backend structured + sanitized error propagation to progress response (`last_error_summary`, `last_error_details`) without changing Google business flow.
+- [x] Add targeted backend tests for structured propagation, secret sanitization, and safe fallback when provider error fields are missing.
+- [x] Apply minimal Agency Accounts UI change to display real error summary under existing error status, if available.
+- [x] Update README with short diagnostics section and run required backend tests (+ frontend build if touched).
+
+## Review
+- [x] Root-cause loss point identified: worker wrapped provider exceptions into generic RuntimeError and progress payload lacked additive error fields.
+
+- [x] Added structured error metadata plumbing in worker/chunk/run, additive progress fields, and service-level HTTP error enrichment with token-safe sanitization.
+- [x] Verified with targeted backend tests and frontend build.
+
+
+---
+
+# TODO — Meta/TikTok full parity in Agency Accounts detail + logs
+
+- [x] Sync workspace to latest remote baseline before edits.
+- [x] Audit Agency Accounts list + detail flows for Google-vs-Meta/TikTok parity gaps (linking, metadata, sync runs, logs, terminal errors).
+- [x] Implement minimal frontend parity changes for clickable names, generic metadata loading, and terminal error visibility in list/detail for Meta/TikTok.
+- [x] Add focused frontend tests for link behavior, detail metadata/error rendering, and list terminal-error summaries.
+- [x] Run relevant frontend tests + frontend build and record results.
+
+## Review
+- [x] Implemented parity updates in Agency Accounts list and detail page for Meta/TikTok, preserving Google behavior and existing run/chunk logs UX.
+
+- [x] Detailed parity verification passed: targeted vitest suite for list/detail pages and `pnpm --dir apps/frontend build`.
+
+---
+
+# TODO — Fix Meta historical sync contract + account scoping
+
+- [x] Update workspace to latest remote baseline before analysis/code changes.
+- [x] Trace Meta batch/run/chunk flow and locate contract mismatch in `MetaAdsService.sync_client` usage.
+- [x] Fix Meta service sync contract (`client_id/start_date/end_date/grain/account_id`) and implement robust window+grain+account scoping behavior.
+- [x] Apply minimal worker plumbing change to pass selected `account_id` context into Meta sync call.
+- [x] Add backend tests for keyword-arg regression, account scoping, invalid grain/date window, and missing/unattached account errors.
+- [x] Run targeted backend tests and document outcomes.
+
+## Review
+- [x] Root cause fixed: Meta service signature/implementation is now aligned with worker chunk call contract and no longer fails on unexpected keyword arguments.
+
+- [x] Verified with targeted backend suite covering Meta sync service contract + sync worker Meta path + existing Meta account_daily scenarios.
+
+
+---
+
+# TODO — Normalize Meta account_id and prevent act_act_ Graph paths
+
+- [x] Update workspace to latest remote baseline before changes.
+- [x] Trace Meta account_id flow for mapping/scoping/Graph endpoint construction and identify double-prefix risk.
+- [x] Add focused Meta account-id helpers (normalize, numeric, graph path, match) and wire them into scoping + API calls.
+- [x] Add backend regression tests for numeric/prefixed IDs, no `act_act_` endpoint generation, and normalized selected-account matching.
+- [x] Run targeted backend tests and document outcomes.
+
+## Review
+- [x] Root cause fixed: Graph endpoint construction now uses normalized account path helper, eliminating `act_act_` double-prefix requests and robustly matching `act_123` with `123` in selected-account scoping.
+
+- [x] Verified with backend tests for normalization regressions + existing Meta sync service/worker suites.
+
+
+---
+
+# TODO — Align Meta backend requests with Graph Explorer valid shape
+
+- [x] Update workspace to latest remote baseline before modifications.
+- [x] Audit Meta backend request construction for account path, graph version, token source, and selected-account scoping parity with Explorer.
+- [x] Implement small helpers for account path/version/token-source/account-probe and reuse them in validation + insights requests.
+- [x] Extend backend tests for URL parity (numeric/prefixed), no `act_act_`, v24.0 usage, probe response validation, and path reuse in sync calls.
+- [x] Run targeted backend tests and record outcomes.
+
+## Review
+- [x] Implemented Graph Explorer parity helpers and request-shape alignment for Meta account probe + insights URL construction.
+
+- [x] Verified backend regressions with targeted pytest suite for Meta contract + existing Meta sync/worker tests.
+
+
+---
+
+# TODO — Keep effective done status and hide superseded historical failures
+
+- [x] Update workspace to latest remote baseline before changes.
+- [ ] Audit Agency Accounts list/detail status reconciliation and historical failure visibility rules.
+- [ ] Add a shared effective sync status + superseded historical helper and apply it consistently in list/detail flows.
+- [ ] Hide superseded historical failures by default (no hard delete), keep unresolved failures visible, and ensure latest error banner uses unresolved latest failure only.
+- [ ] Add/adjust frontend tests for done-vs-idle, superseded filtering, and banner behavior; run required tests/build.
+
+## Review
+- [ ] Pending implementation.
+
+---
+
+# TODO — Stabilizare TikTok pasul 2: contract sync + advertiser scoping
+
+- [x] Sync workspace to latest available repo state before implementation.
+- [x] Trace TikTok flow end-to-end (orchestration -> runs/chunks -> worker -> service sync contract).
+- [x] Align `TikTokAdsService.sync_client` contract to explicit worker params (`client_id`, window, grain, optional `account_id`).
+- [x] Pass selected run `account_id` from worker into TikTok sync call.
+- [x] Enforce strict advertiser scoping in TikTok service for selected `account_id`, including normalize+ownership validation.
+- [x] Add regression tests for worker passthrough + service scoping/validation errors.
+- [x] Run targeted backend tests and record outcomes.
+
+## Review
+- [x] TikTok worker/service contract now includes selected advertiser `account_id`; service no longer fans out to all attached accounts when a specific advertiser is selected.
+- [x] Error paths now return explicit `TikTokAdsIntegrationError` for no attached accounts, unattached selected advertiser, invalid date window, invalid grain, and missing token.
+
+---
+
+# TODO — Stabilizare TikTok pasul 3: preflight advertiser access probe
+
+- [x] Sync workspace to latest available repo state before modifications.
+- [x] Analyze TikTok flow (orchestration -> worker -> service contract -> provider call -> error observability).
+- [x] Add lightweight preflight advertiser probe before reporting (`oauth2/advertiser/get`) for selected/target advertiser(s).
+- [x] Implement error classification for TikTok sync/probe paths (`local_attachment_error`, `provider_access_denied`, `token_missing_or_invalid`, `provider_http_error_generic`).
+- [x] Ensure worker observability details include safe debug fields (`platform`, `advertiser_id`, `endpoint`, `http_status`, `provider_error_code`, `provider_error_message`, `token_source`, `error_category`) without token leaks.
+- [x] Add/update backend tests for probe deny, token classification, probe-success continuation, worker metadata propagation, and local attachment/token validation.
+- [x] Run targeted backend tests (service + worker + orchestration subset) and capture outcomes.
+
+## Review
+- [x] TikTok sync now performs provider-side preflight access validation before reporting and fails fast with classified, sanitized errors when advertiser access/token is invalid.
+- [x] Existing local attachment validation remains distinct from provider access failures, and worker-level error details now expose safe classification context for UI/ops debugging.
+
+---
+
+# TODO — TikTok UX + API wiring pentru error_category
+
+- [x] Sync workspace to latest available repo state and confirm branch/remote constraints.
+- [x] Expose stable TikTok error category field from backend sync payloads used by frontend (`last_error_category`).
+- [x] Add centralized frontend mapping helper for TikTok error categories to user-facing safe labels.
+- [x] Wire TikTok category messaging in Agency Accounts list + Agency Account Detail (banner + run cards) with safe fallback.
+- [x] Disable TikTok historical trigger in UI when frontend TikTok feature flag is off and show explicit unavailable message.
+- [x] Add/update frontend tests for category mapping, list/detail rendering, fallback behavior, and disabled button behavior.
+- [x] Run targeted frontend tests, frontend build, and relevant backend tests.
+
+## Review
+- [x] TikTok error categories are now displayed explicitly in UI without fragile free-text parsing.
+- [x] Existing fallback behavior remains for missing categories, and non-TikTok flows are unchanged.
+
+---
+
+# TODO — Stabilizare TikTok pasul 4: enablement configurabil + UI wiring
+
+- [x] Run requested git remote/fetch/pull commands and reconcile local branch with `origin/main`.
+- [x] Make TikTok enablement configurable via explicit env alias (`TIKTOK_SYNC_ENABLED`) while keeping legacy compatibility.
+- [x] Expose platform sync availability (`sync_enabled`) in clients summary and platform accounts payloads.
+- [x] Wire Agency Accounts TikTok availability from backend payload (with env fallback) for disabled/enabled historical button behavior.
+- [x] Wire Agency Account Detail TikTok disabled banner from backend availability payload.
+- [x] Add/update backend and frontend tests for config/orchestration/UI enablement behavior.
+- [x] Run targeted backend tests, frontend tests, and frontend build.
+
+## Review
+- [x] TikTok is no longer effectively hard-disabled when explicit enablement env is set; UI now reflects backend availability signal and keeps safe fallback behavior.
+
+---
+
+# TODO — Clear stale TikTok feature-flag recent errors when sync is enabled
+
+- [x] Re-check current backend/frontend derivation for TikTok recent error and status fallback sources.
+- [x] Implement minimal stale-error suppression rule for TikTok `integration_disabled`/feature-flag-disabled when platform is currently enabled.
+- [x] Ensure new runs still clear/replace recent error state correctly (success clears, new real failures replace).
+- [x] Add/adjust targeted backend and frontend tests for stale-vs-real disabled scenarios and recent-error transitions.
+- [x] Run requested backend tests, frontend tests, and frontend build; record outcomes.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Stale TikTok feature-flag errors are now suppressed when `sync_enabled=true` and no active run confirms disabled state, without deleting sync history.
+- Backend list payload (`/clients/accounts/tiktok_ads`) now clears derived `last_error` only for stale feature-flag strings when TikTok sync is enabled.
+- Frontend list/detail now use shared stale-error guard helper to avoid rendering stale "disabled by feature flag" as current recent error.
+- Added backend + frontend tests for enabled stale suppression and disabled-state preservation.
+- Verification: `pytest -q apps/backend/tests/test_clients_platform_account_mappings.py apps/backend/tests/test_account_sync_metadata_contract.py`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx src/app/agency-accounts/[platform]/[accountId]/page.platform-parity.test.tsx src/app/agency-accounts/sync-runs.test.ts`, `pnpm --dir apps/frontend build`.
+
+---
+
+# TODO — TikTok advertiser access probe parity with discovery helper
+
+- [x] Verify current config usage for `TIKTOK_API_BASE_URL` / `TIKTOK_API_VERSION` and confirm override risk.
+- [x] Compare TikTok advertiser discovery/import request shape vs sync access probe request shape.
+- [x] Implement minimal shared helper for fetching accessible advertisers and reuse it in import + access probe.
+- [x] Keep structured error payloads and ensure provider_access_denied classification when advertiser missing.
+- [x] Add tests for helper reuse, probe success/denied paths, config base URL override, and token-safe error handling.
+- [x] Run targeted backend test commands and capture results.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Probe now reuses advertiser discovery (`GET /oauth2/advertiser/get/` with app_id+secret+page params + Access-Token header) instead of a separate POST advertiser_ids shape.
+- Added `_advertiser_get_endpoint(...)` helper and reused it in both discovery and probe so endpoint/base-version usage is standardized.
+- Probe now validates selected advertiser by membership in discovered accessible advertiser list and raises `provider_access_denied` when missing.
+- Added tests for probe/discovery helper reuse, present/absent advertiser outcomes, import+probe endpoint parity, and explicit config override of `TIKTOK_API_BASE_URL`/`TIKTOK_API_VERSION`.
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py apps/backend/tests/test_config.py apps/backend/tests/test_services.py::ServiceTests::test_tiktok_ads_sync_provider_access_denied_on_probe`.

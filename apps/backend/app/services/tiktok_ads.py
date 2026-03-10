@@ -11,6 +11,7 @@ from urllib import error, parse, request
 
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
+from app.services.error_observability import safe_body_snippet, sanitize_payload, sanitize_text
 from app.services.entity_performance_reports import (
     upsert_ad_group_performance_reports,
     upsert_ad_unit_performance_reports,
@@ -29,8 +30,66 @@ except Exception:  # noqa: BLE001
 logger = logging.getLogger(__name__)
 
 
+def _sanitize_endpoint(value: str | None) -> str | None:
+    raw = str(value or "").strip()
+    if raw == "":
+        return None
+    try:
+        parsed_url = parse.urlsplit(raw)
+        query_pairs = parse.parse_qsl(parsed_url.query, keep_blank_values=True)
+        sanitized_pairs: list[tuple[str, str]] = []
+        for key, item in query_pairs:
+            normalized_key = str(key or "").strip().lower()
+            if any(part in normalized_key for part in ("token", "secret", "password", "authorization", "api_key", "apikey", "refresh_token")):
+                sanitized_pairs.append((key, "***"))
+            else:
+                sanitized_pairs.append((key, sanitize_text(item, max_len=120)))
+        sanitized_query = parse.urlencode(sanitized_pairs)
+        rebuilt = parse.urlunsplit((parsed_url.scheme, parsed_url.netloc, parsed_url.path, sanitized_query, parsed_url.fragment))
+        return sanitize_text(rebuilt, max_len=200)
+    except Exception:
+        return sanitize_text(raw, max_len=200)
+
+
 class TikTokAdsIntegrationError(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        endpoint: str | None = None,
+        http_status: int | None = None,
+        provider_error_code: str | None = None,
+        provider_error_message: str | None = None,
+        body_snippet: str | None = None,
+        retryable: bool | None = None,
+        error_category: str | None = None,
+        token_source: str | None = None,
+        advertiser_id: str | None = None,
+    ) -> None:
+        super().__init__(sanitize_text(message, max_len=400))
+        self.endpoint = _sanitize_endpoint(endpoint)
+        self.http_status = int(http_status) if http_status is not None else None
+        self.provider_error_code = sanitize_text(provider_error_code, max_len=80) if provider_error_code is not None else None
+        self.provider_error_message = sanitize_text(provider_error_message, max_len=300) if provider_error_message is not None else None
+        self.body_snippet = sanitize_text(body_snippet, max_len=400) if body_snippet is not None else None
+        self.retryable = retryable
+        self.error_category = str(error_category).strip()[:80] if error_category is not None else None
+        self.token_source = str(token_source).strip()[:80] if token_source is not None else None
+        self.advertiser_id = sanitize_text(advertiser_id, max_len=120) if advertiser_id is not None else None
+
+    def to_details(self) -> dict[str, object]:
+        return {
+            "error_summary": sanitize_text(str(self), max_len=300),
+            "provider_error_code": self.provider_error_code,
+            "provider_error_message": self.provider_error_message,
+            "http_status": self.http_status,
+            "endpoint": self.endpoint,
+            "retryable": self.retryable,
+            "body_snippet": self.body_snippet,
+            "error_category": self.error_category,
+            "token_source": self.token_source,
+            "advertiser_id": self.advertiser_id,
+        }
 
 
 TikTokSyncGrain = Literal["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"]
@@ -132,8 +191,46 @@ class TikTokAdsService:
         try:
             with request.urlopen(req, timeout=30) as response:  # noqa: S310
                 data = response.read().decode("utf-8")
-        except (error.HTTPError, error.URLError, TimeoutError) as exc:
-            raise TikTokAdsIntegrationError(f"TikTok HTTP request failed: {exc}") from exc
+        except error.HTTPError as exc:
+            raw_body = ""
+            try:
+                raw_body = exc.read().decode("utf-8", errors="replace")
+            except Exception:  # noqa: BLE001
+                raw_body = ""
+            provider_code = None
+            provider_message = None
+            if raw_body:
+                try:
+                    parsed = json.loads(raw_body)
+                    if isinstance(parsed, dict):
+                        provider_code = parsed.get("code")
+                        provider_message = parsed.get("message") or parsed.get("msg")
+                except Exception:  # noqa: BLE001
+                    provider_code = None
+                    provider_message = None
+
+            normalized_provider_code = sanitize_text(provider_code, max_len=80) if provider_code is not None else None
+            normalized_provider_message = sanitize_text(provider_message, max_len=300) if provider_message is not None else None
+            raise TikTokAdsIntegrationError(
+                f"TikTok HTTP request failed: status={exc.code}",
+                endpoint=url,
+                http_status=exc.code,
+                provider_error_code=normalized_provider_code,
+                provider_error_message=normalized_provider_message,
+                body_snippet=safe_body_snippet(raw_body),
+                retryable=exc.code >= 500,
+                error_category=self._map_tiktok_provider_error(
+                    http_status=exc.code,
+                    provider_error_code=normalized_provider_code,
+                    provider_error_message=normalized_provider_message,
+                ),
+            ) from exc
+        except (error.URLError, TimeoutError) as exc:
+            raise TikTokAdsIntegrationError(
+                f"TikTok HTTP request failed: {sanitize_text(exc, max_len=200)}",
+                endpoint=url,
+                retryable=True,
+            ) from exc
 
         try:
             parsed = json.loads(data) if data else {}
@@ -142,7 +239,113 @@ class TikTokAdsService:
 
         if not isinstance(parsed, dict):
             raise TikTokAdsIntegrationError("TikTok API response shape is invalid")
+        if isinstance(parsed.get("code"), int) and int(parsed.get("code") or 0) != 0:
+            provider_error_code = sanitize_text(parsed.get("code"), max_len=80)
+            provider_error_message = sanitize_text(parsed.get("message") or parsed.get("msg"), max_len=300)
+            raise TikTokAdsIntegrationError(
+                "TikTok API returned error payload",
+                endpoint=url,
+                provider_error_code=provider_error_code,
+                provider_error_message=provider_error_message,
+                body_snippet=safe_body_snippet(json.dumps(sanitize_payload(parsed))),
+                retryable=False,
+                error_category=self._map_tiktok_provider_error(
+                    http_status=None,
+                    provider_error_code=provider_error_code,
+                    provider_error_message=provider_error_message,
+                ),
+            )
         return parsed
+
+    def _map_tiktok_provider_error(
+        self,
+        *,
+        http_status: int | None,
+        provider_error_code: str | None,
+        provider_error_message: str | None,
+    ) -> str:
+        message = str(provider_error_message or "").strip().lower()
+        code = str(provider_error_code or "").strip().lower()
+        if http_status == 401:
+            return "token_missing_or_invalid"
+        if http_status == 403:
+            return "provider_access_denied"
+        if "access token" in message or "access_token" in message or "token" in message and "invalid" in message:
+            return "token_missing_or_invalid"
+        if code in {"40100", "40101", "40102", "40103"}:
+            return "token_missing_or_invalid"
+        if "permission" in message or "no permission" in message or "access denied" in message or "forbidden" in message:
+            return "provider_access_denied"
+        return "provider_http_error_generic"
+
+    def _advertiser_get_endpoint(self, *, query: str | None = None) -> str:
+        settings = load_settings()
+        base = f"{settings.tiktok_api_base_url.rstrip('/')}/open_api/{settings.tiktok_api_version.strip('/')}/oauth2/advertiser/get/"
+        if query:
+            return f"{base}?{query}"
+        return base
+
+    def _probe_selected_advertiser_access(self, *, account_id: str, access_token: str, token_source: str) -> dict[str, object]:
+        advertiser_id = self._normalize_account_id(account_id)
+        endpoint = self._advertiser_get_endpoint()
+        if advertiser_id == "":
+            raise TikTokAdsIntegrationError(
+                "TikTok advertiser id is required for access probe.",
+                error_category="local_attachment_error",
+                token_source=token_source,
+                advertiser_id=advertiser_id,
+            )
+
+        try:
+            accessible_accounts, _ = self._discover_accessible_advertiser_accounts(access_token=access_token)
+        except TikTokAdsIntegrationError as exc:
+            mapped_category = self._map_tiktok_provider_error(
+                http_status=exc.http_status,
+                provider_error_code=exc.provider_error_code,
+                provider_error_message=exc.provider_error_message,
+            )
+            if str(mapped_category or "").strip() == "":
+                if exc.http_status == 401:
+                    mapped_category = "token_missing_or_invalid"
+                elif exc.http_status == 403:
+                    mapped_category = "provider_access_denied"
+                else:
+                    mapped_category = exc.error_category or "provider_http_error_generic"
+            raise TikTokAdsIntegrationError(
+                f"TikTok advertiser access probe failed for advertiser {advertiser_id}.",
+                endpoint=exc.endpoint,
+                http_status=exc.http_status,
+                provider_error_code=exc.provider_error_code,
+                provider_error_message=exc.provider_error_message,
+                body_snippet=exc.body_snippet,
+                retryable=exc.retryable,
+                error_category=mapped_category,
+                token_source=token_source,
+                advertiser_id=advertiser_id,
+            ) from exc
+
+        accessible = any(
+            self._normalize_account_id((item or {}).get("account_id")) == advertiser_id
+            for item in accessible_accounts
+            if isinstance(item, dict)
+        )
+        if not accessible:
+            raise TikTokAdsIntegrationError(
+                f"TikTok advertiser access denied for advertiser {advertiser_id}.",
+                endpoint=endpoint,
+                provider_error_message="Advertiser access denied: advertiser not returned by TikTok advertiser discovery.",
+                retryable=False,
+                error_category="provider_access_denied",
+                token_source=token_source,
+                advertiser_id=advertiser_id,
+            )
+
+        return {
+            "status": "ok",
+            "endpoint": endpoint,
+            "advertiser_id": advertiser_id,
+            "token_source": token_source,
+        }
 
     def _is_placeholder(self, value: str) -> bool:
         normalized = value.strip().lower()
@@ -398,7 +601,7 @@ class TikTokAdsService:
             query = parse.urlencode({"app_id": app_id, "secret": secret, "page": page, "page_size": page_size})
             raw = self._http_json(
                 method="GET",
-                url=f"{settings.tiktok_api_base_url.rstrip('/')}/open_api/{settings.tiktok_api_version.strip('/')}/oauth2/advertiser/get/?{query}",
+                url=self._advertiser_get_endpoint(query=query),
                 headers={"Access-Token": resolved_access_token},
             )
             api_code = raw.get("code")
@@ -1061,47 +1264,66 @@ class TikTokAdsService:
             conn.commit()
             return written
 
+    def _normalize_account_id(self, value: object) -> str:
+        return str(value or "").strip()
+
+    def _resolve_target_account_ids(self, *, client_id: int, account_id: str | None = None) -> list[str]:
+        attached_accounts = client_registry_service.list_client_platform_accounts(platform="tiktok_ads", client_id=int(client_id))
+        attached_by_normalized: dict[str, str] = {}
+        for item in attached_accounts:
+            if not isinstance(item, dict):
+                continue
+            normalized_id = self._normalize_account_id(item.get("id"))
+            if normalized_id == "":
+                continue
+            attached_by_normalized[normalized_id] = normalized_id
+
+        if len(attached_by_normalized) <= 0:
+            raise TikTokAdsIntegrationError("No TikTok advertiser accounts are attached to this client.", error_category="local_attachment_error")
+
+        requested_account_id = self._normalize_account_id(account_id)
+        if requested_account_id != "":
+            selected = attached_by_normalized.get(requested_account_id)
+            if selected is None:
+                raise TikTokAdsIntegrationError(f"TikTok account_id '{requested_account_id}' is not attached to client_id={int(client_id)}.", error_category="local_attachment_error", advertiser_id=requested_account_id)
+            return [selected]
+
+        return list(attached_by_normalized.values())
+
     def sync_client(
         self,
-        client_id: int,
         *,
+        client_id: int,
         start_date: date | None = None,
         end_date: date | None = None,
         grain: TikTokSyncGrain = "account_daily",
+        account_id: str | None = None,
     ) -> dict[str, object]:
         settings = load_settings()
         if not settings.ff_tiktok_integration:
-            raise TikTokAdsIntegrationError("TikTok integration is disabled by feature flag.")
+            raise TikTokAdsIntegrationError("TikTok integration is disabled by feature flag.", error_category="provider_http_error_generic")
 
         if client_id <= 0:
-            raise TikTokAdsIntegrationError("Client id must be a positive integer.")
+            raise TikTokAdsIntegrationError("Client id must be a positive integer.", error_category="local_attachment_error")
 
         resolved_grain = str(grain).strip().lower()
         if resolved_grain not in {"account_daily", "campaign_daily", "ad_group_daily", "ad_daily"}:
-            raise TikTokAdsIntegrationError(f"grain invalid: {resolved_grain}")
+            raise TikTokAdsIntegrationError(f"grain invalid: {resolved_grain}", error_category="local_attachment_error")
 
         range_start, range_end = self._resolve_sync_window(start_date=start_date, end_date=end_date)
 
         access_token, token_source, _ = self._access_token_with_source()
         if access_token == "":
-            raise TikTokAdsIntegrationError("TikTok sync requires a usable OAuth token. Connect TikTok first.")
+            raise TikTokAdsIntegrationError("TikTok sync requires a usable OAuth token. Connect TikTok first.", error_category="token_missing_or_invalid", token_source=token_source)
 
-        attached_accounts = client_registry_service.list_client_platform_accounts(platform="tiktok_ads", client_id=int(client_id))
-        account_ids = [str(item.get("id") or "").strip() for item in attached_accounts if isinstance(item, dict)]
-        account_ids = [account_id for account_id in account_ids if account_id != ""]
+        account_ids = self._resolve_target_account_ids(client_id=int(client_id), account_id=account_id)
 
-        if len(account_ids) == 0:
-            return {
-                "status": "no_accounts",
-                "platform": "tiktok_ads",
-                "grain": resolved_grain,
-                "client_id": int(client_id),
-                "date_start": range_start.isoformat(),
-                "date_end": range_end.isoformat(),
-                "accounts_processed": 0,
-                "rows_written": 0,
-                "message": "No TikTok advertiser accounts are attached to this client.",
-            }
+        for selected_account_id in account_ids:
+            self._probe_selected_advertiser_access(
+                account_id=selected_account_id,
+                access_token=access_token,
+                token_source=token_source,
+            )
 
         rows_written = 0
         totals = {
