@@ -16,46 +16,45 @@ class _CleanupCursor:
         self._fetchone = None
         self.rowcount = 0
 
-        if "SELECT f.job_id, f.account_id FROM sync_runs f" in q:
-            self._fetchall = list(self.state.get("superseded_rows", []))
+        if "FROM sync_runs sr" in q and "WHERE sr.status IN ('error', 'failed')" in q:
+            self._fetchall = list(self.state.get("failed_rows", []))
+            return
+
+        if "FROM sync_runs sr" in q and "sr.status = 'done'" in q and "sr.job_type = 'historical_backfill'" in q and "SELECT sr.job_id" in q:
+            self._fetchall = list(self.state.get("success_rows", []))
+            return
+
+        if q.startswith("SELECT job_id, COUNT(*)::int FROM sync_run_chunks"):
+            self._fetchall = list(self.state.get("chunk_count_rows", []))
             return
 
         if q.startswith("DELETE FROM sync_run_chunks"):
-            deleted = int(self.state.get("deleted_chunks", 0))
-            self.rowcount = deleted
+            self.rowcount = int(self.state.get("deleted_chunks", 0))
             return
 
         if q.startswith("DELETE FROM sync_runs"):
-            deleted = int(self.state.get("deleted_runs", 0))
-            self.rowcount = deleted
+            self.rowcount = int(self.state.get("deleted_runs", 0))
             return
 
-        if "SELECT sr.status, sr.job_type" in q and "ORDER BY COALESCE" in q:
+        if "SELECT sr.status, sr.job_type" in q and "LIMIT 1" in q:
             account_id = str(params[0])
             self._fetchone = self.state.get("latest_by_account", {}).get(account_id)
             return
 
-        if "SELECT MAX(sr.finished_at) FROM sync_runs sr" in q and "sr.status = 'done'" in q:
+        if "SELECT MAX(sr.finished_at)" in q:
             account_id = str(params[0])
-            value = self.state.get("success_at_by_account", {}).get(account_id)
-            self._fetchone = (value,)
+            self._fetchone = (self.state.get("success_at_by_account", {}).get(account_id),)
             return
 
-        if "SELECT MAX(sr.date_end) FROM sync_runs sr" in q and "sr.job_type = 'historical_backfill'" in q:
+        if "SELECT MAX(sr.date_end)" in q:
             account_id = str(params[0])
-            value = self.state.get("backfill_by_account", {}).get(account_id)
-            self._fetchone = (value,)
+            self._fetchone = (self.state.get("backfill_by_account", {}).get(account_id),)
             return
 
         if q.startswith("UPDATE agency_platform_accounts"):
             account_id = str(params[-1])
-            updated_accounts = set(self.state.setdefault("updated_accounts", set()))
-            if account_id in set(self.state.get("accounts_present", [])):
-                updated_accounts.add(account_id)
-                self.rowcount = 1
-            else:
-                self.rowcount = 0
-            self.state["updated_accounts"] = updated_accounts
+            self.state.setdefault("updated_accounts", []).append(account_id)
+            self.rowcount = 1
             return
 
         raise AssertionError(f"Unexpected query: {q}")
@@ -76,13 +75,12 @@ class _CleanupCursor:
 class _CleanupConn:
     def __init__(self, cursor):
         self._cursor = cursor
-        self.commit_calls = 0
 
     def cursor(self):
         return self._cursor
 
     def commit(self):
-        self.commit_calls += 1
+        return None
 
     def __enter__(self):
         return self
@@ -98,65 +96,89 @@ class SyncRunsStoreTikTokCleanupTests(unittest.TestCase):
         cursor = _CleanupCursor(state)
         conn = _CleanupConn(cursor)
         store._connect = lambda: conn
-        return store, state, conn
+        return store, state
 
-    def test_cleanup_deletes_superseded_runs_and_chunks_and_recomputes_metadata(self):
+    def test_same_account_same_grain_later_success_is_superseded_and_deleted(self):
         state = {
-            "superseded_rows": [("failed-1", "acc-1")],
-            "deleted_chunks": 3,
+            "failed_rows": [
+                ("f1", "tiktok_ads", "historical_backfill", "error", " 123 ", "account_daily", "2026-03-01T00:00:00+00:00"),
+            ],
+            "success_rows": [
+                ("s1", "123", "account_daily", "2026-03-02T00:00:00+00:00"),
+            ],
+            "chunk_count_rows": [("f1", 2)],
+            "deleted_chunks": 2,
             "deleted_runs": 1,
-            "accounts_present": ["acc-1"],
-            "latest_by_account": {"acc-1": ("done", "historical_backfill", "2026-03-01T00:00:00+00:00", "2026-03-01T01:00:00+00:00", None, "2026-02-28")},
-            "success_at_by_account": {"acc-1": "2026-03-01T01:00:00+00:00"},
-            "backfill_by_account": {"acc-1": "2026-02-28"},
+            "latest_by_account": {"123": ("done", "historical_backfill", "2026-03-02T00:00:00+00:00", "2026-03-02T01:00:00+00:00", None)},
+            "success_at_by_account": {"123": "2026-03-02T01:00:00+00:00"},
+            "backfill_by_account": {"123": "2026-03-01"},
         }
-        store, state_ref, _ = self._build_store(state)
+        store, state_ref = self._build_store(state)
 
-        result = store.cleanup_superseded_tiktok_failed_runs()
+        result = store.cleanup_superseded_tiktok_failed_runs(dry_run=False)
 
         self.assertEqual(result["superseded_run_count"], 1)
         self.assertEqual(result["deleted_runs"], 1)
-        self.assertEqual(result["deleted_chunks"], 3)
-        self.assertEqual(result["affected_account_ids"], ["acc-1"])
-        self.assertIn("acc-1", state_ref.get("updated_accounts", set()))
-        self.assertEqual(result["metadata_updates"][0]["last_run_status"], "done")
-        self.assertIsNone(result["metadata_updates"][0]["last_error"])
+        self.assertEqual(result["deleted_chunks"], 2)
+        self.assertEqual(result["superseded_runs"][0]["job_id"], "f1")
+        self.assertEqual(result["superseded_runs"][0]["account_id"], "123")
+        self.assertEqual(result["metadata_updates"][0]["account_id"], "123")
+        self.assertEqual(state_ref.get("updated_accounts"), ["123"])
 
-    def test_cleanup_keeps_runs_when_no_superseded_failure_exists(self):
+    def test_same_account_but_grain_mismatch_not_deleted(self):
         state = {
-            "superseded_rows": [],
-            "deleted_chunks": 0,
-            "deleted_runs": 0,
+            "failed_rows": [
+                ("f2", "tiktok_ads", "historical_backfill", "error", "123", "ad_group_daily", "2026-03-01T00:00:00+00:00"),
+            ],
+            "success_rows": [
+                ("s2", "123", "account_daily", "2026-03-02T00:00:00+00:00"),
+            ],
+            "chunk_count_rows": [("f2", 1)],
         }
-        store, _, _ = self._build_store(state)
-
-        result = store.cleanup_superseded_tiktok_failed_runs(account_ids=["acc-no-success"])
-
-        self.assertEqual(result["superseded_run_count"], 0)
-        self.assertEqual(result["deleted_runs"], 0)
-        self.assertEqual(result["deleted_chunks"], 0)
-        self.assertEqual(result["affected_account_ids"], [])
-        self.assertEqual(result["metadata_updates"], [])
-
-    def test_cleanup_dry_run_recomputes_metadata_without_deletion(self):
-        state = {
-            "superseded_rows": [("failed-2", "acc-2")],
-            "deleted_chunks": 99,
-            "deleted_runs": 99,
-            "accounts_present": ["acc-2"],
-            "latest_by_account": {"acc-2": ("error", "historical_backfill", "2026-01-01T00:00:00+00:00", "2026-01-01T01:00:00+00:00", "boom", "2026-01-01")},
-            "success_at_by_account": {"acc-2": None},
-            "backfill_by_account": {"acc-2": None},
-        }
-        store, _, _ = self._build_store(state)
+        store, _ = self._build_store(state)
 
         result = store.cleanup_superseded_tiktok_failed_runs(dry_run=True)
 
-        self.assertTrue(result["dry_run"])
-        self.assertEqual(result["superseded_run_count"], 1)
-        self.assertEqual(result["deleted_runs"], 0)
-        self.assertEqual(result["deleted_chunks"], 0)
-        self.assertEqual(result["metadata_updates"][0]["last_error"], "boom")
+        self.assertEqual(result["superseded_run_count"], 0)
+        self.assertEqual(result["non_superseded_run_count"], 1)
+        self.assertEqual(result["non_superseded_runs"][0]["reason"], "grain_mismatch")
+
+    def test_no_later_success_not_deleted(self):
+        state = {
+            "failed_rows": [
+                ("f3", "tiktok_ads", "historical_backfill", "error", "123", "account_daily", "2026-03-03T00:00:00+00:00"),
+            ],
+            "success_rows": [
+                ("s3", "123", "account_daily", "2026-03-01T00:00:00+00:00"),
+            ],
+            "chunk_count_rows": [("f3", 1)],
+        }
+        store, _ = self._build_store(state)
+
+        result = store.cleanup_superseded_tiktok_failed_runs(dry_run=True)
+
+        self.assertEqual(result["superseded_run_count"], 0)
+        self.assertEqual(result["non_superseded_runs"][0]["reason"], "no_later_success_found")
+
+    def test_dry_run_includes_explicit_non_match_reasons_and_filtered_out(self):
+        state = {
+            "failed_rows": [
+                ("f4", "tiktok_ads", "historical_backfill", "error", " ", "account_daily", "2026-03-01T00:00:00+00:00"),
+                ("f5", "google_ads", "historical_backfill", "error", "123", "account_daily", "2026-03-01T00:00:00+00:00"),
+                ("f6", "tiktok_ads", "rolling_refresh", "error", "123", "account_daily", "2026-03-01T00:00:00+00:00"),
+            ],
+            "success_rows": [],
+            "chunk_count_rows": [],
+        }
+        store, _ = self._build_store(state)
+
+        result = store.cleanup_superseded_tiktok_failed_runs(dry_run=True)
+
+        self.assertEqual(result["non_superseded_run_count"], 1)
+        self.assertIn("account_id_mismatch", result["non_superseded_runs"][0]["reason"])
+        self.assertEqual(result["filtered_out_run_count"], 2)
+        self.assertIn("wrong_platform", result["non_match_reason_counts"])
+        self.assertIn("wrong_job_type", result["non_match_reason_counts"])
 
 
 if __name__ == "__main__":

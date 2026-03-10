@@ -1666,6 +1666,44 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.assertEqual(payload["deleted_runs"], 2)
         self.assertEqual(captured, {"account_ids": ["123"], "dry_run": False})
 
+    def test_tiktok_cleanup_endpoint_dry_run_surfaces_non_match_reasons(self):
+        headers = self._auth_headers()
+
+        def _cleanup(*, account_ids=None, dry_run: bool = False):
+            return {
+                "status": "ok",
+                "platform": "tiktok_ads",
+                "dry_run": bool(dry_run),
+                "superseded_run_count": 0,
+                "superseded_runs": [],
+                "superseded_job_ids": [],
+                "affected_account_ids": [],
+                "deleted_runs": 0,
+                "deleted_chunks": 0,
+                "non_superseded_run_count": 1,
+                "non_superseded_runs": [{"job_id": "f-1", "reason": "no_later_success_found"}],
+                "filtered_out_run_count": 1,
+                "filtered_out_runs": [{"job_id": "f-2", "reason": "wrong_job_type"}],
+                "non_match_reason_counts": {"no_later_success_found": 1, "wrong_job_type": 1},
+                "metadata_updates": [],
+            }
+
+        original_cleanup = sync_orchestration.sync_runs_store.cleanup_superseded_tiktok_failed_runs
+        sync_orchestration.sync_runs_store.cleanup_superseded_tiktok_failed_runs = _cleanup
+        try:
+            response = self.client.post(
+                "/agency/sync-runs/tiktok/cleanup-superseded-failed-historical",
+                headers=headers,
+                json={"dry_run": True, "account_ids": ["123"]},
+            )
+        finally:
+            sync_orchestration.sync_runs_store.cleanup_superseded_tiktok_failed_runs = original_cleanup
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["non_superseded_runs"][0]["reason"], "no_later_success_found")
+        self.assertEqual(payload["filtered_out_runs"][0]["reason"], "wrong_job_type")
+
 
 if __name__ == "__main__":
     unittest.main()

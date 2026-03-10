@@ -2983,3 +2983,25 @@
 - Wired automatic cleanup after successful TikTok historical chunk finalization in worker, with exception guard so cleanup failures do not fail the sync job itself.
 - Added backend tests for store cleanup semantics, endpoint wiring, and worker auto-cleanup invocation.
 - Verification: `pytest -q apps/backend/tests/test_sync_runs_store_tiktok_cleanup.py apps/backend/tests/test_sync_orchestration_api.py apps/backend/tests/test_sync_worker.py apps/backend/tests/test_clients_platform_account_mappings.py`.
+
+---
+
+# TODO — TikTok cleanup matcher hardening + dry-run diagnostics clarity
+
+- [x] Attempt workspace sync before edits and record git topology blocker if tracking remote is unavailable.
+- [x] Audit current cleanup matcher rule and identify fragility in account_id/grain/time matching.
+- [x] Harden cleanup matcher normalization and matching diagnostics for superseded eligibility.
+- [x] Expand dry-run payload with explicit deletion targets and non-match reasons.
+- [x] Keep exec-mode deletion scope safe (TikTok historical failed superseded only) and preserve metadata recompute.
+- [x] Add backend tests for matcher normalization, grain mismatch/no-success non-delete, diagnostics reasons, and metadata reconciliation.
+- [x] Run targeted backend tests for cleanup store + endpoint + worker interactions.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Workspace update was attempted first (`git pull --rebase`) and blocked because branch `work` has no tracking remote configured.
+- Previous matcher fragility: SQL-only candidate selection gave limited explainability for non-matches and depended on raw account/grain values in matching logic.
+- Hardened cleanup matcher now normalizes account ids (`trim`) and grains (`lower + default account_daily`) consistently for failed and successful historical TikTok runs before superseded evaluation.
+- Dry-run now returns explicit `superseded_runs` and `non_superseded_runs` with reasons (`matched_later_success_same_account_grain`, `no_later_success_found`, `grain_mismatch`, `account_id_mismatch`, optional missing-chunks marker), plus `filtered_out_runs` reasons (`wrong_platform`, `wrong_job_type`) and aggregated `non_match_reason_counts`.
+- Exec mode still deletes only superseded TikTok historical failed runs and related chunks, then recomputes operational metadata for affected TikTok accounts.
+- Verification: `pytest -q apps/backend/tests/test_sync_runs_store_tiktok_cleanup.py apps/backend/tests/test_sync_orchestration_api.py apps/backend/tests/test_sync_worker.py`.
