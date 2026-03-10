@@ -2737,3 +2737,249 @@
 - Access token remains in `Access-Token` header; query string contains reporting params only (`advertiser_id`, `report_type`, `data_level`, `dimensions`, `metrics`, `start_date`, `end_date`, `page`, `page_size`).
 - Added tests for GET method/query serialization/header, shared helper reuse across all 4 grains, and a 405 regression guard (non-GET fails in mock).
 - Verification: `pytest -q apps/backend/tests/test_tiktok_*` and `pytest -q apps/backend/tests/test_config.py apps/backend/tests/test_services.py::ServiceTests::test_tiktok_ads_sync_provider_access_denied_on_probe`.
+
+---
+
+# TODO — Sync remote origin and fetch/pull from GitHub
+
+- [x] Run provided `git remote add ... || git remote set-url ...` command exactly as requested.
+- [x] Run `git fetch origin`.
+- [x] Run `git pull origin main --allow-unrelated-histories`.
+
+## Review
+- [x] Executed all requested git connectivity/sync commands in terminal and captured outputs.
+
+---
+
+# TODO — TikTok reporting schema fix per grain (metrics/dimensions validity)
+
+- [x] Audit current TikTok reporting request schema for all grains (`account_daily`, `campaign_daily`, `ad_group_daily`, `ad_daily`).
+- [x] Introduce a centralized per-grain reporting schema helper and wire all grain fetchers to it.
+- [x] Remove invalid metric(s) for `account_daily` (notably `conversion_value`) while keeping safe internal fallback mapping.
+- [x] Reduce dimensions to TikTok accepted limit (<=4) for `ad_group_daily` and `ad_daily`, preferring ID-based dimensions.
+- [x] Add/adjust backend tests for per-grain request schema, conversion fallback, dimension limits, helper usage, and structural validity regressions.
+- [x] Run targeted backend TikTok tests and capture outcomes.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Centralized TikTok reporting request schema by grain via `_report_schema_for_grain(...)` and routed all 4 grain fetchers through it.
+- `account_daily` request metrics no longer include `conversion_value`; conversion value persistence continues via `_extract_conversion_value(...)` fallback keys (e.g. `total_purchase_value`).
+- `ad_group_daily` dimensions reduced to 4 (`stat_time_day`, `adgroup_id`, `campaign_id`, `campaign_name`) and `ad_daily` dimensions reduced to 4 (`stat_time_day`, `ad_id`, `adgroup_id`, `campaign_id`).
+- Added regression tests for per-grain schema constraints, account conversion fallback, and structural payload validity against known provider errors.
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py` and `pytest -q apps/backend/tests/test_tiktok_* apps/backend/tests/test_services.py::ServiceTests::test_tiktok_ads_sync_real_account_daily_single_account`.
+
+---
+
+# TODO — TikTok reporting schema fix pasul 2 (dimension compatibility per data_level)
+
+- [x] Audit current TikTok per-grain schema/request payload for campaign/ad_group/ad against runtime errors.
+- [x] Adjust centralized `_report_schema_for_grain(...)` so each grain only uses dimensions compatible with its `data_level`.
+- [x] Keep `account_daily` schema unchanged and valid.
+- [x] Ensure entity name/hierarchy fields use safe fallback from payload metadata/snapshot/item fallback (not forced via invalid dimensions).
+- [x] Add/update backend tests for invalid dimension regression patterns and per-grain schema assertions.
+- [x] Run targeted backend TikTok tests and document results.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Updated per-grain TikTok dimensions to strict data_level-compatible sets: campaign (`stat_time_day`,`campaign_id`), ad_group (`stat_time_day`,`adgroup_id`), ad (`stat_time_day`,`ad_id`), while preserving account_daily unchanged.
+- Kept entity name hierarchy handling safe by retaining existing item/dimensions fallback extraction without forcing unsupported provider-side dimensions.
+- Added tests to assert runtime-invalid dimensions are excluded per grain and to regress known production error messages.
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py` and `pytest -q apps/backend/tests/test_tiktok_* apps/backend/tests/test_services.py::ServiceTests::test_tiktok_ads_sync_real_account_daily_single_account`.
+
+---
+
+# TODO — TikTok reporting schema fix pasul 3 (remove conversion_value for campaign/ad_group/ad)
+
+- [x] Audit current TikTok per-grain metrics and confirm where `conversion_value` is still sent provider-side.
+- [x] Update centralized TikTok reporting schema helper to remove `conversion_value` from `campaign_daily`, `ad_group_daily`, and `ad_daily` only.
+- [x] Keep `account_daily` request schema unchanged and valid.
+- [x] Preserve internal conversion value field via safe fallback extraction from allowed metrics.
+- [x] Add/update backend tests for per-grain metric exclusions and runtime error regression (`Invalid metric fields: ['conversion_value']`).
+- [x] Run targeted backend TikTok tests and document results.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Removed provider-side `conversion_value` metric from `campaign_daily`, `ad_group_daily`, and `ad_daily` schemas while leaving `account_daily` unchanged.
+- Kept internal `conversion_value` pipeline intact via `_extract_conversion_value(...)` fallback from allowed keys (e.g. `total_purchase_value`).
+- Added tests to assert no remaining grain requests `conversion_value` and to regress real provider error payload (`Invalid metric fields: ['conversion_value']`).
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py` and `pytest -q apps/backend/tests/test_tiktok_* apps/backend/tests/test_services.py::ServiceTests::test_tiktok_ads_sync_real_account_daily_single_account`.
+
+---
+
+# TODO — TikTok zero-row observability + stale recent-error suppression after success
+
+- [x] Audit TikTok sync success path for row counters and where run/chunk metadata can safely carry provider vs mapped/write counts.
+- [x] Add TikTok reporting observability fields for provider rows downloaded, mapped rows, and zero-row markers (provider empty vs parsed-but-zero-mapped).
+- [x] Propagate observability to sync chunk metadata so detail logs can show rows_downloaded vs rows_written.
+- [x] Suppress stale TikTok recent error in accounts payload when latest relevant run is successful and no active sync.
+- [x] Expose rows_downloaded/provider_row_count in detail UI run/chunk logs with minimal UI change.
+- [x] Add/update backend/frontend tests and run targeted test suites.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- TikTok sync now records per-fetch observability (`provider_row_count`/`rows_downloaded`, `rows_mapped`, skip counters, safe sample keys) and surfaces zero-row markers for both provider-empty and parsed-but-zero-mapped scenarios.
+- Sync worker now writes TikTok observability into chunk metadata on success (`rows_downloaded`, `provider_row_count`, `rows_mapped`, `zero_row_observability`) so detail logs can distinguish no-data vs mapping gaps.
+- Clients TikTok listing now suppresses stale recent error payload when latest run is successful (`done/success/completed`), there is no active sync, and `last_success_at` is present.
+- Detail UI now displays `rows downloaded` vs `rows written` (and mapped) in run summary + chunk logs for TikTok with minimal no-redesign changes.
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py apps/backend/tests/test_clients_platform_account_mappings.py apps/backend/tests/test_sync_worker.py`, `pytest -q apps/backend/tests/test_account_sync_metadata_contract.py apps/backend/tests/test_clients_platform_account_mappings.py`, `pnpm --dir apps/frontend test src/app/agency-accounts/[platform]/[accountId]/page.platform-parity.test.tsx`, `pnpm --dir apps/frontend build`.
+
+- Successful TikTok runs now suppress stale per-run error fields in sync-run API serialization, preventing false `Category: run failed` display on `done` runs.
+- Added explicit empty-success handling in worker finalization for TikTok historical: when chunk observability shows `rows_downloaded=0` and `rows_mapped=0`, we keep run `done` but do not advance `backfill_completed_through`.
+- Detail UI now shows neutral no-data diagnostics for successful TikTok runs (`provider_returned_empty_list` / `response_parsed_but_zero_rows_mapped`) instead of failure category messaging.
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py apps/backend/tests/test_clients_platform_account_mappings.py apps/backend/tests/test_sync_worker.py`, `APP_AUTH_SECRET=test-auth-secret pytest -q apps/backend/tests/test_sync_orchestration_meta_ids.py apps/backend/tests/test_account_sync_metadata_contract.py`, `pnpm --dir apps/frontend test src/app/agency-accounts/[platform]/[accountId]/page.platform-parity.test.tsx`, `pnpm --dir apps/frontend build`.
+
+---
+
+# TODO — TikTok historical 1-year cap + short chunks + empty-success coverage semantics
+
+- [x] Audit current TikTok batch orchestration for effective start date/chunk sizing and identify hooks for platform-specific clamp.
+- [x] Implement TikTok-only historical start-date cap to max(last 365 days, original sync start) without impacting other platforms.
+- [x] Enforce short TikTok historical chunk windows (max 30 days) while preserving existing chunk behavior for other platforms.
+- [x] Keep empty-success semantics: do not advance TikTok `backfill_completed_through` when done+zero downloaded/mapped, and mark no-data success explicitly in metadata.
+- [x] Ensure run/detail payload/UI derivation shows neutral no-data state (not false error and not misleading full-success coverage).
+- [x] Add/update backend/frontend tests for 1-year cap, chunk size, empty-success semantics, and non-TikTok regressions.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Batch orchestration now derives TikTok historical effective start using max(requested start, account sync_start_date, today-365d), keeping non-TikTok behavior unchanged.
+- TikTok historical chunk sizing now clamps to 30 days while preserving requested chunk size semantics for other platforms/jobs.
+- Empty-success finalization path persists explicit no-data metadata (`no_data_success`, `empty_success`, row counters, zero_row_marker) and skips coverage advancement for zero-row historical completions.
+- Added regression tests for TikTok 1-year clamp + chunk cap, non-TikTok unchanged chunk sizing, and empty-success no-data marker propagation.
+- Verification: `pytest -q apps/backend/tests/test_sync_orchestration_api.py apps/backend/tests/test_sync_worker.py`.
+
+---
+
+# TODO — TikTok deep-dive parity + zero-row diagnostics + no-data success semantics
+
+- [x] Sync workspace against latest repo state before edits (or record exact git topology blocker).
+- [x] Add explicit TikTok reporting request parity helper parameters (`report_type`, `service_type`, `query_mode`) and keep request shape testable.
+- [x] Expand reporting observability with safe request/response diagnostics (endpoint/query + keys + row markers) without leaking tokens.
+- [x] Differentiate provider empty-list vs parsed-but-zero-mapped with mapper missing-key diagnostics.
+- [x] Ensure all-zero TikTok historical outcomes are not treated as full operational success/backfill-valid completion semantics.
+- [x] Add minimal UI messaging for TikTok all-zero last-run diagnostics without redesign.
+- [x] Add/update backend + frontend tests for request parity, diagnostics differentiation, all-zero semantics, and secret safety.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Git sync attempt executed first (`git pull --rebase`) and blocked by repository topology (`work` has no tracking remote configured); continued from current up-to-date local HEAD.
+- TikTok reporting now uses explicit parity parameters through a shared helper (`report_type=BASIC`, `service_type=AUCTION`, `query_mode=REGULAR`) and stores sanitized request+response diagnostics per fetch.
+- Zero-row diagnostics now include provider-empty vs parser-zero-mapped markers plus `missing_required_breakdown` for mapper-required keys.
+- Sync run serialization now exposes `operational_status=no_data_success` for successful no-data TikTok runs; batch progress surfaces `operational_status=completed_with_no_data` when all batch runs are no-data success.
+- Agency account detail keeps minimal UI change: shows explicit `no_data_success` badge while retaining neutral no-data diagnostics messages.
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py apps/backend/tests/test_sync_orchestration_api.py apps/backend/tests/test_sync_worker.py`, `pnpm --dir apps/frontend test src/app/agency-accounts/[platform]/[accountId]/page.platform-parity.test.tsx`, `pnpm --dir apps/frontend build`.
+
+---
+
+# TODO — Fix Agency sync-run chunks 500 via JSON-safe metadata serialization
+
+- [x] Attempt workspace sync before edits and record git topology blocker if tracking remote is missing.
+- [x] Locate `GET /agency/sync-runs/{jobId}/chunks` backend path and identify exact 500 failure point.
+- [x] Implement small recursive `to_json_safe(value)` helper for dict/list/tuple/set/date/datetime/Decimal/Enum/bytes + safe fallback.
+- [x] Apply JSON-safe normalization to chunk endpoint payload (metadata + nested observability details).
+- [x] Preserve TikTok observability fields (`sample_row_keys`, `skipped_*`, `zero_row_marker`, `rows_downloaded`, `rows_mapped`, `rows_written`).
+- [x] Add backend tests for problematic types and endpoint regression (no 500 on observability-rich metadata).
+- [x] Run backend tests relevant to chunk serialization endpoint.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Workspace sync was attempted first via `git pull --rebase`; blocked because local branch has no tracking remote configured in this environment.
+- Root cause for chunks 500 was endpoint serialization bug in `_serialize_chunk`: it referenced undefined variable `is_success`, causing runtime `NameError` on Show logs path.
+- Added recursive `to_json_safe` and applied it to run/chunk metadata serialization so rich observability payloads are JSON-safe while preserving diagnostic fields.
+- Added dedicated backend tests for set/date/datetime/Decimal/Enum/bytes and endpoint-function regression coverage for observability-rich chunk metadata.
+- Verification: `pytest -q apps/backend/tests/test_sync_orchestration_json_safe.py apps/backend/tests/test_sync_orchestration_api.py`, `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py::TikTokAdsImportAccountsTests::test_sync_client_records_provider_empty_list_observability`.
+
+---
+
+# TODO — Urgent Show logs TikTok: /chunks 500 fix + observability visibility
+
+- [x] Attempt workspace update before changes and record git topology blocker if no tracking remote exists.
+- [x] Re-verify current `/agency/sync-runs/{jobId}/chunks` serialization path for NameError regression and JSON-safe metadata behavior.
+- [x] Apply minimal backend-only patch if needed so `_serialize_chunk` never references undefined vars and keeps chunk observability fields.
+- [x] Add/adjust backend tests for: endpoint no longer 500, TikTok observability fields present, and no token leak.
+- [x] Run targeted backend tests for chunks endpoint/serialization.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Workspace update was attempted first (`git pull --rebase`) and blocked by missing tracking remote configuration on branch `work`.
+- Confirmed endpoint path and runtime failure source: `/agency/sync-runs/{jobId}/chunks` used `_serialize_chunk`, where undefined `is_success` caused NameError and 500 in Show logs.
+- Kept patch minimal and backend-focused: `_serialize_chunk` now uses local `chunk_success` and JSON-safe metadata; no TikTok reporting logic changed.
+- Strengthened JSON-safe helper with secret masking for token-like keys/query params while preserving observability counters/markers in response payload.
+- Added API-level regression test that hits `/chunks`, asserts 200, validates TikTok observability fields, and verifies no token leakage in response body.
+- Verification: `pytest -q apps/backend/tests/test_sync_orchestration_json_safe.py apps/backend/tests/test_sync_orchestration_api.py`, `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py::TikTokAdsImportAccountsTests::test_sync_client_records_provider_empty_list_observability`.
+
+---
+
+# TODO — TikTok parser deep-dive: nested mapping + parser_failure semantics
+
+- [x] Attempt workspace update before edits and record git topology blocker when tracking remote is unavailable.
+- [x] Audit current TikTok fetch parser for nested `dimensions`/`metrics` handling and date extraction per grain.
+- [x] Implement row normalization helpers for dimensions/metrics map extraction across dict/list/simple shapes.
+- [x] Map per-grain fields from normalized dimensions/metrics (stat_time_day, entity ids, metrics) and reduce false skipped_invalid_date.
+- [x] Add deeper parser observability (`sample_dimension_keys`, `sample_metric_keys`, `date_source_used`, skip reasons) without secret leaks.
+- [x] Introduce parser_failure semantics distinct from no_data_success and prevent success/backfill advancement on parser_failure.
+- [x] Apply minimal API/UI status adjustments only if needed so parser_failure is not shown as clean success.
+- [x] Add/adjust tests for nested row mapping, date parsing, parser_failure vs no_data_success, backfill semantics, and no token leak.
+- [x] Run relevant backend tests (and frontend tests/build only if UI touched).
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Workspace update attempted first (`git pull --rebase`), blocked by missing tracking remote on local `work` branch.
+- TikTok parser now normalizes nested `dimensions`/`metrics` payloads from dict/list/entry-shapes and performs robust report date parsing (ISO date, datetime, `YYYYMMDD`, `...Z`).
+- Parser observability now includes `sample_dimension_keys`, `sample_metric_keys`, `date_source_used`, and `skip_reason_counts` while retaining existing row counters/zero-row markers.
+- Worker finalization now classifies `provider_row_count>0 && rows_mapped=0` as parser failure (terminal error), preventing `last_success_at` and backfill advancement; true provider-empty remains `no_data_success`.
+- Added backend tests for nested row shape mapping, parser observability/date source, parser_failure finalization semantics, and operational status serialization.
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py apps/backend/tests/test_sync_worker.py apps/backend/tests/test_sync_orchestration_api.py`.
+
+---
+
+# TODO — TikTok run summary aggregation + effective historical window UI correctness
+
+- [x] Attempt workspace sync before edits and record git topology blocker if tracking remote is unavailable.
+- [x] Audit current run-level serialization/aggregation for `rows_written`, `rows_downloaded`, `rows_mapped` and identify why TikTok run cards show 0/0 while chunks have values.
+- [x] Implement robust run-level aggregation from chunks for TikTok `rows_downloaded` and `rows_mapped` (safe with partial metadata, no double-count semantics regressions).
+- [x] Keep other platforms unaffected and preserve existing `rows_written` behavior.
+- [x] Update Agency Accounts TikTok historical text to reflect effective historical window reality (last-year cap) instead of misleading raw sync_start_date.
+- [x] Ensure Agency Account Detail run cards display run summary rows consistent with chunk logs.
+- [x] Add/update backend + frontend tests for summary aggregation and TikTok historical window text correctness.
+- [x] Run backend tests, frontend targeted tests, and frontend build.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Workspace sync was attempted first (`git pull --rebase`) and blocked because local branch `work` has no tracking remote configured.
+- Run-card 0/0 root cause: run-level metadata did not aggregate `rows_downloaded` / `rows_mapped` from chunk metadata, while UI summary reads those fields from run metadata.
+- Backend now aggregates TikTok run-level rows from chunk metadata (dedup by `chunk_index`, tolerant to missing fields) and injects totals into reconciled run metadata used by detail/list APIs.
+- Agency Accounts TikTok historical text now reflects effective capped window (`ultimul an`) instead of raw `sync_start_date`; completion banner for TikTok historical also states last-year cap.
+- Added backend API regression test for aggregated run summary rows and frontend tests for TikTok effective historical window label + completion banner text.
+- Verification: `pytest -q apps/backend/tests/test_sync_orchestration_api.py apps/backend/tests/test_tiktok_ads_import_accounts.py apps/backend/tests/test_sync_worker.py`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx src/app/agency-accounts/[platform]/[accountId]/page.platform-parity.test.tsx`, `pnpm --dir apps/frontend build`.
+
+---
+
+# TODO — TikTok historical failed-run cleanup + operational metadata reconciliation
+
+- [x] Attempt workspace sync before edits and record git topology blocker if tracking remote is unavailable.
+- [x] Implement backend cleanup for superseded TikTok historical_backfill failed runs + associated chunks (safe scope only).
+- [x] Recompute TikTok account operational metadata for affected accounts after cleanup (last run fields, success/error, backfill coverage).
+- [x] Expose a safe one-off trigger path for existing data cleanup.
+- [x] Add backend tests for cleanup deletion semantics, metadata reconciliation, and non-impact guarantees.
+- [x] Run targeted backend tests for sync cleanup and metadata behavior.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Workspace update was attempted first via `git pull --rebase`; blocked because branch `work` has no upstream tracking remote in this environment.
+- Added `cleanup_superseded_tiktok_failed_runs(...)` in `sync_runs_store` to hard-delete only superseded TikTok `historical_backfill` failed/error runs plus their chunks, scoped by same platform/account and superseded by later successful historical run (grain-aware with null fallback).
+- Added run/account metadata reconciliation for affected TikTok accounts in the same cleanup transaction (recompute `last_run_status`, `last_run_type`, `last_run_started_at`, `last_run_finished_at`, `last_success_at`, `backfill_completed_through`, `last_error`).
+- Exposed a safe one-off backend trigger endpoint `POST /agency/sync-runs/tiktok/cleanup-superseded-failed-historical` with optional `dry_run` and `account_ids` scope.
+- Wired automatic cleanup after successful TikTok historical chunk finalization in worker, with exception guard so cleanup failures do not fail the sync job itself.
+- Added backend tests for store cleanup semantics, endpoint wiring, and worker auto-cleanup invocation.
+- Verification: `pytest -q apps/backend/tests/test_sync_runs_store_tiktok_cleanup.py apps/backend/tests/test_sync_orchestration_api.py apps/backend/tests/test_sync_worker.py apps/backend/tests/test_clients_platform_account_mappings.py`.

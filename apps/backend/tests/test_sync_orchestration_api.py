@@ -1,7 +1,9 @@
 import os
 import unittest
 from unittest.mock import patch
-from datetime import date
+from datetime import date, datetime, timezone
+from decimal import Decimal
+import json
 
 try:
     from fastapi.testclient import TestClient
@@ -33,6 +35,7 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.original_get_run = sync_orchestration.sync_runs_store.get_sync_run
         self.original_repair_run = sync_orchestration.sync_runs_store.repair_historical_sync_run
         self.original_retry_failed_run = sync_orchestration.sync_runs_store.retry_failed_historical_run
+        self.original_cleanup_tiktok_runs = sync_orchestration.sync_runs_store.cleanup_superseded_tiktok_failed_runs
         self.original_create_chunk = sync_orchestration.sync_run_chunks_store.create_sync_run_chunk
         self.original_list_chunks = sync_orchestration.sync_run_chunks_store.list_sync_run_chunks
 
@@ -351,6 +354,20 @@ class SyncOrchestrationApiTests(unittest.TestCase):
                 "run": retry_run,
             }
 
+        def _cleanup_superseded_tiktok_failed_runs(*, account_ids=None, dry_run: bool = False):
+            normalized_account_ids = [str(value) for value in (account_ids or []) if str(value).strip() != ""]
+            return {
+                "status": "ok",
+                "platform": "tiktok_ads",
+                "dry_run": bool(dry_run),
+                "superseded_run_count": 0,
+                "superseded_job_ids": [],
+                "affected_account_ids": normalized_account_ids,
+                "deleted_runs": 0,
+                "deleted_chunks": 0,
+                "metadata_updates": [],
+            }
+
         sync_orchestration.client_registry_service.list_platform_accounts = _list_platform_accounts
         sync_orchestration.sync_runs_store.create_sync_run = _create_sync_run
         sync_orchestration.sync_runs_store.create_historical_sync_run_if_not_active = _create_historical_sync_run_if_not_active
@@ -361,6 +378,7 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         sync_orchestration.sync_runs_store.get_batch_progress = _get_batch_progress
         sync_orchestration.sync_runs_store.repair_historical_sync_run = _repair_historical_sync_run
         sync_orchestration.sync_runs_store.retry_failed_historical_run = _retry_failed_historical_run
+        sync_orchestration.sync_runs_store.cleanup_superseded_tiktok_failed_runs = _cleanup_superseded_tiktok_failed_runs
         sync_orchestration.sync_run_chunks_store.create_sync_run_chunk = _create_chunk
         sync_orchestration.sync_run_chunks_store.list_sync_run_chunks = _list_sync_run_chunks
 
@@ -375,6 +393,7 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         sync_orchestration.sync_runs_store.get_sync_run = self.original_get_run
         sync_orchestration.sync_runs_store.repair_historical_sync_run = self.original_repair_run
         sync_orchestration.sync_runs_store.retry_failed_historical_run = self.original_retry_failed_run
+        sync_orchestration.sync_runs_store.cleanup_superseded_tiktok_failed_runs = self.original_cleanup_tiktok_runs
         sync_orchestration.sync_run_chunks_store.create_sync_run_chunk = self.original_create_chunk
         sync_orchestration.sync_run_chunks_store.list_sync_run_chunks = self.original_list_chunks
         os.environ.clear()
@@ -468,6 +487,40 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.assertGreater(status_payload["progress"]["chunks_total"], 0)
         self.assertEqual(len(status_payload["runs"]), 1)
 
+
+
+    def test_batch_progress_marks_completed_with_no_data_when_all_runs_are_no_data_success(self):
+        headers = self._auth_headers()
+        with patch.dict(os.environ, {"FF_TIKTOK_INTEGRATION": "1"}, clear=False):
+            create_response = self.client.post(
+                "/agency/sync-runs/batch",
+                headers=headers,
+                json={
+                    "platform": "tiktok_ads",
+                    "account_ids": ["123456789"],
+                    "job_type": "historical_backfill",
+                    "start_date": str(date(2026, 2, 1)),
+                    "end_date": str(date(2026, 2, 3)),
+                    "chunk_days": 1,
+                    "grains": ["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"],
+                },
+            )
+        self.assertEqual(create_response.status_code, 200)
+        payload = create_response.json()
+        batch_id = payload["batch_id"]
+
+        for run in payload["runs"]:
+            run_id = str(run["job_id"])
+            self.state["runs"][run_id]["status"] = "done"
+            self.state["runs"][run_id]["chunks_done"] = int(self.state["runs"][run_id].get("chunks_total") or 0)
+            self.state["runs"][run_id]["metadata"] = {"no_data_success": True, "zero_row_marker": "provider_returned_empty_list"}
+
+        status_response = self.client.get(f"/agency/sync-runs/batch/{batch_id}", headers=headers)
+        self.assertEqual(status_response.status_code, 200)
+        status_payload = status_response.json()
+        self.assertEqual(status_payload["progress"]["operational_status"], "completed_with_no_data")
+        self.assertEqual(status_payload["progress"]["no_data_success_runs"], 4)
+        self.assertEqual(status_payload["runs"][0]["operational_status"], "no_data_success")
 
     def test_reconciles_stale_run_progress_from_chunks_for_batch_and_account(self):
         headers = self._auth_headers()
@@ -567,6 +620,134 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.assertEqual(run_payload_2["error_chunks"], 2)
         self.assertEqual(run_payload_2["active_chunks"], 0)
         self.assertEqual(run_payload_2["percent_complete"], 60.0)
+
+    def test_chunks_endpoint_serializes_tiktok_observability_and_masks_tokens(self):
+        headers = self._auth_headers()
+        created = self.client.post(
+            "/agency/sync-runs/batch",
+            headers=headers,
+            json={
+                "platform": "google_ads",
+                "account_ids": ["3986597205"],
+                "job_type": "manual",
+                "start_date": str(date(2026, 2, 1)),
+                "end_date": str(date(2026, 2, 2)),
+                "chunk_days": 1,
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        job_id = created.json()["runs"][0]["job_id"]
+
+        for chunk in self.state["chunks"]:
+            if chunk.get("job_id") != job_id:
+                continue
+            chunk["status"] = "done"
+            chunk["metadata"] = {
+                "rows_downloaded": Decimal("0"),
+                "provider_row_count": Decimal("0"),
+                "rows_mapped": 0,
+                "rows_written": 0,
+                "zero_row_marker": "provider_returned_empty_list",
+                "sample_row_keys": {"campaign_id", "stat_time_day"},
+                "skipped_missing_required": Decimal("3"),
+                "skipped_invalid_date": 1,
+                "endpoint": "https://business-api.tiktok.com/open_api/v1.3/report/integrated/get/?advertiser_id=1&access_token=super-secret-token",
+                "when": datetime(2026, 2, 1, 12, 0, tzinfo=timezone.utc),
+                "access_token": "super-secret-token",
+            }
+
+        chunks_response = self.client.get(f"/agency/sync-runs/{job_id}/chunks", headers=headers)
+        self.assertEqual(chunks_response.status_code, 200)
+        payload = chunks_response.json()
+        self.assertEqual(payload["job_id"], job_id)
+        self.assertGreaterEqual(len(payload["chunks"]), 1)
+
+        metadata = payload["chunks"][0]["metadata"]
+        self.assertEqual(metadata.get("zero_row_marker"), "provider_returned_empty_list")
+        self.assertEqual(metadata.get("rows_mapped"), 0)
+        self.assertEqual(metadata.get("rows_written"), 0)
+        self.assertEqual(metadata.get("rows_downloaded"), "0")
+        self.assertEqual(metadata.get("provider_row_count"), "0")
+        self.assertCountEqual(metadata.get("sample_row_keys") or [], ["campaign_id", "stat_time_day"])
+        self.assertEqual(metadata.get("skipped_missing_required"), "3")
+        self.assertEqual(metadata.get("skipped_invalid_date"), 1)
+        self.assertEqual(metadata.get("access_token"), "***")
+        self.assertNotIn("super-secret-token", json.dumps(payload))
+
+
+    def test_account_runs_serializes_operational_status_parser_failure(self):
+        headers = self._auth_headers()
+        created = self.client.post(
+            "/agency/sync-runs/batch",
+            headers=headers,
+            json={
+                "platform": "google_ads",
+                "account_ids": ["3986597205"],
+                "job_type": "manual",
+                "start_date": str(date(2026, 2, 1)),
+                "end_date": str(date(2026, 2, 2)),
+                "chunk_days": 1,
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        job_id = created.json()["runs"][0]["job_id"]
+        run = self.state["runs"][job_id]
+        run["status"] = "error"
+        run["error"] = "parser failure"
+        run["metadata"] = {"parser_failure": True}
+
+        response = self.client.get("/agency/sync-runs/accounts/google_ads/3986597205?limit=10", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        runs = response.json().get("runs") or []
+        self.assertEqual(runs[0].get("operational_status"), "parser_failure")
+
+
+    def test_tiktok_run_summary_aggregates_rows_downloaded_and_rows_mapped_from_chunks(self):
+        headers = self._auth_headers()
+        original_list_platform_accounts = sync_orchestration.client_registry_service.list_platform_accounts
+        try:
+            sync_orchestration.client_registry_service.list_platform_accounts = lambda *, platform: [
+                {"id": "123456789", "name": "TikTok A", "attached_client_id": 11}
+            ] if platform == "tiktok_ads" else original_list_platform_accounts(platform=platform)
+
+            with patch.dict(os.environ, {"FF_TIKTOK_INTEGRATION": "1"}, clear=False):
+                created = self.client.post(
+                    "/agency/sync-runs/batch",
+                    headers=headers,
+                    json={
+                        "platform": "tiktok_ads",
+                        "account_ids": ["123456789"],
+                        "job_type": "historical_backfill",
+                        "start_date": str(date(2026, 2, 1)),
+                        "end_date": str(date(2026, 2, 3)),
+                        "chunk_days": 1,
+                        "grain": "campaign_daily",
+                    },
+                )
+        finally:
+            sync_orchestration.client_registry_service.list_platform_accounts = original_list_platform_accounts
+
+        self.assertEqual(created.status_code, 200)
+        job_id = created.json()["runs"][0]["job_id"]
+        chunk_rows = [c for c in self.state["chunks"] if c.get("job_id") == job_id]
+        self.assertGreaterEqual(len(chunk_rows), 1)
+        for idx, chunk in enumerate(chunk_rows):
+            chunk["metadata"] = {
+                "rows_downloaded": idx + 2,
+                "rows_mapped": idx + 1,
+                "provider_row_count": idx + 2,
+            }
+            chunk["status"] = "done"
+
+        response = self.client.get("/agency/sync-runs/accounts/tiktok_ads/123456789?limit=10", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        runs = response.json().get("runs") or []
+        self.assertEqual(len(runs), 1)
+        metadata = runs[0].get("metadata") or {}
+        expected_downloaded = sum((idx + 2) for idx in range(len(chunk_rows)))
+        expected_mapped = sum((idx + 1) for idx in range(len(chunk_rows)))
+        self.assertEqual(int(metadata.get("rows_downloaded") or 0), expected_downloaded)
+        self.assertEqual(int(metadata.get("rows_mapped") or 0), expected_mapped)
 
     def test_account_runs_and_chunk_details_shape(self):
         headers = self._auth_headers()
@@ -909,6 +1090,74 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.assertEqual(payload["created_count"], 1)
         self.assertEqual(len(self.state["runs"]), 1)
         self.assertGreater(len(self.state["chunks"]), 0)
+
+
+    def test_batch_tiktok_historical_clamps_start_to_last_year_and_uses_short_chunks(self):
+        headers = self._auth_headers()
+        original_list_platform_accounts = sync_orchestration.client_registry_service.list_platform_accounts
+        try:
+            today = date.today()
+            older_than_year = today.replace(year=today.year - 2) if today.month != 2 or today.day != 29 else date(today.year - 2, 2, 28)
+            requested_start = older_than_year
+            requested_end = today - sync_orchestration.timedelta(days=1)
+
+            sync_orchestration.client_registry_service.list_platform_accounts = lambda *, platform: [
+                {
+                    "id": "123456789",
+                    "name": "TikTok A",
+                    "attached_client_id": 11,
+                    "sync_start_date": str(requested_start),
+                }
+            ] if platform == "tiktok_ads" else original_list_platform_accounts(platform=platform)
+
+            with patch.dict(os.environ, {"FF_TIKTOK_INTEGRATION": "1"}, clear=False):
+                response = self.client.post(
+                    "/agency/sync-runs/batch",
+                    headers=headers,
+                    json={
+                        "platform": "tiktok_ads",
+                        "account_ids": ["123456789"],
+                        "job_type": "historical_backfill",
+                        "start_date": str(requested_start),
+                        "end_date": str(requested_end),
+                        "chunk_days": 31,
+                    },
+                )
+        finally:
+            sync_orchestration.client_registry_service.list_platform_accounts = original_list_platform_accounts
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get("chunk_days"), 30)
+        expected_floor = date.today() - sync_orchestration.timedelta(days=365)
+        run = payload["runs"][0]
+        self.assertEqual(run["account_id"], "123456789")
+        self.assertGreaterEqual(date.fromisoformat(str(payload["results"][0]["date_start"])), expected_floor)
+
+        chunk_rows = [c for c in self.state["chunks"] if c.get("job_id") == run["job_id"]]
+        self.assertGreater(len(chunk_rows), 0)
+        for chunk in chunk_rows:
+            start = date.fromisoformat(str(chunk["date_start"]))
+            end = date.fromisoformat(str(chunk["date_end"]))
+            self.assertLessEqual((end - start).days + 1, 30)
+
+    def test_batch_google_historical_keeps_requested_chunk_days_unaffected(self):
+        headers = self._auth_headers()
+        response = self.client.post(
+            "/agency/sync-runs/batch",
+            headers=headers,
+            json={
+                "platform": "google_ads",
+                "account_ids": ["3986597205"],
+                "job_type": "historical_backfill",
+                "start_date": str(date(2026, 1, 1)),
+                "end_date": str(date(2026, 1, 31)),
+                "chunk_days": 31,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get("chunk_days"), 31)
 
     def test_batch_tiktok_enabled_via_alias_allows_creation(self):
         headers = self._auth_headers()
@@ -1380,6 +1629,42 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         response = self.client.post("/agency/sync-runs/source-done-run/retry-failed", headers=headers)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["outcome"], "no_failed_chunks")
+
+    def test_tiktok_cleanup_endpoint_returns_store_payload(self):
+        headers = self._auth_headers()
+        captured: dict[str, object] = {}
+
+        def _cleanup(*, account_ids=None, dry_run: bool = False):
+            captured["account_ids"] = list(account_ids or [])
+            captured["dry_run"] = bool(dry_run)
+            return {
+                "status": "ok",
+                "platform": "tiktok_ads",
+                "dry_run": bool(dry_run),
+                "superseded_run_count": 2,
+                "superseded_job_ids": ["f1", "f2"],
+                "affected_account_ids": ["123"],
+                "deleted_runs": 2,
+                "deleted_chunks": 5,
+                "metadata_updates": [{"account_id": "123", "last_run_status": "done", "last_error": None}],
+            }
+
+        original_cleanup = sync_orchestration.sync_runs_store.cleanup_superseded_tiktok_failed_runs
+        sync_orchestration.sync_runs_store.cleanup_superseded_tiktok_failed_runs = _cleanup
+        try:
+            response = self.client.post(
+                "/agency/sync-runs/tiktok/cleanup-superseded-failed-historical",
+                headers=headers,
+                json={"dry_run": False, "account_ids": ["123"]},
+            )
+        finally:
+            sync_orchestration.sync_runs_store.cleanup_superseded_tiktok_failed_runs = original_cleanup
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["superseded_run_count"], 2)
+        self.assertEqual(payload["deleted_runs"], 2)
+        self.assertEqual(captured, {"account_ids": ["123"], "dry_run": False})
 
 
 if __name__ == "__main__":

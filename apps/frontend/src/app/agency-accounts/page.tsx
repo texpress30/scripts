@@ -213,6 +213,28 @@ function formatRoDate(value: string): string {
   return `${day}.${month}.${year}`;
 }
 
+
+function effectiveTikTokHistoricalStart(rawSyncStartDate: string | null | undefined): string {
+  const today = new Date();
+  const oneYearAgo = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 365);
+  let effective = toIsoDateLocal(oneYearAgo);
+  const raw = String(rawSyncStartDate ?? "").trim();
+  if (isValidIsoDate(raw) && raw > effective) {
+    effective = raw;
+  }
+  return effective;
+}
+
+function historicalStartLabelForAccount(platform: string, rawSyncStartDate: string | null | undefined): string | null {
+  const raw = String(rawSyncStartDate ?? "").trim();
+  if (platform === "tiktok_ads") {
+    const effective = effectiveTikTokHistoricalStart(raw || null);
+    return `Start istoric efectiv (ultimul an): ${effective}`;
+  }
+  if (raw === "") return null;
+  return `Start istoric: ${raw}`;
+}
+
 function accountDisplayName(account: GoogleAccount): string {
   const clean = account.display_name?.trim() || account.name?.trim();
   return clean ? clean : `Google Account ${account.id}`;
@@ -992,7 +1014,12 @@ export default function AgencyAccountsPage() {
           if (Number(payload.progress.error || 0) > 0) {
             setSyncStatusMessage(`Sync finalizat cu erori: ${payload.progress.error} conturi`);
           } else if (currentJobType === "historical_backfill" && currentHistoricalStartDate) {
-            setSyncStatusMessage(`Date istorice descarcate începând cu ${formatRoDate(currentHistoricalStartDate)}`);
+            if (currentBatchPlatform === "tiktok_ads") {
+              const effectiveStart = effectiveTikTokHistoricalStart(currentHistoricalStartDate);
+              setSyncStatusMessage(`Date istorice TikTok (ultimul an) descărcate începând cu ${formatRoDate(effectiveStart)}`);
+            } else {
+              setSyncStatusMessage(`Date istorice descarcate începând cu ${formatRoDate(currentHistoricalStartDate)}`);
+            }
           }
           void loadData();
           if (currentBatchPlatform === "meta_ads") void loadMetaAccounts();
@@ -1308,7 +1335,9 @@ export default function AgencyAccountsPage() {
                             {attached ? (
                               <>
                                 <p className="text-sm font-medium text-emerald-700">{account.attachedClientName || `#${account.attachedClientId}`}</p>
-                                {account.syncStartDate ? <p className="text-xs text-slate-500">Start istoric: {account.syncStartDate}</p> : null}
+                                {historicalStartLabelForAccount(selectedPlatform, account.syncStartDate) ? (
+                                  <p className="text-xs text-slate-500">{historicalStartLabelForAccount(selectedPlatform, account.syncStartDate)}</p>
+                                ) : null}
                               </>
                             ) : (
                               <p className="text-sm text-amber-700">Neatașat la client</p>
@@ -1564,7 +1593,9 @@ export default function AgencyAccountsPage() {
                               {attached ? (
                                 <>
                                   <p className="text-sm font-medium text-emerald-700">{account.attached_client_name}</p>
-                                  {account.sync_start_date ? <p className="text-xs text-slate-500">Start istoric: {account.sync_start_date}</p> : null}
+                                  {historicalStartLabelForAccount(selectedPlatform, account.sync_start_date) ? (
+                                    <p className="text-xs text-slate-500">{historicalStartLabelForAccount(selectedPlatform, account.sync_start_date)}</p>
+                                  ) : null}
                                   <div className="mt-1 flex flex-wrap items-center gap-2">
                                     <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
                                       {(accountsByClient.get(account.attached_client_id ?? 0) ?? []).length} conturi atribuite
