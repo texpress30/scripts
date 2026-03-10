@@ -1363,6 +1363,324 @@ class SyncRunsStore:
             )
         return payload
 
+    def _normalize_account_id_for_cleanup(self, value: object | None) -> str:
+        return str(value or "").strip()
+
+    def _normalize_grain_for_cleanup(self, value: object | None) -> str:
+        normalized = str(value or "").strip().lower()
+        return normalized if normalized != "" else "account_daily"
+
+    def _normalize_status_for_cleanup(self, value: object | None) -> str:
+        return str(value or "").strip().lower()
+
+    def _recompute_tiktok_account_operational_metadata(self, cur, *, account_id: str) -> dict[str, object]:
+        normalized_account_id = self._normalize_account_id_for_cleanup(account_id)
+        if normalized_account_id == "":
+            return {"account_id": normalized_account_id, "updated": False}
+
+        cur.execute(
+            """
+            SELECT
+                sr.status,
+                sr.job_type,
+                sr.started_at,
+                sr.finished_at,
+                sr.error
+            FROM sync_runs sr
+            WHERE sr.platform = 'tiktok_ads'
+              AND BTRIM(COALESCE(sr.account_id, '')) = %s
+            ORDER BY COALESCE(sr.finished_at, sr.updated_at, sr.started_at, sr.created_at) DESC
+            LIMIT 1
+            """,
+            (normalized_account_id,),
+        )
+        latest_row = cur.fetchone()
+
+        cur.execute(
+            """
+            SELECT MAX(sr.finished_at)
+            FROM sync_runs sr
+            WHERE sr.platform = 'tiktok_ads'
+              AND BTRIM(COALESCE(sr.account_id, '')) = %s
+              AND sr.status = 'done'
+            """,
+            (normalized_account_id,),
+        )
+        success_row = cur.fetchone()
+        last_success_at = success_row[0] if isinstance(success_row, tuple) else None
+
+        cur.execute(
+            """
+            SELECT MAX(sr.date_end)
+            FROM sync_runs sr
+            WHERE sr.platform = 'tiktok_ads'
+              AND BTRIM(COALESCE(sr.account_id, '')) = %s
+              AND sr.job_type = 'historical_backfill'
+              AND sr.status = 'done'
+            """,
+            (normalized_account_id,),
+        )
+        backfill_row = cur.fetchone()
+        backfill_completed_through = backfill_row[0] if isinstance(backfill_row, tuple) else None
+
+        last_run_status = latest_row[0] if latest_row is not None else None
+        last_run_type = latest_row[1] if latest_row is not None else None
+        last_run_started_at = latest_row[2] if latest_row is not None else None
+        last_run_finished_at = latest_row[3] if latest_row is not None else None
+        latest_error = latest_row[4] if latest_row is not None else None
+
+        normalized_status = self._normalize_status_for_cleanup(last_run_status)
+        last_error = None if normalized_status in {"done", "success", "completed"} else latest_error
+
+        cur.execute(
+            """
+            UPDATE agency_platform_accounts
+            SET
+                backfill_completed_through = %s,
+                last_success_at = %s,
+                last_error = %s,
+                last_run_status = %s,
+                last_run_type = %s,
+                last_run_started_at = %s,
+                last_run_finished_at = %s,
+                updated_at = NOW()
+            WHERE platform = 'tiktok_ads'
+              AND BTRIM(COALESCE(account_id, '')) = %s
+            """,
+            (
+                backfill_completed_through,
+                last_success_at,
+                last_error,
+                last_run_status,
+                last_run_type,
+                last_run_started_at,
+                last_run_finished_at,
+                normalized_account_id,
+            ),
+        )
+
+        return {
+            "account_id": normalized_account_id,
+            "updated": bool(cur.rowcount and cur.rowcount > 0),
+            "last_run_status": str(last_run_status) if last_run_status is not None else None,
+            "last_run_type": str(last_run_type) if last_run_type is not None else None,
+            "last_success_at": str(last_success_at) if last_success_at is not None else None,
+            "backfill_completed_through": str(backfill_completed_through) if backfill_completed_through is not None else None,
+            "last_error": str(last_error) if last_error is not None else None,
+        }
+
+    def cleanup_superseded_tiktok_failed_runs(
+        self,
+        *,
+        account_ids: list[str] | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, object]:
+        self._ensure_schema()
+
+        normalized_account_ids = [
+            self._normalize_account_id_for_cleanup(value)
+            for value in (account_ids or [])
+            if self._normalize_account_id_for_cleanup(value) != ""
+        ]
+        normalized_account_ids = list(dict.fromkeys(normalized_account_ids))
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                filter_sql = ""
+                params: list[object] = []
+                if len(normalized_account_ids) > 0:
+                    filter_sql = "AND BTRIM(COALESCE(sr.account_id, '')) = ANY(%s)"
+                    params.append(normalized_account_ids)
+
+                cur.execute(
+                    f"""
+                    SELECT
+                        sr.job_id,
+                        sr.platform,
+                        sr.job_type,
+                        sr.status,
+                        BTRIM(COALESCE(sr.account_id, '')) AS account_id_norm,
+                        COALESCE(NULLIF(BTRIM(COALESCE(sr.grain, '')), ''), 'account_daily') AS grain_norm,
+                        COALESCE(sr.finished_at, sr.updated_at, sr.started_at, sr.created_at) AS reference_ts
+                    FROM sync_runs sr
+                    WHERE sr.status IN ('error', 'failed')
+                      {filter_sql}
+                    ORDER BY COALESCE(sr.finished_at, sr.updated_at, sr.started_at, sr.created_at) ASC
+                    """,
+                    tuple(params),
+                )
+                failed_rows = cur.fetchall() or []
+
+                tiktok_historical_failed_rows: list[dict[str, object]] = []
+                filtered_out: list[dict[str, object]] = []
+                for row in failed_rows:
+                    job_id = str(row[0]) if row[0] is not None else ""
+                    platform = str(row[1]) if row[1] is not None else ""
+                    job_type = str(row[2]) if row[2] is not None else ""
+                    account_id_norm = self._normalize_account_id_for_cleanup(row[4])
+                    grain_norm = self._normalize_grain_for_cleanup(row[5])
+                    if platform != "tiktok_ads":
+                        filtered_out.append({"job_id": job_id, "account_id": account_id_norm, "grain": grain_norm, "reason": "wrong_platform"})
+                        continue
+                    if job_type != "historical_backfill":
+                        filtered_out.append({"job_id": job_id, "account_id": account_id_norm, "grain": grain_norm, "reason": "wrong_job_type"})
+                        continue
+                    tiktok_historical_failed_rows.append(
+                        {
+                            "job_id": job_id,
+                            "account_id": account_id_norm,
+                            "grain": grain_norm,
+                            "reference_ts": row[6],
+                        }
+                    )
+
+                account_scope = sorted({str(item["account_id"]) for item in tiktok_historical_failed_rows if str(item.get("account_id") or "") != ""})
+                success_by_account: dict[str, list[dict[str, object]]] = {}
+                if len(account_scope) > 0:
+                    cur.execute(
+                        """
+                        SELECT
+                            sr.job_id,
+                            BTRIM(COALESCE(sr.account_id, '')) AS account_id_norm,
+                            COALESCE(NULLIF(BTRIM(COALESCE(sr.grain, '')), ''), 'account_daily') AS grain_norm,
+                            COALESCE(sr.finished_at, sr.updated_at, sr.started_at, sr.created_at) AS reference_ts
+                        FROM sync_runs sr
+                        WHERE sr.platform = 'tiktok_ads'
+                          AND sr.job_type = 'historical_backfill'
+                          AND sr.status = 'done'
+                          AND BTRIM(COALESCE(sr.account_id, '')) = ANY(%s)
+                        ORDER BY reference_ts ASC
+                        """,
+                        (account_scope,),
+                    )
+                    for success_row in cur.fetchall() or []:
+                        account_id_norm = self._normalize_account_id_for_cleanup(success_row[1])
+                        success_by_account.setdefault(account_id_norm, []).append(
+                            {
+                                "job_id": str(success_row[0]) if success_row[0] is not None else "",
+                                "grain": self._normalize_grain_for_cleanup(success_row[2]),
+                                "reference_ts": success_row[3],
+                            }
+                        )
+
+                run_ids = [str(item["job_id"]) for item in tiktok_historical_failed_rows if str(item.get("job_id") or "") != ""]
+                chunk_counts: dict[str, int] = {}
+                if len(run_ids) > 0:
+                    cur.execute(
+                        """
+                        SELECT job_id, COUNT(*)::int
+                        FROM sync_run_chunks
+                        WHERE job_id = ANY(%s)
+                        GROUP BY job_id
+                        """,
+                        (run_ids,),
+                    )
+                    for row in cur.fetchall() or []:
+                        if row[0] is not None:
+                            chunk_counts[str(row[0])] = int(row[1] or 0)
+
+                superseded_runs: list[dict[str, object]] = []
+                non_superseded_runs: list[dict[str, object]] = []
+
+                for failed_run in tiktok_historical_failed_rows:
+                    account_id_norm = str(failed_run.get("account_id") or "")
+                    grain_norm = str(failed_run.get("grain") or "account_daily")
+                    ref_ts = failed_run.get("reference_ts")
+                    later_successes = [
+                        item
+                        for item in success_by_account.get(account_id_norm, [])
+                        if ref_ts is not None and item.get("reference_ts") is not None and item.get("reference_ts") > ref_ts
+                    ]
+                    later_successes_same_grain = [item for item in later_successes if str(item.get("grain") or "") == grain_norm]
+                    chunk_count = int(chunk_counts.get(str(failed_run.get("job_id") or ""), 0))
+
+                    if len(later_successes_same_grain) > 0:
+                        superseded_runs.append(
+                            {
+                                "job_id": str(failed_run.get("job_id") or ""),
+                                "account_id": account_id_norm,
+                                "grain": grain_norm,
+                                "matched_by_success_job_id": str(later_successes_same_grain[-1].get("job_id") or ""),
+                                "chunk_count": chunk_count,
+                                "reason": "matched_later_success_same_account_grain",
+                            }
+                        )
+                        continue
+
+                    reason = "no_later_success_found"
+                    if len(later_successes) > 0:
+                        reason = "grain_mismatch"
+                    if account_id_norm == "":
+                        reason = "account_id_mismatch"
+                    if chunk_count <= 0:
+                        reason = "already_deleted_or_missing_chunks" if reason == "no_later_success_found" else f"{reason};already_deleted_or_missing_chunks"
+
+                    non_superseded_runs.append(
+                        {
+                            "job_id": str(failed_run.get("job_id") or ""),
+                            "account_id": account_id_norm,
+                            "grain": grain_norm,
+                            "reason": reason,
+                            "later_success_count": len(later_successes),
+                            "later_success_same_grain_count": len(later_successes_same_grain),
+                            "chunk_count": chunk_count,
+                        }
+                    )
+
+                superseded_job_ids = [str(item.get("job_id") or "") for item in superseded_runs if str(item.get("job_id") or "") != ""]
+                affected_account_ids = sorted({str(item.get("account_id") or "") for item in superseded_runs if str(item.get("account_id") or "") != ""})
+
+                deleted_chunks = 0
+                deleted_runs = 0
+
+                if len(superseded_job_ids) > 0 and not dry_run:
+                    cur.execute(
+                        """
+                        DELETE FROM sync_run_chunks
+                        WHERE job_id = ANY(%s)
+                        """,
+                        (superseded_job_ids,),
+                    )
+                    deleted_chunks = int(cur.rowcount or 0)
+
+                    cur.execute(
+                        """
+                        DELETE FROM sync_runs
+                        WHERE job_id = ANY(%s)
+                        """,
+                        (superseded_job_ids,),
+                    )
+                    deleted_runs = int(cur.rowcount or 0)
+
+                metadata_updates: list[dict[str, object]] = []
+                for account_id in affected_account_ids:
+                    metadata_updates.append(self._recompute_tiktok_account_operational_metadata(cur, account_id=account_id))
+
+            conn.commit()
+
+        reason_counts: dict[str, int] = {}
+        for item in non_superseded_runs + filtered_out:
+            reason = str(item.get("reason") or "unknown")
+            reason_counts[reason] = int(reason_counts.get(reason, 0)) + 1
+
+        return {
+            "status": "ok",
+            "platform": "tiktok_ads",
+            "dry_run": bool(dry_run),
+            "superseded_run_count": len(superseded_runs),
+            "superseded_runs": superseded_runs,
+            "superseded_job_ids": superseded_job_ids,
+            "affected_account_ids": affected_account_ids,
+            "deleted_runs": deleted_runs,
+            "deleted_chunks": deleted_chunks,
+            "non_superseded_run_count": len(non_superseded_runs),
+            "non_superseded_runs": non_superseded_runs,
+            "filtered_out_run_count": len(filtered_out),
+            "filtered_out_runs": filtered_out,
+            "non_match_reason_counts": reason_counts,
+            "metadata_updates": metadata_updates,
+        }
+
     def get_batch_progress(self, batch_id: str) -> dict[str, object]:
         self._ensure_schema()
         with self._connect() as conn:
