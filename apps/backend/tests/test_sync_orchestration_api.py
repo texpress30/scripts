@@ -1,7 +1,9 @@
 import os
 import unittest
 from unittest.mock import patch
-from datetime import date
+from datetime import date, datetime, timezone
+from decimal import Decimal
+import json
 
 try:
     from fastapi.testclient import TestClient
@@ -601,6 +603,59 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.assertEqual(run_payload_2["error_chunks"], 2)
         self.assertEqual(run_payload_2["active_chunks"], 0)
         self.assertEqual(run_payload_2["percent_complete"], 60.0)
+
+    def test_chunks_endpoint_serializes_tiktok_observability_and_masks_tokens(self):
+        headers = self._auth_headers()
+        created = self.client.post(
+            "/agency/sync-runs/batch",
+            headers=headers,
+            json={
+                "platform": "google_ads",
+                "account_ids": ["3986597205"],
+                "job_type": "manual",
+                "start_date": str(date(2026, 2, 1)),
+                "end_date": str(date(2026, 2, 2)),
+                "chunk_days": 1,
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        job_id = created.json()["runs"][0]["job_id"]
+
+        for chunk in self.state["chunks"]:
+            if chunk.get("job_id") != job_id:
+                continue
+            chunk["status"] = "done"
+            chunk["metadata"] = {
+                "rows_downloaded": Decimal("0"),
+                "provider_row_count": Decimal("0"),
+                "rows_mapped": 0,
+                "rows_written": 0,
+                "zero_row_marker": "provider_returned_empty_list",
+                "sample_row_keys": {"campaign_id", "stat_time_day"},
+                "skipped_missing_required": Decimal("3"),
+                "skipped_invalid_date": 1,
+                "endpoint": "https://business-api.tiktok.com/open_api/v1.3/report/integrated/get/?advertiser_id=1&access_token=super-secret-token",
+                "when": datetime(2026, 2, 1, 12, 0, tzinfo=timezone.utc),
+                "access_token": "super-secret-token",
+            }
+
+        chunks_response = self.client.get(f"/agency/sync-runs/{job_id}/chunks", headers=headers)
+        self.assertEqual(chunks_response.status_code, 200)
+        payload = chunks_response.json()
+        self.assertEqual(payload["job_id"], job_id)
+        self.assertGreaterEqual(len(payload["chunks"]), 1)
+
+        metadata = payload["chunks"][0]["metadata"]
+        self.assertEqual(metadata.get("zero_row_marker"), "provider_returned_empty_list")
+        self.assertEqual(metadata.get("rows_mapped"), 0)
+        self.assertEqual(metadata.get("rows_written"), 0)
+        self.assertEqual(metadata.get("rows_downloaded"), "0")
+        self.assertEqual(metadata.get("provider_row_count"), "0")
+        self.assertCountEqual(metadata.get("sample_row_keys") or [], ["campaign_id", "stat_time_day"])
+        self.assertEqual(metadata.get("skipped_missing_required"), "3")
+        self.assertEqual(metadata.get("skipped_invalid_date"), 1)
+        self.assertEqual(metadata.get("access_token"), "***")
+        self.assertNotIn("super-secret-token", json.dumps(payload))
 
     def test_account_runs_and_chunk_details_shape(self):
         headers = self._auth_headers()

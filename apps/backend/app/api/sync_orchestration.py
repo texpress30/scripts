@@ -9,6 +9,7 @@ import logging
 import os
 from typing import Literal
 from uuid import uuid4
+from urllib import parse
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -233,8 +234,42 @@ _MAX_TIKTOK_HISTORICAL_DAYS = 365
 _MAX_TIKTOK_HISTORICAL_CHUNK_DAYS = 30
 
 
+_SENSITIVE_TOKEN_PARTS = ("token", "secret", "password", "authorization", "api_key", "apikey", "refresh_token")
+
+
+def _is_sensitive_key(value: object) -> bool:
+    key = str(value or "").strip().lower()
+    if key == "":
+        return False
+    return any(part in key for part in _SENSITIVE_TOKEN_PARTS)
+
+
+def _sanitize_string_for_secrets(value: str) -> str:
+    raw = str(value or "")
+    if raw == "":
+        return ""
+    try:
+        parsed_url = parse.urlsplit(raw)
+        if parsed_url.scheme == "" and parsed_url.netloc == "" and parsed_url.query == "":
+            return raw
+        query_pairs = parse.parse_qsl(parsed_url.query, keep_blank_values=True)
+        if len(query_pairs) <= 0:
+            return raw
+        sanitized_pairs: list[tuple[str, str]] = []
+        for key, item in query_pairs:
+            sanitized_pairs.append((key, "***" if _is_sensitive_key(key) else item))
+        return parse.urlunsplit((parsed_url.scheme, parsed_url.netloc, parsed_url.path, parse.urlencode(sanitized_pairs), parsed_url.fragment))
+    except Exception:
+        return raw
+
+
+
 def to_json_safe(value: object) -> object:
-    if value is None or isinstance(value, (str, int, float, bool)):
+    if value is None:
+        return value
+    if isinstance(value, str):
+        return _sanitize_string_for_secrets(value)
+    if isinstance(value, (int, float, bool)):
         return value
     if isinstance(value, Decimal):
         return str(value)
@@ -250,7 +285,8 @@ def to_json_safe(value: object) -> object:
     if isinstance(value, dict):
         normalized: dict[str, object] = {}
         for key, item in value.items():
-            normalized[str(key)] = to_json_safe(item)
+            normalized_key = str(key)
+            normalized[normalized_key] = "***" if _is_sensitive_key(normalized_key) else to_json_safe(item)
         return normalized
     if isinstance(value, (list, tuple, set)):
         return [to_json_safe(item) for item in value]

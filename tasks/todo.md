@@ -2894,3 +2894,23 @@
 - Added recursive `to_json_safe` and applied it to run/chunk metadata serialization so rich observability payloads are JSON-safe while preserving diagnostic fields.
 - Added dedicated backend tests for set/date/datetime/Decimal/Enum/bytes and endpoint-function regression coverage for observability-rich chunk metadata.
 - Verification: `pytest -q apps/backend/tests/test_sync_orchestration_json_safe.py apps/backend/tests/test_sync_orchestration_api.py`, `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py::TikTokAdsImportAccountsTests::test_sync_client_records_provider_empty_list_observability`.
+
+---
+
+# TODO — Urgent Show logs TikTok: /chunks 500 fix + observability visibility
+
+- [x] Attempt workspace update before changes and record git topology blocker if no tracking remote exists.
+- [x] Re-verify current `/agency/sync-runs/{jobId}/chunks` serialization path for NameError regression and JSON-safe metadata behavior.
+- [x] Apply minimal backend-only patch if needed so `_serialize_chunk` never references undefined vars and keeps chunk observability fields.
+- [x] Add/adjust backend tests for: endpoint no longer 500, TikTok observability fields present, and no token leak.
+- [x] Run targeted backend tests for chunks endpoint/serialization.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Workspace update was attempted first (`git pull --rebase`) and blocked by missing tracking remote configuration on branch `work`.
+- Confirmed endpoint path and runtime failure source: `/agency/sync-runs/{jobId}/chunks` used `_serialize_chunk`, where undefined `is_success` caused NameError and 500 in Show logs.
+- Kept patch minimal and backend-focused: `_serialize_chunk` now uses local `chunk_success` and JSON-safe metadata; no TikTok reporting logic changed.
+- Strengthened JSON-safe helper with secret masking for token-like keys/query params while preserving observability counters/markers in response payload.
+- Added API-level regression test that hits `/chunks`, asserts 200, validates TikTok observability fields, and verifies no token leakage in response body.
+- Verification: `pytest -q apps/backend/tests/test_sync_orchestration_json_safe.py apps/backend/tests/test_sync_orchestration_api.py`, `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py::TikTokAdsImportAccountsTests::test_sync_client_records_provider_empty_list_observability`.

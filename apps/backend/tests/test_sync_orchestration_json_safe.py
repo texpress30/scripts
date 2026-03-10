@@ -23,6 +23,8 @@ class SyncOrchestrationJsonSafeTests(unittest.TestCase):
             "marker": SampleEnum.DIAGNOSTIC,
             "binary": b"abc",
             "nested": {"raw": {1, 2, 3}},
+            "endpoint": "https://example.test/path?access_token=secret-token&ok=1",
+            "access_token": "secret-token",
         }
 
         result = sync_orchestration.to_json_safe(payload)
@@ -35,6 +37,8 @@ class SyncOrchestrationJsonSafeTests(unittest.TestCase):
         self.assertEqual(result["marker"], "diagnostic")
         self.assertEqual(result["binary"], "abc")
         self.assertCountEqual(result["nested"]["raw"], [1, 2, 3])
+        self.assertEqual(result["access_token"], "***")
+        self.assertNotIn("secret-token", result["endpoint"])
 
     def test_serialize_chunk_keeps_observability_fields_json_safe(self):
         chunk = {
@@ -71,6 +75,20 @@ class SyncOrchestrationJsonSafeTests(unittest.TestCase):
         self.assertCountEqual(metadata["sample_row_keys"], ["stat_time_day", "campaign_id"])
         self.assertEqual(metadata["skipped_missing_required"], "2")
         self.assertEqual(metadata["skipped_invalid_date"], 1)
+
+    def test_to_json_safe_masks_sensitive_keys_and_url_query_tokens(self):
+        payload = {
+            "refresh_token": "abcd",
+            "nested": {"api_key": "xyz"},
+            "url": "https://test.local/report?token=abcd&page=1",
+        }
+
+        result = sync_orchestration.to_json_safe(payload)
+
+        self.assertEqual(result["refresh_token"], "***")
+        self.assertEqual(result["nested"]["api_key"], "***")
+        self.assertNotIn("abcd", result["url"])
+        self.assertIn("page=1", result["url"])
 
     def test_list_sync_run_chunks_endpoint_function_returns_json_safe_payload(self):
         chunk = {

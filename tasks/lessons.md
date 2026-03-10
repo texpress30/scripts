@@ -245,3 +245,4 @@
 - 2026-03-10: Pentru run cards/detail logs, nu reda mesaje de eroare pentru statusuri `done/success/completed`; stale error metadata trebuie suprimată la serializare/derivare UI ca să eviți `Category: run failed` fals.
 - 2026-03-10: După feedback pe TikTok all-zero runs, tratează explicit `no_data_success` ca status operațional separat (backend + UI badge) și livrează diagnostic request-parity complet (`report_type`/`service_type`/`query_mode`) înainte de închidere.
 - 2026-03-10: Pentru endpoint-uri de logs/diagnostics, validează explicit serializarea runtime pe payloaduri observability-rich și evită variabile nedefinite în serializer (ex. `is_success` în `_serialize_chunk`) prin teste dedicate endpoint/helper.
+- 2026-03-10: După feedback repetat pe Show logs, include neapărat un test API end-to-end pentru endpointul afectat (`/agency/sync-runs/{jobId}/chunks`) cu metadata observability reală + assertions anti-token-leak, nu doar teste pe helper intern.
