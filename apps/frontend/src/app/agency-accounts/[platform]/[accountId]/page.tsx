@@ -649,6 +649,7 @@ export default function AgencyAccountDetailPage() {
                   const runMetadata = run.metadata && typeof run.metadata === "object" ? run.metadata : null;
                   const runRowsDownloaded = runMetadata ? Number((runMetadata as Record<string, unknown>).rows_downloaded ?? (runMetadata as Record<string, unknown>).provider_row_count ?? 0) : 0;
                   const runRowsMapped = runMetadata ? Number((runMetadata as Record<string, unknown>).rows_mapped ?? 0) : 0;
+                  const runZeroMarker = runMetadata ? String((runMetadata as Record<string, unknown>).zero_row_marker ?? "").trim() : "";
 
                   return (
                     <article key={run.job_id} className="rounded-md border border-slate-200">
@@ -687,6 +688,16 @@ export default function AgencyAccountDetailPage() {
                         const summary = String((run as { last_error_summary?: unknown }).last_error_summary ?? "").trim();
                         const details = (run as { last_error_details?: unknown }).last_error_details;
                         const category = String((run as { last_error_category?: unknown }).last_error_category ?? (details && typeof details === "object" ? (details as { error_category?: unknown }).error_category : "") ?? "").trim();
+                        const failed = isRunFailure(run.status);
+                        if (platform === "tiktok_ads" && !failed) {
+                          if (runRowsDownloaded === 0 && runRowsMapped === 0 && runZeroMarker === "provider_returned_empty_list") {
+                            return <p className="px-3 pb-2 text-xs text-amber-700">TikTok nu a returnat date pentru acest interval.</p>;
+                          }
+                          if (runRowsDownloaded > 0 && runRowsMapped === 0 && runZeroMarker === "response_parsed_but_zero_rows_mapped") {
+                            return <p className="px-3 pb-2 text-xs text-amber-700">TikTok a returnat răspuns, dar nu s-au mapat rânduri pentru persistare.</p>;
+                          }
+                          return null;
+                        }
                         if (platform === "tiktok_ads") {
                           const fallback = summary || String(run.error ?? "").trim() || (details && typeof details === "object" ? String((details as { provider_error_message?: unknown }).provider_error_message ?? "").trim() : "") || "run failed";
                           const presentation = getTikTokErrorPresentation(category, fallback);
@@ -700,6 +711,7 @@ export default function AgencyAccountDetailPage() {
                             </>
                           );
                         }
+                        if (!failed) return null;
                         return (
                           <>
                             {summary ? <p className="px-3 pb-2 text-xs text-red-600">Summary: {summary}</p> : null}

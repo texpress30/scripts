@@ -63,6 +63,28 @@ def _resolve_successful_coverage_end(*, job_id: str, fallback_date_end: date) ->
     return max(successful_ends)
 
 
+def _is_tiktok_empty_success_run(*, job_id: str) -> bool:
+    try:
+        chunks = sync_run_chunks_store.list_sync_run_chunks(job_id)
+    except Exception:
+        return False
+    if len(chunks) <= 0:
+        return False
+
+    has_success_chunk = False
+    for chunk in chunks:
+        status = str(chunk.get("status") or "").strip().lower()
+        if status in {"done", "success", "completed"}:
+            has_success_chunk = True
+        metadata = chunk.get("metadata") if isinstance(chunk.get("metadata"), dict) else {}
+        rows_downloaded = int(metadata.get("rows_downloaded") or metadata.get("provider_row_count") or 0)
+        rows_mapped = int(metadata.get("rows_mapped") or 0)
+        if rows_downloaded > 0 or rows_mapped > 0:
+            return False
+
+    return has_success_chunk
+
+
 def _finalize_run_if_complete(run: dict[str, object]) -> None:
     job_id = str(run.get("job_id") or "")
     counts = sync_run_chunks_store.get_sync_run_chunk_status_counts(job_id)
@@ -114,10 +136,17 @@ def _finalize_run_if_complete(run: dict[str, object]) -> None:
                 "last_run_id": job_id,
             }
             if job_type == "historical_backfill":
-                metadata_kwargs["backfill_completed_through"] = _resolve_successful_coverage_end(
-                    job_id=job_id,
-                    fallback_date_end=run_date_end,
-                )
+                if platform == "tiktok_ads" and _is_tiktok_empty_success_run(job_id=job_id):
+                    logger.info(
+                        "sync_worker.tiktok_empty_success_no_coverage_advance job_id=%s account_id=%s",
+                        job_id,
+                        account_id,
+                    )
+                else:
+                    metadata_kwargs["backfill_completed_through"] = _resolve_successful_coverage_end(
+                        job_id=job_id,
+                        fallback_date_end=run_date_end,
+                    )
             else:
                 metadata_kwargs["rolling_synced_through"] = run_date_end
             client_registry_service.update_platform_account_operational_metadata(**metadata_kwargs)

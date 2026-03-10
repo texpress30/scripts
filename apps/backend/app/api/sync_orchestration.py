@@ -293,6 +293,10 @@ def _summarize_batch_from_runs(runs: list[dict[str, object]]) -> dict[str, objec
         "percent": percent,
     }
 
+def _is_success_status(value: object | None) -> bool:
+    return str(value or "").strip().lower() in {"done", "success", "completed"}
+
+
 def _serialize_run(item: dict[str, object]) -> dict[str, object]:
     metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
     trigger_source = metadata.get("trigger_source") or metadata.get("source") or "manual"
@@ -300,9 +304,13 @@ def _serialize_run(item: dict[str, object]) -> dict[str, object]:
         trigger_source = "manual"
     elif str(trigger_source) in {"rolling_scheduler", "cron"}:
         trigger_source = "cron"
-    last_error_summary = metadata.get("last_error_summary") or item.get("error")
-    last_error_details = metadata.get("last_error_details") if isinstance(metadata.get("last_error_details"), dict) else None
-    last_error_category = str((last_error_details or {}).get("error_category") or "").strip() or None
+    run_status = str(item.get("status") or "").strip().lower()
+    is_success = _is_success_status(run_status)
+    raw_last_error_summary = metadata.get("last_error_summary") or item.get("error")
+    raw_last_error_details = metadata.get("last_error_details") if isinstance(metadata.get("last_error_details"), dict) else None
+    last_error_summary = None if is_success else raw_last_error_summary
+    last_error_details = None if is_success else raw_last_error_details
+    last_error_category = None if is_success else (str((last_error_details or {}).get("error_category") or "").strip() or None)
 
     return {
         "job_id": item.get("job_id"),
@@ -322,7 +330,7 @@ def _serialize_run(item: dict[str, object]) -> dict[str, object]:
         "error_chunks": item.get("error_chunks"),
         "active_chunks": item.get("active_chunks"),
         "percent_complete": item.get("percent_complete"),
-        "error": item.get("error"),
+        "error": None if is_success else item.get("error"),
         "last_error_summary": last_error_summary,
         "last_error_details": last_error_details,
         "last_error_category": last_error_category,
@@ -350,7 +358,7 @@ def _serialize_chunk(item: dict[str, object]) -> dict[str, object]:
         "finished_at": item.get("finished_at"),
         "created_at": item.get("created_at"),
         "updated_at": item.get("updated_at"),
-        "error": item.get("error"),
+        "error": None if is_success else item.get("error"),
         "metadata": item.get("metadata") or {},
     }
 

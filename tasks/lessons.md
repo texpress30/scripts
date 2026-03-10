@@ -242,3 +242,4 @@
 - 2026-03-10: Pentru TikTok report/integrated/get, validează strict compatibilitatea `data_level` + `dimensions` din erorile runtime reale; evită dimensiuni descriptive (nume/ierarhii) în request dacă providerul le respinge.
 - 2026-03-10: Pentru TikTok reporting pe mai multe iterații, verifică explicit la fiecare grain atât dimensions cât și metrics (nu doar una din axe), pe baza ultimelor erori runtime observate.
 - 2026-03-10: Pentru sync-uri provider cu `rows_written=0`, instrumentează separat `rows_downloaded/provider_row_count` și marker semantic (provider empty vs parsed-but-zero-mapped) în metadata de chunk/run, altfel UI nu poate distinge no-data de bug de mapping.
+- 2026-03-10: Pentru run cards/detail logs, nu reda mesaje de eroare pentru statusuri `done/success/completed`; stale error metadata trebuie suprimată la serializare/derivare UI ca să eviți `Category: run failed` fals.

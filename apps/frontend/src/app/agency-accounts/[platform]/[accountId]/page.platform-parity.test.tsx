@@ -115,7 +115,8 @@ describe("Agency Account detail Meta/TikTok parity", () => {
               chunks_total: 1,
               chunks_done: 1,
               rows_written: 0,
-              metadata: { rows_downloaded: 3, rows_mapped: 0 },
+              metadata: { rows_downloaded: 3, rows_mapped: 0, zero_row_marker: "response_parsed_but_zero_rows_mapped" },
+              last_error_summary: "run failed",
               created_at: "2026-03-09T09:00:00Z",
             },
           ],
@@ -142,6 +143,8 @@ describe("Agency Account detail Meta/TikTok parity", () => {
 
     render(<AgencyAccountDetailPage />);
     expect(await screen.findByText(/Rows downloaded: 3 · rows mapped: 0/i)).toBeInTheDocument();
+    expect(await screen.findByText(/TikTok a returnat răspuns, dar nu s-au mapat rânduri pentru persistare/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Category:\s*run failed/i)).not.toBeInTheDocument();
     fireEvent.click(await screen.findByText("Show logs"));
     expect(await screen.findByText(/Rows downloaded: 3 · Rows mapped: 0/i)).toBeInTheDocument();
   });
