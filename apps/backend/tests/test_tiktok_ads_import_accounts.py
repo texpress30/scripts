@@ -250,6 +250,92 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
 
         self.assertEqual(calls, ["AUCTION_ADVERTISER", "AUCTION_CAMPAIGN", "AUCTION_ADGROUP", "AUCTION_AD"])
 
+    def test_reporting_schema_per_grain_respects_metric_and_dimension_constraints(self):
+        service = TikTokAdsService()
+
+        account_schema = service._report_schema_for_grain("account_daily")
+        campaign_schema = service._report_schema_for_grain("campaign_daily")
+        ad_group_schema = service._report_schema_for_grain("ad_group_daily")
+        ad_schema = service._report_schema_for_grain("ad_daily")
+
+        self.assertEqual(account_schema.data_level, "AUCTION_ADVERTISER")
+        self.assertNotIn("conversion_value", account_schema.metrics)
+        self.assertLessEqual(len(ad_group_schema.dimensions), 4)
+        self.assertLessEqual(len(ad_schema.dimensions), 4)
+        self.assertEqual(campaign_schema.data_level, "AUCTION_CAMPAIGN")
+
+    def test_reporting_fetchers_generate_structurally_valid_requests_for_known_tiktok_errors(self):
+        service = TikTokAdsService()
+
+        def _fake_http_json(*, method: str, url: str, payload=None, headers=None):
+            self.assertEqual(method, "GET")
+            self.assertIsNone(payload)
+            self.assertEqual(headers, {"Access-Token": "tok"})
+            parsed_url = urlparse.urlsplit(str(url))
+            params = urlparse.parse_qs(parsed_url.query)
+            dimensions = json.loads(str(params.get("dimensions", ["[]"])[0]))
+            metrics = json.loads(str(params.get("metrics", ["[]"])[0]))
+            data_level = str(params.get("data_level", [""])[0])
+
+            if data_level == "AUCTION_ADVERTISER" and "conversion_value" in metrics:
+                return {"code": 40010, "message": "Invalid metric fields: ['conversion_value']"}
+            if len(dimensions) < 1 or len(dimensions) > 4:
+                return {"code": 40011, "message": "dimensions: Length must be between 1 and 4"}
+            return {"code": 0, "data": {"list": []}}
+
+        original_http = service._http_json
+        try:
+            service._http_json = _fake_http_json
+            start = date(2026, 3, 1)
+            end = date(2026, 3, 1)
+            service._fetch_account_daily_metrics(account_id="401", access_token="tok", start_date=start, end_date=end)
+            service._fetch_campaign_daily_metrics(account_id="401", access_token="tok", start_date=start, end_date=end)
+            service._fetch_ad_group_daily_metrics(account_id="401", access_token="tok", start_date=start, end_date=end)
+            service._fetch_ad_daily_metrics(account_id="401", access_token="tok", start_date=start, end_date=end)
+        finally:
+            service._http_json = original_http
+
+    def test_account_daily_conversion_value_uses_safe_fallback_without_conversion_value_metric(self):
+        service = TikTokAdsService()
+
+        def _fake_http_json(*, method: str, url: str, payload=None, headers=None):
+            parsed_url = urlparse.urlsplit(str(url))
+            params = urlparse.parse_qs(parsed_url.query)
+            metrics = json.loads(str(params.get("metrics", ["[]"])[0]))
+            self.assertNotIn("conversion_value", metrics)
+            return {
+                "code": 0,
+                "data": {
+                    "list": [
+                        {
+                            "dimensions": {"stat_time_day": "2026-03-01"},
+                            "metrics": {
+                                "spend": "12.5",
+                                "impressions": "100",
+                                "clicks": "6",
+                                "conversion": "1",
+                                "total_purchase_value": "44.2",
+                            },
+                        }
+                    ]
+                },
+            }
+
+        original_http = service._http_json
+        try:
+            service._http_json = _fake_http_json
+            rows = service._fetch_account_daily_metrics(
+                account_id="401",
+                access_token="tok",
+                start_date=date(2026, 3, 1),
+                end_date=date(2026, 3, 1),
+            )
+        finally:
+            service._http_json = original_http
+
+        self.assertEqual(len(rows), 1)
+        self.assertAlmostEqual(rows[0].conversion_value, 44.2)
+
     def test_reporting_request_shape_avoids_405_method_mismatch(self):
         service = TikTokAdsService()
 
