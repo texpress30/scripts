@@ -63,6 +63,101 @@ def _resolve_successful_coverage_end(*, job_id: str, fallback_date_end: date) ->
     return max(successful_ends)
 
 
+def _is_tiktok_empty_success_run(*, job_id: str) -> bool:
+    try:
+        chunks = sync_run_chunks_store.list_sync_run_chunks(job_id)
+    except Exception:
+        return False
+    if len(chunks) <= 0:
+        return False
+
+    has_success_chunk = False
+    for chunk in chunks:
+        status = str(chunk.get("status") or "").strip().lower()
+        if status in {"done", "success", "completed"}:
+            has_success_chunk = True
+        metadata = chunk.get("metadata") if isinstance(chunk.get("metadata"), dict) else {}
+        rows_downloaded = int(metadata.get("rows_downloaded") or metadata.get("provider_row_count") or 0)
+        rows_mapped = int(metadata.get("rows_mapped") or 0)
+        if rows_downloaded > 0 or rows_mapped > 0:
+            return False
+
+    return has_success_chunk
+
+
+def _tiktok_empty_success_summary(*, job_id: str) -> dict[str, object]:
+    try:
+        chunks = sync_run_chunks_store.list_sync_run_chunks(job_id)
+    except Exception:
+        return {"is_empty_success": False, "rows_downloaded": 0, "rows_mapped": 0, "zero_row_marker": None}
+
+    rows_downloaded = 0
+    rows_mapped = 0
+    zero_row_marker = None
+    has_success_chunk = False
+    for chunk in chunks:
+        status = str(chunk.get("status") or "").strip().lower()
+        if status in {"done", "success", "completed"}:
+            has_success_chunk = True
+        metadata = chunk.get("metadata") if isinstance(chunk.get("metadata"), dict) else {}
+        rows_downloaded += int(metadata.get("rows_downloaded") or metadata.get("provider_row_count") or 0)
+        rows_mapped += int(metadata.get("rows_mapped") or 0)
+        if zero_row_marker is None:
+            marker_candidate = str(metadata.get("zero_row_marker") or "").strip()
+            if marker_candidate != "":
+                zero_row_marker = marker_candidate
+            else:
+                nested = metadata.get("zero_row_observability")
+                if isinstance(nested, list) and len(nested) > 0 and isinstance(nested[0], dict):
+                    nested_marker = str((nested[0] or {}).get("zero_row_marker") or "").strip()
+                    if nested_marker != "":
+                        zero_row_marker = nested_marker
+
+    return {
+        "is_empty_success": bool(has_success_chunk and rows_downloaded == 0 and rows_mapped == 0),
+        "rows_downloaded": int(rows_downloaded),
+        "rows_mapped": int(rows_mapped),
+        "zero_row_marker": zero_row_marker,
+    }
+
+
+
+
+def _tiktok_parser_failure_summary(*, job_id: str) -> dict[str, object]:
+    try:
+        chunks = sync_run_chunks_store.list_sync_run_chunks(job_id)
+    except Exception:
+        return {"is_parser_failure": False, "rows_downloaded": 0, "rows_mapped": 0, "zero_row_marker": None}
+
+    rows_downloaded = 0
+    rows_mapped = 0
+    zero_row_marker = None
+    has_success_chunk = False
+    for chunk in chunks:
+        status = str(chunk.get("status") or "").strip().lower()
+        if status in {"done", "success", "completed"}:
+            has_success_chunk = True
+        metadata = chunk.get("metadata") if isinstance(chunk.get("metadata"), dict) else {}
+        rows_downloaded += int(metadata.get("rows_downloaded") or metadata.get("provider_row_count") or 0)
+        rows_mapped += int(metadata.get("rows_mapped") or 0)
+        if zero_row_marker is None:
+            marker_candidate = str(metadata.get("zero_row_marker") or "").strip()
+            if marker_candidate != "":
+                zero_row_marker = marker_candidate
+            else:
+                nested = metadata.get("zero_row_observability")
+                if isinstance(nested, list) and len(nested) > 0 and isinstance(nested[0], dict):
+                    nested_marker = str((nested[0] or {}).get("zero_row_marker") or "").strip()
+                    if nested_marker != "":
+                        zero_row_marker = nested_marker
+
+    return {
+        "is_parser_failure": bool(has_success_chunk and rows_downloaded > 0 and rows_mapped == 0),
+        "rows_downloaded": int(rows_downloaded),
+        "rows_mapped": int(rows_mapped),
+        "zero_row_marker": zero_row_marker,
+    }
+
 def _finalize_run_if_complete(run: dict[str, object]) -> None:
     job_id = str(run.get("job_id") or "")
     counts = sync_run_chunks_store.get_sync_run_chunk_status_counts(job_id)
@@ -99,6 +194,47 @@ def _finalize_run_if_complete(run: dict[str, object]) -> None:
                 last_run_id=job_id,
             )
     else:
+        if platform == "tiktok_ads":
+            parser_failure_summary = _tiktok_parser_failure_summary(job_id=job_id)
+            if bool(parser_failure_summary.get("is_parser_failure")):
+                parser_error = "parser_failure: provider returned rows but none were mapped"
+                metadata = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
+                metadata_patch = dict(metadata)
+                metadata_patch["parser_failure"] = True
+                metadata_patch["mapping_failure"] = True
+                metadata_patch["rows_downloaded"] = int(parser_failure_summary.get("rows_downloaded") or 0)
+                metadata_patch["rows_mapped"] = int(parser_failure_summary.get("rows_mapped") or 0)
+                metadata_patch["zero_row_marker"] = parser_failure_summary.get("zero_row_marker")
+                metadata_patch["last_error_summary"] = parser_error
+                metadata_patch["last_error_details"] = {
+                    "error_category": "parser_failure",
+                    "provider_row_count": int(parser_failure_summary.get("rows_downloaded") or 0),
+                    "rows_mapped": int(parser_failure_summary.get("rows_mapped") or 0),
+                    "zero_row_marker": parser_failure_summary.get("zero_row_marker"),
+                }
+                sync_runs_store.update_sync_run_status(
+                    job_id=job_id,
+                    status="error",
+                    mark_finished=True,
+                    error=parser_error,
+                    metadata=metadata_patch,
+                )
+                if account_id != "":
+                    client_registry_service.update_platform_account_operational_metadata(
+                        platform=platform,
+                        account_id=account_id,
+                        last_synced_at=now_utc,
+                        last_error=parser_error,
+                        last_run_id=job_id,
+                    )
+                logger.warning(
+                    "sync_worker.tiktok_parser_failure job_id=%s account_id=%s rows_downloaded=%s",
+                    job_id,
+                    account_id,
+                    parser_failure_summary.get("rows_downloaded"),
+                )
+                return
+
         sync_runs_store.update_sync_run_status(
             job_id=job_id,
             status="done",
@@ -113,14 +249,40 @@ def _finalize_run_if_complete(run: dict[str, object]) -> None:
                 "last_error": None,
                 "last_run_id": job_id,
             }
+            status_metadata_patch: dict[str, object] = {}
             if job_type == "historical_backfill":
-                metadata_kwargs["backfill_completed_through"] = _resolve_successful_coverage_end(
-                    job_id=job_id,
-                    fallback_date_end=run_date_end,
-                )
+                if platform == "tiktok_ads":
+                    empty_summary = _tiktok_empty_success_summary(job_id=job_id)
+                    if bool(empty_summary.get("is_empty_success")):
+                        status_metadata_patch["no_data_success"] = True
+                        status_metadata_patch["empty_success"] = True
+                        status_metadata_patch["rows_downloaded"] = int(empty_summary.get("rows_downloaded") or 0)
+                        status_metadata_patch["rows_mapped"] = int(empty_summary.get("rows_mapped") or 0)
+                        status_metadata_patch["zero_row_marker"] = empty_summary.get("zero_row_marker")
+                        logger.info(
+                            "sync_worker.tiktok_empty_success_no_coverage_advance job_id=%s account_id=%s",
+                            job_id,
+                            account_id,
+                        )
+                    else:
+                        metadata_kwargs["backfill_completed_through"] = _resolve_successful_coverage_end(
+                            job_id=job_id,
+                            fallback_date_end=run_date_end,
+                        )
+                else:
+                    metadata_kwargs["backfill_completed_through"] = _resolve_successful_coverage_end(
+                        job_id=job_id,
+                        fallback_date_end=run_date_end,
+                    )
             else:
                 metadata_kwargs["rolling_synced_through"] = run_date_end
             client_registry_service.update_platform_account_operational_metadata(**metadata_kwargs)
+            if len(status_metadata_patch) > 0:
+                sync_runs_store.update_sync_run_status(
+                    job_id=job_id,
+                    status="done",
+                    metadata=status_metadata_patch,
+                )
             if platform == "google_ads" and run_grain in ("campaign_daily", "ad_group_daily", "ad_daily", "keyword_daily"):
                 with sync_runs_store._connect() as conn:
                     reconcile_platform_account_watermarks(
@@ -188,6 +350,7 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
 
     started = time.monotonic()
     rows_written = 0
+    success_metadata: dict[str, object] = {"grain": grain}
     chunk_error: str | None = None
     chunk_error_details: dict[str, object] | None = None
     platform = str(run.get("platform") or "").strip().lower()
@@ -225,6 +388,16 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
                 account_id=account_id,
             )
             rows_written = int(snapshot.get("rows_written") or 0)
+            success_metadata.update(
+                {
+                    "rows_downloaded": int(snapshot.get("rows_downloaded") or 0),
+                    "provider_row_count": int(snapshot.get("provider_row_count") or 0),
+                    "rows_mapped": int(snapshot.get("rows_mapped") or 0),
+                }
+            )
+            zero_row_observability = snapshot.get("zero_row_observability")
+            if isinstance(zero_row_observability, list):
+                success_metadata["zero_row_observability"] = sanitize_payload(zero_row_observability)
         elif platform != "google_ads":
             raise RuntimeError(f"unsupported platform '{platform}'")
         elif grain == "campaign_daily":
@@ -505,7 +678,7 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
             job_id=job_id,
             chunk_index=chunk_index,
             status="done",
-            metadata={"grain": grain},
+            metadata=success_metadata,
             rows_written=rows_written,
             duration_ms=duration_ms,
             mark_finished=True,
