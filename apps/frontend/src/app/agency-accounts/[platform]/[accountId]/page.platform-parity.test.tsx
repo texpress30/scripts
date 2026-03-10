@@ -97,6 +97,58 @@ describe("Agency Account detail Meta/TikTok parity", () => {
     expect(screen.getByText(/Sync runs/)).toBeInTheDocument();
   });
 
+  it("shows TikTok rows downloaded vs rows written in run and chunk logs", async () => {
+    paramsState.platform = "tiktok_ads";
+    paramsState.accountId = "tt_1";
+
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients/accounts/tiktok_ads") {
+        return Promise.resolve({ items: [{ id: "tt_1", name: "TikTok One", platform: "tiktok_ads", client_name: "Client B" }] });
+      }
+      if (path.includes("/accounts/tiktok_ads/tt_1")) {
+        return Promise.resolve({
+          runs: [
+            {
+              job_id: "tt-run-1",
+              job_type: "historical_backfill",
+              status: "done",
+              chunks_total: 1,
+              chunks_done: 1,
+              rows_written: 0,
+              metadata: { rows_downloaded: 3, rows_mapped: 0, zero_row_marker: "response_parsed_but_zero_rows_mapped" },
+              last_error_summary: "run failed",
+              created_at: "2026-03-09T09:00:00Z",
+            },
+          ],
+        });
+      }
+      if (path.includes("/agency/sync-runs/tt-run-1/chunks")) {
+        return Promise.resolve({
+          chunks: [
+            {
+              chunk_index: 0,
+              status: "done",
+              rows_written: 0,
+              metadata: {
+                rows_downloaded: 3,
+                rows_mapped: 0,
+                zero_row_observability: [{ zero_row_marker: "response_parsed_but_zero_rows_mapped" }],
+              },
+            },
+          ],
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountDetailPage />);
+    expect(await screen.findByText(/Rows downloaded: 3 · rows mapped: 0/i)).toBeInTheDocument();
+    expect(await screen.findByText(/TikTok a returnat răspuns, dar nu s-au mapat rânduri pentru persistare/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Category:\s*run failed/i)).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByText("Show logs"));
+    expect(await screen.findByText(/Rows downloaded: 3 · Rows mapped: 0/i)).toBeInTheDocument();
+  });
+
   it("shows disabled TikTok sync banner when platform sync_enabled is false", async () => {
     paramsState.platform = "tiktok_ads";
     paramsState.accountId = "tt_1";
