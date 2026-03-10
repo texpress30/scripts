@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
+from enum import Enum
+import base64
 from time import perf_counter
 import logging
 import os
@@ -230,6 +233,31 @@ _MAX_TIKTOK_HISTORICAL_DAYS = 365
 _MAX_TIKTOK_HISTORICAL_CHUNK_DAYS = 30
 
 
+def to_json_safe(value: object) -> object:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, Enum):
+        return to_json_safe(value.value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, bytes):
+        try:
+            return value.decode("utf-8")
+        except Exception:
+            return f"base64:{base64.b64encode(value).decode('ascii')}"
+    if isinstance(value, dict):
+        normalized: dict[str, object] = {}
+        for key, item in value.items():
+            normalized[str(key)] = to_json_safe(item)
+        return normalized
+    if isinstance(value, (list, tuple, set)):
+        return [to_json_safe(item) for item in value]
+    return str(value)
+
+
+
 def _normalize_status(value: object, default: str = "queued") -> str:
     normalized = str(value or default).strip().lower()
     return normalized if normalized != "" else default
@@ -341,7 +369,7 @@ def _is_success_status(value: object | None) -> bool:
 
 
 def _serialize_run(item: dict[str, object]) -> dict[str, object]:
-    metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+    metadata = to_json_safe(item.get("metadata") if isinstance(item.get("metadata"), dict) else {})
     trigger_source = metadata.get("trigger_source") or metadata.get("source") or "manual"
     if str(trigger_source) in {"agency_batch", "manual"}:
         trigger_source = "manual"
@@ -350,7 +378,7 @@ def _serialize_run(item: dict[str, object]) -> dict[str, object]:
     run_status = str(item.get("status") or "").strip().lower()
     is_success = _is_success_status(run_status)
     raw_last_error_summary = metadata.get("last_error_summary") or item.get("error")
-    raw_last_error_details = metadata.get("last_error_details") if isinstance(metadata.get("last_error_details"), dict) else None
+    raw_last_error_details = metadata.get("last_error_details") if isinstance(metadata, dict) and isinstance(metadata.get("last_error_details"), dict) else None
     last_error_summary = None if is_success else raw_last_error_summary
     last_error_details = None if is_success else raw_last_error_details
     last_error_category = None if is_success else (str((last_error_details or {}).get("error_category") or "").strip() or None)
@@ -389,6 +417,9 @@ def _serialize_run(item: dict[str, object]) -> dict[str, object]:
 
 
 def _serialize_chunk(item: dict[str, object]) -> dict[str, object]:
+    chunk_status = str(item.get("status") or "").strip().lower()
+    chunk_success = chunk_status in {"done", "success", "completed"}
+    metadata = to_json_safe(item.get("metadata") or {})
     return {
         "id": item.get("id"),
         "job_id": item.get("job_id"),
@@ -403,8 +434,8 @@ def _serialize_chunk(item: dict[str, object]) -> dict[str, object]:
         "finished_at": item.get("finished_at"),
         "created_at": item.get("created_at"),
         "updated_at": item.get("updated_at"),
-        "error": None if is_success else item.get("error"),
-        "metadata": item.get("metadata") or {},
+        "error": None if chunk_success else item.get("error"),
+        "metadata": metadata if isinstance(metadata, dict) else {},
     }
 
 

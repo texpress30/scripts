@@ -2873,3 +2873,24 @@
 - Sync run serialization now exposes `operational_status=no_data_success` for successful no-data TikTok runs; batch progress surfaces `operational_status=completed_with_no_data` when all batch runs are no-data success.
 - Agency account detail keeps minimal UI change: shows explicit `no_data_success` badge while retaining neutral no-data diagnostics messages.
 - Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py apps/backend/tests/test_sync_orchestration_api.py apps/backend/tests/test_sync_worker.py`, `pnpm --dir apps/frontend test src/app/agency-accounts/[platform]/[accountId]/page.platform-parity.test.tsx`, `pnpm --dir apps/frontend build`.
+
+---
+
+# TODO — Fix Agency sync-run chunks 500 via JSON-safe metadata serialization
+
+- [x] Attempt workspace sync before edits and record git topology blocker if tracking remote is missing.
+- [x] Locate `GET /agency/sync-runs/{jobId}/chunks` backend path and identify exact 500 failure point.
+- [x] Implement small recursive `to_json_safe(value)` helper for dict/list/tuple/set/date/datetime/Decimal/Enum/bytes + safe fallback.
+- [x] Apply JSON-safe normalization to chunk endpoint payload (metadata + nested observability details).
+- [x] Preserve TikTok observability fields (`sample_row_keys`, `skipped_*`, `zero_row_marker`, `rows_downloaded`, `rows_mapped`, `rows_written`).
+- [x] Add backend tests for problematic types and endpoint regression (no 500 on observability-rich metadata).
+- [x] Run backend tests relevant to chunk serialization endpoint.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Workspace sync was attempted first via `git pull --rebase`; blocked because local branch has no tracking remote configured in this environment.
+- Root cause for chunks 500 was endpoint serialization bug in `_serialize_chunk`: it referenced undefined variable `is_success`, causing runtime `NameError` on Show logs path.
+- Added recursive `to_json_safe` and applied it to run/chunk metadata serialization so rich observability payloads are JSON-safe while preserving diagnostic fields.
+- Added dedicated backend tests for set/date/datetime/Decimal/Enum/bytes and endpoint-function regression coverage for observability-rich chunk metadata.
+- Verification: `pytest -q apps/backend/tests/test_sync_orchestration_json_safe.py apps/backend/tests/test_sync_orchestration_api.py`, `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py::TikTokAdsImportAccountsTests::test_sync_client_records_provider_empty_list_observability`.
