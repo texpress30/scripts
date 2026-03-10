@@ -897,6 +897,8 @@ class SyncWorkerTests(unittest.TestCase):
 
         def _update_chunk_status(**kwargs):
             state["chunk"]["status"] = kwargs["status"]
+            if kwargs.get("metadata") is not None:
+                state["chunk"]["metadata"] = kwargs.get("metadata") or {}
             if kwargs.get("error") is not None:
                 state["chunk"]["error"] = kwargs["error"]
             if kwargs.get("rows_written") is not None:
@@ -970,6 +972,8 @@ class SyncWorkerTests(unittest.TestCase):
 
         def _update_chunk_status(**kwargs):
             state["chunk"]["status"] = kwargs["status"]
+            if kwargs.get("metadata") is not None:
+                state["chunk"]["metadata"] = kwargs.get("metadata") or {}
             if kwargs.get("error") is not None:
                 state["chunk"]["error"] = kwargs["error"]
             if kwargs.get("rows_written") is not None:
@@ -1003,7 +1007,16 @@ class SyncWorkerTests(unittest.TestCase):
         ), patch.object(
             sync_worker.tiktok_ads_service,
             "sync_client",
-            return_value={"rows_written": 5, "grain": "ad_daily", "accounts_processed": 1, "token_source": "database"},
+            return_value={
+                "rows_written": 5,
+                "rows_downloaded": 12,
+                "provider_row_count": 12,
+                "rows_mapped": 5,
+                "zero_row_observability": [{"zero_row_marker": "provider_returned_empty_list", "account_id": "3986597205"}],
+                "grain": "ad_daily",
+                "accounts_processed": 1,
+                "token_source": "database",
+            },
         ) as tiktok_sync_mock:
             processed = sync_worker.process_next_chunk()
 
@@ -1012,6 +1025,9 @@ class SyncWorkerTests(unittest.TestCase):
         self.assertEqual(state["chunk"]["rows_written"], 5)
         self.assertEqual(state["run"]["status"], "done")
         self.assertEqual(state["run"]["rows_written"], 5)
+        self.assertEqual((state["chunk"].get("metadata") or {}).get("rows_downloaded"), 12)
+        self.assertEqual((state["chunk"].get("metadata") or {}).get("provider_row_count"), 12)
+        self.assertEqual((state["chunk"].get("metadata") or {}).get("rows_mapped"), 5)
         self.assertEqual(tiktok_sync_mock.call_count, 1)
         self.assertEqual(tiktok_sync_mock.call_args.kwargs["grain"], "ad_daily")
         self.assertEqual(tiktok_sync_mock.call_args.kwargs["account_id"], "3986597205")

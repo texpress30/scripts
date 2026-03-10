@@ -188,6 +188,7 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
 
     started = time.monotonic()
     rows_written = 0
+    success_metadata: dict[str, object] = {"grain": grain}
     chunk_error: str | None = None
     chunk_error_details: dict[str, object] | None = None
     platform = str(run.get("platform") or "").strip().lower()
@@ -225,6 +226,16 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
                 account_id=account_id,
             )
             rows_written = int(snapshot.get("rows_written") or 0)
+            success_metadata.update(
+                {
+                    "rows_downloaded": int(snapshot.get("rows_downloaded") or 0),
+                    "provider_row_count": int(snapshot.get("provider_row_count") or 0),
+                    "rows_mapped": int(snapshot.get("rows_mapped") or 0),
+                }
+            )
+            zero_row_observability = snapshot.get("zero_row_observability")
+            if isinstance(zero_row_observability, list):
+                success_metadata["zero_row_observability"] = sanitize_payload(zero_row_observability)
         elif platform != "google_ads":
             raise RuntimeError(f"unsupported platform '{platform}'")
         elif grain == "campaign_daily":
@@ -505,7 +516,7 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
             job_id=job_id,
             chunk_index=chunk_index,
             status="done",
-            metadata={"grain": grain},
+            metadata=success_metadata,
             rows_written=rows_written,
             duration_ms=duration_ms,
             mark_finished=True,

@@ -2737,3 +2737,92 @@
 - Access token remains in `Access-Token` header; query string contains reporting params only (`advertiser_id`, `report_type`, `data_level`, `dimensions`, `metrics`, `start_date`, `end_date`, `page`, `page_size`).
 - Added tests for GET method/query serialization/header, shared helper reuse across all 4 grains, and a 405 regression guard (non-GET fails in mock).
 - Verification: `pytest -q apps/backend/tests/test_tiktok_*` and `pytest -q apps/backend/tests/test_config.py apps/backend/tests/test_services.py::ServiceTests::test_tiktok_ads_sync_provider_access_denied_on_probe`.
+
+---
+
+# TODO — Sync remote origin and fetch/pull from GitHub
+
+- [x] Run provided `git remote add ... || git remote set-url ...` command exactly as requested.
+- [x] Run `git fetch origin`.
+- [x] Run `git pull origin main --allow-unrelated-histories`.
+
+## Review
+- [x] Executed all requested git connectivity/sync commands in terminal and captured outputs.
+
+---
+
+# TODO — TikTok reporting schema fix per grain (metrics/dimensions validity)
+
+- [x] Audit current TikTok reporting request schema for all grains (`account_daily`, `campaign_daily`, `ad_group_daily`, `ad_daily`).
+- [x] Introduce a centralized per-grain reporting schema helper and wire all grain fetchers to it.
+- [x] Remove invalid metric(s) for `account_daily` (notably `conversion_value`) while keeping safe internal fallback mapping.
+- [x] Reduce dimensions to TikTok accepted limit (<=4) for `ad_group_daily` and `ad_daily`, preferring ID-based dimensions.
+- [x] Add/adjust backend tests for per-grain request schema, conversion fallback, dimension limits, helper usage, and structural validity regressions.
+- [x] Run targeted backend TikTok tests and capture outcomes.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Centralized TikTok reporting request schema by grain via `_report_schema_for_grain(...)` and routed all 4 grain fetchers through it.
+- `account_daily` request metrics no longer include `conversion_value`; conversion value persistence continues via `_extract_conversion_value(...)` fallback keys (e.g. `total_purchase_value`).
+- `ad_group_daily` dimensions reduced to 4 (`stat_time_day`, `adgroup_id`, `campaign_id`, `campaign_name`) and `ad_daily` dimensions reduced to 4 (`stat_time_day`, `ad_id`, `adgroup_id`, `campaign_id`).
+- Added regression tests for per-grain schema constraints, account conversion fallback, and structural payload validity against known provider errors.
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py` and `pytest -q apps/backend/tests/test_tiktok_* apps/backend/tests/test_services.py::ServiceTests::test_tiktok_ads_sync_real_account_daily_single_account`.
+
+---
+
+# TODO — TikTok reporting schema fix pasul 2 (dimension compatibility per data_level)
+
+- [x] Audit current TikTok per-grain schema/request payload for campaign/ad_group/ad against runtime errors.
+- [x] Adjust centralized `_report_schema_for_grain(...)` so each grain only uses dimensions compatible with its `data_level`.
+- [x] Keep `account_daily` schema unchanged and valid.
+- [x] Ensure entity name/hierarchy fields use safe fallback from payload metadata/snapshot/item fallback (not forced via invalid dimensions).
+- [x] Add/update backend tests for invalid dimension regression patterns and per-grain schema assertions.
+- [x] Run targeted backend TikTok tests and document results.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Updated per-grain TikTok dimensions to strict data_level-compatible sets: campaign (`stat_time_day`,`campaign_id`), ad_group (`stat_time_day`,`adgroup_id`), ad (`stat_time_day`,`ad_id`), while preserving account_daily unchanged.
+- Kept entity name hierarchy handling safe by retaining existing item/dimensions fallback extraction without forcing unsupported provider-side dimensions.
+- Added tests to assert runtime-invalid dimensions are excluded per grain and to regress known production error messages.
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py` and `pytest -q apps/backend/tests/test_tiktok_* apps/backend/tests/test_services.py::ServiceTests::test_tiktok_ads_sync_real_account_daily_single_account`.
+
+---
+
+# TODO — TikTok reporting schema fix pasul 3 (remove conversion_value for campaign/ad_group/ad)
+
+- [x] Audit current TikTok per-grain metrics and confirm where `conversion_value` is still sent provider-side.
+- [x] Update centralized TikTok reporting schema helper to remove `conversion_value` from `campaign_daily`, `ad_group_daily`, and `ad_daily` only.
+- [x] Keep `account_daily` request schema unchanged and valid.
+- [x] Preserve internal conversion value field via safe fallback extraction from allowed metrics.
+- [x] Add/update backend tests for per-grain metric exclusions and runtime error regression (`Invalid metric fields: ['conversion_value']`).
+- [x] Run targeted backend TikTok tests and document results.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Removed provider-side `conversion_value` metric from `campaign_daily`, `ad_group_daily`, and `ad_daily` schemas while leaving `account_daily` unchanged.
+- Kept internal `conversion_value` pipeline intact via `_extract_conversion_value(...)` fallback from allowed keys (e.g. `total_purchase_value`).
+- Added tests to assert no remaining grain requests `conversion_value` and to regress real provider error payload (`Invalid metric fields: ['conversion_value']`).
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py` and `pytest -q apps/backend/tests/test_tiktok_* apps/backend/tests/test_services.py::ServiceTests::test_tiktok_ads_sync_real_account_daily_single_account`.
+
+---
+
+# TODO — TikTok zero-row observability + stale recent-error suppression after success
+
+- [x] Audit TikTok sync success path for row counters and where run/chunk metadata can safely carry provider vs mapped/write counts.
+- [x] Add TikTok reporting observability fields for provider rows downloaded, mapped rows, and zero-row markers (provider empty vs parsed-but-zero-mapped).
+- [x] Propagate observability to sync chunk metadata so detail logs can show rows_downloaded vs rows_written.
+- [x] Suppress stale TikTok recent error in accounts payload when latest relevant run is successful and no active sync.
+- [x] Expose rows_downloaded/provider_row_count in detail UI run/chunk logs with minimal UI change.
+- [x] Add/update backend/frontend tests and run targeted test suites.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- TikTok sync now records per-fetch observability (`provider_row_count`/`rows_downloaded`, `rows_mapped`, skip counters, safe sample keys) and surfaces zero-row markers for both provider-empty and parsed-but-zero-mapped scenarios.
+- Sync worker now writes TikTok observability into chunk metadata on success (`rows_downloaded`, `provider_row_count`, `rows_mapped`, `zero_row_observability`) so detail logs can distinguish no-data vs mapping gaps.
+- Clients TikTok listing now suppresses stale recent error payload when latest run is successful (`done/success/completed`), there is no active sync, and `last_success_at` is present.
+- Detail UI now displays `rows downloaded` vs `rows written` (and mapped) in run summary + chunk logs for TikTok with minimal no-redesign changes.
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py apps/backend/tests/test_clients_platform_account_mappings.py apps/backend/tests/test_sync_worker.py`, `pytest -q apps/backend/tests/test_account_sync_metadata_contract.py apps/backend/tests/test_clients_platform_account_mappings.py`, `pnpm --dir apps/frontend test src/app/agency-accounts/[platform]/[accountId]/page.platform-parity.test.tsx`, `pnpm --dir apps/frontend build`.
