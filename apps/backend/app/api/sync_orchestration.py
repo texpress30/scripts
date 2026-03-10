@@ -363,7 +363,50 @@ def _reconcile_run_payload(run: dict[str, object]) -> dict[str, object]:
     summary = _summarize_run_from_chunks(run, chunks)
     payload = dict(run)
     payload.update(summary)
+
+    platform = str(payload.get("platform") or "").strip().lower()
+    if platform == "tiktok_ads":
+        existing_metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        merged_metadata = dict(existing_metadata)
+        aggregate_rows = _aggregate_tiktok_run_rows_from_chunks(chunks)
+        merged_metadata["rows_downloaded"] = int(aggregate_rows.get("rows_downloaded") or 0)
+        merged_metadata["rows_mapped"] = int(aggregate_rows.get("rows_mapped") or 0)
+        payload["metadata"] = merged_metadata
+
     return payload
+
+
+
+def _coerce_non_negative_int(value: object) -> int:
+    try:
+        return max(0, int(value or 0))
+    except Exception:
+        return 0
+
+
+def _aggregate_tiktok_run_rows_from_chunks(chunks: list[dict[str, object]]) -> dict[str, int]:
+    latest_by_chunk_index: dict[int, dict[str, object]] = {}
+    for idx, chunk in enumerate(chunks):
+        chunk_index = chunk.get("chunk_index")
+        if chunk_index is None:
+            chunk_index = idx
+        try:
+            normalized_index = int(chunk_index)
+        except Exception:
+            normalized_index = idx
+        latest_by_chunk_index[normalized_index] = chunk
+
+    rows_downloaded = 0
+    rows_mapped = 0
+    for chunk in latest_by_chunk_index.values():
+        metadata = chunk.get("metadata") if isinstance(chunk.get("metadata"), dict) else {}
+        rows_downloaded += _coerce_non_negative_int(metadata.get("rows_downloaded") or metadata.get("provider_row_count"))
+        rows_mapped += _coerce_non_negative_int(metadata.get("rows_mapped"))
+
+    return {
+        "rows_downloaded": int(rows_downloaded),
+        "rows_mapped": int(rows_mapped),
+    }
 
 
 def _summarize_batch_from_runs(runs: list[dict[str, object]]) -> dict[str, object]:

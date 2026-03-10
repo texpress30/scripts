@@ -2938,3 +2938,26 @@
 - Worker finalization now classifies `provider_row_count>0 && rows_mapped=0` as parser failure (terminal error), preventing `last_success_at` and backfill advancement; true provider-empty remains `no_data_success`.
 - Added backend tests for nested row shape mapping, parser observability/date source, parser_failure finalization semantics, and operational status serialization.
 - Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py apps/backend/tests/test_sync_worker.py apps/backend/tests/test_sync_orchestration_api.py`.
+
+---
+
+# TODO — TikTok run summary aggregation + effective historical window UI correctness
+
+- [x] Attempt workspace sync before edits and record git topology blocker if tracking remote is unavailable.
+- [x] Audit current run-level serialization/aggregation for `rows_written`, `rows_downloaded`, `rows_mapped` and identify why TikTok run cards show 0/0 while chunks have values.
+- [x] Implement robust run-level aggregation from chunks for TikTok `rows_downloaded` and `rows_mapped` (safe with partial metadata, no double-count semantics regressions).
+- [x] Keep other platforms unaffected and preserve existing `rows_written` behavior.
+- [x] Update Agency Accounts TikTok historical text to reflect effective historical window reality (last-year cap) instead of misleading raw sync_start_date.
+- [x] Ensure Agency Account Detail run cards display run summary rows consistent with chunk logs.
+- [x] Add/update backend + frontend tests for summary aggregation and TikTok historical window text correctness.
+- [x] Run backend tests, frontend targeted tests, and frontend build.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Workspace sync was attempted first (`git pull --rebase`) and blocked because local branch `work` has no tracking remote configured.
+- Run-card 0/0 root cause: run-level metadata did not aggregate `rows_downloaded` / `rows_mapped` from chunk metadata, while UI summary reads those fields from run metadata.
+- Backend now aggregates TikTok run-level rows from chunk metadata (dedup by `chunk_index`, tolerant to missing fields) and injects totals into reconciled run metadata used by detail/list APIs.
+- Agency Accounts TikTok historical text now reflects effective capped window (`ultimul an`) instead of raw `sync_start_date`; completion banner for TikTok historical also states last-year cap.
+- Added backend API regression test for aggregated run summary rows and frontend tests for TikTok effective historical window label + completion banner text.
+- Verification: `pytest -q apps/backend/tests/test_sync_orchestration_api.py apps/backend/tests/test_tiktok_ads_import_accounts.py apps/backend/tests/test_sync_worker.py`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx src/app/agency-accounts/[platform]/[accountId]/page.platform-parity.test.tsx`, `pnpm --dir apps/frontend build`.

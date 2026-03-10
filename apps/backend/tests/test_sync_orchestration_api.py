@@ -684,6 +684,54 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         runs = response.json().get("runs") or []
         self.assertEqual(runs[0].get("operational_status"), "parser_failure")
 
+
+    def test_tiktok_run_summary_aggregates_rows_downloaded_and_rows_mapped_from_chunks(self):
+        headers = self._auth_headers()
+        original_list_platform_accounts = sync_orchestration.client_registry_service.list_platform_accounts
+        try:
+            sync_orchestration.client_registry_service.list_platform_accounts = lambda *, platform: [
+                {"id": "123456789", "name": "TikTok A", "attached_client_id": 11}
+            ] if platform == "tiktok_ads" else original_list_platform_accounts(platform=platform)
+
+            with patch.dict(os.environ, {"FF_TIKTOK_INTEGRATION": "1"}, clear=False):
+                created = self.client.post(
+                    "/agency/sync-runs/batch",
+                    headers=headers,
+                    json={
+                        "platform": "tiktok_ads",
+                        "account_ids": ["123456789"],
+                        "job_type": "historical_backfill",
+                        "start_date": str(date(2026, 2, 1)),
+                        "end_date": str(date(2026, 2, 3)),
+                        "chunk_days": 1,
+                        "grain": "campaign_daily",
+                    },
+                )
+        finally:
+            sync_orchestration.client_registry_service.list_platform_accounts = original_list_platform_accounts
+
+        self.assertEqual(created.status_code, 200)
+        job_id = created.json()["runs"][0]["job_id"]
+        chunk_rows = [c for c in self.state["chunks"] if c.get("job_id") == job_id]
+        self.assertGreaterEqual(len(chunk_rows), 1)
+        for idx, chunk in enumerate(chunk_rows):
+            chunk["metadata"] = {
+                "rows_downloaded": idx + 2,
+                "rows_mapped": idx + 1,
+                "provider_row_count": idx + 2,
+            }
+            chunk["status"] = "done"
+
+        response = self.client.get("/agency/sync-runs/accounts/tiktok_ads/123456789?limit=10", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        runs = response.json().get("runs") or []
+        self.assertEqual(len(runs), 1)
+        metadata = runs[0].get("metadata") or {}
+        expected_downloaded = sum((idx + 2) for idx in range(len(chunk_rows)))
+        expected_mapped = sum((idx + 1) for idx in range(len(chunk_rows)))
+        self.assertEqual(int(metadata.get("rows_downloaded") or 0), expected_downloaded)
+        self.assertEqual(int(metadata.get("rows_mapped") or 0), expected_mapped)
+
     def test_account_runs_and_chunk_details_shape(self):
         headers = self._auth_headers()
         created = self.client.post(
