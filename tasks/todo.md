@@ -2698,3 +2698,23 @@
 - Frontend list/detail now use shared stale-error guard helper to avoid rendering stale "disabled by feature flag" as current recent error.
 - Added backend + frontend tests for enabled stale suppression and disabled-state preservation.
 - Verification: `pytest -q apps/backend/tests/test_clients_platform_account_mappings.py apps/backend/tests/test_account_sync_metadata_contract.py`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx src/app/agency-accounts/[platform]/[accountId]/page.platform-parity.test.tsx src/app/agency-accounts/sync-runs.test.ts`, `pnpm --dir apps/frontend build`.
+
+---
+
+# TODO — TikTok advertiser access probe parity with discovery helper
+
+- [x] Verify current config usage for `TIKTOK_API_BASE_URL` / `TIKTOK_API_VERSION` and confirm override risk.
+- [x] Compare TikTok advertiser discovery/import request shape vs sync access probe request shape.
+- [x] Implement minimal shared helper for fetching accessible advertisers and reuse it in import + access probe.
+- [x] Keep structured error payloads and ensure provider_access_denied classification when advertiser missing.
+- [x] Add tests for helper reuse, probe success/denied paths, config base URL override, and token-safe error handling.
+- [x] Run targeted backend test commands and capture results.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Probe now reuses advertiser discovery (`GET /oauth2/advertiser/get/` with app_id+secret+page params + Access-Token header) instead of a separate POST advertiser_ids shape.
+- Added `_advertiser_get_endpoint(...)` helper and reused it in both discovery and probe so endpoint/base-version usage is standardized.
+- Probe now validates selected advertiser by membership in discovered accessible advertiser list and raises `provider_access_denied` when missing.
+- Added tests for probe/discovery helper reuse, present/absent advertiser outcomes, import+probe endpoint parity, and explicit config override of `TIKTOK_API_BASE_URL`/`TIKTOK_API_VERSION`.
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py apps/backend/tests/test_config.py apps/backend/tests/test_services.py::ServiceTests::test_tiktok_ads_sync_provider_access_denied_on_probe`.

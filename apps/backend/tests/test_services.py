@@ -1385,6 +1385,8 @@ class ServiceTests(unittest.TestCase):
 
     def test_tiktok_ads_sync_provider_access_denied_on_probe(self):
         os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        os.environ["TIKTOK_APP_ID"] = "tt-app-id"
+        os.environ["TIKTOK_APP_SECRET"] = "tt-app-secret"
         client = client_registry_service.create_client(name="TikTok Probe Denied", owner_email="owner@example.com")
         client_id = int(client["id"])
         client_registry_service.upsert_platform_accounts(platform="tiktok_ads", accounts=[{"id": "tt-probe-denied", "name": "Denied"}])

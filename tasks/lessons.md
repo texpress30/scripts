@@ -235,3 +235,5 @@
 - 2026-03-09: When user provides exact git sync commands (including auth remote), execute them first and then complete reconciliation (--rebase/merge) if pull requires explicit strategy.
 
 - When introducing feature-flag-dependent UI error messaging, always add stale-state guards so historical "disabled by feature flag" errors do not override current enabled availability.
+- For TikTok sync access checks, prefer reusing the exact advertiser discovery request/helper that already succeeds in import flows; avoid introducing a second request shape unless provider docs require it.
+- When debugging provider access failures, explicitly validate env-driven API base/version overrides first (e.g., sandbox vs production base URL) before changing error handling.

@@ -87,6 +87,17 @@ class ConfigTests(unittest.TestCase):
         settings = load_settings()
         self.assertFalse(settings.ff_tiktok_integration)
 
+    def test_tiktok_api_base_url_and_version_can_be_overridden_by_env(self):
+        os.environ.clear()
+        os.environ["APP_AUTH_SECRET"] = "test-auth-secret"
+        os.environ["TIKTOK_API_BASE_URL"] = "https://sandbox-ads.tiktok.com"
+        os.environ["TIKTOK_API_VERSION"] = "v9.9"
+
+        settings = load_settings()
+
+        self.assertEqual(settings.tiktok_api_base_url, "https://sandbox-ads.tiktok.com")
+        self.assertEqual(settings.tiktok_api_version, "v9.9")
+
     def test_tiktok_retry_settings_are_configurable(self):
         os.environ.clear()
         os.environ["APP_AUTH_SECRET"] = "test-auth-secret"

@@ -278,10 +278,16 @@ class TikTokAdsService:
             return "provider_access_denied"
         return "provider_http_error_generic"
 
-    def _probe_selected_advertiser_access(self, *, account_id: str, access_token: str, token_source: str) -> dict[str, object]:
+    def _advertiser_get_endpoint(self, *, query: str | None = None) -> str:
         settings = load_settings()
-        endpoint = f"{settings.tiktok_api_base_url.rstrip('/')}/open_api/{settings.tiktok_api_version.strip('/')}/oauth2/advertiser/get/"
+        base = f"{settings.tiktok_api_base_url.rstrip('/')}/open_api/{settings.tiktok_api_version.strip('/')}/oauth2/advertiser/get/"
+        if query:
+            return f"{base}?{query}"
+        return base
+
+    def _probe_selected_advertiser_access(self, *, account_id: str, access_token: str, token_source: str) -> dict[str, object]:
         advertiser_id = self._normalize_account_id(account_id)
+        endpoint = self._advertiser_get_endpoint()
         if advertiser_id == "":
             raise TikTokAdsIntegrationError(
                 "TikTok advertiser id is required for access probe.",
@@ -291,16 +297,7 @@ class TikTokAdsService:
             )
 
         try:
-            response = self._http_json(
-                method="POST",
-                url=endpoint,
-                headers={"Access-Token": access_token},
-                payload={
-                    "advertiser_ids": [advertiser_id],
-                    "page": 1,
-                    "page_size": 1,
-                },
-            )
+            accessible_accounts, _ = self._discover_accessible_advertiser_accounts(access_token=access_token)
         except TikTokAdsIntegrationError as exc:
             mapped_category = self._map_tiktok_provider_error(
                 http_status=exc.http_status,
@@ -327,14 +324,16 @@ class TikTokAdsService:
                 advertiser_id=advertiser_id,
             ) from exc
 
-        data = response.get("data") if isinstance(response.get("data"), dict) else {}
-        rows = data.get("list") if isinstance(data.get("list"), list) else []
-        accessible = any(self._normalize_account_id((item or {}).get("advertiser_id")) == advertiser_id for item in rows if isinstance(item, dict))
+        accessible = any(
+            self._normalize_account_id((item or {}).get("account_id")) == advertiser_id
+            for item in accessible_accounts
+            if isinstance(item, dict)
+        )
         if not accessible:
             raise TikTokAdsIntegrationError(
                 f"TikTok advertiser access denied for advertiser {advertiser_id}.",
                 endpoint=endpoint,
-                provider_error_message="Advertiser not returned by TikTok advertiser access probe.",
+                provider_error_message="Advertiser access denied: advertiser not returned by TikTok advertiser discovery.",
                 retryable=False,
                 error_category="provider_access_denied",
                 token_source=token_source,
@@ -602,7 +601,7 @@ class TikTokAdsService:
             query = parse.urlencode({"app_id": app_id, "secret": secret, "page": page, "page_size": page_size})
             raw = self._http_json(
                 method="GET",
-                url=f"{settings.tiktok_api_base_url.rstrip('/')}/open_api/{settings.tiktok_api_version.strip('/')}/oauth2/advertiser/get/?{query}",
+                url=self._advertiser_get_endpoint(query=query),
                 headers={"Access-Token": resolved_access_token},
             )
             api_code = raw.get("code")
