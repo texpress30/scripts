@@ -2748,3 +2748,23 @@
 
 ## Review
 - [x] Executed all requested git connectivity/sync commands in terminal and captured outputs.
+
+---
+
+# TODO — TikTok reporting schema fix per grain (metrics/dimensions validity)
+
+- [x] Audit current TikTok reporting request schema for all grains (`account_daily`, `campaign_daily`, `ad_group_daily`, `ad_daily`).
+- [x] Introduce a centralized per-grain reporting schema helper and wire all grain fetchers to it.
+- [x] Remove invalid metric(s) for `account_daily` (notably `conversion_value`) while keeping safe internal fallback mapping.
+- [x] Reduce dimensions to TikTok accepted limit (<=4) for `ad_group_daily` and `ad_daily`, preferring ID-based dimensions.
+- [x] Add/adjust backend tests for per-grain request schema, conversion fallback, dimension limits, helper usage, and structural validity regressions.
+- [x] Run targeted backend TikTok tests and capture outcomes.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Centralized TikTok reporting request schema by grain via `_report_schema_for_grain(...)` and routed all 4 grain fetchers through it.
+- `account_daily` request metrics no longer include `conversion_value`; conversion value persistence continues via `_extract_conversion_value(...)` fallback keys (e.g. `total_purchase_value`).
+- `ad_group_daily` dimensions reduced to 4 (`stat_time_day`, `adgroup_id`, `campaign_id`, `campaign_name`) and `ad_daily` dimensions reduced to 4 (`stat_time_day`, `ad_id`, `adgroup_id`, `campaign_id`).
+- Added regression tests for per-grain schema constraints, account conversion fallback, and structural payload validity against known provider errors.
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py` and `pytest -q apps/backend/tests/test_tiktok_* apps/backend/tests/test_services.py::ServiceTests::test_tiktok_ads_sync_real_account_daily_single_account`.
