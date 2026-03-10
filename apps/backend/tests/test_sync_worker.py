@@ -897,6 +897,8 @@ class SyncWorkerTests(unittest.TestCase):
 
         def _update_chunk_status(**kwargs):
             state["chunk"]["status"] = kwargs["status"]
+            if kwargs.get("metadata") is not None:
+                state["chunk"]["metadata"] = kwargs.get("metadata") or {}
             if kwargs.get("error") is not None:
                 state["chunk"]["error"] = kwargs["error"]
             if kwargs.get("rows_written") is not None:
@@ -970,6 +972,8 @@ class SyncWorkerTests(unittest.TestCase):
 
         def _update_chunk_status(**kwargs):
             state["chunk"]["status"] = kwargs["status"]
+            if kwargs.get("metadata") is not None:
+                state["chunk"]["metadata"] = kwargs.get("metadata") or {}
             if kwargs.get("error") is not None:
                 state["chunk"]["error"] = kwargs["error"]
             if kwargs.get("rows_written") is not None:
@@ -1003,7 +1007,16 @@ class SyncWorkerTests(unittest.TestCase):
         ), patch.object(
             sync_worker.tiktok_ads_service,
             "sync_client",
-            return_value={"rows_written": 5, "grain": "ad_daily", "accounts_processed": 1, "token_source": "database"},
+            return_value={
+                "rows_written": 5,
+                "rows_downloaded": 12,
+                "provider_row_count": 12,
+                "rows_mapped": 5,
+                "zero_row_observability": [{"zero_row_marker": "provider_returned_empty_list", "account_id": "3986597205"}],
+                "grain": "ad_daily",
+                "accounts_processed": 1,
+                "token_source": "database",
+            },
         ) as tiktok_sync_mock:
             processed = sync_worker.process_next_chunk()
 
@@ -1012,6 +1025,9 @@ class SyncWorkerTests(unittest.TestCase):
         self.assertEqual(state["chunk"]["rows_written"], 5)
         self.assertEqual(state["run"]["status"], "done")
         self.assertEqual(state["run"]["rows_written"], 5)
+        self.assertEqual((state["chunk"].get("metadata") or {}).get("rows_downloaded"), 12)
+        self.assertEqual((state["chunk"].get("metadata") or {}).get("provider_row_count"), 12)
+        self.assertEqual((state["chunk"].get("metadata") or {}).get("rows_mapped"), 5)
         self.assertEqual(tiktok_sync_mock.call_count, 1)
         self.assertEqual(tiktok_sync_mock.call_args.kwargs["grain"], "ad_daily")
         self.assertEqual(tiktok_sync_mock.call_args.kwargs["account_id"], "3986597205")
@@ -1290,6 +1306,97 @@ class SyncWorkerTests(unittest.TestCase):
         self.assertEqual(len(metadata_calls), 1)
         self.assertEqual(str(metadata_calls[0].get("backfill_completed_through")), "2026-02-14")
         self.assertNotIn("rolling_synced_through", metadata_calls[0])
+
+    def test_tiktok_historical_empty_success_does_not_advance_backfill_coverage(self):
+        state = self._build_state(job_type="historical_backfill", platform="tiktok_ads")
+
+        metadata_calls = []
+
+        def _claim_any(**kwargs):
+            if state["claimed"]:
+                return None
+            state["claimed"] = True
+            state["chunk"]["status"] = "running"
+            return dict(state["chunk"])
+
+        def _get_run(job_id):
+            return dict(state["run"]) if job_id == "job-1" else None
+
+        def _update_run_status(**kwargs):
+            if kwargs.get("status") is not None:
+                state["run"]["status"] = kwargs["status"]
+            if isinstance(kwargs.get("metadata"), dict):
+                existing = state["run"].get("metadata") if isinstance(state["run"].get("metadata"), dict) else {}
+                merged = dict(existing)
+                merged.update(kwargs.get("metadata") or {})
+                state["run"]["metadata"] = merged
+            return dict(state["run"])
+
+        def _update_chunk_status(**kwargs):
+            state["chunk"]["status"] = kwargs["status"]
+            if kwargs.get("metadata") is not None:
+                state["chunk"]["metadata"] = kwargs.get("metadata") or {}
+            return dict(state["chunk"])
+
+        def _update_progress(**kwargs):
+            state["run"]["chunks_done"] = int(state["run"].get("chunks_done") or 0) + int(kwargs.get("chunks_done_delta") or 0)
+            state["run"]["rows_written"] = int(state["run"].get("rows_written") or 0) + int(kwargs.get("rows_written_delta") or 0)
+            return dict(state["run"])
+
+        def _counts(job_id):
+            return {"remaining": 0 if state["chunk"]["status"] in ("done", "error") else 1, "errors": 0}
+
+        with patch.object(sync_worker.sync_run_chunks_store, "claim_next_queued_chunk_any", side_effect=_claim_any), patch.object(
+            sync_worker.sync_runs_store,
+            "get_sync_run",
+            side_effect=_get_run,
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_status", side_effect=_update_run_status), patch.object(
+            sync_worker.sync_run_chunks_store,
+            "update_sync_run_chunk_status",
+            side_effect=_update_chunk_status,
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_progress", side_effect=_update_progress), patch.object(
+            sync_worker.sync_run_chunks_store,
+            "get_sync_run_chunk_status_counts",
+            side_effect=_counts,
+        ), patch.object(
+            sync_worker.sync_run_chunks_store,
+            "list_sync_run_chunks",
+            return_value=[
+                {
+                    "chunk_index": 0,
+                    "status": "done",
+                    "metadata": {
+                        "rows_downloaded": 0,
+                        "rows_mapped": 0,
+                        "zero_row_observability": [{"zero_row_marker": "provider_returned_empty_list"}],
+                    },
+                }
+            ],
+        ), patch.object(
+            sync_worker.client_registry_service,
+            "update_platform_account_operational_metadata",
+            side_effect=lambda **kwargs: metadata_calls.append(kwargs) or kwargs,
+        ), patch.object(
+            sync_worker.tiktok_ads_service,
+            "sync_client",
+            return_value={
+                "rows_written": 0,
+                "rows_downloaded": 0,
+                "provider_row_count": 0,
+                "rows_mapped": 0,
+                "zero_row_observability": [{"zero_row_marker": "provider_returned_empty_list"}],
+            },
+        ):
+            processed = sync_worker.process_next_chunk()
+
+        self.assertTrue(processed)
+        self.assertEqual(state["run"]["status"], "done")
+        self.assertEqual(len(metadata_calls), 1)
+        self.assertNotIn("backfill_completed_through", metadata_calls[0])
+        run_metadata = state["run"].get("metadata") or {}
+        self.assertTrue(bool(run_metadata.get("no_data_success")))
+        self.assertEqual(run_metadata.get("zero_row_marker"), "provider_returned_empty_list")
+
 
 
 if __name__ == "__main__":
