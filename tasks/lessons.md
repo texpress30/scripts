@@ -223,3 +223,18 @@
 - 2026-03-08: For generic account endpoints reused across providers, frontend mappers must support both `client_*` and `attached_client_*` aliases to avoid stale unattached UI after reload.
 - 2026-03-09: In constrained git environments (missing remote/main), explicitly report the baseline limitation and proceed from the clean local branch instead of pretending the requested reset succeeded.
 - 2026-03-09: For cross-provider historical UX, don't stop at enabling selection; wire Meta/TikTok into the same live batch banner, row progress polling, and completion refresh lifecycle as Google.
+- 2026-03-09: After user dissatisfaction on prior delivery, prioritize requested product fix over repo bookkeeping-only changes; always ship the concrete code/test changes asked before closing.
+- 2026-03-09: For parity requests on existing pages, validate end-to-end UX parity against the Google baseline (list link -> detail metadata -> sync runs/logs -> terminal errors), not only API plumbing fields.
+- 2026-03-09: When fixing provider-sync production bugs, prioritize executable backend contract alignment (service signature + worker call) before adding further UI parity changes.
+- 2026-03-09: For provider account IDs with prefixed variants (e.g., `act_123` vs `123`), centralize normalization/matching helpers and use them for both API path building and scoping checks to avoid drift bugs.
+- 2026-03-09: When provider Explorer gives a known-good minimal request, add an explicit backend probe using that exact shape before deeper sync calls to isolate request-construction mismatches quickly.
+- 2026-03-09: For sync-history UX, separate "active/last effective status" from raw historical runs and hide superseded failures by default so old errors don't override current success state.
+- 2026-03-09: After explicit user correction about scope quality, prioritize concrete backend contract+scoping bug fixes with executable tests over broad parity/generalization work; ship minimal code-path changes first.
+- 2026-03-09: For provider preflight/error-taxonomy tasks, avoid passing classification labels containing 'token' through generic secret-mask sanitizers; preserve enum values explicitly after payload sanitization.
+- 2026-03-09: When adding provider-specific UI logic in shared pages, verify both provider and Google-only sections separately to avoid accidental type narrowing regressions.
+- 2026-03-09: When user provides exact git sync commands (including auth remote), execute them first and then complete reconciliation (--rebase/merge) if pull requires explicit strategy.
+
+- When introducing feature-flag-dependent UI error messaging, always add stale-state guards so historical "disabled by feature flag" errors do not override current enabled availability.
+- For TikTok sync access checks, prefer reusing the exact advertiser discovery request/helper that already succeeds in import flows; avoid introducing a second request shape unless provider docs require it.
+- When debugging provider access failures, explicitly validate env-driven API base/version overrides first (e.g., sandbox vs production base URL) before changing error handling.
+- For TikTok reporting API parity bugs, assert HTTP method at test level (mock rejects non-GET) so 405 regressions are caught before runtime.

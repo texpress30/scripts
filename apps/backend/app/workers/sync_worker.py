@@ -6,6 +6,7 @@ import os
 import time
 
 from app.core.config import load_settings
+from app.services.error_observability import sanitize_payload, sanitize_text
 from app.services.client_registry import client_registry_service
 from app.services.entity_performance_reports import upsert_ad_group_performance_reports, upsert_ad_unit_performance_reports, upsert_campaign_performance_reports, upsert_keyword_performance_reports
 from app.services.platform_entity_store import upsert_platform_ad_groups, upsert_platform_ads, upsert_platform_campaigns, upsert_platform_keywords
@@ -36,6 +37,32 @@ def _normalize_run_grain(run: dict[str, object]) -> str:
     return grain
 
 
+
+
+def _resolve_successful_coverage_end(*, job_id: str, fallback_date_end: date) -> date:
+    try:
+        chunks = sync_run_chunks_store.list_sync_run_chunks(job_id)
+    except Exception:
+        return fallback_date_end
+
+    successful_ends: list[date] = []
+    for chunk in chunks:
+        status = str(chunk.get("status") or "").strip().lower()
+        if status not in {"done", "success", "completed"}:
+            continue
+        raw_end = chunk.get("date_end")
+        if raw_end is None:
+            continue
+        try:
+            successful_ends.append(_as_date(raw_end))
+        except Exception:
+            continue
+
+    if not successful_ends:
+        return fallback_date_end
+    return max(successful_ends)
+
+
 def _finalize_run_if_complete(run: dict[str, object]) -> None:
     job_id = str(run.get("job_id") or "")
     counts = sync_run_chunks_store.get_sync_run_chunk_status_counts(job_id)
@@ -50,12 +77,18 @@ def _finalize_run_if_complete(run: dict[str, object]) -> None:
     run_grain = _normalize_run_grain(run)
 
     if int(counts.get("errors") or 0) > 0:
-        run_error = str(run.get("error") or "one or more chunks failed")
+        run_error = sanitize_text(run.get("error") or "one or more chunks failed", max_len=300)
+        metadata = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
+        metadata_patch = dict(metadata)
+        metadata_patch["last_error_summary"] = sanitize_text(run.get("error_summary") or run_error, max_len=300)
+        if isinstance(run.get("error_details"), dict):
+            metadata_patch["last_error_details"] = sanitize_payload(run.get("error_details"))
         sync_runs_store.update_sync_run_status(
             job_id=job_id,
             status="error",
             mark_finished=True,
             error=run_error,
+            metadata=metadata_patch,
         )
         if platform != "" and account_id != "":
             client_registry_service.update_platform_account_operational_metadata(
@@ -81,7 +114,10 @@ def _finalize_run_if_complete(run: dict[str, object]) -> None:
                 "last_run_id": job_id,
             }
             if job_type == "historical_backfill":
-                metadata_kwargs["backfill_completed_through"] = run_date_end
+                metadata_kwargs["backfill_completed_through"] = _resolve_successful_coverage_end(
+                    job_id=job_id,
+                    fallback_date_end=run_date_end,
+                )
             else:
                 metadata_kwargs["rolling_synced_through"] = run_date_end
             client_registry_service.update_platform_account_operational_metadata(**metadata_kwargs)
@@ -153,15 +189,16 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
     started = time.monotonic()
     rows_written = 0
     chunk_error: str | None = None
+    chunk_error_details: dict[str, object] | None = None
+    platform = str(run.get("platform") or "").strip().lower()
+    account_id = str(run.get("account_id") or "").strip()
+    client_id = int(run.get("client_id") or 0)
 
     try:
-        platform = str(run.get("platform") or "").strip().lower()
 
-        account_id = str(run.get("account_id") or "").strip()
         if account_id == "":
             raise RuntimeError("run has no account_id")
 
-        client_id = int(run.get("client_id") or 0)
         if client_id <= 0:
             raise RuntimeError("run has no client_id mapping")
 
@@ -171,27 +208,23 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
         job_type = str(run.get("job_type") or "manual")
 
         if platform == "meta_ads":
-            try:
-                snapshot = meta_ads_service.sync_client(
-                    client_id=client_id,
-                    start_date=chunk_start,
-                    end_date=chunk_end,
-                    grain=grain,
-                )
-                rows_written = int(snapshot.get("rows_written") or 0)
-            except MetaAdsIntegrationError as exc:
-                raise RuntimeError(str(exc)[:300]) from exc
+            snapshot = meta_ads_service.sync_client(
+                client_id=client_id,
+                start_date=chunk_start,
+                end_date=chunk_end,
+                grain=grain,
+                account_id=account_id,
+            )
+            rows_written = int(snapshot.get("rows_written") or 0)
         elif platform == "tiktok_ads":
-            try:
-                snapshot = tiktok_ads_service.sync_client(
-                    client_id=client_id,
-                    start_date=chunk_start,
-                    end_date=chunk_end,
-                    grain=grain,
-                )
-                rows_written = int(snapshot.get("rows_written") or 0)
-            except TikTokAdsIntegrationError as exc:
-                raise RuntimeError(str(exc)[:300]) from exc
+            snapshot = tiktok_ads_service.sync_client(
+                client_id=client_id,
+                start_date=chunk_start,
+                end_date=chunk_end,
+                grain=grain,
+                account_id=account_id,
+            )
+            rows_written = int(snapshot.get("rows_written") or 0)
         elif platform != "google_ads":
             raise RuntimeError(f"unsupported platform '{platform}'")
         elif grain == "campaign_daily":
@@ -416,11 +449,54 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
             )
             rows_written = int(response.get("inserted_rows", 0) or 0)
     except Exception as exc:  # noqa: BLE001
-        raw_error = str(exc)[:300]
+        raw_error = sanitize_text(exc, max_len=300)
         if raw_error.startswith(f"{_GRAIN_NOT_SUPPORTED_ERROR}:"):
             chunk_error = raw_error
         else:
             chunk_error = raw_error
+        provider_error_code = None
+        provider_error_message = None
+        http_status = None
+        endpoint = None
+        retryable = None
+        error_category = None
+        token_source = None
+        advertiser_id = None
+        if isinstance(exc, (MetaAdsIntegrationError, TikTokAdsIntegrationError)):
+            provider_error_code = exc.provider_error_code
+            provider_error_message = exc.provider_error_message
+            http_status = exc.http_status
+            endpoint = exc.endpoint
+            retryable = exc.retryable
+            error_category = getattr(exc, "error_category", None)
+            token_source = getattr(exc, "token_source", None)
+            advertiser_id = getattr(exc, "advertiser_id", None)
+            if provider_error_message and chunk_error == "":
+                chunk_error = sanitize_text(provider_error_message, max_len=300)
+        chunk_error_details = sanitize_payload(
+            {
+                "platform": platform,
+                "account_id": account_id,
+                "client_id": client_id,
+                "grain": grain,
+                "chunk_index": chunk_index,
+                "start_date": chunk_start.isoformat() if 'chunk_start' in locals() else None,
+                "end_date": chunk_end.isoformat() if 'chunk_end' in locals() else None,
+                "error_summary": chunk_error,
+                "provider_error_code": provider_error_code,
+                "provider_error_message": provider_error_message,
+                "http_status": http_status,
+                "endpoint": endpoint,
+                "retryable": retryable,
+                "error_category": error_category,
+                "token_source": token_source,
+                "advertiser_id": advertiser_id,
+            }
+        )
+        if isinstance(chunk_error_details, dict):
+            chunk_error_details["error_category"] = error_category
+            chunk_error_details["token_source"] = token_source
+            chunk_error_details["advertiser_id"] = advertiser_id
 
     duration_ms = int((time.monotonic() - started) * 1000)
 
@@ -448,12 +524,18 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
         )
     else:
         run["error"] = chunk_error
+        run["error_summary"] = chunk_error
+        run["error_details"] = chunk_error_details
         sync_run_chunks_store.update_sync_run_chunk_status(
             job_id=job_id,
             chunk_index=chunk_index,
             status="error",
             error=chunk_error,
-            metadata={"grain": grain},
+            metadata={
+                "grain": grain,
+                "last_error_summary": chunk_error,
+                "last_error_details": chunk_error_details or {},
+            },
             rows_written=0,
             duration_ms=duration_ms,
             mark_finished=True,
