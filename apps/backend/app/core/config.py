@@ -81,6 +81,15 @@ def _parse_bool_env(name: str, default: bool = False) -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def _parse_bool_env_alias(names: tuple[str, ...], default: bool = False) -> bool:
+    for candidate in names:
+        raw = os.environ.get(candidate)
+        if raw is None:
+            continue
+        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+    return default
+
+
 
 
 def _parse_int_env(name: str, default: int) -> int:
@@ -149,7 +158,7 @@ def load_settings() -> Settings:
         redis_url=_get_env("REDIS_URL", default="redis://localhost:6379/0"),
         cors_origins=_parse_csv_env("APP_CORS_ORIGINS", default="http://localhost:3000,http://127.0.0.1:3000"),
         cors_origin_regex=_safe_regex_env("APP_CORS_ORIGIN_REGEX", default=r"https://.*\.vercel\.app"),
-        ff_tiktok_integration=_parse_bool_env("FF_TIKTOK_INTEGRATION", default=False),
+        ff_tiktok_integration=_parse_bool_env_alias(("TIKTOK_SYNC_ENABLED", "FF_TIKTOK_INTEGRATION"), default=False),
         tiktok_app_id=_get_env("TIKTOK_APP_ID", default=""),
         tiktok_app_secret=_get_env("TIKTOK_APP_SECRET", default=""),
         tiktok_redirect_uri=_get_env("TIKTOK_REDIRECT_URI", default=""),

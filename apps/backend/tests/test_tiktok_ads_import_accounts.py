@@ -1,5 +1,8 @@
+import json
+from datetime import date
 import os
 import unittest
+from urllib import parse as urlparse
 
 from app.api import tiktok_ads as tiktok_ads_api
 from app.services.auth import AuthUser
@@ -102,6 +105,183 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
 
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["account_id"], "2201")
+
+    def test_probe_uses_discovery_helper_and_succeeds_when_advertiser_present(self):
+        service = TikTokAdsService()
+
+        calls: list[str] = []
+        original_discover = service._discover_accessible_advertiser_accounts
+        try:
+            def _fake_discover(*, access_token: str | None = None):
+                calls.append(str(access_token))
+                return ([{"account_id": "101"}, {"account_id": "202"}], {"page_count_checked": 1})
+
+            service._discover_accessible_advertiser_accounts = _fake_discover
+            result = service._probe_selected_advertiser_access(account_id="202", access_token="tok", token_source="database")
+        finally:
+            service._discover_accessible_advertiser_accounts = original_discover
+
+        self.assertEqual(calls, ["tok"])
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["advertiser_id"], "202")
+        self.assertIn("/oauth2/advertiser/get/", str(result["endpoint"]))
+
+    def test_probe_returns_provider_access_denied_when_advertiser_missing_from_discovery(self):
+        service = TikTokAdsService()
+
+        original_discover = service._discover_accessible_advertiser_accounts
+        try:
+            service._discover_accessible_advertiser_accounts = lambda **kwargs: ([{"account_id": "101"}], {"page_count_checked": 1})
+            with self.assertRaises(TikTokAdsIntegrationError) as ctx:
+                service._probe_selected_advertiser_access(account_id="999", access_token="tt-sensitive-token-123", token_source="database")
+        finally:
+            service._discover_accessible_advertiser_accounts = original_discover
+
+        self.assertEqual(ctx.exception.error_category, "provider_access_denied")
+        self.assertEqual(ctx.exception.advertiser_id, "999")
+        self.assertNotIn("tt-sensitive-token-123", str(ctx.exception.to_details()))
+
+    def test_import_discovery_and_probe_share_endpoint_shape(self):
+        service = TikTokAdsService()
+
+        calls: list[tuple[str, str]] = []
+        responses = [
+            {
+                "code": 0,
+                "message": "OK",
+                "data": {
+                    "list": [{"advertiser_id": "301", "advertiser_name": "A"}],
+                    "page_info": {"page": 1, "total_page": 1},
+                },
+            },
+            {
+                "code": 0,
+                "message": "OK",
+                "data": {
+                    "list": [{"advertiser_id": "301", "advertiser_name": "A"}],
+                    "page_info": {"page": 1, "total_page": 1},
+                },
+            },
+        ]
+
+        def _fake_http_json(*, method: str, url: str, payload=None, headers=None):
+            calls.append((method, url))
+            return responses[len(calls) - 1]
+
+        original_http = service._http_json
+        try:
+            service._http_json = _fake_http_json
+            discovered = service.list_accessible_advertiser_accounts(access_token="tok")
+            probe = service._probe_selected_advertiser_access(account_id="301", access_token="tok", token_source="database")
+        finally:
+            service._http_json = original_http
+
+        self.assertEqual(len(discovered), 1)
+        self.assertEqual(probe["status"], "ok")
+        self.assertEqual(calls[0][0], "GET")
+        self.assertEqual(calls[1][0], "GET")
+        self.assertIn("oauth2/advertiser/get/", calls[0][1])
+        self.assertIn("oauth2/advertiser/get/", calls[1][1])
+
+    def test_report_integrated_get_uses_get_with_query_params_and_header(self):
+        service = TikTokAdsService()
+
+        captured: dict[str, object] = {}
+
+        def _fake_http_json(*, method: str, url: str, payload=None, headers=None):
+            captured["method"] = method
+            captured["url"] = url
+            captured["payload"] = payload
+            captured["headers"] = headers
+            return {"code": 0, "data": {"list": []}}
+
+        original_http = service._http_json
+        try:
+            service._http_json = _fake_http_json
+            service._report_integrated_get(
+                account_id="401",
+                access_token="tt-token",
+                report_type="BASIC",
+                data_level="AUCTION_ADVERTISER",
+                dimensions=["stat_time_day"],
+                metrics=["spend", "clicks"],
+                start_date=date(2026, 3, 1),
+                end_date=date(2026, 3, 2),
+            )
+        finally:
+            service._http_json = original_http
+
+        self.assertEqual(captured["method"], "GET")
+        self.assertIsNone(captured["payload"])
+        self.assertEqual(captured["headers"], {"Access-Token": "tt-token"})
+        self.assertNotIn("tt-token", str(captured["url"]))
+        parsed_url = urlparse.urlsplit(str(captured["url"]))
+        params = urlparse.parse_qs(parsed_url.query)
+        self.assertEqual(params.get("advertiser_id"), ["401"])
+        self.assertEqual(params.get("report_type"), ["BASIC"])
+        self.assertEqual(params.get("data_level"), ["AUCTION_ADVERTISER"])
+        self.assertEqual(params.get("start_date"), ["2026-03-01"])
+        self.assertEqual(params.get("end_date"), ["2026-03-02"])
+        self.assertEqual(params.get("page"), ["1"])
+        self.assertEqual(params.get("page_size"), ["1000"])
+        self.assertEqual(json.loads(str(params.get("dimensions", ["[]"])[0])), ["stat_time_day"])
+        self.assertEqual(json.loads(str(params.get("metrics", ["[]"])[0])), ["spend", "clicks"])
+
+    def test_all_reporting_grains_use_common_report_integrated_get_helper(self):
+        service = TikTokAdsService()
+
+        calls: list[str] = []
+
+        def _fake_report_integrated_get(**kwargs):
+            calls.append(str(kwargs.get("data_level") or ""))
+            return {"code": 0, "data": {"list": []}}
+
+        original_report = service._report_integrated_get
+        try:
+            service._report_integrated_get = _fake_report_integrated_get
+            start = date(2026, 3, 1)
+            end = date(2026, 3, 2)
+            service._fetch_account_daily_metrics(account_id="401", access_token="tok", start_date=start, end_date=end)
+            service._fetch_campaign_daily_metrics(account_id="401", access_token="tok", start_date=start, end_date=end)
+            service._fetch_ad_group_daily_metrics(account_id="401", access_token="tok", start_date=start, end_date=end)
+            service._fetch_ad_daily_metrics(account_id="401", access_token="tok", start_date=start, end_date=end)
+        finally:
+            service._report_integrated_get = original_report
+
+        self.assertEqual(calls, ["AUCTION_ADVERTISER", "AUCTION_CAMPAIGN", "AUCTION_ADGROUP", "AUCTION_AD"])
+
+    def test_reporting_request_shape_avoids_405_method_mismatch(self):
+        service = TikTokAdsService()
+
+        def _fake_http_json(*, method: str, url: str, payload=None, headers=None):
+            if method != "GET":
+                raise AssertionError("reporting must use GET to avoid 405")
+            return {
+                "code": 0,
+                "data": {
+                    "list": [
+                        {
+                            "dimensions": {"stat_time_day": "2026-03-01"},
+                            "metrics": {"spend": "10", "impressions": "100", "clicks": "5"},
+                        }
+                    ]
+                },
+            }
+
+        original_http = service._http_json
+        try:
+            service._http_json = _fake_http_json
+            rows = service._fetch_account_daily_metrics(
+                account_id="401",
+                access_token="tok",
+                start_date=date(2026, 3, 1),
+                end_date=date(2026, 3, 1),
+            )
+        finally:
+            service._http_json = original_http
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].account_id, "401")
 
     def test_import_accounts_zero_advertisers_returns_diagnostics_message(self):
         service = TikTokAdsService()

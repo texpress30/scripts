@@ -1285,7 +1285,9 @@ class SyncRunsStore:
                             r.job_type,
                             r.status,
                             r.date_start,
-                            r.date_end
+                            r.date_end,
+                            r.error,
+                            r.metadata
                         FROM sync_runs r
                         JOIN requested req ON req.account_id = r.account_id
                         WHERE r.platform = %s
@@ -1309,6 +1311,8 @@ class SyncRunsStore:
                         ar.status,
                         ar.date_start,
                         ar.date_end,
+                        ar.error,
+                        ar.metadata,
                         COALESCE(cs.chunks_done, 0)::int,
                         COALESCE(cs.chunks_total, 0)::int,
                         COALESCE(cs.error_chunks, 0)::int
@@ -1336,9 +1340,24 @@ class SyncRunsStore:
                         "status": str(row[3]) if row[3] is not None else None,
                         "date_start": str(row[4]) if row[4] is not None else None,
                         "date_end": str(row[5]) if row[5] is not None else None,
-                        "chunks_done": int(row[6]) if row[6] is not None else 0,
-                        "chunks_total": int(row[7]) if row[7] is not None else 0,
-                        "errors_count": int(row[8]) if row[8] is not None else 0,
+                        "last_error_summary": (
+                            str((row[7] or {}).get("last_error_summary"))
+                            if isinstance(row[7], dict) and (row[7] or {}).get("last_error_summary") is not None
+                            else (str(row[6]) if row[6] is not None else None)
+                        ),
+                        "last_error_details": (
+                            (row[7] or {}).get("last_error_details")
+                            if isinstance(row[7], dict)
+                            else None
+                        ),
+                        "last_error_category": (
+                            str((((row[7] or {}).get("last_error_details") or {}).get("error_category") or "")).strip() or None
+                            if isinstance(row[7], dict) and isinstance((row[7] or {}).get("last_error_details"), dict)
+                            else None
+                        ),
+                        "chunks_done": int(row[8]) if row[8] is not None else 0,
+                        "chunks_total": int(row[9]) if row[9] is not None else 0,
+                        "errors_count": int(row[10]) if row[10] is not None else 0,
                     },
                 }
             )
