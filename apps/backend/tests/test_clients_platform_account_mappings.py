@@ -252,6 +252,30 @@ class ClientsPlatformAccountMappingsApiTests(unittest.TestCase):
         self.assertEqual(listed["count"], 1)
         self.assertEqual(listed["items"][0]["last_error"], "TikTok integration is disabled by feature flag.")
 
+    def test_tiktok_success_status_suppresses_stale_recent_error_in_payload(self):
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+
+        original_list_mapping = clients_api.client_registry_service.list_platform_accounts_for_mapping
+        try:
+            clients_api.client_registry_service.list_platform_accounts_for_mapping = lambda **kwargs: [
+                {
+                    "platform": "tiktok_ads",
+                    "id": "tt_101",
+                    "account_id": "tt_101",
+                    "name": "TikTok Account",
+                    "last_error": "TikTok API timeout from old run",
+                    "last_run_status": "done",
+                    "last_success_at": "2026-03-10T10:00:00+00:00",
+                    "has_active_sync": False,
+                }
+            ]
+            listed = clients_api.list_platform_accounts(platform="tiktok_ads", user=self.user)
+        finally:
+            clients_api.client_registry_service.list_platform_accounts_for_mapping = original_list_mapping
+
+        self.assertEqual(listed["count"], 1)
+        self.assertIsNone(listed["items"][0]["last_error"])
+
     def test_google_legacy_endpoints_still_function(self):
         client_id = self._create_client("Client A")
 

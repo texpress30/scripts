@@ -469,6 +469,40 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.assertEqual(len(status_payload["runs"]), 1)
 
 
+
+    def test_batch_progress_marks_completed_with_no_data_when_all_runs_are_no_data_success(self):
+        headers = self._auth_headers()
+        with patch.dict(os.environ, {"FF_TIKTOK_INTEGRATION": "1"}, clear=False):
+            create_response = self.client.post(
+                "/agency/sync-runs/batch",
+                headers=headers,
+                json={
+                    "platform": "tiktok_ads",
+                    "account_ids": ["123456789"],
+                    "job_type": "historical_backfill",
+                    "start_date": str(date(2026, 2, 1)),
+                    "end_date": str(date(2026, 2, 3)),
+                    "chunk_days": 1,
+                    "grains": ["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"],
+                },
+            )
+        self.assertEqual(create_response.status_code, 200)
+        payload = create_response.json()
+        batch_id = payload["batch_id"]
+
+        for run in payload["runs"]:
+            run_id = str(run["job_id"])
+            self.state["runs"][run_id]["status"] = "done"
+            self.state["runs"][run_id]["chunks_done"] = int(self.state["runs"][run_id].get("chunks_total") or 0)
+            self.state["runs"][run_id]["metadata"] = {"no_data_success": True, "zero_row_marker": "provider_returned_empty_list"}
+
+        status_response = self.client.get(f"/agency/sync-runs/batch/{batch_id}", headers=headers)
+        self.assertEqual(status_response.status_code, 200)
+        status_payload = status_response.json()
+        self.assertEqual(status_payload["progress"]["operational_status"], "completed_with_no_data")
+        self.assertEqual(status_payload["progress"]["no_data_success_runs"], 4)
+        self.assertEqual(status_payload["runs"][0]["operational_status"], "no_data_success")
+
     def test_reconciles_stale_run_progress_from_chunks_for_batch_and_account(self):
         headers = self._auth_headers()
         create_response = self.client.post(
@@ -909,6 +943,74 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.assertEqual(payload["created_count"], 1)
         self.assertEqual(len(self.state["runs"]), 1)
         self.assertGreater(len(self.state["chunks"]), 0)
+
+
+    def test_batch_tiktok_historical_clamps_start_to_last_year_and_uses_short_chunks(self):
+        headers = self._auth_headers()
+        original_list_platform_accounts = sync_orchestration.client_registry_service.list_platform_accounts
+        try:
+            today = date.today()
+            older_than_year = today.replace(year=today.year - 2) if today.month != 2 or today.day != 29 else date(today.year - 2, 2, 28)
+            requested_start = older_than_year
+            requested_end = today - sync_orchestration.timedelta(days=1)
+
+            sync_orchestration.client_registry_service.list_platform_accounts = lambda *, platform: [
+                {
+                    "id": "123456789",
+                    "name": "TikTok A",
+                    "attached_client_id": 11,
+                    "sync_start_date": str(requested_start),
+                }
+            ] if platform == "tiktok_ads" else original_list_platform_accounts(platform=platform)
+
+            with patch.dict(os.environ, {"FF_TIKTOK_INTEGRATION": "1"}, clear=False):
+                response = self.client.post(
+                    "/agency/sync-runs/batch",
+                    headers=headers,
+                    json={
+                        "platform": "tiktok_ads",
+                        "account_ids": ["123456789"],
+                        "job_type": "historical_backfill",
+                        "start_date": str(requested_start),
+                        "end_date": str(requested_end),
+                        "chunk_days": 31,
+                    },
+                )
+        finally:
+            sync_orchestration.client_registry_service.list_platform_accounts = original_list_platform_accounts
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get("chunk_days"), 30)
+        expected_floor = date.today() - sync_orchestration.timedelta(days=365)
+        run = payload["runs"][0]
+        self.assertEqual(run["account_id"], "123456789")
+        self.assertGreaterEqual(date.fromisoformat(str(payload["results"][0]["date_start"])), expected_floor)
+
+        chunk_rows = [c for c in self.state["chunks"] if c.get("job_id") == run["job_id"]]
+        self.assertGreater(len(chunk_rows), 0)
+        for chunk in chunk_rows:
+            start = date.fromisoformat(str(chunk["date_start"]))
+            end = date.fromisoformat(str(chunk["date_end"]))
+            self.assertLessEqual((end - start).days + 1, 30)
+
+    def test_batch_google_historical_keeps_requested_chunk_days_unaffected(self):
+        headers = self._auth_headers()
+        response = self.client.post(
+            "/agency/sync-runs/batch",
+            headers=headers,
+            json={
+                "platform": "google_ads",
+                "account_ids": ["3986597205"],
+                "job_type": "historical_backfill",
+                "start_date": str(date(2026, 1, 1)),
+                "end_date": str(date(2026, 1, 31)),
+                "chunk_days": 31,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get("chunk_days"), 31)
 
     def test_batch_tiktok_enabled_via_alias_allows_creation(self):
         headers = self._auth_headers()
