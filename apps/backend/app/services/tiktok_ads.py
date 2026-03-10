@@ -96,6 +96,13 @@ TikTokSyncGrain = Literal["account_daily", "campaign_daily", "ad_group_daily", "
 
 
 @dataclass(frozen=True)
+class TikTokReportingSchema:
+    data_level: str
+    dimensions: tuple[str, ...]
+    metrics: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class TikTokDailyMetric:
     report_date: date
     account_id: str
@@ -744,6 +751,31 @@ class TikTokAdsService:
         return 0.0
 
 
+    def _report_schema_for_grain(self, grain: TikTokSyncGrain) -> TikTokReportingSchema:
+        if grain == "account_daily":
+            return TikTokReportingSchema(
+                data_level="AUCTION_ADVERTISER",
+                dimensions=("stat_time_day",),
+                metrics=("spend", "impressions", "clicks", "conversion", "total_purchase_value"),
+            )
+        if grain == "campaign_daily":
+            return TikTokReportingSchema(
+                data_level="AUCTION_CAMPAIGN",
+                dimensions=("stat_time_day", "campaign_id"),
+                metrics=("spend", "impressions", "clicks", "conversion", "total_purchase_value"),
+            )
+        if grain == "ad_group_daily":
+            return TikTokReportingSchema(
+                data_level="AUCTION_ADGROUP",
+                dimensions=("stat_time_day", "adgroup_id"),
+                metrics=("spend", "impressions", "clicks", "conversion", "total_purchase_value"),
+            )
+        return TikTokReportingSchema(
+            data_level="AUCTION_AD",
+            dimensions=("stat_time_day", "ad_id"),
+            metrics=("spend", "impressions", "clicks", "conversion", "total_purchase_value"),
+        )
+
     def _report_integrated_endpoint(self, *, query: str | None = None) -> str:
         settings = load_settings()
         base = f"{settings.tiktok_api_base_url.rstrip('/')}/open_api/{settings.tiktok_api_version.strip('/')}/report/integrated/get/"
@@ -785,20 +817,14 @@ class TikTokAdsService:
         )
 
     def _fetch_account_daily_metrics(self, *, account_id: str, access_token: str, start_date: date, end_date: date) -> list[TikTokDailyMetric]:
+        schema = self._report_schema_for_grain("account_daily")
         raw = self._report_integrated_get(
             account_id=account_id,
             access_token=access_token,
             report_type="BASIC",
-            data_level="AUCTION_ADVERTISER",
-            dimensions=["stat_time_day"],
-            metrics=[
-                "spend",
-                "impressions",
-                "clicks",
-                "conversion",
-                "conversion_value",
-                "total_purchase_value",
-            ],
+            data_level=schema.data_level,
+            dimensions=list(schema.dimensions),
+            metrics=list(schema.metrics),
             start_date=start_date,
             end_date=end_date,
         )
@@ -858,20 +884,14 @@ class TikTokAdsService:
         return rows
 
     def _fetch_campaign_daily_metrics(self, *, account_id: str, access_token: str, start_date: date, end_date: date) -> list[TikTokCampaignDailyMetric]:
+        schema = self._report_schema_for_grain("campaign_daily")
         raw = self._report_integrated_get(
             account_id=account_id,
             access_token=access_token,
             report_type="BASIC",
-            data_level="AUCTION_CAMPAIGN",
-            dimensions=["stat_time_day", "campaign_id", "campaign_name"],
-            metrics=[
-                "spend",
-                "impressions",
-                "clicks",
-                "conversion",
-                "conversion_value",
-                "total_purchase_value",
-            ],
+            data_level=schema.data_level,
+            dimensions=list(schema.dimensions),
+            metrics=list(schema.metrics),
             start_date=start_date,
             end_date=end_date,
         )
@@ -937,20 +957,14 @@ class TikTokAdsService:
         return rows
 
     def _fetch_ad_group_daily_metrics(self, *, account_id: str, access_token: str, start_date: date, end_date: date) -> list[TikTokAdGroupDailyMetric]:
+        schema = self._report_schema_for_grain("ad_group_daily")
         raw = self._report_integrated_get(
             account_id=account_id,
             access_token=access_token,
             report_type="BASIC",
-            data_level="AUCTION_ADGROUP",
-            dimensions=["stat_time_day", "adgroup_id", "adgroup_name", "campaign_id", "campaign_name"],
-            metrics=[
-                "spend",
-                "impressions",
-                "clicks",
-                "conversion",
-                "conversion_value",
-                "total_purchase_value",
-            ],
+            data_level=schema.data_level,
+            dimensions=list(schema.dimensions),
+            metrics=list(schema.metrics),
             start_date=start_date,
             end_date=end_date,
         )
@@ -1022,20 +1036,14 @@ class TikTokAdsService:
         return rows
 
     def _fetch_ad_daily_metrics(self, *, account_id: str, access_token: str, start_date: date, end_date: date) -> list[TikTokAdDailyMetric]:
+        schema = self._report_schema_for_grain("ad_daily")
         raw = self._report_integrated_get(
             account_id=account_id,
             access_token=access_token,
             report_type="BASIC",
-            data_level="AUCTION_AD",
-            dimensions=["stat_time_day", "ad_id", "ad_name", "adgroup_id", "adgroup_name", "campaign_id", "campaign_name"],
-            metrics=[
-                "spend",
-                "impressions",
-                "clicks",
-                "conversion",
-                "conversion_value",
-                "total_purchase_value",
-            ],
+            data_level=schema.data_level,
+            dimensions=list(schema.dimensions),
+            metrics=list(schema.metrics),
             start_date=start_date,
             end_date=end_date,
         )
