@@ -259,10 +259,17 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
         ad_schema = service._report_schema_for_grain("ad_daily")
 
         self.assertEqual(account_schema.data_level, "AUCTION_ADVERTISER")
+        self.assertEqual(account_schema.dimensions, ("stat_time_day",))
         self.assertNotIn("conversion_value", account_schema.metrics)
-        self.assertLessEqual(len(ad_group_schema.dimensions), 4)
-        self.assertLessEqual(len(ad_schema.dimensions), 4)
         self.assertEqual(campaign_schema.data_level, "AUCTION_CAMPAIGN")
+        self.assertEqual(campaign_schema.dimensions, ("stat_time_day", "campaign_id"))
+        self.assertNotIn("campaign_name", campaign_schema.dimensions)
+        self.assertEqual(ad_group_schema.dimensions, ("stat_time_day", "adgroup_id"))
+        self.assertNotIn("campaign_id", ad_group_schema.dimensions)
+        self.assertNotIn("campaign_name", ad_group_schema.dimensions)
+        self.assertEqual(ad_schema.dimensions, ("stat_time_day", "ad_id"))
+        self.assertNotIn("adgroup_id", ad_schema.dimensions)
+        self.assertNotIn("campaign_id", ad_schema.dimensions)
 
     def test_reporting_fetchers_generate_structurally_valid_requests_for_known_tiktok_errors(self):
         service = TikTokAdsService()
@@ -277,6 +284,12 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
             metrics = json.loads(str(params.get("metrics", ["[]"])[0]))
             data_level = str(params.get("data_level", [""])[0])
 
+            if data_level == "AUCTION_CAMPAIGN" and "campaign_name" in dimensions:
+                return {"code": 40020, "message": "campaign_name is not supported"}
+            if data_level == "AUCTION_ADGROUP" and "campaign_id" in dimensions:
+                return {"code": 40021, "message": "data_level AUCTION_ADGROUP and dimension campaign_id do not match"}
+            if data_level == "AUCTION_AD" and "adgroup_id" in dimensions:
+                return {"code": 40022, "message": "data_level AUCTION_AD and dimension adgroup_id do not match"}
             if data_level == "AUCTION_ADVERTISER" and "conversion_value" in metrics:
                 return {"code": 40010, "message": "Invalid metric fields: ['conversion_value']"}
             if len(dimensions) < 1 or len(dimensions) > 4:
@@ -294,6 +307,39 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
             service._fetch_ad_daily_metrics(account_id="401", access_token="tok", start_date=start, end_date=end)
         finally:
             service._http_json = original_http
+
+    def test_reporting_requests_exclude_runtime_invalid_dimensions_per_grain(self):
+        service = TikTokAdsService()
+
+        captured: dict[str, list[str]] = {}
+
+        def _fake_http_json(*, method: str, url: str, payload=None, headers=None):
+            parsed_url = urlparse.urlsplit(str(url))
+            params = urlparse.parse_qs(parsed_url.query)
+            data_level = str(params.get("data_level", [""])[0])
+            dimensions = json.loads(str(params.get("dimensions", ["[]"])[0]))
+            captured[data_level] = dimensions
+            return {"code": 0, "data": {"list": []}}
+
+        original_http = service._http_json
+        try:
+            service._http_json = _fake_http_json
+            start = date(2026, 3, 1)
+            end = date(2026, 3, 1)
+            service._fetch_campaign_daily_metrics(account_id="401", access_token="tok", start_date=start, end_date=end)
+            service._fetch_ad_group_daily_metrics(account_id="401", access_token="tok", start_date=start, end_date=end)
+            service._fetch_ad_daily_metrics(account_id="401", access_token="tok", start_date=start, end_date=end)
+        finally:
+            service._http_json = original_http
+
+        self.assertEqual(captured.get("AUCTION_CAMPAIGN"), ["stat_time_day", "campaign_id"])
+        self.assertNotIn("campaign_name", captured.get("AUCTION_CAMPAIGN", []))
+        self.assertEqual(captured.get("AUCTION_ADGROUP"), ["stat_time_day", "adgroup_id"])
+        self.assertNotIn("campaign_id", captured.get("AUCTION_ADGROUP", []))
+        self.assertNotIn("campaign_name", captured.get("AUCTION_ADGROUP", []))
+        self.assertEqual(captured.get("AUCTION_AD"), ["stat_time_day", "ad_id"])
+        self.assertNotIn("adgroup_id", captured.get("AUCTION_AD", []))
+        self.assertNotIn("campaign_id", captured.get("AUCTION_AD", []))
 
     def test_account_daily_conversion_value_uses_safe_fallback_without_conversion_value_metric(self):
         service = TikTokAdsService()

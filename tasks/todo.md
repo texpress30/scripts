@@ -2768,3 +2768,22 @@
 - `ad_group_daily` dimensions reduced to 4 (`stat_time_day`, `adgroup_id`, `campaign_id`, `campaign_name`) and `ad_daily` dimensions reduced to 4 (`stat_time_day`, `ad_id`, `adgroup_id`, `campaign_id`).
 - Added regression tests for per-grain schema constraints, account conversion fallback, and structural payload validity against known provider errors.
 - Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py` and `pytest -q apps/backend/tests/test_tiktok_* apps/backend/tests/test_services.py::ServiceTests::test_tiktok_ads_sync_real_account_daily_single_account`.
+
+---
+
+# TODO — TikTok reporting schema fix pasul 2 (dimension compatibility per data_level)
+
+- [x] Audit current TikTok per-grain schema/request payload for campaign/ad_group/ad against runtime errors.
+- [x] Adjust centralized `_report_schema_for_grain(...)` so each grain only uses dimensions compatible with its `data_level`.
+- [x] Keep `account_daily` schema unchanged and valid.
+- [x] Ensure entity name/hierarchy fields use safe fallback from payload metadata/snapshot/item fallback (not forced via invalid dimensions).
+- [x] Add/update backend tests for invalid dimension regression patterns and per-grain schema assertions.
+- [x] Run targeted backend TikTok tests and document results.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Updated per-grain TikTok dimensions to strict data_level-compatible sets: campaign (`stat_time_day`,`campaign_id`), ad_group (`stat_time_day`,`adgroup_id`), ad (`stat_time_day`,`ad_id`), while preserving account_daily unchanged.
+- Kept entity name hierarchy handling safe by retaining existing item/dimensions fallback extraction without forcing unsupported provider-side dimensions.
+- Added tests to assert runtime-invalid dimensions are excluded per grain and to regress known production error messages.
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py` and `pytest -q apps/backend/tests/test_tiktok_* apps/backend/tests/test_services.py::ServiceTests::test_tiktok_ads_sync_real_account_daily_single_account`.

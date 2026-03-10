@@ -761,18 +761,18 @@ class TikTokAdsService:
         if grain == "campaign_daily":
             return TikTokReportingSchema(
                 data_level="AUCTION_CAMPAIGN",
-                dimensions=("stat_time_day", "campaign_id", "campaign_name"),
+                dimensions=("stat_time_day", "campaign_id"),
                 metrics=("spend", "impressions", "clicks", "conversion", "conversion_value", "total_purchase_value"),
             )
         if grain == "ad_group_daily":
             return TikTokReportingSchema(
                 data_level="AUCTION_ADGROUP",
-                dimensions=("stat_time_day", "adgroup_id", "campaign_id", "campaign_name"),
+                dimensions=("stat_time_day", "adgroup_id"),
                 metrics=("spend", "impressions", "clicks", "conversion", "conversion_value", "total_purchase_value"),
             )
         return TikTokReportingSchema(
             data_level="AUCTION_AD",
-            dimensions=("stat_time_day", "ad_id", "adgroup_id", "campaign_id"),
+            dimensions=("stat_time_day", "ad_id"),
             metrics=("spend", "impressions", "clicks", "conversion", "conversion_value", "total_purchase_value"),
         )
 
