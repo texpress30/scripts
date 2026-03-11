@@ -3005,3 +3005,26 @@
 - Dry-run now returns explicit `superseded_runs` and `non_superseded_runs` with reasons (`matched_later_success_same_account_grain`, `no_later_success_found`, `grain_mismatch`, `account_id_mismatch`, optional missing-chunks marker), plus `filtered_out_runs` reasons (`wrong_platform`, `wrong_job_type`) and aggregated `non_match_reason_counts`.
 - Exec mode still deletes only superseded TikTok historical failed runs and related chunks, then recomputes operational metadata for affected TikTok accounts.
 - Verification: `pytest -q apps/backend/tests/test_sync_runs_store_tiktok_cleanup.py apps/backend/tests/test_sync_orchestration_api.py apps/backend/tests/test_sync_worker.py`.
+
+---
+
+# TODO — TikTok legacy cleanup matcher fix for window-mismatch failed historical runs
+
+- [x] Attempt workspace sync before edits and record git topology blocker if tracking remote is unavailable.
+- [x] Audit current matcher and confirm whether window/date-range compatibility is causing missed legacy deletions.
+- [x] Implement explicit TikTok legacy rule: same account+grain and later done historical run supersedes failed run regardless of start_date equality.
+- [x] Keep safety guards (same platform/job_type/account/grain + strictly later success in time).
+- [x] Ensure chunks are deleted with eligible runs and metadata is recomputed for affected accounts.
+- [x] Expand dry-run diagnostics with explicit legacy window-mismatch signal for debugging.
+- [x] Add/update backend tests for legacy window mismatch delete, grain mismatch/no-success no-delete, chunk deletion, metadata recompute, and non-impact on other platforms.
+- [x] Run targeted backend tests.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Workspace update was attempted first (`git pull --rebase`) and blocked because local branch `work` has no upstream tracking remote configured.
+- Confirmed matcher miss risk for legacy runs came from time ordering based on `updated_at` participation (`COALESCE(..., updated_at)`), which can make older failed runs look newer than subsequent successful runs.
+- Fixed matcher ordering to use terminal/run chronology (`finished_at`, then `started_at`, then `created_at`, fallback `updated_at`) and kept supersede eligibility strict on same TikTok account + same grain + later done historical run.
+- Added explicit legacy dry-run diagnostic reason `window_mismatch_but_legacy_tiktok_cleanup_should_match` when same account/grain successes exist but are not later, to highlight pre-cap/pre-fix window drift scenarios.
+- Exec mode remains safe and narrow: deletes only superseded TikTok historical failed runs plus their chunks, then recomputes operational metadata for affected accounts.
+- Verification: `pytest -q apps/backend/tests/test_sync_runs_store_tiktok_cleanup.py apps/backend/tests/test_sync_orchestration_api.py apps/backend/tests/test_sync_worker.py apps/backend/tests/test_clients_platform_account_mappings.py`.

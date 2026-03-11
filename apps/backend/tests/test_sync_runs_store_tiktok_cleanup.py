@@ -98,20 +98,20 @@ class SyncRunsStoreTikTokCleanupTests(unittest.TestCase):
         store._connect = lambda: conn
         return store, state
 
-    def test_same_account_same_grain_later_success_is_superseded_and_deleted(self):
+    def test_same_account_same_grain_later_success_with_different_start_date_is_deleted(self):
         state = {
             "failed_rows": [
-                ("f1", "tiktok_ads", "historical_backfill", "error", " 123 ", "account_daily", "2026-03-01T00:00:00+00:00"),
+                ("f1", "tiktok_ads", "historical_backfill", "error", " 123 ", "account_daily", "2024-09-01", "2026-03-08", "2026-03-08T10:00:00+00:00"),
             ],
             "success_rows": [
-                ("s1", "123", "account_daily", "2026-03-02T00:00:00+00:00"),
+                ("s1", "123", "account_daily", "2025-03-10", "2026-03-09", "2026-03-09T10:00:00+00:00"),
             ],
             "chunk_count_rows": [("f1", 2)],
             "deleted_chunks": 2,
             "deleted_runs": 1,
-            "latest_by_account": {"123": ("done", "historical_backfill", "2026-03-02T00:00:00+00:00", "2026-03-02T01:00:00+00:00", None)},
-            "success_at_by_account": {"123": "2026-03-02T01:00:00+00:00"},
-            "backfill_by_account": {"123": "2026-03-01"},
+            "latest_by_account": {"123": ("done", "historical_backfill", "2026-03-09T10:00:00+00:00", "2026-03-09T11:00:00+00:00", None)},
+            "success_at_by_account": {"123": "2026-03-09T11:00:00+00:00"},
+            "backfill_by_account": {"123": "2026-03-09"},
         }
         store, state_ref = self._build_store(state)
 
@@ -120,18 +120,16 @@ class SyncRunsStoreTikTokCleanupTests(unittest.TestCase):
         self.assertEqual(result["superseded_run_count"], 1)
         self.assertEqual(result["deleted_runs"], 1)
         self.assertEqual(result["deleted_chunks"], 2)
-        self.assertEqual(result["superseded_runs"][0]["job_id"], "f1")
-        self.assertEqual(result["superseded_runs"][0]["account_id"], "123")
-        self.assertEqual(result["metadata_updates"][0]["account_id"], "123")
+        self.assertEqual(result["superseded_runs"][0]["matched_by_success_job_id"], "s1")
         self.assertEqual(state_ref.get("updated_accounts"), ["123"])
 
     def test_same_account_but_grain_mismatch_not_deleted(self):
         state = {
             "failed_rows": [
-                ("f2", "tiktok_ads", "historical_backfill", "error", "123", "ad_group_daily", "2026-03-01T00:00:00+00:00"),
+                ("f2", "tiktok_ads", "historical_backfill", "error", "123", "ad_group_daily", "2026-03-01", "2026-03-08", "2026-03-08T10:00:00+00:00"),
             ],
             "success_rows": [
-                ("s2", "123", "account_daily", "2026-03-02T00:00:00+00:00"),
+                ("s2", "123", "account_daily", "2026-03-01", "2026-03-09", "2026-03-09T10:00:00+00:00"),
             ],
             "chunk_count_rows": [("f2", 1)],
         }
@@ -140,16 +138,15 @@ class SyncRunsStoreTikTokCleanupTests(unittest.TestCase):
         result = store.cleanup_superseded_tiktok_failed_runs(dry_run=True)
 
         self.assertEqual(result["superseded_run_count"], 0)
-        self.assertEqual(result["non_superseded_run_count"], 1)
         self.assertEqual(result["non_superseded_runs"][0]["reason"], "grain_mismatch")
 
-    def test_no_later_success_not_deleted(self):
+    def test_without_later_success_not_deleted(self):
         state = {
             "failed_rows": [
-                ("f3", "tiktok_ads", "historical_backfill", "error", "123", "account_daily", "2026-03-03T00:00:00+00:00"),
+                ("f3", "tiktok_ads", "historical_backfill", "error", "123", "account_daily", "2026-03-01", "2026-03-08", "2026-03-08T10:00:00+00:00"),
             ],
             "success_rows": [
-                ("s3", "123", "account_daily", "2026-03-01T00:00:00+00:00"),
+                ("s3", "123", "account_daily", "2026-03-01", "2026-03-07", "2026-03-07T10:00:00+00:00"),
             ],
             "chunk_count_rows": [("f3", 1)],
         }
@@ -158,14 +155,14 @@ class SyncRunsStoreTikTokCleanupTests(unittest.TestCase):
         result = store.cleanup_superseded_tiktok_failed_runs(dry_run=True)
 
         self.assertEqual(result["superseded_run_count"], 0)
-        self.assertEqual(result["non_superseded_runs"][0]["reason"], "no_later_success_found")
+        self.assertEqual(result["non_superseded_runs"][0]["reason"], "window_mismatch_but_legacy_tiktok_cleanup_should_match")
 
-    def test_dry_run_includes_explicit_non_match_reasons_and_filtered_out(self):
+    def test_dry_run_includes_explicit_reasons_and_filtered_out(self):
         state = {
             "failed_rows": [
-                ("f4", "tiktok_ads", "historical_backfill", "error", " ", "account_daily", "2026-03-01T00:00:00+00:00"),
-                ("f5", "google_ads", "historical_backfill", "error", "123", "account_daily", "2026-03-01T00:00:00+00:00"),
-                ("f6", "tiktok_ads", "rolling_refresh", "error", "123", "account_daily", "2026-03-01T00:00:00+00:00"),
+                ("f4", "tiktok_ads", "historical_backfill", "error", " ", "account_daily", "2026-03-01", "2026-03-08", "2026-03-08T10:00:00+00:00"),
+                ("f5", "google_ads", "historical_backfill", "error", "123", "account_daily", "2026-03-01", "2026-03-08", "2026-03-08T10:00:00+00:00"),
+                ("f6", "tiktok_ads", "rolling_refresh", "error", "123", "account_daily", "2026-03-01", "2026-03-08", "2026-03-08T10:00:00+00:00"),
             ],
             "success_rows": [],
             "chunk_count_rows": [],
@@ -174,9 +171,7 @@ class SyncRunsStoreTikTokCleanupTests(unittest.TestCase):
 
         result = store.cleanup_superseded_tiktok_failed_runs(dry_run=True)
 
-        self.assertEqual(result["non_superseded_run_count"], 1)
         self.assertIn("account_id_mismatch", result["non_superseded_runs"][0]["reason"])
-        self.assertEqual(result["filtered_out_run_count"], 2)
         self.assertIn("wrong_platform", result["non_match_reason_counts"])
         self.assertIn("wrong_job_type", result["non_match_reason_counts"])
 

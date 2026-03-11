@@ -1501,11 +1501,13 @@ class SyncRunsStore:
                         sr.status,
                         BTRIM(COALESCE(sr.account_id, '')) AS account_id_norm,
                         COALESCE(NULLIF(BTRIM(COALESCE(sr.grain, '')), ''), 'account_daily') AS grain_norm,
-                        COALESCE(sr.finished_at, sr.updated_at, sr.started_at, sr.created_at) AS reference_ts
+                        sr.date_start,
+                        sr.date_end,
+                        COALESCE(sr.finished_at, sr.started_at, sr.created_at, sr.updated_at) AS ordering_ts
                     FROM sync_runs sr
                     WHERE sr.status IN ('error', 'failed')
                       {filter_sql}
-                    ORDER BY COALESCE(sr.finished_at, sr.updated_at, sr.started_at, sr.created_at) ASC
+                    ORDER BY COALESCE(sr.finished_at, sr.started_at, sr.created_at, sr.updated_at) ASC
                     """,
                     tuple(params),
                 )
@@ -1530,7 +1532,9 @@ class SyncRunsStore:
                             "job_id": job_id,
                             "account_id": account_id_norm,
                             "grain": grain_norm,
-                            "reference_ts": row[6],
+                            "date_start": row[6],
+                            "date_end": row[7],
+                            "ordering_ts": row[8],
                         }
                     )
 
@@ -1543,13 +1547,15 @@ class SyncRunsStore:
                             sr.job_id,
                             BTRIM(COALESCE(sr.account_id, '')) AS account_id_norm,
                             COALESCE(NULLIF(BTRIM(COALESCE(sr.grain, '')), ''), 'account_daily') AS grain_norm,
-                            COALESCE(sr.finished_at, sr.updated_at, sr.started_at, sr.created_at) AS reference_ts
+                            sr.date_start,
+                            sr.date_end,
+                            COALESCE(sr.finished_at, sr.started_at, sr.created_at, sr.updated_at) AS ordering_ts
                         FROM sync_runs sr
                         WHERE sr.platform = 'tiktok_ads'
                           AND sr.job_type = 'historical_backfill'
                           AND sr.status = 'done'
                           AND BTRIM(COALESCE(sr.account_id, '')) = ANY(%s)
-                        ORDER BY reference_ts ASC
+                        ORDER BY ordering_ts ASC
                         """,
                         (account_scope,),
                     )
@@ -1559,7 +1565,9 @@ class SyncRunsStore:
                             {
                                 "job_id": str(success_row[0]) if success_row[0] is not None else "",
                                 "grain": self._normalize_grain_for_cleanup(success_row[2]),
-                                "reference_ts": success_row[3],
+                                "date_start": success_row[3],
+                                "date_end": success_row[4],
+                                "ordering_ts": success_row[5],
                             }
                         )
 
@@ -1585,13 +1593,18 @@ class SyncRunsStore:
                 for failed_run in tiktok_historical_failed_rows:
                     account_id_norm = str(failed_run.get("account_id") or "")
                     grain_norm = str(failed_run.get("grain") or "account_daily")
-                    ref_ts = failed_run.get("reference_ts")
+                    failed_ts = failed_run.get("ordering_ts")
+                    failed_start = failed_run.get("date_start")
+                    failed_end = failed_run.get("date_end")
+
+                    successes_for_account = success_by_account.get(account_id_norm, [])
                     later_successes = [
                         item
-                        for item in success_by_account.get(account_id_norm, [])
-                        if ref_ts is not None and item.get("reference_ts") is not None and item.get("reference_ts") > ref_ts
+                        for item in successes_for_account
+                        if failed_ts is not None and item.get("ordering_ts") is not None and item.get("ordering_ts") > failed_ts
                     ]
                     later_successes_same_grain = [item for item in later_successes if str(item.get("grain") or "") == grain_norm]
+                    all_successes_same_grain = [item for item in successes_for_account if str(item.get("grain") or "") == grain_norm]
                     chunk_count = int(chunk_counts.get(str(failed_run.get("job_id") or ""), 0))
 
                     if len(later_successes_same_grain) > 0:
@@ -1610,6 +1623,13 @@ class SyncRunsStore:
                     reason = "no_later_success_found"
                     if len(later_successes) > 0:
                         reason = "grain_mismatch"
+                    elif len(all_successes_same_grain) > 0:
+                        any_window_diff = any(
+                            item.get("date_start") != failed_start or item.get("date_end") != failed_end
+                            for item in all_successes_same_grain
+                        )
+                        if any_window_diff:
+                            reason = "window_mismatch_but_legacy_tiktok_cleanup_should_match"
                     if account_id_norm == "":
                         reason = "account_id_mismatch"
                     if chunk_count <= 0:
@@ -1623,6 +1643,7 @@ class SyncRunsStore:
                             "reason": reason,
                             "later_success_count": len(later_successes),
                             "later_success_same_grain_count": len(later_successes_same_grain),
+                            "same_grain_success_count": len(all_successes_same_grain),
                             "chunk_count": chunk_count,
                         }
                     )
