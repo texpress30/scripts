@@ -3073,3 +3073,22 @@
 - Historical correction mechanism: no new endpoint required; existing Meta historical backfill endpoint is idempotent and rewrites rows via upsert using corrected lead-only conversions.
 - Added tests for mixed actions (lead + non-lead), explicit exclusions, and all-grain lead-only usage.
 - Verification: `pytest -q apps/backend/tests/test_meta_ads_sync_account_daily.py apps/backend/tests/test_clients_platform_account_mappings.py`.
+
+---
+
+# TODO — Meta dashboard source-of-truth = account_daily + daily real + lead-only
+
+- [x] Attempt workspace sync before edits and record tracking-remote blocker if unavailable.
+- [x] Audit Meta account_daily insights request (level/fields/time_increment) and persistence behavior.
+- [x] Enforce time_increment=1 for Meta account_daily ingestion and verify row-per-day behavior.
+- [x] Audit dashboard/subaccount aggregation source for Meta and remove multi-grain double counting.
+- [x] Ensure Meta dashboard totals come strictly from account_daily source and conversions are lead-only.
+- [x] Add safe/idempotent recompute path for historical Meta data correction.
+- [x] Add/update backend tests for daily account ingestion params, dashboard source grain, and non-impact on other platforms.
+- [x] Run targeted backend tests and document verification.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Added `time_increment=1` for `account_daily` Meta insights requests and protected snapshot upserts to `account_daily` grain only.
+- Added tests for request parameter enforcement and snapshot source-of-truth protection.
+- Verified with: `pytest -q apps/backend/tests/test_meta_ads_sync_account_daily.py apps/backend/tests/test_clients_platform_account_mappings.py`.

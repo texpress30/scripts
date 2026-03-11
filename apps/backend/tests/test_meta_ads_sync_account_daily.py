@@ -172,6 +172,70 @@ class MetaAdsSyncDailyTests(unittest.TestCase):
             payload = meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 1), grain=grain)
             self.assertEqual(payload["conversions"], 3.0)
 
+    def test_account_daily_insights_request_uses_time_increment_1(self):
+        captured: dict[str, str] = {}
+        original_build_url = meta_ads_service._build_graph_account_url
+        original_http_json = meta_ads_service._http_json
+        try:
+            meta_ads_service._build_graph_account_url = lambda **kwargs: "https://graph.example/insights"
+
+            def _http_json(*, method: str, url: str):
+                captured["method"] = method
+                captured["url"] = url
+                return {"data": []}
+
+            meta_ads_service._http_json = _http_json
+            meta_ads_service._fetch_account_daily_insights(
+                account_id="act_1",
+                start_date=date(2026, 3, 1),
+                end_date=date(2026, 3, 3),
+                access_token="token",
+            )
+        finally:
+            meta_ads_service._build_graph_account_url = original_build_url
+            meta_ads_service._http_json = original_http_json
+
+        self.assertEqual(captured.get("method"), "GET")
+        self.assertIn("time_increment=1", str(captured.get("url") or ""))
+
+    def test_only_account_daily_updates_meta_snapshot_source_of_truth(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client Snapshot", account_ids=["act_919"])
+        meta_ads_service._resolve_active_access_token_with_source = lambda: ("token-1", "database", None, None)
+
+        meta_ads_service._fetch_account_daily_insights = lambda **kwargs: [
+            {
+                "date_start": "2026-03-01",
+                "date_stop": "2026-03-01",
+                "spend": "10",
+                "impressions": "100",
+                "clicks": "10",
+                "actions": [{"action_type": "lead", "value": "2"}],
+                "action_values": [{"action_type": "purchase", "value": "20"}],
+            }
+        ]
+        meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 1), grain="account_daily")
+        before = meta_ads_service.get_metrics(client_id=client_id)
+
+        meta_ads_service._fetch_campaign_daily_insights = lambda **kwargs: [
+            {
+                "campaign_id": "cmp-snapshot",
+                "campaign_name": "Snapshot",
+                "date_start": "2026-03-01",
+                "spend": "999",
+                "impressions": "9999",
+                "clicks": "999",
+                "actions": [{"action_type": "lead", "value": "999"}],
+                "action_values": [{"action_type": "purchase", "value": "999"}],
+            }
+        ]
+        meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 1), grain="campaign_daily")
+        after = meta_ads_service.get_metrics(client_id=client_id)
+
+        self.assertEqual(before.get("spend"), after.get("spend"))
+        self.assertEqual(before.get("impressions"), after.get("impressions"))
+        self.assertEqual(before.get("clicks"), after.get("clicks"))
+        self.assertEqual(before.get("conversions"), after.get("conversions"))
+
     def test_campaign_daily_happy_path_single_account(self):
         client_id = self._create_client_with_meta_accounts(client_name="Client B", account_ids=["act_202"])
 

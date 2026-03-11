@@ -316,6 +316,7 @@ class MetaAdsService:
         access_token: str,
         level: str,
         fields: list[str],
+        time_increment: int | None = None,
     ) -> list[dict[str, object]]:
         params = {
             "level": level,
@@ -323,6 +324,8 @@ class MetaAdsService:
             "time_range": json.dumps({"since": start_date.isoformat(), "until": end_date.isoformat()}),
             "limit": 500,
         }
+        if time_increment is not None:
+            params["time_increment"] = max(1, int(time_increment))
         query = parse.urlencode(params)
         base_url = self._build_graph_account_url(account_id=account_id, access_token=access_token, suffix="/insights")
         joiner = "&" if "?" in base_url else "?"
@@ -368,6 +371,7 @@ class MetaAdsService:
             access_token=access_token,
             level="account",
             fields=["date_start", "date_stop", "spend", "impressions", "clicks", "actions", "action_values", "reach", "inline_link_clicks"],
+            time_increment=1,
         )
 
     def _fetch_campaign_daily_insights(self, *, account_id: str, start_date: date, end_date: date, access_token: str) -> list[dict[str, object]]:
@@ -846,17 +850,18 @@ class MetaAdsService:
             "synced_at": datetime.now(timezone.utc).isoformat(),
         }
 
-        meta_snapshot_store.upsert_snapshot(
-            payload={
-                "client_id": int(client_id),
-                "spend": float(snapshot["spend"]),
-                "impressions": int(snapshot["impressions"]),
-                "clicks": int(snapshot["clicks"]),
-                "conversions": int(round(float(snapshot["conversions"]))),
-                "revenue": float(snapshot["revenue"]),
-                "synced_at": str(snapshot["synced_at"]),
-            }
-        )
+        if resolved_grain == "account_daily":
+            meta_snapshot_store.upsert_snapshot(
+                payload={
+                    "client_id": int(client_id),
+                    "spend": float(snapshot["spend"]),
+                    "impressions": int(snapshot["impressions"]),
+                    "clicks": int(snapshot["clicks"]),
+                    "conversions": int(round(float(snapshot["conversions"]))),
+                    "revenue": float(snapshot["revenue"]),
+                    "synced_at": str(snapshot["synced_at"]),
+                }
+            )
         return snapshot
 
     def get_metrics(self, client_id: int) -> dict[str, float | int | str | bool]:
