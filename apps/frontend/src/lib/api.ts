@@ -89,6 +89,7 @@ export type AccountSyncRun = {
   job_type?: string | null;
   grain?: string | null;
   status?: string | null;
+  operational_status?: string | null;
   date_start?: string | null;
   date_end?: string | null;
   chunks_total?: number | null;
