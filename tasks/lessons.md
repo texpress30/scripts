@@ -263,3 +263,7 @@
 - 2026-03-11: Pentru taskuri incremental-backend pe același feature, când userul cere "pasul 2 read-side", livrează endpoint-ul final orientat UI (days + month groups + metadata) și recalcul formule la nivel de group, nu doar query brut de date zilnice.
 - 2026-03-11: După feedback pe Media Buying step 3, pentru taskuri UI read-only pe endpointuri noi, livrează componenta finală cu states complete (loading/error/empty/non-supported), grouping cerut și teste de interacțiune (expand/collapse), nu doar înlocuire minimală de placeholder.
 - 2026-03-11: Pentru Media Buying editabil în tabel, evită update-uri locale parțiale ale formulelor; după save pe rând zilnic preferă refetch complet al tabelului pentru consistență între rânduri zilnice și totaluri lunare.
+
+## 2026-03-11 — When user says previous code was unsatisfactory
+- Immediately add targeted regression tests that reflect the exact UX acceptance language (format/style/order), before finishing.
+- Verify selectors avoid ambiguous text matches when UI introduces editable headers or repeated labels.

@@ -100,6 +100,49 @@ const INTEGER_FIELDS: Array<keyof EditableDraft> = [
 
 const NON_NEGATIVE_AMOUNT_FIELDS: Array<keyof EditableDraft> = ["custom_value_3_amount_ron", "custom_value_4_amount_ron"];
 
+const RO_MONTH_SHORT = ["Ian", "Feb", "Mar", "Apr", "Mai", "Iun", "Iul", "Aug", "Sep", "Oct", "Noi", "Dec"] as const;
+
+type ColumnSemanticKey =
+  | "date"
+  | "cost_google"
+  | "cost_meta"
+  | "cost_tiktok"
+  | "cost_total"
+  | "percent_change"
+  | "leads"
+  | "phones"
+  | "total_leads"
+  | "custom_value_1_count"
+  | "custom_value_2_count"
+  | "custom_value_3_amount_ron"
+  | "custom_value_4_amount_ron"
+  | "custom_value_5_amount_ron"
+  | "sales_count"
+  | "custom_value_rate_1"
+  | "custom_value_rate_2"
+  | "cost_per_lead"
+  | "cost_custom_value_1"
+  | "cost_custom_value_2"
+  | "cost_per_sale";
+
+const GREY_COLUMNS: Set<ColumnSemanticKey> = new Set([
+  "cost_google",
+  "cost_meta",
+  "cost_tiktok",
+  "leads",
+  "phones",
+  "custom_value_1_count",
+  "custom_value_2_count",
+  "custom_value_3_amount_ron",
+]);
+
+const DASHED_COLUMNS: Set<ColumnSemanticKey> = new Set([
+  "cost_total",
+  "total_leads",
+  "custom_value_rate_1",
+  "custom_value_rate_2",
+]);
+
 function toIso(value: Date): string {
   return format(value, "yyyy-MM-dd");
 }
@@ -119,10 +162,29 @@ function formatRate(value: number | null | undefined): string {
   return `${(value * 100).toFixed(2)}%`;
 }
 
+function formatUnrealizedMoney(value: number | null | undefined, currencyCode: string): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  return `(${formatMoney(Math.abs(value), currencyCode)})`;
+}
+
+function columnClass(key: ColumnSemanticKey): string {
+  const classes = ["px-3", "py-2"];
+  if (GREY_COLUMNS.has(key)) classes.push("text-[#bfbfbf]");
+  if (DASHED_COLUMNS.has(key)) classes.push("border-l", "border-r", "border-dashed", "border-slate-300");
+  if (key === "custom_value_4_amount_ron") classes.push("text-red-600");
+  return classes.join(" ");
+}
+
 function monthLabel(value: string): string {
   const [year, month] = value.split("-");
-  const d = new Date(Number(year), Number(month) - 1, 1);
-  return format(d, "MMMM yyyy");
+  const monthIndex = Number(month) - 1;
+  return `${RO_MONTH_SHORT[Math.max(0, Math.min(11, monthIndex))]} ${year}`;
+}
+
+function shortDayLabel(value: string): string {
+  const [, month, day] = value.split("-");
+  const monthIndex = Number(month) - 1;
+  return `${Number(day)} ${RO_MONTH_SHORT[Math.max(0, Math.min(11, monthIndex))]}`;
 }
 
 function fallbackLabel(value: string | undefined, fallback: string): string {
@@ -223,7 +285,7 @@ export default function SubMediaBuyingPage() {
       setTableData(payload);
       setEditingByDate({});
       if (!preserveExpanded) {
-        const latestMonth = payload.months[payload.months.length - 1]?.month;
+        const latestMonth = [...payload.months].sort((a, b) => b.month.localeCompare(a.month))[0]?.month;
         setExpandedMonths(latestMonth ? { [latestMonth]: true } : {});
       }
     } catch (err) {
@@ -287,6 +349,10 @@ export default function SubMediaBuyingPage() {
   };
 
   const isLeadTemplate = clientType === "lead";
+  const sortedMonths = useMemo(
+    () => (tableData ? [...tableData.months].sort((a, b) => b.month.localeCompare(a.month)) : []),
+    [tableData]
+  );
 
   async function saveRow(day: LeadTableRow) {
     const draft = editingByDate[day.date];
@@ -431,48 +497,48 @@ export default function SubMediaBuyingPage() {
             </div>
           ) : null}
 
-          {!loading && !error && tableData && isLeadTemplate && tableData.months.length === 0 ? (
+          {!loading && !error && tableData && isLeadTemplate && sortedMonths.length === 0 ? (
             <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
               No data available for selected range.
             </div>
           ) : null}
 
-          {!loading && !error && tableData && isLeadTemplate && tableData.months.length > 0 ? (
+          {!loading && !error && tableData && isLeadTemplate && sortedMonths.length > 0 ? (
             <div className="mt-4 overflow-x-auto">
               <table className="min-w-[1850px] wm-card text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-600">
                   <tr>
-                    <th className="px-3 py-2">Data</th>
-                    <th className="px-3 py-2">Cost Google</th>
-                    <th className="px-3 py-2">Cost Meta</th>
-                    <th className="px-3 py-2">Cost TikTok</th>
-                    <th className="px-3 py-2">Cost Total</th>
-                    <th className="px-3 py-2">%^</th>
-                    <th className="px-3 py-2">Lead-uri</th>
-                    <th className="px-3 py-2">Telefoane</th>
-                    <th className="px-3 py-2">Total Lead-uri</th>
-                    <th className="px-3 py-2">{renderEditableHeader("custom_label_1")}</th>
-                    <th className="px-3 py-2">{renderEditableHeader("custom_label_2")}</th>
-                    <th className="px-3 py-2">{renderEditableHeader("custom_label_3")}</th>
-                    <th className="px-3 py-2">{renderEditableHeader("custom_label_4")}</th>
-                    <th className="px-3 py-2">{renderEditableHeader("custom_label_5")}</th>
-                    <th className="px-3 py-2">Vânzări</th>
-                    <th className="px-3 py-2">{renderEditableHeader("custom_rate_label_1")}</th>
-                    <th className="px-3 py-2">{renderEditableHeader("custom_rate_label_2")}</th>
-                    <th className="px-3 py-2">Cost per Lead</th>
-                    <th className="px-3 py-2">{renderEditableHeader("custom_cost_label_1")}</th>
-                    <th className="px-3 py-2">{renderEditableHeader("custom_cost_label_2")}</th>
-                    <th className="px-3 py-2">Cost per Sale</th>
+                    <th className={columnClass("date")}>Data</th>
+                    <th className={columnClass("cost_google")}>Cost Google</th>
+                    <th className={columnClass("cost_meta")}>Cost Meta</th>
+                    <th className={columnClass("cost_tiktok")}>Cost TikTok</th>
+                    <th className={columnClass("cost_total")}>Cost Total</th>
+                    <th className={columnClass("percent_change")}>%^</th>
+                    <th className={columnClass("leads")}>Lead-uri</th>
+                    <th className={columnClass("phones")}>Telefoane</th>
+                    <th className={columnClass("total_leads")}>Total Lead-uri</th>
+                    <th className={columnClass("custom_value_1_count")}>{renderEditableHeader("custom_label_1")}</th>
+                    <th className={columnClass("custom_value_2_count")}>{renderEditableHeader("custom_label_2")}</th>
+                    <th className={columnClass("custom_value_3_amount_ron")}>{renderEditableHeader("custom_label_3")}</th>
+                    <th className={columnClass("custom_value_4_amount_ron")}>{renderEditableHeader("custom_label_4")}</th>
+                    <th className={columnClass("custom_value_5_amount_ron")}>{renderEditableHeader("custom_label_5")}</th>
+                    <th className={columnClass("sales_count")}>Vânzări</th>
+                    <th className={columnClass("custom_value_rate_1")}>{renderEditableHeader("custom_rate_label_1")}</th>
+                    <th className={columnClass("custom_value_rate_2")}>{renderEditableHeader("custom_rate_label_2")}</th>
+                    <th className={columnClass("cost_per_lead")}>Cost per Lead</th>
+                    <th className={columnClass("cost_custom_value_1")}>{renderEditableHeader("custom_cost_label_1")}</th>
+                    <th className={columnClass("cost_custom_value_2")}>{renderEditableHeader("custom_cost_label_2")}</th>
+                    <th className={columnClass("cost_per_sale")}>Cost per Sale</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {tableData.months.map((month) => {
+                  {sortedMonths.map((month) => {
                     const open = Boolean(expandedMonths[month.month]);
                     const monthTotals = month.totals;
                     return (
                       <React.Fragment key={month.month}>
                         <tr className="border-t border-slate-300 bg-slate-100 font-semibold text-slate-900">
-                          <td className="px-3 py-2">
+                          <td className={columnClass("date")}>
                             <button
                               type="button"
                               onClick={() => setExpandedMonths((prev) => ({ ...prev, [month.month]: !open }))}
@@ -481,26 +547,26 @@ export default function SubMediaBuyingPage() {
                               {open ? "▾" : "▸"} {monthLabel(month.month)}
                             </button>
                           </td>
-                          <td className="px-3 py-2">{formatMoney(monthTotals.cost_google, displayCurrency)}</td>
-                          <td className="px-3 py-2">{formatMoney(monthTotals.cost_meta, displayCurrency)}</td>
-                          <td className="px-3 py-2">{formatMoney(monthTotals.cost_tiktok, displayCurrency)}</td>
-                          <td className="px-3 py-2">{formatMoney(monthTotals.cost_total, displayCurrency)}</td>
-                          <td className="px-3 py-2">—</td>
-                          <td className="px-3 py-2">{formatCount(monthTotals.leads)}</td>
-                          <td className="px-3 py-2">{formatCount(monthTotals.phones)}</td>
-                          <td className="px-3 py-2">{formatCount(monthTotals.total_leads)}</td>
-                          <td className="px-3 py-2">{formatCount(monthTotals.custom_value_1_count)}</td>
-                          <td className="px-3 py-2">{formatCount(monthTotals.custom_value_2_count)}</td>
-                          <td className="px-3 py-2">{formatMoney(monthTotals.custom_value_3_amount_ron, displayCurrency)}</td>
-                          <td className="px-3 py-2">{formatMoney(monthTotals.custom_value_4_amount_ron, displayCurrency)}</td>
-                          <td className="px-3 py-2">{formatMoney(monthTotals.custom_value_5_amount_ron, displayCurrency)}</td>
-                          <td className="px-3 py-2">{formatCount(monthTotals.sales_count)}</td>
-                          <td className="px-3 py-2">{formatRate(monthTotals.custom_value_rate_1)}</td>
-                          <td className="px-3 py-2">{formatRate(monthTotals.custom_value_rate_2)}</td>
-                          <td className="px-3 py-2">{formatMoney(monthTotals.cost_per_lead, displayCurrency)}</td>
-                          <td className="px-3 py-2">{formatMoney(monthTotals.cost_custom_value_1, displayCurrency)}</td>
-                          <td className="px-3 py-2">{formatMoney(monthTotals.cost_custom_value_2, displayCurrency)}</td>
-                          <td className="px-3 py-2">{formatMoney(monthTotals.cost_per_sale, displayCurrency)}</td>
+                          <td className={columnClass("cost_google")}>{formatMoney(monthTotals.cost_google, displayCurrency)}</td>
+                          <td className={columnClass("cost_meta")}>{formatMoney(monthTotals.cost_meta, displayCurrency)}</td>
+                          <td className={columnClass("cost_tiktok")}>{formatMoney(monthTotals.cost_tiktok, displayCurrency)}</td>
+                          <td className={columnClass("cost_total")}>{formatMoney(monthTotals.cost_total, displayCurrency)}</td>
+                          <td className={columnClass("percent_change")}>—</td>
+                          <td className={columnClass("leads")}>{formatCount(monthTotals.leads)}</td>
+                          <td className={columnClass("phones")}>{formatCount(monthTotals.phones)}</td>
+                          <td className={columnClass("total_leads")}>{formatCount(monthTotals.total_leads)}</td>
+                          <td className={columnClass("custom_value_1_count")}>{formatCount(monthTotals.custom_value_1_count)}</td>
+                          <td className={columnClass("custom_value_2_count")}>{formatCount(monthTotals.custom_value_2_count)}</td>
+                          <td className={columnClass("custom_value_3_amount_ron")}>{formatMoney(monthTotals.custom_value_3_amount_ron, displayCurrency)}</td>
+                          <td className={columnClass("custom_value_4_amount_ron")}>{formatUnrealizedMoney(monthTotals.custom_value_4_amount_ron, displayCurrency)}</td>
+                          <td className={columnClass("custom_value_5_amount_ron")}>{formatMoney(monthTotals.custom_value_5_amount_ron, displayCurrency)}</td>
+                          <td className={columnClass("sales_count")}>{formatCount(monthTotals.sales_count)}</td>
+                          <td className={columnClass("custom_value_rate_1")}>{formatRate(monthTotals.custom_value_rate_1)}</td>
+                          <td className={columnClass("custom_value_rate_2")}>{formatRate(monthTotals.custom_value_rate_2)}</td>
+                          <td className={columnClass("cost_per_lead")}>{formatMoney(monthTotals.cost_per_lead, displayCurrency)}</td>
+                          <td className={columnClass("cost_custom_value_1")}>{formatMoney(monthTotals.cost_custom_value_1, displayCurrency)}</td>
+                          <td className={columnClass("cost_custom_value_2")}>{formatMoney(monthTotals.cost_custom_value_2, displayCurrency)}</td>
+                          <td className={columnClass("cost_per_sale")}>{formatMoney(monthTotals.cost_per_sale, displayCurrency)}</td>
                         </tr>
 
                         {open
@@ -514,8 +580,8 @@ export default function SubMediaBuyingPage() {
 
                               return (
                                 <tr key={day.date} className="border-t border-slate-200 bg-white text-slate-800">
-                                  <td className="px-3 py-2 pl-8 align-top">
-                                    <div>{day.date}</div>
+                                  <td className={`${columnClass("date")} pl-8 align-top`}>
+                                    <div>{shortDayLabel(day.date)}</div>
                                     <div className="mt-1 flex gap-2">
                                       {draft ? (
                                         <>
@@ -554,50 +620,50 @@ export default function SubMediaBuyingPage() {
                                       <p className={`mt-1 text-xs ${feedback.kind === "error" ? "text-red-600" : "text-emerald-600"}`}>{feedback.message}</p>
                                     ) : null}
                                   </td>
-                                  <td className="px-3 py-2">{formatMoney(day.cost_google, displayCurrency)}</td>
-                                  <td className="px-3 py-2">{formatMoney(day.cost_meta, displayCurrency)}</td>
-                                  <td className="px-3 py-2">{formatMoney(day.cost_tiktok, displayCurrency)}</td>
-                                  <td className="px-3 py-2">{formatMoney(day.cost_total, displayCurrency)}</td>
-                                  <td className="px-3 py-2">—</td>
-                                  <td className="px-3 py-2">
+                                  <td className={columnClass("cost_google")}>{formatMoney(day.cost_google, displayCurrency)}</td>
+                                  <td className={columnClass("cost_meta")}>{formatMoney(day.cost_meta, displayCurrency)}</td>
+                                  <td className={columnClass("cost_tiktok")}>{formatMoney(day.cost_tiktok, displayCurrency)}</td>
+                                  <td className={columnClass("cost_total")}>{formatMoney(day.cost_total, displayCurrency)}</td>
+                                  <td className={columnClass("percent_change")}>—</td>
+                                  <td className={columnClass("leads")}>
                                     {draft ? <input aria-label={`Leads ${day.date}`} className="w-20 rounded border border-slate-300 px-2 py-1" value={draft.leads} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, leads: e.target.value } }))} /> : formatCount(day.leads)}
                                     {errors.leads ? <p className="text-xs text-red-600">{errors.leads}</p> : null}
                                   </td>
-                                  <td className="px-3 py-2">
+                                  <td className={columnClass("phones")}>
                                     {draft ? <input aria-label={`Phones ${day.date}`} className="w-20 rounded border border-slate-300 px-2 py-1" value={draft.phones} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, phones: e.target.value } }))} /> : formatCount(day.phones)}
                                     {errors.phones ? <p className="text-xs text-red-600">{errors.phones}</p> : null}
                                   </td>
-                                  <td className="px-3 py-2">{formatCount(day.total_leads)}</td>
-                                  <td className="px-3 py-2">
+                                  <td className={columnClass("total_leads")}>{formatCount(day.total_leads)}</td>
+                                  <td className={columnClass("custom_value_1_count")}>
                                     {draft ? <input aria-label={`Custom Value 1 ${day.date}`} className="w-20 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_1_count} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, custom_value_1_count: e.target.value } }))} /> : formatCount(day.custom_value_1_count)}
                                     {errors.custom_value_1_count ? <p className="text-xs text-red-600">{errors.custom_value_1_count}</p> : null}
                                   </td>
-                                  <td className="px-3 py-2">
+                                  <td className={columnClass("custom_value_2_count")}>
                                     {draft ? <input aria-label={`Custom Value 2 ${day.date}`} className="w-20 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_2_count} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, custom_value_2_count: e.target.value } }))} /> : formatCount(day.custom_value_2_count)}
                                     {errors.custom_value_2_count ? <p className="text-xs text-red-600">{errors.custom_value_2_count}</p> : null}
                                   </td>
-                                  <td className="px-3 py-2">
+                                  <td className={columnClass("custom_value_3_amount_ron")}>
                                     {draft ? <input aria-label={`Custom Value 3 ${day.date}`} className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_3_amount_ron} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, custom_value_3_amount_ron: e.target.value } }))} /> : formatMoney(day.custom_value_3_amount_ron, displayCurrency)}
                                     {errors.custom_value_3_amount_ron ? <p className="text-xs text-red-600">{errors.custom_value_3_amount_ron}</p> : null}
                                   </td>
-                                  <td className="px-3 py-2">
-                                    {draft ? <input aria-label={`Custom Value 4 ${day.date}`} className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_4_amount_ron} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, custom_value_4_amount_ron: e.target.value } }))} /> : formatMoney(day.custom_value_4_amount_ron, displayCurrency)}
+                                  <td className={columnClass("custom_value_4_amount_ron")}>
+                                    {draft ? <input aria-label={`Custom Value 4 ${day.date}`} className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_4_amount_ron} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, custom_value_4_amount_ron: e.target.value } }))} /> : formatUnrealizedMoney(day.custom_value_4_amount_ron, displayCurrency)}
                                     {errors.custom_value_4_amount_ron ? <p className="text-xs text-red-600">{errors.custom_value_4_amount_ron}</p> : null}
                                   </td>
-                                  <td className="px-3 py-2">
+                                  <td className={columnClass("custom_value_5_amount_ron")}>
                                     {draft ? <input aria-label={`Custom Value 5 ${day.date}`} className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_5_amount_ron} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, custom_value_5_amount_ron: e.target.value } }))} /> : formatMoney(day.custom_value_5_amount_ron, displayCurrency)}
                                     {errors.custom_value_5_amount_ron ? <p className="text-xs text-red-600">{errors.custom_value_5_amount_ron}</p> : null}
                                   </td>
-                                  <td className="px-3 py-2">
+                                  <td className={columnClass("sales_count")}>
                                     {draft ? <input aria-label={`Sales ${day.date}`} className="w-20 rounded border border-slate-300 px-2 py-1" value={draft.sales_count} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, sales_count: e.target.value } }))} /> : formatCount(day.sales_count)}
                                     {errors.sales_count ? <p className="text-xs text-red-600">{errors.sales_count}</p> : null}
                                   </td>
-                                  <td className="px-3 py-2">{formatRate(day.custom_value_rate_1)}</td>
-                                  <td className="px-3 py-2">{formatRate(day.custom_value_rate_2)}</td>
-                                  <td className="px-3 py-2">{formatMoney(day.cost_per_lead, displayCurrency)}</td>
-                                  <td className="px-3 py-2">{formatMoney(day.cost_custom_value_1, displayCurrency)}</td>
-                                  <td className="px-3 py-2">{formatMoney(day.cost_custom_value_2, displayCurrency)}</td>
-                                  <td className="px-3 py-2">{formatMoney(day.cost_per_sale, displayCurrency)}</td>
+                                  <td className={columnClass("custom_value_rate_1")}>{formatRate(day.custom_value_rate_1)}</td>
+                                  <td className={columnClass("custom_value_rate_2")}>{formatRate(day.custom_value_rate_2)}</td>
+                                  <td className={columnClass("cost_per_lead")}>{formatMoney(day.cost_per_lead, displayCurrency)}</td>
+                                  <td className={columnClass("cost_custom_value_1")}>{formatMoney(day.cost_custom_value_1, displayCurrency)}</td>
+                                  <td className={columnClass("cost_custom_value_2")}>{formatMoney(day.cost_custom_value_2, displayCurrency)}</td>
+                                  <td className={columnClass("cost_per_sale")}>{formatMoney(day.cost_per_sale, displayCurrency)}</td>
                                 </tr>
                               );
                             })

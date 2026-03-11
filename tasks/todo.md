@@ -3278,3 +3278,20 @@
 - Daily rows now support robust manual editing with simple inputs and per-row actions, while monthly summary rows remain read-only.
 - Save uses existing backend PUT endpoint and triggers table refetch to refresh day + month totals and dependent formulas from backend response.
 - `%^` remains displayed as explicit placeholder (`—`) on both month and day rows.
+
+---
+
+# TODO — Media Buying table UI polish (date/column styles/month order)
+
+- [x] Attempt workspace sync to latest branch state and record tracking/upstream limitations.
+- [x] Implement frontend-only Media Buying table polish (short Romanian day dates, semantic column styling, dashed separators, month order descending) with no business-logic changes.
+- [x] Add/update frontend tests for date format, month order, semantic styles, dashed separators, and inline edit regression coverage.
+- [x] Run frontend tests + build and record results.
+- [x] Commit, attempt push, and create PR.
+
+## Review
+- [x] Added semantic column styling map in Media Buying page and applied gray text, dashed separators, and red unrealized-value rendering with parentheses.
+- [x] Daily rows now display Romanian short dates (`1 Mar`, `1 Feb`, `1 Ian`) and month headers use short month+year labels.
+- [x] Month sections are rendered newest-first (`sortedMonths` descending by `YYYY-MM`).
+- [x] Verification: `pnpm --dir apps/frontend test src/app/sub/[id]/media-buying/page.test.tsx`, `pnpm --dir apps/frontend build`.
+- [x] Workspace sync note: `git pull --ff-only` failed because branch `work` has no upstream tracking configured in this environment.

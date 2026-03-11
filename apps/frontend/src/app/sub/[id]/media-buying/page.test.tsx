@@ -120,6 +120,34 @@ function leadPayload() {
   };
 }
 
+
+function leadPayloadWithMonths() {
+  const base = leadPayload();
+  return {
+    ...base,
+    months: [
+      {
+        ...base.months[0],
+        month: "2026-01",
+        totals: { ...base.months[0].totals, date: "2026-01-31" },
+        days: [{ ...base.months[0].days[0], date: "2026-01-01" }],
+      },
+      {
+        ...base.months[0],
+        month: "2026-02",
+        totals: { ...base.months[0].totals, date: "2026-02-28" },
+        days: [{ ...base.months[0].days[0], date: "2026-02-01" }],
+      },
+      {
+        ...base.months[0],
+        month: "2026-03",
+        totals: { ...base.months[0].totals, date: "2026-03-31" },
+        days: [{ ...base.months[0].days[0], date: "2026-03-01" }],
+      },
+    ],
+  };
+}
+
 describe("SubMediaBuyingPage", () => {
   beforeEach(() => {
     apiMock.apiRequest.mockReset();
@@ -134,7 +162,7 @@ describe("SubMediaBuyingPage", () => {
 
     render(<SubMediaBuyingPage />);
     expect(await screen.findByRole("heading", { name: "Media Buying - Active Life Therapy" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /March 2026/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Mar 2026/i })).toBeInTheDocument();
   });
 
   it("ecommerce/programmatic from Agency Clients shows not-implemented fallback and no lead table", async () => {
@@ -146,7 +174,7 @@ describe("SubMediaBuyingPage", () => {
     render(<SubMediaBuyingPage />);
     expect(await screen.findByText("Template not implemented yet for this client type (programmatic)."))
       .toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /March 2026/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Mar 2026/i })).toBeNull();
   });
 
   it("supports inline header edit for custom/rate/cost labels and persists through config endpoint", async () => {
@@ -231,7 +259,7 @@ describe("SubMediaBuyingPage", () => {
 
     await screen.findByText("Saved");
     await waitFor(() => expect(screen.getAllByText("20").length).toBeGreaterThan(0));
-    expect(screen.getByRole("button", { name: /March 2026/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Mar 2026/i })).toBeInTheDocument();
   });
 
   it("shows validation errors and disables save for invalid row values", async () => {
@@ -267,6 +295,32 @@ describe("SubMediaBuyingPage", () => {
     expect(await screen.findByText("Custom Value 1")).toBeInTheDocument();
     expect(screen.getByText("Custom Value Rate 1")).toBeInTheDocument();
     expect(screen.getByText("Cost Custom Value 1")).toBeInTheDocument();
+  });
+
+  it("formats daily dates, applies semantic column styles, dashed separators, and reverse month order", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
+      if (path.startsWith("/clients/96/media-buying/lead/table")) return leadPayloadWithMonths();
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaBuyingPage />);
+
+    const monthButtons = await screen.findAllByRole("button", { name: /(Ian|Feb|Mar) 2026/i });
+    expect(monthButtons.map((item) => item.textContent || "")[0]).toContain("Mar 2026");
+
+    expect(screen.getByText("1 Mar")).toBeInTheDocument();
+
+    expect(screen.getByRole("columnheader", { name: /Cost Google/i }).className).toContain("text-[#bfbfbf]");
+    expect(screen.getByRole("columnheader", { name: /Cost Total/i }).className).toContain("border-dashed");
+    expect(screen.getByRole("columnheader", { name: /Total Lead-uri/i }).className).toContain("border-dashed");
+
+    const unrealizedCells = screen.getAllByText(/\(RON\s?40\.00\)|\(.*40.*RON.*\)/i);
+    expect(unrealizedCells.length).toBeGreaterThan(0);
+    expect(unrealizedCells[0].closest("td")?.className || "").toContain("text-red-600");
+
+    fireEvent.click(screen.getByRole("button", { name: /Mar 2026/i }));
+    expect(screen.queryByText("1 Mar")).toBeNull();
   });
 
   it("renders loading and error state", async () => {
