@@ -3110,3 +3110,23 @@
 - Canonical rule now selects one lead action type by priority (`lead` first, then `onsite_conversion.lead_grouped`, then other lead aliases) and uses only that value for conversions.
 - Added safe observability fields in `extra_metrics.meta_ads`: `lead_action_types_found`, `lead_action_type_selected`, `lead_action_values_found`.
 - Verified dedup regression case where two lead-like action types both report 23 now stores conversions=23 (not 46).
+
+---
+
+# TODO — Dashboard currency normalization (Agency RON / Sub-account client currency)
+
+- [x] Attempt workspace sync before edits and record tracking-remote blocker if unavailable.
+- [x] Audit current aggregation paths for Agency Dashboard totals, Sub-account totals/platform rows, and Top clients spend card.
+- [x] Implement generic per-row currency normalization helper using date-based FX with safe fallback behavior.
+- [x] Normalize Agency Dashboard monetary totals to RON before aggregation and recalculate ROAS from normalized spend/revenue.
+- [x] Normalize Sub-account Dashboard monetary totals/platform rows to client preferred currency before aggregation.
+- [x] Ensure Top clients (by spend) is sorted and displayed in RON using normalized spend.
+- [x] Keep non-monetary metrics unconverted (impressions/clicks/conversions).
+- [x] Add backend tests for mixed-currency normalization, top-clients RON behavior, and FX fallback predictability.
+- [x] Run targeted backend and frontend tests/build relevant to changed dashboard flows.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Added `_normalize_money(...)` and `_aggregate_client_rows(...)` to normalize by row date + source currency -> target currency.
+- Updated client dashboard query to pull `account_currency` and normalize spend/revenue to client preferred currency for totals and per-platform rows.
+- Updated agency top clients to use/display RON normalized spend, with sorting based on normalized RON values.
