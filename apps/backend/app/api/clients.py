@@ -1,3 +1,4 @@
+from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.dependencies import enforce_action_scope, get_current_user
@@ -11,11 +12,14 @@ from app.schemas.client import (
     DetachGoogleAccountRequest,
     DetachPlatformAccountRequest,
     UpdateClientProfileRequest,
+    MediaBuyingConfigUpdateRequest,
+    MediaBuyingLeadDailyValueUpsertRequest,
 )
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
 from app.services.client_registry import PlatformAccountAlreadyAttachedError, client_registry_service
 from app.services.client_business_inputs_import_service import client_business_inputs_import_service
+from app.services.media_buying_store import media_buying_store
 from app.services.sync_constants import (
     PLATFORM_GOOGLE_ADS,
     PLATFORM_META_ADS,
@@ -43,6 +47,10 @@ def _looks_like_feature_flag_disabled_error(value: object | None) -> bool:
     return "disabled by feature flag" in normalized
 
 
+def _is_success_run_status(value: object | None) -> bool:
+    return str(value or "").strip().lower() in {"done", "success", "completed"}
+
+
 def _suppress_stale_tiktok_feature_flag_errors(*, items: list[dict[str, object]], sync_enabled: bool) -> None:
     if not sync_enabled:
         return
@@ -57,6 +65,44 @@ def _suppress_stale_tiktok_feature_flag_errors(*, items: list[dict[str, object]]
                 item["last_error_category"] = None
             if "last_error_details" in item:
                 item["last_error_details"] = None
+
+
+def _suppress_stale_tiktok_recent_errors_after_success(*, items: list[dict[str, object]]) -> None:
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if bool(item.get("has_active_sync")):
+            continue
+        if not _is_success_run_status(item.get("last_run_status")):
+            continue
+        if item.get("last_success_at") is None:
+            continue
+        if item.get("last_error") is None:
+            continue
+        item["last_error"] = None
+        if "last_error_category" in item:
+            item["last_error_category"] = None
+        if "last_error_details" in item:
+            item["last_error_details"] = None
+
+
+def _suppress_stale_recent_errors_after_success(*, items: list[dict[str, object]]) -> None:
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if bool(item.get("has_active_sync")):
+            continue
+        if not _is_success_run_status(item.get("last_run_status")):
+            continue
+        if item.get("last_success_at") is None:
+            continue
+        if item.get("last_error") is None:
+            continue
+        item["last_error"] = None
+        if "last_error_category" in item:
+            item["last_error_category"] = None
+        if "last_error_details" in item:
+            item["last_error_details"] = None
 
 
 def _normalize_platform_or_422(platform: str) -> str:
@@ -167,8 +213,10 @@ def list_platform_accounts(platform: str, user: AuthUser = Depends(get_current_u
     normalized_platform = _normalize_platform_or_422(platform)
     sync_enabled = _is_platform_sync_enabled(normalized_platform)
     items = client_registry_service.list_platform_accounts_for_mapping(platform=normalized_platform)
+    _suppress_stale_recent_errors_after_success(items=items)
     if normalized_platform == PLATFORM_TIKTOK_ADS:
         _suppress_stale_tiktok_feature_flag_errors(items=items, sync_enabled=sync_enabled)
+        _suppress_stale_tiktok_recent_errors_after_success(items=items)
     return {
         "platform": normalized_platform,
         "sync_enabled": sync_enabled,
@@ -339,6 +387,103 @@ def import_client_business_inputs(
     )
     return result
 
+
+
+
+def _ensure_client_exists_or_404(*, client_id: int) -> None:
+    details = client_registry_service.get_client_details(client_id=int(client_id))
+    if details is None:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+
+@router.get("/{client_id}/media-buying/config")
+def get_media_buying_config(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    _ensure_client_exists_or_404(client_id=client_id)
+    return media_buying_store.get_config(client_id=client_id)
+
+
+@router.put("/{client_id}/media-buying/config")
+def upsert_media_buying_config(
+    client_id: int,
+    payload: MediaBuyingConfigUpdateRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    _ensure_client_exists_or_404(client_id=client_id)
+    try:
+        return media_buying_store.upsert_config(
+            client_id=client_id,
+            template_type=payload.template_type,
+            display_currency=payload.display_currency,
+            custom_label_1=payload.custom_label_1,
+            custom_label_2=payload.custom_label_2,
+            custom_label_3=payload.custom_label_3,
+            custom_label_4=payload.custom_label_4,
+            custom_label_5=payload.custom_label_5,
+            enabled=payload.enabled,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
+@router.get("/{client_id}/media-buying/lead/daily-values")
+def list_media_buying_lead_daily_values(
+    client_id: int,
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    _ensure_client_exists_or_404(client_id=client_id)
+    try:
+        items = media_buying_store.list_lead_daily_manual_values(client_id=client_id, date_from=date_from, date_to=date_to)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return {"items": items, "count": len(items), "date_from": str(date_from), "date_to": str(date_to)}
+
+
+@router.put("/{client_id}/media-buying/lead/daily-values")
+def upsert_media_buying_lead_daily_value(
+    client_id: int,
+    payload: MediaBuyingLeadDailyValueUpsertRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    _ensure_client_exists_or_404(client_id=client_id)
+    try:
+        return media_buying_store.upsert_lead_daily_manual_value(
+            client_id=client_id,
+            metric_date=payload.date,
+            leads=payload.leads,
+            phones=payload.phones,
+            custom_value_1_count=payload.custom_value_1_count,
+            custom_value_2_count=payload.custom_value_2_count,
+            custom_value_3_amount_ron=payload.custom_value_3_amount_ron,
+            custom_value_4_amount_ron=payload.custom_value_4_amount_ron,
+            custom_value_5_amount_ron=payload.custom_value_5_amount_ron,
+            sales_count=payload.sales_count,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
+
+@router.get("/{client_id}/media-buying/lead/table")
+def get_media_buying_lead_table(
+    client_id: int,
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    _ensure_client_exists_or_404(client_id=client_id)
+    try:
+        return media_buying_store.get_lead_table(client_id=client_id, date_from=date_from, date_to=date_to)
+    except NotImplementedError as exc:
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
 @router.get("/{client_id}/accounts")
 def list_client_accounts(
