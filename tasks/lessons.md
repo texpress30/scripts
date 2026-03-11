@@ -254,4 +254,7 @@
 - 2026-03-10: Pentru parity cross-platform în Agency Accounts list, verifică întâi mapper-ul frontend unificat; dacă backend are câmpurile dar UI afișează '-', cauza poate fi strict de mapping nul hardcodat.
 - 2026-03-10: Pentru Meta Ads, `conversions` nu trebuie derivat din suma tuturor action types; folosește allowlist explicit lead-only și păstrează separat `conversion_value` ca metrică distinctă.
 - 2026-03-11: După feedback pe Meta conversions dublate, pentru action metrics cu aliasuri lead-like trebuie aleasă o singură sursă canonică prin prioritate explicită și instrumentată minim (`selected/found/values`), nu sumare peste toate aliasurile.
+<<<<<<< codex/setup-new-workspace-and-sync-with-github-afcojn
 - 2026-03-11: Pentru dashboard-uri multi-currency, nu agrega direct valori monetare native; normalizează per-row cu FX pe dată către moneda de prezentare (Agency=RON, Sub-account=moneda clientului), apoi calculează ROAS din valorile normalizate.
+=======
+>>>>>>> main
