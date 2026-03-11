@@ -260,6 +260,4 @@
 - 2026-03-11: Pentru schimbări UI locale pe pagină de sub-dashboard, modifică strict headerul paginii (fără side effects în sidebar global) și validează explicit link-uri noi + eliminări prin test component.
 - 2026-03-11: După feedback pe link-uri noi în sub-dashboard, când adaugi navigare către rute inexistente, livrează în același schimb și paginile destinație (scaffold minim + layout consistent), nu lăsa link-uri care dau 404.
 - 2026-03-11: După feedback pe feature scaffold incomplet, când introduci o fundație de produs (ex. Media Buying), livrează vertical slice complet pe scope-ul cerut (DB + store + API + validări + teste), nu doar placeholder UI.
-- 2026-03-11: Pentru schimbări UI locale pe pagină de sub-dashboard, modifică strict headerul paginii (fără side effects în sidebar global) și validează explicit link-uri noi + eliminări prin test component.
-- 2026-03-11: După feedback pe link-uri noi în sub-dashboard, când adaugi navigare către rute inexistente, livrează în același schimb și paginile destinație (scaffold minim + layout consistent), nu lăsa link-uri care dau 404.
-- 2026-03-11: Pentru schimbări UI locale pe pagină de sub-dashboard, modifică strict headerul paginii (fără side effects în sidebar global) și validează explicit link-uri noi + eliminări prin test component.
+- 2026-03-11: Pentru taskuri incremental-backend pe același feature, când userul cere "pasul 2 read-side", livrează endpoint-ul final orientat UI (days + month groups + metadata) și recalcul formule la nivel de group, nu doar query brut de date zilnice.

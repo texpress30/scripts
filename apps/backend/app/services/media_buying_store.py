@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from threading import Lock
 
 from app.core.config import load_settings
+from app.services.dashboard import unified_dashboard_service
 
 try:
     import psycopg
@@ -125,6 +126,262 @@ class MediaBuyingStore:
             "updated_at": str(row[11]) if row[11] is not None else None,
             # TODO(media-buying): `%^` column formula intentionally not implemented in foundation task.
         }
+
+    def _safe_div(self, numerator: float, denominator: float) -> float | None:
+        if denominator == 0:
+            return None
+        return numerator / denominator
+
+    def _month_key(self, value: date) -> str:
+        return f"{value.year:04d}-{value.month:02d}"
+
+    def _normalize_money_to_display_currency(self, *, amount: float, from_currency: str, display_currency: str, rate_date: date) -> float:
+        return float(
+            unified_dashboard_service._normalize_money(
+                amount=float(amount),
+                from_currency=from_currency,
+                to_currency=display_currency,
+                rate_date=rate_date,
+            )
+        )
+
+    def _list_automated_daily_costs(
+        self,
+        *,
+        client_id: int,
+        date_from: date,
+        date_to: date,
+    ) -> list[dict[str, object]]:
+        self._ensure_schema()
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    WITH perf AS (
+                        SELECT
+                            apr.platform,
+                            apr.report_date,
+                            COALESCE(
+                                NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') ELSE '' END), ''),
+                                NULLIF(TRIM(mapped.account_currency), ''),
+                                NULLIF(TRIM(client.currency), ''),
+                                'RON'
+                            ) AS account_currency,
+                            COALESCE(apr.client_id, mapped.client_id) AS resolved_client_id,
+                            COALESCE(apr.spend, 0) AS spend
+                        FROM ad_performance_reports apr
+                        LEFT JOIN LATERAL (
+                            SELECT m.client_id, m.account_currency
+                            FROM agency_account_client_mappings m
+                            WHERE m.platform = apr.platform
+                              AND (
+                                  m.account_id = apr.customer_id
+                                  OR (
+                                      apr.platform = 'google_ads'
+                                      AND regexp_replace(m.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                                  )
+                              )
+                            ORDER BY m.updated_at DESC, m.created_at DESC
+                            LIMIT 1
+                        ) mapped ON TRUE
+                        LEFT JOIN agency_clients client ON client.id = COALESCE(apr.client_id, mapped.client_id)
+                    )
+                    SELECT report_date, platform, account_currency, SUM(spend)
+                    FROM perf
+                    WHERE resolved_client_id = %s
+                      AND platform IN ('google_ads', 'meta_ads', 'tiktok_ads')
+                      AND report_date BETWEEN %s AND %s
+                    GROUP BY report_date, platform, account_currency
+                    ORDER BY report_date ASC
+                    """,
+                    (int(client_id), date_from, date_to),
+                )
+                rows = cur.fetchall() or []
+
+        payload: list[dict[str, object]] = []
+        for row in rows:
+            report_date = row[0] if isinstance(row[0], date) else date.today()
+            payload.append(
+                {
+                    "date": report_date,
+                    "platform": str(row[1]),
+                    "account_currency": str(row[2] or "RON").upper(),
+                    "spend": float(row[3] or 0.0),
+                }
+            )
+        return payload
+
+    def _build_daily_row(
+        self,
+        *,
+        row_date: date,
+        display_currency: str,
+        daily_costs: dict[str, float],
+        manual_row: dict[str, object] | None,
+    ) -> dict[str, object]:
+        leads = int(manual_row.get("leads", 0)) if isinstance(manual_row, dict) else 0
+        phones = int(manual_row.get("phones", 0)) if isinstance(manual_row, dict) else 0
+        cv1 = int(manual_row.get("custom_value_1_count", 0)) if isinstance(manual_row, dict) else 0
+        cv2 = int(manual_row.get("custom_value_2_count", 0)) if isinstance(manual_row, dict) else 0
+        cv3_ron = float(manual_row.get("custom_value_3_amount_ron", 0.0)) if isinstance(manual_row, dict) else 0.0
+        cv4_ron = float(manual_row.get("custom_value_4_amount_ron", 0.0)) if isinstance(manual_row, dict) else 0.0
+        cv5_ron = float(manual_row.get("custom_value_5_amount_ron", 0.0)) if isinstance(manual_row, dict) else 0.0
+        sales_count = int(manual_row.get("sales_count", 0)) if isinstance(manual_row, dict) else 0
+
+        cost_google = round(float(daily_costs.get("google_ads", 0.0)), 2)
+        cost_meta = round(float(daily_costs.get("meta_ads", 0.0)), 2)
+        cost_tiktok = round(float(daily_costs.get("tiktok_ads", 0.0)), 2)
+        cost_total = round(cost_google + cost_meta + cost_tiktok, 2)
+        total_leads = leads + phones
+
+        return {
+            "date": row_date.isoformat(),
+            "cost_google": cost_google,
+            "cost_meta": cost_meta,
+            "cost_tiktok": cost_tiktok,
+            "cost_total": cost_total,
+            "percent_change": None,  # TODO(media-buying): `%^` formula is intentionally not implemented in this task.
+            "leads": leads,
+            "phones": phones,
+            "total_leads": total_leads,
+            "custom_value_1_count": cv1,
+            "custom_value_2_count": cv2,
+            "custom_value_3_amount_ron": round(cv3_ron, 2),
+            "custom_value_4_amount_ron": round(cv4_ron, 2),
+            "custom_value_5_amount_ron": round(cv5_ron, 2),
+            "sales_count": sales_count,
+            "custom_value_rate_1": self._safe_div(float(sales_count), float(cv1)),
+            "custom_value_rate_2": self._safe_div(float(sales_count), float(cv2)),
+            "cost_per_lead": self._safe_div(cost_total, float(total_leads)),
+            "cost_custom_value_1": self._safe_div(cost_total, float(cv1)),
+            "cost_custom_value_2": self._safe_div(cost_total, float(cv2)),
+            "cost_per_sale": self._safe_div(cost_total, float(sales_count)),
+            "display_currency": display_currency,
+        }
+
+    def _rollup_month(self, *, month: str, day_rows: list[dict[str, object]]) -> dict[str, object]:
+        sums = {
+            "cost_google": sum(float(row.get("cost_google", 0.0)) for row in day_rows),
+            "cost_meta": sum(float(row.get("cost_meta", 0.0)) for row in day_rows),
+            "cost_tiktok": sum(float(row.get("cost_tiktok", 0.0)) for row in day_rows),
+            "leads": sum(int(row.get("leads", 0)) for row in day_rows),
+            "phones": sum(int(row.get("phones", 0)) for row in day_rows),
+            "custom_value_1_count": sum(int(row.get("custom_value_1_count", 0)) for row in day_rows),
+            "custom_value_2_count": sum(int(row.get("custom_value_2_count", 0)) for row in day_rows),
+            "custom_value_3_amount_ron": sum(float(row.get("custom_value_3_amount_ron", 0.0)) for row in day_rows),
+            "custom_value_4_amount_ron": sum(float(row.get("custom_value_4_amount_ron", 0.0)) for row in day_rows),
+            "custom_value_5_amount_ron": sum(float(row.get("custom_value_5_amount_ron", 0.0)) for row in day_rows),
+            "sales_count": sum(int(row.get("sales_count", 0)) for row in day_rows),
+        }
+        cost_total = round(sums["cost_google"] + sums["cost_meta"] + sums["cost_tiktok"], 2)
+        total_leads = int(sums["leads"]) + int(sums["phones"])
+        return {
+            "month": month,
+            "date_from": day_rows[0]["date"],
+            "date_to": day_rows[-1]["date"],
+            "totals": {
+                "cost_google": round(sums["cost_google"], 2),
+                "cost_meta": round(sums["cost_meta"], 2),
+                "cost_tiktok": round(sums["cost_tiktok"], 2),
+                "cost_total": cost_total,
+                "percent_change": None,
+                "leads": int(sums["leads"]),
+                "phones": int(sums["phones"]),
+                "total_leads": total_leads,
+                "custom_value_1_count": int(sums["custom_value_1_count"]),
+                "custom_value_2_count": int(sums["custom_value_2_count"]),
+                "custom_value_3_amount_ron": round(sums["custom_value_3_amount_ron"], 2),
+                "custom_value_4_amount_ron": round(sums["custom_value_4_amount_ron"], 2),
+                "custom_value_5_amount_ron": round(sums["custom_value_5_amount_ron"], 2),
+                "sales_count": int(sums["sales_count"]),
+                "custom_value_rate_1": self._safe_div(float(sums["sales_count"]), float(sums["custom_value_1_count"])),
+                "custom_value_rate_2": self._safe_div(float(sums["sales_count"]), float(sums["custom_value_2_count"])),
+                "cost_per_lead": self._safe_div(cost_total, float(total_leads)),
+                "cost_custom_value_1": self._safe_div(cost_total, float(sums["custom_value_1_count"])),
+                "cost_custom_value_2": self._safe_div(cost_total, float(sums["custom_value_2_count"])),
+                "cost_per_sale": self._safe_div(cost_total, float(sums["sales_count"])),
+            },
+            "days": day_rows,
+        }
+
+    def get_lead_table(
+        self,
+        *,
+        client_id: int,
+        date_from: date,
+        date_to: date,
+    ) -> dict[str, object]:
+        self._ensure_schema()
+        if date_from > date_to:
+            raise ValueError("date_from must be less than or equal to date_to")
+
+        config = self.get_config(client_id=int(client_id))
+        if str(config.get("template_type") or "").lower() != "lead":
+            raise NotImplementedError("Media Buying table is implemented only for template_type=lead in this task")
+
+        display_currency = self._normalize_currency(str(config.get("display_currency") or "RON"))
+        automated_rows = self._list_automated_daily_costs(client_id=int(client_id), date_from=date_from, date_to=date_to)
+        manual_rows = self.list_lead_daily_manual_values(client_id=int(client_id), date_from=date_from, date_to=date_to)
+
+        manual_by_date = {str(item.get("date")): item for item in manual_rows}
+        costs_by_date: dict[str, dict[str, float]] = {}
+        for item in automated_rows:
+            report_date = item.get("date")
+            if not isinstance(report_date, date):
+                continue
+            day_key = report_date.isoformat()
+            platform = str(item.get("platform") or "")
+            if platform not in {"google_ads", "meta_ads", "tiktok_ads"}:
+                continue
+            spend = self._normalize_money_to_display_currency(
+                amount=float(item.get("spend") or 0.0),
+                from_currency=str(item.get("account_currency") or "RON"),
+                display_currency=display_currency,
+                rate_date=report_date,
+            )
+            bucket = costs_by_date.setdefault(day_key, {"google_ads": 0.0, "meta_ads": 0.0, "tiktok_ads": 0.0})
+            bucket[platform] = float(bucket.get(platform, 0.0)) + float(spend)
+
+        day_rows: list[dict[str, object]] = []
+        cursor = date_from
+        while cursor <= date_to:
+            day_key = cursor.isoformat()
+            day_rows.append(
+                self._build_daily_row(
+                    row_date=cursor,
+                    display_currency=display_currency,
+                    daily_costs=costs_by_date.get(day_key, {}),
+                    manual_row=manual_by_date.get(day_key),
+                )
+            )
+            cursor = cursor + timedelta(days=1)
+
+        monthly_grouped: dict[str, list[dict[str, object]]] = {}
+        for row in day_rows:
+            row_date = date.fromisoformat(str(row["date"]))
+            key = self._month_key(row_date)
+            monthly_grouped.setdefault(key, []).append(row)
+
+        months = [self._rollup_month(month=month, day_rows=rows) for month, rows in sorted(monthly_grouped.items(), key=lambda item: item[0])]
+
+        return {
+            "meta": {
+                "client_id": int(client_id),
+                "template_type": "lead",
+                "display_currency": display_currency,
+                "custom_label_1": str(config.get("custom_label_1") or _DEFAULT_LABELS["custom_label_1"]),
+                "custom_label_2": str(config.get("custom_label_2") or _DEFAULT_LABELS["custom_label_2"]),
+                "custom_label_3": str(config.get("custom_label_3") or _DEFAULT_LABELS["custom_label_3"]),
+                "custom_label_4": str(config.get("custom_label_4") or _DEFAULT_LABELS["custom_label_4"]),
+                "custom_label_5": str(config.get("custom_label_5") or _DEFAULT_LABELS["custom_label_5"]),
+                "date_from": date_from.isoformat(),
+                "date_to": date_to.isoformat(),
+                "available_months": [item["month"] for item in months],
+            },
+            "days": day_rows,
+            "months": months,
+        }
+
 
     def get_config(self, *, client_id: int) -> dict[str, object]:
         self._ensure_schema()

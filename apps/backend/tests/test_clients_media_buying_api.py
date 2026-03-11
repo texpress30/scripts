@@ -65,6 +65,29 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
                     raise ValueError("date_from must be less than or equal to date_to")
                 return [row for row in self.daily if kwargs["date_from"] <= date.fromisoformat(row["date"]) <= kwargs["date_to"]]
 
+            def get_lead_table(self, **kwargs):
+                if self.config.get("template_type") != "lead":
+                    raise NotImplementedError("Media Buying table is implemented only for template_type=lead in this task")
+                if kwargs["date_from"] > kwargs["date_to"]:
+                    raise ValueError("date_from must be less than or equal to date_to")
+                return {
+                    "meta": {
+                        "client_id": kwargs["client_id"],
+                        "template_type": "lead",
+                        "display_currency": "RON",
+                        "custom_label_1": "Custom Value 1",
+                        "custom_label_2": "Custom Value 2",
+                        "custom_label_3": "Custom Value 3",
+                        "custom_label_4": "Custom Value 4",
+                        "custom_label_5": "Custom Value 5",
+                        "date_from": kwargs["date_from"].isoformat(),
+                        "date_to": kwargs["date_to"].isoformat(),
+                        "available_months": ["2026-03"],
+                    },
+                    "days": [{"date": "2026-03-11", "percent_change": None}],
+                    "months": [{"month": "2026-03", "totals": {"percent_change": None}, "days": [{"date": "2026-03-11"}]}],
+                }
+
             def upsert_lead_daily_manual_value(self, **kwargs):
                 if kwargs["leads"] < 0:
                     raise ValueError("leads must be an integer >= 0")
@@ -167,6 +190,28 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as ctx:
             clients_api.get_media_buying_config(client_id=999999, user=self.user)
         self.assertEqual(ctx.exception.status_code, 404)
+
+
+    def test_get_lead_table_endpoint(self):
+        payload = clients_api.get_media_buying_lead_table(
+            client_id=self.client_id,
+            date_from=date(2026, 3, 1),
+            date_to=date(2026, 3, 31),
+            user=self.user,
+        )
+        self.assertEqual(payload["meta"]["template_type"], "lead")
+        self.assertEqual(payload["days"][0]["percent_change"], None)
+
+    def test_get_lead_table_non_lead_returns_501(self):
+        clients_api.media_buying_store.config["template_type"] = "ecommerce"
+        with self.assertRaises(HTTPException) as ctx:
+            clients_api.get_media_buying_lead_table(
+                client_id=self.client_id,
+                date_from=date(2026, 3, 1),
+                date_to=date(2026, 3, 31),
+                user=self.user,
+            )
+        self.assertEqual(ctx.exception.status_code, 501)
 
 
 if __name__ == "__main__":

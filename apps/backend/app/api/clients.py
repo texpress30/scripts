@@ -467,6 +467,24 @@ def upsert_media_buying_lead_daily_value(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
+
+
+@router.get("/{client_id}/media-buying/lead/table")
+def get_media_buying_lead_table(
+    client_id: int,
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    _ensure_client_exists_or_404(client_id=client_id)
+    try:
+        return media_buying_store.get_lead_table(client_id=client_id, date_from=date_from, date_to=date_to)
+    except NotImplementedError as exc:
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
 @router.get("/{client_id}/accounts")
 def list_client_accounts(
     client_id: int,

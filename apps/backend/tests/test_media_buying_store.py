@@ -252,5 +252,104 @@ class MediaBuyingStoreTests(unittest.TestCase):
         self.assertEqual(rows[0]["custom_value_5_amount_ron"], -2.0)
 
 
+class MediaBuyingLeadTableReadTests(unittest.TestCase):
+    def _build_store(self):
+        store = MediaBuyingStore()
+        store._ensure_schema = lambda: None
+        return store
+
+    def test_get_lead_table_merges_costs_manual_and_fx_and_formulas(self):
+        store = self._build_store()
+        store.get_config = lambda **kwargs: {
+            "client_id": 12,
+            "template_type": "lead",
+            "display_currency": "RON",
+            "custom_label_1": "CV1",
+            "custom_label_2": "CV2",
+            "custom_label_3": "CV3",
+            "custom_label_4": "CV4",
+            "custom_label_5": "CV5",
+        }
+        store.list_lead_daily_manual_values = lambda **kwargs: [
+            {
+                "date": "2026-03-10",
+                "leads": 10,
+                "phones": 5,
+                "custom_value_1_count": 3,
+                "custom_value_2_count": 2,
+                "custom_value_3_amount_ron": 100,
+                "custom_value_4_amount_ron": 20,
+                "custom_value_5_amount_ron": -5,
+                "sales_count": 2,
+            }
+        ]
+        store._list_automated_daily_costs = lambda **kwargs: [
+            {"date": date(2026, 3, 10), "platform": "google_ads", "account_currency": "RON", "spend": 100.0},
+            {"date": date(2026, 3, 10), "platform": "meta_ads", "account_currency": "USD", "spend": 10.0},
+            {"date": date(2026, 3, 10), "platform": "tiktok_ads", "account_currency": "RON", "spend": 50.0},
+        ]
+
+        def _fake_normalize(*, amount, from_currency, display_currency, rate_date):
+            if from_currency == "USD" and display_currency == "RON":
+                return amount * 5
+            return amount
+
+        store._normalize_money_to_display_currency = _fake_normalize
+
+        payload = store.get_lead_table(client_id=12, date_from=date(2026, 3, 10), date_to=date(2026, 3, 10))
+
+        self.assertEqual(payload["meta"]["template_type"], "lead")
+        self.assertEqual(payload["meta"]["available_months"], ["2026-03"])
+        row = payload["days"][0]
+        self.assertEqual(row["cost_google"], 100.0)
+        self.assertEqual(row["cost_meta"], 50.0)
+        self.assertEqual(row["cost_tiktok"], 50.0)
+        self.assertEqual(row["cost_total"], 200.0)
+        self.assertEqual(row["total_leads"], 15)
+        self.assertAlmostEqual(float(row["custom_value_rate_1"]), 2 / 3)
+        self.assertAlmostEqual(float(row["cost_per_lead"]), 200 / 15)
+        self.assertAlmostEqual(float(row["cost_per_sale"]), 100.0)
+        self.assertIsNone(row["percent_change"])
+
+    def test_monthly_totals_are_recomputed_from_month_sums_and_missing_manual_is_zero(self):
+        store = self._build_store()
+        store.get_config = lambda **kwargs: {"client_id": 12, "template_type": "lead", "display_currency": "RON", "custom_label_1": "a", "custom_label_2": "b", "custom_label_3": "c", "custom_label_4": "d", "custom_label_5": "e"}
+        store.list_lead_daily_manual_values = lambda **kwargs: [
+            {"date": "2026-03-01", "leads": 1, "phones": 1, "custom_value_1_count": 1, "custom_value_2_count": 1, "custom_value_3_amount_ron": 10, "custom_value_4_amount_ron": 1, "custom_value_5_amount_ron": 0, "sales_count": 1},
+            {"date": "2026-03-02", "leads": 2, "phones": 0, "custom_value_1_count": 2, "custom_value_2_count": 1, "custom_value_3_amount_ron": 20, "custom_value_4_amount_ron": 2, "custom_value_5_amount_ron": 0, "sales_count": 1},
+        ]
+        store._list_automated_daily_costs = lambda **kwargs: [
+            {"date": date(2026, 3, 1), "platform": "google_ads", "account_currency": "RON", "spend": 100.0},
+            {"date": date(2026, 3, 2), "platform": "google_ads", "account_currency": "RON", "spend": 200.0},
+            {"date": date(2026, 3, 3), "platform": "google_ads", "account_currency": "RON", "spend": 300.0},
+        ]
+        store._normalize_money_to_display_currency = lambda **kwargs: kwargs["amount"]
+
+        payload = store.get_lead_table(client_id=12, date_from=date(2026, 3, 1), date_to=date(2026, 3, 3))
+
+        self.assertEqual(len(payload["days"]), 3)
+        self.assertEqual(payload["days"][2]["leads"], 0)
+        self.assertIsNone(payload["days"][2]["cost_per_sale"])
+
+        month = payload["months"][0]
+        totals = month["totals"]
+        self.assertEqual(totals["cost_total"], 600.0)
+        self.assertEqual(totals["leads"], 3)
+        self.assertEqual(totals["phones"], 1)
+        self.assertEqual(totals["total_leads"], 4)
+        self.assertAlmostEqual(float(totals["cost_per_lead"]), 150.0)
+        self.assertAlmostEqual(float(totals["cost_per_sale"]), 300.0)
+        self.assertIsNone(totals["percent_change"])
+
+    def test_non_lead_template_is_not_implemented(self):
+        store = self._build_store()
+        store.get_config = lambda **kwargs: {"client_id": 12, "template_type": "ecommerce", "display_currency": "RON"}
+        store.list_lead_daily_manual_values = lambda **kwargs: []
+        store._list_automated_daily_costs = lambda **kwargs: []
+
+        with self.assertRaises(NotImplementedError):
+            store.get_lead_table(client_id=12, date_from=date(2026, 3, 1), date_to=date(2026, 3, 2))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -3220,3 +3220,22 @@
 - Added migration `0019_media_buying_foundation.sql` with `media_buying_configs` and `media_buying_lead_daily_manual_values`.
 - Added `MediaBuyingStore` and `/clients/{client_id}/media-buying/*` endpoints for lead-template foundation only.
 - Left `%^` formula intentionally unimplemented via explicit TODO comment in payload mapping.
+
+---
+
+# TODO — Media Buying lead step 2 (read API + automated cost aggregation + monthly grouping)
+
+- [x] Attempt workspace sync before changes and record upstream-tracking blocker when remote is missing.
+- [x] Implement lead read-side table assembler combining automated daily costs (Google/Meta/TikTok) + manual daily values.
+- [x] Reuse existing FX normalization behavior for daily cost conversion into template display currency.
+- [x] Implement confirmed formulas on daily rows and monthly rollups recalculated from month sums.
+- [x] Keep `%^` explicitly unimplemented as null/TODO placeholder.
+- [x] Expose dedicated API endpoint for lead table read with date range and non-lead unsupported behavior.
+- [x] Add/extend backend tests for merge, FX conversion, formulas, monthly recompute, missing-manual fallback, non-lead unsupported.
+- [x] Run targeted backend tests.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Added `get_lead_table(...)` in `MediaBuyingStore` and a dedicated query for automated daily costs from `ad_performance_reports` for google/meta/tiktok.
+- Added endpoint `GET /clients/{client_id}/media-buying/lead/table` and explicit 501 for template types not implemented in this task.
+- Verified `percent_change` (`%^`) remains explicit `None` at day and month levels.
