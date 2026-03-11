@@ -253,3 +253,4 @@
 - 2026-03-10: Pentru cleanup matcher pe run-uri istorice, evită ordonarea de supersede pe `updated_at` ca semnal principal; folosește cronologia run-ului (`finished_at`/`started_at`/`created_at`) ca să nu blochezi ștergerea failure-urilor legacy.
 - 2026-03-10: Pentru parity cross-platform în Agency Accounts list, verifică întâi mapper-ul frontend unificat; dacă backend are câmpurile dar UI afișează '-', cauza poate fi strict de mapping nul hardcodat.
 - 2026-03-10: Pentru Meta Ads, `conversions` nu trebuie derivat din suma tuturor action types; folosește allowlist explicit lead-only și păstrează separat `conversion_value` ca metrică distinctă.
+- 2026-03-11: După feedback pe Meta conversions dublate, pentru action metrics cu aliasuri lead-like trebuie aleasă o singură sursă canonică prin prioritate explicită și instrumentată minim (`selected/found/values`), nu sumare peste toate aliasurile.

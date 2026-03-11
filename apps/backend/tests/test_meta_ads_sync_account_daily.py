@@ -115,7 +115,38 @@ class MetaAdsSyncDailyTests(unittest.TestCase):
                 {"action_type": "post_engagement", "value": "25"},
             ]
         )
-        self.assertEqual(value, 5.0)
+        self.assertEqual(value, 3.0)
+
+    def test_lead_conversions_single_lead_type_uses_that_value(self):
+        value = meta_ads_service._derive_lead_conversions(
+            actions=[
+                {"action_type": "offsite_conversion.fb_pixel_lead", "value": "23"},
+                {"action_type": "purchase", "value": "100"},
+            ]
+        )
+        self.assertEqual(value, 23.0)
+
+    def test_lead_conversions_deduplicate_duplicate_lead_aliases(self):
+        value = meta_ads_service._derive_lead_conversions(
+            actions=[
+                {"action_type": "lead", "value": "23"},
+                {"action_type": "onsite_conversion.lead_grouped", "value": "23"},
+                {"action_type": "page_view", "value": "200"},
+            ]
+        )
+        self.assertEqual(value, 23.0)
+
+    def test_lead_conversions_observability_contains_selected_canonical_type(self):
+        details = meta_ads_service._derive_lead_conversion_details(
+            actions=[
+                {"action_type": "lead", "value": "4"},
+                {"action_type": "onsite_conversion.lead_grouped", "value": "4"},
+                {"action_type": "purchase", "value": "90"},
+            ]
+        )
+        self.assertEqual(details["lead_action_types_found"], ["lead", "onsite_conversion.lead_grouped"])
+        self.assertEqual(details["lead_action_type_selected"], "lead")
+        self.assertEqual(details["lead_action_values_found"], {"lead": 4.0, "onsite_conversion.lead_grouped": 4.0})
 
     def test_campaign_daily_uses_lead_only_conversions(self):
         client_id = self._create_client_with_meta_accounts(client_name="Client Lead", account_ids=["act_777"])
@@ -140,9 +171,11 @@ class MetaAdsSyncDailyTests(unittest.TestCase):
         payload = meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 1), grain="campaign_daily")
 
         self.assertEqual(payload["rows_written"], 1)
-        self.assertEqual(payload["conversions"], 5.0)
+        self.assertEqual(payload["conversions"], 4.0)
         row = meta_ads_service._memory_campaign_daily_rows[0]
-        self.assertEqual(float(row.get("conversions") or 0), 5.0)
+        self.assertEqual(float(row.get("conversions") or 0), 4.0)
+        extra = (row.get("extra_metrics") or {}).get("meta_ads") or {}
+        self.assertEqual(extra.get("lead_action_type_selected"), "lead")
 
     def test_all_meta_grains_use_lead_only_conversions(self):
         client_id = self._create_client_with_meta_accounts(client_name="Client Grains", account_ids=["act_888"])
@@ -170,7 +203,36 @@ class MetaAdsSyncDailyTests(unittest.TestCase):
 
         for grain in ("account_daily", "campaign_daily", "ad_group_daily", "ad_daily"):
             payload = meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 1), grain=grain)
-            self.assertEqual(payload["conversions"], 3.0)
+            self.assertEqual(payload["conversions"], 2.0)
+
+    def test_account_daily_and_snapshot_use_canonical_deduplicated_leads(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client Dedup", account_ids=["act_7777"])
+        meta_ads_service._resolve_active_access_token_with_source = lambda: ("token-1", "database", None, None)
+        meta_ads_service._fetch_account_daily_insights = lambda **kwargs: [
+            {
+                "date_start": "2026-03-01",
+                "date_stop": "2026-03-01",
+                "spend": "12",
+                "impressions": "120",
+                "clicks": "12",
+                "actions": [
+                    {"action_type": "lead", "value": "23"},
+                    {"action_type": "onsite_conversion.lead_grouped", "value": "23"},
+                ],
+                "action_values": [{"action_type": "purchase", "value": "0"}],
+            }
+        ]
+
+        payload = meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 1), grain="account_daily")
+        self.assertEqual(payload["conversions"], 23.0)
+
+        rows = performance_reports_store._memory_rows
+        self.assertEqual(rows[-1]["conversions"], 23.0)
+        extra = (rows[-1].get("extra_metrics") or {}).get("meta_ads") or {}
+        self.assertEqual(extra.get("lead_action_type_selected"), "lead")
+
+        snapshot = meta_ads_service.get_metrics(client_id=client_id)
+        self.assertEqual(snapshot["conversions"], 23)
 
     def test_account_daily_insights_request_uses_time_increment_1(self):
         captured: dict[str, str] = {}

@@ -3092,3 +3092,21 @@
 - Added `time_increment=1` for `account_daily` Meta insights requests and protected snapshot upserts to `account_daily` grain only.
 - Added tests for request parameter enforcement and snapshot source-of-truth protection.
 - Verified with: `pytest -q apps/backend/tests/test_meta_ads_sync_account_daily.py apps/backend/tests/test_clients_platform_account_mappings.py`.
+
+---
+
+# TODO — Meta canonical lead conversion deduplication
+
+- [x] Attempt workspace sync before edits and record tracking-remote blocker if unavailable.
+- [x] Audit Meta lead conversion helper action_type handling and account_daily/snapshot call path.
+- [x] Implement canonical lead action selection by explicit priority (no summing across lead-like aliases).
+- [x] Add minimal safe lead observability fields to Meta extra_metrics/run-debug payloads.
+- [x] Apply canonical conversion derivation across all Meta grains and snapshot source path.
+- [x] Add/update backend tests for single-type, duplicate alias dedup, mixed actions, account_daily + snapshot canonical behavior.
+- [x] Run targeted backend tests for Meta plus adjacent non-impact suites.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Canonical rule now selects one lead action type by priority (`lead` first, then `onsite_conversion.lead_grouped`, then other lead aliases) and uses only that value for conversions.
+- Added safe observability fields in `extra_metrics.meta_ads`: `lead_action_types_found`, `lead_action_type_selected`, `lead_action_values_found`.
+- Verified dedup regression case where two lead-like action types both report 23 now stores conversions=23 (not 46).

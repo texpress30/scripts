@@ -22,16 +22,17 @@ except Exception:  # noqa: BLE001
 
 MetaSyncGrain = Literal["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"]
 _ALLOWED_SYNC_GRAINS: tuple[str, ...] = ("account_daily", "campaign_daily", "ad_group_daily", "ad_daily")
-_META_LEAD_ACTION_TYPES: set[str] = {
+_META_LEAD_ACTION_TYPE_PRIORITY: tuple[str, ...] = (
     "lead",
-    "onsite_conversion.lead",
     "onsite_conversion.lead_grouped",
+    "onsite_conversion.lead",
     "offsite_conversion.lead",
     "offsite_conversion.fb_pixel_lead",
     "offsite_conversion.fb_pixel_custom_lead",
     "offsite_conversion.meta_lead",
     "offsite_conversion.meta_pixel_lead",
-}
+)
+_META_LEAD_ACTION_TYPES: set[str] = set(_META_LEAD_ACTION_TYPE_PRIORITY)
 
 
 class MetaAdsIntegrationError(RuntimeError):
@@ -277,18 +278,47 @@ class MetaAdsService:
         except Exception:  # noqa: BLE001
             return 0
 
-    def _derive_lead_conversions(self, *, actions: object) -> float:
+    def _derive_lead_conversion_details(self, *, actions: object) -> dict[str, object]:
         if not isinstance(actions, list):
-            return 0.0
-        total = 0.0
+            return {
+                "conversions": 0.0,
+                "lead_action_types_found": [],
+                "lead_action_type_selected": None,
+                "lead_action_values_found": {},
+            }
+
+        lead_action_values: dict[str, float] = {}
         for item in actions:
             if not isinstance(item, dict):
                 continue
             action_type = str(item.get("action_type") or "").strip().lower()
             if action_type not in _META_LEAD_ACTION_TYPES:
                 continue
-            total += self._parse_numeric(item.get("value"))
-        return total
+            lead_action_values[action_type] = lead_action_values.get(action_type, 0.0) + self._parse_numeric(item.get("value"))
+
+        selected_action_type: str | None = None
+        for candidate in _META_LEAD_ACTION_TYPE_PRIORITY:
+            if candidate in lead_action_values:
+                selected_action_type = candidate
+                break
+
+        return {
+            "conversions": float(lead_action_values.get(selected_action_type or "", 0.0)),
+            "lead_action_types_found": [action_type for action_type in _META_LEAD_ACTION_TYPE_PRIORITY if action_type in lead_action_values],
+            "lead_action_type_selected": selected_action_type,
+            "lead_action_values_found": {action_type: round(value, 4) for action_type, value in lead_action_values.items()},
+        }
+
+    def _derive_lead_conversions(self, *, actions: object) -> float:
+        details = self._derive_lead_conversion_details(actions=actions)
+        return float(details.get("conversions") or 0.0)
+
+    def _lead_conversion_observability(self, *, details: dict[str, object]) -> dict[str, object]:
+        return {
+            "lead_action_types_found": details.get("lead_action_types_found") if isinstance(details.get("lead_action_types_found"), list) else [],
+            "lead_action_type_selected": details.get("lead_action_type_selected"),
+            "lead_action_values_found": details.get("lead_action_values_found") if isinstance(details.get("lead_action_values_found"), dict) else {},
+        }
 
     def _derive_conversion_value(self, *, action_values: object) -> float:
         if not isinstance(action_values, list):
@@ -610,7 +640,8 @@ class MetaAdsService:
                     spend = self._parse_numeric(item.get("spend"))
                     impressions = self._parse_int(item.get("impressions"))
                     clicks = self._parse_int(item.get("clicks"))
-                    conversions = self._derive_lead_conversions(actions=item.get("actions"))
+                    lead_conversion_details = self._derive_lead_conversion_details(actions=item.get("actions"))
+                    conversions = float(lead_conversion_details.get("conversions") or 0.0)
                     conversion_value = self._derive_conversion_value(action_values=item.get("action_values"))
 
                     performance_reports_store.write_daily_report(
@@ -623,7 +654,7 @@ class MetaAdsService:
                         clicks=clicks,
                         conversions=conversions,
                         conversion_value=conversion_value,
-                        extra_metrics={"meta_ads": self._base_extra_metrics(item)},
+                        extra_metrics={"meta_ads": {**self._base_extra_metrics(item), **self._lead_conversion_observability(details=lead_conversion_details)}},
                     )
                     rows_written += 1
                     account_rows_written += 1
@@ -653,7 +684,8 @@ class MetaAdsService:
                     spend = self._parse_numeric(item.get("spend"))
                     impressions = self._parse_int(item.get("impressions"))
                     clicks = self._parse_int(item.get("clicks"))
-                    conversions = self._derive_lead_conversions(actions=item.get("actions"))
+                    lead_conversion_details = self._derive_lead_conversion_details(actions=item.get("actions"))
+                    conversions = float(lead_conversion_details.get("conversions") or 0.0)
                     conversion_value = self._derive_conversion_value(action_values=item.get("action_values"))
 
                     campaign_rows.append(
@@ -672,6 +704,7 @@ class MetaAdsService:
                                     **self._base_extra_metrics(item),
                                     "campaign_name": str(item.get("campaign_name") or "").strip() or None,
                                     "campaign_id": campaign_id,
+                                    **self._lead_conversion_observability(details=lead_conversion_details),
                                 }
                             },
                             "source_window_start": resolved_start,
@@ -708,7 +741,8 @@ class MetaAdsService:
                     spend = self._parse_numeric(item.get("spend"))
                     impressions = self._parse_int(item.get("impressions"))
                     clicks = self._parse_int(item.get("clicks"))
-                    conversions = self._derive_lead_conversions(actions=item.get("actions"))
+                    lead_conversion_details = self._derive_lead_conversion_details(actions=item.get("actions"))
+                    conversions = float(lead_conversion_details.get("conversions") or 0.0)
                     conversion_value = self._derive_conversion_value(action_values=item.get("action_values"))
                     campaign_id = str(item.get("campaign_id") or "").strip() or None
 
@@ -731,6 +765,7 @@ class MetaAdsService:
                                     "adset_name": str(item.get("adset_name") or "").strip() or None,
                                     "campaign_id": campaign_id,
                                     "campaign_name": str(item.get("campaign_name") or "").strip() or None,
+                                    **self._lead_conversion_observability(details=lead_conversion_details),
                                 }
                             },
                             "source_window_start": resolved_start,
@@ -767,7 +802,8 @@ class MetaAdsService:
                     spend = self._parse_numeric(item.get("spend"))
                     impressions = self._parse_int(item.get("impressions"))
                     clicks = self._parse_int(item.get("clicks"))
-                    conversions = self._derive_lead_conversions(actions=item.get("actions"))
+                    lead_conversion_details = self._derive_lead_conversion_details(actions=item.get("actions"))
+                    conversions = float(lead_conversion_details.get("conversions") or 0.0)
                     conversion_value = self._derive_conversion_value(action_values=item.get("action_values"))
                     campaign_id = str(item.get("campaign_id") or "").strip() or None
                     ad_group_id = str(item.get("adset_id") or "").strip() or None
@@ -794,6 +830,7 @@ class MetaAdsService:
                                     "adset_name": str(item.get("adset_name") or "").strip() or None,
                                     "campaign_id": campaign_id,
                                     "campaign_name": str(item.get("campaign_name") or "").strip() or None,
+                                    **self._lead_conversion_observability(details=lead_conversion_details),
                                 }
                             },
                             "source_window_start": resolved_start,
