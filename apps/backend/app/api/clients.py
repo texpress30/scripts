@@ -1,3 +1,4 @@
+from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.dependencies import enforce_action_scope, get_current_user
@@ -11,11 +12,14 @@ from app.schemas.client import (
     DetachGoogleAccountRequest,
     DetachPlatformAccountRequest,
     UpdateClientProfileRequest,
+    MediaBuyingConfigUpdateRequest,
+    MediaBuyingLeadDailyValueUpsertRequest,
 )
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
 from app.services.client_registry import PlatformAccountAlreadyAttachedError, client_registry_service
 from app.services.client_business_inputs_import_service import client_business_inputs_import_service
+from app.services.media_buying_store import media_buying_store
 from app.services.sync_constants import (
     PLATFORM_GOOGLE_ADS,
     PLATFORM_META_ADS,
@@ -383,6 +387,85 @@ def import_client_business_inputs(
     )
     return result
 
+
+
+
+def _ensure_client_exists_or_404(*, client_id: int) -> None:
+    details = client_registry_service.get_client_details(client_id=int(client_id))
+    if details is None:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+
+@router.get("/{client_id}/media-buying/config")
+def get_media_buying_config(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    _ensure_client_exists_or_404(client_id=client_id)
+    return media_buying_store.get_config(client_id=client_id)
+
+
+@router.put("/{client_id}/media-buying/config")
+def upsert_media_buying_config(
+    client_id: int,
+    payload: MediaBuyingConfigUpdateRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    _ensure_client_exists_or_404(client_id=client_id)
+    try:
+        return media_buying_store.upsert_config(
+            client_id=client_id,
+            template_type=payload.template_type,
+            display_currency=payload.display_currency,
+            custom_label_1=payload.custom_label_1,
+            custom_label_2=payload.custom_label_2,
+            custom_label_3=payload.custom_label_3,
+            custom_label_4=payload.custom_label_4,
+            custom_label_5=payload.custom_label_5,
+            enabled=payload.enabled,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
+@router.get("/{client_id}/media-buying/lead/daily-values")
+def list_media_buying_lead_daily_values(
+    client_id: int,
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    _ensure_client_exists_or_404(client_id=client_id)
+    try:
+        items = media_buying_store.list_lead_daily_manual_values(client_id=client_id, date_from=date_from, date_to=date_to)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return {"items": items, "count": len(items), "date_from": str(date_from), "date_to": str(date_to)}
+
+
+@router.put("/{client_id}/media-buying/lead/daily-values")
+def upsert_media_buying_lead_daily_value(
+    client_id: int,
+    payload: MediaBuyingLeadDailyValueUpsertRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    _ensure_client_exists_or_404(client_id=client_id)
+    try:
+        return media_buying_store.upsert_lead_daily_manual_value(
+            client_id=client_id,
+            metric_date=payload.date,
+            leads=payload.leads,
+            phones=payload.phones,
+            custom_value_1_count=payload.custom_value_1_count,
+            custom_value_2_count=payload.custom_value_2_count,
+            custom_value_3_amount_ron=payload.custom_value_3_amount_ron,
+            custom_value_4_amount_ron=payload.custom_value_4_amount_ron,
+            custom_value_5_amount_ron=payload.custom_value_5_amount_ron,
+            sales_count=payload.sales_count,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
 @router.get("/{client_id}/accounts")
 def list_client_accounts(

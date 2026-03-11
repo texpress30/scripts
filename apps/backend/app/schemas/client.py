@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel
@@ -47,3 +48,26 @@ class BusinessInputsImportResponse(BaseModel):
     failed: int
     errors: list[dict[str, object]]
     rows: list[dict[str, object]] | None = None
+
+
+class MediaBuyingConfigUpdateRequest(BaseModel):
+    template_type: Literal["lead", "ecommerce", "programmatic"] | None = None
+    display_currency: str | None = None
+    custom_label_1: str | None = None
+    custom_label_2: str | None = None
+    custom_label_3: str | None = None
+    custom_label_4: str | None = None
+    custom_label_5: str | None = None
+    enabled: bool | None = None
+
+
+class MediaBuyingLeadDailyValueUpsertRequest(BaseModel):
+    date: date
+    leads: int
+    phones: int
+    custom_value_1_count: int
+    custom_value_2_count: int
+    custom_value_3_amount_ron: float
+    custom_value_4_amount_ron: float
+    custom_value_5_amount_ron: float
+    sales_count: int

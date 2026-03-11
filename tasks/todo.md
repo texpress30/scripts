@@ -3202,3 +3202,21 @@
 - [x] Completed implementation + verification notes.
 - Added a reusable sub-route placeholder component and wired all requested routes with consistent dashboard shell styling.
 - Added route coverage tests validating per-page heading text, media navigation links, and placeholder content.
+
+---
+
+# TODO — Media Buying lead foundation (backend config + daily manual values API)
+
+- [x] Attempt workspace sync before implementation; record tracking-branch blocker if remote is not configured.
+- [x] Add DB migration for media buying config per sub-account and lead daily manual values table with unique upsert keys.
+- [x] Implement backend persistence store for media buying config + lead daily values (validation + idempotent upsert).
+- [x] Expose API endpoints for get/update config and list/upsert lead daily values by interval/date.
+- [x] Enforce validation rules: template type, non-negative counts, monetary constraints (allow negative only for custom value 5), and date interval checks.
+- [x] Add backend tests for config persistence, custom labels, template type, daily upsert idempotency, and validation/list semantics.
+- [x] Run targeted backend tests for the new store and API endpoints.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Added migration `0019_media_buying_foundation.sql` with `media_buying_configs` and `media_buying_lead_daily_manual_values`.
+- Added `MediaBuyingStore` and `/clients/{client_id}/media-buying/*` endpoints for lead-template foundation only.
+- Left `%^` formula intentionally unimplemented via explicit TODO comment in payload mapping.
