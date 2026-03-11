@@ -3186,3 +3186,19 @@
 - Header title removed by passing `title={null}` to AppShell on sub dashboard page.
 - Header links updated to `Media Buying` and `Media Tracker` only.
 - Platform names now render as interactive links to `/sub/{id}/{platform-slug}` with hover styling.
+
+---
+
+# TODO — Sub dashboard linked routes scaffold (header + platform links)
+
+- [x] Audit existing sub dashboard layout wrapper usage (`ProtectedPage` + `AppShell`) for consistent route scaffolding.
+- [x] Add new App Router routes under `/sub/[id]/` for media-buying, media-tracker, google-ads, meta-ads, tiktok-ads, pinterest-ads, snapchat-ads.
+- [x] Reuse a shared placeholder page component to keep consistent header links, layout, and "Coming Soon" container.
+- [x] Ensure route pages consume URL id via `useParams` and preserve sub-account context in links/titles.
+- [x] Add/adjust frontend tests for all newly scaffolded routes.
+- [x] Run targeted frontend tests.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Added a reusable sub-route placeholder component and wired all requested routes with consistent dashboard shell styling.
+- Added route coverage tests validating per-page heading text, media navigation links, and placeholder content.
