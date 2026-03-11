@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import { format, subDays } from "date-fns";
 
@@ -62,12 +62,29 @@ type LeadTableResponse = {
   months: LeadTableMonth[];
 };
 
+type EditableDraft = {
+  leads: string;
+  phones: string;
+  custom_value_1_count: string;
+  custom_value_2_count: string;
+  custom_value_3_amount_ron: string;
+  custom_value_4_amount_ron: string;
+  custom_value_5_amount_ron: string;
+  sales_count: string;
+};
+
+const INTEGER_FIELDS: Array<keyof EditableDraft> = [
+  "leads",
+  "phones",
+  "custom_value_1_count",
+  "custom_value_2_count",
+  "sales_count",
+];
+
+const NON_NEGATIVE_AMOUNT_FIELDS: Array<keyof EditableDraft> = ["custom_value_3_amount_ron", "custom_value_4_amount_ron"];
+
 function toIso(value: Date): string {
   return format(value, "yyyy-MM-dd");
-}
-
-function safeNumber(value: number | null | undefined): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function formatMoney(value: number | null | undefined, currencyCode: string): string {
@@ -96,6 +113,57 @@ function fallbackLabel(value: string | undefined, fallback: string): string {
   return normalized || fallback;
 }
 
+function makeDraft(row: LeadTableRow): EditableDraft {
+  return {
+    leads: String(row.leads),
+    phones: String(row.phones),
+    custom_value_1_count: String(row.custom_value_1_count),
+    custom_value_2_count: String(row.custom_value_2_count),
+    custom_value_3_amount_ron: String(row.custom_value_3_amount_ron),
+    custom_value_4_amount_ron: String(row.custom_value_4_amount_ron),
+    custom_value_5_amount_ron: String(row.custom_value_5_amount_ron),
+    sales_count: String(row.sales_count),
+  };
+}
+
+function validateDraft(draft: EditableDraft): Record<string, string> {
+  const errors: Record<string, string> = {};
+
+  for (const field of INTEGER_FIELDS) {
+    const raw = draft[field].trim();
+    if (!/^\d+$/.test(raw)) {
+      errors[field] = "Must be integer >= 0";
+      continue;
+    }
+    const parsed = Number(raw);
+    if (!Number.isInteger(parsed) || parsed < 0) errors[field] = "Must be integer >= 0";
+  }
+
+  for (const field of NON_NEGATIVE_AMOUNT_FIELDS) {
+    const raw = draft[field].trim();
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed < 0) errors[field] = "Must be >= 0";
+  }
+
+  const custom5 = Number(draft.custom_value_5_amount_ron.trim());
+  if (!Number.isFinite(custom5)) errors.custom_value_5_amount_ron = "Must be a number";
+
+  return errors;
+}
+
+function hasChanges(draft: EditableDraft, row: LeadTableRow): boolean {
+  return (
+    draft.leads !== String(row.leads)
+    || draft.phones !== String(row.phones)
+    || draft.custom_value_1_count !== String(row.custom_value_1_count)
+    || draft.custom_value_2_count !== String(row.custom_value_2_count)
+    || draft.custom_value_3_amount_ron !== String(row.custom_value_3_amount_ron)
+    || draft.custom_value_4_amount_ron !== String(row.custom_value_4_amount_ron)
+    || draft.custom_value_5_amount_ron !== String(row.custom_value_5_amount_ron)
+    || draft.sales_count !== String(row.sales_count)
+  );
+}
+
 export default function SubMediaBuyingPage() {
   const params = useParams<{ id: string }>();
   const clientId = Number(params.id);
@@ -105,9 +173,34 @@ export default function SubMediaBuyingPage() {
   const [error, setError] = useState("");
   const [tableData, setTableData] = useState<LeadTableResponse | null>(null);
   const [expandedMonths, setExpandedMonths] = useState<Record<string, boolean>>({});
+  const [editingByDate, setEditingByDate] = useState<Record<string, EditableDraft>>({});
+  const [savingByDate, setSavingByDate] = useState<Record<string, boolean>>({});
+  const [rowFeedback, setRowFeedback] = useState<Record<string, { kind: "success" | "error"; message: string }>>({});
 
   const dateTo = useMemo(() => new Date(), []);
   const dateFrom = useMemo(() => subDays(dateTo, 89), [dateTo]);
+
+  const loadTable = useCallback(async (preserveExpanded: boolean) => {
+    if (!Number.isFinite(clientId)) return;
+    setLoading(true);
+    setError("");
+    try {
+      const payload = await apiRequest<LeadTableResponse>(
+        `/clients/${clientId}/media-buying/lead/table?date_from=${toIso(dateFrom)}&date_to=${toIso(dateTo)}`
+      );
+      setTableData(payload);
+      setEditingByDate({});
+      if (!preserveExpanded) {
+        const latestMonth = payload.months[payload.months.length - 1]?.month;
+        setExpandedMonths(latestMonth ? { [latestMonth]: true } : {});
+      }
+    } catch (err) {
+      setTableData(null);
+      setError(err instanceof Error ? err.message : "Nu am putut încărca tabelul Media Buying");
+    } finally {
+      setLoading(false);
+    }
+  }, [clientId, dateFrom, dateTo]);
 
   useEffect(() => {
     let ignore = false;
@@ -129,35 +222,8 @@ export default function SubMediaBuyingPage() {
   }, [clientId]);
 
   useEffect(() => {
-    let ignore = false;
-
-    async function loadTable() {
-      if (!Number.isFinite(clientId)) return;
-      setLoading(true);
-      setError("");
-      try {
-        const payload = await apiRequest<LeadTableResponse>(
-          `/clients/${clientId}/media-buying/lead/table?date_from=${toIso(dateFrom)}&date_to=${toIso(dateTo)}`
-        );
-        if (ignore) return;
-        setTableData(payload);
-
-        const latestMonth = payload.months[payload.months.length - 1]?.month;
-        setExpandedMonths(latestMonth ? { [latestMonth]: true } : {});
-      } catch (err) {
-        if (ignore) return;
-        setTableData(null);
-        setError(err instanceof Error ? err.message : "Nu am putut încărca tabelul Media Buying");
-      } finally {
-        if (!ignore) setLoading(false);
-      }
-    }
-
-    void loadTable();
-    return () => {
-      ignore = true;
-    };
-  }, [clientId, dateFrom, dateTo]);
+    void loadTable(false);
+  }, [loadTable]);
 
   const title = `Media Buying - ${clientName}`;
 
@@ -169,6 +235,43 @@ export default function SubMediaBuyingPage() {
   const label5 = fallbackLabel(tableData?.meta.custom_label_5, "Custom Value 5");
 
   const isLeadTemplate = (tableData?.meta.template_type || "lead") === "lead";
+
+  async function saveRow(day: LeadTableRow) {
+    const draft = editingByDate[day.date];
+    if (!draft) return;
+    const validationErrors = validateDraft(draft);
+    if (Object.keys(validationErrors).length > 0) return;
+
+    setSavingByDate((prev) => ({ ...prev, [day.date]: true }));
+    setRowFeedback((prev) => ({ ...prev, [day.date]: { kind: "success", message: "" } }));
+
+    try {
+      await apiRequest(`/clients/${clientId}/media-buying/lead/daily-values`, {
+        method: "PUT",
+        body: JSON.stringify({
+          date: day.date,
+          leads: Number(draft.leads),
+          phones: Number(draft.phones),
+          custom_value_1_count: Number(draft.custom_value_1_count),
+          custom_value_2_count: Number(draft.custom_value_2_count),
+          custom_value_3_amount_ron: Number(draft.custom_value_3_amount_ron),
+          custom_value_4_amount_ron: Number(draft.custom_value_4_amount_ron),
+          custom_value_5_amount_ron: Number(draft.custom_value_5_amount_ron),
+          sales_count: Number(draft.sales_count),
+        }),
+      });
+
+      await loadTable(true);
+      setRowFeedback((prev) => ({ ...prev, [day.date]: { kind: "success", message: "Saved" } }));
+    } catch (err) {
+      setRowFeedback((prev) => ({
+        ...prev,
+        [day.date]: { kind: "error", message: err instanceof Error ? err.message : "Save failed" },
+      }));
+    } finally {
+      setSavingByDate((prev) => ({ ...prev, [day.date]: false }));
+    }
+  }
 
   return (
     <ProtectedPage>
@@ -199,7 +302,7 @@ export default function SubMediaBuyingPage() {
 
           {!loading && !error && tableData && isLeadTemplate && tableData.months.length > 0 ? (
             <div className="mt-4 overflow-x-auto">
-              <table className="min-w-[1800px] wm-card text-left text-sm">
+              <table className="min-w-[1850px] wm-card text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-600">
                   <tr>
                     <th className="px-3 py-2">Data</th>
@@ -264,31 +367,103 @@ export default function SubMediaBuyingPage() {
                         </tr>
 
                         {open
-                          ? month.days.map((day) => (
-                              <tr key={day.date} className="border-t border-slate-200 bg-white text-slate-800">
-                                <td className="px-3 py-2 pl-8">{day.date}</td>
-                                <td className="px-3 py-2">{formatMoney(day.cost_google, displayCurrency)}</td>
-                                <td className="px-3 py-2">{formatMoney(day.cost_meta, displayCurrency)}</td>
-                                <td className="px-3 py-2">{formatMoney(day.cost_tiktok, displayCurrency)}</td>
-                                <td className="px-3 py-2">{formatMoney(day.cost_total, displayCurrency)}</td>
-                                <td className="px-3 py-2">—</td>
-                                <td className="px-3 py-2">{formatCount(day.leads)}</td>
-                                <td className="px-3 py-2">{formatCount(day.phones)}</td>
-                                <td className="px-3 py-2">{formatCount(day.total_leads)}</td>
-                                <td className="px-3 py-2">{formatCount(day.custom_value_1_count)}</td>
-                                <td className="px-3 py-2">{formatCount(day.custom_value_2_count)}</td>
-                                <td className="px-3 py-2">{formatMoney(day.custom_value_3_amount_ron, displayCurrency)}</td>
-                                <td className="px-3 py-2">{formatMoney(day.custom_value_4_amount_ron, displayCurrency)}</td>
-                                <td className="px-3 py-2">{formatMoney(day.custom_value_5_amount_ron, displayCurrency)}</td>
-                                <td className="px-3 py-2">{formatCount(day.sales_count)}</td>
-                                <td className="px-3 py-2">{formatRate(day.custom_value_rate_1)}</td>
-                                <td className="px-3 py-2">{formatRate(day.custom_value_rate_2)}</td>
-                                <td className="px-3 py-2">{formatMoney(day.cost_per_lead, displayCurrency)}</td>
-                                <td className="px-3 py-2">{formatMoney(day.cost_custom_value_1, displayCurrency)}</td>
-                                <td className="px-3 py-2">{formatMoney(day.cost_custom_value_2, displayCurrency)}</td>
-                                <td className="px-3 py-2">{formatMoney(day.cost_per_sale, displayCurrency)}</td>
-                              </tr>
-                            ))
+                          ? month.days.map((day) => {
+                              const draft = editingByDate[day.date];
+                              const errors = draft ? validateDraft(draft) : {};
+                              const changed = draft ? hasChanges(draft, day) : false;
+                              const invalid = draft ? Object.keys(errors).length > 0 : false;
+                              const saving = Boolean(savingByDate[day.date]);
+                              const feedback = rowFeedback[day.date];
+
+                              return (
+                                <tr key={day.date} className="border-t border-slate-200 bg-white text-slate-800">
+                                  <td className="px-3 py-2 pl-8 align-top">
+                                    <div>{day.date}</div>
+                                    <div className="mt-1 flex gap-2">
+                                      {draft ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            className="rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-50 disabled:opacity-50"
+                                            onClick={() => void saveRow(day)}
+                                            disabled={!changed || invalid || saving}
+                                          >
+                                            {saving ? "Saving..." : "Save"}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-50 disabled:opacity-50"
+                                            onClick={() => setEditingByDate((prev) => {
+                                              const next = { ...prev };
+                                              delete next[day.date];
+                                              return next;
+                                            })}
+                                            disabled={saving}
+                                          >
+                                            Cancel
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          className="rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-50"
+                                          onClick={() => setEditingByDate((prev) => ({ ...prev, [day.date]: makeDraft(day) }))}
+                                        >
+                                          Edit
+                                        </button>
+                                      )}
+                                    </div>
+                                    {feedback?.message ? (
+                                      <p className={`mt-1 text-xs ${feedback.kind === "error" ? "text-red-600" : "text-emerald-600"}`}>{feedback.message}</p>
+                                    ) : null}
+                                  </td>
+                                  <td className="px-3 py-2">{formatMoney(day.cost_google, displayCurrency)}</td>
+                                  <td className="px-3 py-2">{formatMoney(day.cost_meta, displayCurrency)}</td>
+                                  <td className="px-3 py-2">{formatMoney(day.cost_tiktok, displayCurrency)}</td>
+                                  <td className="px-3 py-2">{formatMoney(day.cost_total, displayCurrency)}</td>
+                                  <td className="px-3 py-2">—</td>
+                                  <td className="px-3 py-2">
+                                    {draft ? <input aria-label={`Leads ${day.date}`} className="w-20 rounded border border-slate-300 px-2 py-1" value={draft.leads} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, leads: e.target.value } }))} /> : formatCount(day.leads)}
+                                    {errors.leads ? <p className="text-xs text-red-600">{errors.leads}</p> : null}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    {draft ? <input aria-label={`Phones ${day.date}`} className="w-20 rounded border border-slate-300 px-2 py-1" value={draft.phones} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, phones: e.target.value } }))} /> : formatCount(day.phones)}
+                                    {errors.phones ? <p className="text-xs text-red-600">{errors.phones}</p> : null}
+                                  </td>
+                                  <td className="px-3 py-2">{formatCount(day.total_leads)}</td>
+                                  <td className="px-3 py-2">
+                                    {draft ? <input aria-label={`Custom Value 1 ${day.date}`} className="w-20 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_1_count} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, custom_value_1_count: e.target.value } }))} /> : formatCount(day.custom_value_1_count)}
+                                    {errors.custom_value_1_count ? <p className="text-xs text-red-600">{errors.custom_value_1_count}</p> : null}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    {draft ? <input aria-label={`Custom Value 2 ${day.date}`} className="w-20 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_2_count} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, custom_value_2_count: e.target.value } }))} /> : formatCount(day.custom_value_2_count)}
+                                    {errors.custom_value_2_count ? <p className="text-xs text-red-600">{errors.custom_value_2_count}</p> : null}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    {draft ? <input aria-label={`Custom Value 3 ${day.date}`} className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_3_amount_ron} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, custom_value_3_amount_ron: e.target.value } }))} /> : formatMoney(day.custom_value_3_amount_ron, displayCurrency)}
+                                    {errors.custom_value_3_amount_ron ? <p className="text-xs text-red-600">{errors.custom_value_3_amount_ron}</p> : null}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    {draft ? <input aria-label={`Custom Value 4 ${day.date}`} className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_4_amount_ron} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, custom_value_4_amount_ron: e.target.value } }))} /> : formatMoney(day.custom_value_4_amount_ron, displayCurrency)}
+                                    {errors.custom_value_4_amount_ron ? <p className="text-xs text-red-600">{errors.custom_value_4_amount_ron}</p> : null}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    {draft ? <input aria-label={`Custom Value 5 ${day.date}`} className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_5_amount_ron} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, custom_value_5_amount_ron: e.target.value } }))} /> : formatMoney(day.custom_value_5_amount_ron, displayCurrency)}
+                                    {errors.custom_value_5_amount_ron ? <p className="text-xs text-red-600">{errors.custom_value_5_amount_ron}</p> : null}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    {draft ? <input aria-label={`Sales ${day.date}`} className="w-20 rounded border border-slate-300 px-2 py-1" value={draft.sales_count} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, sales_count: e.target.value } }))} /> : formatCount(day.sales_count)}
+                                    {errors.sales_count ? <p className="text-xs text-red-600">{errors.sales_count}</p> : null}
+                                  </td>
+                                  <td className="px-3 py-2">{formatRate(day.custom_value_rate_1)}</td>
+                                  <td className="px-3 py-2">{formatRate(day.custom_value_rate_2)}</td>
+                                  <td className="px-3 py-2">{formatMoney(day.cost_per_lead, displayCurrency)}</td>
+                                  <td className="px-3 py-2">{formatMoney(day.cost_custom_value_1, displayCurrency)}</td>
+                                  <td className="px-3 py-2">{formatMoney(day.cost_custom_value_2, displayCurrency)}</td>
+                                  <td className="px-3 py-2">{formatMoney(day.cost_per_sale, displayCurrency)}</td>
+                                </tr>
+                              );
+                            })
                           : null}
                       </React.Fragment>
                     );

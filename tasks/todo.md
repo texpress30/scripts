@@ -3258,3 +3258,23 @@
 - Media Buying page now renders a read-only lead table with grouped month totals and expandable daily rows from backend API payload.
 - Custom labels for CV1..CV5 are sourced from API metadata with fallback defaults; `%^` remains explicit placeholder (`—`).
 - Non-lead templates show clear "not implemented" fallback message in-page.
+
+---
+
+# TODO — Media Buying lead step 4 (daily row manual editing + save + recalculation)
+
+- [x] Attempt workspace sync before edits and record upstream-tracking blocker when remote is missing.
+- [x] Add editable inputs for daily rows only (lead, phones, CV1, CV2, CV3, CV4, CV5, sales) while keeping month rows read-only.
+- [x] Implement per-row edit/save/cancel UX with saving feedback and disabled Save when unchanged/invalid.
+- [x] Validate UI inputs to match backend constraints (non-negative integers/counts, non-negative CV3/CV4 amounts, numeric CV5 allowed negative).
+- [x] Save via existing endpoint `PUT /clients/{id}/media-buying/lead/daily-values` and refetch table after save for robust recalculation.
+- [x] Keep `%^` column as placeholder/fallback only, no formula logic added.
+- [x] Add frontend tests for edit/save/cancel/validation/refetch/non-lead fallback/states.
+- [x] Run targeted frontend tests and build.
+- [x] Capture screenshot for editable UI state.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Daily rows now support robust manual editing with simple inputs and per-row actions, while monthly summary rows remain read-only.
+- Save uses existing backend PUT endpoint and triggers table refetch to refresh day + month totals and dependent formulas from backend response.
+- `%^` remains displayed as explicit placeholder (`—`) on both month and day rows.
