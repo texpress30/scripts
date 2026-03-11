@@ -26,7 +26,7 @@ class _MediaBuyingCursor:
             client_id = int(params[0])
             configs = self.state.setdefault("configs", {})
             previous = configs.get(client_id)
-            created_at = previous[9] if previous else "2026-03-11T10:00:00+00:00"
+            created_at = previous[13] if previous else "2026-03-11T10:00:00+00:00"
             updated_at = "2026-03-11T11:00:00+00:00"
             configs[client_id] = (
                 client_id,
@@ -37,7 +37,11 @@ class _MediaBuyingCursor:
                 params[5],
                 params[6],
                 params[7],
-                bool(params[8]),
+                params[8],
+                params[9],
+                params[10],
+                params[11],
+                bool(params[12]),
                 created_at,
                 updated_at,
             )
@@ -125,6 +129,7 @@ class MediaBuyingStoreTests(unittest.TestCase):
         store = MediaBuyingStore()
         store._ensure_schema = lambda: None
         store._connect = lambda: conn
+        store._resolve_client_template_type = lambda **kwargs: "lead"
         return store, state
 
     def test_upsert_config_persists_template_type_and_custom_labels(self):
@@ -146,6 +151,25 @@ class MediaBuyingStoreTests(unittest.TestCase):
         self.assertEqual(result["display_currency"], "RON")
         self.assertEqual(result["custom_label_1"], "Apeluri")
         self.assertEqual(result["custom_label_5"], "Refund")
+
+
+    def test_config_includes_extended_inline_header_labels(self):
+        store, _ = self._build_store()
+        store._resolve_client_template_type = lambda **kwargs: "programmatic"
+
+        cfg = store.upsert_config(
+            client_id=12,
+            custom_rate_label_1="Rate A",
+            custom_rate_label_2="Rate B",
+            custom_cost_label_1="Cost A",
+            custom_cost_label_2="Cost B",
+        )
+
+        self.assertEqual(cfg["template_type"], "programmatic")
+        self.assertEqual(cfg["custom_rate_label_1"], "Rate A")
+        self.assertEqual(cfg["custom_rate_label_2"], "Rate B")
+        self.assertEqual(cfg["custom_cost_label_1"], "Cost A")
+        self.assertEqual(cfg["custom_cost_label_2"], "Cost B")
 
     def test_upsert_lead_daily_values_is_idempotent_for_same_day(self):
         store, state = self._build_store()
@@ -256,6 +280,7 @@ class MediaBuyingLeadTableReadTests(unittest.TestCase):
     def _build_store(self):
         store = MediaBuyingStore()
         store._ensure_schema = lambda: None
+        store._resolve_client_template_type = lambda **kwargs: "lead"
         return store
 
     def test_get_lead_table_merges_costs_manual_and_fx_and_formulas(self):
@@ -343,7 +368,8 @@ class MediaBuyingLeadTableReadTests(unittest.TestCase):
 
     def test_non_lead_template_is_not_implemented(self):
         store = self._build_store()
-        store.get_config = lambda **kwargs: {"client_id": 12, "template_type": "ecommerce", "display_currency": "RON"}
+        store.get_config = lambda **kwargs: {"client_id": 12, "template_type": "lead", "display_currency": "RON"}
+        store._resolve_client_template_type = lambda **kwargs: "ecommerce"
         store.list_lead_daily_manual_values = lambda **kwargs: []
         store._list_automated_daily_costs = lambda **kwargs: []
 

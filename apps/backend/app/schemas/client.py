@@ -58,6 +58,10 @@ class MediaBuyingConfigUpdateRequest(BaseModel):
     custom_label_3: str | None = None
     custom_label_4: str | None = None
     custom_label_5: str | None = None
+    custom_rate_label_1: str | None = None
+    custom_rate_label_2: str | None = None
+    custom_cost_label_1: str | None = None
+    custom_cost_label_2: str | None = None
     enabled: bool | None = None
 
 

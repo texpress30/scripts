@@ -10,7 +10,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
 
-type ClientItem = { id: number; name: string };
+type ClientItem = { id: number; name: string; client_type?: string };
 
 type LeadTableRow = {
   date: string;
@@ -44,20 +44,26 @@ type LeadTableMonth = {
   days: LeadTableRow[];
 };
 
+type LeadTableMeta = {
+  client_id: number;
+  template_type: string;
+  display_currency: string;
+  custom_label_1?: string;
+  custom_label_2?: string;
+  custom_label_3?: string;
+  custom_label_4?: string;
+  custom_label_5?: string;
+  custom_rate_label_1?: string;
+  custom_rate_label_2?: string;
+  custom_cost_label_1?: string;
+  custom_cost_label_2?: string;
+  date_from: string;
+  date_to: string;
+  available_months?: string[];
+};
+
 type LeadTableResponse = {
-  meta: {
-    client_id: number;
-    template_type: string;
-    display_currency: string;
-    custom_label_1?: string;
-    custom_label_2?: string;
-    custom_label_3?: string;
-    custom_label_4?: string;
-    custom_label_5?: string;
-    date_from: string;
-    date_to: string;
-    available_months?: string[];
-  };
+  meta: LeadTableMeta;
   days: LeadTableRow[];
   months: LeadTableMonth[];
 };
@@ -72,6 +78,17 @@ type EditableDraft = {
   custom_value_5_amount_ron: string;
   sales_count: string;
 };
+
+type LabelFieldKey =
+  | "custom_label_1"
+  | "custom_label_2"
+  | "custom_label_3"
+  | "custom_label_4"
+  | "custom_label_5"
+  | "custom_rate_label_1"
+  | "custom_rate_label_2"
+  | "custom_cost_label_1"
+  | "custom_cost_label_2";
 
 const INTEGER_FIELDS: Array<keyof EditableDraft> = [
   "leads",
@@ -111,6 +128,14 @@ function monthLabel(value: string): string {
 function fallbackLabel(value: string | undefined, fallback: string): string {
   const normalized = String(value || "").trim();
   return normalized || fallback;
+}
+
+function normalizedClientType(value: string | null): string {
+  const raw = String(value || "lead").trim().toLowerCase();
+  if (raw === "e-commerce") return "ecommerce";
+  if (raw === "ecommerce") return "ecommerce";
+  if (raw === "programmatic") return "programmatic";
+  return "lead";
 }
 
 function makeDraft(row: LeadTableRow): EditableDraft {
@@ -169,6 +194,8 @@ export default function SubMediaBuyingPage() {
   const clientId = Number(params.id);
 
   const [clientName, setClientName] = useState<string>(`Sub-account #${clientId}`);
+  const [clientType, setClientType] = useState<string>("lead");
+  const [clientContextLoaded, setClientContextLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [tableData, setTableData] = useState<LeadTableResponse | null>(null);
@@ -176,6 +203,11 @@ export default function SubMediaBuyingPage() {
   const [editingByDate, setEditingByDate] = useState<Record<string, EditableDraft>>({});
   const [savingByDate, setSavingByDate] = useState<Record<string, boolean>>({});
   const [rowFeedback, setRowFeedback] = useState<Record<string, { kind: "success" | "error"; message: string }>>({});
+
+  const [editingLabelKey, setEditingLabelKey] = useState<LabelFieldKey | null>(null);
+  const [labelDraft, setLabelDraft] = useState("");
+  const [labelSaving, setLabelSaving] = useState(false);
+  const [labelFeedback, setLabelFeedback] = useState<{ kind: "success" | "error"; message: string } | null>(null);
 
   const dateTo = useMemo(() => new Date(), []);
   const dateFrom = useMemo(() => subDays(dateTo, 89), [dateTo]);
@@ -205,36 +237,56 @@ export default function SubMediaBuyingPage() {
   useEffect(() => {
     let ignore = false;
 
-    async function loadClientName() {
+    async function loadClientContext() {
       try {
         const result = await apiRequest<{ items: ClientItem[] }>("/clients");
         const match = result.items.find((item) => item.id === clientId);
-        if (!ignore && match?.name) setClientName(match.name);
+        if (!ignore) {
+          if (match?.name) setClientName(match.name);
+          if (match?.client_type) setClientType(normalizedClientType(match.client_type));
+          setClientContextLoaded(true);
+        }
       } catch {
-        if (!ignore) setClientName(`Sub-account #${clientId}`);
+        if (!ignore) {
+          setClientName(`Sub-account #${clientId}`);
+          setClientType("lead");
+          setClientContextLoaded(true);
+        }
       }
     }
 
-    if (Number.isFinite(clientId)) void loadClientName();
+    if (Number.isFinite(clientId)) void loadClientContext();
     return () => {
       ignore = true;
     };
   }, [clientId]);
 
   useEffect(() => {
+    if (!clientContextLoaded) return;
+    if (clientType !== "lead") {
+      setLoading(false);
+      setTableData(null);
+      return;
+    }
     void loadTable(false);
-  }, [loadTable]);
+  }, [loadTable, clientType, clientContextLoaded]);
 
   const title = `Media Buying - ${clientName}`;
 
   const displayCurrency = tableData?.meta.display_currency || "RON";
-  const label1 = fallbackLabel(tableData?.meta.custom_label_1, "Custom Value 1");
-  const label2 = fallbackLabel(tableData?.meta.custom_label_2, "Custom Value 2");
-  const label3 = fallbackLabel(tableData?.meta.custom_label_3, "Custom Value 3");
-  const label4 = fallbackLabel(tableData?.meta.custom_label_4, "Custom Value 4");
-  const label5 = fallbackLabel(tableData?.meta.custom_label_5, "Custom Value 5");
+  const labelMap: Record<LabelFieldKey, string> = {
+    custom_label_1: fallbackLabel(tableData?.meta.custom_label_1, "Custom Value 1"),
+    custom_label_2: fallbackLabel(tableData?.meta.custom_label_2, "Custom Value 2"),
+    custom_label_3: fallbackLabel(tableData?.meta.custom_label_3, "Custom Value 3"),
+    custom_label_4: fallbackLabel(tableData?.meta.custom_label_4, "Custom Value 4"),
+    custom_label_5: fallbackLabel(tableData?.meta.custom_label_5, "Custom Value 5"),
+    custom_rate_label_1: fallbackLabel(tableData?.meta.custom_rate_label_1, "Custom Value Rate 1"),
+    custom_rate_label_2: fallbackLabel(tableData?.meta.custom_rate_label_2, "Custom Value Rate 2"),
+    custom_cost_label_1: fallbackLabel(tableData?.meta.custom_cost_label_1, "Cost Custom Value 1"),
+    custom_cost_label_2: fallbackLabel(tableData?.meta.custom_cost_label_2, "Cost Custom Value 2"),
+  };
 
-  const isLeadTemplate = (tableData?.meta.template_type || "lead") === "lead";
+  const isLeadTemplate = clientType === "lead";
 
   async function saveRow(day: LeadTableRow) {
     const draft = editingByDate[day.date];
@@ -273,6 +325,87 @@ export default function SubMediaBuyingPage() {
     }
   }
 
+  async function saveLabel(labelKey: LabelFieldKey) {
+    const nextValue = labelDraft.trim();
+    if (!tableData) return;
+
+    setLabelSaving(true);
+    setLabelFeedback(null);
+    try {
+      const updated = await apiRequest<LeadTableMeta>(`/clients/${clientId}/media-buying/config`, {
+        method: "PUT",
+        body: JSON.stringify({ [labelKey]: nextValue }),
+      });
+
+      setTableData((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          meta: {
+            ...prev.meta,
+            ...updated,
+            template_type: prev.meta.template_type,
+          },
+        };
+      });
+      setEditingLabelKey(null);
+      setLabelDraft("");
+      setLabelFeedback({ kind: "success", message: "Label saved" });
+    } catch (err) {
+      setLabelFeedback({ kind: "error", message: err instanceof Error ? err.message : "Could not save label" });
+    } finally {
+      setLabelSaving(false);
+    }
+  }
+
+  function renderEditableHeader(labelKey: LabelFieldKey) {
+    const labelValue = labelMap[labelKey];
+    const editing = editingLabelKey === labelKey;
+    return (
+      <div className="flex items-center gap-1">
+        {editing ? (
+          <input
+            aria-label={`Edit ${labelKey}`}
+            autoFocus
+            className="w-36 rounded border border-slate-300 px-1 py-0.5 text-xs normal-case"
+            value={labelDraft}
+            onChange={(event) => setLabelDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void saveLabel(labelKey);
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setEditingLabelKey(null);
+                setLabelDraft("");
+              }
+            }}
+            onBlur={() => {
+              setEditingLabelKey(null);
+              setLabelDraft("");
+            }}
+          />
+        ) : (
+          <span>{labelValue}</span>
+        )}
+        {!editing ? (
+          <button
+            aria-label={`Edit label ${labelKey}`}
+            type="button"
+            className="rounded px-1 text-xs text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+            onClick={() => {
+              setEditingLabelKey(labelKey);
+              setLabelDraft(labelValue);
+            }}
+          >
+            ✎
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <ProtectedPage>
       <AppShell title={null}>
@@ -285,12 +418,16 @@ export default function SubMediaBuyingPage() {
           <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
           <p className="mt-2 text-sm text-slate-600">Range: {toIso(dateFrom)} - {toIso(dateTo)}</p>
 
+          {labelFeedback?.message ? (
+            <p className={`mt-2 text-xs ${labelFeedback.kind === "error" ? "text-red-600" : "text-emerald-600"}`}>{labelFeedback.message}</p>
+          ) : null}
+
           {loading ? <p className="mt-4 text-sm text-slate-600">Loading Media Buying table...</p> : null}
           {!loading && error ? <p className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
 
-          {!loading && !error && tableData && !isLeadTemplate ? (
+          {!loading && !error && !isLeadTemplate ? (
             <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              Template not implemented yet for this sub-account.
+              Template not implemented yet for this client type ({clientType}).
             </div>
           ) : null}
 
@@ -314,17 +451,17 @@ export default function SubMediaBuyingPage() {
                     <th className="px-3 py-2">Lead-uri</th>
                     <th className="px-3 py-2">Telefoane</th>
                     <th className="px-3 py-2">Total Lead-uri</th>
-                    <th className="px-3 py-2">{label1}</th>
-                    <th className="px-3 py-2">{label2}</th>
-                    <th className="px-3 py-2">{label3}</th>
-                    <th className="px-3 py-2">{label4}</th>
-                    <th className="px-3 py-2">{label5}</th>
+                    <th className="px-3 py-2">{renderEditableHeader("custom_label_1")}</th>
+                    <th className="px-3 py-2">{renderEditableHeader("custom_label_2")}</th>
+                    <th className="px-3 py-2">{renderEditableHeader("custom_label_3")}</th>
+                    <th className="px-3 py-2">{renderEditableHeader("custom_label_4")}</th>
+                    <th className="px-3 py-2">{renderEditableHeader("custom_label_5")}</th>
                     <th className="px-3 py-2">Vânzări</th>
-                    <th className="px-3 py-2">Custom Value Rate 1</th>
-                    <th className="px-3 py-2">Custom Value Rate 2</th>
+                    <th className="px-3 py-2">{renderEditableHeader("custom_rate_label_1")}</th>
+                    <th className="px-3 py-2">{renderEditableHeader("custom_rate_label_2")}</th>
                     <th className="px-3 py-2">Cost per Lead</th>
-                    <th className="px-3 py-2">Cost Custom Value 1</th>
-                    <th className="px-3 py-2">Cost Custom Value 2</th>
+                    <th className="px-3 py-2">{renderEditableHeader("custom_cost_label_1")}</th>
+                    <th className="px-3 py-2">{renderEditableHeader("custom_cost_label_2")}</th>
                     <th className="px-3 py-2">Cost per Sale</th>
                   </tr>
                 </thead>

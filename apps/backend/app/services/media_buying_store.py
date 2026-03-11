@@ -6,6 +6,7 @@ from threading import Lock
 
 from app.core.config import load_settings
 from app.services.dashboard import unified_dashboard_service
+from app.services.client_registry import client_registry_service
 
 try:
     import psycopg
@@ -20,6 +21,10 @@ _DEFAULT_LABELS = {
     "custom_label_3": "Custom Value 3",
     "custom_label_4": "Custom Value 4",
     "custom_label_5": "Custom Value 5",
+    "custom_rate_label_1": "Custom Value Rate 1",
+    "custom_rate_label_2": "Custom Value Rate 2",
+    "custom_cost_label_1": "Cost Custom Value 1",
+    "custom_cost_label_2": "Cost Custom Value 2",
 }
 
 
@@ -105,9 +110,13 @@ class MediaBuyingStore:
             "custom_label_3": str(row[5]),
             "custom_label_4": str(row[6]),
             "custom_label_5": str(row[7]),
-            "enabled": bool(row[8]),
-            "created_at": str(row[9]) if row[9] is not None else None,
-            "updated_at": str(row[10]) if row[10] is not None else None,
+            "custom_rate_label_1": str(row[8]),
+            "custom_rate_label_2": str(row[9]),
+            "custom_cost_label_1": str(row[10]),
+            "custom_cost_label_2": str(row[11]),
+            "enabled": bool(row[12]),
+            "created_at": str(row[13]) if row[13] is not None else None,
+            "updated_at": str(row[14]) if row[14] is not None else None,
         }
 
     def _daily_from_row(self, row: tuple[object, ...]) -> dict[str, object]:
@@ -304,6 +313,20 @@ class MediaBuyingStore:
             "days": day_rows,
         }
 
+    def _resolve_client_template_type(self, *, client_id: int) -> str:
+        details = client_registry_service.get_client_details(client_id=int(client_id))
+        if not isinstance(details, dict):
+            return "lead"
+        client_payload = details.get("client")
+        if not isinstance(client_payload, dict):
+            return "lead"
+        raw = str(client_payload.get("client_type") or "lead").strip().lower()
+        if raw == "e-commerce":
+            return "ecommerce"
+        if raw in {"lead", "ecommerce", "programmatic"}:
+            return raw
+        return "lead"
+
     def get_lead_table(
         self,
         *,
@@ -316,7 +339,8 @@ class MediaBuyingStore:
             raise ValueError("date_from must be less than or equal to date_to")
 
         config = self.get_config(client_id=int(client_id))
-        if str(config.get("template_type") or "").lower() != "lead":
+        effective_template_type = self._resolve_client_template_type(client_id=int(client_id))
+        if effective_template_type != "lead":
             raise NotImplementedError("Media Buying table is implemented only for template_type=lead in this task")
 
         display_currency = self._normalize_currency(str(config.get("display_currency") or "RON"))
@@ -367,13 +391,17 @@ class MediaBuyingStore:
         return {
             "meta": {
                 "client_id": int(client_id),
-                "template_type": "lead",
+                "template_type": effective_template_type,
                 "display_currency": display_currency,
                 "custom_label_1": str(config.get("custom_label_1") or _DEFAULT_LABELS["custom_label_1"]),
                 "custom_label_2": str(config.get("custom_label_2") or _DEFAULT_LABELS["custom_label_2"]),
                 "custom_label_3": str(config.get("custom_label_3") or _DEFAULT_LABELS["custom_label_3"]),
                 "custom_label_4": str(config.get("custom_label_4") or _DEFAULT_LABELS["custom_label_4"]),
                 "custom_label_5": str(config.get("custom_label_5") or _DEFAULT_LABELS["custom_label_5"]),
+                "custom_rate_label_1": str(config.get("custom_rate_label_1") or _DEFAULT_LABELS["custom_rate_label_1"]),
+                "custom_rate_label_2": str(config.get("custom_rate_label_2") or _DEFAULT_LABELS["custom_rate_label_2"]),
+                "custom_cost_label_1": str(config.get("custom_cost_label_1") or _DEFAULT_LABELS["custom_cost_label_1"]),
+                "custom_cost_label_2": str(config.get("custom_cost_label_2") or _DEFAULT_LABELS["custom_cost_label_2"]),
                 "date_from": date_from.isoformat(),
                 "date_to": date_to.isoformat(),
                 "available_months": [item["month"] for item in months],
@@ -398,6 +426,10 @@ class MediaBuyingStore:
                         custom_label_3,
                         custom_label_4,
                         custom_label_5,
+                        custom_rate_label_1,
+                        custom_rate_label_2,
+                        custom_cost_label_1,
+                        custom_cost_label_2,
                         enabled,
                         created_at,
                         updated_at
@@ -412,15 +444,20 @@ class MediaBuyingStore:
         if payload is not None:
             return payload
 
+        effective_template_type = self._resolve_client_template_type(client_id=int(client_id))
         return {
             "client_id": int(client_id),
-            "template_type": "lead",
+            "template_type": effective_template_type,
             "display_currency": "RON",
             "custom_label_1": _DEFAULT_LABELS["custom_label_1"],
             "custom_label_2": _DEFAULT_LABELS["custom_label_2"],
             "custom_label_3": _DEFAULT_LABELS["custom_label_3"],
             "custom_label_4": _DEFAULT_LABELS["custom_label_4"],
             "custom_label_5": _DEFAULT_LABELS["custom_label_5"],
+            "custom_rate_label_1": _DEFAULT_LABELS["custom_rate_label_1"],
+            "custom_rate_label_2": _DEFAULT_LABELS["custom_rate_label_2"],
+            "custom_cost_label_1": _DEFAULT_LABELS["custom_cost_label_1"],
+            "custom_cost_label_2": _DEFAULT_LABELS["custom_cost_label_2"],
             "enabled": True,
             "created_at": None,
             "updated_at": None,
@@ -437,18 +474,18 @@ class MediaBuyingStore:
         custom_label_3: str | None = None,
         custom_label_4: str | None = None,
         custom_label_5: str | None = None,
+        custom_rate_label_1: str | None = None,
+        custom_rate_label_2: str | None = None,
+        custom_cost_label_1: str | None = None,
+        custom_cost_label_2: str | None = None,
         enabled: bool | None = None,
     ) -> dict[str, object]:
         self._ensure_schema()
         current = self.get_config(client_id=int(client_id))
 
-        next_template_type = self._normalize_template_type(template_type or str(current["template_type"]))
+        effective_template_type = self._resolve_client_template_type(client_id=int(client_id))
+        next_template_type = self._normalize_template_type(effective_template_type)
         next_currency = self._normalize_currency(display_currency or str(current["display_currency"]))
-
-        # Lead template default display currency is RON when creating first config.
-        if current.get("created_at") is None and template_type is None and display_currency is None:
-            next_template_type = "lead"
-            next_currency = "RON"
 
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -463,9 +500,13 @@ class MediaBuyingStore:
                         custom_label_3,
                         custom_label_4,
                         custom_label_5,
+                        custom_rate_label_1,
+                        custom_rate_label_2,
+                        custom_cost_label_1,
+                        custom_cost_label_2,
                         enabled
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (client_id)
                     DO UPDATE SET
                         template_type = EXCLUDED.template_type,
@@ -475,6 +516,10 @@ class MediaBuyingStore:
                         custom_label_3 = EXCLUDED.custom_label_3,
                         custom_label_4 = EXCLUDED.custom_label_4,
                         custom_label_5 = EXCLUDED.custom_label_5,
+                        custom_rate_label_1 = EXCLUDED.custom_rate_label_1,
+                        custom_rate_label_2 = EXCLUDED.custom_rate_label_2,
+                        custom_cost_label_1 = EXCLUDED.custom_cost_label_1,
+                        custom_cost_label_2 = EXCLUDED.custom_cost_label_2,
                         enabled = EXCLUDED.enabled,
                         updated_at = NOW()
                     """,
@@ -487,6 +532,10 @@ class MediaBuyingStore:
                         self._normalize_label(custom_label_3, fallback=str(current["custom_label_3"])),
                         self._normalize_label(custom_label_4, fallback=str(current["custom_label_4"])),
                         self._normalize_label(custom_label_5, fallback=str(current["custom_label_5"])),
+                        self._normalize_label(custom_rate_label_1, fallback=str(current.get("custom_rate_label_1") or _DEFAULT_LABELS["custom_rate_label_1"])),
+                        self._normalize_label(custom_rate_label_2, fallback=str(current.get("custom_rate_label_2") or _DEFAULT_LABELS["custom_rate_label_2"])),
+                        self._normalize_label(custom_cost_label_1, fallback=str(current.get("custom_cost_label_1") or _DEFAULT_LABELS["custom_cost_label_1"])),
+                        self._normalize_label(custom_cost_label_2, fallback=str(current.get("custom_cost_label_2") or _DEFAULT_LABELS["custom_cost_label_2"])),
                         bool(current["enabled"]) if enabled is None else bool(enabled),
                     ),
                 )
