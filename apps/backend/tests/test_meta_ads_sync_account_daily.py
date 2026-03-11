@@ -802,6 +802,30 @@ class MetaAdsSyncDailyTests(unittest.TestCase):
         self.assertIn("start_date", str(ctx.exception.detail))
 
 
+
+    def test_account_daily_persists_meta_account_currency_in_extra_metrics(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client Currency", account_ids=["act_9101"])
+        client_registry_service._memory_platform_accounts.setdefault("meta_ads", {}).setdefault("act_9101", {"id": "act_9101", "name": "Meta 9101"})["currency_code"] = "RON"
+        meta_ads_service._resolve_active_access_token_with_source = lambda: ("token-1", "database", None, None)
+        meta_ads_service._fetch_account_daily_insights = lambda **kwargs: [
+            {
+                "date_start": "2026-03-01",
+                "date_stop": "2026-03-01",
+                "spend": "10",
+                "impressions": "100",
+                "clicks": "10",
+                "actions": [{"action_type": "lead", "value": "1"}],
+                "action_values": [],
+            }
+        ]
+
+        payload = meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 1), grain="account_daily")
+        self.assertEqual(payload["rows_written"], 1)
+        rows = [row for row in performance_reports_store._memory_rows if row.get("customer_id") == "act_9101"]
+        self.assertEqual(len(rows), 1)
+        extra = (rows[0].get("extra_metrics") or {}).get("meta_ads") or {}
+        self.assertEqual(extra.get("account_currency"), "RON")
+
     def test_fetch_insights_retries_transient_meta_500(self):
         calls: list[str] = []
         original_http_json = meta_ads_service._http_json

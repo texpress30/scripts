@@ -266,6 +266,22 @@ class MetaAdsService:
             raise MetaAdsIntegrationError("Selected account_id is not attached to this client.")
         return [matched[0]]
 
+    def _resolve_attached_account_currency(self, *, client_id: int, account_id: str) -> str | None:
+        accounts = client_registry_service.list_platform_accounts(platform="meta_ads")
+        for account in accounts:
+            attached_client_id = account.get("attached_client_id")
+            if attached_client_id is None or int(attached_client_id) != int(client_id):
+                continue
+            candidate_id = str(account.get("account_id") or account.get("id") or "").strip()
+            if candidate_id == "":
+                continue
+            if not self.meta_account_ids_match(candidate_id, account_id):
+                continue
+            currency = str(account.get("currency") or "").strip().upper()
+            if len(currency) == 3 and currency.isalpha():
+                return currency
+        return None
+
     def _parse_numeric(self, value: object) -> float:
         try:
             return float(value or 0)
@@ -645,6 +661,7 @@ class MetaAdsService:
                 "conversions": 0.0,
                 "conversion_value": 0.0,
             }
+            resolved_account_currency = self._resolve_attached_account_currency(client_id=int(client_id), account_id=account_id)
 
             if resolved_grain == "account_daily":
                 insights_rows = self._fetch_account_daily_insights(
@@ -679,7 +696,7 @@ class MetaAdsService:
                         clicks=clicks,
                         conversions=conversions,
                         conversion_value=conversion_value,
-                        extra_metrics={"meta_ads": {**self._base_extra_metrics(item), **self._lead_conversion_observability(details=lead_conversion_details)}},
+                        extra_metrics={"meta_ads": {**self._base_extra_metrics(item), "account_currency": resolved_account_currency, **self._lead_conversion_observability(details=lead_conversion_details)}},
                     )
                     rows_written += 1
                     account_rows_written += 1

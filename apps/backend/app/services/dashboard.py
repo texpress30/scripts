@@ -233,7 +233,12 @@ class UnifiedDashboardService:
                             SELECT
                                 apr.platform,
                                 apr.report_date,
-                                COALESCE(NULLIF(TRIM(mapped.account_currency), ''), NULLIF(TRIM(client.currency), ''), 'RON') AS account_currency,
+                                COALESCE(
+                                    NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') ELSE '' END), ''),
+                                    NULLIF(TRIM(mapped.account_currency), ''),
+                                    NULLIF(TRIM(client.currency), ''),
+                                    'RON'
+                                ) AS account_currency,
                                 COALESCE(apr.client_id, mapped.client_id) AS resolved_client_id,
                                 apr.spend,
                                 apr.impressions,
@@ -497,7 +502,12 @@ class UnifiedDashboardService:
                         SELECT
                             apr.report_date,
                             COALESCE(apr.client_id, mapped.client_id) AS resolved_client_id,
-                            COALESCE(NULLIF(TRIM(mapped.account_currency), ''), NULLIF(TRIM(client.currency), ''), 'RON') AS account_currency,
+                            COALESCE(
+                                    NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') ELSE '' END), ''),
+                                    NULLIF(TRIM(mapped.account_currency), ''),
+                                    NULLIF(TRIM(client.currency), ''),
+                                    'RON'
+                                ) AS account_currency,
                             apr.spend,
                             apr.impressions,
                             apr.clicks,

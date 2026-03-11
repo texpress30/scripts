@@ -3149,3 +3149,21 @@
 - Root cause identified: account_daily historical backfill could fail hard on transient Meta 5xx due to no retry in insights fetch, and snapshot could stay stale because per-chunk account_daily sync updated snapshot with only the last chunk window.
 - Implemented retries for retryable Meta errors in `_fetch_insights` and added full-window snapshot rebuild at end of historical backfill when `account_daily` grain is included.
 - Added `POST /integrations/meta-ads/{client_id}/recompute-snapshot` to rebuild snapshot idempotently from persisted account_daily rows (optionally filtered by date/account).
+
+---
+
+# TODO — Meta currency propagation and no-double-conversion in dashboard
+
+- [x] Attempt workspace sync before edits and record tracking-remote blocker if unavailable.
+- [x] Audit Meta money flow from account_daily write -> dashboard query currency resolution -> normalization.
+- [x] Fix Meta source currency propagation into account_daily row extra metrics.
+- [x] Fix dashboard currency resolution to prefer Meta row currency from extra metrics before mapping/client fallback.
+- [x] Add regression tests for RON->RON no-conversion (3,587.60 case), query precedence, and Meta row currency propagation.
+- [x] Keep scope strict: no Google/TikTok functional changes.
+- [x] Run targeted backend tests.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Root cause: dashboard fallback could resolve Meta rows to mapping/client currency (USD) when true Meta account currency was RON, leading to double conversion (RON treated as USD then converted to RON again).
+- Fix: propagate Meta account currency into `extra_metrics.meta_ads.account_currency` during account_daily writes and make dashboard queries prefer that per-row currency for Meta before fallback chain.
+- Added exact regression for 3,587.60 RON source with RON target to ensure no reconversion.

@@ -88,3 +88,26 @@ def test_normalize_money_uses_fallback_fx_rate_when_provider_missing():
         unified_dashboard_service._fx_cache = original_cache
 
     assert round(amount_ron, 2) == 42.0
+
+
+def test_meta_ron_to_ron_is_not_double_converted_observed_case_3587_60():
+    original_rate = unified_dashboard_service._get_fx_rate_to_ron
+    try:
+        unified_dashboard_service._get_fx_rate_to_ron = lambda **kwargs: {"USD": 4.359, "RON": 1.0}.get(kwargs.get("currency_code"), 1.0)
+        rows = [
+            ("meta_ads", date(2026, 3, 1), "RON", 3587.60, 1000, 100, 10, 0.0, {"meta_ads": {"account_currency": "RON"}}),
+        ]
+        platform_totals = unified_dashboard_service._aggregate_client_rows(rows=rows, target_currency="RON")
+    finally:
+        unified_dashboard_service._get_fx_rate_to_ron = original_rate
+
+    meta = platform_totals["meta_ads"]
+    assert round(float(meta["spend"]), 2) == 3587.60
+
+
+def test_dashboard_queries_prefer_meta_row_currency_from_extra_metrics_over_mapping_fallback():
+    client_query = unified_dashboard_service._client_reports_query()
+    agency_query = unified_dashboard_service._agency_reports_query()
+
+    assert "apr.extra_metrics -> 'meta_ads' ->> 'account_currency'" in client_query
+    assert "apr.extra_metrics -> 'meta_ads' ->> 'account_currency'" in agency_query
