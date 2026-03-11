@@ -3167,3 +3167,22 @@
 - Root cause: dashboard fallback could resolve Meta rows to mapping/client currency (USD) when true Meta account currency was RON, leading to double conversion (RON treated as USD then converted to RON again).
 - Fix: propagate Meta account currency into `extra_metrics.meta_ads.account_currency` during account_daily writes and make dashboard queries prefer that per-row currency for Meta before fallback chain.
 - Added exact regression for 3,587.60 RON source with RON target to ensure no reconversion.
+
+---
+
+# TODO — Sub-account Dashboard header/nav + platform links update
+
+- [x] Attempt workspace sync before edits and record tracking-remote blocker if unavailable.
+- [x] Remove sub-account dashboard page title from header universally.
+- [x] Replace old header quick links (Campaigns/Rules/Creative/Recommendations) with Media Buying + Media Tracker only in page header.
+- [x] Convert platform names in dashboard table into links to platform-dedicated sub routes.
+- [x] Keep sidebar untouched (no new sidebar entries for new header links).
+- [x] Add frontend test coverage for new header links, removed old links, and platform table links.
+- [x] Run targeted frontend tests and frontend build.
+- [x] Capture screenshot for visual frontend change.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Header title removed by passing `title={null}` to AppShell on sub dashboard page.
+- Header links updated to `Media Buying` and `Media Tracker` only.
+- Platform names now render as interactive links to `/sub/{id}/{platform-slug}` with hover styling.
