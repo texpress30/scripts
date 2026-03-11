@@ -43,6 +43,10 @@ def _looks_like_feature_flag_disabled_error(value: object | None) -> bool:
     return "disabled by feature flag" in normalized
 
 
+def _is_success_run_status(value: object | None) -> bool:
+    return str(value or "").strip().lower() in {"done", "success", "completed"}
+
+
 def _suppress_stale_tiktok_feature_flag_errors(*, items: list[dict[str, object]], sync_enabled: bool) -> None:
     if not sync_enabled:
         return
@@ -57,6 +61,44 @@ def _suppress_stale_tiktok_feature_flag_errors(*, items: list[dict[str, object]]
                 item["last_error_category"] = None
             if "last_error_details" in item:
                 item["last_error_details"] = None
+
+
+def _suppress_stale_tiktok_recent_errors_after_success(*, items: list[dict[str, object]]) -> None:
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if bool(item.get("has_active_sync")):
+            continue
+        if not _is_success_run_status(item.get("last_run_status")):
+            continue
+        if item.get("last_success_at") is None:
+            continue
+        if item.get("last_error") is None:
+            continue
+        item["last_error"] = None
+        if "last_error_category" in item:
+            item["last_error_category"] = None
+        if "last_error_details" in item:
+            item["last_error_details"] = None
+
+
+def _suppress_stale_recent_errors_after_success(*, items: list[dict[str, object]]) -> None:
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if bool(item.get("has_active_sync")):
+            continue
+        if not _is_success_run_status(item.get("last_run_status")):
+            continue
+        if item.get("last_success_at") is None:
+            continue
+        if item.get("last_error") is None:
+            continue
+        item["last_error"] = None
+        if "last_error_category" in item:
+            item["last_error_category"] = None
+        if "last_error_details" in item:
+            item["last_error_details"] = None
 
 
 def _normalize_platform_or_422(platform: str) -> str:
@@ -167,8 +209,10 @@ def list_platform_accounts(platform: str, user: AuthUser = Depends(get_current_u
     normalized_platform = _normalize_platform_or_422(platform)
     sync_enabled = _is_platform_sync_enabled(normalized_platform)
     items = client_registry_service.list_platform_accounts_for_mapping(platform=normalized_platform)
+    _suppress_stale_recent_errors_after_success(items=items)
     if normalized_platform == PLATFORM_TIKTOK_ADS:
         _suppress_stale_tiktok_feature_flag_errors(items=items, sync_enabled=sync_enabled)
+        _suppress_stale_tiktok_recent_errors_after_success(items=items)
     return {
         "platform": normalized_platform,
         "sync_enabled": sync_enabled,
