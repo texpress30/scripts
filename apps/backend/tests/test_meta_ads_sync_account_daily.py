@@ -802,5 +802,128 @@ class MetaAdsSyncDailyTests(unittest.TestCase):
         self.assertIn("start_date", str(ctx.exception.detail))
 
 
+    def test_fetch_insights_retries_transient_meta_500(self):
+        calls: list[str] = []
+        original_http_json = meta_ads_service._http_json
+        original_build_url = meta_ads_service._build_graph_account_url
+        try:
+            meta_ads_service._build_graph_account_url = lambda **kwargs: "https://graph.example/insights"
+
+            def _http_json(*, method: str, url: str):
+                calls.append(url)
+                if len(calls) == 1:
+                    raise MetaAdsIntegrationError("Meta HTTP request failed: status=500", http_status=500)
+                return {"data": [{"date_start": "2026-03-01"}]}
+
+            meta_ads_service._http_json = _http_json
+            rows = meta_ads_service._fetch_account_daily_insights(
+                account_id="act_1",
+                start_date=date(2026, 3, 1),
+                end_date=date(2026, 3, 1),
+                access_token="token",
+            )
+        finally:
+            meta_ads_service._http_json = original_http_json
+            meta_ads_service._build_graph_account_url = original_build_url
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(rows), 1)
+
+    def test_account_daily_writes_coherent_rows_for_multi_day_window(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client Daily", account_ids=["act_333"])
+        meta_ads_service._resolve_active_access_token_with_source = lambda: ("token-1", "database", None, None)
+        meta_ads_service._fetch_account_daily_insights = lambda **kwargs: [
+            {"date_start": "2026-03-01", "date_stop": "2026-03-01", "spend": "10", "impressions": "100", "clicks": "10", "actions": [{"action_type": "lead", "value": "1"}], "action_values": []},
+            {"date_start": "2026-03-02", "date_stop": "2026-03-02", "spend": "11", "impressions": "110", "clicks": "11", "actions": [{"action_type": "lead", "value": "1"}], "action_values": []},
+            {"date_start": "2026-03-03", "date_stop": "2026-03-03", "spend": "12", "impressions": "120", "clicks": "12", "actions": [{"action_type": "lead", "value": "1"}], "action_values": []},
+        ]
+
+        payload = meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 3), grain="account_daily")
+
+        rows = [row for row in performance_reports_store._memory_rows if row.get("customer_id") == "act_333"]
+        self.assertEqual(payload["rows_written"], 3)
+        self.assertEqual(len(rows), 3)
+
+    def test_backfill_rebuilds_snapshot_from_full_account_daily_window(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client Rebuild", account_ids=["act_4001"])
+        meta_ads_service.integration_status = lambda: {"token_source": "database", "status": "connected"}
+
+        def _sync_client(**kwargs):
+            return {
+                "status": "ok",
+                "grain": kwargs.get("grain"),
+                "accounts_processed": 1,
+                "rows_written": 1,
+                "token_source": "database",
+            }
+
+        rebuild_calls: list[dict[str, object]] = []
+
+        def _rebuild_snapshot_from_account_daily(**kwargs):
+            rebuild_calls.append(dict(kwargs))
+            return {"client_id": kwargs.get("client_id"), "spend": 123.0, "impressions": 10, "clicks": 1, "conversions": 1, "revenue": 50.0, "synced_at": "2026-03-10T10:00:00Z"}
+
+        meta_ads_service.sync_client = _sync_client
+        original_rebuild = meta_ads_service.rebuild_snapshot_from_account_daily
+        meta_ads_service.rebuild_snapshot_from_account_daily = _rebuild_snapshot_from_account_daily
+        try:
+            job_id = backfill_job_store.create(payload={"platform": "meta_ads", "client_id": client_id})
+            meta_ads_api._run_meta_historical_backfill_job(
+                job_id,
+                client_id=client_id,
+                start_date=date(2026, 3, 1),
+                end_date=date(2026, 3, 3),
+                grains=["account_daily", "campaign_daily"],
+                chunk_days=30,
+            )
+        finally:
+            meta_ads_service.rebuild_snapshot_from_account_daily = original_rebuild
+
+        self.assertEqual(len(rebuild_calls), 1)
+        self.assertEqual(rebuild_calls[0]["client_id"], client_id)
+        payload = backfill_job_store.get(job_id) or {}
+        result = payload.get("result") or {}
+        self.assertEqual(result.get("snapshot_rebuilt"), True)
+
+    def test_recompute_snapshot_endpoint_rebuilds_from_account_daily_rows(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client Recompute", account_ids=["act_5001"])
+        performance_reports_store.write_daily_report(
+            report_date=date(2026, 3, 1),
+            platform="meta_ads",
+            customer_id="act_5001",
+            client_id=client_id,
+            spend=20.0,
+            impressions=200,
+            clicks=20,
+            conversions=2.0,
+            conversion_value=40.0,
+            extra_metrics={},
+        )
+        performance_reports_store.write_daily_report(
+            report_date=date(2026, 3, 2),
+            platform="meta_ads",
+            customer_id="act_5001",
+            client_id=client_id,
+            spend=30.0,
+            impressions=300,
+            clicks=30,
+            conversions=3.0,
+            conversion_value=60.0,
+            extra_metrics={},
+        )
+
+        response = meta_ads_api.recompute_meta_snapshot(
+            client_id=client_id,
+            payload=meta_ads_api.MetaSnapshotRecomputeRequest(start_date=date(2026, 3, 1), end_date=date(2026, 3, 2), account_id="act_5001"),
+            user=self.user,
+        )
+
+        snapshot = response.get("snapshot") or {}
+        self.assertEqual(response.get("status"), "ok")
+        self.assertEqual(snapshot.get("spend"), 50.0)
+        self.assertEqual(snapshot.get("revenue"), 100.0)
+        self.assertEqual(snapshot.get("clicks"), 50)
+
+
 if __name__ == "__main__":
     unittest.main()

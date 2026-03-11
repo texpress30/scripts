@@ -3130,3 +3130,22 @@
 - Added `_normalize_money(...)` and `_aggregate_client_rows(...)` to normalize by row date + source currency -> target currency.
 - Updated client dashboard query to pull `account_currency` and normalize spend/revenue to client preferred currency for totals and per-platform rows.
 - Updated agency top clients to use/display RON normalized spend, with sorting based on normalized RON values.
+
+---
+
+# TODO — Meta account_daily reliability + snapshot rebuild/recompute
+
+- [x] Attempt workspace sync before edits and record tracking-remote blocker if unavailable.
+- [x] Audit Meta account_daily request/parsing/write path and historical backfill flow for final-chunk 500 behavior.
+- [x] Fix account_daily fetch reliability for transient Meta 5xx and preserve explicit `time_increment=1` daily fetch semantics.
+- [x] Ensure account_daily backfill no longer leaves stale snapshot by rebuilding snapshot from full account_daily backfill window.
+- [x] Add idempotent snapshot recompute mechanism (API) sourced strictly from persisted account_daily rows.
+- [x] Keep lead-only conversions unchanged and ensure non-account grains remain out of dashboard snapshot source-of-truth.
+- [x] Add/update tests for transient 500 regression, daily row coherence, backfill snapshot rebuild, recompute endpoint, and source-of-truth safety.
+- [x] Run targeted Meta backend tests and verify pass.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Root cause identified: account_daily historical backfill could fail hard on transient Meta 5xx due to no retry in insights fetch, and snapshot could stay stale because per-chunk account_daily sync updated snapshot with only the last chunk window.
+- Implemented retries for retryable Meta errors in `_fetch_insights` and added full-window snapshot rebuild at end of historical backfill when `account_daily` grain is included.
+- Added `POST /integrations/meta-ads/{client_id}/recompute-snapshot` to rebuild snapshot idempotently from persisted account_daily rows (optionally filtered by date/account).
