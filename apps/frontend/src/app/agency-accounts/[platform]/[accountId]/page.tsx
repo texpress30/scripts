@@ -60,6 +60,7 @@ type SyncChunk = {
   rows_written?: number | null;
   duration_ms?: number | null;
   error?: string | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 type ChunksResponse = {
@@ -645,6 +646,11 @@ export default function AgencyAccountDetailPage() {
                   const done = Number(run.chunks_done ?? 0);
                   const total = Number(run.chunks_total ?? 0);
                   const progressPercent = total > 0 ? Math.round((done / total) * 100) : 0;
+                  const runMetadata = run.metadata && typeof run.metadata === "object" ? run.metadata : null;
+                  const runOperationalStatus = String((run as { operational_status?: unknown }).operational_status ?? "").trim().toLowerCase();
+                  const runRowsDownloaded = runMetadata ? Number((runMetadata as Record<string, unknown>).rows_downloaded ?? (runMetadata as Record<string, unknown>).provider_row_count ?? 0) : 0;
+                  const runRowsMapped = runMetadata ? Number((runMetadata as Record<string, unknown>).rows_mapped ?? 0) : 0;
+                  const runZeroMarker = runMetadata ? String((runMetadata as Record<string, unknown>).zero_row_marker ?? "").trim() : "";
 
                   return (
                     <article key={run.job_id} className="rounded-md border border-slate-200">
@@ -658,7 +664,7 @@ export default function AgencyAccountDetailPage() {
                           <p className="text-xs text-slate-600">{run.date_start ?? "-"} → {run.date_end ?? "-"} · start: {formatDate(run.started_at)} · end: {formatDate(run.finished_at)}</p>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className={`rounded px-2 py-1 text-xs font-medium ${statusBadge(run.status)}`}>{run.status ?? "queued"}</span>
+                          <span className={`rounded px-2 py-1 text-xs font-medium ${runOperationalStatus === "no_data_success" ? "bg-amber-100 text-amber-700" : statusBadge(run.status)}`}>{runOperationalStatus === "no_data_success" ? "no_data_success" : (run.status ?? "queued")}</span>
                           <span className="rounded bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">{run.trigger_source === "cron" ? "cron" : "manual"}</span>
                           <span className="text-xs text-slate-600">{done}/{total || "-"} chunks</span>
                           <span className="text-xs text-slate-600">errors: {run.error_count ?? (run.error ? 1 : 0)}</span>
@@ -672,6 +678,9 @@ export default function AgencyAccountDetailPage() {
                             <div className="h-full bg-indigo-600" style={{ width: `${Math.max(0, Math.min(100, progressPercent))}%` }} />
                           </div>
                           <p className="mt-1 text-xs text-slate-600">Progress: {progressPercent}% · rows written: {run.rows_written ?? 0}</p>
+                          {platform === "tiktok_ads" ? (
+                            <p className="text-xs text-slate-600">Rows downloaded: {runRowsDownloaded} · rows mapped: {runRowsMapped}</p>
+                          ) : null}
                         </div>
                       ) : null}
 
@@ -680,6 +689,16 @@ export default function AgencyAccountDetailPage() {
                         const summary = String((run as { last_error_summary?: unknown }).last_error_summary ?? "").trim();
                         const details = (run as { last_error_details?: unknown }).last_error_details;
                         const category = String((run as { last_error_category?: unknown }).last_error_category ?? (details && typeof details === "object" ? (details as { error_category?: unknown }).error_category : "") ?? "").trim();
+                        const failed = isRunFailure(run.status);
+                        if (platform === "tiktok_ads" && !failed) {
+                          if (runRowsDownloaded === 0 && runRowsMapped === 0 && runZeroMarker === "provider_returned_empty_list") {
+                            return <p className="px-3 pb-2 text-xs text-amber-700">TikTok nu a returnat date pentru acest interval.</p>;
+                          }
+                          if (runRowsDownloaded > 0 && runRowsMapped === 0 && runZeroMarker === "response_parsed_but_zero_rows_mapped") {
+                            return <p className="px-3 pb-2 text-xs text-amber-700">TikTok a returnat răspuns, dar nu s-au mapat rânduri pentru persistare.</p>;
+                          }
+                          return null;
+                        }
                         if (platform === "tiktok_ads") {
                           const fallback = summary || String(run.error ?? "").trim() || (details && typeof details === "object" ? String((details as { provider_error_message?: unknown }).provider_error_message ?? "").trim() : "") || "run failed";
                           const presentation = getTikTokErrorPresentation(category, fallback);
@@ -693,6 +712,7 @@ export default function AgencyAccountDetailPage() {
                             </>
                           );
                         }
+                        if (!failed) return null;
                         return (
                           <>
                             {summary ? <p className="px-3 pb-2 text-xs text-red-600">Summary: {summary}</p> : null}
@@ -714,12 +734,26 @@ export default function AgencyAccountDetailPage() {
                             <div className="space-y-2">
                               {chunks.map((chunk) => (
                                 <div key={`${run.job_id}-${chunk.chunk_index}`} className="rounded border border-slate-200 bg-white p-2 text-xs text-slate-700">
+                                  {(() => {
+                                    const chunkMetadata = chunk.metadata && typeof chunk.metadata === "object" ? chunk.metadata : null;
+                                    const chunkRowsDownloaded = chunkMetadata ? Number((chunkMetadata as Record<string, unknown>).rows_downloaded ?? (chunkMetadata as Record<string, unknown>).provider_row_count ?? 0) : 0;
+                                    const chunkRowsMapped = chunkMetadata ? Number((chunkMetadata as Record<string, unknown>).rows_mapped ?? 0) : 0;
+                                    const zeroRowObservability = chunkMetadata ? (chunkMetadata as Record<string, unknown>).zero_row_observability : null;
+                                    return (
+                                      <>
                                   <div className="flex flex-wrap items-center justify-between gap-2">
                                     <p className="font-medium">Chunk #{chunk.chunk_index} · {chunk.date_start ?? "-"} → {chunk.date_end ?? "-"}</p>
                                     <span className={`rounded px-2 py-0.5 text-[11px] font-medium ${statusBadge(chunk.status)}`}>{chunk.status ?? "queued"}</span>
                                   </div>
                                   <p className="mt-1">Attempts: {chunk.attempts ?? 0} · Rows: {chunk.rows_written ?? 0} · Duration: {chunk.duration_ms ?? "-"} ms</p>
+                                  {platform === "tiktok_ads" ? <p className="mt-1">Rows downloaded: {chunkRowsDownloaded} · Rows mapped: {chunkRowsMapped}</p> : null}
+                                  {platform === "tiktok_ads" && Array.isArray(zeroRowObservability) && zeroRowObservability.length > 0 ? (
+                                    <p className="mt-1 text-amber-700">Observability: {JSON.stringify(zeroRowObservability[0])}</p>
+                                  ) : null}
                                   {chunk.error ? <p className="mt-1 text-red-600">Error: {chunk.error}</p> : null}
+                                      </>
+                                    );
+                                  })()}
                                 </div>
                               ))}
                             </div>
