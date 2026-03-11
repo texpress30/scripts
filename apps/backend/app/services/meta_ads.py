@@ -22,6 +22,17 @@ except Exception:  # noqa: BLE001
 
 MetaSyncGrain = Literal["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"]
 _ALLOWED_SYNC_GRAINS: tuple[str, ...] = ("account_daily", "campaign_daily", "ad_group_daily", "ad_daily")
+_META_LEAD_ACTION_TYPE_PRIORITY: tuple[str, ...] = (
+    "lead",
+    "onsite_conversion.lead_grouped",
+    "onsite_conversion.lead",
+    "offsite_conversion.lead",
+    "offsite_conversion.fb_pixel_lead",
+    "offsite_conversion.fb_pixel_custom_lead",
+    "offsite_conversion.meta_lead",
+    "offsite_conversion.meta_pixel_lead",
+)
+_META_LEAD_ACTION_TYPES: set[str] = set(_META_LEAD_ACTION_TYPE_PRIORITY)
 
 
 class MetaAdsIntegrationError(RuntimeError):
@@ -255,6 +266,22 @@ class MetaAdsService:
             raise MetaAdsIntegrationError("Selected account_id is not attached to this client.")
         return [matched[0]]
 
+    def _resolve_attached_account_currency(self, *, client_id: int, account_id: str) -> str | None:
+        accounts = client_registry_service.list_platform_accounts(platform="meta_ads")
+        for account in accounts:
+            attached_client_id = account.get("attached_client_id")
+            if attached_client_id is None or int(attached_client_id) != int(client_id):
+                continue
+            candidate_id = str(account.get("account_id") or account.get("id") or "").strip()
+            if candidate_id == "":
+                continue
+            if not self.meta_account_ids_match(candidate_id, account_id):
+                continue
+            currency = str(account.get("currency") or "").strip().upper()
+            if len(currency) == 3 and currency.isalpha():
+                return currency
+        return None
+
     def _parse_numeric(self, value: object) -> float:
         try:
             return float(value or 0)
@@ -267,15 +294,47 @@ class MetaAdsService:
         except Exception:  # noqa: BLE001
             return 0
 
-    def _derive_conversions(self, *, actions: object) -> float:
+    def _derive_lead_conversion_details(self, *, actions: object) -> dict[str, object]:
         if not isinstance(actions, list):
-            return 0.0
-        total = 0.0
+            return {
+                "conversions": 0.0,
+                "lead_action_types_found": [],
+                "lead_action_type_selected": None,
+                "lead_action_values_found": {},
+            }
+
+        lead_action_values: dict[str, float] = {}
         for item in actions:
             if not isinstance(item, dict):
                 continue
-            total += self._parse_numeric(item.get("value"))
-        return total
+            action_type = str(item.get("action_type") or "").strip().lower()
+            if action_type not in _META_LEAD_ACTION_TYPES:
+                continue
+            lead_action_values[action_type] = lead_action_values.get(action_type, 0.0) + self._parse_numeric(item.get("value"))
+
+        selected_action_type: str | None = None
+        for candidate in _META_LEAD_ACTION_TYPE_PRIORITY:
+            if candidate in lead_action_values:
+                selected_action_type = candidate
+                break
+
+        return {
+            "conversions": float(lead_action_values.get(selected_action_type or "", 0.0)),
+            "lead_action_types_found": [action_type for action_type in _META_LEAD_ACTION_TYPE_PRIORITY if action_type in lead_action_values],
+            "lead_action_type_selected": selected_action_type,
+            "lead_action_values_found": {action_type: round(value, 4) for action_type, value in lead_action_values.items()},
+        }
+
+    def _derive_lead_conversions(self, *, actions: object) -> float:
+        details = self._derive_lead_conversion_details(actions=actions)
+        return float(details.get("conversions") or 0.0)
+
+    def _lead_conversion_observability(self, *, details: dict[str, object]) -> dict[str, object]:
+        return {
+            "lead_action_types_found": details.get("lead_action_types_found") if isinstance(details.get("lead_action_types_found"), list) else [],
+            "lead_action_type_selected": details.get("lead_action_type_selected"),
+            "lead_action_values_found": details.get("lead_action_values_found") if isinstance(details.get("lead_action_values_found"), dict) else {},
+        }
 
     def _derive_conversion_value(self, *, action_values: object) -> float:
         if not isinstance(action_values, list):
@@ -294,6 +353,12 @@ class MetaAdsService:
             "inline_link_clicks": item.get("inline_link_clicks"),
         }
 
+    def _is_retryable_meta_error(self, exc: MetaAdsIntegrationError) -> bool:
+        if exc.retryable is True:
+            return True
+        status = exc.http_status
+        return isinstance(status, int) and status >= 500
+
     def _fetch_insights(
         self,
         *,
@@ -303,6 +368,7 @@ class MetaAdsService:
         access_token: str,
         level: str,
         fields: list[str],
+        time_increment: int | None = None,
     ) -> list[dict[str, object]]:
         params = {
             "level": level,
@@ -310,17 +376,37 @@ class MetaAdsService:
             "time_range": json.dumps({"since": start_date.isoformat(), "until": end_date.isoformat()}),
             "limit": 500,
         }
+        if time_increment is not None:
+            params["time_increment"] = max(1, int(time_increment))
         query = parse.urlencode(params)
         base_url = self._build_graph_account_url(account_id=account_id, access_token=access_token, suffix="/insights")
         joiner = "&" if "?" in base_url else "?"
-        payload = self._http_json(
-            method="GET",
-            url=f"{base_url}{joiner}{query}",
-        )
-        data = payload.get("data")
-        if not isinstance(data, list):
-            raise MetaAdsIntegrationError("Meta API returned invalid data container")
-        return [item for item in data if isinstance(item, dict)]
+        next_url: str | None = f"{base_url}{joiner}{query}"
+        items: list[dict[str, object]] = []
+
+        while next_url:
+            payload: dict[str, object] | None = None
+            for attempt in range(3):
+                try:
+                    payload = self._http_json(method="GET", url=next_url)
+                    break
+                except MetaAdsIntegrationError as exc:
+                    if attempt >= 2 or not self._is_retryable_meta_error(exc):
+                        raise
+            if payload is None:
+                break
+
+            data = payload.get("data")
+            if not isinstance(data, list):
+                raise MetaAdsIntegrationError("Meta API returned invalid data container")
+            items.extend(item for item in data if isinstance(item, dict))
+
+            paging = payload.get("paging")
+            next_value = paging.get("next") if isinstance(paging, dict) else None
+            candidate = str(next_value or "").strip()
+            next_url = candidate or None
+
+        return items
 
     def _probe_account_access(self, *, account_id: str, access_token: str, token_source: str) -> dict[str, object]:
         url = self._build_graph_account_url(account_id=account_id, access_token=access_token)
@@ -355,6 +441,7 @@ class MetaAdsService:
             access_token=access_token,
             level="account",
             fields=["date_start", "date_stop", "spend", "impressions", "clicks", "actions", "action_values", "reach", "inline_link_clicks"],
+            time_increment=1,
         )
 
     def _fetch_campaign_daily_insights(self, *, account_id: str, start_date: date, end_date: date, access_token: str) -> list[dict[str, object]]:
@@ -538,6 +625,7 @@ class MetaAdsService:
         end_date: date | None = None,
         grain: MetaSyncGrain | str | None = None,
         account_id: str | None = None,
+        update_snapshot: bool = True,
     ) -> dict[str, float | int | str]:
         if int(client_id) <= 0:
             raise MetaAdsIntegrationError("Client id must be a positive integer.")
@@ -573,6 +661,7 @@ class MetaAdsService:
                 "conversions": 0.0,
                 "conversion_value": 0.0,
             }
+            resolved_account_currency = self._resolve_attached_account_currency(client_id=int(client_id), account_id=account_id)
 
             if resolved_grain == "account_daily":
                 insights_rows = self._fetch_account_daily_insights(
@@ -593,7 +682,8 @@ class MetaAdsService:
                     spend = self._parse_numeric(item.get("spend"))
                     impressions = self._parse_int(item.get("impressions"))
                     clicks = self._parse_int(item.get("clicks"))
-                    conversions = self._derive_conversions(actions=item.get("actions"))
+                    lead_conversion_details = self._derive_lead_conversion_details(actions=item.get("actions"))
+                    conversions = float(lead_conversion_details.get("conversions") or 0.0)
                     conversion_value = self._derive_conversion_value(action_values=item.get("action_values"))
 
                     performance_reports_store.write_daily_report(
@@ -606,7 +696,7 @@ class MetaAdsService:
                         clicks=clicks,
                         conversions=conversions,
                         conversion_value=conversion_value,
-                        extra_metrics={"meta_ads": self._base_extra_metrics(item)},
+                        extra_metrics={"meta_ads": {**self._base_extra_metrics(item), "account_currency": resolved_account_currency, **self._lead_conversion_observability(details=lead_conversion_details)}},
                     )
                     rows_written += 1
                     account_rows_written += 1
@@ -636,7 +726,8 @@ class MetaAdsService:
                     spend = self._parse_numeric(item.get("spend"))
                     impressions = self._parse_int(item.get("impressions"))
                     clicks = self._parse_int(item.get("clicks"))
-                    conversions = self._derive_conversions(actions=item.get("actions"))
+                    lead_conversion_details = self._derive_lead_conversion_details(actions=item.get("actions"))
+                    conversions = float(lead_conversion_details.get("conversions") or 0.0)
                     conversion_value = self._derive_conversion_value(action_values=item.get("action_values"))
 
                     campaign_rows.append(
@@ -655,6 +746,7 @@ class MetaAdsService:
                                     **self._base_extra_metrics(item),
                                     "campaign_name": str(item.get("campaign_name") or "").strip() or None,
                                     "campaign_id": campaign_id,
+                                    **self._lead_conversion_observability(details=lead_conversion_details),
                                 }
                             },
                             "source_window_start": resolved_start,
@@ -691,7 +783,8 @@ class MetaAdsService:
                     spend = self._parse_numeric(item.get("spend"))
                     impressions = self._parse_int(item.get("impressions"))
                     clicks = self._parse_int(item.get("clicks"))
-                    conversions = self._derive_conversions(actions=item.get("actions"))
+                    lead_conversion_details = self._derive_lead_conversion_details(actions=item.get("actions"))
+                    conversions = float(lead_conversion_details.get("conversions") or 0.0)
                     conversion_value = self._derive_conversion_value(action_values=item.get("action_values"))
                     campaign_id = str(item.get("campaign_id") or "").strip() or None
 
@@ -714,6 +807,7 @@ class MetaAdsService:
                                     "adset_name": str(item.get("adset_name") or "").strip() or None,
                                     "campaign_id": campaign_id,
                                     "campaign_name": str(item.get("campaign_name") or "").strip() or None,
+                                    **self._lead_conversion_observability(details=lead_conversion_details),
                                 }
                             },
                             "source_window_start": resolved_start,
@@ -750,7 +844,8 @@ class MetaAdsService:
                     spend = self._parse_numeric(item.get("spend"))
                     impressions = self._parse_int(item.get("impressions"))
                     clicks = self._parse_int(item.get("clicks"))
-                    conversions = self._derive_conversions(actions=item.get("actions"))
+                    lead_conversion_details = self._derive_lead_conversion_details(actions=item.get("actions"))
+                    conversions = float(lead_conversion_details.get("conversions") or 0.0)
                     conversion_value = self._derive_conversion_value(action_values=item.get("action_values"))
                     campaign_id = str(item.get("campaign_id") or "").strip() or None
                     ad_group_id = str(item.get("adset_id") or "").strip() or None
@@ -777,6 +872,7 @@ class MetaAdsService:
                                     "adset_name": str(item.get("adset_name") or "").strip() or None,
                                     "campaign_id": campaign_id,
                                     "campaign_name": str(item.get("campaign_name") or "").strip() or None,
+                                    **self._lead_conversion_observability(details=lead_conversion_details),
                                 }
                             },
                             "source_window_start": resolved_start,
@@ -833,17 +929,113 @@ class MetaAdsService:
             "synced_at": datetime.now(timezone.utc).isoformat(),
         }
 
-        meta_snapshot_store.upsert_snapshot(
-            payload={
-                "client_id": int(client_id),
-                "spend": float(snapshot["spend"]),
-                "impressions": int(snapshot["impressions"]),
-                "clicks": int(snapshot["clicks"]),
-                "conversions": int(round(float(snapshot["conversions"]))),
-                "revenue": float(snapshot["revenue"]),
-                "synced_at": str(snapshot["synced_at"]),
-            }
-        )
+        if resolved_grain == "account_daily" and bool(update_snapshot):
+            meta_snapshot_store.upsert_snapshot(
+                payload={
+                    "client_id": int(client_id),
+                    "spend": float(snapshot["spend"]),
+                    "impressions": int(snapshot["impressions"]),
+                    "clicks": int(snapshot["clicks"]),
+                    "conversions": int(round(float(snapshot["conversions"]))),
+                    "revenue": float(snapshot["revenue"]),
+                    "synced_at": str(snapshot["synced_at"]),
+                }
+            )
+        return snapshot
+
+    def rebuild_snapshot_from_account_daily(
+        self,
+        *,
+        client_id: int,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        account_id: str | None = None,
+    ) -> dict[str, float | int | str]:
+        if int(client_id) <= 0:
+            raise MetaAdsIntegrationError("Client id must be a positive integer.")
+
+        account_filter = str(account_id or "").strip()
+        resolved_start = start_date
+        resolved_end = end_date
+
+        spend = 0.0
+        impressions = 0
+        clicks = 0
+        conversions = 0.0
+        revenue = 0.0
+
+        if self._is_test_mode():
+            for row in performance_reports_store._memory_rows:
+                if str(row.get("platform") or "") != "meta_ads":
+                    continue
+                if int(row.get("client_id") or 0) != int(client_id):
+                    continue
+                report_date_raw = str(row.get("report_date") or "").strip()
+                if report_date_raw == "":
+                    continue
+                try:
+                    report_date_value = date.fromisoformat(report_date_raw)
+                except ValueError:
+                    continue
+                if resolved_start is not None and report_date_value < resolved_start:
+                    continue
+                if resolved_end is not None and report_date_value > resolved_end:
+                    continue
+                customer = str(row.get("customer_id") or "").strip()
+                if account_filter != "" and not self.meta_account_ids_match(customer, account_filter):
+                    continue
+
+                spend += self._parse_numeric(row.get("spend"))
+                impressions += self._parse_int(row.get("impressions"))
+                clicks += self._parse_int(row.get("clicks"))
+                conversions += self._parse_numeric(row.get("conversions"))
+                revenue += self._parse_numeric(row.get("conversion_value"))
+        else:
+            performance_reports_store.initialize_schema()
+            where_parts = ["platform = %s", "client_id = %s"]
+            params: list[object] = ["meta_ads", int(client_id)]
+            if resolved_start is not None:
+                where_parts.append("report_date >= %s")
+                params.append(resolved_start)
+            if resolved_end is not None:
+                where_parts.append("report_date <= %s")
+                params.append(resolved_end)
+            if account_filter != "":
+                where_parts.append("(customer_id = %s OR regexp_replace(customer_id, '[^0-9]', '', 'g') = regexp_replace(%s, '[^0-9]', '', 'g'))")
+                params.extend([account_filter, account_filter])
+
+            with performance_reports_store._connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""
+                        SELECT
+                            COALESCE(SUM(spend), 0),
+                            COALESCE(SUM(impressions), 0),
+                            COALESCE(SUM(clicks), 0),
+                            COALESCE(SUM(conversions), 0),
+                            COALESCE(SUM(conversion_value), 0)
+                        FROM ad_performance_reports
+                        WHERE {' AND '.join(where_parts)}
+                        """,
+                        tuple(params),
+                    )
+                    row = cur.fetchone() or (0, 0, 0, 0, 0)
+            spend = self._parse_numeric(row[0])
+            impressions = self._parse_int(row[1])
+            clicks = self._parse_int(row[2])
+            conversions = self._parse_numeric(row[3])
+            revenue = self._parse_numeric(row[4])
+
+        snapshot = {
+            "client_id": int(client_id),
+            "spend": round(spend, 2),
+            "impressions": int(impressions),
+            "clicks": int(clicks),
+            "conversions": int(round(conversions)),
+            "revenue": round(revenue, 2),
+            "synced_at": datetime.now(timezone.utc).isoformat(),
+        }
+        meta_snapshot_store.upsert_snapshot(payload=snapshot)
         return snapshot
 
     def get_metrics(self, client_id: int) -> dict[str, float | int | str | bool]:
