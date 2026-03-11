@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 import SubGoogleAdsPage from "./google-ads/page";
-import SubMediaBuyingPage from "./media-buying/page";
 import SubMediaTrackerPage from "./media-tracker/page";
 import SubMetaAdsPage from "./meta-ads/page";
 import SubPinterestAdsPage from "./pinterest-ads/page";
@@ -31,7 +30,6 @@ describe("Sub routes placeholder pages", () => {
   });
 
   it.each([
-    ["Media Buying - Active Life Therapy", SubMediaBuyingPage],
     ["Media Tracker - Active Life Therapy", SubMediaTrackerPage],
     ["Google Ads - Active Life Therapy", SubGoogleAdsPage],
     ["Meta Ads - Active Life Therapy", SubMetaAdsPage],

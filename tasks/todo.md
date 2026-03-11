@@ -3239,3 +3239,22 @@
 - Added `get_lead_table(...)` in `MediaBuyingStore` and a dedicated query for automated daily costs from `ad_performance_reports` for google/meta/tiktok.
 - Added endpoint `GET /clients/{client_id}/media-buying/lead/table` and explicit 501 for template types not implemented in this task.
 - Verified `percent_change` (`%^`) remains explicit `None` at day and month levels.
+
+---
+
+# TODO — Media Buying lead step 3 (frontend table UI with month/day grouping)
+
+- [x] Attempt workspace sync before edits and record upstream-tracking blocker when remote is missing.
+- [x] Replace Media Buying placeholder with lead read-only table UI backed by `/clients/{id}/media-buying/lead/table`.
+- [x] Implement month summary rows + expand/collapse day rows with latest month expanded by default.
+- [x] Render required columns including dynamic custom labels from API metadata and `%^` placeholder fallback.
+- [x] Add loading, error, and empty states; handle non-lead template fallback without crash.
+- [x] Add frontend tests for table render, month grouping/expand, custom labels, null fallback, non-lead fallback, and basic states.
+- [x] Run targeted frontend tests and frontend build.
+- [x] Capture screenshot for visual verification.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Media Buying page now renders a read-only lead table with grouped month totals and expandable daily rows from backend API payload.
+- Custom labels for CV1..CV5 are sourced from API metadata with fallback defaults; `%^` remains explicit placeholder (`—`).
+- Non-lead templates show clear "not implemented" fallback message in-page.
