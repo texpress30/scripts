@@ -3028,3 +3028,25 @@
 - Added explicit legacy dry-run diagnostic reason `window_mismatch_but_legacy_tiktok_cleanup_should_match` when same account/grain successes exist but are not later, to highlight pre-cap/pre-fix window drift scenarios.
 - Exec mode remains safe and narrow: deletes only superseded TikTok historical failed runs plus their chunks, then recomputes operational metadata for affected accounts.
 - Verification: `pytest -q apps/backend/tests/test_sync_runs_store_tiktok_cleanup.py apps/backend/tests/test_sync_orchestration_api.py apps/backend/tests/test_sync_worker.py apps/backend/tests/test_clients_platform_account_mappings.py`.
+
+---
+
+# TODO — Meta parity in Agency Accounts list operational metadata
+
+- [x] Attempt workspace sync before edits and record tracking-remote blocker if unavailable.
+- [x] Audit API + frontend data flow for Agency Accounts list (Meta vs Google/TikTok metadata fields).
+- [x] Fix backend payload/reconciliation for Meta list-level operational metadata if missing.
+- [x] Fix frontend mapping/rendering so Meta tab uses same operational metadata display rules as Google/TikTok.
+- [x] Add backend tests for Meta payload/recompute behavior and stale error suppression parity.
+- [x] Add frontend tests for Meta list rendering (Istoric/Rolling/Ultimul sync reușit/Eroare recentă + fallback "-").
+- [x] Run targeted backend + frontend tests and frontend build.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Workspace sync attempted first (`git pull --rebase`) but blocked because local `work` branch has no upstream tracking remote.
+- Root cause of Meta list parity gap was frontend mapping: Meta unified rows were hardcoded with null operational fields, even when backend payload contained values.
+- Updated Meta account type + unified mapper to consume backend operational metadata (`backfill_completed_through`, `rolling_synced_through`, `last_success_at`, `last_error`, `last_error_category`, `last_error_details`, `last_run_status`, `last_run_type`, `sync_start_date`).
+- Added generic stale-error suppression after success in `/clients/accounts/{platform}` path so Meta stale `last_error` is cleared when latest run is successful and no active sync (TikTok-specific feature-flag suppression remains unchanged).
+- Added backend test for Meta stale-error suppression and metadata passthrough; added frontend test to verify Meta tab renders operational fields and fallback `-` for missing values.
+- Verification: `pytest -q apps/backend/tests/test_clients_platform_account_mappings.py apps/backend/tests/test_sync_orchestration_api.py`; `pnpm --dir apps/frontend test src/app/agency-accounts/page.meta.test.tsx src/app/agency-accounts/page.tiktok.test.tsx`; `pnpm --dir apps/frontend build`.

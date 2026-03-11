@@ -99,6 +99,15 @@ type MetaAccount = {
   status?: string | null;
   currency?: string | null;
   timezone?: string | null;
+  sync_start_date?: string | null;
+  backfill_completed_through?: string | null;
+  rolling_synced_through?: string | null;
+  last_success_at?: string | null;
+  last_error?: string | null;
+  last_error_category?: string | null;
+  last_error_details?: Record<string, unknown> | null;
+  last_run_status?: string | null;
+  last_run_type?: string | null;
 };
 
 type MetaAccountsResponse = {
@@ -439,13 +448,15 @@ export default function AgencyAccountsPage() {
         name: metaAccountDisplayName(account),
         attachedClientId: account.client_id ?? null,
         attachedClientName: account.client_name ?? null,
-        lastSuccessAt: null,
-        lastError: null,
-        lastRunStatus: null,
-        lastRunType: null,
-        syncStartDate: null,
-        backfillCompletedThrough: null,
-        rollingSyncedThrough: null,
+        lastSuccessAt: account.last_success_at ?? null,
+        lastError: account.last_error ?? null,
+        lastErrorCategory: account.last_error_category ?? null,
+        lastErrorDetails: account.last_error_details ?? null,
+        lastRunStatus: account.last_run_status ?? null,
+        lastRunType: account.last_run_type ?? null,
+        syncStartDate: account.sync_start_date ?? null,
+        backfillCompletedThrough: account.backfill_completed_through ?? null,
+        rollingSyncedThrough: account.rolling_synced_through ?? null,
       }));
     }
     if (selectedPlatform === "tiktok_ads") {

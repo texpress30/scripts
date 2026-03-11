@@ -276,6 +276,33 @@ class ClientsPlatformAccountMappingsApiTests(unittest.TestCase):
         self.assertEqual(listed["count"], 1)
         self.assertIsNone(listed["items"][0]["last_error"])
 
+    def test_meta_success_status_suppresses_stale_recent_error_in_payload(self):
+        original_list_mapping = clients_api.client_registry_service.list_platform_accounts_for_mapping
+        try:
+            clients_api.client_registry_service.list_platform_accounts_for_mapping = lambda **kwargs: [
+                {
+                    "platform": "meta_ads",
+                    "id": "act_101",
+                    "account_id": "act_101",
+                    "name": "Meta Account",
+                    "last_error": "meta stale error",
+                    "last_run_status": "done",
+                    "last_success_at": "2026-03-10T11:00:00+00:00",
+                    "has_active_sync": False,
+                    "backfill_completed_through": "2026-03-09",
+                    "rolling_synced_through": "2026-03-10",
+                }
+            ]
+            listed = clients_api.list_platform_accounts(platform="meta_ads", user=self.user)
+        finally:
+            clients_api.client_registry_service.list_platform_accounts_for_mapping = original_list_mapping
+
+        self.assertEqual(listed["count"], 1)
+        self.assertEqual(listed["items"][0]["backfill_completed_through"], "2026-03-09")
+        self.assertEqual(listed["items"][0]["rolling_synced_through"], "2026-03-10")
+        self.assertEqual(listed["items"][0]["last_success_at"], "2026-03-10T11:00:00+00:00")
+        self.assertIsNone(listed["items"][0]["last_error"])
+
     def test_google_legacy_endpoints_still_function(self):
         client_id = self._create_client("Client A")
 
