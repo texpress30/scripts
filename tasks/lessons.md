@@ -257,4 +257,7 @@
 - 2026-03-11: Pentru dashboard-uri multi-currency, nu agrega direct valori monetare native; normalizează per-row cu FX pe dată către moneda de prezentare (Agency=RON, Sub-account=moneda clientului), apoi calculează ROAS din valorile normalizate.
 - 2026-03-11: Pentru backfill-uri chunked cu snapshot-uri derivate, nu actualiza snapshotul final doar din ultimul chunk; reconstruiește explicit snapshotul din întreaga fereastră account_daily după finalizare și tratează retry pentru 5xx tranziente provider.
 - 2026-03-11: Pentru Meta money normalization, nu folosi exclusiv mapping/client currency ca sursă; preferă currency per-row din extra_metrics când disponibil (ex. `meta_ads.account_currency`) pentru a evita dublă conversie RON->RON via USD fallback.
+<<<<<<< codex/setup-new-workspace-and-sync-with-github-01qgrj
 - 2026-03-11: Pentru schimbări UI locale pe pagină de sub-dashboard, modifică strict headerul paginii (fără side effects în sidebar global) și validează explicit link-uri noi + eliminări prin test component.
+=======
+>>>>>>> main
