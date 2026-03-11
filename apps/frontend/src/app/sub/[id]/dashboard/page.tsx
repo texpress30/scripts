@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 
 import { format, startOfMonth, subDays } from "date-fns";
 import { DayPicker, type DateRange } from "react-day-picker";
@@ -191,12 +191,10 @@ export default function SubDashboardPage() {
 
   return (
     <ProtectedPage>
-      <AppShell title={`Sub-account Dashboard #${clientId}`}>
+      <AppShell title={null}>
         <div className="mb-4 flex items-center gap-4 text-sm">
-          <Link href={`/sub/${clientId}/campaigns`} className="text-indigo-600 hover:underline">Campaigns</Link>
-          <Link href={`/sub/${clientId}/rules`} className="text-indigo-600 hover:underline">Rules</Link>
-          <Link href={`/sub/${clientId}/creative`} className="text-indigo-600 hover:underline">Creative</Link>
-          <Link href={`/sub/${clientId}/recommendations`} className="text-indigo-600 hover:underline">Recommendations</Link>
+          <Link href={`/sub/${clientId}/media-buying`} className="text-indigo-600 transition-colors hover:text-indigo-700 hover:underline">Media Buying</Link>
+          <Link href={`/sub/${clientId}/media-tracker`} className="text-indigo-600 transition-colors hover:text-indigo-700 hover:underline">Media Tracker</Link>
         </div>
 
         <section className="relative mb-4 flex justify-end">
@@ -281,15 +279,19 @@ export default function SubDashboardPage() {
             </thead>
             <tbody>
               {([
-                ["Google Ads", google],
-                ["Meta Ads", meta],
-                ["TikTok Ads", tiktok],
-                ["Pinterest Ads", pinterest],
-                ["Snapchat Ads", snapchat],
-              ] as Array<[string, NormalizedMetrics]>).map(([name, m]) => {
+                ["Google Ads", "google-ads", google],
+                ["Meta Ads", "meta-ads", meta],
+                ["TikTok Ads", "tiktok-ads", tiktok],
+                ["Pinterest Ads", "pinterest-ads", pinterest],
+                ["Snapchat Ads", "snapchat-ads", snapchat],
+              ] as Array<[string, string, NormalizedMetrics]>).map(([name, slug, m]) => {
                 return (
                   <tr key={name} className="border-t border-slate-200 text-slate-900">
-                    <td className="px-4 py-3">{name}</td>
+                    <td className="px-4 py-3">
+                      <Link href={`/sub/${clientId}/${slug}`} className="text-slate-900 transition-colors hover:text-indigo-700 hover:underline">
+                        {name}
+                      </Link>
+                    </td>
                     <td className="px-4 py-3">{loading ? "..." : formatCurrency(m.spend, currencyCode)}</td>
                     <td className="px-4 py-3">{loading ? "..." : m.impressions.toLocaleString()}</td>
                     <td className="px-4 py-3">{loading ? "..." : m.clicks.toLocaleString()}</td>
