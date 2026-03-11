@@ -3050,3 +3050,26 @@
 - Added generic stale-error suppression after success in `/clients/accounts/{platform}` path so Meta stale `last_error` is cleared when latest run is successful and no active sync (TikTok-specific feature-flag suppression remains unchanged).
 - Added backend test for Meta stale-error suppression and metadata passthrough; added frontend test to verify Meta tab renders operational fields and fallback `-` for missing values.
 - Verification: `pytest -q apps/backend/tests/test_clients_platform_account_mappings.py apps/backend/tests/test_sync_orchestration_api.py`; `pnpm --dir apps/frontend test src/app/agency-accounts/page.meta.test.tsx src/app/agency-accounts/page.tiktok.test.tsx`; `pnpm --dir apps/frontend build`.
+
+---
+
+# TODO — Meta conversions = strict Lead only
+
+- [x] Attempt workspace sync before edits and record tracking-remote blocker if unavailable.
+- [x] Audit current Meta conversions derivation from actions and all write/aggregate call-sites.
+- [x] Implement explicit lead-only helper for Meta conversions and wire it across account/campaign/adset/ad grains.
+- [x] Ensure non-lead action types are excluded and revenue/conversion_value behavior remains unchanged unless required.
+- [x] Add safe idempotent recompute/backfill mechanism for historical Meta rows saved with inflated conversions.
+- [x] Add/update backend tests for lead-only behavior and non-impact on other platforms.
+- [x] Run targeted backend tests and summarize impact.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Workspace sync was attempted first (`git pull --rebase`) and blocked because branch `work` has no upstream tracking remote in this environment.
+- Root cause confirmed: Meta conversions were computed as sum of all `actions[*].value`, inflating conversions with non-lead actions (purchase, add_to_cart, page_view, post_engagement etc.).
+- Implemented explicit lead-only derivation helper `_derive_lead_conversions(...)` with allowlist-only action types and wired it across all Meta sync grains (`account_daily`, `campaign_daily`, `ad_group_daily`, `ad_daily`).
+- Kept `conversion_value`/revenue logic unchanged (`_derive_conversion_value` still sums `action_values`) to keep scope strict to conversions semantics.
+- Historical correction mechanism: no new endpoint required; existing Meta historical backfill endpoint is idempotent and rewrites rows via upsert using corrected lead-only conversions.
+- Added tests for mixed actions (lead + non-lead), explicit exclusions, and all-grain lead-only usage.
+- Verification: `pytest -q apps/backend/tests/test_meta_ads_sync_account_daily.py apps/backend/tests/test_clients_platform_account_mappings.py`.

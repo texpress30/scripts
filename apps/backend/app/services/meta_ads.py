@@ -22,6 +22,16 @@ except Exception:  # noqa: BLE001
 
 MetaSyncGrain = Literal["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"]
 _ALLOWED_SYNC_GRAINS: tuple[str, ...] = ("account_daily", "campaign_daily", "ad_group_daily", "ad_daily")
+_META_LEAD_ACTION_TYPES: set[str] = {
+    "lead",
+    "onsite_conversion.lead",
+    "onsite_conversion.lead_grouped",
+    "offsite_conversion.lead",
+    "offsite_conversion.fb_pixel_lead",
+    "offsite_conversion.fb_pixel_custom_lead",
+    "offsite_conversion.meta_lead",
+    "offsite_conversion.meta_pixel_lead",
+}
 
 
 class MetaAdsIntegrationError(RuntimeError):
@@ -267,12 +277,15 @@ class MetaAdsService:
         except Exception:  # noqa: BLE001
             return 0
 
-    def _derive_conversions(self, *, actions: object) -> float:
+    def _derive_lead_conversions(self, *, actions: object) -> float:
         if not isinstance(actions, list):
             return 0.0
         total = 0.0
         for item in actions:
             if not isinstance(item, dict):
+                continue
+            action_type = str(item.get("action_type") or "").strip().lower()
+            if action_type not in _META_LEAD_ACTION_TYPES:
                 continue
             total += self._parse_numeric(item.get("value"))
         return total
@@ -593,7 +606,7 @@ class MetaAdsService:
                     spend = self._parse_numeric(item.get("spend"))
                     impressions = self._parse_int(item.get("impressions"))
                     clicks = self._parse_int(item.get("clicks"))
-                    conversions = self._derive_conversions(actions=item.get("actions"))
+                    conversions = self._derive_lead_conversions(actions=item.get("actions"))
                     conversion_value = self._derive_conversion_value(action_values=item.get("action_values"))
 
                     performance_reports_store.write_daily_report(
@@ -636,7 +649,7 @@ class MetaAdsService:
                     spend = self._parse_numeric(item.get("spend"))
                     impressions = self._parse_int(item.get("impressions"))
                     clicks = self._parse_int(item.get("clicks"))
-                    conversions = self._derive_conversions(actions=item.get("actions"))
+                    conversions = self._derive_lead_conversions(actions=item.get("actions"))
                     conversion_value = self._derive_conversion_value(action_values=item.get("action_values"))
 
                     campaign_rows.append(
@@ -691,7 +704,7 @@ class MetaAdsService:
                     spend = self._parse_numeric(item.get("spend"))
                     impressions = self._parse_int(item.get("impressions"))
                     clicks = self._parse_int(item.get("clicks"))
-                    conversions = self._derive_conversions(actions=item.get("actions"))
+                    conversions = self._derive_lead_conversions(actions=item.get("actions"))
                     conversion_value = self._derive_conversion_value(action_values=item.get("action_values"))
                     campaign_id = str(item.get("campaign_id") or "").strip() or None
 
@@ -750,7 +763,7 @@ class MetaAdsService:
                     spend = self._parse_numeric(item.get("spend"))
                     impressions = self._parse_int(item.get("impressions"))
                     clicks = self._parse_int(item.get("clicks"))
-                    conversions = self._derive_conversions(actions=item.get("actions"))
+                    conversions = self._derive_lead_conversions(actions=item.get("actions"))
                     conversion_value = self._derive_conversion_value(action_values=item.get("action_values"))
                     campaign_id = str(item.get("campaign_id") or "").strip() or None
                     ad_group_id = str(item.get("adset_id") or "").strip() or None

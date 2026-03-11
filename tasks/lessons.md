@@ -252,3 +252,4 @@
 - 2026-03-10: Pentru cleanup-uri de date sensibile la matching, livrează nu doar regula de delete ci și diagnostics explicite pe non-match (reason-per-run în dry-run), altfel debugging în producție rămâne opac.
 - 2026-03-10: Pentru cleanup matcher pe run-uri istorice, evită ordonarea de supersede pe `updated_at` ca semnal principal; folosește cronologia run-ului (`finished_at`/`started_at`/`created_at`) ca să nu blochezi ștergerea failure-urilor legacy.
 - 2026-03-10: Pentru parity cross-platform în Agency Accounts list, verifică întâi mapper-ul frontend unificat; dacă backend are câmpurile dar UI afișează '-', cauza poate fi strict de mapping nul hardcodat.
+- 2026-03-10: Pentru Meta Ads, `conversions` nu trebuie derivat din suma tuturor action types; folosește allowlist explicit lead-only și păstrează separat `conversion_value` ca metrică distinctă.
