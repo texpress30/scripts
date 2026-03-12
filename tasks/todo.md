@@ -1,3 +1,52 @@
+# TODO — Attached account currency precedence consistency (backend)
+
+- [x] Refresh workspace from remote and note sync constraints if local branch diverges.
+- [x] Inspect client registry + dashboard read-side currency fallback paths and identify shared resolver insertion points.
+- [x] Implement shared effective attached-account currency resolver and reuse in attach/listing/dashboard paths.
+- [x] Add safe backfill for mapping account_currency only when blank/null.
+- [x] Add targeted backend tests for attach seeding, non-overwrite behavior, backfill safety, and precedence consistency.
+- [x] Run relevant backend tests and document outcomes.
+
+## Review
+- [x] Added reusable backend resolver `account_currency_resolver` with explicit precedence `mapping -> platform -> client -> fallback` and reused it in client-registry test-path resolution + dashboard SQL expression builder usage.
+- [x] Updated attach/upsert behavior so mapping `account_currency` seeds from `agency_platform_accounts.currency_code` then client currency and does not overwrite existing non-blank mapping currencies on conflict.
+- [x] Added safe backfill hook run at schema initialization that only updates mapping rows where `account_currency` is null/blank using `agency_platform_accounts.currency_code` (no overwrite for explicit values).
+- [x] Extended attached-account listing payloads to include `effective_account_currency` and `account_currency_source` while preserving `currency` compatibility field.
+- [x] Updated dashboard read-side + reconciliation read-side to apply source-account fallback order via shared SQL helper (`mapping -> platform -> client -> RON`) without changing reporting currency strategy.
+- [x] Verification: `python -m pytest apps/backend/tests/test_client_registry_account_currency_resolution.py -q` and `python -m pytest apps/backend/tests/test_dashboard_currency_normalization.py apps/backend/tests/test_dashboard_reconciliation_diagnostics.py -q` (pass).
+
+---
+
+# TODO — Client dashboard reconciliation diagnostics endpoint
+
+- [x] Refresh workspace from remote and document sync constraints if branch is diverged.
+- [x] Inspect dashboard read-side, client mapping, and performance reports storage code paths.
+- [x] Implement internal debug endpoint for client dashboard reconciliation without changing business logic.
+- [x] Add focused backend tests for diagnostic payload and exclusion reasons.
+- [x] Run backend tests and document review outcomes.
+
+## Review
+- [x] Synced remote refs with `git fetch --all --prune`; `git pull --ff-only origin main` reported divergence on local branch, so implementation continued on updated local branch without history rewrite.
+- [x] Added backend-only debug endpoint `GET /dashboard/debug/clients/{client_id}/dashboard-reconciliation` with agency-scope authorization and audit logging.
+- [x] Added reconciliation diagnostics in dashboard service: mapping snapshot, raw grouped totals, included grouped totals, excluded rows with reasons (`missing_mapping`, `grain_not_account_daily`, `currency_resolution_fallback`), row counts, pre/post-conversion summaries, per-platform summaries, and per-account summaries.
+- [x] Added targeted service test covering multi-account rows, inclusion/exclusion logic, and currency fallback visibility.
+- [x] Verification: `pytest -q apps/backend/tests/test_dashboard_reconciliation_diagnostics.py apps/backend/tests/test_dashboard_currency_normalization.py` (pass).
+
+---
+
+# TODO — Remote sync via Connector workspace
+
+- [x] Confirm instructions and run requested remote/fetch/pull commands exactly as provided.
+- [x] Verify git remotes and current branch state after sync.
+- [x] Record review notes with command outcomes.
+
+## Review
+- [x] Executed the exact requested remote/add-or-set + fetch + pull commands in a fresh terminal session for this run.
+- [x] Fetch completed successfully and pulled `origin/main` with response `Already up to date.`
+- [x] Verified `origin` URL and current branch (`work`) via `git remote -v`, `git branch --show-current`, and `git status --short --branch`.
+
+---
+
 # TODO — Fix Meta/TikTok historical backfill progress UI in Agency Accounts
 
 - [x] Rebaseline branch from clean baseline and document constraints if requested remote baseline is unavailable.
