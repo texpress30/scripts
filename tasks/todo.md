@@ -3443,3 +3443,19 @@
 - [x] Fix implementat: read query și bounds query folosesc strict `ad_performance_reports` + mapping lateral cu `m.created_at::date <= apr.report_date`, grain filter explicit `account_daily`, source client din mapping (nu din `apr.client_id`) și currency fallback ordonat `row extra_metrics -> mapping account_currency -> agency_platform_accounts.account_currency -> RON`.
 - [x] Logica de effective range/hide empty days/months rămâne activă; fixul este doar pe read-side automated costs.
 - [x] Teste: `pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py` (pass).
+
+---
+
+# TODO — Media Buying hotfix: UndefinedColumn `apa.account_currency` on lead table
+
+- [x] Attempt workspace update to latest repo state (`git fetch --all --prune`, `git pull --ff-only`) before code changes.
+- [x] Audit `_list_automated_daily_costs(...)` SQL and DB schema for `agency_platform_accounts` currency source compatibility.
+- [x] Replace invalid `apa.account_currency` reference with schema-valid currency source from `agency_platform_accounts`.
+- [x] Add regression tests for query text (no `apa.account_currency`, yes correct currency column) and robust missing-currency fallback.
+- [x] Run targeted backend tests for media buying store and media buying clients API.
+
+## Review
+- [x] Root cause confirmed: query referenced `apa.account_currency`, but `agency_platform_accounts` stores currency in `currency_code`, so Postgres raised `UndefinedColumn`.
+- [x] Fix implemented in read-side SQL: fallback chain now uses `apa.currency_code` (plus existing `extra_metrics` and mapping currency sources), keeping formulas/editing/UI behavior untouched.
+- [x] Regression coverage added to assert query uses `apa.currency_code` and explicitly does not contain `apa.account_currency`, plus fallback to `RON` when DB row currency is null.
+- [x] Verification: `pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py` (pass).

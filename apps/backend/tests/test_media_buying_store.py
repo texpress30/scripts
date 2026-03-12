@@ -596,5 +596,41 @@ class MediaBuyingStoreBoundsQueryTests(unittest.TestCase):
         self.assertIn("FROM ad_performance_reports apr", captured_query)
         self.assertIn("m.created_at::date <= apr.report_date", captured_query)
         self.assertIn("agency_platform_accounts apa", captured_query)
+        self.assertIn("apa.currency_code", captured_query)
+        self.assertNotIn("apa.account_currency", captured_query)
         self.assertIn("'account_daily'", captured_query)
         self.assertNotIn("ads_platform_reporting", captured_query)
+
+    def test_automated_costs_falls_back_to_ron_when_currency_missing(self):
+        class _Cursor:
+            def execute(self, query, params=None):
+                return None
+
+            def fetchall(self):
+                return [(date(2026, 2, 1), "meta_ads", None, 125.0)]
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _Conn:
+            def cursor(self):
+                return _Cursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        store = MediaBuyingStore()
+        store._ensure_schema = lambda: None
+        store._connect = lambda: _Conn()
+
+        rows = store._list_automated_daily_costs(client_id=97, date_from=date(2026, 2, 1), date_to=date(2026, 2, 28))
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["account_currency"], "RON")
+        self.assertEqual(rows[0]["platform"], "meta_ads")

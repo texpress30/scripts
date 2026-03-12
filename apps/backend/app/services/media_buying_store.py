@@ -209,7 +209,7 @@ class MediaBuyingStore:
                             COALESCE(
                                 NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'account_currency', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'account_currency', '') ELSE '' END), ''),
                                 NULLIF(TRIM(mapped.account_currency), ''),
-                                NULLIF(TRIM(apa.account_currency), ''),
+                                NULLIF(TRIM(apa.currency_code), ''),
                                 'RON'
                             ) AS account_currency,
                             mapped.client_id AS resolved_client_id,
