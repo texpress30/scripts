@@ -3477,3 +3477,21 @@
 - [x] Earliest/latest bounds now come from real report dates for currently attached accounts (automated) plus manual non-zero rows; effective range still derives from non-empty day rows.
 - [x] Existing rules preserved: explicit `date_from/date_to` still supported; empty days/months remain hidden by `_lead_table_day_has_data` filtering.
 - [x] Verification: `pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py` (pass).
+
+---
+
+# TODO — Media Buying cost accuracy fix: TikTok overestimation + Meta invalid periods
+
+- [x] Sync workspace attempts (`git fetch --all --prune`, `git pull --ff-only`) before code changes.
+- [x] Audit automated-cost read-side SQL (source/grain/currency/membership/date filters) for Media Buying.
+- [x] Fix TikTok currency source precedence to avoid false USD->RON reconversion when account currency is already RON.
+- [x] Reintroduce mapping-validity date guard in automated-cost query to prevent invalid pre-mapping Meta inclusion.
+- [x] Add/adjust regressions for account_daily grain, mapping validity condition, currency fallback precedence, and non-reconversion pattern.
+- [x] Run relevant backend tests for media buying store/API + client mapping + currency normalization.
+
+## Review
+- [x] Root cause TikTok overestimation: currency fallback prioritized `mapped.account_currency` before `agency_platform_accounts.currency_code`; when row-level extra currency was missing and mapping currency differed (e.g. USD), RON-denominated TikTok spend could be treated as USD and converted again to RON.
+- [x] Root cause Meta invalid January costs: automated-cost query no longer applied mapping temporal validity (`created_at <= report_date`), so rows from dates before mapping validity were included.
+- [x] Fix applied: keep source-of-truth `ad_performance_reports` + strict `account_daily` grain; enforce mapping membership with temporal validity in `_list_automated_daily_costs`, and reorder currency fallback to `row extra_metrics -> agency_platform_accounts.currency_code -> mapping.account_currency -> RON`.
+- [x] Verified via regressions including explicit TikTok pattern (`805.85` and `50.40` in RON stay unchanged for RON display) and SQL assertions for mapping/date guard + currency precedence.
+- [x] Verification command: `pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py apps/backend/tests/test_clients_platform_account_mappings.py apps/backend/tests/test_dashboard_currency_normalization.py` (pass).

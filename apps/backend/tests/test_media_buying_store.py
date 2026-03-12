@@ -554,11 +554,11 @@ class MediaBuyingStoreBoundsQueryTests(unittest.TestCase):
         all_sql = "\n".join(captured_queries)
         self.assertIn("FROM ad_performance_reports apr", all_sql)
         self.assertIn("mapped.client_id = %s", all_sql)
-        self.assertNotIn("m.created_at::date <= apr.report_date", all_sql)
+        self.assertIn("mapped.created_at::date <= apr.report_date", all_sql)
         self.assertIn("'account_daily'", all_sql)
         self.assertNotIn("ads_platform_reporting", all_sql)
 
-    def test_automated_costs_query_uses_account_daily_and_mapping_membership(self):
+    def test_automated_costs_query_uses_account_daily_and_mapping_validity(self):
         captured_query = ""
 
         class _Cursor:
@@ -596,12 +596,71 @@ class MediaBuyingStoreBoundsQueryTests(unittest.TestCase):
         self.assertAlmostEqual(float(rows[0]["spend"]), 805.85)
         self.assertIn("FROM ad_performance_reports apr", captured_query)
         self.assertIn("mapped.client_id = %s", captured_query)
-        self.assertNotIn("m.created_at::date <= apr.report_date", captured_query)
+        self.assertIn("mapped.created_at::date <= apr.report_date", captured_query)
         self.assertIn("agency_platform_accounts apa", captured_query)
         self.assertIn("apa.currency_code", captured_query)
         self.assertNotIn("apa.account_currency", captured_query)
         self.assertIn("'account_daily'", captured_query)
-        self.assertNotIn("ads_platform_reporting", captured_query)
+        self.assertLess(captured_query.index("apa.currency_code"), captured_query.index("mapped.account_currency"))
+
+    def test_tiktok_ron_costs_do_not_get_reconverted_when_display_currency_is_ron(self):
+        store = MediaBuyingStore()
+        store._ensure_schema = lambda: None
+        store.get_config = lambda **kwargs: {"client_id": 97, "template_type": "lead", "display_currency": "RON"}
+        store._resolve_client_template_type = lambda **kwargs: "lead"
+        store.list_lead_daily_manual_values = lambda **kwargs: []
+        store._list_automated_daily_costs = lambda **kwargs: [
+            {"date": date(2026, 2, 1), "platform": "tiktok_ads", "account_currency": "RON", "spend": 805.85},
+            {"date": date(2026, 3, 11), "platform": "tiktok_ads", "account_currency": "RON", "spend": 50.40},
+        ]
+
+        def _normalize(amount: float, from_currency: str, display_currency: str, rate_date: date):
+            if from_currency == display_currency:
+                return amount
+            return amount * 4.4
+
+        store._normalize_money_to_display_currency = _normalize
+
+        payload = store.get_lead_table(client_id=97, date_from=date(2026, 2, 1), date_to=date(2026, 3, 31))
+
+        per_day = {row["date"]: row for row in payload["days"]}
+        self.assertAlmostEqual(float(per_day["2026-02-01"]["cost_tiktok"]), 805.85, places=2)
+        self.assertAlmostEqual(float(per_day["2026-03-11"]["cost_tiktok"]), 50.40, places=2)
+
+    def test_meta_rows_before_mapping_created_at_are_excluded_from_automated_costs(self):
+        captured_query = ""
+
+        class _Cursor:
+            def execute(self, query, params=None):
+                nonlocal captured_query
+                captured_query = " ".join(str(query).split())
+
+            def fetchall(self):
+                return []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _Conn:
+            def cursor(self):
+                return _Cursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        store = MediaBuyingStore()
+        store._ensure_schema = lambda: None
+        store._connect = lambda: _Conn()
+
+        _ = store._list_automated_daily_costs(client_id=97, date_from=date(2026, 1, 1), date_to=date(2026, 1, 31))
+
+        self.assertIn("mapped.created_at::date <= apr.report_date", captured_query)
 
     def test_automated_costs_falls_back_to_ron_when_currency_missing(self):
         class _Cursor:

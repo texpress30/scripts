@@ -208,8 +208,8 @@ class MediaBuyingStore:
                             apr.report_date,
                             COALESCE(
                                 NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'account_currency', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'account_currency', '') ELSE '' END), ''),
-                                NULLIF(TRIM(mapped.account_currency), ''),
                                 NULLIF(TRIM(apa.currency_code), ''),
+                                NULLIF(TRIM(mapped.account_currency), ''),
                                 'RON'
                             ) AS account_currency,
                             COALESCE(apr.spend, 0) AS spend
@@ -217,6 +217,7 @@ class MediaBuyingStore:
                         JOIN agency_account_client_mappings mapped
                           ON mapped.platform = apr.platform
                          AND mapped.client_id = %s
+                         AND mapped.created_at::date <= apr.report_date
                          AND (
                               mapped.account_id = apr.customer_id
                               OR (
@@ -561,6 +562,7 @@ class MediaBuyingStore:
                         JOIN agency_account_client_mappings mapped
                           ON mapped.platform = apr.platform
                          AND mapped.client_id = %s
+                         AND mapped.created_at::date <= apr.report_date
                          AND (
                               mapped.account_id = apr.customer_id
                               OR (
