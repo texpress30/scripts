@@ -55,12 +55,17 @@ def test_client_dashboard_reconciliation_reports_included_excluded_and_fallbacks
     fake_conn = _FakeConn(fake_cursor)
 
     original_connect = unified_dashboard_service._connect
-    original_currency = dashboard_module.client_registry_service.get_preferred_currency_for_client
+    original_reporting_decision = dashboard_module.client_registry_service.get_client_reporting_currency_decision
     original_rate = unified_dashboard_service._get_fx_rate_to_ron
     original_init_schema = dashboard_module.performance_reports_store.initialize_schema
     try:
         unified_dashboard_service._connect = lambda: fake_conn
-        dashboard_module.client_registry_service.get_preferred_currency_for_client = lambda **kwargs: "RON"
+        dashboard_module.client_registry_service.get_client_reporting_currency_decision = lambda **kwargs: {
+            "reporting_currency": "RON",
+            "reporting_currency_source": "single_attached_account_currency",
+            "mixed_attached_account_currencies": False,
+            "attached_account_currency_summary": [{"currency": "RON", "account_count": 2}],
+        }
         unified_dashboard_service._get_fx_rate_to_ron = lambda **kwargs: {"USD": 4.0, "EUR": 5.0, "RON": 1.0}.get(kwargs.get("currency_code"), 1.0)
         dashboard_module.performance_reports_store.initialize_schema = lambda: None
 
@@ -71,12 +76,14 @@ def test_client_dashboard_reconciliation_reports_included_excluded_and_fallbacks
         )
     finally:
         unified_dashboard_service._connect = original_connect
-        dashboard_module.client_registry_service.get_preferred_currency_for_client = original_currency
+        dashboard_module.client_registry_service.get_client_reporting_currency_decision = original_reporting_decision
         unified_dashboard_service._get_fx_rate_to_ron = original_rate
         dashboard_module.performance_reports_store.initialize_schema = original_init_schema
 
     assert payload["client_id"] == 77
     assert payload["reporting_currency"] == "RON"
+    assert payload["reporting_currency_source"] == "single_attached_account_currency"
+    assert payload["mixed_attached_account_currencies"] is False
     assert payload["counts"] == {
         "total_rows_scanned": 4,
         "included_rows": 2,

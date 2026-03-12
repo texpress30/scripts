@@ -7,7 +7,7 @@ from threading import Lock
 import os
 
 from app.core.config import load_settings
-from app.services.account_currency_resolver import resolve_effective_attached_account_currency
+from app.services.account_currency_resolver import resolve_client_reporting_currency, resolve_effective_attached_account_currency
 from app.services.platform_account_watermarks_store import list_platform_account_watermarks
 
 try:
@@ -1595,13 +1595,49 @@ class ClientRegistryService:
         return self.get_client_details(client_id=client_id)
 
 
+    def get_client_reporting_currency_decision(
+        self,
+        *,
+        client_id: int,
+        platforms: tuple[str, ...] = ("google_ads", "meta_ads", "tiktok_ads"),
+        safe_fallback: str = "USD",
+    ) -> dict[str, object]:
+        platform_set = {str(item) for item in platforms}
+        attached_accounts = [
+            item
+            for item in self.list_client_accounts(client_id=client_id)
+            if str(item.get("platform") or "") in platform_set
+        ]
+        attached_effective_currencies = [
+            item.get("effective_account_currency") or item.get("currency")
+            for item in attached_accounts
+        ]
+
+        client_currency = None
+        for item in self.list_clients():
+            if int(item.get("id") or 0) == int(client_id):
+                client_currency = item.get("currency")
+                break
+
+        reporting_currency, source, mixed, summary = resolve_client_reporting_currency(
+            attached_effective_currencies=attached_effective_currencies,
+            client_currency=client_currency,
+            fallback=safe_fallback,
+        )
+
+        return {
+            "reporting_currency": reporting_currency,
+            "reporting_currency_source": source,
+            "mixed_attached_account_currencies": mixed,
+            "attached_account_currency_summary": summary,
+            "attached_account_count": len(attached_accounts),
+            "client_default_currency": str(client_currency or "").strip().upper() or None,
+            "platforms_considered": sorted(platform_set),
+        }
+
     def get_preferred_currency_for_client(self, *, client_id: int) -> str:
-        accounts = self.list_client_platform_accounts(platform="google_ads", client_id=client_id)
-        for account in accounts:
-            currency = str(account.get("currency") or account.get("account_currency") or "").upper()
-            if len(currency) == 3 and currency.isalpha():
-                return currency
-        return "USD"
+        decision = self.get_client_reporting_currency_decision(client_id=client_id)
+        return str(decision.get("reporting_currency") or "USD")
 
 
     def list_media_storage_usage(

@@ -45,3 +45,36 @@ def sql_effective_attached_account_currency_expression(
         f"'{fallback_literal}'"
         ")"
     )
+
+
+def resolve_client_reporting_currency(
+    *,
+    attached_effective_currencies: list[object],
+    client_currency: object,
+    fallback: str = "USD",
+) -> tuple[str, str, bool, list[dict[str, object]]]:
+    normalized: list[str] = []
+    counts: dict[str, int] = {}
+    for value in attached_effective_currencies:
+        code = str(value or "").strip().upper()
+        if len(code) == 3 and code.isalpha():
+            normalized.append(code)
+            counts[code] = counts.get(code, 0) + 1
+
+    summary = [
+        {"currency": currency, "account_count": counts[currency]}
+        for currency in sorted(counts.keys())
+    ]
+    distinct = sorted(set(normalized))
+
+    if len(distinct) == 1:
+        return distinct[0], "single_attached_account_currency", False, summary
+
+    client_code = str(client_currency or "").strip().upper()
+    client_valid = len(client_code) == 3 and client_code.isalpha()
+    if client_valid:
+        if len(distinct) > 1:
+            return client_code, "client_default_mixed_attached_currencies", True, summary
+        return client_code, "client_default_no_attached_currency", False, summary
+
+    return normalize_currency_code(fallback, fallback="USD"), "safe_fallback", len(distinct) > 1, summary
