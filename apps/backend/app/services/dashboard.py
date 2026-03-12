@@ -104,6 +104,59 @@ class UnifiedDashboardService:
         self._fx_cache[cache_key] = fallback_rate
         return fallback_rate
 
+    def _normalize_money(self, *, amount: float, from_currency: object, to_currency: object, rate_date: date) -> float:
+        source = self._normalize_currency_code(from_currency, fallback="RON")
+        target = self._normalize_currency_code(to_currency, fallback="RON")
+        if source == target:
+            return float(amount)
+        amount_ron = float(amount) * self._get_fx_rate_to_ron(currency_code=source, rate_date=rate_date)
+        if target == "RON":
+            return amount_ron
+        target_rate = self._get_fx_rate_to_ron(currency_code=target, rate_date=rate_date)
+        if target_rate <= 0:
+            return amount_ron
+        return amount_ron / target_rate
+
+    def _aggregate_client_rows(
+        self,
+        *,
+        rows: list[tuple[object, object, object, object, object, object, object, object, object]],
+        target_currency: str,
+    ) -> dict[str, dict[str, object]]:
+        platform_totals: dict[str, dict[str, object]] = {}
+        for row in rows:
+            report_date = row[1] if isinstance(row[1], date) else date.today()
+            account_currency = self._normalize_currency_code(row[2], fallback=target_currency)
+            platform = str(row[0] or "")
+            if platform == "":
+                continue
+
+            spend = self._normalize_money(amount=_to_float(row[3]), from_currency=account_currency, to_currency=target_currency, rate_date=report_date)
+            conversion_value = self._normalize_money(amount=_to_float(row[7]), from_currency=account_currency, to_currency=target_currency, rate_date=report_date)
+
+            current = platform_totals.setdefault(
+                platform,
+                {
+                    "spend": 0.0,
+                    "impressions": 0,
+                    "clicks": 0,
+                    "conversions": 0.0,
+                    "conversion_value": 0.0,
+                    "extra_metrics": {},
+                },
+            )
+            current["spend"] = _to_float(current.get("spend")) + spend
+            current["impressions"] = _to_int(current.get("impressions")) + _to_int(row[4])
+            current["clicks"] = _to_int(current.get("clicks")) + _to_int(row[5])
+            current["conversions"] = _to_float(current.get("conversions")) + _to_float(row[6])
+            current["conversion_value"] = _to_float(current.get("conversion_value")) + conversion_value
+            incoming_extra = self._coerce_extra_metrics(row[8])
+            current["extra_metrics"] = self._merge_extra_metrics(
+                current.get("extra_metrics") if isinstance(current.get("extra_metrics"), dict) else {},
+                incoming_extra,
+            )
+        return platform_totals
+
     def _aggregate_agency_rows(self, rows: list[tuple[object, object, object, object, object, object, object, object]]) -> tuple[dict[str, float | int], dict[int, float], dict[int, float], dict[int, str], int]:
         totals: dict[str, float | int] = {"spend": 0.0, "impressions": 0, "clicks": 0, "conversions": 0, "revenue": 0.0}
         spend_by_client_ron: dict[int, float] = {}
@@ -176,37 +229,48 @@ class UnifiedDashboardService:
 
     def _client_reports_query(self) -> str:
         return """
-                        WITH perf AS (
-                            SELECT
-                                apr.platform,
-                                COALESCE(apr.client_id, mapped.client_id) AS resolved_client_id,
-                                apr.report_date,
-                                apr.spend,
-                                apr.impressions,
-                                apr.clicks,
-                                apr.conversions,
-                                apr.conversion_value,
-                                COALESCE(apr.extra_metrics, '{}'::jsonb) AS extra_metrics
-                            FROM ad_performance_reports apr
-                            LEFT JOIN LATERAL (
-                                SELECT m.client_id
-                                FROM agency_account_client_mappings m
-                                WHERE m.platform = apr.platform AND m.account_id = apr.customer_id
-                                ORDER BY m.updated_at DESC, m.created_at DESC
-                                LIMIT 1
-                            ) mapped ON TRUE
-                        )
                         SELECT
-                            platform,
-                            COALESCE(spend, 0),
-                            COALESCE(impressions, 0),
-                            COALESCE(clicks, 0),
-                            COALESCE(conversions, 0),
-                            COALESCE(conversion_value, 0),
-                            extra_metrics
-                        FROM perf
-                        WHERE resolved_client_id = %s
-                          AND report_date BETWEEN %s AND %s
+                            apr.platform,
+                            apr.report_date,
+                            COALESCE(
+                                NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'account_currency', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'account_currency', '') ELSE '' END), ''),
+                                NULLIF(TRIM(apa.currency_code), ''),
+                                NULLIF(TRIM(mapped.account_currency), ''),
+                                'RON'
+                            ) AS account_currency,
+                            COALESCE(apr.spend, 0),
+                            COALESCE(apr.impressions, 0),
+                            COALESCE(apr.clicks, 0),
+                            COALESCE(apr.conversions, 0),
+                            COALESCE(apr.conversion_value, 0),
+                            COALESCE(apr.extra_metrics, '{}'::jsonb) AS extra_metrics
+                        FROM ad_performance_reports apr
+                        JOIN agency_account_client_mappings mapped
+                          ON mapped.platform = apr.platform
+                         AND mapped.client_id = %s
+                         AND mapped.created_at::date <= apr.report_date
+                         AND (
+                              mapped.account_id = apr.customer_id
+                              OR (
+                                  apr.platform = 'google_ads'
+                                  AND regexp_replace(mapped.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                              )
+                         )
+                        LEFT JOIN agency_platform_accounts apa
+                          ON apa.platform = apr.platform
+                         AND (
+                              apa.account_id = apr.customer_id
+                              OR (
+                                  apr.platform = 'google_ads'
+                                  AND regexp_replace(apa.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                              )
+                         )
+                        WHERE apr.report_date BETWEEN %s AND %s
+                          AND apr.platform IN ('google_ads', 'meta_ads', 'tiktok_ads', 'pinterest_ads', 'snapchat_ads')
+                          AND COALESCE(
+                              NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'grain', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'grain', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'grain', '') ELSE '' END), ''),
+                              'account_daily'
+                          ) = 'account_daily'
                         """
 
 
@@ -332,30 +396,8 @@ class UnifiedDashboardService:
                     )
                     rows = cur.fetchall()
 
-            platform_totals: dict[str, dict[str, object]] = {}
-            for row in rows:
-                platform = str(row[0])
-                current = platform_totals.setdefault(
-                    platform,
-                    {
-                        "spend": 0.0,
-                        "impressions": 0,
-                        "clicks": 0,
-                        "conversions": 0.0,
-                        "conversion_value": 0.0,
-                        "extra_metrics": {},
-                    },
-                )
-                current["spend"] = _to_float(current.get("spend")) + _to_float(row[1])
-                current["impressions"] = _to_int(current.get("impressions")) + _to_int(row[2])
-                current["clicks"] = _to_int(current.get("clicks")) + _to_int(row[3])
-                current["conversions"] = _to_float(current.get("conversions")) + _to_float(row[4])
-                current["conversion_value"] = _to_float(current.get("conversion_value")) + _to_float(row[5])
-                incoming_extra = self._coerce_extra_metrics(row[6])
-                current["extra_metrics"] = self._merge_extra_metrics(
-                    current.get("extra_metrics") if isinstance(current.get("extra_metrics"), dict) else {},
-                    incoming_extra,
-                )
+            preferred_currency = client_registry_service.get_preferred_currency_for_client(client_id=client_id)
+            platform_totals = self._aggregate_client_rows(rows=rows, target_currency=preferred_currency)
 
             def platform_metrics(name: str) -> dict[str, object]:
                 return self._normalize_platform_metrics(name, {"client_id": client_id, **platform_totals.get(name, {})}, client_id)
@@ -366,6 +408,7 @@ class UnifiedDashboardService:
             pinterest_metrics = platform_metrics("pinterest_ads")
             snapchat_metrics = platform_metrics("snapchat_ads")
         else:
+            preferred_currency = client_registry_service.get_preferred_currency_for_client(client_id=client_id)
             google_metrics = self._normalize_platform_metrics("google_ads", google_ads_service.get_metrics(client_id), client_id)
             meta_metrics = self._normalize_platform_metrics("meta_ads", meta_ads_service.get_metrics(client_id), client_id)
             tiktok_metrics = self._normalize_platform_metrics("tiktok_ads", tiktok_ads_service.get_metrics(client_id), client_id)
@@ -407,8 +450,6 @@ class UnifiedDashboardService:
             + _to_int(pinterest_metrics.get("conversions"))
             + _to_int(snapchat_metrics.get("conversions"))
         )
-
-        preferred_currency = client_registry_service.get_preferred_currency_for_client(client_id=client_id)
 
         business_inputs_payload = self._build_business_inputs_payload(
             client_id=client_id,
@@ -456,7 +497,12 @@ class UnifiedDashboardService:
                         SELECT
                             apr.report_date,
                             COALESCE(apr.client_id, mapped.client_id) AS resolved_client_id,
-                            COALESCE(NULLIF(TRIM(mapped.account_currency), ''), NULLIF(TRIM(client.currency), ''), 'RON') AS account_currency,
+                            COALESCE(
+                                    NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') ELSE '' END), ''),
+                                    NULLIF(TRIM(mapped.account_currency), ''),
+                                    NULLIF(TRIM(client.currency), ''),
+                                    'RON'
+                                ) AS account_currency,
                             apr.spend,
                             apr.impressions,
                             apr.clicks,
@@ -586,15 +632,17 @@ class UnifiedDashboardService:
                 cid = int(client["id"])
                 metrics = self.get_client_dashboard(cid)
                 mt = metrics["totals"]
-                spend = _to_float(mt.get("spend"))
-                totals["spend"] += spend
+                source_currency = self._normalize_currency_code(metrics.get("currency"), fallback="RON")
+                spend_ron = self._normalize_money(amount=_to_float(mt.get("spend")), from_currency=source_currency, to_currency="RON", rate_date=end_date)
+                revenue_ron = self._normalize_money(amount=_to_float(mt.get("revenue")), from_currency=source_currency, to_currency="RON", rate_date=end_date)
+                totals["spend"] += spend_ron
                 totals["impressions"] += _to_int(mt.get("impressions"))
                 totals["clicks"] += _to_int(mt.get("clicks"))
                 totals["conversions"] += _to_int(mt.get("conversions"))
-                totals["revenue"] += _to_float(mt.get("revenue"))
-                top_clients.append({"client_id": cid, "name": str(client.get("name") or f"Client {cid}"), "spend": round(spend, 2), "currency": "RON", "spend_ron": round(spend, 2)})
+                totals["revenue"] += revenue_ron
+                top_clients.append({"client_id": cid, "name": str(client.get("name") or f"Client {cid}"), "spend": round(spend_ron, 2), "currency": "RON", "spend_ron": round(spend_ron, 2)})
 
-            top_clients.sort(key=lambda item: float(item["spend"]), reverse=True)
+            top_clients.sort(key=lambda item: float(item["spend_ron"]), reverse=True)
             return {
                 "date_range": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
                 "active_clients": len(clients),
@@ -615,44 +663,10 @@ class UnifiedDashboardService:
 
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    WITH perf AS (
-                        SELECT
-                            apr.report_date,
-                            COALESCE(apr.client_id, mapped.client_id) AS resolved_client_id,
-                            COALESCE(NULLIF(TRIM(mapped.account_currency), ''), 'RON') AS account_currency,
-                            apr.spend,
-                            apr.impressions,
-                            apr.clicks,
-                            apr.conversions,
-                            apr.conversion_value
-                        FROM ad_performance_reports apr
-                        LEFT JOIN LATERAL (
-                            SELECT m.client_id, m.account_currency
-                            FROM agency_account_client_mappings m
-                            WHERE m.platform = apr.platform AND m.account_id = apr.customer_id
-                            ORDER BY m.updated_at DESC, m.created_at DESC
-                            LIMIT 1
-                        ) mapped ON TRUE
-                        WHERE apr.report_date BETWEEN %s AND %s
-                    )
-                    SELECT
-                        report_date,
-                        resolved_client_id,
-                        account_currency,
-                        COALESCE(spend, 0),
-                        COALESCE(impressions, 0),
-                        COALESCE(clicks, 0),
-                        COALESCE(conversions, 0),
-                        COALESCE(conversion_value, 0)
-                    FROM perf
-                    """,
-                    (start_date, end_date),
-                )
+                cur.execute(self._agency_reports_query(), (start_date, end_date))
                 rows = cur.fetchall()
 
-        totals, spend_by_client_ron, spend_by_client_native, client_currency, row_count = self._aggregate_agency_rows(rows)
+        totals, spend_by_client_ron, _spend_by_client_native, _client_currency, row_count = self._aggregate_agency_rows(rows)
 
         manual_clients = client_registry_service.list_clients()
         active_clients = len(manual_clients)
@@ -662,14 +676,12 @@ class UnifiedDashboardService:
         for client_id, spend_ron in sorted(spend_by_client_ron.items(), key=lambda item: item[1], reverse=True):
             if client_id not in client_names:
                 continue
-            preferred_currency = client_currency.get(client_id, "RON")
-            display_spend = spend_by_client_native.get(client_id, 0.0) if preferred_currency != "RON" else spend_ron
             top_clients.append(
                 {
                     "client_id": client_id,
                     "name": client_names[client_id],
-                    "spend": round(display_spend, 2),
-                    "currency": preferred_currency,
+                    "spend": round(spend_ron, 2),
+                    "currency": "RON",
                     "spend_ron": round(spend_ron, 2),
                 }
             )
