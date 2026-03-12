@@ -3314,3 +3314,19 @@
 - [x] Verification: `pytest apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py`, `pnpm --dir apps/frontend test src/app/sub/[id]/media-buying/page.test.tsx`, `pnpm --dir apps/frontend build`.
 - [x] Workspace sync note: `git pull --ff-only` failed because branch `work` has no upstream tracking configured in this environment.
 - [x] Screenshot attempt note: browser tool failed to launch Chromium (TargetClosedError/SIGSEGV) in this environment.
+
+---
+
+# TODO — Railway backend build fix: pin Python 3.12 for google-ads compatibility
+
+- [x] Attempt workspace sync and record upstream-tracking limitation if present.
+- [x] Identify runtime version source used for Railway/backend builds.
+- [x] Apply minimal Python pin to 3.12 without changing `google-ads` dependency.
+- [x] Run targeted checks and finalize with commit + push attempt + PR.
+
+## Review
+- [x] Added `apps/backend/.python-version` with `3.12` for Railway/Nixpacks-style runtime detection.
+- [x] Updated backend container base image to `python:3.12-slim` in `apps/backend/Dockerfile` for Docker-based deployments.
+- [x] Kept `apps/backend/requirements.txt` unchanged (no `google-ads` upgrade).
+- [x] Verification: `pytest apps/backend/tests/test_clients_media_buying_api.py -q`.
+- [x] Workspace sync note: `git pull --ff-only` failed because branch `work` has no upstream tracking configured.
