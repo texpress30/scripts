@@ -3425,3 +3425,21 @@
 - [x] Scroll UX: containerul tabelului are acum `max-h` + `overflow-auto` + border/rounded + scrollbar classes pentru evidențiere mai clară.
 - [x] Compatibilitate păstrată pentru `Customize columns`, expand/collapse luni și `Edit` pe rândurile zilnice; header-ele inline edit rămân clickabile.
 - [x] Verificare: `pnpm --dir apps/frontend test src/app/sub/[id]/media-buying/page.test.tsx`, `pnpm --dir apps/frontend build`.
+
+---
+
+# TODO — Media Buying cost accuracy audit & fix (TikTok overcount + Meta invalid windows)
+
+- [x] Sync workspace la ultima stare disponibilă și confirmare constrângeri remote.
+- [x] Audit read-side Media Buying automated costs: source table, grain filter, currency handling, mapping join, effective date filters.
+- [x] Identificare root cause concret pentru supraestimare TikTok și costuri Meta în perioade nevalide.
+- [x] Implementare fix backend: source-of-truth strict account_daily + mapping window/effective period + conversie valutară single-pass corectă.
+- [x] Adăugare/actualizare teste regresie multi-client/multi-platform/currency/window pentru prevenirea contaminării.
+- [x] Rulare teste backend relevante (și frontend doar dacă se schimbă contract), documentare rezultate.
+
+## Review
+- [x] Root cause TikTok overcount: read-side folosea fallback de currency insuficient de robust (`mapped.account_currency`/`client.currency`) și putea aplica conversie pe source currency greșită; plus source grain nu era filtrat explicit la `account_daily`.
+- [x] Root cause Meta în luni nevalide: join-ul de mapping nu respecta fereastra temporală a mapping-ului (raport putea fi atribuit pe mapping curent pentru date mai vechi), iar `apr.client_id` în coalesce putea introduce atribuiri stale.
+- [x] Fix implementat: read query și bounds query folosesc strict `ad_performance_reports` + mapping lateral cu `m.created_at::date <= apr.report_date`, grain filter explicit `account_daily`, source client din mapping (nu din `apr.client_id`) și currency fallback ordonat `row extra_metrics -> mapping account_currency -> agency_platform_accounts.account_currency -> RON`.
+- [x] Logica de effective range/hide empty days/months rămâne activă; fixul este doar pe read-side automated costs.
+- [x] Teste: `pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py` (pass).

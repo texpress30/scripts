@@ -553,4 +553,48 @@ class MediaBuyingStoreBoundsQueryTests(unittest.TestCase):
         self.assertEqual(latest, date(2026, 3, 1))
         all_sql = "\n".join(captured_queries)
         self.assertIn("FROM ad_performance_reports apr", all_sql)
+        self.assertIn("m.created_at::date <= apr.report_date", all_sql)
+        self.assertIn("'account_daily'", all_sql)
         self.assertNotIn("ads_platform_reporting", all_sql)
+
+    def test_automated_costs_query_uses_account_daily_and_mapping_window(self):
+        captured_query = ""
+
+        class _Cursor:
+            def execute(self, query, params=None):
+                nonlocal captured_query
+                captured_query = " ".join(str(query).split())
+
+            def fetchall(self):
+                return [(date(2026, 2, 1), "tiktok_ads", "RON", 805.85)]
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _Conn:
+            def cursor(self):
+                return _Cursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        store = MediaBuyingStore()
+        store._ensure_schema = lambda: None
+        store._connect = lambda: _Conn()
+
+        rows = store._list_automated_daily_costs(client_id=97, date_from=date(2026, 2, 1), date_to=date(2026, 2, 28))
+
+        self.assertEqual(rows[0]["platform"], "tiktok_ads")
+        self.assertEqual(rows[0]["account_currency"], "RON")
+        self.assertAlmostEqual(float(rows[0]["spend"]), 805.85)
+        self.assertIn("FROM ad_performance_reports apr", captured_query)
+        self.assertIn("m.created_at::date <= apr.report_date", captured_query)
+        self.assertIn("agency_platform_accounts apa", captured_query)
+        self.assertIn("'account_daily'", captured_query)
+        self.assertNotIn("ads_platform_reporting", captured_query)

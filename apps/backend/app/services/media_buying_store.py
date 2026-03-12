@@ -207,18 +207,19 @@ class MediaBuyingStore:
                             apr.platform,
                             apr.report_date,
                             COALESCE(
-                                NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') ELSE '' END), ''),
+                                NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'account_currency', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'account_currency', '') ELSE '' END), ''),
                                 NULLIF(TRIM(mapped.account_currency), ''),
-                                NULLIF(TRIM(client.currency), ''),
+                                NULLIF(TRIM(apa.account_currency), ''),
                                 'RON'
                             ) AS account_currency,
-                            COALESCE(apr.client_id, mapped.client_id) AS resolved_client_id,
+                            mapped.client_id AS resolved_client_id,
                             COALESCE(apr.spend, 0) AS spend
                         FROM ad_performance_reports apr
                         LEFT JOIN LATERAL (
                             SELECT m.client_id, m.account_currency
                             FROM agency_account_client_mappings m
                             WHERE m.platform = apr.platform
+                              AND m.created_at::date <= apr.report_date
                               AND (
                                   m.account_id = apr.customer_id
                                   OR (
@@ -229,7 +230,19 @@ class MediaBuyingStore:
                             ORDER BY m.updated_at DESC, m.created_at DESC
                             LIMIT 1
                         ) mapped ON TRUE
-                        LEFT JOIN agency_clients client ON client.id = COALESCE(apr.client_id, mapped.client_id)
+                        LEFT JOIN agency_platform_accounts apa
+                          ON apa.platform = apr.platform
+                         AND (
+                              apa.account_id = apr.customer_id
+                              OR (
+                                  apr.platform = 'google_ads'
+                                  AND regexp_replace(apa.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                              )
+                         )
+                        WHERE COALESCE(
+                            NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'grain', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'grain', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'grain', '') ELSE '' END), ''),
+                            'account_daily'
+                        ) = 'account_daily'
                     )
                     SELECT report_date, platform, account_currency, SUM(spend)
                     FROM perf
@@ -551,13 +564,14 @@ class MediaBuyingStore:
                         SELECT
                             apr.report_date,
                             apr.platform,
-                            COALESCE(apr.client_id, mapped.client_id) AS resolved_client_id,
+                            mapped.client_id AS resolved_client_id,
                             COALESCE(apr.spend, 0) AS spend
                         FROM ad_performance_reports apr
                         LEFT JOIN LATERAL (
                             SELECT m.client_id
                             FROM agency_account_client_mappings m
                             WHERE m.platform = apr.platform
+                              AND m.created_at::date <= apr.report_date
                               AND (
                                   m.account_id = apr.customer_id
                                   OR (
@@ -568,6 +582,10 @@ class MediaBuyingStore:
                             ORDER BY m.updated_at DESC, m.created_at DESC
                             LIMIT 1
                         ) mapped ON TRUE
+                        WHERE COALESCE(
+                            NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'grain', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'grain', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'grain', '') ELSE '' END), ''),
+                            'account_daily'
+                        ) = 'account_daily'
                     ), scoped AS (
                         SELECT
                             report_date,
