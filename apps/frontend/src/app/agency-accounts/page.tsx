@@ -99,6 +99,15 @@ type MetaAccount = {
   status?: string | null;
   currency?: string | null;
   timezone?: string | null;
+  sync_start_date?: string | null;
+  backfill_completed_through?: string | null;
+  rolling_synced_through?: string | null;
+  last_success_at?: string | null;
+  last_error?: string | null;
+  last_error_category?: string | null;
+  last_error_details?: Record<string, unknown> | null;
+  last_run_status?: string | null;
+  last_run_type?: string | null;
 };
 
 type MetaAccountsResponse = {
@@ -211,6 +220,28 @@ function formatRoDate(value: string): string {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const year = date.getFullYear();
   return `${day}.${month}.${year}`;
+}
+
+
+function effectiveTikTokHistoricalStart(rawSyncStartDate: string | null | undefined): string {
+  const today = new Date();
+  const oneYearAgo = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 365);
+  let effective = toIsoDateLocal(oneYearAgo);
+  const raw = String(rawSyncStartDate ?? "").trim();
+  if (isValidIsoDate(raw) && raw > effective) {
+    effective = raw;
+  }
+  return effective;
+}
+
+function historicalStartLabelForAccount(platform: string, rawSyncStartDate: string | null | undefined): string | null {
+  const raw = String(rawSyncStartDate ?? "").trim();
+  if (platform === "tiktok_ads") {
+    const effective = effectiveTikTokHistoricalStart(raw || null);
+    return `Start istoric efectiv (ultimul an): ${effective}`;
+  }
+  if (raw === "") return null;
+  return `Start istoric: ${raw}`;
 }
 
 function accountDisplayName(account: GoogleAccount): string {
@@ -417,13 +448,15 @@ export default function AgencyAccountsPage() {
         name: metaAccountDisplayName(account),
         attachedClientId: account.client_id ?? null,
         attachedClientName: account.client_name ?? null,
-        lastSuccessAt: null,
-        lastError: null,
-        lastRunStatus: null,
-        lastRunType: null,
-        syncStartDate: null,
-        backfillCompletedThrough: null,
-        rollingSyncedThrough: null,
+        lastSuccessAt: account.last_success_at ?? null,
+        lastError: account.last_error ?? null,
+        lastErrorCategory: account.last_error_category ?? null,
+        lastErrorDetails: account.last_error_details ?? null,
+        lastRunStatus: account.last_run_status ?? null,
+        lastRunType: account.last_run_type ?? null,
+        syncStartDate: account.sync_start_date ?? null,
+        backfillCompletedThrough: account.backfill_completed_through ?? null,
+        rollingSyncedThrough: account.rolling_synced_through ?? null,
       }));
     }
     if (selectedPlatform === "tiktok_ads") {
@@ -992,7 +1025,12 @@ export default function AgencyAccountsPage() {
           if (Number(payload.progress.error || 0) > 0) {
             setSyncStatusMessage(`Sync finalizat cu erori: ${payload.progress.error} conturi`);
           } else if (currentJobType === "historical_backfill" && currentHistoricalStartDate) {
-            setSyncStatusMessage(`Date istorice descarcate începând cu ${formatRoDate(currentHistoricalStartDate)}`);
+            if (currentBatchPlatform === "tiktok_ads") {
+              const effectiveStart = effectiveTikTokHistoricalStart(currentHistoricalStartDate);
+              setSyncStatusMessage(`Date istorice TikTok (ultimul an) descărcate începând cu ${formatRoDate(effectiveStart)}`);
+            } else {
+              setSyncStatusMessage(`Date istorice descarcate începând cu ${formatRoDate(currentHistoricalStartDate)}`);
+            }
           }
           void loadData();
           if (currentBatchPlatform === "meta_ads") void loadMetaAccounts();
@@ -1308,7 +1346,9 @@ export default function AgencyAccountsPage() {
                             {attached ? (
                               <>
                                 <p className="text-sm font-medium text-emerald-700">{account.attachedClientName || `#${account.attachedClientId}`}</p>
-                                {account.syncStartDate ? <p className="text-xs text-slate-500">Start istoric: {account.syncStartDate}</p> : null}
+                                {historicalStartLabelForAccount(selectedPlatform, account.syncStartDate) ? (
+                                  <p className="text-xs text-slate-500">{historicalStartLabelForAccount(selectedPlatform, account.syncStartDate)}</p>
+                                ) : null}
                               </>
                             ) : (
                               <p className="text-sm text-amber-700">Neatașat la client</p>
@@ -1526,6 +1566,7 @@ export default function AgencyAccountsPage() {
                         const attached = Boolean(account.attached_client_id);
                         const selected = selectedAccountIds.has(account.id);
                         const rowStatus = batchRunsByAccount[account.id];
+                        const showRecentError = isErrorAccount(account) && Boolean(String(account.last_error ?? "").trim());
 
                         return (
                           <div key={account.id} className="grid gap-3 px-3 py-3 lg:grid-cols-[48px_minmax(220px,2fr)_minmax(180px,1.2fr)_minmax(180px,1.2fr)_minmax(220px,1.4fr)_110px] lg:items-start">
@@ -1549,7 +1590,7 @@ export default function AgencyAccountsPage() {
                               </p>
                               <p className="text-xs text-slate-500">ID: {account.id}</p>
                               <p className="text-xs text-slate-500">Ultimul sync reușit: {account.last_success_at ? formatDateTime(account.last_success_at) : "Nu există sync finalizat încă"}</p>
-                              {account.last_error ? <p className="text-xs text-red-600">Eroare recentă: {account.last_error}</p> : null}
+                              {showRecentError ? <p className="text-xs text-red-600">Eroare recentă: {account.last_error}</p> : null}
                             </div>
 
                             <div>
@@ -1564,7 +1605,9 @@ export default function AgencyAccountsPage() {
                               {attached ? (
                                 <>
                                   <p className="text-sm font-medium text-emerald-700">{account.attached_client_name}</p>
-                                  {account.sync_start_date ? <p className="text-xs text-slate-500">Start istoric: {account.sync_start_date}</p> : null}
+                                  {historicalStartLabelForAccount(selectedPlatform, account.sync_start_date) ? (
+                                    <p className="text-xs text-slate-500">{historicalStartLabelForAccount(selectedPlatform, account.sync_start_date)}</p>
+                                  ) : null}
                                   <div className="mt-1 flex flex-wrap items-center gap-2">
                                     <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
                                       {(accountsByClient.get(account.attached_client_id ?? 0) ?? []).length} conturi atribuite

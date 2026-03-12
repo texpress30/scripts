@@ -128,13 +128,16 @@ export function getEffectiveAccountStatus(input: {
   lastSuccessAt?: string | null;
 }): string {
   const row = normalizeStatus(input.rowStatus);
-  if (row) return row;
-
   const lastRunStatus = normalizeStatus(input.lastRunStatus);
-  if (lastRunStatus) return lastRunStatus;
 
-  if (input.hasActiveSync) return "running";
+  if (input.hasActiveSync || isRunActive(row) || isRunActive(lastRunStatus)) return "running";
+  if (isRunFailure(row)) return row;
+  if (isRunFailure(lastRunStatus)) return lastRunStatus;
+  if (isRunSuccess(row)) return row;
+  if (isRunSuccess(lastRunStatus)) return lastRunStatus;
   if (String(input.lastSuccessAt ?? "").trim()) return "done";
+  if (row && row !== "idle") return row;
+  if (lastRunStatus && lastRunStatus !== "idle") return lastRunStatus;
   return "idle";
 }
 
