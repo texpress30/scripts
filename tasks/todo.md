@@ -1,3 +1,21 @@
+# TODO — Platform sync write-side audit endpoint (Meta/TikTok)
+
+- [x] Refresh workspace and document remote divergence constraints.
+- [x] Inspect backend sync write/persistence code paths (Meta/TikTok services, performance reports store, sync runs/chunks) and existing debug endpoint pattern.
+- [x] Implement read-only `platform-sync-audit` debug endpoint for one client/platform with optional account filter + daily breakdown.
+- [x] Add persisted data summaries and anomaly flags (duplicates, missing coverage, lower-grain risk, id/currency mismatches, unsupported history floor checks).
+- [x] Add targeted backend tests for TikTok duplicate/floor/id mismatch and Meta missing-account-daily with sync errors + multi-account client coverage.
+- [x] Run backend tests and document outcomes.
+
+## Review
+- [x] Added backend-only debug endpoint `GET /dashboard/debug/clients/{client_id}/platform-sync-audit` with platform/date filters, optional account filter, optional lower-grain daily breakdown, agency scope enforcement, and audit logging.
+- [x] Implemented platform sync audit service output with: client/platform context, attached account metadata + effective account currency, recent sync runs/chunk status snapshots, persisted-row summaries by grain/account/day/currency, anomaly flags, suspected root causes, and recommended next fix scope.
+- [x] Added anomaly detection for duplicate-like rows, multiple account_daily rows same account/day, lower-grain without account_daily, missing account_daily days in range, rows before supported TikTok floor, mixed customer ids, currency mismatch vs attached effective currency, no-mapping rows, and multi-grain overcount risk.
+- [x] Added targeted backend tests covering TikTok duplication/floor/id mismatch, Meta partial coverage with sync error exposure, and multi-account platform behavior.
+- [x] Verification: `python -m pytest apps/backend/tests/test_dashboard_platform_sync_audit.py apps/backend/tests/test_dashboard_reporting_currency_selection.py apps/backend/tests/test_dashboard_reconciliation_diagnostics.py apps/backend/tests/test_dashboard_currency_normalization.py apps/backend/tests/test_client_registry_account_currency_resolution.py -q` (pass).
+
+---
+
 # TODO — Client dashboard reporting/display currency resolver
 
 - [x] Refresh workspace from remote and document divergence constraints.
