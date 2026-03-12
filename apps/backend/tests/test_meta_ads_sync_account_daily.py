@@ -81,7 +81,7 @@ class MetaAdsSyncDailyTests(unittest.TestCase):
                 "spend": "10.50",
                 "impressions": "100",
                 "clicks": "7",
-                "actions": [{"action_type": "purchase", "value": "2"}],
+                "actions": [{"action_type": "lead", "value": "2"}],
                 "action_values": [{"action_type": "purchase", "value": "25.75"}],
             }
         ]
@@ -102,6 +102,202 @@ class MetaAdsSyncDailyTests(unittest.TestCase):
         self.assertEqual(rows[0]["conversions"], 2.0)
         self.assertEqual(rows[0]["conversion_value"], 25.75)
 
+
+    def test_lead_conversions_ignore_non_lead_action_types(self):
+        value = meta_ads_service._derive_lead_conversions(
+            actions=[
+                {"action_type": "lead", "value": "3"},
+                {"action_type": "offsite_conversion.fb_pixel_lead", "value": "2"},
+                {"action_type": "purchase", "value": "100"},
+                {"action_type": "add_to_cart", "value": "50"},
+                {"action_type": "page_view", "value": "999"},
+                {"action_type": "landing_page_view", "value": "40"},
+                {"action_type": "post_engagement", "value": "25"},
+            ]
+        )
+        self.assertEqual(value, 3.0)
+
+    def test_lead_conversions_single_lead_type_uses_that_value(self):
+        value = meta_ads_service._derive_lead_conversions(
+            actions=[
+                {"action_type": "offsite_conversion.fb_pixel_lead", "value": "23"},
+                {"action_type": "purchase", "value": "100"},
+            ]
+        )
+        self.assertEqual(value, 23.0)
+
+    def test_lead_conversions_deduplicate_duplicate_lead_aliases(self):
+        value = meta_ads_service._derive_lead_conversions(
+            actions=[
+                {"action_type": "lead", "value": "23"},
+                {"action_type": "onsite_conversion.lead_grouped", "value": "23"},
+                {"action_type": "page_view", "value": "200"},
+            ]
+        )
+        self.assertEqual(value, 23.0)
+
+    def test_lead_conversions_observability_contains_selected_canonical_type(self):
+        details = meta_ads_service._derive_lead_conversion_details(
+            actions=[
+                {"action_type": "lead", "value": "4"},
+                {"action_type": "onsite_conversion.lead_grouped", "value": "4"},
+                {"action_type": "purchase", "value": "90"},
+            ]
+        )
+        self.assertEqual(details["lead_action_types_found"], ["lead", "onsite_conversion.lead_grouped"])
+        self.assertEqual(details["lead_action_type_selected"], "lead")
+        self.assertEqual(details["lead_action_values_found"], {"lead": 4.0, "onsite_conversion.lead_grouped": 4.0})
+
+    def test_campaign_daily_uses_lead_only_conversions(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client Lead", account_ids=["act_777"])
+        meta_ads_service._resolve_active_access_token_with_source = lambda: ("token-1", "database", None, None)
+        meta_ads_service._fetch_campaign_daily_insights = lambda **kwargs: [
+            {
+                "campaign_id": "cmp-lead",
+                "campaign_name": "Lead Campaign",
+                "date_start": "2026-03-01",
+                "spend": "20",
+                "impressions": "200",
+                "clicks": "20",
+                "actions": [
+                    {"action_type": "lead", "value": "4"},
+                    {"action_type": "offsite_conversion.fb_pixel_lead", "value": "1"},
+                    {"action_type": "purchase", "value": "99"},
+                ],
+                "action_values": [{"action_type": "purchase", "value": "120.5"}],
+            }
+        ]
+
+        payload = meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 1), grain="campaign_daily")
+
+        self.assertEqual(payload["rows_written"], 1)
+        self.assertEqual(payload["conversions"], 4.0)
+        row = meta_ads_service._memory_campaign_daily_rows[0]
+        self.assertEqual(float(row.get("conversions") or 0), 4.0)
+        extra = (row.get("extra_metrics") or {}).get("meta_ads") or {}
+        self.assertEqual(extra.get("lead_action_type_selected"), "lead")
+
+    def test_all_meta_grains_use_lead_only_conversions(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client Grains", account_ids=["act_888"])
+        meta_ads_service._resolve_active_access_token_with_source = lambda: ("token-1", "database", None, None)
+
+        mixed_actions = [
+            {"action_type": "lead", "value": "2"},
+            {"action_type": "onsite_conversion.lead_grouped", "value": "1"},
+            {"action_type": "purchase", "value": "50"},
+            {"action_type": "add_to_cart", "value": "30"},
+        ]
+
+        meta_ads_service._fetch_account_daily_insights = lambda **kwargs: [
+            {"date_start": "2026-03-01", "date_stop": "2026-03-01", "spend": "10", "impressions": "100", "clicks": "10", "actions": mixed_actions, "action_values": []}
+        ]
+        meta_ads_service._fetch_campaign_daily_insights = lambda **kwargs: [
+            {"campaign_id": "cmp-1", "campaign_name": "Cmp", "date_start": "2026-03-01", "spend": "10", "impressions": "100", "clicks": "10", "actions": mixed_actions, "action_values": []}
+        ]
+        meta_ads_service._fetch_ad_group_daily_insights = lambda **kwargs: [
+            {"campaign_id": "cmp-1", "campaign_name": "Cmp", "adset_id": "as-1", "adset_name": "Adset", "date_start": "2026-03-01", "spend": "10", "impressions": "100", "clicks": "10", "actions": mixed_actions, "action_values": []}
+        ]
+        meta_ads_service._fetch_ad_daily_insights = lambda **kwargs: [
+            {"campaign_id": "cmp-1", "campaign_name": "Cmp", "adset_id": "as-1", "adset_name": "Adset", "ad_id": "ad-1", "ad_name": "Ad", "date_start": "2026-03-01", "spend": "10", "impressions": "100", "clicks": "10", "actions": mixed_actions, "action_values": []}
+        ]
+
+        for grain in ("account_daily", "campaign_daily", "ad_group_daily", "ad_daily"):
+            payload = meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 1), grain=grain)
+            self.assertEqual(payload["conversions"], 2.0)
+
+    def test_account_daily_and_snapshot_use_canonical_deduplicated_leads(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client Dedup", account_ids=["act_7777"])
+        meta_ads_service._resolve_active_access_token_with_source = lambda: ("token-1", "database", None, None)
+        meta_ads_service._fetch_account_daily_insights = lambda **kwargs: [
+            {
+                "date_start": "2026-03-01",
+                "date_stop": "2026-03-01",
+                "spend": "12",
+                "impressions": "120",
+                "clicks": "12",
+                "actions": [
+                    {"action_type": "lead", "value": "23"},
+                    {"action_type": "onsite_conversion.lead_grouped", "value": "23"},
+                ],
+                "action_values": [{"action_type": "purchase", "value": "0"}],
+            }
+        ]
+
+        payload = meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 1), grain="account_daily")
+        self.assertEqual(payload["conversions"], 23.0)
+
+        rows = performance_reports_store._memory_rows
+        self.assertEqual(rows[-1]["conversions"], 23.0)
+        extra = (rows[-1].get("extra_metrics") or {}).get("meta_ads") or {}
+        self.assertEqual(extra.get("lead_action_type_selected"), "lead")
+
+        snapshot = meta_ads_service.get_metrics(client_id=client_id)
+        self.assertEqual(snapshot["conversions"], 23)
+
+    def test_account_daily_insights_request_uses_time_increment_1(self):
+        captured: dict[str, str] = {}
+        original_build_url = meta_ads_service._build_graph_account_url
+        original_http_json = meta_ads_service._http_json
+        try:
+            meta_ads_service._build_graph_account_url = lambda **kwargs: "https://graph.example/insights"
+
+            def _http_json(*, method: str, url: str):
+                captured["method"] = method
+                captured["url"] = url
+                return {"data": []}
+
+            meta_ads_service._http_json = _http_json
+            meta_ads_service._fetch_account_daily_insights(
+                account_id="act_1",
+                start_date=date(2026, 3, 1),
+                end_date=date(2026, 3, 3),
+                access_token="token",
+            )
+        finally:
+            meta_ads_service._build_graph_account_url = original_build_url
+            meta_ads_service._http_json = original_http_json
+
+        self.assertEqual(captured.get("method"), "GET")
+        self.assertIn("time_increment=1", str(captured.get("url") or ""))
+
+    def test_only_account_daily_updates_meta_snapshot_source_of_truth(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client Snapshot", account_ids=["act_919"])
+        meta_ads_service._resolve_active_access_token_with_source = lambda: ("token-1", "database", None, None)
+
+        meta_ads_service._fetch_account_daily_insights = lambda **kwargs: [
+            {
+                "date_start": "2026-03-01",
+                "date_stop": "2026-03-01",
+                "spend": "10",
+                "impressions": "100",
+                "clicks": "10",
+                "actions": [{"action_type": "lead", "value": "2"}],
+                "action_values": [{"action_type": "purchase", "value": "20"}],
+            }
+        ]
+        meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 1), grain="account_daily")
+        before = meta_ads_service.get_metrics(client_id=client_id)
+
+        meta_ads_service._fetch_campaign_daily_insights = lambda **kwargs: [
+            {
+                "campaign_id": "cmp-snapshot",
+                "campaign_name": "Snapshot",
+                "date_start": "2026-03-01",
+                "spend": "999",
+                "impressions": "9999",
+                "clicks": "999",
+                "actions": [{"action_type": "lead", "value": "999"}],
+                "action_values": [{"action_type": "purchase", "value": "999"}],
+            }
+        ]
+        meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 1), grain="campaign_daily")
+        after = meta_ads_service.get_metrics(client_id=client_id)
+
+        self.assertEqual(before.get("spend"), after.get("spend"))
+        self.assertEqual(before.get("impressions"), after.get("impressions"))
+        self.assertEqual(before.get("clicks"), after.get("clicks"))
+        self.assertEqual(before.get("conversions"), after.get("conversions"))
+
     def test_campaign_daily_happy_path_single_account(self):
         client_id = self._create_client_with_meta_accounts(client_name="Client B", account_ids=["act_202"])
 
@@ -114,7 +310,7 @@ class MetaAdsSyncDailyTests(unittest.TestCase):
                 "spend": "20.00",
                 "impressions": "200",
                 "clicks": "12",
-                "actions": [{"action_type": "purchase", "value": "3"}],
+                "actions": [{"action_type": "lead", "value": "3"}],
                 "action_values": [{"action_type": "purchase", "value": "90.00"}],
             }
         ]
@@ -208,7 +404,7 @@ class MetaAdsSyncDailyTests(unittest.TestCase):
                 "spend": "11.25",
                 "impressions": "111",
                 "clicks": "9",
-                "actions": [{"action_type": "purchase", "value": "4"}],
+                "actions": [{"action_type": "lead", "value": "4"}],
                 "action_values": [{"action_type": "purchase", "value": "123.45"}],
             }
         ]
@@ -291,7 +487,7 @@ class MetaAdsSyncDailyTests(unittest.TestCase):
                 "spend": "13.50",
                 "impressions": "150",
                 "clicks": "10",
-                "actions": [{"action_type": "purchase", "value": "2"}],
+                "actions": [{"action_type": "lead", "value": "2"}],
                 "action_values": [{"action_type": "purchase", "value": "77.70"}],
             }
         ]
@@ -604,6 +800,153 @@ class MetaAdsSyncDailyTests(unittest.TestCase):
             )
         self.assertEqual(ctx.exception.status_code, 400)
         self.assertIn("start_date", str(ctx.exception.detail))
+
+
+
+    def test_account_daily_persists_meta_account_currency_in_extra_metrics(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client Currency", account_ids=["act_9101"])
+        client_registry_service._memory_platform_accounts.setdefault("meta_ads", {}).setdefault("act_9101", {"id": "act_9101", "name": "Meta 9101"})["currency_code"] = "RON"
+        meta_ads_service._resolve_active_access_token_with_source = lambda: ("token-1", "database", None, None)
+        meta_ads_service._fetch_account_daily_insights = lambda **kwargs: [
+            {
+                "date_start": "2026-03-01",
+                "date_stop": "2026-03-01",
+                "spend": "10",
+                "impressions": "100",
+                "clicks": "10",
+                "actions": [{"action_type": "lead", "value": "1"}],
+                "action_values": [],
+            }
+        ]
+
+        payload = meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 1), grain="account_daily")
+        self.assertEqual(payload["rows_written"], 1)
+        rows = [row for row in performance_reports_store._memory_rows if row.get("customer_id") == "act_9101"]
+        self.assertEqual(len(rows), 1)
+        extra = (rows[0].get("extra_metrics") or {}).get("meta_ads") or {}
+        self.assertEqual(extra.get("account_currency"), "RON")
+
+    def test_fetch_insights_retries_transient_meta_500(self):
+        calls: list[str] = []
+        original_http_json = meta_ads_service._http_json
+        original_build_url = meta_ads_service._build_graph_account_url
+        try:
+            meta_ads_service._build_graph_account_url = lambda **kwargs: "https://graph.example/insights"
+
+            def _http_json(*, method: str, url: str):
+                calls.append(url)
+                if len(calls) == 1:
+                    raise MetaAdsIntegrationError("Meta HTTP request failed: status=500", http_status=500)
+                return {"data": [{"date_start": "2026-03-01"}]}
+
+            meta_ads_service._http_json = _http_json
+            rows = meta_ads_service._fetch_account_daily_insights(
+                account_id="act_1",
+                start_date=date(2026, 3, 1),
+                end_date=date(2026, 3, 1),
+                access_token="token",
+            )
+        finally:
+            meta_ads_service._http_json = original_http_json
+            meta_ads_service._build_graph_account_url = original_build_url
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(rows), 1)
+
+    def test_account_daily_writes_coherent_rows_for_multi_day_window(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client Daily", account_ids=["act_333"])
+        meta_ads_service._resolve_active_access_token_with_source = lambda: ("token-1", "database", None, None)
+        meta_ads_service._fetch_account_daily_insights = lambda **kwargs: [
+            {"date_start": "2026-03-01", "date_stop": "2026-03-01", "spend": "10", "impressions": "100", "clicks": "10", "actions": [{"action_type": "lead", "value": "1"}], "action_values": []},
+            {"date_start": "2026-03-02", "date_stop": "2026-03-02", "spend": "11", "impressions": "110", "clicks": "11", "actions": [{"action_type": "lead", "value": "1"}], "action_values": []},
+            {"date_start": "2026-03-03", "date_stop": "2026-03-03", "spend": "12", "impressions": "120", "clicks": "12", "actions": [{"action_type": "lead", "value": "1"}], "action_values": []},
+        ]
+
+        payload = meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 3), grain="account_daily")
+
+        rows = [row for row in performance_reports_store._memory_rows if row.get("customer_id") == "act_333"]
+        self.assertEqual(payload["rows_written"], 3)
+        self.assertEqual(len(rows), 3)
+
+    def test_backfill_rebuilds_snapshot_from_full_account_daily_window(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client Rebuild", account_ids=["act_4001"])
+        meta_ads_service.integration_status = lambda: {"token_source": "database", "status": "connected"}
+
+        def _sync_client(**kwargs):
+            return {
+                "status": "ok",
+                "grain": kwargs.get("grain"),
+                "accounts_processed": 1,
+                "rows_written": 1,
+                "token_source": "database",
+            }
+
+        rebuild_calls: list[dict[str, object]] = []
+
+        def _rebuild_snapshot_from_account_daily(**kwargs):
+            rebuild_calls.append(dict(kwargs))
+            return {"client_id": kwargs.get("client_id"), "spend": 123.0, "impressions": 10, "clicks": 1, "conversions": 1, "revenue": 50.0, "synced_at": "2026-03-10T10:00:00Z"}
+
+        meta_ads_service.sync_client = _sync_client
+        original_rebuild = meta_ads_service.rebuild_snapshot_from_account_daily
+        meta_ads_service.rebuild_snapshot_from_account_daily = _rebuild_snapshot_from_account_daily
+        try:
+            job_id = backfill_job_store.create(payload={"platform": "meta_ads", "client_id": client_id})
+            meta_ads_api._run_meta_historical_backfill_job(
+                job_id,
+                client_id=client_id,
+                start_date=date(2026, 3, 1),
+                end_date=date(2026, 3, 3),
+                grains=["account_daily", "campaign_daily"],
+                chunk_days=30,
+            )
+        finally:
+            meta_ads_service.rebuild_snapshot_from_account_daily = original_rebuild
+
+        self.assertEqual(len(rebuild_calls), 1)
+        self.assertEqual(rebuild_calls[0]["client_id"], client_id)
+        payload = backfill_job_store.get(job_id) or {}
+        result = payload.get("result") or {}
+        self.assertEqual(result.get("snapshot_rebuilt"), True)
+
+    def test_recompute_snapshot_endpoint_rebuilds_from_account_daily_rows(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Client Recompute", account_ids=["act_5001"])
+        performance_reports_store.write_daily_report(
+            report_date=date(2026, 3, 1),
+            platform="meta_ads",
+            customer_id="act_5001",
+            client_id=client_id,
+            spend=20.0,
+            impressions=200,
+            clicks=20,
+            conversions=2.0,
+            conversion_value=40.0,
+            extra_metrics={},
+        )
+        performance_reports_store.write_daily_report(
+            report_date=date(2026, 3, 2),
+            platform="meta_ads",
+            customer_id="act_5001",
+            client_id=client_id,
+            spend=30.0,
+            impressions=300,
+            clicks=30,
+            conversions=3.0,
+            conversion_value=60.0,
+            extra_metrics={},
+        )
+
+        response = meta_ads_api.recompute_meta_snapshot(
+            client_id=client_id,
+            payload=meta_ads_api.MetaSnapshotRecomputeRequest(start_date=date(2026, 3, 1), end_date=date(2026, 3, 2), account_id="act_5001"),
+            user=self.user,
+        )
+
+        snapshot = response.get("snapshot") or {}
+        self.assertEqual(response.get("status"), "ok")
+        self.assertEqual(snapshot.get("spend"), 50.0)
+        self.assertEqual(snapshot.get("revenue"), 100.0)
+        self.assertEqual(snapshot.get("clicks"), 50)
 
 
 if __name__ == "__main__":
