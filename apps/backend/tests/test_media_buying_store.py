@@ -553,11 +553,12 @@ class MediaBuyingStoreBoundsQueryTests(unittest.TestCase):
         self.assertEqual(latest, date(2026, 3, 1))
         all_sql = "\n".join(captured_queries)
         self.assertIn("FROM ad_performance_reports apr", all_sql)
-        self.assertIn("m.created_at::date <= apr.report_date", all_sql)
+        self.assertIn("mapped.client_id = %s", all_sql)
+        self.assertNotIn("m.created_at::date <= apr.report_date", all_sql)
         self.assertIn("'account_daily'", all_sql)
         self.assertNotIn("ads_platform_reporting", all_sql)
 
-    def test_automated_costs_query_uses_account_daily_and_mapping_window(self):
+    def test_automated_costs_query_uses_account_daily_and_mapping_membership(self):
         captured_query = ""
 
         class _Cursor:
@@ -594,7 +595,8 @@ class MediaBuyingStoreBoundsQueryTests(unittest.TestCase):
         self.assertEqual(rows[0]["account_currency"], "RON")
         self.assertAlmostEqual(float(rows[0]["spend"]), 805.85)
         self.assertIn("FROM ad_performance_reports apr", captured_query)
-        self.assertIn("m.created_at::date <= apr.report_date", captured_query)
+        self.assertIn("mapped.client_id = %s", captured_query)
+        self.assertNotIn("m.created_at::date <= apr.report_date", captured_query)
         self.assertIn("agency_platform_accounts apa", captured_query)
         self.assertIn("apa.currency_code", captured_query)
         self.assertNotIn("apa.account_currency", captured_query)
@@ -634,3 +636,42 @@ class MediaBuyingStoreBoundsQueryTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["account_currency"], "RON")
         self.assertEqual(rows[0]["platform"], "meta_ads")
+
+    def test_bounds_merge_manual_and_automated_dates(self):
+        class _Cursor:
+            def __init__(self):
+                self._idx = 0
+
+            def execute(self, query, params=None):
+                return None
+
+            def fetchone(self):
+                self._idx += 1
+                if self._idx == 1:
+                    return (date(2025, 8, 1), date(2026, 3, 11))
+                return (date(2024, 6, 15), date(2024, 6, 20))
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _Conn:
+            def cursor(self):
+                return _Cursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        store = MediaBuyingStore()
+        store._ensure_schema = lambda: None
+        store._connect = lambda: _Conn()
+
+        earliest, latest = store._get_lead_table_data_bounds(client_id=97)
+
+        self.assertEqual(earliest, date(2024, 6, 15))
+        self.assertEqual(latest, date(2026, 3, 11))

@@ -212,24 +212,18 @@ class MediaBuyingStore:
                                 NULLIF(TRIM(apa.currency_code), ''),
                                 'RON'
                             ) AS account_currency,
-                            mapped.client_id AS resolved_client_id,
                             COALESCE(apr.spend, 0) AS spend
                         FROM ad_performance_reports apr
-                        LEFT JOIN LATERAL (
-                            SELECT m.client_id, m.account_currency
-                            FROM agency_account_client_mappings m
-                            WHERE m.platform = apr.platform
-                              AND m.created_at::date <= apr.report_date
-                              AND (
-                                  m.account_id = apr.customer_id
-                                  OR (
-                                      apr.platform = 'google_ads'
-                                      AND regexp_replace(m.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
-                                  )
+                        JOIN agency_account_client_mappings mapped
+                          ON mapped.platform = apr.platform
+                         AND mapped.client_id = %s
+                         AND (
+                              mapped.account_id = apr.customer_id
+                              OR (
+                                  apr.platform = 'google_ads'
+                                  AND regexp_replace(mapped.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
                               )
-                            ORDER BY m.updated_at DESC, m.created_at DESC
-                            LIMIT 1
-                        ) mapped ON TRUE
+                         )
                         LEFT JOIN agency_platform_accounts apa
                           ON apa.platform = apr.platform
                          AND (
@@ -246,8 +240,7 @@ class MediaBuyingStore:
                     )
                     SELECT report_date, platform, account_currency, SUM(spend)
                     FROM perf
-                    WHERE resolved_client_id = %s
-                      AND platform IN ('google_ads', 'meta_ads', 'tiktok_ads')
+                    WHERE platform IN ('google_ads', 'meta_ads', 'tiktok_ads')
                       AND report_date BETWEEN %s AND %s
                     GROUP BY report_date, platform, account_currency
                     ORDER BY report_date ASC
@@ -560,44 +553,30 @@ class MediaBuyingStore:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    WITH perf AS (
+                    WITH scoped AS (
                         SELECT
                             apr.report_date,
-                            apr.platform,
-                            mapped.client_id AS resolved_client_id,
                             COALESCE(apr.spend, 0) AS spend
                         FROM ad_performance_reports apr
-                        LEFT JOIN LATERAL (
-                            SELECT m.client_id
-                            FROM agency_account_client_mappings m
-                            WHERE m.platform = apr.platform
-                              AND m.created_at::date <= apr.report_date
-                              AND (
-                                  m.account_id = apr.customer_id
-                                  OR (
-                                      apr.platform = 'google_ads'
-                                      AND regexp_replace(m.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
-                                  )
+                        JOIN agency_account_client_mappings mapped
+                          ON mapped.platform = apr.platform
+                         AND mapped.client_id = %s
+                         AND (
+                              mapped.account_id = apr.customer_id
+                              OR (
+                                  apr.platform = 'google_ads'
+                                  AND regexp_replace(mapped.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
                               )
-                            ORDER BY m.updated_at DESC, m.created_at DESC
-                            LIMIT 1
-                        ) mapped ON TRUE
-                        WHERE COALESCE(
-                            NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'grain', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'grain', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'grain', '') ELSE '' END), ''),
-                            'account_daily'
-                        ) = 'account_daily'
-                    ), scoped AS (
-                        SELECT
-                            report_date,
-                            spend,
-                            resolved_client_id
-                        FROM perf
-                        WHERE platform IN ('google_ads', 'meta_ads', 'tiktok_ads')
+                         )
+                        WHERE apr.platform IN ('google_ads', 'meta_ads', 'tiktok_ads')
+                          AND COALESCE(
+                              NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'grain', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'grain', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'grain', '') ELSE '' END), ''),
+                              'account_daily'
+                          ) = 'account_daily'
                     )
                     SELECT MIN(report_date), MAX(report_date)
                     FROM scoped
-                    WHERE resolved_client_id = %s
-                      AND COALESCE(spend, 0) <> 0
+                    WHERE COALESCE(spend, 0) <> 0
                     """,
                     (int(client_id),),
                 )

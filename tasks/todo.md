@@ -3459,3 +3459,21 @@
 - [x] Fix implemented in read-side SQL: fallback chain now uses `apa.currency_code` (plus existing `extra_metrics` and mapping currency sources), keeping formulas/editing/UI behavior untouched.
 - [x] Regression coverage added to assert query uses `apa.currency_code` and explicitly does not contain `apa.account_currency`, plus fallback to `RON` when DB row currency is null.
 - [x] Verification: `pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py` (pass).
+
+---
+
+# TODO — Media Buying regression fix: restore full history for attached accounts
+
+- [x] Sync workspace attempts before analysis (`git fetch --all --prune`, `git pull --ff-only`) and continue on latest local branch state.
+- [x] Audit `MediaBuyingStore` bounds/effective-range logic and identify mapping timestamp filter that clamps history.
+- [x] Update automated-cost and bounds SQL so mapping is used for account membership only (no `mapping.created_at` lower bound).
+- [x] Preserve existing day/month non-empty filtering behavior and explicit range support.
+- [x] Add regressions for query semantics (no mapping date clamp) and bounds merge behavior.
+- [x] Run backend media buying tests.
+
+## Review
+- [x] Root cause: both `_list_automated_daily_costs` and `_get_lead_table_data_bounds` filtered mappings with `m.created_at::date <= apr.report_date`, which cut off pre-attachment historical spend and forced many clients to recent start dates.
+- [x] Fix: switched to direct mapping membership join (`agency_account_client_mappings` + `mapped.client_id = %s` + account-id match), removing mapping audit timestamp as history lower bound.
+- [x] Earliest/latest bounds now come from real report dates for currently attached accounts (automated) plus manual non-zero rows; effective range still derives from non-empty day rows.
+- [x] Existing rules preserved: explicit `date_from/date_to` still supported; empty days/months remain hidden by `_lead_table_day_has_data` filtering.
+- [x] Verification: `pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py` (pass).
