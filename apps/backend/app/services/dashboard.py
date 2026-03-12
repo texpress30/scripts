@@ -287,6 +287,595 @@ class UnifiedDashboardService:
                           ) = 'account_daily'
                         """
 
+    def _client_dashboard_reconciliation_rows_query(self) -> str:
+        return """
+                        SELECT
+                            apr.platform,
+                            apr.customer_id,
+                            apr.report_date,
+                            COALESCE(apr.spend, 0) AS spend,
+                            COALESCE(apr.impressions, 0) AS impressions,
+                            COALESCE(apr.clicks, 0) AS clicks,
+                            COALESCE(apr.conversions, 0) AS conversions,
+                            COALESCE(apr.conversion_value, 0) AS conversion_value,
+                            NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'grain', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'grain', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'grain', '') ELSE '' END), '') AS grain_raw,
+                            COALESCE(
+                                NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'grain', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'grain', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'grain', '') ELSE '' END), ''),
+                                'account_daily'
+                            ) AS grain_resolved,
+                            NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'account_currency', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'account_currency', '') ELSE '' END), '') AS report_currency,
+                            NULLIF(TRIM(apa.currency_code), '') AS platform_account_currency,
+                            NULLIF(TRIM(mapped.account_currency), '') AS mapped_account_currency,
+                            COALESCE(
+                                NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'account_currency', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'account_currency', '') ELSE '' END), ''),
+                                NULLIF(TRIM(apa.currency_code), ''),
+                                NULLIF(TRIM(mapped.account_currency), ''),
+                                'RON'
+                            ) AS resolved_currency,
+                            CASE
+                                WHEN NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'account_currency', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'account_currency', '') ELSE '' END), '') IS NOT NULL THEN 'report_extra_metrics'
+                                WHEN NULLIF(TRIM(apa.currency_code), '') IS NOT NULL THEN 'agency_platform_account'
+                                WHEN NULLIF(TRIM(mapped.account_currency), '') IS NOT NULL THEN 'mapping_account_currency'
+                                ELSE 'fallback_ron'
+                            END AS currency_source,
+                            mapped.client_id IS NOT NULL AS has_mapping
+                        FROM ad_performance_reports apr
+                        LEFT JOIN agency_account_client_mappings mapped
+                          ON mapped.platform = apr.platform
+                         AND mapped.client_id = %s
+                         AND (
+                              mapped.account_id = apr.customer_id
+                              OR (
+                                  apr.platform = 'google_ads'
+                                  AND regexp_replace(mapped.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                              )
+                         )
+                        LEFT JOIN agency_platform_accounts apa
+                          ON apa.platform = apr.platform
+                         AND (
+                              apa.account_id = apr.customer_id
+                              OR (
+                                  apr.platform = 'google_ads'
+                                  AND regexp_replace(apa.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                              )
+                         )
+                        WHERE apr.report_date BETWEEN %s AND %s
+                          AND apr.platform IN ('google_ads', 'meta_ads', 'tiktok_ads', 'pinterest_ads', 'snapchat_ads')
+                        """
+
+    def _client_mappings_query(self) -> str:
+        return """
+                SELECT
+                    platform,
+                    account_id,
+                    client_id,
+                    account_currency,
+                    created_at
+                FROM agency_account_client_mappings
+                WHERE client_id = %s
+                ORDER BY platform, account_id
+                """
+
+    def _empty_metric_totals(self) -> dict[str, float | int]:
+        return {
+            "spend": 0.0,
+            "impressions": 0,
+            "clicks": 0,
+            "conversions": 0.0,
+            "revenue": 0.0,
+        }
+
+    def _add_to_metric_totals(self, totals: dict[str, float | int], *, spend: float, impressions: int, clicks: int, conversions: float, revenue: float) -> None:
+        totals["spend"] = _to_float(totals.get("spend")) + spend
+        totals["impressions"] = _to_int(totals.get("impressions")) + impressions
+        totals["clicks"] = _to_int(totals.get("clicks")) + clicks
+        totals["conversions"] = _to_float(totals.get("conversions")) + conversions
+        totals["revenue"] = _to_float(totals.get("revenue")) + revenue
+
+    def get_client_dashboard_reconciliation(
+        self,
+        *,
+        client_id: int,
+        start_date: date,
+        end_date: date,
+    ) -> dict[str, object]:
+        performance_reports_store.initialize_schema()
+        preferred_currency = client_registry_service.get_preferred_currency_for_client(client_id=client_id)
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(self._client_mappings_query(), (client_id,))
+                mapping_rows = cur.fetchall()
+                cur.execute(self._client_dashboard_reconciliation_rows_query(), (client_id, start_date, end_date))
+                report_rows = cur.fetchall()
+
+        mappings = [
+            {
+                "platform": str(row[0] or ""),
+                "account_id": str(row[1] or ""),
+                "client_id": _to_int(row[2]),
+                "account_currency": self._normalize_currency_code(row[3], fallback="RON"),
+                "created_at": str(row[4]) if row[4] is not None else None,
+            }
+            for row in mapping_rows
+        ]
+
+        raw_totals_by_group: dict[tuple[str, str, str | None], dict[str, object]] = {}
+        included_totals_by_group: dict[tuple[str, str, str], dict[str, object]] = {}
+
+        raw_before = self._empty_metric_totals()
+        included_before = self._empty_metric_totals()
+        included_after = self._empty_metric_totals()
+
+        per_platform: dict[str, dict[str, object]] = {}
+        per_account: dict[str, dict[str, object]] = {}
+
+        excluded_rows: list[dict[str, object]] = []
+        currency_fallback_rows: list[dict[str, object]] = []
+        included_count = 0
+        excluded_count = 0
+
+        for row in report_rows:
+            platform = str(row[0] or "")
+            customer_id = str(row[1] or "")
+            report_date = row[2] if isinstance(row[2], date) else end_date
+            spend = _to_float(row[3])
+            impressions = _to_int(row[4])
+            clicks = _to_int(row[5])
+            conversions = _to_float(row[6])
+            revenue = _to_float(row[7])
+            grain_resolved = str(row[9] or "account_daily")
+            report_currency = self._normalize_currency_code(row[10], fallback="RON") if row[10] else None
+            resolved_currency = self._normalize_currency_code(row[13], fallback="RON")
+            currency_source = str(row[14] or "fallback_ron")
+            has_mapping = bool(row[15])
+
+            raw_key = (platform, customer_id, report_currency)
+            raw_entry = raw_totals_by_group.setdefault(
+                raw_key,
+                {
+                    "platform": platform,
+                    "account_id": customer_id,
+                    "report_currency": report_currency,
+                    "totals": self._empty_metric_totals(),
+                },
+            )
+            self._add_to_metric_totals(raw_entry["totals"], spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+            self._add_to_metric_totals(raw_before, spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+
+            is_included = has_mapping and grain_resolved == "account_daily"
+            reasons: list[str] = []
+            if not has_mapping:
+                reasons.append("missing_mapping")
+            if grain_resolved != "account_daily":
+                reasons.append("grain_not_account_daily")
+            if currency_source == "fallback_ron":
+                reasons.append("currency_resolution_fallback")
+
+            normalized_spend = self._normalize_money(
+                amount=spend,
+                from_currency=resolved_currency,
+                to_currency=preferred_currency,
+                rate_date=report_date,
+            )
+            normalized_revenue = self._normalize_money(
+                amount=revenue,
+                from_currency=resolved_currency,
+                to_currency=preferred_currency,
+                rate_date=report_date,
+            )
+
+            platform_bucket = per_platform.setdefault(
+                platform,
+                {
+                    "platform": platform,
+                    "included_rows": 0,
+                    "excluded_rows": 0,
+                    "raw_before_conversion": self._empty_metric_totals(),
+                    "included_before_conversion": self._empty_metric_totals(),
+                    "included_after_conversion": self._empty_metric_totals(),
+                },
+            )
+            account_key = f"{platform}:{customer_id}"
+            account_bucket = per_account.setdefault(
+                account_key,
+                {
+                    "platform": platform,
+                    "account_id": customer_id,
+                    "included_rows": 0,
+                    "excluded_rows": 0,
+                    "raw_before_conversion": self._empty_metric_totals(),
+                    "included_before_conversion": self._empty_metric_totals(),
+                    "included_after_conversion": self._empty_metric_totals(),
+                },
+            )
+            self._add_to_metric_totals(platform_bucket["raw_before_conversion"], spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+            self._add_to_metric_totals(account_bucket["raw_before_conversion"], spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+
+            if currency_source == "fallback_ron":
+                currency_fallback_rows.append(
+                    {
+                        "platform": platform,
+                        "account_id": customer_id,
+                        "report_date": report_date.isoformat(),
+                        "resolved_currency": resolved_currency,
+                    }
+                )
+
+            if is_included:
+                included_count += 1
+                platform_bucket["included_rows"] = _to_int(platform_bucket.get("included_rows")) + 1
+                account_bucket["included_rows"] = _to_int(account_bucket.get("included_rows")) + 1
+                self._add_to_metric_totals(included_before, spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+                self._add_to_metric_totals(included_after, spend=normalized_spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=normalized_revenue)
+                self._add_to_metric_totals(platform_bucket["included_before_conversion"], spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+                self._add_to_metric_totals(account_bucket["included_before_conversion"], spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+                self._add_to_metric_totals(platform_bucket["included_after_conversion"], spend=normalized_spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=normalized_revenue)
+                self._add_to_metric_totals(account_bucket["included_after_conversion"], spend=normalized_spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=normalized_revenue)
+
+                included_key = (platform, customer_id, resolved_currency)
+                included_entry = included_totals_by_group.setdefault(
+                    included_key,
+                    {
+                        "platform": platform,
+                        "account_id": customer_id,
+                        "resolved_currency": resolved_currency,
+                        "totals_before_conversion": self._empty_metric_totals(),
+                        "totals_after_conversion": self._empty_metric_totals(),
+                    },
+                )
+                self._add_to_metric_totals(included_entry["totals_before_conversion"], spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+                self._add_to_metric_totals(included_entry["totals_after_conversion"], spend=normalized_spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=normalized_revenue)
+            else:
+                excluded_count += 1
+                platform_bucket["excluded_rows"] = _to_int(platform_bucket.get("excluded_rows")) + 1
+                account_bucket["excluded_rows"] = _to_int(account_bucket.get("excluded_rows")) + 1
+                excluded_rows.append(
+                    {
+                        "platform": platform,
+                        "account_id": customer_id,
+                        "report_date": report_date.isoformat(),
+                        "grain": grain_resolved,
+                        "resolved_currency": resolved_currency,
+                        "currency_source": currency_source,
+                        "reasons": reasons,
+                        "metrics": {
+                            "spend": spend,
+                            "impressions": impressions,
+                            "clicks": clicks,
+                            "conversions": conversions,
+                            "revenue": revenue,
+                        },
+                    }
+                )
+
+        return {
+            "client_id": client_id,
+            "date_range": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
+            "reporting_currency": preferred_currency,
+            "attached_account_mappings": mappings,
+            "counts": {
+                "total_rows_scanned": len(report_rows),
+                "included_rows": included_count,
+                "excluded_rows": excluded_count,
+                "currency_fallback_rows": len(currency_fallback_rows),
+            },
+            "raw_db_totals_by_platform_account_currency": list(raw_totals_by_group.values()),
+            "included_dashboard_totals_by_platform_account_currency": list(included_totals_by_group.values()),
+            "excluded_rows": excluded_rows,
+            "currency_resolution_fallback_rows": currency_fallback_rows,
+            "summed_metrics": {
+                "before_conversion": {
+                    "raw_db": raw_before,
+                    "included_dashboard": included_before,
+                },
+                "after_conversion": {
+                    "included_dashboard": included_after,
+                },
+            },
+            "per_platform_summary": list(per_platform.values()),
+            "per_account_summary": list(per_account.values()),
+        }
+
+
+    def _client_dashboard_reconciliation_rows_query(self) -> str:
+        effective_currency_sql = self._effective_attached_account_currency_sql(
+            mapping_currency_expr="mapped.account_currency",
+            platform_currency_expr="apa.currency_code",
+            client_currency_expr="client.currency",
+            fallback_literal="RON",
+        )
+        return f"""
+                        SELECT
+                            apr.platform,
+                            apr.customer_id,
+                            apr.report_date,
+                            COALESCE(apr.spend, 0) AS spend,
+                            COALESCE(apr.impressions, 0) AS impressions,
+                            COALESCE(apr.clicks, 0) AS clicks,
+                            COALESCE(apr.conversions, 0) AS conversions,
+                            COALESCE(apr.conversion_value, 0) AS conversion_value,
+                            NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'grain', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'grain', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'grain', '') ELSE '' END), '') AS grain_raw,
+                            COALESCE(
+                                NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'grain', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'grain', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'grain', '') ELSE '' END), ''),
+                                'account_daily'
+                            ) AS grain_resolved,
+                            NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'account_currency', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'account_currency', '') ELSE '' END), '') AS report_currency,
+                            NULLIF(TRIM(apa.currency_code), '') AS platform_account_currency,
+                            NULLIF(TRIM(mapped.account_currency), '') AS mapped_account_currency,
+                            COALESCE(
+                                NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'account_currency', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'account_currency', '') ELSE '' END), ''),
+                                {effective_currency_sql}
+                            ) AS resolved_currency,
+                            CASE
+                                WHEN NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'account_currency', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'account_currency', '') ELSE '' END), '') IS NOT NULL THEN 'report_extra_metrics'
+                                WHEN NULLIF(TRIM(mapped.account_currency), '') IS NOT NULL THEN 'mapping_account_currency'
+                                WHEN NULLIF(TRIM(apa.currency_code), '') IS NOT NULL THEN 'platform_account_currency'
+                                WHEN NULLIF(TRIM(client.currency), '') IS NOT NULL THEN 'client_currency'
+                                ELSE 'fallback_ron'
+                            END AS currency_source,
+                            mapped.client_id IS NOT NULL AS has_mapping
+                        FROM ad_performance_reports apr
+                        LEFT JOIN agency_account_client_mappings mapped
+                          ON mapped.platform = apr.platform
+                         AND mapped.client_id = %s
+                         AND (
+                              mapped.account_id = apr.customer_id
+                              OR (
+                                  apr.platform = 'google_ads'
+                                  AND regexp_replace(mapped.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                              )
+                         )
+                        LEFT JOIN agency_platform_accounts apa
+                          ON apa.platform = apr.platform
+                         AND (
+                              apa.account_id = apr.customer_id
+                              OR (
+                                  apr.platform = 'google_ads'
+                                  AND regexp_replace(apa.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                              )
+                         )
+                        LEFT JOIN agency_clients client
+                          ON client.id = mapped.client_id
+                        WHERE apr.report_date BETWEEN %s AND %s
+                          AND apr.platform IN ('google_ads', 'meta_ads', 'tiktok_ads', 'pinterest_ads', 'snapchat_ads')
+                        """
+
+
+    def _client_mappings_query(self) -> str:
+        return """
+                SELECT
+                    platform,
+                    account_id,
+                    client_id,
+                    account_currency,
+                    created_at
+                FROM agency_account_client_mappings
+                WHERE client_id = %s
+                ORDER BY platform, account_id
+                """
+
+    def _empty_metric_totals(self) -> dict[str, float | int]:
+        return {
+            "spend": 0.0,
+            "impressions": 0,
+            "clicks": 0,
+            "conversions": 0.0,
+            "revenue": 0.0,
+        }
+
+    def _add_to_metric_totals(self, totals: dict[str, float | int], *, spend: float, impressions: int, clicks: int, conversions: float, revenue: float) -> None:
+        totals["spend"] = _to_float(totals.get("spend")) + spend
+        totals["impressions"] = _to_int(totals.get("impressions")) + impressions
+        totals["clicks"] = _to_int(totals.get("clicks")) + clicks
+        totals["conversions"] = _to_float(totals.get("conversions")) + conversions
+        totals["revenue"] = _to_float(totals.get("revenue")) + revenue
+
+    def get_client_dashboard_reconciliation(
+        self,
+        *,
+        client_id: int,
+        start_date: date,
+        end_date: date,
+    ) -> dict[str, object]:
+        performance_reports_store.initialize_schema()
+        preferred_currency = client_registry_service.get_preferred_currency_for_client(client_id=client_id)
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(self._client_mappings_query(), (client_id,))
+                mapping_rows = cur.fetchall()
+                cur.execute(self._client_dashboard_reconciliation_rows_query(), (client_id, start_date, end_date))
+                report_rows = cur.fetchall()
+
+        mappings = [
+            {
+                "platform": str(row[0] or ""),
+                "account_id": str(row[1] or ""),
+                "client_id": _to_int(row[2]),
+                "account_currency": self._normalize_currency_code(row[3], fallback="RON"),
+                "created_at": str(row[4]) if row[4] is not None else None,
+            }
+            for row in mapping_rows
+        ]
+
+        raw_totals_by_group: dict[tuple[str, str, str | None], dict[str, object]] = {}
+        included_totals_by_group: dict[tuple[str, str, str], dict[str, object]] = {}
+
+        raw_before = self._empty_metric_totals()
+        included_before = self._empty_metric_totals()
+        included_after = self._empty_metric_totals()
+
+        per_platform: dict[str, dict[str, object]] = {}
+        per_account: dict[str, dict[str, object]] = {}
+
+        excluded_rows: list[dict[str, object]] = []
+        currency_fallback_rows: list[dict[str, object]] = []
+        included_count = 0
+        excluded_count = 0
+
+        for row in report_rows:
+            platform = str(row[0] or "")
+            customer_id = str(row[1] or "")
+            report_date = row[2] if isinstance(row[2], date) else end_date
+            spend = _to_float(row[3])
+            impressions = _to_int(row[4])
+            clicks = _to_int(row[5])
+            conversions = _to_float(row[6])
+            revenue = _to_float(row[7])
+            grain_resolved = str(row[9] or "account_daily")
+            report_currency = self._normalize_currency_code(row[10], fallback="RON") if row[10] else None
+            resolved_currency = self._normalize_currency_code(row[13], fallback="RON")
+            currency_source = str(row[14] or "fallback_ron")
+            has_mapping = bool(row[15])
+
+            raw_key = (platform, customer_id, report_currency)
+            raw_entry = raw_totals_by_group.setdefault(
+                raw_key,
+                {
+                    "platform": platform,
+                    "account_id": customer_id,
+                    "report_currency": report_currency,
+                    "totals": self._empty_metric_totals(),
+                },
+            )
+            self._add_to_metric_totals(raw_entry["totals"], spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+            self._add_to_metric_totals(raw_before, spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+
+            is_included = has_mapping and grain_resolved == "account_daily"
+            reasons: list[str] = []
+            if not has_mapping:
+                reasons.append("missing_mapping")
+            if grain_resolved != "account_daily":
+                reasons.append("grain_not_account_daily")
+            if currency_source == "fallback_ron":
+                reasons.append("currency_resolution_fallback")
+
+            normalized_spend = self._normalize_money(
+                amount=spend,
+                from_currency=resolved_currency,
+                to_currency=preferred_currency,
+                rate_date=report_date,
+            )
+            normalized_revenue = self._normalize_money(
+                amount=revenue,
+                from_currency=resolved_currency,
+                to_currency=preferred_currency,
+                rate_date=report_date,
+            )
+
+            platform_bucket = per_platform.setdefault(
+                platform,
+                {
+                    "platform": platform,
+                    "included_rows": 0,
+                    "excluded_rows": 0,
+                    "raw_before_conversion": self._empty_metric_totals(),
+                    "included_before_conversion": self._empty_metric_totals(),
+                    "included_after_conversion": self._empty_metric_totals(),
+                },
+            )
+            account_key = f"{platform}:{customer_id}"
+            account_bucket = per_account.setdefault(
+                account_key,
+                {
+                    "platform": platform,
+                    "account_id": customer_id,
+                    "included_rows": 0,
+                    "excluded_rows": 0,
+                    "raw_before_conversion": self._empty_metric_totals(),
+                    "included_before_conversion": self._empty_metric_totals(),
+                    "included_after_conversion": self._empty_metric_totals(),
+                },
+            )
+            self._add_to_metric_totals(platform_bucket["raw_before_conversion"], spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+            self._add_to_metric_totals(account_bucket["raw_before_conversion"], spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+
+            if currency_source == "fallback_ron":
+                currency_fallback_rows.append(
+                    {
+                        "platform": platform,
+                        "account_id": customer_id,
+                        "report_date": report_date.isoformat(),
+                        "resolved_currency": resolved_currency,
+                    }
+                )
+
+            if is_included:
+                included_count += 1
+                platform_bucket["included_rows"] = _to_int(platform_bucket.get("included_rows")) + 1
+                account_bucket["included_rows"] = _to_int(account_bucket.get("included_rows")) + 1
+                self._add_to_metric_totals(included_before, spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+                self._add_to_metric_totals(included_after, spend=normalized_spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=normalized_revenue)
+                self._add_to_metric_totals(platform_bucket["included_before_conversion"], spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+                self._add_to_metric_totals(account_bucket["included_before_conversion"], spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+                self._add_to_metric_totals(platform_bucket["included_after_conversion"], spend=normalized_spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=normalized_revenue)
+                self._add_to_metric_totals(account_bucket["included_after_conversion"], spend=normalized_spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=normalized_revenue)
+
+                included_key = (platform, customer_id, resolved_currency)
+                included_entry = included_totals_by_group.setdefault(
+                    included_key,
+                    {
+                        "platform": platform,
+                        "account_id": customer_id,
+                        "resolved_currency": resolved_currency,
+                        "totals_before_conversion": self._empty_metric_totals(),
+                        "totals_after_conversion": self._empty_metric_totals(),
+                    },
+                )
+                self._add_to_metric_totals(included_entry["totals_before_conversion"], spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+                self._add_to_metric_totals(included_entry["totals_after_conversion"], spend=normalized_spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=normalized_revenue)
+            else:
+                excluded_count += 1
+                platform_bucket["excluded_rows"] = _to_int(platform_bucket.get("excluded_rows")) + 1
+                account_bucket["excluded_rows"] = _to_int(account_bucket.get("excluded_rows")) + 1
+                excluded_rows.append(
+                    {
+                        "platform": platform,
+                        "account_id": customer_id,
+                        "report_date": report_date.isoformat(),
+                        "grain": grain_resolved,
+                        "resolved_currency": resolved_currency,
+                        "currency_source": currency_source,
+                        "reasons": reasons,
+                        "metrics": {
+                            "spend": spend,
+                            "impressions": impressions,
+                            "clicks": clicks,
+                            "conversions": conversions,
+                            "revenue": revenue,
+                        },
+                    }
+                )
+
+        return {
+            "client_id": client_id,
+            "date_range": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
+            "reporting_currency": preferred_currency,
+            "attached_account_mappings": mappings,
+            "counts": {
+                "total_rows_scanned": len(report_rows),
+                "included_rows": included_count,
+                "excluded_rows": excluded_count,
+                "currency_fallback_rows": len(currency_fallback_rows),
+            },
+            "raw_db_totals_by_platform_account_currency": list(raw_totals_by_group.values()),
+            "included_dashboard_totals_by_platform_account_currency": list(included_totals_by_group.values()),
+            "excluded_rows": excluded_rows,
+            "currency_resolution_fallback_rows": currency_fallback_rows,
+            "summed_metrics": {
+                "before_conversion": {
+                    "raw_db": raw_before,
+                    "included_dashboard": included_before,
+                },
+                "after_conversion": {
+                    "included_dashboard": included_after,
+                },
+            },
+            "per_platform_summary": list(per_platform.values()),
+            "per_account_summary": list(per_account.values()),
+        }
+
 
     def _client_dashboard_reconciliation_rows_query(self) -> str:
         effective_currency_sql = self._effective_attached_account_currency_sql(
