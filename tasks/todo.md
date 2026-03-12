@@ -1,3 +1,16 @@
+# TODO — Remote sync via Connector workspace
+
+- [x] Confirm instructions and run requested remote/fetch/pull commands exactly as provided.
+- [x] Verify git remotes and current branch state after sync.
+- [x] Record review notes with command outcomes.
+
+## Review
+- [x] Executed the exact requested remote/add-or-set + fetch + pull commands in a fresh terminal session for this run.
+- [x] Fetch completed successfully and pulled `origin/main` with response `Already up to date.`
+- [x] Verified `origin` URL and current branch (`work`) via `git remote -v`, `git branch --show-current`, and `git status --short --branch`.
+
+---
+
 # TODO — Fix Meta/TikTok historical backfill progress UI in Agency Accounts
 
 - [x] Rebaseline branch from clean baseline and document constraints if requested remote baseline is unavailable.
