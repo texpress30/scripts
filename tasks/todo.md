@@ -3407,3 +3407,21 @@
 - [x] Fix: helper-ul de bounds folosește acum `ad_performance_reports` + `agency_account_client_mappings`, aceeași sursă și aceeași mapare client/account utilizate deja în `_list_automated_daily_costs`.
 - [x] Logicile recent introduse rămân active: effective range, excludere zile fără date, excludere luni fără zile.
 - [x] Teste: `pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py` (pass).
+
+---
+
+# TODO — Media Buying pasul 11: sticky header + sticky first column + scroll UX
+
+- [x] Sync workspace la ultima stare disponibilă și confirmare constrângeri remote.
+- [x] Audit structură tabel Media Buying pentru header/coloană Data/container scroll.
+- [x] Implementare sticky header + sticky first column + sticky corner cu z-index/background/border corecte.
+- [x] Îmbunătățire minimă scroll UX pentru tabel lat/lung fără redesign major.
+- [x] Adăugare/actualizare teste frontend pentru sticky classes + compatibilitate expand/collapse, visibility și inline edit.
+- [x] Rulare teste frontend relevante + build frontend; documentare rezultate.
+
+## Review
+- [x] Sticky header implementat pe toate celulele de header (`top-0`) și sticky corner pentru `Data` (`top-0 + left-0`) cu background opac și z-index separat.
+- [x] Sticky first column implementat pe celulele `Data` pentru rânduri lunare și zilnice (`left-0`) cu border/shadow discret pentru separare vizuală la scroll orizontal.
+- [x] Scroll UX: containerul tabelului are acum `max-h` + `overflow-auto` + border/rounded + scrollbar classes pentru evidențiere mai clară.
+- [x] Compatibilitate păstrată pentru `Customize columns`, expand/collapse luni și `Edit` pe rândurile zilnice; header-ele inline edit rămân clickabile.
+- [x] Verificare: `pnpm --dir apps/frontend test src/app/sub/[id]/media-buying/page.test.tsx`, `pnpm --dir apps/frontend build`.

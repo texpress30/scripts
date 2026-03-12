@@ -204,6 +204,17 @@ function columnClass(key: ColumnSemanticKey): string {
   return classes.join(" ");
 }
 
+function stickyHeaderClass(column: ColumnSemanticKey): string {
+  if (column === "date") return "sticky left-0 top-0 z-50 bg-slate-50 shadow-[6px_0_8px_-8px_rgba(15,23,42,0.35)]";
+  return "sticky top-0 z-30 bg-slate-50";
+}
+
+function stickyDateCellClass(tone: "month" | "day"): string {
+  const base = "sticky left-0 z-20 border-r border-slate-200 bg-white shadow-[6px_0_8px_-8px_rgba(15,23,42,0.35)]";
+  if (tone === "month") return `${base} bg-slate-100`;
+  return base;
+}
+
 function monthLabel(value: string): string {
   const [year, month] = value.split("-");
   const monthIndex = Number(month) - 1;
@@ -591,7 +602,7 @@ export default function SubMediaBuyingPage() {
                 Customize columns
               </button>
               {columnsPanelOpen ? (
-                <div className="max-h-56 overflow-y-auto rounded border border-slate-200 bg-white p-2 text-xs shadow-sm">
+                <div className="relative z-[60] max-h-56 overflow-y-auto rounded border border-slate-200 bg-white p-2 text-xs shadow-sm">
                   {columnsMenu.map((item) => {
                     const required = MANDATORY_COLUMNS.has(item.key);
                     return (
@@ -631,31 +642,31 @@ export default function SubMediaBuyingPage() {
           ) : null}
 
           {!loading && !error && tableData && isLeadTemplate && sortedMonths.length > 0 ? (
-            <div className="mt-4 overflow-x-auto">
+            <div className="mt-4 max-h-[70vh] overflow-auto rounded-lg border border-slate-200 scrollbar-thin scrollbar-track-slate-100 scrollbar-thumb-slate-300">
               <table className="min-w-[1850px] wm-card text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-600">
                   <tr>
-                    <th {...visibilityProps("date")} className={classFor("date")}>Data</th>
-                    <th {...visibilityProps("cost_google")} className={classFor("cost_google")}>Cost Google</th>
-                    <th {...visibilityProps("cost_meta")} className={classFor("cost_meta")}>Cost Meta</th>
-                    <th {...visibilityProps("cost_tiktok")} className={classFor("cost_tiktok")}>Cost TikTok</th>
-                    <th {...visibilityProps("cost_total")} className={classFor("cost_total")}>Cost Total</th>
-                    <th {...visibilityProps("percent_change")} className={classFor("percent_change")}>%^</th>
-                    <th {...visibilityProps("leads")} className={classFor("leads")}>Lead-uri</th>
-                    <th {...visibilityProps("phones")} className={classFor("phones")}>Telefoane</th>
-                    <th {...visibilityProps("total_leads")} className={classFor("total_leads")}>Total Lead-uri</th>
-                    <th {...visibilityProps("custom_value_1_count")} className={classFor("custom_value_1_count")}>{renderEditableHeader("custom_label_1")}</th>
-                    <th {...visibilityProps("custom_value_2_count")} className={classFor("custom_value_2_count")}>{renderEditableHeader("custom_label_2")}</th>
-                    <th {...visibilityProps("custom_value_3_amount_ron")} className={classFor("custom_value_3_amount_ron")}>{renderEditableHeader("custom_label_3")}</th>
-                    <th {...visibilityProps("custom_value_4_amount_ron")} className={classFor("custom_value_4_amount_ron")}>{renderEditableHeader("custom_label_4")}</th>
-                    <th {...visibilityProps("custom_value_5_amount_ron")} className={classFor("custom_value_5_amount_ron")}>{renderEditableHeader("custom_label_5")}</th>
-                    <th {...visibilityProps("sales_count")} className={classFor("sales_count")}>Vânzări</th>
-                    <th {...visibilityProps("custom_value_rate_1")} className={classFor("custom_value_rate_1")}>{renderEditableHeader("custom_rate_label_1")}</th>
-                    <th {...visibilityProps("custom_value_rate_2")} className={classFor("custom_value_rate_2")}>{renderEditableHeader("custom_rate_label_2")}</th>
-                    <th {...visibilityProps("cost_per_lead")} className={classFor("cost_per_lead")}>Cost per Lead</th>
-                    <th {...visibilityProps("cost_custom_value_1")} className={classFor("cost_custom_value_1")}>{renderEditableHeader("custom_cost_label_1")}</th>
-                    <th {...visibilityProps("cost_custom_value_2")} className={classFor("cost_custom_value_2")}>{renderEditableHeader("custom_cost_label_2")}</th>
-                    <th {...visibilityProps("cost_per_sale")} className={classFor("cost_per_sale")}>Cost per Sale</th>
+                    <th {...visibilityProps("date")} className={`${classFor("date")} ${stickyHeaderClass("date")}`}>Data</th>
+                    <th {...visibilityProps("cost_google")} className={`${classFor("cost_google")} ${stickyHeaderClass("cost_google")}`}>Cost Google</th>
+                    <th {...visibilityProps("cost_meta")} className={`${classFor("cost_meta")} ${stickyHeaderClass("cost_meta")}`}>Cost Meta</th>
+                    <th {...visibilityProps("cost_tiktok")} className={`${classFor("cost_tiktok")} ${stickyHeaderClass("cost_tiktok")}`}>Cost TikTok</th>
+                    <th {...visibilityProps("cost_total")} className={`${classFor("cost_total")} ${stickyHeaderClass("cost_total")}`}>Cost Total</th>
+                    <th {...visibilityProps("percent_change")} className={`${classFor("percent_change")} ${stickyHeaderClass("percent_change")}`}>%^</th>
+                    <th {...visibilityProps("leads")} className={`${classFor("leads")} ${stickyHeaderClass("leads")}`}>Lead-uri</th>
+                    <th {...visibilityProps("phones")} className={`${classFor("phones")} ${stickyHeaderClass("phones")}`}>Telefoane</th>
+                    <th {...visibilityProps("total_leads")} className={`${classFor("total_leads")} ${stickyHeaderClass("total_leads")}`}>Total Lead-uri</th>
+                    <th {...visibilityProps("custom_value_1_count")} className={`${classFor("custom_value_1_count")} ${stickyHeaderClass("custom_value_1_count")}`}>{renderEditableHeader("custom_label_1")}</th>
+                    <th {...visibilityProps("custom_value_2_count")} className={`${classFor("custom_value_2_count")} ${stickyHeaderClass("custom_value_2_count")}`}>{renderEditableHeader("custom_label_2")}</th>
+                    <th {...visibilityProps("custom_value_3_amount_ron")} className={`${classFor("custom_value_3_amount_ron")} ${stickyHeaderClass("custom_value_3_amount_ron")}`}>{renderEditableHeader("custom_label_3")}</th>
+                    <th {...visibilityProps("custom_value_4_amount_ron")} className={`${classFor("custom_value_4_amount_ron")} ${stickyHeaderClass("custom_value_4_amount_ron")}`}>{renderEditableHeader("custom_label_4")}</th>
+                    <th {...visibilityProps("custom_value_5_amount_ron")} className={`${classFor("custom_value_5_amount_ron")} ${stickyHeaderClass("custom_value_5_amount_ron")}`}>{renderEditableHeader("custom_label_5")}</th>
+                    <th {...visibilityProps("sales_count")} className={`${classFor("sales_count")} ${stickyHeaderClass("sales_count")}`}>Vânzări</th>
+                    <th {...visibilityProps("custom_value_rate_1")} className={`${classFor("custom_value_rate_1")} ${stickyHeaderClass("custom_value_rate_1")}`}>{renderEditableHeader("custom_rate_label_1")}</th>
+                    <th {...visibilityProps("custom_value_rate_2")} className={`${classFor("custom_value_rate_2")} ${stickyHeaderClass("custom_value_rate_2")}`}>{renderEditableHeader("custom_rate_label_2")}</th>
+                    <th {...visibilityProps("cost_per_lead")} className={`${classFor("cost_per_lead")} ${stickyHeaderClass("cost_per_lead")}`}>Cost per Lead</th>
+                    <th {...visibilityProps("cost_custom_value_1")} className={`${classFor("cost_custom_value_1")} ${stickyHeaderClass("cost_custom_value_1")}`}>{renderEditableHeader("custom_cost_label_1")}</th>
+                    <th {...visibilityProps("cost_custom_value_2")} className={`${classFor("cost_custom_value_2")} ${stickyHeaderClass("cost_custom_value_2")}`}>{renderEditableHeader("custom_cost_label_2")}</th>
+                    <th {...visibilityProps("cost_per_sale")} className={`${classFor("cost_per_sale")} ${stickyHeaderClass("cost_per_sale")}`}>Cost per Sale</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -665,7 +676,7 @@ export default function SubMediaBuyingPage() {
                     return (
                       <React.Fragment key={month.month}>
                         <tr className="border-t border-slate-300 bg-slate-100 font-semibold text-slate-900">
-                          <td {...visibilityProps("date")} className={classFor("date")}>
+                          <td {...visibilityProps("date")} className={`${classFor("date")} ${stickyDateCellClass("month")}`}>
                             <button
                               type="button"
                               onClick={() => setExpandedMonths((prev) => ({ ...prev, [month.month]: !open }))}
@@ -707,7 +718,7 @@ export default function SubMediaBuyingPage() {
 
                               return (
                                 <tr key={day.date} className="border-t border-slate-200 bg-white text-slate-800">
-                                  <td {...visibilityProps("date")} className={`${classFor("date")} pl-8 align-top`}>
+                                  <td {...visibilityProps("date")} className={`${classFor("date")} ${stickyDateCellClass("day")} pl-8 align-top`}>
                                     <div>{shortDayLabel(day.date)}</div>
                                     <div className="mt-1 flex gap-2">
                                       {draft ? (

@@ -343,7 +343,15 @@ describe("SubMediaBuyingPage", () => {
 
     expect(screen.getByText("1 Mar")).toBeInTheDocument();
 
+    const dateHeader = screen.getByRole("columnheader", { name: /^Data$/i });
+    expect(dateHeader.className).toContain("sticky");
+    expect(dateHeader.className).toContain("top-0");
+    expect(dateHeader.className).toContain("left-0");
+    expect(dateHeader.className).toContain("bg-slate-50");
+
     expect(screen.getByRole("columnheader", { name: /Cost Google/i }).className).toContain("text-[#bfbfbf]");
+    expect(screen.getByRole("columnheader", { name: /Cost Google/i }).className).toContain("sticky");
+    expect(screen.getByRole("columnheader", { name: /Cost Google/i }).className).toContain("top-0");
     expect(screen.getByRole("columnheader", { name: /Cost Total/i }).className).toContain("border-dashed");
     expect(screen.getByRole("columnheader", { name: /Total Lead-uri/i }).className).toContain("border-dashed");
 
@@ -354,6 +362,38 @@ describe("SubMediaBuyingPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Mar 2026/i }));
     expect(screen.queryByText("1 Mar")).toBeNull();
+  });
+
+  it("keeps first date column sticky for month/day rows and remains compatible with edit and column visibility", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string, options?: RequestInit) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
+      if (path.startsWith("/clients/96/media-buying/lead/table")) return leadPayload();
+      if (path === "/clients/96/media-buying/config") {
+        const body = JSON.parse(String(options?.body || "{}"));
+        return { ...leadPayload().meta, ...body };
+      }
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaBuyingPage />);
+    await screen.findByRole("button", { name: /Mar 2026/i });
+
+    const monthToggle = screen.getByRole("button", { name: /Mar 2026/i });
+    const monthDateCell = monthToggle.closest("td");
+    expect(monthDateCell).toBeTruthy();
+    expect(monthDateCell?.className || "").toContain("sticky");
+    expect(monthDateCell?.className || "").toContain("left-0");
+
+    const dayDateCell = screen.getByText(/\d+ Mar/i).closest("td");
+    expect(dayDateCell).toBeTruthy();
+    expect(dayDateCell?.className || "").toContain("sticky");
+    expect(dayDateCell?.className || "").toContain("left-0");
+
+    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Customize columns/i }));
+    fireEvent.click(screen.getByLabelText(/Cost Google/i));
+    expect(await screen.findByText("View saved")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: /^Data$/i }).className).toContain("sticky");
   });
 
   it("renders custom value and custom rate columns without special text colors", async () => {
