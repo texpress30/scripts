@@ -3390,3 +3390,20 @@
 - [x] Lunile fără zile cu date nu mai sunt returnate; totalurile lunare se calculează doar din zilele rămase.
 - [x] Frontend Media Buying folosește range-ul efectiv din metadata API și nu mai trimite implicit query de 90 zile la load inițial.
 - [x] Verificare: `pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py`, `pnpm --dir apps/frontend test src/app/sub/[id]/media-buying/page.test.tsx`, `pnpm --dir apps/frontend build`.
+
+---
+
+# TODO — Media Buying hotfix: bounds query relation fix for 500
+
+- [x] Sync workspace la ultima stare disponibilă și confirmare constrângeri remote.
+- [x] Audit helper `_get_lead_table_data_bounds` vs sursa reală folosită de `_list_automated_daily_costs`.
+- [x] Înlocuire query bounds de pe relația inexistentă cu aceeași sursă reală folosită în read-side costuri automate.
+- [x] Păstrare logică existentă: effective range + hide empty days/months.
+- [x] Adăugare/actualizare teste backend pentru regresie 500 + empty data coherence + effective bounds.
+- [x] Rulare teste backend relevante și documentare rezultate.
+
+## Review
+- [x] Bug root-cause: `_get_lead_table_data_bounds` interoga `ads_platform_reporting` (relație absentă în DB), ceea ce producea `UndefinedTable` și 500 la `/clients/{id}/media-buying/lead/table`.
+- [x] Fix: helper-ul de bounds folosește acum `ad_performance_reports` + `agency_account_client_mappings`, aceeași sursă și aceeași mapare client/account utilizate deja în `_list_automated_daily_costs`.
+- [x] Logicile recent introduse rămân active: effective range, excludere zile fără date, excludere luni fără zile.
+- [x] Teste: `pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py` (pass).

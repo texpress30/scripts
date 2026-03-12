@@ -508,3 +508,49 @@ class MediaBuyingLeadTableReadTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MediaBuyingStoreBoundsQueryTests(unittest.TestCase):
+    def test_bounds_query_uses_ad_performance_reports_source(self):
+        captured_queries: list[str] = []
+
+        class _Cursor:
+            def __init__(self):
+                self._idx = 0
+
+            def execute(self, query, params=None):
+                captured_queries.append(" ".join(str(query).split()))
+
+            def fetchone(self):
+                self._idx += 1
+                if self._idx == 1:
+                    return (date(2026, 1, 10), date(2026, 3, 1))
+                return (None, None)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _Conn:
+            def cursor(self):
+                return _Cursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        store = MediaBuyingStore()
+        store._ensure_schema = lambda: None
+        store._connect = lambda: _Conn()
+
+        earliest, latest = store._get_lead_table_data_bounds(client_id=12)
+
+        self.assertEqual(earliest, date(2026, 1, 10))
+        self.assertEqual(latest, date(2026, 3, 1))
+        all_sql = "\n".join(captured_queries)
+        self.assertIn("FROM ad_performance_reports apr", all_sql)
+        self.assertNotIn("ads_platform_reporting", all_sql)

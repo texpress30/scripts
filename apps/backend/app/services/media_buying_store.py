@@ -551,18 +551,28 @@ class MediaBuyingStore:
                         SELECT
                             apr.report_date,
                             apr.platform,
-                            apr.spend,
-                            apr.client_id AS perf_client_id,
-                            map.client_id AS mapped_client_id
-                        FROM ads_platform_reporting apr
-                        LEFT JOIN ads_platform_accounts map
-                          ON map.platform = apr.platform
-                         AND map.account_id = apr.account_id
+                            COALESCE(apr.client_id, mapped.client_id) AS resolved_client_id,
+                            COALESCE(apr.spend, 0) AS spend
+                        FROM ad_performance_reports apr
+                        LEFT JOIN LATERAL (
+                            SELECT m.client_id
+                            FROM agency_account_client_mappings m
+                            WHERE m.platform = apr.platform
+                              AND (
+                                  m.account_id = apr.customer_id
+                                  OR (
+                                      apr.platform = 'google_ads'
+                                      AND regexp_replace(m.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                                  )
+                              )
+                            ORDER BY m.updated_at DESC, m.created_at DESC
+                            LIMIT 1
+                        ) mapped ON TRUE
                     ), scoped AS (
                         SELECT
                             report_date,
                             spend,
-                            COALESCE(perf_client_id, mapped_client_id) AS resolved_client_id
+                            resolved_client_id
                         FROM perf
                         WHERE platform IN ('google_ads', 'meta_ads', 'tiktok_ads')
                     )
