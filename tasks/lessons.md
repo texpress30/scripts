@@ -280,3 +280,4 @@
 ## 2026-03-12 — UI semantics + persisted views follow-up
 - When user corrects business semantics for displayed metrics, implement source-of-truth derivation in backend payload first, then style in UI.
 - For table customization features, persist server-side per-client view config (not browser-only) and guard essential columns from being hidden.
+- 2026-03-12: După feedback că schimbarea anterioară nu a fost satisfăcătoare pe Media Buying UI, livrează strict pe cerința rămasă (styling custom columns) fără modificări de logică/formule și validează explicit că restul coloanelor își păstrează stilul existent prin teste dedicate.

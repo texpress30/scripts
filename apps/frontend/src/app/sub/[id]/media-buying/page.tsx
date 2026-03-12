@@ -156,9 +156,6 @@ const GREY_COLUMNS: Set<ColumnSemanticKey> = new Set([
   "cost_tiktok",
   "leads",
   "phones",
-  "custom_value_1_count",
-  "custom_value_2_count",
-  "custom_value_3_amount_ron",
 ]);
 
 const DASHED_COLUMNS: Set<ColumnSemanticKey> = new Set([
@@ -168,10 +165,7 @@ const DASHED_COLUMNS: Set<ColumnSemanticKey> = new Set([
   "custom_value_rate_2",
 ]);
 
-const VIOLET_COLUMNS: Set<ColumnSemanticKey> = new Set([
-  "custom_value_rate_1",
-  "custom_value_rate_2",
-]);
+const VIOLET_COLUMNS: Set<ColumnSemanticKey> = new Set([]);
 
 function toIso(value: Date): string {
   return format(value, "yyyy-MM-dd");
@@ -688,7 +682,7 @@ export default function SubMediaBuyingPage() {
                           <td {...visibilityProps("custom_value_1_count")} className={classFor("custom_value_1_count")}>{formatCount(monthTotals.custom_value_1_count)}</td>
                           <td {...visibilityProps("custom_value_2_count")} className={classFor("custom_value_2_count")}>{formatCount(monthTotals.custom_value_2_count)}</td>
                           <td {...visibilityProps("custom_value_3_amount_ron")} className={classFor("custom_value_3_amount_ron")}>{formatMoney(monthTotals.custom_value_3_amount_ron, displayCurrency)}</td>
-                          <td {...visibilityProps("custom_value_4_amount_ron")} className={classFor("custom_value_4_amount_ron")}><span className={monthTotals.custom_value_4_amount_ron > 0 ? "text-red-600" : "text-slate-900"}>{formatUnrealizedMoney(monthTotals.custom_value_4_amount_ron, displayCurrency)}</span></td>
+                          <td {...visibilityProps("custom_value_4_amount_ron")} className={classFor("custom_value_4_amount_ron")}><span className="text-slate-900">{formatUnrealizedMoney(monthTotals.custom_value_4_amount_ron, displayCurrency)}</span></td>
                           <td {...visibilityProps("custom_value_5_amount_ron")} className={classFor("custom_value_5_amount_ron")}>{formatMoney(monthTotals.custom_value_5_amount_ron, displayCurrency)}</td>
                           <td {...visibilityProps("sales_count")} className={classFor("sales_count")}>{formatCount(monthTotals.sales_count)}</td>
                           <td {...visibilityProps("custom_value_rate_1")} className={classFor("custom_value_rate_1")}>{formatRate(monthTotals.custom_value_rate_1)}</td>
@@ -777,7 +771,7 @@ export default function SubMediaBuyingPage() {
                                     {errors.custom_value_3_amount_ron ? <p className="text-xs text-red-600">{errors.custom_value_3_amount_ron}</p> : null}
                                   </td>
                                   <td {...visibilityProps("custom_value_4_amount_ron")} className={classFor("custom_value_4_amount_ron")}>
-                                    {draft ? <input aria-label={`Custom Value 4 ${day.date}`} className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_4_amount_ron} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, custom_value_4_amount_ron: e.target.value } }))} /> : <span className={day.custom_value_4_amount_ron > 0 ? "text-red-600" : "text-slate-900"}>{formatUnrealizedMoney(day.custom_value_4_amount_ron, displayCurrency)}</span>}
+                                    {draft ? <input aria-label={`Custom Value 4 ${day.date}`} className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_4_amount_ron} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, custom_value_4_amount_ron: e.target.value } }))} /> : <span className="text-slate-900">{formatUnrealizedMoney(day.custom_value_4_amount_ron, displayCurrency)}</span>}
                                     {errors.custom_value_4_amount_ron ? <p className="text-xs text-red-600">{errors.custom_value_4_amount_ron}</p> : null}
                                   </td>
                                   <td {...visibilityProps("custom_value_5_amount_ron")} className={classFor("custom_value_5_amount_ron")}>

@@ -3355,3 +3355,19 @@
 - [x] Verification: `pytest apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py`, `pnpm --dir apps/frontend test src/app/sub/[id]/media-buying/page.test.tsx`, `pnpm --dir apps/frontend build`.
 - [x] Workspace sync note: `git pull --ff-only` failed because branch `work` has no upstream tracking configured.
 - [x] Screenshot note: Playwright browser tool timed out in this environment while capturing `/sub/96/media-buying`.
+
+---
+
+# TODO — Media Buying pasul 9: custom columns black text only
+
+- [x] Sync workspace to latest available repo state and confirm remote constraints.
+- [x] Audit Media Buying table column style mapping for custom values and custom value rates.
+- [x] Remove special text colors for custom values (1..5) and custom value rates (1..2), forcing black text on day/month rows.
+- [x] Add/update frontend tests for custom column black-text rendering and non-custom style regression guard.
+- [x] Run relevant frontend tests and frontend build; capture outcomes.
+
+## Review
+- [x] Removed custom value columns (`custom_value_1_count`, `custom_value_2_count`, `custom_value_3_amount_ron`) from grey semantic mapping and removed violet semantic mapping from custom rate columns (`custom_value_rate_1`, `custom_value_rate_2`).
+- [x] Removed positive-value red styling on `custom_value_4_amount_ron` in both month total rows and day rows; custom value/rate cells now render in black/default text.
+- [x] Added frontend regression checks for no color classes on custom value/rate headers/cells, dynamic custom labels, and non-custom semantic style preservation.
+- [x] Verification: `pnpm --dir apps/frontend test src/app/sub/[id]/media-buying/page.test.tsx` and `pnpm --dir apps/frontend build`.

@@ -329,7 +329,7 @@ describe("SubMediaBuyingPage", () => {
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
 
-  it("formats daily dates, applies semantic column styles, dashed separators, and reverse month order", async () => {
+  it("formats daily dates, keeps non-custom semantic styles, dashed separators, and reverse month order", async () => {
     apiMock.apiRequest.mockImplementation(async (path: string) => {
       if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
       if (path.startsWith("/clients/96/media-buying/lead/table")) return leadPayloadWithMonths();
@@ -349,13 +349,14 @@ describe("SubMediaBuyingPage", () => {
 
     const unrealizedCells = screen.getAllByText(/\(RON\s?40\.00\)|\(.*40.*RON.*\)/i);
     expect(unrealizedCells.length).toBeGreaterThan(0);
-    expect(unrealizedCells[0].className || "").toContain("text-red-600");
+    expect(unrealizedCells[0].className || "").toContain("text-slate-900");
+    expect(unrealizedCells[0].className || "").not.toContain("text-red-600");
 
     fireEvent.click(screen.getByRole("button", { name: /Mar 2026/i }));
     expect(screen.queryByText("1 Mar")).toBeNull();
   });
 
-  it("styles sold/unrealized/rates columns with business semantics", async () => {
+  it("renders custom value and custom rate columns without special text colors", async () => {
     apiMock.apiRequest.mockImplementation(async (path: string) => {
       if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
       if (path.startsWith("/clients/96/media-buying/lead/table")) {
@@ -373,8 +374,27 @@ describe("SubMediaBuyingPage", () => {
     render(<SubMediaBuyingPage />);
     await screen.findByRole("button", { name: /Mar 2026/i });
 
-    expect(screen.getByRole("columnheader", { name: /Rate A/i }).className).toContain("text-violet-600");
-    expect(screen.getByRole("columnheader", { name: /Rate B/i }).className).toContain("text-violet-600");
+    const rateAHeader = screen.getByRole("columnheader", { name: /Rate A/i });
+    const rateBHeader = screen.getByRole("columnheader", { name: /Rate B/i });
+    expect(rateAHeader.className).not.toContain("text-violet-600");
+    expect(rateBHeader.className).not.toContain("text-violet-600");
+
+    const custom1Header = screen.getByRole("columnheader", { name: /Appointments/i });
+    expect(custom1Header.className).not.toContain("text-[#bfbfbf]");
+
+    const customRateCells = screen.getAllByText(/66\.67%|100\.00%/i).map((item) => item.closest("td")).filter(Boolean) as HTMLTableCellElement[];
+    expect(customRateCells.length).toBeGreaterThan(0);
+    for (const cell of customRateCells) {
+      expect(cell.className).not.toContain("text-violet-600");
+      expect(cell.className).not.toContain("text-[#bfbfbf]");
+    }
+
+    const customValueCells = screen.getAllByText(/RON\s?30\.00|30\.00\s?RON/i).map((item) => item.closest("td")).filter(Boolean) as HTMLTableCellElement[];
+    expect(customValueCells.length).toBeGreaterThan(0);
+    for (const cell of customValueCells) {
+      expect(cell.className).not.toContain("text-violet-600");
+      expect(cell.className).not.toContain("text-[#bfbfbf]");
+    }
 
     const soldHeader = screen.getByRole("columnheader", { name: /Val\. Vanduta/i });
     expect(soldHeader.className).not.toContain("text-red-600");
@@ -384,6 +404,33 @@ describe("SubMediaBuyingPage", () => {
 
     expect(screen.getByText(/\(RON\s?30\.00\)|\(.*30.*RON.*\)/i)).toBeInTheDocument();
     expect(screen.getAllByText(/RON\s?100\.00|100\.00\s?RON/i).length).toBeGreaterThan(0);
+  });
+
+  it("keeps custom columns uncolored even when client custom labels are changed", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
+      if (path.startsWith("/clients/96/media-buying/lead/table")) {
+        const payload = leadPayload();
+        payload.meta.custom_label_1 = "Lead Brut";
+        payload.meta.custom_label_2 = "Lead Calificat";
+        payload.meta.custom_label_3 = "Valoare Bruta";
+        payload.meta.custom_label_4 = "Valoare Nerealizata";
+        payload.meta.custom_label_5 = "Valoare Vanduta";
+        payload.meta.custom_rate_label_1 = "Rata Conversie A";
+        payload.meta.custom_rate_label_2 = "Rata Conversie B";
+        return payload;
+      }
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaBuyingPage />);
+    await screen.findByRole("button", { name: /Mar 2026/i });
+
+    expect(screen.getByRole("columnheader", { name: /Lead Brut/i }).className).not.toContain("text-[#bfbfbf]");
+    expect(screen.getByRole("columnheader", { name: /Lead Calificat/i }).className).not.toContain("text-[#bfbfbf]");
+    expect(screen.getByRole("columnheader", { name: /Valoare Bruta/i }).className).not.toContain("text-[#bfbfbf]");
+    expect(screen.getByRole("columnheader", { name: /Rata Conversie A/i }).className).not.toContain("text-violet-600");
+    expect(screen.getByRole("columnheader", { name: /Rata Conversie B/i }).className).not.toContain("text-violet-600");
   });
 
   it("supports column visibility toggling and persists selected view via config", async () => {
