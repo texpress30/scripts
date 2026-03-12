@@ -977,5 +977,256 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
         self.assertEqual(payload.get("account_daily_identity_warnings"), [])
 
 
+    def test_sync_client_account_daily_rerun_is_idempotent_for_same_day(self):
+        service = TikTokAdsService()
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        os.environ["APP_ENV"] = "test"
+        performance_reports_store._memory_rows.clear()
+
+        original_access = service._access_token_with_source
+        original_resolve_ids = service._resolve_target_account_ids
+        original_probe = service._probe_selected_advertiser_access
+        original_fetch = service._fetch_account_daily_metrics
+        original_snapshot_upsert = tiktok_snapshot_store.upsert_snapshot
+        try:
+            service._access_token_with_source = lambda: ("tok", "database", None)
+            service._resolve_target_account_ids = lambda **kwargs: ["401"]
+            service._probe_selected_advertiser_access = lambda **kwargs: {"status": "ok"}
+            service._fetch_account_daily_metrics = lambda **kwargs: [
+                TikTokDailyMetric(
+                    report_date=date(2026, 3, 3),
+                    account_id="401",
+                    spend=10.0,
+                    impressions=100,
+                    clicks=5,
+                    conversions=1.0,
+                    conversion_value=12.0,
+                    extra_metrics={"tiktok_ads": {"provider_identity_candidates": ["401"]}},
+                )
+            ]
+            tiktok_snapshot_store.upsert_snapshot = lambda **kwargs: None
+
+            first = service.sync_client(client_id=1, start_date=date(2026, 3, 3), end_date=date(2026, 3, 3), grain="account_daily", account_id="401")
+            second = service.sync_client(client_id=1, start_date=date(2026, 3, 3), end_date=date(2026, 3, 3), grain="account_daily", account_id="401")
+        finally:
+            service._access_token_with_source = original_access
+            service._resolve_target_account_ids = original_resolve_ids
+            service._probe_selected_advertiser_access = original_probe
+            service._fetch_account_daily_metrics = original_fetch
+            tiktok_snapshot_store.upsert_snapshot = original_snapshot_upsert
+
+        self.assertEqual(first.get("rows_written"), 1)
+        self.assertEqual(second.get("rows_written"), 1)
+        rows = [row for row in performance_reports_store._memory_rows if row.get("platform") == "tiktok_ads" and row.get("customer_id") == "401" and row.get("report_date") == "2026-03-03"]
+        self.assertEqual(len(rows), 1)
+
+    def test_sync_client_account_daily_rerun_replaces_metrics_for_same_natural_key(self):
+        service = TikTokAdsService()
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        os.environ["APP_ENV"] = "test"
+        performance_reports_store._memory_rows.clear()
+
+        original_access = service._access_token_with_source
+        original_resolve_ids = service._resolve_target_account_ids
+        original_probe = service._probe_selected_advertiser_access
+        original_fetch = service._fetch_account_daily_metrics
+        original_snapshot_upsert = tiktok_snapshot_store.upsert_snapshot
+        try:
+            service._access_token_with_source = lambda: ("tok", "database", None)
+            service._resolve_target_account_ids = lambda **kwargs: ["401"]
+            service._probe_selected_advertiser_access = lambda **kwargs: {"status": "ok"}
+            fetch_calls = {"count": 0}
+
+            def _fetch(**kwargs):
+                fetch_calls["count"] += 1
+                spend = 10.0 if fetch_calls["count"] == 1 else 33.0
+                clicks = 5 if fetch_calls["count"] == 1 else 11
+                return [
+                    TikTokDailyMetric(
+                        report_date=date(2026, 3, 4),
+                        account_id="401",
+                        spend=spend,
+                        impressions=100,
+                        clicks=clicks,
+                        conversions=1.0,
+                        conversion_value=12.0,
+                        extra_metrics={"tiktok_ads": {"provider_identity_candidates": ["401"]}},
+                    )
+                ]
+
+            service._fetch_account_daily_metrics = _fetch
+            tiktok_snapshot_store.upsert_snapshot = lambda **kwargs: None
+
+            service.sync_client(client_id=1, start_date=date(2026, 3, 4), end_date=date(2026, 3, 4), grain="account_daily", account_id="401")
+            service.sync_client(client_id=1, start_date=date(2026, 3, 4), end_date=date(2026, 3, 4), grain="account_daily", account_id="401")
+        finally:
+            service._access_token_with_source = original_access
+            service._resolve_target_account_ids = original_resolve_ids
+            service._probe_selected_advertiser_access = original_probe
+            service._fetch_account_daily_metrics = original_fetch
+            tiktok_snapshot_store.upsert_snapshot = original_snapshot_upsert
+
+        rows = [row for row in performance_reports_store._memory_rows if row.get("platform") == "tiktok_ads" and row.get("customer_id") == "401" and row.get("report_date") == "2026-03-04"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].get("spend"), 33.0)
+        self.assertEqual(rows[0].get("clicks"), 11)
+
+    def test_sync_client_account_daily_overlap_windows_are_idempotent_on_overlap_dates(self):
+        service = TikTokAdsService()
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        os.environ["APP_ENV"] = "test"
+        performance_reports_store._memory_rows.clear()
+
+        original_access = service._access_token_with_source
+        original_resolve_ids = service._resolve_target_account_ids
+        original_probe = service._probe_selected_advertiser_access
+        original_fetch = service._fetch_account_daily_metrics
+        original_snapshot_upsert = tiktok_snapshot_store.upsert_snapshot
+        try:
+            service._access_token_with_source = lambda: ("tok", "database", None)
+            service._resolve_target_account_ids = lambda **kwargs: ["401"]
+            service._probe_selected_advertiser_access = lambda **kwargs: {"status": "ok"}
+
+            def _fetch(**kwargs):
+                start = kwargs.get("start_date")
+                if start == date(2026, 3, 1):
+                    days = [1, 2, 3]
+                    overlap_spend = 20.0
+                else:
+                    days = [2, 3, 4]
+                    overlap_spend = 99.0
+                rows = []
+                for day in days:
+                    spend = overlap_spend if day in (2, 3) else float(day)
+                    rows.append(
+                        TikTokDailyMetric(
+                            report_date=date(2026, 3, day),
+                            account_id="401",
+                            spend=spend,
+                            impressions=100,
+                            clicks=5,
+                            conversions=1.0,
+                            conversion_value=12.0,
+                            extra_metrics={"tiktok_ads": {"provider_identity_candidates": ["401"]}},
+                        )
+                    )
+                return rows
+
+            service._fetch_account_daily_metrics = _fetch
+            tiktok_snapshot_store.upsert_snapshot = lambda **kwargs: None
+
+            service.sync_client(client_id=1, start_date=date(2026, 3, 1), end_date=date(2026, 3, 3), grain="account_daily", account_id="401")
+            service.sync_client(client_id=1, start_date=date(2026, 3, 2), end_date=date(2026, 3, 4), grain="account_daily", account_id="401")
+        finally:
+            service._access_token_with_source = original_access
+            service._resolve_target_account_ids = original_resolve_ids
+            service._probe_selected_advertiser_access = original_probe
+            service._fetch_account_daily_metrics = original_fetch
+            tiktok_snapshot_store.upsert_snapshot = original_snapshot_upsert
+
+        rows = [row for row in performance_reports_store._memory_rows if row.get("platform") == "tiktok_ads" and row.get("customer_id") == "401"]
+        by_day = {row.get("report_date"): row for row in rows}
+        self.assertEqual(sorted(by_day.keys()), ["2026-03-01", "2026-03-02", "2026-03-03", "2026-03-04"])
+        self.assertEqual(by_day["2026-03-02"].get("spend"), 99.0)
+        self.assertEqual(by_day["2026-03-03"].get("spend"), 99.0)
+
+    def test_sync_client_account_daily_collapses_duplicate_candidates_in_single_batch(self):
+        service = TikTokAdsService()
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        os.environ["APP_ENV"] = "test"
+        performance_reports_store._memory_rows.clear()
+
+        original_access = service._access_token_with_source
+        original_resolve_ids = service._resolve_target_account_ids
+        original_probe = service._probe_selected_advertiser_access
+        original_fetch = service._fetch_account_daily_metrics
+        original_snapshot_upsert = tiktok_snapshot_store.upsert_snapshot
+        try:
+            service._access_token_with_source = lambda: ("tok", "database", None)
+            service._resolve_target_account_ids = lambda **kwargs: ["401"]
+            service._probe_selected_advertiser_access = lambda **kwargs: {"status": "ok"}
+            service._fetch_account_daily_metrics = lambda **kwargs: [
+                TikTokDailyMetric(
+                    report_date=date(2026, 3, 5),
+                    account_id="401",
+                    spend=11.0,
+                    impressions=100,
+                    clicks=5,
+                    conversions=1.0,
+                    conversion_value=12.0,
+                    extra_metrics={"tiktok_ads": {"provider_identity_candidates": ["401"]}},
+                ),
+                TikTokDailyMetric(
+                    report_date=date(2026, 3, 5),
+                    account_id="401",
+                    spend=22.0,
+                    impressions=200,
+                    clicks=7,
+                    conversions=2.0,
+                    conversion_value=18.0,
+                    extra_metrics={"tiktok_ads": {"provider_identity_candidates": ["401"]}},
+                ),
+            ]
+            tiktok_snapshot_store.upsert_snapshot = lambda **kwargs: None
+
+            payload = service.sync_client(client_id=1, start_date=date(2026, 3, 5), end_date=date(2026, 3, 5), grain="account_daily", account_id="401")
+        finally:
+            service._access_token_with_source = original_access
+            service._resolve_target_account_ids = original_resolve_ids
+            service._probe_selected_advertiser_access = original_probe
+            service._fetch_account_daily_metrics = original_fetch
+            tiktok_snapshot_store.upsert_snapshot = original_snapshot_upsert
+
+        rows = [row for row in performance_reports_store._memory_rows if row.get("platform") == "tiktok_ads" and row.get("customer_id") == "401" and row.get("report_date") == "2026-03-05"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].get("spend"), 22.0)
+        self.assertEqual(payload.get("rows_written"), 1)
+        warnings = payload.get("account_daily_identity_warnings") or []
+        self.assertTrue(any(item.get("action") == "collapsed_duplicate_write_candidates" for item in warnings))
+
+    def test_sync_client_account_daily_ambiguous_identity_still_skips_persistence(self):
+        service = TikTokAdsService()
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+        os.environ["APP_ENV"] = "test"
+        performance_reports_store._memory_rows.clear()
+
+        original_access = service._access_token_with_source
+        original_resolve_ids = service._resolve_target_account_ids
+        original_probe = service._probe_selected_advertiser_access
+        original_fetch = service._fetch_account_daily_metrics
+        original_snapshot_upsert = tiktok_snapshot_store.upsert_snapshot
+        try:
+            service._access_token_with_source = lambda: ("tok", "database", None)
+            service._resolve_target_account_ids = lambda **kwargs: ["401"]
+            service._probe_selected_advertiser_access = lambda **kwargs: {"status": "ok"}
+            service._fetch_account_daily_metrics = lambda **kwargs: [
+                TikTokDailyMetric(
+                    report_date=date(2026, 3, 6),
+                    account_id="401",
+                    spend=10.0,
+                    impressions=100,
+                    clicks=5,
+                    conversions=1.0,
+                    conversion_value=20.0,
+                    extra_metrics={"tiktok_ads": {"provider_identity_candidates": ["401", "999"]}},
+                )
+            ]
+            tiktok_snapshot_store.upsert_snapshot = lambda **kwargs: None
+
+            payload = service.sync_client(client_id=1, start_date=date(2026, 3, 6), end_date=date(2026, 3, 6), grain="account_daily", account_id="401")
+        finally:
+            service._access_token_with_source = original_access
+            service._resolve_target_account_ids = original_resolve_ids
+            service._probe_selected_advertiser_access = original_probe
+            service._fetch_account_daily_metrics = original_fetch
+            tiktok_snapshot_store.upsert_snapshot = original_snapshot_upsert
+
+        rows = [row for row in performance_reports_store._memory_rows if row.get("platform") == "tiktok_ads" and row.get("report_date") == "2026-03-06"]
+        self.assertEqual(rows, [])
+        self.assertEqual(payload.get("rows_written"), 0)
+        warnings = payload.get("account_daily_identity_warnings") or []
+        self.assertTrue(any(item.get("is_ambiguous") is True for item in warnings))
+
+
 if __name__ == "__main__":
     unittest.main()
