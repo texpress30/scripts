@@ -238,3 +238,46 @@
 - For TikTok sync access checks, prefer reusing the exact advertiser discovery request/helper that already succeeds in import flows; avoid introducing a second request shape unless provider docs require it.
 - When debugging provider access failures, explicitly validate env-driven API base/version overrides first (e.g., sandbox vs production base URL) before changing error handling.
 - For TikTok reporting API parity bugs, assert HTTP method at test level (mock rejects non-GET) so 405 regressions are caught before runtime.
+- 2026-03-10: După feedback "unsatisfied", evită PR-uri de bookkeeping/docs-only; livrează fixul tehnic cerut cu modificări reale de cod + teste înainte de commit/PR.
+- 2026-03-10: Pentru TikTok report/integrated/get, validează strict compatibilitatea `data_level` + `dimensions` din erorile runtime reale; evită dimensiuni descriptive (nume/ierarhii) în request dacă providerul le respinge.
+- 2026-03-10: Pentru TikTok reporting pe mai multe iterații, verifică explicit la fiecare grain atât dimensions cât și metrics (nu doar una din axe), pe baza ultimelor erori runtime observate.
+- 2026-03-10: Pentru sync-uri provider cu `rows_written=0`, instrumentează separat `rows_downloaded/provider_row_count` și marker semantic (provider empty vs parsed-but-zero-mapped) în metadata de chunk/run, altfel UI nu poate distinge no-data de bug de mapping.
+- 2026-03-10: Pentru run cards/detail logs, nu reda mesaje de eroare pentru statusuri `done/success/completed`; stale error metadata trebuie suprimată la serializare/derivare UI ca să eviți `Category: run failed` fals.
+- 2026-03-10: După feedback pe TikTok all-zero runs, tratează explicit `no_data_success` ca status operațional separat (backend + UI badge) și livrează diagnostic request-parity complet (`report_type`/`service_type`/`query_mode`) înainte de închidere.
+- 2026-03-10: Pentru endpoint-uri de logs/diagnostics, validează explicit serializarea runtime pe payloaduri observability-rich și evită variabile nedefinite în serializer (ex. `is_success` în `_serialize_chunk`) prin teste dedicate endpoint/helper.
+- 2026-03-10: După feedback repetat pe Show logs, include neapărat un test API end-to-end pentru endpointul afectat (`/agency/sync-runs/{jobId}/chunks`) cu metadata observability reală + assertions anti-token-leak, nu doar teste pe helper intern.
+- 2026-03-10: Pentru TikTok reporting, tratează explicit shape-uri nested variabile (`dimensions`/`metrics` dict sau list entries) și separă semantic `parser_failure` (provider rows > 0, mapped 0) de `no_data_success`, altfel rule-uri cu date reale apar fals ca succes fără date.
+- 2026-03-10: Pentru run summaries care afișează counters derivați din chunk metadata (ex. TikTok rows_downloaded/rows_mapped), reconciliază explicit agregarea server-side din chunks (cu dedupe pe chunk_index) înainte de serializare, altfel UI poate afișa 0/0 deși chunk logs au valori.
+- 2026-03-10: După feedback pe statusuri TikTok stale, rezolvarea trebuie să fie cleanup real de date (ștergere run/chunk supersedate + reconciliere metadata), nu doar suprimare UI a erorilor vechi.
+- 2026-03-10: Pentru cleanup-uri de date sensibile la matching, livrează nu doar regula de delete ci și diagnostics explicite pe non-match (reason-per-run în dry-run), altfel debugging în producție rămâne opac.
+- 2026-03-10: Pentru cleanup matcher pe run-uri istorice, evită ordonarea de supersede pe `updated_at` ca semnal principal; folosește cronologia run-ului (`finished_at`/`started_at`/`created_at`) ca să nu blochezi ștergerea failure-urilor legacy.
+- 2026-03-10: Pentru parity cross-platform în Agency Accounts list, verifică întâi mapper-ul frontend unificat; dacă backend are câmpurile dar UI afișează '-', cauza poate fi strict de mapping nul hardcodat.
+- 2026-03-10: Pentru Meta Ads, `conversions` nu trebuie derivat din suma tuturor action types; folosește allowlist explicit lead-only și păstrează separat `conversion_value` ca metrică distinctă.
+- 2026-03-11: După feedback pe Meta conversions dublate, pentru action metrics cu aliasuri lead-like trebuie aleasă o singură sursă canonică prin prioritate explicită și instrumentată minim (`selected/found/values`), nu sumare peste toate aliasurile.
+- 2026-03-11: Pentru dashboard-uri multi-currency, nu agrega direct valori monetare native; normalizează per-row cu FX pe dată către moneda de prezentare (Agency=RON, Sub-account=moneda clientului), apoi calculează ROAS din valorile normalizate.
+- 2026-03-11: Pentru backfill-uri chunked cu snapshot-uri derivate, nu actualiza snapshotul final doar din ultimul chunk; reconstruiește explicit snapshotul din întreaga fereastră account_daily după finalizare și tratează retry pentru 5xx tranziente provider.
+- 2026-03-11: Pentru Meta money normalization, nu folosi exclusiv mapping/client currency ca sursă; preferă currency per-row din extra_metrics când disponibil (ex. `meta_ads.account_currency`) pentru a evita dublă conversie RON->RON via USD fallback.
+- 2026-03-11: Pentru schimbări UI locale pe pagină de sub-dashboard, modifică strict headerul paginii (fără side effects în sidebar global) și validează explicit link-uri noi + eliminări prin test component.
+- 2026-03-11: După feedback pe link-uri noi în sub-dashboard, când adaugi navigare către rute inexistente, livrează în același schimb și paginile destinație (scaffold minim + layout consistent), nu lăsa link-uri care dau 404.
+- 2026-03-11: După feedback pe feature scaffold incomplet, când introduci o fundație de produs (ex. Media Buying), livrează vertical slice complet pe scope-ul cerut (DB + store + API + validări + teste), nu doar placeholder UI.
+- 2026-03-11: Pentru taskuri incremental-backend pe același feature, când userul cere "pasul 2 read-side", livrează endpoint-ul final orientat UI (days + month groups + metadata) și recalcul formule la nivel de group, nu doar query brut de date zilnice.
+- 2026-03-11: După feedback pe Media Buying step 3, pentru taskuri UI read-only pe endpointuri noi, livrează componenta finală cu states complete (loading/error/empty/non-supported), grouping cerut și teste de interacțiune (expand/collapse), nu doar înlocuire minimală de placeholder.
+- 2026-03-11: Pentru Media Buying editabil în tabel, evită update-uri locale parțiale ale formulelor; după save pe rând zilnic preferă refetch complet al tabelului pentru consistență între rânduri zilnice și totaluri lunare.
+
+## 2026-03-11 — When user says previous code was unsatisfactory
+- Immediately add targeted regression tests that reflect the exact UX acceptance language (format/style/order), before finishing.
+- Verify selectors avoid ambiguous text matches when UI introduces editable headers or repeated labels.
+
+
+## 2026-03-12 — After user says previous change still unsatisfactory
+- Narrow follow-up scope to the explicit remaining business requirement (here `%^`) and avoid unrelated refactors.
+- Ensure backend formulas are validated with deterministic tests first, then wire UI rendering to those results.
+
+## 2026-03-12 — Dependency compatibility hotfixes for deployment
+- When a hosted build fails due to interpreter mismatch (e.g., Python 3.13 vs dependency support), pin interpreter version first in deploy/runtime config before touching dependency versions.
+- Keep hotfix scope to deployment compatibility and avoid package upgrades unless explicitly requested.
+
+## 2026-03-12 — UI semantics + persisted views follow-up
+- When user corrects business semantics for displayed metrics, implement source-of-truth derivation in backend payload first, then style in UI.
+- For table customization features, persist server-side per-client view config (not browser-only) and guard essential columns from being hidden.
+- 2026-03-12: După feedback că schimbarea anterioară nu a fost satisfăcătoare pe Media Buying UI, livrează strict pe cerința rămasă (styling custom columns) fără modificări de logică/formule și validează explicit că restul coloanelor își păstrează stilul existent prin teste dedicate.
