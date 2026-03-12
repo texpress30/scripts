@@ -1,3 +1,17 @@
+# TODO — TikTok account_daily write-side idempotency hardening
+
+- [x] Refresh workspace and document remote divergence constraints.
+- [ ] Inspect TikTok sync + persistence write path and current sync error/status propagation.
+- [ ] Add focused TikTok canonical persistence identity resolver for account_daily writes.
+- [ ] Enforce deterministic/idempotent TikTok account_daily writes across reruns/overlaps and add ambiguity guardrails with explicit errors.
+- [ ] Add targeted TikTok tests for rerun idempotency, rolling overlap, ambiguity, and error visibility (without Meta changes).
+- [ ] Run backend tests and document outcomes.
+
+## Review
+- [ ] Pending.
+
+---
+
 # TODO — Platform sync write-side audit endpoint (Meta/TikTok)
 
 - [x] Refresh workspace and document remote divergence constraints.
