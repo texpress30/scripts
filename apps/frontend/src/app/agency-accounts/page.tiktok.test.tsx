@@ -57,6 +57,33 @@ describe("AgencyAccountsPage TikTok historical progress UX", () => {
     expect(await screen.findByText(/Batch status: running/i)).toBeInTheDocument();
   });
 
+
+  it("shows completion message with effective TikTok last-year window", async () => {
+    let pollCount = 0;
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients") return Promise.resolve({ items: [{ id: 1, name: "Client A", owner_email: "a@x.com", display_id: 1 }] });
+      if (path === "/clients/accounts/summary") return Promise.resolve({ items: [{ platform: "google_ads", connected_count: 1, last_import_at: null }, { platform: "tiktok_ads", connected_count: 1, last_import_at: null }] });
+      if (path === "/clients/accounts/google") return Promise.resolve({ items: [{ id: "g_1", name: "G1", attached_client_id: 1, attached_client_name: "Client A" }], count: 1 });
+      if (path === "/clients/accounts/tiktok_ads") return Promise.resolve({ items: [{ id: "tt_attached", name: "TikTok One", client_id: 1, client_name: "Client A" }], count: 1 });
+      if (path === "/agency/sync-runs/batch") return Promise.resolve({ batch_id: "tt-batch-msg" });
+      if (path === "/agency/sync-runs/batch/tt-batch-msg") {
+        pollCount += 1;
+        if (pollCount === 1) return Promise.resolve({ batch_id: "tt-batch-msg", progress: { total_runs: 1, queued: 0, running: 1, done: 0, error: 0, percent: 50 }, runs: [{ account_id: "tt_attached", status: "running" }] });
+        return Promise.resolve({ batch_id: "tt-batch-msg", progress: { total_runs: 1, queued: 0, running: 0, done: 1, error: 0, percent: 100 }, runs: [{ account_id: "tt_attached", status: "done" }] });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /TikTok Ads/i }));
+    fireEvent.click(await screen.findByTestId("row-select-tt_attached"));
+    fireEvent.click(await screen.findByRole("button", { name: "Download historical" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Date istorice TikTok \(ultimul an\) descărcate începând cu/i)).toBeInTheDocument();
+    }, { timeout: 5000 });
+  });
+
   it("completion reloads tiktok rows after loadData", async () => {
     let pollCount = 0;
     let tiktokLoads = 0;
@@ -201,6 +228,31 @@ describe("AgencyAccountsPage TikTok historical progress UX", () => {
     expect(screen.queryByText(/TikTok sync este dezactivat în acest environment/i)).not.toBeInTheDocument();
     const button = await screen.findByRole("button", { name: "Download historical" });
     expect(button).not.toBeDisabled();
+  });
+
+
+  it("shows effective historical start label for TikTok rows (last-year cap)", async () => {
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients") return Promise.resolve({ items: [{ id: 1, name: "Client A", owner_email: "a@x.com", display_id: 1 }] });
+      if (path === "/clients/accounts/summary") return Promise.resolve({ items: [{ platform: "google_ads", connected_count: 1, last_import_at: null }, { platform: "tiktok_ads", connected_count: 1, last_import_at: null }] });
+      if (path === "/clients/accounts/google") return Promise.resolve({ items: [{ id: "g_1", name: "G1", attached_client_id: 1, attached_client_name: "Client A" }], count: 1 });
+      if (path === "/clients/accounts/tiktok_ads") {
+        return Promise.resolve({ items: [{ id: "tt_attached", name: "TikTok One", client_id: 1, client_name: "Client A", sync_start_date: "2024-09-01" }], count: 1 });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /TikTok Ads/i }));
+
+    const now = new Date();
+    const oneYearAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 365);
+    const y = oneYearAgo.getFullYear();
+    const m = String(oneYearAgo.getMonth() + 1).padStart(2, "0");
+    const d = String(oneYearAgo.getDate()).padStart(2, "0");
+    const expectedStart = `${y}-${m}-${d}`;
+
+    expect(await screen.findByText(`Start istoric efectiv (ultimul an): ${expectedStart}`)).toBeInTheDocument();
   });
 
   it("hides stale feature-flag recent error when TikTok sync is currently enabled", async () => {
