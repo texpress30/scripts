@@ -3495,3 +3495,21 @@
 - [x] Fix applied: keep source-of-truth `ad_performance_reports` + strict `account_daily` grain; enforce mapping membership with temporal validity in `_list_automated_daily_costs`, and reorder currency fallback to `row extra_metrics -> agency_platform_accounts.currency_code -> mapping.account_currency -> RON`.
 - [x] Verified via regressions including explicit TikTok pattern (`805.85` and `50.40` in RON stay unchanged for RON display) and SQL assertions for mapping/date guard + currency precedence.
 - [x] Verification command: `pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py apps/backend/tests/test_clients_platform_account_mappings.py apps/backend/tests/test_dashboard_currency_normalization.py` (pass).
+
+---
+
+# TODO — Sub-account Dashboard critical fix: align platform totals with Media Buying source-of-truth
+
+- [x] Sync workspace attempts before changes (`git fetch --all --prune`, `git pull --ff-only`) and proceed on latest local state.
+- [x] Audit Sub-account Dashboard read path (`UnifiedDashboardService.get_client_dashboard`) and identify source query/currency/membership/grain behavior.
+- [x] Align client dashboard query to account_daily + mapping membership validity + correct currency precedence (same correctness contract as Media Buying).
+- [x] Keep UI contract unchanged; backend-only read path fix.
+- [x] Add regressions for query semantics, TikTok RON non-reconversion, and dashboard-vs-media-buying spend consistency.
+- [x] Run relevant backend tests for dashboard/media buying/mappings/currency.
+
+## Review
+- [x] Root cause (Sub-account Dashboard): `_client_reports_query` used a lateral/coalesce path (`COALESCE(apr.client_id, mapped.client_id)`) without strict account_daily filter and without mapping validity bound. This could include stale rows, cross-client attribution via `apr.client_id`, and invalid pre-mapping periods.
+- [x] Root cause TikTok overestimation in dashboard: currency fallback prioritized mapping/client-level currency over account-level source currency; when row currency was missing this could reconvert RON spends as if foreign currency.
+- [x] Fix: dashboard client query now uses `ad_performance_reports` + direct `agency_account_client_mappings` join (`mapped.client_id = %s`, `mapped.created_at::date <= apr.report_date`, account match), strict account_daily filter, and currency precedence `row extra_metrics -> agency_platform_accounts.currency_code -> mapping.account_currency -> RON`.
+- [x] Result: platform totals use same correctness contract as Media Buying read-side (source + grain + membership + currency single-pass normalization).
+- [x] Verification: `pytest -q apps/backend/tests/test_dashboard_currency_normalization.py apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_platform_account_mappings.py apps/backend/tests/test_clients_media_buying_api.py apps/backend/tests/test_dashboard_agency_summary_integration_health.py` (pass).

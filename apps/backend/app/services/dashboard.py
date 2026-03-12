@@ -229,53 +229,48 @@ class UnifiedDashboardService:
 
     def _client_reports_query(self) -> str:
         return """
-                        WITH perf AS (
-                            SELECT
-                                apr.platform,
-                                apr.report_date,
-                                COALESCE(
-                                    NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') ELSE '' END), ''),
-                                    NULLIF(TRIM(mapped.account_currency), ''),
-                                    NULLIF(TRIM(client.currency), ''),
-                                    'RON'
-                                ) AS account_currency,
-                                COALESCE(apr.client_id, mapped.client_id) AS resolved_client_id,
-                                apr.spend,
-                                apr.impressions,
-                                apr.clicks,
-                                apr.conversions,
-                                apr.conversion_value,
-                                COALESCE(apr.extra_metrics, '{}'::jsonb) AS extra_metrics
-                            FROM ad_performance_reports apr
-                            LEFT JOIN LATERAL (
-                                SELECT m.client_id, m.account_currency
-                                FROM agency_account_client_mappings m
-                                WHERE m.platform = apr.platform
-                                  AND (
-                                      m.account_id = apr.customer_id
-                                      OR (
-                                          apr.platform = 'google_ads'
-                                          AND regexp_replace(m.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
-                                      )
-                                  )
-                                ORDER BY m.updated_at DESC, m.created_at DESC
-                                LIMIT 1
-                            ) mapped ON TRUE
-                            LEFT JOIN agency_clients client ON client.id = COALESCE(apr.client_id, mapped.client_id)
-                        )
                         SELECT
-                            platform,
-                            report_date,
-                            account_currency,
-                            COALESCE(spend, 0),
-                            COALESCE(impressions, 0),
-                            COALESCE(clicks, 0),
-                            COALESCE(conversions, 0),
-                            COALESCE(conversion_value, 0),
-                            extra_metrics
-                        FROM perf
-                        WHERE resolved_client_id = %s
-                          AND report_date BETWEEN %s AND %s
+                            apr.platform,
+                            apr.report_date,
+                            COALESCE(
+                                NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'account_currency', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'account_currency', '') ELSE '' END), ''),
+                                NULLIF(TRIM(apa.currency_code), ''),
+                                NULLIF(TRIM(mapped.account_currency), ''),
+                                'RON'
+                            ) AS account_currency,
+                            COALESCE(apr.spend, 0),
+                            COALESCE(apr.impressions, 0),
+                            COALESCE(apr.clicks, 0),
+                            COALESCE(apr.conversions, 0),
+                            COALESCE(apr.conversion_value, 0),
+                            COALESCE(apr.extra_metrics, '{}'::jsonb) AS extra_metrics
+                        FROM ad_performance_reports apr
+                        JOIN agency_account_client_mappings mapped
+                          ON mapped.platform = apr.platform
+                         AND mapped.client_id = %s
+                         AND mapped.created_at::date <= apr.report_date
+                         AND (
+                              mapped.account_id = apr.customer_id
+                              OR (
+                                  apr.platform = 'google_ads'
+                                  AND regexp_replace(mapped.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                              )
+                         )
+                        LEFT JOIN agency_platform_accounts apa
+                          ON apa.platform = apr.platform
+                         AND (
+                              apa.account_id = apr.customer_id
+                              OR (
+                                  apr.platform = 'google_ads'
+                                  AND regexp_replace(apa.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                              )
+                         )
+                        WHERE apr.report_date BETWEEN %s AND %s
+                          AND apr.platform IN ('google_ads', 'meta_ads', 'tiktok_ads', 'pinterest_ads', 'snapchat_ads')
+                          AND COALESCE(
+                              NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'grain', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'grain', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'grain', '') ELSE '' END), ''),
+                              'account_daily'
+                          ) = 'account_daily'
                         """
 
 
