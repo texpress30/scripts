@@ -19,6 +19,7 @@ from app.services.entity_performance_reports import (
 )
 from app.services.integration_secrets_store import integration_secrets_store
 from app.services.performance_reports import performance_reports_store
+from app.services.tiktok_account_daily_identity_resolver import resolve_tiktok_account_daily_persistence_identity
 from app.services.tiktok_store import tiktok_snapshot_store
 
 try:
@@ -1204,6 +1205,19 @@ class TikTokAdsService:
                         "tiktok_ads": {
                             "dimensions": dimensions,
                             "metrics": metrics,
+                            "provider_identity_candidates": [
+                                str(value).strip()
+                                for value in (
+                                    account_id,
+                                    dimensions.get("advertiser_id"),
+                                    dimensions.get("customer_id"),
+                                    dimensions.get("account_id"),
+                                    item.get("advertiser_id"),
+                                    item.get("customer_id"),
+                                    item.get("account_id"),
+                                )
+                                if str(value or "").strip() != ""
+                            ],
                             "source": "report.integrated.get",
                             "grain": "account_daily",
                         }
@@ -1971,6 +1985,7 @@ class TikTokAdsService:
         rows_downloaded = 0
         rows_mapped = 0
         zero_row_observability: list[dict[str, object]] = []
+        account_daily_identity_warnings: list[dict[str, object]] = []
         totals = {
             "spend": 0.0,
             "impressions": 0,
@@ -1996,11 +2011,41 @@ class TikTokAdsService:
                 rows_mapped += int(fetch_stats.get("rows_mapped") or 0)
                 if fetch_stats.get("zero_row_marker") is not None:
                     zero_row_observability.append(fetch_stats)
+                provider_ids_in_scope: list[str] = []
+                for row in daily_rows:
+                    provider_ids_in_scope.append(self._normalize_account_id(row.account_id))
+                    tiktok_meta = row.extra_metrics.get("tiktok_ads") if isinstance(row.extra_metrics, dict) else None
+                    if isinstance(tiktok_meta, dict):
+                        candidates = tiktok_meta.get("provider_identity_candidates")
+                        if isinstance(candidates, list):
+                            for candidate in candidates:
+                                normalized_candidate = self._normalize_account_id(candidate)
+                                if normalized_candidate != "":
+                                    provider_ids_in_scope.append(normalized_candidate)
+
+                identity_resolution = resolve_tiktok_account_daily_persistence_identity(
+                    attached_account_id=account_id,
+                    provider_ids_in_scope=provider_ids_in_scope,
+                )
+                if identity_resolution.is_ambiguous or identity_resolution.canonical_persistence_customer_id is None:
+                    account_daily_identity_warnings.append(
+                        {
+                            "account_id": account_id,
+                            "canonical_persistence_customer_id": identity_resolution.canonical_persistence_customer_id,
+                            "identity_source": identity_resolution.identity_source,
+                            "provider_ids_seen": list(identity_resolution.provider_ids_seen),
+                            "is_ambiguous": identity_resolution.is_ambiguous,
+                            "ambiguity_reason": identity_resolution.ambiguity_reason,
+                            "action": "skipped_account_daily_persistence",
+                        }
+                    )
+                    continue
+
                 for row in daily_rows:
                     performance_reports_store.write_daily_report(
                         report_date=row.report_date,
                         platform="tiktok_ads",
-                        customer_id=row.account_id,
+                        customer_id=identity_resolution.canonical_persistence_customer_id,
                         client_id=int(client_id),
                         spend=row.spend,
                         impressions=row.impressions,
@@ -2127,6 +2172,7 @@ class TikTokAdsService:
             "rows_mapped": rows_mapped,
             "rows_written": rows_written,
             "zero_row_observability": zero_row_observability,
+            "account_daily_identity_warnings": account_daily_identity_warnings,
             "token_source": token_source,
             **snapshot,
         }

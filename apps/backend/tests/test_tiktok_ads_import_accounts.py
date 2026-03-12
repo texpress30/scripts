@@ -6,7 +6,8 @@ from urllib import parse as urlparse
 
 from app.api import tiktok_ads as tiktok_ads_api
 from app.services.auth import AuthUser
-from app.services.tiktok_ads import TikTokAdsIntegrationError, TikTokAdsService
+from app.services.performance_reports import performance_reports_store
+from app.services.tiktok_ads import TikTokAdsIntegrationError, TikTokAdsService, TikTokDailyMetric
 from app.services.tiktok_store import tiktok_snapshot_store
 
 
@@ -825,6 +826,155 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
         self.assertEqual((observability[0].get("missing_required_breakdown") or {}).get("ad_id"), 1)
         self.assertIn("code", observability[0].get("response_top_level_keys") or [])
         self.assertIn("list", observability[0].get("data_container_keys") or [])
+
+    def test_sync_client_account_daily_uses_canonical_identity_for_repeated_provider_id(self):
+        service = TikTokAdsService()
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+
+        writes: list[dict[str, object]] = []
+        original_access = service._access_token_with_source
+        original_resolve_ids = service._resolve_target_account_ids
+        original_probe = service._probe_selected_advertiser_access
+        original_fetch = service._fetch_account_daily_metrics
+        original_write = performance_reports_store.write_daily_report
+        original_snapshot_upsert = tiktok_snapshot_store.upsert_snapshot
+        try:
+            service._access_token_with_source = lambda: ("tok", "database", None)
+            service._resolve_target_account_ids = lambda **kwargs: ["401"]
+            service._probe_selected_advertiser_access = lambda **kwargs: {"status": "ok"}
+            service._fetch_account_daily_metrics = lambda **kwargs: [
+                TikTokDailyMetric(
+                    report_date=date(2026, 3, 1),
+                    account_id="401",
+                    spend=10.0,
+                    impressions=100,
+                    clicks=5,
+                    conversions=1.0,
+                    conversion_value=20.0,
+                    extra_metrics={"tiktok_ads": {"provider_identity_candidates": ["401", " 401 "]}},
+                ),
+                TikTokDailyMetric(
+                    report_date=date(2026, 3, 2),
+                    account_id="401",
+                    spend=12.0,
+                    impressions=120,
+                    clicks=6,
+                    conversions=2.0,
+                    conversion_value=25.0,
+                    extra_metrics={"tiktok_ads": {"provider_identity_candidates": ["401"]}},
+                ),
+            ]
+            performance_reports_store.write_daily_report = lambda **kwargs: writes.append(kwargs)
+            tiktok_snapshot_store.upsert_snapshot = lambda **kwargs: None
+
+            payload = service.sync_client(
+                client_id=1,
+                start_date=date(2026, 3, 1),
+                end_date=date(2026, 3, 2),
+                grain="account_daily",
+                account_id="401",
+            )
+        finally:
+            service._access_token_with_source = original_access
+            service._resolve_target_account_ids = original_resolve_ids
+            service._probe_selected_advertiser_access = original_probe
+            service._fetch_account_daily_metrics = original_fetch
+            performance_reports_store.write_daily_report = original_write
+            tiktok_snapshot_store.upsert_snapshot = original_snapshot_upsert
+
+        self.assertEqual(payload.get("rows_written"), 2)
+        self.assertEqual(payload.get("account_daily_identity_warnings"), [])
+        self.assertEqual(len(writes), 2)
+        self.assertEqual({item.get("customer_id") for item in writes}, {"401"})
+
+    def test_sync_client_account_daily_skips_ambiguous_provider_identities(self):
+        service = TikTokAdsService()
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+
+        writes: list[dict[str, object]] = []
+        original_access = service._access_token_with_source
+        original_resolve_ids = service._resolve_target_account_ids
+        original_probe = service._probe_selected_advertiser_access
+        original_fetch = service._fetch_account_daily_metrics
+        original_write = performance_reports_store.write_daily_report
+        original_snapshot_upsert = tiktok_snapshot_store.upsert_snapshot
+        try:
+            service._access_token_with_source = lambda: ("tok", "database", None)
+            service._resolve_target_account_ids = lambda **kwargs: ["401"]
+            service._probe_selected_advertiser_access = lambda **kwargs: {"status": "ok"}
+            service._fetch_account_daily_metrics = lambda **kwargs: [
+                TikTokDailyMetric(
+                    report_date=date(2026, 3, 1),
+                    account_id="401",
+                    spend=10.0,
+                    impressions=100,
+                    clicks=5,
+                    conversions=1.0,
+                    conversion_value=20.0,
+                    extra_metrics={"tiktok_ads": {"provider_identity_candidates": ["401", "999"]}},
+                )
+            ]
+            performance_reports_store.write_daily_report = lambda **kwargs: writes.append(kwargs)
+            tiktok_snapshot_store.upsert_snapshot = lambda **kwargs: None
+
+            payload = service.sync_client(
+                client_id=1,
+                start_date=date(2026, 3, 1),
+                end_date=date(2026, 3, 1),
+                grain="account_daily",
+                account_id="401",
+            )
+        finally:
+            service._access_token_with_source = original_access
+            service._resolve_target_account_ids = original_resolve_ids
+            service._probe_selected_advertiser_access = original_probe
+            service._fetch_account_daily_metrics = original_fetch
+            performance_reports_store.write_daily_report = original_write
+            tiktok_snapshot_store.upsert_snapshot = original_snapshot_upsert
+
+        self.assertEqual(payload.get("rows_written"), 0)
+        self.assertEqual(writes, [])
+        warnings = payload.get("account_daily_identity_warnings")
+        self.assertIsInstance(warnings, list)
+        self.assertEqual(warnings[0].get("is_ambiguous"), True)
+        self.assertEqual(warnings[0].get("ambiguity_reason"), "conflicting_provider_identities_in_scope")
+
+    def test_sync_client_campaign_daily_unchanged_and_has_no_account_daily_identity_warnings(self):
+        service = TikTokAdsService()
+        os.environ["FF_TIKTOK_INTEGRATION"] = "1"
+
+        original_access = service._access_token_with_source
+        original_resolve_ids = service._resolve_target_account_ids
+        original_probe = service._probe_selected_advertiser_access
+        original_fetch = service._fetch_campaign_daily_metrics
+        original_upsert = service._upsert_campaign_rows
+        original_snapshot_upsert = tiktok_snapshot_store.upsert_snapshot
+        try:
+            service._access_token_with_source = lambda: ("tok", "database", None)
+            service._resolve_target_account_ids = lambda **kwargs: ["401"]
+            service._probe_selected_advertiser_access = lambda **kwargs: {"status": "ok"}
+            service._fetch_campaign_daily_metrics = lambda **kwargs: []
+            service._upsert_campaign_rows = lambda *args, **kwargs: 0
+            tiktok_snapshot_store.upsert_snapshot = lambda **kwargs: None
+
+            payload = service.sync_client(
+                client_id=1,
+                start_date=date(2026, 3, 1),
+                end_date=date(2026, 3, 1),
+                grain="campaign_daily",
+                account_id="401",
+            )
+        finally:
+            service._access_token_with_source = original_access
+            service._resolve_target_account_ids = original_resolve_ids
+            service._probe_selected_advertiser_access = original_probe
+            service._fetch_campaign_daily_metrics = original_fetch
+            service._upsert_campaign_rows = original_upsert
+            tiktok_snapshot_store.upsert_snapshot = original_snapshot_upsert
+
+        self.assertEqual(payload.get("grain"), "campaign_daily")
+        self.assertEqual(payload.get("rows_written"), 0)
+        self.assertEqual(payload.get("account_daily_identity_warnings"), [])
 
 
 if __name__ == "__main__":
