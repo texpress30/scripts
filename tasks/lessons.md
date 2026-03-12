@@ -276,3 +276,7 @@
 ## 2026-03-12 — Dependency compatibility hotfixes for deployment
 - When a hosted build fails due to interpreter mismatch (e.g., Python 3.13 vs dependency support), pin interpreter version first in deploy/runtime config before touching dependency versions.
 - Keep hotfix scope to deployment compatibility and avoid package upgrades unless explicitly requested.
+
+## 2026-03-12 — UI semantics + persisted views follow-up
+- When user corrects business semantics for displayed metrics, implement source-of-truth derivation in backend payload first, then style in UI.
+- For table customization features, persist server-side per-client view config (not browser-only) and guard essential columns from being hidden.

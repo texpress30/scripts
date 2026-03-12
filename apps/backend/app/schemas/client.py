@@ -62,6 +62,7 @@ class MediaBuyingConfigUpdateRequest(BaseModel):
     custom_rate_label_2: str | None = None
     custom_cost_label_1: str | None = None
     custom_cost_label_2: str | None = None
+    visible_columns: list[str] | None = None
     enabled: bool | None = None
 
 

@@ -27,6 +27,30 @@ _DEFAULT_LABELS = {
     "custom_cost_label_2": "Cost Custom Value 2",
 }
 
+_DEFAULT_VISIBLE_COLUMNS = [
+    "date",
+    "cost_google",
+    "cost_meta",
+    "cost_tiktok",
+    "cost_total",
+    "percent_change",
+    "leads",
+    "phones",
+    "total_leads",
+    "custom_value_1_count",
+    "custom_value_2_count",
+    "custom_value_3_amount_ron",
+    "custom_value_4_amount_ron",
+    "custom_value_5_amount_ron",
+    "sales_count",
+    "custom_value_rate_1",
+    "custom_value_rate_2",
+    "cost_per_lead",
+    "cost_custom_value_1",
+    "cost_custom_value_2",
+    "cost_per_sale",
+]
+
 
 class MediaBuyingStore:
     def __init__(self) -> None:
@@ -76,6 +100,17 @@ class MediaBuyingStore:
             return fallback
         return normalized[:120]
 
+    def _normalize_visible_columns(self, value: object, *, fallback: list[str]) -> list[str]:
+        if not isinstance(value, list):
+            return list(fallback)
+        allowed = set(_DEFAULT_VISIBLE_COLUMNS)
+        normalized: list[str] = []
+        for item in value:
+            key = str(item or "").strip()
+            if key in allowed and key not in normalized:
+                normalized.append(key)
+        return normalized or list(fallback)
+
     def _parse_non_negative_int(self, value: object, *, field_name: str) -> int:
         if value is None:
             return 0
@@ -114,9 +149,10 @@ class MediaBuyingStore:
             "custom_rate_label_2": str(row[9]),
             "custom_cost_label_1": str(row[10]),
             "custom_cost_label_2": str(row[11]),
-            "enabled": bool(row[12]),
-            "created_at": str(row[13]) if row[13] is not None else None,
-            "updated_at": str(row[14]) if row[14] is not None else None,
+            "visible_columns": self._normalize_visible_columns(row[12], fallback=_DEFAULT_VISIBLE_COLUMNS),
+            "enabled": bool(row[13]),
+            "created_at": str(row[14]) if row[14] is not None else None,
+            "updated_at": str(row[15]) if row[15] is not None else None,
         }
 
     def _daily_from_row(self, row: tuple[object, ...]) -> dict[str, object]:
@@ -240,8 +276,8 @@ class MediaBuyingStore:
         cv1 = int(manual_row.get("custom_value_1_count", 0)) if isinstance(manual_row, dict) else 0
         cv2 = int(manual_row.get("custom_value_2_count", 0)) if isinstance(manual_row, dict) else 0
         cv3_ron = float(manual_row.get("custom_value_3_amount_ron", 0.0)) if isinstance(manual_row, dict) else 0.0
-        cv4_ron = float(manual_row.get("custom_value_4_amount_ron", 0.0)) if isinstance(manual_row, dict) else 0.0
         cv5_ron = float(manual_row.get("custom_value_5_amount_ron", 0.0)) if isinstance(manual_row, dict) else 0.0
+        cv4_ron = max(round(cv3_ron, 2) - round(cv5_ron, 2), 0.0)
         sales_count = int(manual_row.get("sales_count", 0)) if isinstance(manual_row, dict) else 0
 
         cost_google = round(float(daily_costs.get("google_ads", 0.0)), 2)
@@ -307,7 +343,7 @@ class MediaBuyingStore:
                 "custom_value_1_count": int(sums["custom_value_1_count"]),
                 "custom_value_2_count": int(sums["custom_value_2_count"]),
                 "custom_value_3_amount_ron": round(sums["custom_value_3_amount_ron"], 2),
-                "custom_value_4_amount_ron": round(sums["custom_value_4_amount_ron"], 2),
+                "custom_value_4_amount_ron": max(round(sums["custom_value_3_amount_ron"], 2) - round(sums["custom_value_5_amount_ron"], 2), 0.0),
                 "custom_value_5_amount_ron": round(sums["custom_value_5_amount_ron"], 2),
                 "sales_count": int(sums["sales_count"]),
                 "custom_value_rate_1": self._safe_div(float(sums["sales_count"]), float(sums["custom_value_1_count"])),
@@ -424,6 +460,7 @@ class MediaBuyingStore:
                 "custom_rate_label_2": str(config.get("custom_rate_label_2") or _DEFAULT_LABELS["custom_rate_label_2"]),
                 "custom_cost_label_1": str(config.get("custom_cost_label_1") or _DEFAULT_LABELS["custom_cost_label_1"]),
                 "custom_cost_label_2": str(config.get("custom_cost_label_2") or _DEFAULT_LABELS["custom_cost_label_2"]),
+                "visible_columns": self._normalize_visible_columns(config.get("visible_columns"), fallback=_DEFAULT_VISIBLE_COLUMNS),
                 "date_from": date_from.isoformat(),
                 "date_to": date_to.isoformat(),
                 "available_months": [item["month"] for item in months],
@@ -452,6 +489,7 @@ class MediaBuyingStore:
                         custom_rate_label_2,
                         custom_cost_label_1,
                         custom_cost_label_2,
+                        visible_columns,
                         enabled,
                         created_at,
                         updated_at
@@ -480,6 +518,7 @@ class MediaBuyingStore:
             "custom_rate_label_2": _DEFAULT_LABELS["custom_rate_label_2"],
             "custom_cost_label_1": _DEFAULT_LABELS["custom_cost_label_1"],
             "custom_cost_label_2": _DEFAULT_LABELS["custom_cost_label_2"],
+            "visible_columns": list(_DEFAULT_VISIBLE_COLUMNS),
             "enabled": True,
             "created_at": None,
             "updated_at": None,
@@ -500,6 +539,7 @@ class MediaBuyingStore:
         custom_rate_label_2: str | None = None,
         custom_cost_label_1: str | None = None,
         custom_cost_label_2: str | None = None,
+        visible_columns: list[str] | None = None,
         enabled: bool | None = None,
     ) -> dict[str, object]:
         self._ensure_schema()
@@ -526,9 +566,10 @@ class MediaBuyingStore:
                         custom_rate_label_2,
                         custom_cost_label_1,
                         custom_cost_label_2,
+                        visible_columns,
                         enabled
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (client_id)
                     DO UPDATE SET
                         template_type = EXCLUDED.template_type,
@@ -542,6 +583,7 @@ class MediaBuyingStore:
                         custom_rate_label_2 = EXCLUDED.custom_rate_label_2,
                         custom_cost_label_1 = EXCLUDED.custom_cost_label_1,
                         custom_cost_label_2 = EXCLUDED.custom_cost_label_2,
+                        visible_columns = EXCLUDED.visible_columns,
                         enabled = EXCLUDED.enabled,
                         updated_at = NOW()
                     """,
@@ -558,6 +600,7 @@ class MediaBuyingStore:
                         self._normalize_label(custom_rate_label_2, fallback=str(current.get("custom_rate_label_2") or _DEFAULT_LABELS["custom_rate_label_2"])),
                         self._normalize_label(custom_cost_label_1, fallback=str(current.get("custom_cost_label_1") or _DEFAULT_LABELS["custom_cost_label_1"])),
                         self._normalize_label(custom_cost_label_2, fallback=str(current.get("custom_cost_label_2") or _DEFAULT_LABELS["custom_cost_label_2"])),
+                        self._normalize_visible_columns(visible_columns, fallback=self._normalize_visible_columns(current.get("visible_columns"), fallback=_DEFAULT_VISIBLE_COLUMNS)),
                         bool(current["enabled"]) if enabled is None else bool(enabled),
                     ),
                 )

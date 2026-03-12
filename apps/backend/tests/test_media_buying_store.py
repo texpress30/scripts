@@ -26,7 +26,7 @@ class _MediaBuyingCursor:
             client_id = int(params[0])
             configs = self.state.setdefault("configs", {})
             previous = configs.get(client_id)
-            created_at = previous[13] if previous else "2026-03-11T10:00:00+00:00"
+            created_at = previous[14] if previous else "2026-03-11T10:00:00+00:00"
             updated_at = "2026-03-11T11:00:00+00:00"
             configs[client_id] = (
                 client_id,
@@ -41,7 +41,8 @@ class _MediaBuyingCursor:
                 params[9],
                 params[10],
                 params[11],
-                bool(params[12]),
+                params[12],
+                bool(params[13]),
                 created_at,
                 updated_at,
             )
@@ -163,6 +164,7 @@ class MediaBuyingStoreTests(unittest.TestCase):
             custom_rate_label_2="Rate B",
             custom_cost_label_1="Cost A",
             custom_cost_label_2="Cost B",
+            visible_columns=["date", "cost_total"],
         )
 
         self.assertEqual(cfg["template_type"], "programmatic")
@@ -170,6 +172,7 @@ class MediaBuyingStoreTests(unittest.TestCase):
         self.assertEqual(cfg["custom_rate_label_2"], "Rate B")
         self.assertEqual(cfg["custom_cost_label_1"], "Cost A")
         self.assertEqual(cfg["custom_cost_label_2"], "Cost B")
+        self.assertEqual(cfg["visible_columns"], ["date", "cost_total"])
 
     def test_upsert_lead_daily_values_is_idempotent_for_same_day(self):
         store, state = self._build_store()
@@ -334,6 +337,8 @@ class MediaBuyingLeadTableReadTests(unittest.TestCase):
         self.assertAlmostEqual(float(row["custom_value_rate_1"]), 2 / 3)
         self.assertAlmostEqual(float(row["cost_per_lead"]), 200 / 15)
         self.assertAlmostEqual(float(row["cost_per_sale"]), 100.0)
+        self.assertEqual(row["custom_value_4_amount_ron"], 105.0)
+        self.assertEqual(row["custom_value_5_amount_ron"], -5.0)
         self.assertIsNone(row["percent_change"])
 
     def test_monthly_totals_are_recomputed_from_month_sums_and_missing_manual_is_zero(self):
@@ -364,6 +369,7 @@ class MediaBuyingLeadTableReadTests(unittest.TestCase):
         self.assertEqual(totals["total_leads"], 4)
         self.assertAlmostEqual(float(totals["cost_per_lead"]), 150.0)
         self.assertAlmostEqual(float(totals["cost_per_sale"]), 300.0)
+        self.assertEqual(totals["custom_value_4_amount_ron"], 30.0)
         self.assertIsNone(totals["percent_change"])
 
 

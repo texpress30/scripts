@@ -44,6 +44,7 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
                     "custom_rate_label_2": "Custom Value Rate 2",
                     "custom_cost_label_1": "Cost Custom Value 1",
                     "custom_cost_label_2": "Cost Custom Value 2",
+                    "visible_columns": ["date", "cost_total"],
                     "enabled": True,
                     "created_at": None,
                     "updated_at": None,
@@ -88,6 +89,7 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
                         "custom_rate_label_2": "Custom Value Rate 2",
                         "custom_cost_label_1": "Cost Custom Value 1",
                         "custom_cost_label_2": "Cost Custom Value 2",
+                        "visible_columns": ["date", "cost_total"],
                         "date_from": kwargs["date_from"].isoformat(),
                         "date_to": kwargs["date_to"].isoformat(),
                         "available_months": ["2026-03"],
@@ -133,7 +135,7 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
 
         updated = clients_api.upsert_media_buying_config(
             client_id=self.client_id,
-            payload=MediaBuyingConfigUpdateRequest(template_type="lead", custom_label_1="Leads calificate", custom_label_5="Refund", custom_rate_label_1="Rata 1", custom_cost_label_1="Cost CV1"),
+            payload=MediaBuyingConfigUpdateRequest(template_type="lead", custom_label_1="Leads calificate", custom_label_5="Refund", custom_rate_label_1="Rata 1", custom_cost_label_1="Cost CV1", visible_columns=["date", "cost_total", "leads"]),
             user=self.user,
         )
 
@@ -141,6 +143,7 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
         self.assertEqual(updated["custom_label_5"], "Refund")
         self.assertEqual(updated["custom_rate_label_1"], "Rata 1")
         self.assertEqual(updated["custom_cost_label_1"], "Cost CV1")
+        self.assertEqual(updated["visible_columns"], ["date", "cost_total", "leads"])
 
     def test_upsert_and_list_daily_values(self):
         row = clients_api.upsert_media_buying_lead_daily_value(

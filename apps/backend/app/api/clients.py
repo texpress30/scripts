@@ -425,6 +425,7 @@ def upsert_media_buying_config(
             custom_rate_label_2=payload.custom_rate_label_2,
             custom_cost_label_1=payload.custom_cost_label_1,
             custom_cost_label_2=payload.custom_cost_label_2,
+            visible_columns=payload.visible_columns,
             enabled=payload.enabled,
         )
     except ValueError as exc:

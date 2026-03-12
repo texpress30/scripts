@@ -3330,3 +3330,24 @@
 - [x] Kept `apps/backend/requirements.txt` unchanged (no `google-ads` upgrade).
 - [x] Verification: `pytest apps/backend/tests/test_clients_media_buying_api.py -q`.
 - [x] Workspace sync note: `git pull --ff-only` failed because branch `work` has no upstream tracking configured.
+
+---
+
+# TODO — Media Buying step 7 (unrealized semantics + column visibility persisted view)
+
+- [x] Attempt workspace sync and record upstream-tracking limitation if present.
+- [x] Extend backend media buying config with persisted `visible_columns` and wire through API schema/store.
+- [x] Implement backend `Val. Nerealizata` semantics as derived (`Val. Aprobata - Val. Vanduta`, floored at 0) for day + month rows.
+- [x] Update frontend table styling/formatting: sold value normal black, unrealized red+parentheses only when >0 (else black no parentheses), close-rate columns violet.
+- [x] Add column visibility UI (with mandatory columns guard), load/save from backend config, and keep custom labels compatible.
+- [x] Add/update backend/frontend tests for formula semantics, styling, toggling, persistence, and fallback defaults.
+- [x] Run relevant backend/frontend tests + frontend build, then commit/push/PR.
+
+## Review
+- [x] Added migration `0021_media_buying_visible_columns.sql` and persisted `visible_columns` through media buying config schema/API/store + lead table meta.
+- [x] Derived `custom_value_4_amount_ron` as max(`custom_value_3_amount_ron - custom_value_5_amount_ron`, 0) for daily rows, and month totals recompute from monthly sums (not daily averages).
+- [x] Updated UI semantics: sold value shown normally (black, no parentheses), unrealized value shown red+parentheses only when >0, and rate columns in violet for month/day/header cells.
+- [x] Implemented "Customize columns" visibility selector with required `Data` column guard and auto-persist to backend config via `PUT /clients/{id}/media-buying/config`.
+- [x] Verification: `pytest apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py`, `pnpm --dir apps/frontend test src/app/sub/[id]/media-buying/page.test.tsx`, `pnpm --dir apps/frontend build`.
+- [x] Workspace sync note: `git pull --ff-only` failed because branch `work` has no upstream tracking configured.
+- [x] Screenshot note: Playwright browser tool timed out in this environment while capturing `/sub/96/media-buying`.

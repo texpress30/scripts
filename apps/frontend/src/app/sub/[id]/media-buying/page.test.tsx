@@ -26,9 +26,9 @@ function leadPayload() {
       display_currency: "RON",
       custom_label_1: "Appointments",
       custom_label_2: "Qualified",
-      custom_label_3: "CV3",
-      custom_label_4: "CV4",
-      custom_label_5: "Refund",
+      custom_label_3: "Val. Aprobata",
+      custom_label_4: "Val. Nerealizata",
+      custom_label_5: "Val. Vanduta",
       custom_rate_label_1: "Rate A",
       custom_rate_label_2: "Rate B",
       custom_cost_label_1: "Cost A",
@@ -349,10 +349,89 @@ describe("SubMediaBuyingPage", () => {
 
     const unrealizedCells = screen.getAllByText(/\(RON\s?40\.00\)|\(.*40.*RON.*\)/i);
     expect(unrealizedCells.length).toBeGreaterThan(0);
-    expect(unrealizedCells[0].closest("td")?.className || "").toContain("text-red-600");
+    expect(unrealizedCells[0].className || "").toContain("text-red-600");
 
     fireEvent.click(screen.getByRole("button", { name: /Mar 2026/i }));
     expect(screen.queryByText("1 Mar")).toBeNull();
+  });
+
+  it("styles sold/unrealized/rates columns with business semantics", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
+      if (path.startsWith("/clients/96/media-buying/lead/table")) {
+        const payload = leadPayload();
+        payload.months[0].totals.custom_value_3_amount_ron = 100;
+        payload.months[0].totals.custom_value_5_amount_ron = 70;
+        payload.months[0].totals.custom_value_4_amount_ron = 30;
+        payload.months[0].days[0].custom_value_4_amount_ron = 0;
+        payload.months[0].days[0].custom_value_5_amount_ron = 100;
+        return payload;
+      }
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaBuyingPage />);
+    await screen.findByRole("button", { name: /Mar 2026/i });
+
+    expect(screen.getByRole("columnheader", { name: /Rate A/i }).className).toContain("text-violet-600");
+    expect(screen.getByRole("columnheader", { name: /Rate B/i }).className).toContain("text-violet-600");
+
+    const soldHeader = screen.getByRole("columnheader", { name: /Val\. Vanduta/i });
+    expect(soldHeader.className).not.toContain("text-red-600");
+
+    const unrealizedHeader = screen.getByRole("columnheader", { name: /Val\. Nerealizata/i });
+    expect(unrealizedHeader.className).not.toContain("text-red-600");
+
+    expect(screen.getByText(/\(RON\s?30\.00\)|\(.*30.*RON.*\)/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/RON\s?100\.00|100\.00\s?RON/i).length).toBeGreaterThan(0);
+  });
+
+  it("supports column visibility toggling and persists selected view via config", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string, options?: RequestInit) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
+      if (path.startsWith("/clients/96/media-buying/lead/table")) {
+        const payload = leadPayload();
+        payload.meta.visible_columns = ["date", "cost_total", "custom_value_5_amount_ron"];
+        return payload;
+      }
+      if (path === "/clients/96/media-buying/config") {
+        const body = JSON.parse(String(options?.body || "{}"));
+        return { ...leadPayload().meta, ...body };
+      }
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaBuyingPage />);
+    await screen.findByRole("button", { name: /Mar 2026/i });
+
+    expect(screen.queryByRole("columnheader", { name: /Cost Google/i })).toBeNull();
+    expect(screen.getByRole("columnheader", { name: /Cost Total/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Customize columns/i }));
+    fireEvent.click(screen.getByLabelText(/Cost Google/i));
+
+    await screen.findByText("View saved");
+    expect(screen.getByRole("columnheader", { name: /Cost Google/i })).toBeInTheDocument();
+    expect(apiMock.apiRequest).toHaveBeenCalledWith(
+      "/clients/96/media-buying/config",
+      expect.objectContaining({ method: "PUT" })
+    );
+  });
+
+  it("falls back to default visible columns when config has no saved view", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
+      if (path.startsWith("/clients/96/media-buying/lead/table")) {
+        const payload = leadPayload();
+        delete payload.meta.visible_columns;
+        return payload;
+      }
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaBuyingPage />);
+    expect(await screen.findByRole("columnheader", { name: /Cost Google/i })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: /Val\. Aprobata/i })).toBeInTheDocument();
   });
 
   it("renders loading and error state", async () => {
