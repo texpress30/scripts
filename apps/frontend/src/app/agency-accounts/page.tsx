@@ -1566,6 +1566,7 @@ export default function AgencyAccountsPage() {
                         const attached = Boolean(account.attached_client_id);
                         const selected = selectedAccountIds.has(account.id);
                         const rowStatus = batchRunsByAccount[account.id];
+                        const showRecentError = isErrorAccount(account) && Boolean(String(account.last_error ?? "").trim());
 
                         return (
                           <div key={account.id} className="grid gap-3 px-3 py-3 lg:grid-cols-[48px_minmax(220px,2fr)_minmax(180px,1.2fr)_minmax(180px,1.2fr)_minmax(220px,1.4fr)_110px] lg:items-start">
@@ -1589,7 +1590,7 @@ export default function AgencyAccountsPage() {
                               </p>
                               <p className="text-xs text-slate-500">ID: {account.id}</p>
                               <p className="text-xs text-slate-500">Ultimul sync reușit: {account.last_success_at ? formatDateTime(account.last_success_at) : "Nu există sync finalizat încă"}</p>
-                              {account.last_error ? <p className="text-xs text-red-600">Eroare recentă: {account.last_error}</p> : null}
+                              {showRecentError ? <p className="text-xs text-red-600">Eroare recentă: {account.last_error}</p> : null}
                             </div>
 
                             <div>

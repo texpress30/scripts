@@ -2609,13 +2609,17 @@
 # TODO — Keep effective done status and hide superseded historical failures
 
 - [x] Update workspace to latest remote baseline before changes.
-- [ ] Audit Agency Accounts list/detail status reconciliation and historical failure visibility rules.
-- [ ] Add a shared effective sync status + superseded historical helper and apply it consistently in list/detail flows.
-- [ ] Hide superseded historical failures by default (no hard delete), keep unresolved failures visible, and ensure latest error banner uses unresolved latest failure only.
-- [ ] Add/adjust frontend tests for done-vs-idle, superseded filtering, and banner behavior; run required tests/build.
+- [x] Audit Agency Accounts list/detail status reconciliation and historical failure visibility rules.
+- [x] Add a shared effective sync status + superseded historical helper and apply it consistently in list/detail flows.
+- [x] Hide superseded historical failures by default (no hard delete), keep unresolved failures visible, and ensure latest error banner uses unresolved latest failure only.
+- [x] Add/adjust frontend tests for done-vs-idle, superseded filtering, and banner behavior; run required tests/build.
 
 ## Review
-- [ ] Pending implementation.
+- [x] Effective status helper now prioritizes active/error/success semantics before idle, so rows with stale `idle` status and valid `last_success_at` remain `done`.
+- [x] Google list rows now show “Eroare recentă” only when effective status is still failure, preventing stale old error banners after successful syncs.
+- [x] Added regression coverage for idle-vs-done helper precedence and list rendering that suppresses stale errors while keeping status `done`.
+- [x] Verification: `pnpm --dir apps/frontend test src/app/agency-accounts/sync-runs.test.ts src/app/agency-accounts/page.list.test.tsx`.
+- [x] Attempted `pnpm --dir apps/frontend build`; build process was started but could not complete within container execution window.
 
 ---
 

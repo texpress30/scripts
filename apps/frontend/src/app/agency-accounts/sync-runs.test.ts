@@ -62,6 +62,17 @@ describe("sync-runs helpers", () => {
     ).toBe("done");
   });
 
+  it("prefers done over idle when sync metadata includes last_success_at", () => {
+    expect(
+      getEffectiveAccountStatus({
+        rowStatus: "idle",
+        lastRunStatus: "idle",
+        hasActiveSync: false,
+        lastSuccessAt: "2026-03-09T10:00:00Z",
+      }),
+    ).toBe("done");
+  });
+
   it("maps TikTok error category to clear UX message", () => {
     const presentation = getTikTokErrorPresentation("provider_access_denied", "provider technical message");
     expect(presentation.title).toBe("Acces refuzat de TikTok la advertiser");
