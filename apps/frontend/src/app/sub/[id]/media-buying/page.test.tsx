@@ -44,7 +44,7 @@ function leadPayload() {
         cost_meta: 200,
         cost_tiktok: 50,
         cost_total: 350,
-        percent_change: null,
+        percent_change: 0.25,
         leads: 10,
         phones: 5,
         total_leads: 15,
@@ -73,7 +73,7 @@ function leadPayload() {
           cost_meta: 200,
           cost_tiktok: 50,
           cost_total: 350,
-          percent_change: null,
+          percent_change: 0.1,
           leads: 10,
           phones: 5,
           total_leads: 15,
@@ -97,7 +97,7 @@ function leadPayload() {
             cost_meta: 200,
             cost_tiktok: 50,
             cost_total: 350,
-            percent_change: null,
+            percent_change: 0.25,
             leads: 10,
             phones: 5,
             total_leads: 15,
@@ -295,6 +295,38 @@ describe("SubMediaBuyingPage", () => {
     expect(await screen.findByText("Custom Value 1")).toBeInTheDocument();
     expect(screen.getByText("Custom Value Rate 1")).toBeInTheDocument();
     expect(screen.getByText("Cost Custom Value 1")).toBeInTheDocument();
+  });
+
+
+  it("renders percent_change values and fallback for null", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
+      if (path.startsWith("/clients/96/media-buying/lead/table")) {
+        const payload = leadPayloadWithMonths();
+        payload.months[0].totals.percent_change = null;
+        payload.months[0].days[0].percent_change = null;
+        payload.months[1].totals.percent_change = 0.5;
+        payload.months[1].days[0].percent_change = -0.4;
+        payload.months[2].totals.percent_change = 1.0;
+        payload.months[2].days[0].percent_change = 0.25;
+        return payload;
+      }
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaBuyingPage />);
+
+    expect(await screen.findByRole("button", { name: /Mar 2026/i })).toBeInTheDocument();
+    expect(screen.getAllByText("25.00%").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: /Mar 2026/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Feb 2026/i }));
+    expect(screen.getByText("50.00%")).toBeInTheDocument();
+    expect(screen.getByText("-40.00%")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Feb 2026/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Ian 2026/i }));
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
 
   it("formats daily dates, applies semantic column styles, dashed separators, and reverse month order", async () => {

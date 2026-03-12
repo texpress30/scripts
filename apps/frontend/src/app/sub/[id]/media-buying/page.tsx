@@ -551,7 +551,7 @@ export default function SubMediaBuyingPage() {
                           <td className={columnClass("cost_meta")}>{formatMoney(monthTotals.cost_meta, displayCurrency)}</td>
                           <td className={columnClass("cost_tiktok")}>{formatMoney(monthTotals.cost_tiktok, displayCurrency)}</td>
                           <td className={columnClass("cost_total")}>{formatMoney(monthTotals.cost_total, displayCurrency)}</td>
-                          <td className={columnClass("percent_change")}>—</td>
+                          <td className={columnClass("percent_change")}>{formatRate(monthTotals.percent_change)}</td>
                           <td className={columnClass("leads")}>{formatCount(monthTotals.leads)}</td>
                           <td className={columnClass("phones")}>{formatCount(monthTotals.phones)}</td>
                           <td className={columnClass("total_leads")}>{formatCount(monthTotals.total_leads)}</td>
@@ -624,7 +624,7 @@ export default function SubMediaBuyingPage() {
                                   <td className={columnClass("cost_meta")}>{formatMoney(day.cost_meta, displayCurrency)}</td>
                                   <td className={columnClass("cost_tiktok")}>{formatMoney(day.cost_tiktok, displayCurrency)}</td>
                                   <td className={columnClass("cost_total")}>{formatMoney(day.cost_total, displayCurrency)}</td>
-                                  <td className={columnClass("percent_change")}>—</td>
+                                  <td className={columnClass("percent_change")}>{formatRate(day.percent_change)}</td>
                                   <td className={columnClass("leads")}>
                                     {draft ? <input aria-label={`Leads ${day.date}`} className="w-20 rounded border border-slate-300 px-2 py-1" value={draft.leads} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, leads: e.target.value } }))} /> : formatCount(day.leads)}
                                     {errors.leads ? <p className="text-xs text-red-600">{errors.leads}</p> : null}

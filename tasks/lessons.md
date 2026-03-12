@@ -267,3 +267,8 @@
 ## 2026-03-11 — When user says previous code was unsatisfactory
 - Immediately add targeted regression tests that reflect the exact UX acceptance language (format/style/order), before finishing.
 - Verify selectors avoid ambiguous text matches when UI introduces editable headers or repeated labels.
+
+
+## 2026-03-12 — After user says previous change still unsatisfactory
+- Narrow follow-up scope to the explicit remaining business requirement (here `%^`) and avoid unrelated refactors.
+- Ensure backend formulas are validated with deterministic tests first, then wire UI rendering to those results.

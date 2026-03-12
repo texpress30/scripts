@@ -3295,3 +3295,22 @@
 - [x] Month sections are rendered newest-first (`sortedMonths` descending by `YYYY-MM`).
 - [x] Verification: `pnpm --dir apps/frontend test src/app/sub/[id]/media-buying/page.test.tsx`, `pnpm --dir apps/frontend build`.
 - [x] Workspace sync note: `git pull --ff-only` failed because branch `work` has no upstream tracking configured in this environment.
+
+
+---
+
+# TODO — Media Buying step 6 (%^ daily+monthly implementation)
+
+- [x] Attempt workspace update and record any upstream-tracking limitations.
+- [x] Implement backend `percent_change` for daily rows (vs previous calendar day cost_total) and monthly rows (vs previous month total cost_total), null-safe for missing/zero previous totals.
+- [x] Update frontend Media Buying table to render computed `%^` values for month/day rows and fallback `—` for null.
+- [x] Add/update backend + frontend tests for daily/monthly percent_change, zero/missing previous totals, and UI rendering with descending month order unaffected.
+- [x] Run relevant backend/frontend tests + frontend build, then commit/push/PR.
+
+## Review
+- [x] Added backend helper `_build_percent_change(...)` and applied it in chronological day traversal + chronological month traversal, independent from UI sort order.
+- [x] Kept null behavior for missing/zero previous totals (`percent_change=None`) to avoid invented values and division by zero.
+- [x] Frontend now renders `%^` with existing `formatRate(...)` for both month/day rows and retains `—` fallback for null.
+- [x] Verification: `pytest apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py`, `pnpm --dir apps/frontend test src/app/sub/[id]/media-buying/page.test.tsx`, `pnpm --dir apps/frontend build`.
+- [x] Workspace sync note: `git pull --ff-only` failed because branch `work` has no upstream tracking configured in this environment.
+- [x] Screenshot attempt note: browser tool failed to launch Chromium (TargetClosedError/SIGSEGV) in this environment.

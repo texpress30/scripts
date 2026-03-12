@@ -220,6 +220,13 @@ class MediaBuyingStore:
             )
         return payload
 
+    def _build_percent_change(self, *, current_total: float | None, previous_total: float | None) -> float | None:
+        if current_total is None or previous_total is None:
+            return None
+        if float(previous_total) == 0.0:
+            return None
+        return (float(current_total) - float(previous_total)) / float(previous_total)
+
     def _build_daily_row(
         self,
         *,
@@ -249,7 +256,7 @@ class MediaBuyingStore:
             "cost_meta": cost_meta,
             "cost_tiktok": cost_tiktok,
             "cost_total": cost_total,
-            "percent_change": None,  # TODO(media-buying): `%^` formula is intentionally not implemented in this task.
+            "percent_change": None,
             "leads": leads,
             "phones": phones,
             "total_leads": total_leads,
@@ -386,7 +393,22 @@ class MediaBuyingStore:
             key = self._month_key(row_date)
             monthly_grouped.setdefault(key, []).append(row)
 
+        previous_day_total: float | None = None
+        for row in day_rows:
+            current_total = float(row.get("cost_total", 0.0))
+            row["percent_change"] = self._build_percent_change(current_total=current_total, previous_total=previous_day_total)
+            previous_day_total = current_total
+
         months = [self._rollup_month(month=month, day_rows=rows) for month, rows in sorted(monthly_grouped.items(), key=lambda item: item[0])]
+
+        previous_month_total: float | None = None
+        for month in months:
+            totals = month.get("totals")
+            if not isinstance(totals, dict):
+                continue
+            current_month_total = float(totals.get("cost_total", 0.0))
+            totals["percent_change"] = self._build_percent_change(current_total=current_month_total, previous_total=previous_month_total)
+            previous_month_total = current_month_total
 
         return {
             "meta": {

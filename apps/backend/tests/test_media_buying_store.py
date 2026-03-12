@@ -366,6 +366,66 @@ class MediaBuyingLeadTableReadTests(unittest.TestCase):
         self.assertAlmostEqual(float(totals["cost_per_sale"]), 300.0)
         self.assertIsNone(totals["percent_change"])
 
+
+    def test_percent_change_daily_and_monthly_follow_chronological_cost_totals(self):
+        store = self._build_store()
+        store.get_config = lambda **kwargs: {"client_id": 12, "template_type": "lead", "display_currency": "RON", "custom_label_1": "a", "custom_label_2": "b", "custom_label_3": "c", "custom_label_4": "d", "custom_label_5": "e"}
+        store.list_lead_daily_manual_values = lambda **kwargs: []
+        store._list_automated_daily_costs = lambda **kwargs: [
+            {"date": date(2026, 2, 28), "platform": "google_ads", "account_currency": "RON", "spend": 100.0},
+            {"date": date(2026, 3, 1), "platform": "google_ads", "account_currency": "RON", "spend": 200.0},
+            {"date": date(2026, 3, 2), "platform": "google_ads", "account_currency": "RON", "spend": 50.0},
+        ]
+        store._normalize_money_to_display_currency = lambda **kwargs: kwargs["amount"]
+
+        payload = store.get_lead_table(client_id=12, date_from=date(2026, 2, 28), date_to=date(2026, 3, 2))
+
+        self.assertIsNone(payload["days"][0]["percent_change"])
+        self.assertAlmostEqual(float(payload["days"][1]["percent_change"]), 1.0)
+        self.assertAlmostEqual(float(payload["days"][2]["percent_change"]), -0.75)
+
+        self.assertEqual([item["month"] for item in payload["months"]], ["2026-02", "2026-03"])
+        self.assertIsNone(payload["months"][0]["totals"]["percent_change"])
+        self.assertAlmostEqual(float(payload["months"][1]["totals"]["percent_change"]), 1.5)
+
+    def test_percent_change_returns_null_when_previous_total_missing_or_zero(self):
+        store = self._build_store()
+        store.get_config = lambda **kwargs: {"client_id": 12, "template_type": "lead", "display_currency": "RON", "custom_label_1": "a", "custom_label_2": "b", "custom_label_3": "c", "custom_label_4": "d", "custom_label_5": "e"}
+        store.list_lead_daily_manual_values = lambda **kwargs: []
+        store._list_automated_daily_costs = lambda **kwargs: [
+            {"date": date(2026, 2, 1), "platform": "google_ads", "account_currency": "RON", "spend": 0.0},
+            {"date": date(2026, 2, 2), "platform": "google_ads", "account_currency": "RON", "spend": 50.0},
+            {"date": date(2026, 2, 3), "platform": "google_ads", "account_currency": "RON", "spend": 10.0},
+            {"date": date(2026, 3, 1), "platform": "google_ads", "account_currency": "RON", "spend": 0.0},
+        ]
+        store._normalize_money_to_display_currency = lambda **kwargs: kwargs["amount"]
+
+        payload = store.get_lead_table(client_id=12, date_from=date(2026, 2, 1), date_to=date(2026, 3, 1))
+
+        self.assertIsNone(payload["days"][0]["percent_change"])
+        self.assertIsNone(payload["days"][1]["percent_change"])
+        self.assertAlmostEqual(float(payload["days"][2]["percent_change"]), -0.8)
+
+        self.assertIsNone(payload["months"][0]["totals"]["percent_change"])
+        self.assertAlmostEqual(float(payload["months"][1]["totals"]["percent_change"]), -1.0)
+
+
+    def test_monthly_percent_change_is_null_when_previous_month_total_is_zero(self):
+        store = self._build_store()
+        store.get_config = lambda **kwargs: {"client_id": 12, "template_type": "lead", "display_currency": "RON", "custom_label_1": "a", "custom_label_2": "b", "custom_label_3": "c", "custom_label_4": "d", "custom_label_5": "e"}
+        store.list_lead_daily_manual_values = lambda **kwargs: []
+        store._list_automated_daily_costs = lambda **kwargs: [
+            {"date": date(2026, 3, 1), "platform": "google_ads", "account_currency": "RON", "spend": 0.0},
+            {"date": date(2026, 4, 1), "platform": "google_ads", "account_currency": "RON", "spend": 100.0},
+        ]
+        store._normalize_money_to_display_currency = lambda **kwargs: kwargs["amount"]
+
+        payload = store.get_lead_table(client_id=12, date_from=date(2026, 3, 1), date_to=date(2026, 4, 1))
+
+        self.assertEqual([item["month"] for item in payload["months"]], ["2026-03", "2026-04"])
+        self.assertIsNone(payload["months"][0]["totals"]["percent_change"])
+        self.assertIsNone(payload["months"][1]["totals"]["percent_change"])
+
     def test_non_lead_template_is_not_implemented(self):
         store = self._build_store()
         store.get_config = lambda **kwargs: {"client_id": 12, "template_type": "lead", "display_currency": "RON"}
