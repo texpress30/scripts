@@ -3513,3 +3513,21 @@
 - [x] Fix: dashboard client query now uses `ad_performance_reports` + direct `agency_account_client_mappings` join (`mapped.client_id = %s`, `mapped.created_at::date <= apr.report_date`, account match), strict account_daily filter, and currency precedence `row extra_metrics -> agency_platform_accounts.currency_code -> mapping.account_currency -> RON`.
 - [x] Result: platform totals use same correctness contract as Media Buying read-side (source + grain + membership + currency single-pass normalization).
 - [x] Verification: `pytest -q apps/backend/tests/test_dashboard_currency_normalization.py apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_platform_account_mappings.py apps/backend/tests/test_clients_media_buying_api.py apps/backend/tests/test_dashboard_agency_summary_integration_health.py` (pass).
+
+---
+
+# TODO — Regressie istoric Media Buying/Dashboard: eliminare clamp pe mapping.created_at
+
+- [x] Sync workspace attempts (`git fetch --all --prune`, `git pull --ff-only`) înainte de modificări.
+- [x] Audit query-urile de costuri automate din Media Buying + Sub-account Dashboard pentru folosirea `mapped.created_at::date <= apr.report_date`.
+- [x] Eliminare clamp temporal pe `mapped.created_at` din read-side (membership-only mapping).
+- [x] Păstrare source-of-truth `ad_performance_reports` + grain `account_daily` + membership strict pe conturi client.
+- [x] Actualizare regresii pentru a valida că istoricul nu mai este tăiat de data mapping-ului.
+- [x] Rulare suite backend relevante (media buying, dashboard, client mappings).
+
+## Review
+- [x] Clamp-ul greșit era prezent în trei query-uri read-side: `_list_automated_daily_costs`, `_get_lead_table_data_bounds` și `UnifiedDashboardService._client_reports_query`.
+- [x] `mapped.created_at` este câmp de audit, nu câmp business de validitate istorică; folosit ca lower-bound taie artificial istoricul real la data atașării mapping-ului.
+- [x] Fix: mapping-ul rămâne strict pentru membership (`mapped.client_id` + account/platform match), dar fără filtrare temporală pe `created_at`; bounds/istoric vin din datele reale `account_daily` din `ad_performance_reports` (+ manual non-zero pentru Media Buying bounds).
+- [x] Problemă Meta ianuarie invalid nu se rezolvă prin clamp pe mapping-created-at; root cause trebuie adresată prin membership/source corect, nu prin tăiere globală de istoric.
+- [x] Verificare: `pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_dashboard_currency_normalization.py apps/backend/tests/test_clients_platform_account_mappings.py apps/backend/tests/test_clients_media_buying_api.py apps/backend/tests/test_dashboard_agency_summary_integration_health.py` (pass).

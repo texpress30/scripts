@@ -554,11 +554,11 @@ class MediaBuyingStoreBoundsQueryTests(unittest.TestCase):
         all_sql = "\n".join(captured_queries)
         self.assertIn("FROM ad_performance_reports apr", all_sql)
         self.assertIn("mapped.client_id = %s", all_sql)
-        self.assertIn("mapped.created_at::date <= apr.report_date", all_sql)
+        self.assertNotIn("mapped.created_at::date <= apr.report_date", all_sql)
         self.assertIn("'account_daily'", all_sql)
         self.assertNotIn("ads_platform_reporting", all_sql)
 
-    def test_automated_costs_query_uses_account_daily_and_mapping_validity(self):
+    def test_automated_costs_query_uses_account_daily_and_mapping_membership(self):
         captured_query = ""
 
         class _Cursor:
@@ -596,7 +596,7 @@ class MediaBuyingStoreBoundsQueryTests(unittest.TestCase):
         self.assertAlmostEqual(float(rows[0]["spend"]), 805.85)
         self.assertIn("FROM ad_performance_reports apr", captured_query)
         self.assertIn("mapped.client_id = %s", captured_query)
-        self.assertIn("mapped.created_at::date <= apr.report_date", captured_query)
+        self.assertNotIn("mapped.created_at::date <= apr.report_date", captured_query)
         self.assertIn("agency_platform_accounts apa", captured_query)
         self.assertIn("apa.currency_code", captured_query)
         self.assertNotIn("apa.account_currency", captured_query)
@@ -627,7 +627,7 @@ class MediaBuyingStoreBoundsQueryTests(unittest.TestCase):
         self.assertAlmostEqual(float(per_day["2026-02-01"]["cost_tiktok"]), 805.85, places=2)
         self.assertAlmostEqual(float(per_day["2026-03-11"]["cost_tiktok"]), 50.40, places=2)
 
-    def test_meta_rows_before_mapping_created_at_are_excluded_from_automated_costs(self):
+    def test_automated_costs_query_does_not_clamp_history_by_mapping_created_at(self):
         captured_query = ""
 
         class _Cursor:
@@ -660,7 +660,7 @@ class MediaBuyingStoreBoundsQueryTests(unittest.TestCase):
 
         _ = store._list_automated_daily_costs(client_id=97, date_from=date(2026, 1, 1), date_to=date(2026, 1, 31))
 
-        self.assertIn("mapped.created_at::date <= apr.report_date", captured_query)
+        self.assertNotIn("mapped.created_at::date <= apr.report_date", captured_query)
 
     def test_automated_costs_falls_back_to_ron_when_currency_missing(self):
         class _Cursor:

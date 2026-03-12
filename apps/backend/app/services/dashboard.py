@@ -248,7 +248,6 @@ class UnifiedDashboardService:
                         JOIN agency_account_client_mappings mapped
                           ON mapped.platform = apr.platform
                          AND mapped.client_id = %s
-                         AND mapped.created_at::date <= apr.report_date
                          AND (
                               mapped.account_id = apr.customer_id
                               OR (

@@ -111,7 +111,7 @@ def test_client_dashboard_query_uses_account_daily_membership_and_currency_prece
     assert "FROM ad_performance_reports apr" in client_query
     assert "JOIN agency_account_client_mappings mapped" in client_query
     assert "mapped.client_id = %s" in client_query
-    assert "mapped.created_at::date <= apr.report_date" in client_query
+    assert "mapped.created_at::date <= apr.report_date" not in client_query
     assert "'account_daily'" in client_query
     assert "COALESCE(apr.client_id, mapped.client_id)" not in client_query
     assert "apr.extra_metrics -> 'meta_ads' ->> 'account_currency'" in client_query

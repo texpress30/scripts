@@ -289,3 +289,4 @@
 - For read-side history windows, never reuse mapping audit timestamps (`created_at`/`updated_at`) as temporal validity unless product explicitly defines business-validity fields; mapping should usually scope membership only while bounds come from fact-table dates.
 - When fixing attribution regressions, treat currency source precedence as a correctness contract: prefer row/account source-of-truth currency over client-level mapping currency to avoid accidental double conversion.
 - Dashboard and Media Buying must share the same attribution contract (account_daily grain, mapping validity window, account-level currency precedence); if one path diverges, platform totals will drift even when ingestion is correct.
+- Do not use mapping audit timestamps (`created_at`) as historical lower bounds in read-side analytics; that turns membership metadata into data-loss filters and truncates valid history.
