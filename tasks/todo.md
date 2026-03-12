@@ -1,3 +1,20 @@
+# TODO — Client dashboard reconciliation diagnostics endpoint
+
+- [x] Refresh workspace from remote and document sync constraints if branch is diverged.
+- [x] Inspect dashboard read-side, client mapping, and performance reports storage code paths.
+- [x] Implement internal debug endpoint for client dashboard reconciliation without changing business logic.
+- [x] Add focused backend tests for diagnostic payload and exclusion reasons.
+- [x] Run backend tests and document review outcomes.
+
+## Review
+- [x] Synced remote refs with `git fetch --all --prune`; `git pull --ff-only origin main` reported divergence on local branch, so implementation continued on updated local branch without history rewrite.
+- [x] Added backend-only debug endpoint `GET /dashboard/debug/clients/{client_id}/dashboard-reconciliation` with agency-scope authorization and audit logging.
+- [x] Added reconciliation diagnostics in dashboard service: mapping snapshot, raw grouped totals, included grouped totals, excluded rows with reasons (`missing_mapping`, `grain_not_account_daily`, `currency_resolution_fallback`), row counts, pre/post-conversion summaries, per-platform summaries, and per-account summaries.
+- [x] Added targeted service test covering multi-account rows, inclusion/exclusion logic, and currency fallback visibility.
+- [x] Verification: `pytest -q apps/backend/tests/test_dashboard_reconciliation_diagnostics.py apps/backend/tests/test_dashboard_currency_normalization.py` (pass).
+
+---
+
 # TODO — Remote sync via Connector workspace
 
 - [x] Confirm instructions and run requested remote/fetch/pull commands exactly as provided.
