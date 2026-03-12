@@ -631,9 +631,10 @@ describe("AgencyAccountsPage list redesign + same-client quick view", () => {
               name: "Account One",
               attached_client_id: 11,
               attached_client_name: "Client A",
-              last_run_status: null,
+              last_run_status: "idle",
               has_active_sync: false,
               last_success_at: "2026-03-09T10:00:00Z",
+              last_error: "stale old error",
             },
           ],
         });
@@ -645,6 +646,7 @@ describe("AgencyAccountsPage list redesign + same-client quick view", () => {
 
     expect(await screen.findByText(/Status: done/i)).toBeInTheDocument();
     expect(screen.queryByText(/Status: idle/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Eroare recentă: stale old error/i)).not.toBeInTheDocument();
   });
 
 });
