@@ -147,4 +147,50 @@ describe("AgencyAccountsPage Meta historical progress UX", () => {
     expect(await screen.findByText(/Eroare recentă:/i)).toBeInTheDocument();
   });
 
+  it("renders meta operational metadata fields and keeps '-' fallback when missing", async () => {
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients") return Promise.resolve({ items: [{ id: 1, name: "Client A", owner_email: "a@x.com", display_id: 1 }] });
+      if (path === "/clients/accounts/summary") return Promise.resolve({ items: [{ platform: "google_ads", connected_count: 1, last_import_at: null }, { platform: "meta_ads", connected_count: 2, last_import_at: null }] });
+      if (path === "/clients/accounts/google") return Promise.resolve({ items: [{ id: "g_1", name: "G1", attached_client_id: 1, attached_client_name: "Client A" }], count: 1 });
+      if (path === "/clients/accounts/meta_ads") {
+        return Promise.resolve({
+          items: [
+            {
+              account_id: "act_with_meta",
+              account_name: "Meta With Metadata",
+              client_id: 1,
+              client_name: "Client A",
+              backfill_completed_through: "2026-03-08",
+              rolling_synced_through: "2026-03-09",
+              last_success_at: "2026-03-09T10:00:00+00:00",
+              last_error: "meta current error",
+            },
+            {
+              account_id: "act_without_meta",
+              account_name: "Meta Without Metadata",
+              client_id: null,
+              client_name: null,
+            },
+          ],
+          count: 2,
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /Meta Ads/i }));
+
+    expect(await screen.findByText("Meta With Metadata")).toBeInTheDocument();
+    expect(await screen.findByText("Meta Without Metadata")).toBeInTheDocument();
+    expect(await screen.findByText("Istoric până la: 2026-03-08")).toBeInTheDocument();
+    expect(await screen.findByText("Rolling până la: 2026-03-09")).toBeInTheDocument();
+    expect((await screen.findAllByText(/Ultimul sync reușit:/i)).length).toBeGreaterThan(0);
+    expect(await screen.findByText("Eroare recentă: meta current error")).toBeInTheDocument();
+    expect(screen.getAllByText("Istoric până la: -").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Rolling până la: -").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Ultimul sync reușit: -").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Eroare recentă: -").length).toBeGreaterThan(0);
+  });
+
 });
