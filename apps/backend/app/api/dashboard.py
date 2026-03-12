@@ -98,8 +98,6 @@ def client_platform_sync_audit_debug(
         },
     )
     return payload
-<<<<<<< codex/set-up-new-workspace-and-sync-with-github-68tz6w
-
 
 @router.post("/debug/clients/{client_id}/tiktok-account-daily-repair")
 def client_tiktok_account_daily_repair_debug(
