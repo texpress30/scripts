@@ -68,6 +68,12 @@ class MetaBackfillRequest(BaseModel):
     grains: list[Literal["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"]] | None = None
 
 
+class MetaSnapshotRecomputeRequest(BaseModel):
+    start_date: date | None = None
+    end_date: date | None = None
+    account_id: str | None = None
+
+
 def _log_best_effort_warning(
     *,
     operation: str,
@@ -341,6 +347,7 @@ def _run_meta_historical_backfill_job(
                     start_date=chunk_start,
                     end_date=chunk_end,
                     grain=grain,
+                    update_snapshot=False,
                 )
                 rows_written = int(snapshot.get("rows_written") or 0)
                 accounts_processed = int(snapshot.get("accounts_processed") or 0)
@@ -357,6 +364,14 @@ def _run_meta_historical_backfill_job(
                         "accounts_processed": accounts_processed,
                     }
                 )
+
+        rebuilt_snapshot = None
+        if "account_daily" in grains:
+            rebuilt_snapshot = meta_ads_service.rebuild_snapshot_from_account_daily(
+                client_id=int(client_id),
+                start_date=start_date,
+                end_date=end_date,
+            )
 
         result = {
             "status": SYNC_STATUS_DONE,
@@ -375,6 +390,7 @@ def _run_meta_historical_backfill_job(
             "accounts_processed": accounts_processed_max,
             "token_source": token_source,
             "runs": execution_log,
+            "snapshot_rebuilt": rebuilt_snapshot is not None,
         }
         backfill_job_store.set_done(job_id, result=result)
     except Exception as exc:  # noqa: BLE001
@@ -402,6 +418,45 @@ def _map_sync_run_to_job_status_payload(sync_run: dict[str, object]) -> dict[str
             payload[field] = value
 
     return payload
+
+
+
+
+@router.post("/{client_id}/recompute-snapshot")
+def recompute_meta_snapshot(
+    client_id: int,
+    payload: MetaSnapshotRecomputeRequest | None = None,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:sync", scope="agency")
+    try:
+        snapshot = meta_ads_service.rebuild_snapshot_from_account_daily(
+            client_id=int(client_id),
+            start_date=payload.start_date if payload else None,
+            end_date=payload.end_date if payload else None,
+            account_id=payload.account_id if payload else None,
+        )
+    except MetaAdsIntegrationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="meta_ads.snapshot.recompute",
+        resource=f"client:{client_id}",
+        details={
+            "start_date": payload.start_date.isoformat() if payload and payload.start_date else None,
+            "end_date": payload.end_date.isoformat() if payload and payload.end_date else None,
+            "account_id": payload.account_id if payload else None,
+        },
+    )
+    return {
+        "status": "ok",
+        "mode": "snapshot_recompute",
+        "platform": "meta_ads",
+        "client_id": int(client_id),
+        "snapshot": snapshot,
+    }
 
 
 @router.get("/status")

@@ -2737,3 +2737,617 @@
 - Access token remains in `Access-Token` header; query string contains reporting params only (`advertiser_id`, `report_type`, `data_level`, `dimensions`, `metrics`, `start_date`, `end_date`, `page`, `page_size`).
 - Added tests for GET method/query serialization/header, shared helper reuse across all 4 grains, and a 405 regression guard (non-GET fails in mock).
 - Verification: `pytest -q apps/backend/tests/test_tiktok_*` and `pytest -q apps/backend/tests/test_config.py apps/backend/tests/test_services.py::ServiceTests::test_tiktok_ads_sync_provider_access_denied_on_probe`.
+
+---
+
+# TODO — Sync remote origin and fetch/pull from GitHub
+
+- [x] Run provided `git remote add ... || git remote set-url ...` command exactly as requested.
+- [x] Run `git fetch origin`.
+- [x] Run `git pull origin main --allow-unrelated-histories`.
+
+## Review
+- [x] Executed all requested git connectivity/sync commands in terminal and captured outputs.
+
+---
+
+# TODO — TikTok reporting schema fix per grain (metrics/dimensions validity)
+
+- [x] Audit current TikTok reporting request schema for all grains (`account_daily`, `campaign_daily`, `ad_group_daily`, `ad_daily`).
+- [x] Introduce a centralized per-grain reporting schema helper and wire all grain fetchers to it.
+- [x] Remove invalid metric(s) for `account_daily` (notably `conversion_value`) while keeping safe internal fallback mapping.
+- [x] Reduce dimensions to TikTok accepted limit (<=4) for `ad_group_daily` and `ad_daily`, preferring ID-based dimensions.
+- [x] Add/adjust backend tests for per-grain request schema, conversion fallback, dimension limits, helper usage, and structural validity regressions.
+- [x] Run targeted backend TikTok tests and capture outcomes.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Centralized TikTok reporting request schema by grain via `_report_schema_for_grain(...)` and routed all 4 grain fetchers through it.
+- `account_daily` request metrics no longer include `conversion_value`; conversion value persistence continues via `_extract_conversion_value(...)` fallback keys (e.g. `total_purchase_value`).
+- `ad_group_daily` dimensions reduced to 4 (`stat_time_day`, `adgroup_id`, `campaign_id`, `campaign_name`) and `ad_daily` dimensions reduced to 4 (`stat_time_day`, `ad_id`, `adgroup_id`, `campaign_id`).
+- Added regression tests for per-grain schema constraints, account conversion fallback, and structural payload validity against known provider errors.
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py` and `pytest -q apps/backend/tests/test_tiktok_* apps/backend/tests/test_services.py::ServiceTests::test_tiktok_ads_sync_real_account_daily_single_account`.
+
+---
+
+# TODO — TikTok reporting schema fix pasul 2 (dimension compatibility per data_level)
+
+- [x] Audit current TikTok per-grain schema/request payload for campaign/ad_group/ad against runtime errors.
+- [x] Adjust centralized `_report_schema_for_grain(...)` so each grain only uses dimensions compatible with its `data_level`.
+- [x] Keep `account_daily` schema unchanged and valid.
+- [x] Ensure entity name/hierarchy fields use safe fallback from payload metadata/snapshot/item fallback (not forced via invalid dimensions).
+- [x] Add/update backend tests for invalid dimension regression patterns and per-grain schema assertions.
+- [x] Run targeted backend TikTok tests and document results.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Updated per-grain TikTok dimensions to strict data_level-compatible sets: campaign (`stat_time_day`,`campaign_id`), ad_group (`stat_time_day`,`adgroup_id`), ad (`stat_time_day`,`ad_id`), while preserving account_daily unchanged.
+- Kept entity name hierarchy handling safe by retaining existing item/dimensions fallback extraction without forcing unsupported provider-side dimensions.
+- Added tests to assert runtime-invalid dimensions are excluded per grain and to regress known production error messages.
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py` and `pytest -q apps/backend/tests/test_tiktok_* apps/backend/tests/test_services.py::ServiceTests::test_tiktok_ads_sync_real_account_daily_single_account`.
+
+---
+
+# TODO — TikTok reporting schema fix pasul 3 (remove conversion_value for campaign/ad_group/ad)
+
+- [x] Audit current TikTok per-grain metrics and confirm where `conversion_value` is still sent provider-side.
+- [x] Update centralized TikTok reporting schema helper to remove `conversion_value` from `campaign_daily`, `ad_group_daily`, and `ad_daily` only.
+- [x] Keep `account_daily` request schema unchanged and valid.
+- [x] Preserve internal conversion value field via safe fallback extraction from allowed metrics.
+- [x] Add/update backend tests for per-grain metric exclusions and runtime error regression (`Invalid metric fields: ['conversion_value']`).
+- [x] Run targeted backend TikTok tests and document results.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Removed provider-side `conversion_value` metric from `campaign_daily`, `ad_group_daily`, and `ad_daily` schemas while leaving `account_daily` unchanged.
+- Kept internal `conversion_value` pipeline intact via `_extract_conversion_value(...)` fallback from allowed keys (e.g. `total_purchase_value`).
+- Added tests to assert no remaining grain requests `conversion_value` and to regress real provider error payload (`Invalid metric fields: ['conversion_value']`).
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py` and `pytest -q apps/backend/tests/test_tiktok_* apps/backend/tests/test_services.py::ServiceTests::test_tiktok_ads_sync_real_account_daily_single_account`.
+
+---
+
+# TODO — TikTok zero-row observability + stale recent-error suppression after success
+
+- [x] Audit TikTok sync success path for row counters and where run/chunk metadata can safely carry provider vs mapped/write counts.
+- [x] Add TikTok reporting observability fields for provider rows downloaded, mapped rows, and zero-row markers (provider empty vs parsed-but-zero-mapped).
+- [x] Propagate observability to sync chunk metadata so detail logs can show rows_downloaded vs rows_written.
+- [x] Suppress stale TikTok recent error in accounts payload when latest relevant run is successful and no active sync.
+- [x] Expose rows_downloaded/provider_row_count in detail UI run/chunk logs with minimal UI change.
+- [x] Add/update backend/frontend tests and run targeted test suites.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- TikTok sync now records per-fetch observability (`provider_row_count`/`rows_downloaded`, `rows_mapped`, skip counters, safe sample keys) and surfaces zero-row markers for both provider-empty and parsed-but-zero-mapped scenarios.
+- Sync worker now writes TikTok observability into chunk metadata on success (`rows_downloaded`, `provider_row_count`, `rows_mapped`, `zero_row_observability`) so detail logs can distinguish no-data vs mapping gaps.
+- Clients TikTok listing now suppresses stale recent error payload when latest run is successful (`done/success/completed`), there is no active sync, and `last_success_at` is present.
+- Detail UI now displays `rows downloaded` vs `rows written` (and mapped) in run summary + chunk logs for TikTok with minimal no-redesign changes.
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py apps/backend/tests/test_clients_platform_account_mappings.py apps/backend/tests/test_sync_worker.py`, `pytest -q apps/backend/tests/test_account_sync_metadata_contract.py apps/backend/tests/test_clients_platform_account_mappings.py`, `pnpm --dir apps/frontend test src/app/agency-accounts/[platform]/[accountId]/page.platform-parity.test.tsx`, `pnpm --dir apps/frontend build`.
+
+- Successful TikTok runs now suppress stale per-run error fields in sync-run API serialization, preventing false `Category: run failed` display on `done` runs.
+- Added explicit empty-success handling in worker finalization for TikTok historical: when chunk observability shows `rows_downloaded=0` and `rows_mapped=0`, we keep run `done` but do not advance `backfill_completed_through`.
+- Detail UI now shows neutral no-data diagnostics for successful TikTok runs (`provider_returned_empty_list` / `response_parsed_but_zero_rows_mapped`) instead of failure category messaging.
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py apps/backend/tests/test_clients_platform_account_mappings.py apps/backend/tests/test_sync_worker.py`, `APP_AUTH_SECRET=test-auth-secret pytest -q apps/backend/tests/test_sync_orchestration_meta_ids.py apps/backend/tests/test_account_sync_metadata_contract.py`, `pnpm --dir apps/frontend test src/app/agency-accounts/[platform]/[accountId]/page.platform-parity.test.tsx`, `pnpm --dir apps/frontend build`.
+
+---
+
+# TODO — TikTok historical 1-year cap + short chunks + empty-success coverage semantics
+
+- [x] Audit current TikTok batch orchestration for effective start date/chunk sizing and identify hooks for platform-specific clamp.
+- [x] Implement TikTok-only historical start-date cap to max(last 365 days, original sync start) without impacting other platforms.
+- [x] Enforce short TikTok historical chunk windows (max 30 days) while preserving existing chunk behavior for other platforms.
+- [x] Keep empty-success semantics: do not advance TikTok `backfill_completed_through` when done+zero downloaded/mapped, and mark no-data success explicitly in metadata.
+- [x] Ensure run/detail payload/UI derivation shows neutral no-data state (not false error and not misleading full-success coverage).
+- [x] Add/update backend/frontend tests for 1-year cap, chunk size, empty-success semantics, and non-TikTok regressions.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Batch orchestration now derives TikTok historical effective start using max(requested start, account sync_start_date, today-365d), keeping non-TikTok behavior unchanged.
+- TikTok historical chunk sizing now clamps to 30 days while preserving requested chunk size semantics for other platforms/jobs.
+- Empty-success finalization path persists explicit no-data metadata (`no_data_success`, `empty_success`, row counters, zero_row_marker) and skips coverage advancement for zero-row historical completions.
+- Added regression tests for TikTok 1-year clamp + chunk cap, non-TikTok unchanged chunk sizing, and empty-success no-data marker propagation.
+- Verification: `pytest -q apps/backend/tests/test_sync_orchestration_api.py apps/backend/tests/test_sync_worker.py`.
+
+---
+
+# TODO — TikTok deep-dive parity + zero-row diagnostics + no-data success semantics
+
+- [x] Sync workspace against latest repo state before edits (or record exact git topology blocker).
+- [x] Add explicit TikTok reporting request parity helper parameters (`report_type`, `service_type`, `query_mode`) and keep request shape testable.
+- [x] Expand reporting observability with safe request/response diagnostics (endpoint/query + keys + row markers) without leaking tokens.
+- [x] Differentiate provider empty-list vs parsed-but-zero-mapped with mapper missing-key diagnostics.
+- [x] Ensure all-zero TikTok historical outcomes are not treated as full operational success/backfill-valid completion semantics.
+- [x] Add minimal UI messaging for TikTok all-zero last-run diagnostics without redesign.
+- [x] Add/update backend + frontend tests for request parity, diagnostics differentiation, all-zero semantics, and secret safety.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Git sync attempt executed first (`git pull --rebase`) and blocked by repository topology (`work` has no tracking remote configured); continued from current up-to-date local HEAD.
+- TikTok reporting now uses explicit parity parameters through a shared helper (`report_type=BASIC`, `service_type=AUCTION`, `query_mode=REGULAR`) and stores sanitized request+response diagnostics per fetch.
+- Zero-row diagnostics now include provider-empty vs parser-zero-mapped markers plus `missing_required_breakdown` for mapper-required keys.
+- Sync run serialization now exposes `operational_status=no_data_success` for successful no-data TikTok runs; batch progress surfaces `operational_status=completed_with_no_data` when all batch runs are no-data success.
+- Agency account detail keeps minimal UI change: shows explicit `no_data_success` badge while retaining neutral no-data diagnostics messages.
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py apps/backend/tests/test_sync_orchestration_api.py apps/backend/tests/test_sync_worker.py`, `pnpm --dir apps/frontend test src/app/agency-accounts/[platform]/[accountId]/page.platform-parity.test.tsx`, `pnpm --dir apps/frontend build`.
+
+---
+
+# TODO — Fix Agency sync-run chunks 500 via JSON-safe metadata serialization
+
+- [x] Attempt workspace sync before edits and record git topology blocker if tracking remote is missing.
+- [x] Locate `GET /agency/sync-runs/{jobId}/chunks` backend path and identify exact 500 failure point.
+- [x] Implement small recursive `to_json_safe(value)` helper for dict/list/tuple/set/date/datetime/Decimal/Enum/bytes + safe fallback.
+- [x] Apply JSON-safe normalization to chunk endpoint payload (metadata + nested observability details).
+- [x] Preserve TikTok observability fields (`sample_row_keys`, `skipped_*`, `zero_row_marker`, `rows_downloaded`, `rows_mapped`, `rows_written`).
+- [x] Add backend tests for problematic types and endpoint regression (no 500 on observability-rich metadata).
+- [x] Run backend tests relevant to chunk serialization endpoint.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Workspace sync was attempted first via `git pull --rebase`; blocked because local branch has no tracking remote configured in this environment.
+- Root cause for chunks 500 was endpoint serialization bug in `_serialize_chunk`: it referenced undefined variable `is_success`, causing runtime `NameError` on Show logs path.
+- Added recursive `to_json_safe` and applied it to run/chunk metadata serialization so rich observability payloads are JSON-safe while preserving diagnostic fields.
+- Added dedicated backend tests for set/date/datetime/Decimal/Enum/bytes and endpoint-function regression coverage for observability-rich chunk metadata.
+- Verification: `pytest -q apps/backend/tests/test_sync_orchestration_json_safe.py apps/backend/tests/test_sync_orchestration_api.py`, `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py::TikTokAdsImportAccountsTests::test_sync_client_records_provider_empty_list_observability`.
+
+---
+
+# TODO — Urgent Show logs TikTok: /chunks 500 fix + observability visibility
+
+- [x] Attempt workspace update before changes and record git topology blocker if no tracking remote exists.
+- [x] Re-verify current `/agency/sync-runs/{jobId}/chunks` serialization path for NameError regression and JSON-safe metadata behavior.
+- [x] Apply minimal backend-only patch if needed so `_serialize_chunk` never references undefined vars and keeps chunk observability fields.
+- [x] Add/adjust backend tests for: endpoint no longer 500, TikTok observability fields present, and no token leak.
+- [x] Run targeted backend tests for chunks endpoint/serialization.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Workspace update was attempted first (`git pull --rebase`) and blocked by missing tracking remote configuration on branch `work`.
+- Confirmed endpoint path and runtime failure source: `/agency/sync-runs/{jobId}/chunks` used `_serialize_chunk`, where undefined `is_success` caused NameError and 500 in Show logs.
+- Kept patch minimal and backend-focused: `_serialize_chunk` now uses local `chunk_success` and JSON-safe metadata; no TikTok reporting logic changed.
+- Strengthened JSON-safe helper with secret masking for token-like keys/query params while preserving observability counters/markers in response payload.
+- Added API-level regression test that hits `/chunks`, asserts 200, validates TikTok observability fields, and verifies no token leakage in response body.
+- Verification: `pytest -q apps/backend/tests/test_sync_orchestration_json_safe.py apps/backend/tests/test_sync_orchestration_api.py`, `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py::TikTokAdsImportAccountsTests::test_sync_client_records_provider_empty_list_observability`.
+
+---
+
+# TODO — TikTok parser deep-dive: nested mapping + parser_failure semantics
+
+- [x] Attempt workspace update before edits and record git topology blocker when tracking remote is unavailable.
+- [x] Audit current TikTok fetch parser for nested `dimensions`/`metrics` handling and date extraction per grain.
+- [x] Implement row normalization helpers for dimensions/metrics map extraction across dict/list/simple shapes.
+- [x] Map per-grain fields from normalized dimensions/metrics (stat_time_day, entity ids, metrics) and reduce false skipped_invalid_date.
+- [x] Add deeper parser observability (`sample_dimension_keys`, `sample_metric_keys`, `date_source_used`, skip reasons) without secret leaks.
+- [x] Introduce parser_failure semantics distinct from no_data_success and prevent success/backfill advancement on parser_failure.
+- [x] Apply minimal API/UI status adjustments only if needed so parser_failure is not shown as clean success.
+- [x] Add/adjust tests for nested row mapping, date parsing, parser_failure vs no_data_success, backfill semantics, and no token leak.
+- [x] Run relevant backend tests (and frontend tests/build only if UI touched).
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Workspace update attempted first (`git pull --rebase`), blocked by missing tracking remote on local `work` branch.
+- TikTok parser now normalizes nested `dimensions`/`metrics` payloads from dict/list/entry-shapes and performs robust report date parsing (ISO date, datetime, `YYYYMMDD`, `...Z`).
+- Parser observability now includes `sample_dimension_keys`, `sample_metric_keys`, `date_source_used`, and `skip_reason_counts` while retaining existing row counters/zero-row markers.
+- Worker finalization now classifies `provider_row_count>0 && rows_mapped=0` as parser failure (terminal error), preventing `last_success_at` and backfill advancement; true provider-empty remains `no_data_success`.
+- Added backend tests for nested row shape mapping, parser observability/date source, parser_failure finalization semantics, and operational status serialization.
+- Verification: `pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py apps/backend/tests/test_sync_worker.py apps/backend/tests/test_sync_orchestration_api.py`.
+
+---
+
+# TODO — TikTok run summary aggregation + effective historical window UI correctness
+
+- [x] Attempt workspace sync before edits and record git topology blocker if tracking remote is unavailable.
+- [x] Audit current run-level serialization/aggregation for `rows_written`, `rows_downloaded`, `rows_mapped` and identify why TikTok run cards show 0/0 while chunks have values.
+- [x] Implement robust run-level aggregation from chunks for TikTok `rows_downloaded` and `rows_mapped` (safe with partial metadata, no double-count semantics regressions).
+- [x] Keep other platforms unaffected and preserve existing `rows_written` behavior.
+- [x] Update Agency Accounts TikTok historical text to reflect effective historical window reality (last-year cap) instead of misleading raw sync_start_date.
+- [x] Ensure Agency Account Detail run cards display run summary rows consistent with chunk logs.
+- [x] Add/update backend + frontend tests for summary aggregation and TikTok historical window text correctness.
+- [x] Run backend tests, frontend targeted tests, and frontend build.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Workspace sync was attempted first (`git pull --rebase`) and blocked because local branch `work` has no tracking remote configured.
+- Run-card 0/0 root cause: run-level metadata did not aggregate `rows_downloaded` / `rows_mapped` from chunk metadata, while UI summary reads those fields from run metadata.
+- Backend now aggregates TikTok run-level rows from chunk metadata (dedup by `chunk_index`, tolerant to missing fields) and injects totals into reconciled run metadata used by detail/list APIs.
+- Agency Accounts TikTok historical text now reflects effective capped window (`ultimul an`) instead of raw `sync_start_date`; completion banner for TikTok historical also states last-year cap.
+- Added backend API regression test for aggregated run summary rows and frontend tests for TikTok effective historical window label + completion banner text.
+- Verification: `pytest -q apps/backend/tests/test_sync_orchestration_api.py apps/backend/tests/test_tiktok_ads_import_accounts.py apps/backend/tests/test_sync_worker.py`, `pnpm --dir apps/frontend test src/app/agency-accounts/page.tiktok.test.tsx src/app/agency-accounts/[platform]/[accountId]/page.platform-parity.test.tsx`, `pnpm --dir apps/frontend build`.
+
+---
+
+# TODO — TikTok historical failed-run cleanup + operational metadata reconciliation
+
+- [x] Attempt workspace sync before edits and record git topology blocker if tracking remote is unavailable.
+- [x] Implement backend cleanup for superseded TikTok historical_backfill failed runs + associated chunks (safe scope only).
+- [x] Recompute TikTok account operational metadata for affected accounts after cleanup (last run fields, success/error, backfill coverage).
+- [x] Expose a safe one-off trigger path for existing data cleanup.
+- [x] Add backend tests for cleanup deletion semantics, metadata reconciliation, and non-impact guarantees.
+- [x] Run targeted backend tests for sync cleanup and metadata behavior.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Workspace update was attempted first via `git pull --rebase`; blocked because branch `work` has no upstream tracking remote in this environment.
+- Added `cleanup_superseded_tiktok_failed_runs(...)` in `sync_runs_store` to hard-delete only superseded TikTok `historical_backfill` failed/error runs plus their chunks, scoped by same platform/account and superseded by later successful historical run (grain-aware with null fallback).
+- Added run/account metadata reconciliation for affected TikTok accounts in the same cleanup transaction (recompute `last_run_status`, `last_run_type`, `last_run_started_at`, `last_run_finished_at`, `last_success_at`, `backfill_completed_through`, `last_error`).
+- Exposed a safe one-off backend trigger endpoint `POST /agency/sync-runs/tiktok/cleanup-superseded-failed-historical` with optional `dry_run` and `account_ids` scope.
+- Wired automatic cleanup after successful TikTok historical chunk finalization in worker, with exception guard so cleanup failures do not fail the sync job itself.
+- Added backend tests for store cleanup semantics, endpoint wiring, and worker auto-cleanup invocation.
+- Verification: `pytest -q apps/backend/tests/test_sync_runs_store_tiktok_cleanup.py apps/backend/tests/test_sync_orchestration_api.py apps/backend/tests/test_sync_worker.py apps/backend/tests/test_clients_platform_account_mappings.py`.
+
+---
+
+# TODO — TikTok cleanup matcher hardening + dry-run diagnostics clarity
+
+- [x] Attempt workspace sync before edits and record git topology blocker if tracking remote is unavailable.
+- [x] Audit current cleanup matcher rule and identify fragility in account_id/grain/time matching.
+- [x] Harden cleanup matcher normalization and matching diagnostics for superseded eligibility.
+- [x] Expand dry-run payload with explicit deletion targets and non-match reasons.
+- [x] Keep exec-mode deletion scope safe (TikTok historical failed superseded only) and preserve metadata recompute.
+- [x] Add backend tests for matcher normalization, grain mismatch/no-success non-delete, diagnostics reasons, and metadata reconciliation.
+- [x] Run targeted backend tests for cleanup store + endpoint + worker interactions.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Workspace update was attempted first (`git pull --rebase`) and blocked because branch `work` has no tracking remote configured.
+- Previous matcher fragility: SQL-only candidate selection gave limited explainability for non-matches and depended on raw account/grain values in matching logic.
+- Hardened cleanup matcher now normalizes account ids (`trim`) and grains (`lower + default account_daily`) consistently for failed and successful historical TikTok runs before superseded evaluation.
+- Dry-run now returns explicit `superseded_runs` and `non_superseded_runs` with reasons (`matched_later_success_same_account_grain`, `no_later_success_found`, `grain_mismatch`, `account_id_mismatch`, optional missing-chunks marker), plus `filtered_out_runs` reasons (`wrong_platform`, `wrong_job_type`) and aggregated `non_match_reason_counts`.
+- Exec mode still deletes only superseded TikTok historical failed runs and related chunks, then recomputes operational metadata for affected TikTok accounts.
+- Verification: `pytest -q apps/backend/tests/test_sync_runs_store_tiktok_cleanup.py apps/backend/tests/test_sync_orchestration_api.py apps/backend/tests/test_sync_worker.py`.
+
+---
+
+# TODO — TikTok legacy cleanup matcher fix for window-mismatch failed historical runs
+
+- [x] Attempt workspace sync before edits and record git topology blocker if tracking remote is unavailable.
+- [x] Audit current matcher and confirm whether window/date-range compatibility is causing missed legacy deletions.
+- [x] Implement explicit TikTok legacy rule: same account+grain and later done historical run supersedes failed run regardless of start_date equality.
+- [x] Keep safety guards (same platform/job_type/account/grain + strictly later success in time).
+- [x] Ensure chunks are deleted with eligible runs and metadata is recomputed for affected accounts.
+- [x] Expand dry-run diagnostics with explicit legacy window-mismatch signal for debugging.
+- [x] Add/update backend tests for legacy window mismatch delete, grain mismatch/no-success no-delete, chunk deletion, metadata recompute, and non-impact on other platforms.
+- [x] Run targeted backend tests.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Workspace update was attempted first (`git pull --rebase`) and blocked because local branch `work` has no upstream tracking remote configured.
+- Confirmed matcher miss risk for legacy runs came from time ordering based on `updated_at` participation (`COALESCE(..., updated_at)`), which can make older failed runs look newer than subsequent successful runs.
+- Fixed matcher ordering to use terminal/run chronology (`finished_at`, then `started_at`, then `created_at`, fallback `updated_at`) and kept supersede eligibility strict on same TikTok account + same grain + later done historical run.
+- Added explicit legacy dry-run diagnostic reason `window_mismatch_but_legacy_tiktok_cleanup_should_match` when same account/grain successes exist but are not later, to highlight pre-cap/pre-fix window drift scenarios.
+- Exec mode remains safe and narrow: deletes only superseded TikTok historical failed runs plus their chunks, then recomputes operational metadata for affected accounts.
+- Verification: `pytest -q apps/backend/tests/test_sync_runs_store_tiktok_cleanup.py apps/backend/tests/test_sync_orchestration_api.py apps/backend/tests/test_sync_worker.py apps/backend/tests/test_clients_platform_account_mappings.py`.
+
+---
+
+# TODO — Meta parity in Agency Accounts list operational metadata
+
+- [x] Attempt workspace sync before edits and record tracking-remote blocker if unavailable.
+- [x] Audit API + frontend data flow for Agency Accounts list (Meta vs Google/TikTok metadata fields).
+- [x] Fix backend payload/reconciliation for Meta list-level operational metadata if missing.
+- [x] Fix frontend mapping/rendering so Meta tab uses same operational metadata display rules as Google/TikTok.
+- [x] Add backend tests for Meta payload/recompute behavior and stale error suppression parity.
+- [x] Add frontend tests for Meta list rendering (Istoric/Rolling/Ultimul sync reușit/Eroare recentă + fallback "-").
+- [x] Run targeted backend + frontend tests and frontend build.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Workspace sync attempted first (`git pull --rebase`) but blocked because local `work` branch has no upstream tracking remote.
+- Root cause of Meta list parity gap was frontend mapping: Meta unified rows were hardcoded with null operational fields, even when backend payload contained values.
+- Updated Meta account type + unified mapper to consume backend operational metadata (`backfill_completed_through`, `rolling_synced_through`, `last_success_at`, `last_error`, `last_error_category`, `last_error_details`, `last_run_status`, `last_run_type`, `sync_start_date`).
+- Added generic stale-error suppression after success in `/clients/accounts/{platform}` path so Meta stale `last_error` is cleared when latest run is successful and no active sync (TikTok-specific feature-flag suppression remains unchanged).
+- Added backend test for Meta stale-error suppression and metadata passthrough; added frontend test to verify Meta tab renders operational fields and fallback `-` for missing values.
+- Verification: `pytest -q apps/backend/tests/test_clients_platform_account_mappings.py apps/backend/tests/test_sync_orchestration_api.py`; `pnpm --dir apps/frontend test src/app/agency-accounts/page.meta.test.tsx src/app/agency-accounts/page.tiktok.test.tsx`; `pnpm --dir apps/frontend build`.
+
+---
+
+# TODO — Meta conversions = strict Lead only
+
+- [x] Attempt workspace sync before edits and record tracking-remote blocker if unavailable.
+- [x] Audit current Meta conversions derivation from actions and all write/aggregate call-sites.
+- [x] Implement explicit lead-only helper for Meta conversions and wire it across account/campaign/adset/ad grains.
+- [x] Ensure non-lead action types are excluded and revenue/conversion_value behavior remains unchanged unless required.
+- [x] Add safe idempotent recompute/backfill mechanism for historical Meta rows saved with inflated conversions.
+- [x] Add/update backend tests for lead-only behavior and non-impact on other platforms.
+- [x] Run targeted backend tests and summarize impact.
+
+## Review
+- [x] Completed implementation + verification notes.
+
+- Workspace sync was attempted first (`git pull --rebase`) and blocked because branch `work` has no upstream tracking remote in this environment.
+- Root cause confirmed: Meta conversions were computed as sum of all `actions[*].value`, inflating conversions with non-lead actions (purchase, add_to_cart, page_view, post_engagement etc.).
+- Implemented explicit lead-only derivation helper `_derive_lead_conversions(...)` with allowlist-only action types and wired it across all Meta sync grains (`account_daily`, `campaign_daily`, `ad_group_daily`, `ad_daily`).
+- Kept `conversion_value`/revenue logic unchanged (`_derive_conversion_value` still sums `action_values`) to keep scope strict to conversions semantics.
+- Historical correction mechanism: no new endpoint required; existing Meta historical backfill endpoint is idempotent and rewrites rows via upsert using corrected lead-only conversions.
+- Added tests for mixed actions (lead + non-lead), explicit exclusions, and all-grain lead-only usage.
+- Verification: `pytest -q apps/backend/tests/test_meta_ads_sync_account_daily.py apps/backend/tests/test_clients_platform_account_mappings.py`.
+
+---
+
+# TODO — Meta dashboard source-of-truth = account_daily + daily real + lead-only
+
+- [x] Attempt workspace sync before edits and record tracking-remote blocker if unavailable.
+- [x] Audit Meta account_daily insights request (level/fields/time_increment) and persistence behavior.
+- [x] Enforce time_increment=1 for Meta account_daily ingestion and verify row-per-day behavior.
+- [x] Audit dashboard/subaccount aggregation source for Meta and remove multi-grain double counting.
+- [x] Ensure Meta dashboard totals come strictly from account_daily source and conversions are lead-only.
+- [x] Add safe/idempotent recompute path for historical Meta data correction.
+- [x] Add/update backend tests for daily account ingestion params, dashboard source grain, and non-impact on other platforms.
+- [x] Run targeted backend tests and document verification.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Added `time_increment=1` for `account_daily` Meta insights requests and protected snapshot upserts to `account_daily` grain only.
+- Added tests for request parameter enforcement and snapshot source-of-truth protection.
+- Verified with: `pytest -q apps/backend/tests/test_meta_ads_sync_account_daily.py apps/backend/tests/test_clients_platform_account_mappings.py`.
+
+---
+
+# TODO — Meta canonical lead conversion deduplication
+
+- [x] Attempt workspace sync before edits and record tracking-remote blocker if unavailable.
+- [x] Audit Meta lead conversion helper action_type handling and account_daily/snapshot call path.
+- [x] Implement canonical lead action selection by explicit priority (no summing across lead-like aliases).
+- [x] Add minimal safe lead observability fields to Meta extra_metrics/run-debug payloads.
+- [x] Apply canonical conversion derivation across all Meta grains and snapshot source path.
+- [x] Add/update backend tests for single-type, duplicate alias dedup, mixed actions, account_daily + snapshot canonical behavior.
+- [x] Run targeted backend tests for Meta plus adjacent non-impact suites.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Canonical rule now selects one lead action type by priority (`lead` first, then `onsite_conversion.lead_grouped`, then other lead aliases) and uses only that value for conversions.
+- Added safe observability fields in `extra_metrics.meta_ads`: `lead_action_types_found`, `lead_action_type_selected`, `lead_action_values_found`.
+- Verified dedup regression case where two lead-like action types both report 23 now stores conversions=23 (not 46).
+
+---
+
+# TODO — Dashboard currency normalization (Agency RON / Sub-account client currency)
+
+- [x] Attempt workspace sync before edits and record tracking-remote blocker if unavailable.
+- [x] Audit current aggregation paths for Agency Dashboard totals, Sub-account totals/platform rows, and Top clients spend card.
+- [x] Implement generic per-row currency normalization helper using date-based FX with safe fallback behavior.
+- [x] Normalize Agency Dashboard monetary totals to RON before aggregation and recalculate ROAS from normalized spend/revenue.
+- [x] Normalize Sub-account Dashboard monetary totals/platform rows to client preferred currency before aggregation.
+- [x] Ensure Top clients (by spend) is sorted and displayed in RON using normalized spend.
+- [x] Keep non-monetary metrics unconverted (impressions/clicks/conversions).
+- [x] Add backend tests for mixed-currency normalization, top-clients RON behavior, and FX fallback predictability.
+- [x] Run targeted backend and frontend tests/build relevant to changed dashboard flows.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Added `_normalize_money(...)` and `_aggregate_client_rows(...)` to normalize by row date + source currency -> target currency.
+- Updated client dashboard query to pull `account_currency` and normalize spend/revenue to client preferred currency for totals and per-platform rows.
+- Updated agency top clients to use/display RON normalized spend, with sorting based on normalized RON values.
+
+---
+
+# TODO — Meta account_daily reliability + snapshot rebuild/recompute
+
+- [x] Attempt workspace sync before edits and record tracking-remote blocker if unavailable.
+- [x] Audit Meta account_daily request/parsing/write path and historical backfill flow for final-chunk 500 behavior.
+- [x] Fix account_daily fetch reliability for transient Meta 5xx and preserve explicit `time_increment=1` daily fetch semantics.
+- [x] Ensure account_daily backfill no longer leaves stale snapshot by rebuilding snapshot from full account_daily backfill window.
+- [x] Add idempotent snapshot recompute mechanism (API) sourced strictly from persisted account_daily rows.
+- [x] Keep lead-only conversions unchanged and ensure non-account grains remain out of dashboard snapshot source-of-truth.
+- [x] Add/update tests for transient 500 regression, daily row coherence, backfill snapshot rebuild, recompute endpoint, and source-of-truth safety.
+- [x] Run targeted Meta backend tests and verify pass.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Root cause identified: account_daily historical backfill could fail hard on transient Meta 5xx due to no retry in insights fetch, and snapshot could stay stale because per-chunk account_daily sync updated snapshot with only the last chunk window.
+- Implemented retries for retryable Meta errors in `_fetch_insights` and added full-window snapshot rebuild at end of historical backfill when `account_daily` grain is included.
+- Added `POST /integrations/meta-ads/{client_id}/recompute-snapshot` to rebuild snapshot idempotently from persisted account_daily rows (optionally filtered by date/account).
+
+---
+
+# TODO — Meta currency propagation and no-double-conversion in dashboard
+
+- [x] Attempt workspace sync before edits and record tracking-remote blocker if unavailable.
+- [x] Audit Meta money flow from account_daily write -> dashboard query currency resolution -> normalization.
+- [x] Fix Meta source currency propagation into account_daily row extra metrics.
+- [x] Fix dashboard currency resolution to prefer Meta row currency from extra metrics before mapping/client fallback.
+- [x] Add regression tests for RON->RON no-conversion (3,587.60 case), query precedence, and Meta row currency propagation.
+- [x] Keep scope strict: no Google/TikTok functional changes.
+- [x] Run targeted backend tests.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Root cause: dashboard fallback could resolve Meta rows to mapping/client currency (USD) when true Meta account currency was RON, leading to double conversion (RON treated as USD then converted to RON again).
+- Fix: propagate Meta account currency into `extra_metrics.meta_ads.account_currency` during account_daily writes and make dashboard queries prefer that per-row currency for Meta before fallback chain.
+- Added exact regression for 3,587.60 RON source with RON target to ensure no reconversion.
+
+---
+
+# TODO — Sub-account Dashboard header/nav + platform links update
+
+- [x] Attempt workspace sync before edits and record tracking-remote blocker if unavailable.
+- [x] Remove sub-account dashboard page title from header universally.
+- [x] Replace old header quick links (Campaigns/Rules/Creative/Recommendations) with Media Buying + Media Tracker only in page header.
+- [x] Convert platform names in dashboard table into links to platform-dedicated sub routes.
+- [x] Keep sidebar untouched (no new sidebar entries for new header links).
+- [x] Add frontend test coverage for new header links, removed old links, and platform table links.
+- [x] Run targeted frontend tests and frontend build.
+- [x] Capture screenshot for visual frontend change.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Header title removed by passing `title={null}` to AppShell on sub dashboard page.
+- Header links updated to `Media Buying` and `Media Tracker` only.
+- Platform names now render as interactive links to `/sub/{id}/{platform-slug}` with hover styling.
+
+---
+
+# TODO — Sub dashboard linked routes scaffold (header + platform links)
+
+- [x] Audit existing sub dashboard layout wrapper usage (`ProtectedPage` + `AppShell`) for consistent route scaffolding.
+- [x] Add new App Router routes under `/sub/[id]/` for media-buying, media-tracker, google-ads, meta-ads, tiktok-ads, pinterest-ads, snapchat-ads.
+- [x] Reuse a shared placeholder page component to keep consistent header links, layout, and "Coming Soon" container.
+- [x] Ensure route pages consume URL id via `useParams` and preserve sub-account context in links/titles.
+- [x] Add/adjust frontend tests for all newly scaffolded routes.
+- [x] Run targeted frontend tests.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Added a reusable sub-route placeholder component and wired all requested routes with consistent dashboard shell styling.
+- Added route coverage tests validating per-page heading text, media navigation links, and placeholder content.
+
+---
+
+# TODO — Media Buying lead foundation (backend config + daily manual values API)
+
+- [x] Attempt workspace sync before implementation; record tracking-branch blocker if remote is not configured.
+- [x] Add DB migration for media buying config per sub-account and lead daily manual values table with unique upsert keys.
+- [x] Implement backend persistence store for media buying config + lead daily values (validation + idempotent upsert).
+- [x] Expose API endpoints for get/update config and list/upsert lead daily values by interval/date.
+- [x] Enforce validation rules: template type, non-negative counts, monetary constraints (allow negative only for custom value 5), and date interval checks.
+- [x] Add backend tests for config persistence, custom labels, template type, daily upsert idempotency, and validation/list semantics.
+- [x] Run targeted backend tests for the new store and API endpoints.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Added migration `0019_media_buying_foundation.sql` with `media_buying_configs` and `media_buying_lead_daily_manual_values`.
+- Added `MediaBuyingStore` and `/clients/{client_id}/media-buying/*` endpoints for lead-template foundation only.
+- Left `%^` formula intentionally unimplemented via explicit TODO comment in payload mapping.
+
+---
+
+# TODO — Media Buying lead step 2 (read API + automated cost aggregation + monthly grouping)
+
+- [x] Attempt workspace sync before changes and record upstream-tracking blocker when remote is missing.
+- [x] Implement lead read-side table assembler combining automated daily costs (Google/Meta/TikTok) + manual daily values.
+- [x] Reuse existing FX normalization behavior for daily cost conversion into template display currency.
+- [x] Implement confirmed formulas on daily rows and monthly rollups recalculated from month sums.
+- [x] Keep `%^` explicitly unimplemented as null/TODO placeholder.
+- [x] Expose dedicated API endpoint for lead table read with date range and non-lead unsupported behavior.
+- [x] Add/extend backend tests for merge, FX conversion, formulas, monthly recompute, missing-manual fallback, non-lead unsupported.
+- [x] Run targeted backend tests.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Added `get_lead_table(...)` in `MediaBuyingStore` and a dedicated query for automated daily costs from `ad_performance_reports` for google/meta/tiktok.
+- Added endpoint `GET /clients/{client_id}/media-buying/lead/table` and explicit 501 for template types not implemented in this task.
+- Verified `percent_change` (`%^`) remains explicit `None` at day and month levels.
+
+---
+
+# TODO — Media Buying lead step 3 (frontend table UI with month/day grouping)
+
+- [x] Attempt workspace sync before edits and record upstream-tracking blocker when remote is missing.
+- [x] Replace Media Buying placeholder with lead read-only table UI backed by `/clients/{id}/media-buying/lead/table`.
+- [x] Implement month summary rows + expand/collapse day rows with latest month expanded by default.
+- [x] Render required columns including dynamic custom labels from API metadata and `%^` placeholder fallback.
+- [x] Add loading, error, and empty states; handle non-lead template fallback without crash.
+- [x] Add frontend tests for table render, month grouping/expand, custom labels, null fallback, non-lead fallback, and basic states.
+- [x] Run targeted frontend tests and frontend build.
+- [x] Capture screenshot for visual verification.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Media Buying page now renders a read-only lead table with grouped month totals and expandable daily rows from backend API payload.
+- Custom labels for CV1..CV5 are sourced from API metadata with fallback defaults; `%^` remains explicit placeholder (`—`).
+- Non-lead templates show clear "not implemented" fallback message in-page.
+
+---
+
+# TODO — Media Buying lead step 4 (daily row manual editing + save + recalculation)
+
+- [x] Attempt workspace sync before edits and record upstream-tracking blocker when remote is missing.
+- [x] Add editable inputs for daily rows only (lead, phones, CV1, CV2, CV3, CV4, CV5, sales) while keeping month rows read-only.
+- [x] Implement per-row edit/save/cancel UX with saving feedback and disabled Save when unchanged/invalid.
+- [x] Validate UI inputs to match backend constraints (non-negative integers/counts, non-negative CV3/CV4 amounts, numeric CV5 allowed negative).
+- [x] Save via existing endpoint `PUT /clients/{id}/media-buying/lead/daily-values` and refetch table after save for robust recalculation.
+- [x] Keep `%^` column as placeholder/fallback only, no formula logic added.
+- [x] Add frontend tests for edit/save/cancel/validation/refetch/non-lead fallback/states.
+- [x] Run targeted frontend tests and build.
+- [x] Capture screenshot for editable UI state.
+
+## Review
+- [x] Completed implementation + verification notes.
+- Daily rows now support robust manual editing with simple inputs and per-row actions, while monthly summary rows remain read-only.
+- Save uses existing backend PUT endpoint and triggers table refetch to refresh day + month totals and dependent formulas from backend response.
+- `%^` remains displayed as explicit placeholder (`—`) on both month and day rows.
+
+---
+
+# TODO — Media Buying table UI polish (date/column styles/month order)
+
+- [x] Attempt workspace sync to latest branch state and record tracking/upstream limitations.
+- [x] Implement frontend-only Media Buying table polish (short Romanian day dates, semantic column styling, dashed separators, month order descending) with no business-logic changes.
+- [x] Add/update frontend tests for date format, month order, semantic styles, dashed separators, and inline edit regression coverage.
+- [x] Run frontend tests + build and record results.
+- [x] Commit, attempt push, and create PR.
+
+## Review
+- [x] Added semantic column styling map in Media Buying page and applied gray text, dashed separators, and red unrealized-value rendering with parentheses.
+- [x] Daily rows now display Romanian short dates (`1 Mar`, `1 Feb`, `1 Ian`) and month headers use short month+year labels.
+- [x] Month sections are rendered newest-first (`sortedMonths` descending by `YYYY-MM`).
+- [x] Verification: `pnpm --dir apps/frontend test src/app/sub/[id]/media-buying/page.test.tsx`, `pnpm --dir apps/frontend build`.
+- [x] Workspace sync note: `git pull --ff-only` failed because branch `work` has no upstream tracking configured in this environment.
+
+
+---
+
+# TODO — Media Buying step 6 (%^ daily+monthly implementation)
+
+- [x] Attempt workspace update and record any upstream-tracking limitations.
+- [x] Implement backend `percent_change` for daily rows (vs previous calendar day cost_total) and monthly rows (vs previous month total cost_total), null-safe for missing/zero previous totals.
+- [x] Update frontend Media Buying table to render computed `%^` values for month/day rows and fallback `—` for null.
+- [x] Add/update backend + frontend tests for daily/monthly percent_change, zero/missing previous totals, and UI rendering with descending month order unaffected.
+- [x] Run relevant backend/frontend tests + frontend build, then commit/push/PR.
+
+## Review
+- [x] Added backend helper `_build_percent_change(...)` and applied it in chronological day traversal + chronological month traversal, independent from UI sort order.
+- [x] Kept null behavior for missing/zero previous totals (`percent_change=None`) to avoid invented values and division by zero.
+- [x] Frontend now renders `%^` with existing `formatRate(...)` for both month/day rows and retains `—` fallback for null.
+- [x] Verification: `pytest apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py`, `pnpm --dir apps/frontend test src/app/sub/[id]/media-buying/page.test.tsx`, `pnpm --dir apps/frontend build`.
+- [x] Workspace sync note: `git pull --ff-only` failed because branch `work` has no upstream tracking configured in this environment.
+- [x] Screenshot attempt note: browser tool failed to launch Chromium (TargetClosedError/SIGSEGV) in this environment.
+
+---
+
+# TODO — Railway backend build fix: pin Python 3.12 for google-ads compatibility
+
+- [x] Attempt workspace sync and record upstream-tracking limitation if present.
+- [x] Identify runtime version source used for Railway/backend builds.
+- [x] Apply minimal Python pin to 3.12 without changing `google-ads` dependency.
+- [x] Run targeted checks and finalize with commit + push attempt + PR.
+
+## Review
+- [x] Added `apps/backend/.python-version` with `3.12` for Railway/Nixpacks-style runtime detection.
+- [x] Updated backend container base image to `python:3.12-slim` in `apps/backend/Dockerfile` for Docker-based deployments.
+- [x] Kept `apps/backend/requirements.txt` unchanged (no `google-ads` upgrade).
+- [x] Verification: `pytest apps/backend/tests/test_clients_media_buying_api.py -q`.
+- [x] Workspace sync note: `git pull --ff-only` failed because branch `work` has no upstream tracking configured.
+
+---
+
+# TODO — Media Buying step 7 (unrealized semantics + column visibility persisted view)
+
+- [x] Attempt workspace sync and record upstream-tracking limitation if present.
+- [x] Extend backend media buying config with persisted `visible_columns` and wire through API schema/store.
+- [x] Implement backend `Val. Nerealizata` semantics as derived (`Val. Aprobata - Val. Vanduta`, floored at 0) for day + month rows.
+- [x] Update frontend table styling/formatting: sold value normal black, unrealized red+parentheses only when >0 (else black no parentheses), close-rate columns violet.
+- [x] Add column visibility UI (with mandatory columns guard), load/save from backend config, and keep custom labels compatible.
+- [x] Add/update backend/frontend tests for formula semantics, styling, toggling, persistence, and fallback defaults.
+- [x] Run relevant backend/frontend tests + frontend build, then commit/push/PR.
+
+## Review
+- [x] Added migration `0021_media_buying_visible_columns.sql` and persisted `visible_columns` through media buying config schema/API/store + lead table meta.
+- [x] Derived `custom_value_4_amount_ron` as max(`custom_value_3_amount_ron - custom_value_5_amount_ron`, 0) for daily rows, and month totals recompute from monthly sums (not daily averages).
+- [x] Updated UI semantics: sold value shown normally (black, no parentheses), unrealized value shown red+parentheses only when >0, and rate columns in violet for month/day/header cells.
+- [x] Implemented "Customize columns" visibility selector with required `Data` column guard and auto-persist to backend config via `PUT /clients/{id}/media-buying/config`.
+- [x] Verification: `pytest apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py`, `pnpm --dir apps/frontend test src/app/sub/[id]/media-buying/page.test.tsx`, `pnpm --dir apps/frontend build`.
+- [x] Workspace sync note: `git pull --ff-only` failed because branch `work` has no upstream tracking configured.
+- [x] Screenshot note: Playwright browser tool timed out in this environment while capturing `/sub/96/media-buying`.
