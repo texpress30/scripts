@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
-import { format, subDays } from "date-fns";
+import { format } from "date-fns";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
@@ -58,8 +58,12 @@ type LeadTableMeta = {
   custom_cost_label_1?: string;
   custom_cost_label_2?: string;
   visible_columns?: string[];
-  date_from: string;
-  date_to: string;
+  date_from: string | null;
+  date_to: string | null;
+  effective_date_from?: string | null;
+  effective_date_to?: string | null;
+  earliest_data_date?: string | null;
+  latest_data_date?: string | null;
   available_months?: string[];
 };
 
@@ -299,16 +303,13 @@ export default function SubMediaBuyingPage() {
   const [visibleColumns, setVisibleColumns] = useState<ColumnSemanticKey[]>(DEFAULT_VISIBLE_COLUMNS);
   const [columnsPanelOpen, setColumnsPanelOpen] = useState(false);
 
-  const dateTo = useMemo(() => new Date(), []);
-  const dateFrom = useMemo(() => subDays(dateTo, 89), [dateTo]);
-
   const loadTable = useCallback(async (preserveExpanded: boolean) => {
     if (!Number.isFinite(clientId)) return;
     setLoading(true);
     setError("");
     try {
       const payload = await apiRequest<LeadTableResponse>(
-        `/clients/${clientId}/media-buying/lead/table?date_from=${toIso(dateFrom)}&date_to=${toIso(dateTo)}`
+        `/clients/${clientId}/media-buying/lead/table`
       );
       setTableData(payload);
       setEditingByDate({});
@@ -322,7 +323,7 @@ export default function SubMediaBuyingPage() {
     } finally {
       setLoading(false);
     }
-  }, [clientId, dateFrom, dateTo]);
+  }, [clientId]);
 
   useEffect(() => {
     let ignore = false;
@@ -576,7 +577,9 @@ export default function SubMediaBuyingPage() {
 
         <section className="wm-card p-6">
           <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
-          <p className="mt-2 text-sm text-slate-600">Range: {toIso(dateFrom)} - {toIso(dateTo)}</p>
+          <p className="mt-2 text-sm text-slate-600">
+            Range: {tableData?.meta.effective_date_from ?? tableData?.meta.date_from ?? "—"} - {tableData?.meta.effective_date_to ?? tableData?.meta.date_to ?? "—"}
+          </p>
 
           {isLeadTemplate ? (
             <div className="mt-3 flex items-center gap-2">

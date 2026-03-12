@@ -284,6 +284,7 @@ class MediaBuyingLeadTableReadTests(unittest.TestCase):
         store = MediaBuyingStore()
         store._ensure_schema = lambda: None
         store._resolve_client_template_type = lambda **kwargs: "lead"
+        store._get_lead_table_data_bounds = lambda **kwargs: (None, None)
         return store
 
     def test_get_lead_table_merges_costs_manual_and_fx_and_formulas(self):
@@ -409,11 +410,10 @@ class MediaBuyingLeadTableReadTests(unittest.TestCase):
         payload = store.get_lead_table(client_id=12, date_from=date(2026, 2, 1), date_to=date(2026, 3, 1))
 
         self.assertIsNone(payload["days"][0]["percent_change"])
-        self.assertIsNone(payload["days"][1]["percent_change"])
-        self.assertAlmostEqual(float(payload["days"][2]["percent_change"]), -0.8)
+        self.assertAlmostEqual(float(payload["days"][1]["percent_change"]), -0.8)
 
+        self.assertEqual([item["month"] for item in payload["months"]], ["2026-02"])
         self.assertIsNone(payload["months"][0]["totals"]["percent_change"])
-        self.assertAlmostEqual(float(payload["months"][1]["totals"]["percent_change"]), -1.0)
 
 
     def test_monthly_percent_change_is_null_when_previous_month_total_is_zero(self):
@@ -428,9 +428,72 @@ class MediaBuyingLeadTableReadTests(unittest.TestCase):
 
         payload = store.get_lead_table(client_id=12, date_from=date(2026, 3, 1), date_to=date(2026, 4, 1))
 
-        self.assertEqual([item["month"] for item in payload["months"]], ["2026-03", "2026-04"])
+        self.assertEqual([item["month"] for item in payload["months"]], ["2026-04"])
         self.assertIsNone(payload["months"][0]["totals"]["percent_change"])
-        self.assertIsNone(payload["months"][1]["totals"]["percent_change"])
+
+    def test_default_range_uses_real_data_bounds_and_skips_months_without_data(self):
+        store = self._build_store()
+        store.get_config = lambda **kwargs: {"client_id": 12, "template_type": "lead", "display_currency": "RON"}
+        store._get_lead_table_data_bounds = lambda **kwargs: (date(2025, 8, 4), date(2025, 8, 5))
+        store.list_lead_daily_manual_values = lambda **kwargs: []
+        store._list_automated_daily_costs = lambda **kwargs: [
+            {"date": date(2025, 8, 4), "platform": "google_ads", "account_currency": "RON", "spend": 100.0},
+            {"date": date(2025, 8, 5), "platform": "google_ads", "account_currency": "RON", "spend": 50.0},
+        ]
+        store._normalize_money_to_display_currency = lambda **kwargs: kwargs["amount"]
+
+        payload = store.get_lead_table(client_id=12)
+
+        self.assertEqual(payload["meta"]["date_from"], "2025-08-04")
+        self.assertEqual(payload["meta"]["date_to"], "2025-08-05")
+        self.assertEqual(payload["meta"]["effective_date_from"], "2025-08-04")
+        self.assertEqual(payload["meta"]["effective_date_to"], "2025-08-05")
+        self.assertEqual(payload["meta"]["earliest_data_date"], "2025-08-04")
+        self.assertEqual(payload["meta"]["latest_data_date"], "2025-08-05")
+        self.assertEqual(payload["meta"]["available_months"], ["2025-08"])
+        self.assertEqual([row["date"] for row in payload["days"]], ["2025-08-04", "2025-08-05"])
+
+    def test_explicit_range_keeps_support_but_removes_empty_days_and_months(self):
+        store = self._build_store()
+        store.get_config = lambda **kwargs: {"client_id": 12, "template_type": "lead", "display_currency": "RON"}
+        store.list_lead_daily_manual_values = lambda **kwargs: []
+        store._list_automated_daily_costs = lambda **kwargs: [
+            {"date": date(2026, 3, 12), "platform": "google_ads", "account_currency": "RON", "spend": 120.0},
+        ]
+        store._normalize_money_to_display_currency = lambda **kwargs: kwargs["amount"]
+
+        payload = store.get_lead_table(client_id=12, date_from=date(2026, 3, 1), date_to=date(2026, 4, 10))
+
+        self.assertEqual(payload["meta"]["date_from"], "2026-03-01")
+        self.assertEqual(payload["meta"]["date_to"], "2026-04-10")
+        self.assertEqual(payload["meta"]["effective_date_from"], "2026-03-12")
+        self.assertEqual(payload["meta"]["effective_date_to"], "2026-03-12")
+        self.assertEqual([item["month"] for item in payload["months"]], ["2026-03"])
+        self.assertEqual([row["date"] for row in payload["days"]], ["2026-03-12"])
+
+    def test_manual_values_alone_activate_day_even_when_costs_are_zero(self):
+        store = self._build_store()
+        store.get_config = lambda **kwargs: {"client_id": 12, "template_type": "lead", "display_currency": "RON"}
+        store.list_lead_daily_manual_values = lambda **kwargs: [
+            {
+                "date": "2026-03-14",
+                "leads": 1,
+                "phones": 0,
+                "custom_value_1_count": 0,
+                "custom_value_2_count": 0,
+                "custom_value_3_amount_ron": 0,
+                "custom_value_4_amount_ron": 0,
+                "custom_value_5_amount_ron": 0,
+                "sales_count": 0,
+            }
+        ]
+        store._list_automated_daily_costs = lambda **kwargs: []
+        store._normalize_money_to_display_currency = lambda **kwargs: kwargs["amount"]
+
+        payload = store.get_lead_table(client_id=12, date_from=date(2026, 3, 10), date_to=date(2026, 3, 20))
+
+        self.assertEqual([row["date"] for row in payload["days"]], ["2026-03-14"])
+        self.assertEqual(payload["months"][0]["totals"]["leads"], 1)
 
     def test_non_lead_template_is_not_implemented(self):
         store = self._build_store()

@@ -491,4 +491,24 @@ describe("SubMediaBuyingPage", () => {
     expect(screen.getByText("Loading Media Buying table...")).toBeInTheDocument();
     expect(await screen.findByText("boom")).toBeInTheDocument();
   });
+
+  it("uses effective range metadata from API and requests table without implicit date query params", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
+      if (path === "/clients/96/media-buying/lead/table") {
+        const payload = leadPayload();
+        payload.meta.date_from = "2025-12-13";
+        payload.meta.date_to = "2026-03-12";
+        payload.meta.effective_date_from = "2026-01-01";
+        payload.meta.effective_date_to = "2026-03-11";
+        return payload;
+      }
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaBuyingPage />);
+
+    expect(await screen.findByText(/Range: 2026-01-01 - 2026-03-11/i)).toBeInTheDocument();
+    expect(apiMock.apiRequest).toHaveBeenCalledWith("/clients/96/media-buying/lead/table");
+  });
 });

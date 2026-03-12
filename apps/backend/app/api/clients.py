@@ -477,8 +477,8 @@ def upsert_media_buying_lead_daily_value(
 @router.get("/{client_id}/media-buying/lead/table")
 def get_media_buying_lead_table(
     client_id: int,
-    date_from: date = Query(...),
-    date_to: date = Query(...),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:list", scope="agency")

@@ -73,8 +73,13 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
             def get_lead_table(self, **kwargs):
                 if self.config.get("template_type") != "lead":
                     raise NotImplementedError("Media Buying table is implemented only for template_type=lead in this task")
-                if kwargs["date_from"] > kwargs["date_to"]:
+                date_from = kwargs.get("date_from")
+                date_to = kwargs.get("date_to")
+                if date_from is not None and date_to is not None and date_from > date_to:
                     raise ValueError("date_from must be less than or equal to date_to")
+                if date_from is None and date_to is None:
+                    date_from = date(2026, 3, 11)
+                    date_to = date(2026, 3, 11)
                 return {
                     "meta": {
                         "client_id": kwargs["client_id"],
@@ -90,8 +95,12 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
                         "custom_cost_label_1": "Cost Custom Value 1",
                         "custom_cost_label_2": "Cost Custom Value 2",
                         "visible_columns": ["date", "cost_total"],
-                        "date_from": kwargs["date_from"].isoformat(),
-                        "date_to": kwargs["date_to"].isoformat(),
+                        "date_from": date_from.isoformat(),
+                        "date_to": date_to.isoformat(),
+                        "effective_date_from": "2026-03-11",
+                        "effective_date_to": "2026-03-11",
+                        "earliest_data_date": "2026-03-11",
+                        "latest_data_date": "2026-03-11",
                         "available_months": ["2026-03"],
                     },
                     "days": [{"date": "2026-03-11", "percent_change": None}],
@@ -225,6 +234,15 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
                 user=self.user,
             )
         self.assertEqual(ctx.exception.status_code, 501)
+
+    def test_get_lead_table_endpoint_supports_missing_range(self):
+        payload = clients_api.get_media_buying_lead_table(
+            client_id=self.client_id,
+            date_from=None,
+            date_to=None,
+            user=self.user,
+        )
+        self.assertEqual(payload["meta"]["effective_date_from"], "2026-03-11")
 
 
 if __name__ == "__main__":

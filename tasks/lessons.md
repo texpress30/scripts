@@ -281,3 +281,4 @@
 - When user corrects business semantics for displayed metrics, implement source-of-truth derivation in backend payload first, then style in UI.
 - For table customization features, persist server-side per-client view config (not browser-only) and guard essential columns from being hidden.
 - 2026-03-12: După feedback că schimbarea anterioară nu a fost satisfăcătoare pe Media Buying UI, livrează strict pe cerința rămasă (styling custom columns) fără modificări de logică/formule și validează explicit că restul coloanelor își păstrează stilul existent prin teste dedicate.
+- 2026-03-12: După feedback de nesatisfacție pe Media Buying read view, pentru taskuri de afișare cu date reale livrează explicit filtering day/month în backend (nu doar UI), metadata de range efectiv și teste de regresie pentru range explicit + manual-only activation.

@@ -374,11 +374,13 @@ class MediaBuyingStore:
         self,
         *,
         client_id: int,
-        date_from: date,
-        date_to: date,
+        date_from: date | None = None,
+        date_to: date | None = None,
     ) -> dict[str, object]:
         self._ensure_schema()
-        if date_from > date_to:
+        if (date_from is None) != (date_to is None):
+            raise ValueError("date_from and date_to must be provided together")
+        if date_from is not None and date_to is not None and date_from > date_to:
             raise ValueError("date_from must be less than or equal to date_to")
 
         config = self.get_config(client_id=int(client_id))
@@ -386,7 +388,45 @@ class MediaBuyingStore:
         if effective_template_type != "lead":
             raise NotImplementedError("Media Buying table is implemented only for template_type=lead in this task")
 
+        has_explicit_range = date_from is not None and date_to is not None
         display_currency = self._normalize_currency(str(config.get("display_currency") or "RON"))
+        earliest_data_date: date | None = None
+        latest_data_date: date | None = None
+
+        if not has_explicit_range:
+            earliest_data_date, latest_data_date = self._get_lead_table_data_bounds(client_id=int(client_id))
+        if not has_explicit_range:
+            date_from = earliest_data_date
+            date_to = latest_data_date
+
+        if date_from is None or date_to is None:
+            return {
+                "meta": {
+                    "client_id": int(client_id),
+                    "template_type": effective_template_type,
+                    "display_currency": display_currency,
+                    "custom_label_1": str(config.get("custom_label_1") or _DEFAULT_LABELS["custom_label_1"]),
+                    "custom_label_2": str(config.get("custom_label_2") or _DEFAULT_LABELS["custom_label_2"]),
+                    "custom_label_3": str(config.get("custom_label_3") or _DEFAULT_LABELS["custom_label_3"]),
+                    "custom_label_4": str(config.get("custom_label_4") or _DEFAULT_LABELS["custom_label_4"]),
+                    "custom_label_5": str(config.get("custom_label_5") or _DEFAULT_LABELS["custom_label_5"]),
+                    "custom_rate_label_1": str(config.get("custom_rate_label_1") or _DEFAULT_LABELS["custom_rate_label_1"]),
+                    "custom_rate_label_2": str(config.get("custom_rate_label_2") or _DEFAULT_LABELS["custom_rate_label_2"]),
+                    "custom_cost_label_1": str(config.get("custom_cost_label_1") or _DEFAULT_LABELS["custom_cost_label_1"]),
+                    "custom_cost_label_2": str(config.get("custom_cost_label_2") or _DEFAULT_LABELS["custom_cost_label_2"]),
+                    "visible_columns": self._normalize_visible_columns(config.get("visible_columns"), fallback=_DEFAULT_VISIBLE_COLUMNS),
+                    "date_from": None,
+                    "date_to": None,
+                    "effective_date_from": None,
+                    "effective_date_to": None,
+                    "earliest_data_date": None,
+                    "latest_data_date": None,
+                    "available_months": [],
+                },
+                "days": [],
+                "months": [],
+            }
+
         automated_rows = self._list_automated_daily_costs(client_id=int(client_id), date_from=date_from, date_to=date_to)
         manual_rows = self.list_lead_daily_manual_values(client_id=int(client_id), date_from=date_from, date_to=date_to)
 
@@ -409,11 +449,11 @@ class MediaBuyingStore:
             bucket = costs_by_date.setdefault(day_key, {"google_ads": 0.0, "meta_ads": 0.0, "tiktok_ads": 0.0})
             bucket[platform] = float(bucket.get(platform, 0.0)) + float(spend)
 
-        day_rows: list[dict[str, object]] = []
+        day_rows_unfiltered: list[dict[str, object]] = []
         cursor = date_from
         while cursor <= date_to:
             day_key = cursor.isoformat()
-            day_rows.append(
+            day_rows_unfiltered.append(
                 self._build_daily_row(
                     row_date=cursor,
                     display_currency=display_currency,
@@ -422,6 +462,14 @@ class MediaBuyingStore:
                 )
             )
             cursor = cursor + timedelta(days=1)
+
+        day_rows = [row for row in day_rows_unfiltered if self._lead_table_day_has_data(row)]
+
+        if day_rows:
+            if earliest_data_date is None:
+                earliest_data_date = date.fromisoformat(str(day_rows[0]["date"]))
+            if latest_data_date is None:
+                latest_data_date = date.fromisoformat(str(day_rows[-1]["date"]))
 
         monthly_grouped: dict[str, list[dict[str, object]]] = {}
         for row in day_rows:
@@ -463,11 +511,105 @@ class MediaBuyingStore:
                 "visible_columns": self._normalize_visible_columns(config.get("visible_columns"), fallback=_DEFAULT_VISIBLE_COLUMNS),
                 "date_from": date_from.isoformat(),
                 "date_to": date_to.isoformat(),
+                "effective_date_from": day_rows[0]["date"] if day_rows else None,
+                "effective_date_to": day_rows[-1]["date"] if day_rows else None,
+                "earliest_data_date": earliest_data_date.isoformat() if earliest_data_date else None,
+                "latest_data_date": latest_data_date.isoformat() if latest_data_date else None,
                 "available_months": [item["month"] for item in months],
             },
             "days": day_rows,
             "months": months,
         }
+
+    def _lead_table_day_has_data(self, row: dict[str, object]) -> bool:
+        fields = [
+            "cost_google",
+            "cost_meta",
+            "cost_tiktok",
+            "leads",
+            "phones",
+            "custom_value_1_count",
+            "custom_value_2_count",
+            "custom_value_3_amount_ron",
+            "custom_value_4_amount_ron",
+            "custom_value_5_amount_ron",
+            "sales_count",
+        ]
+        for field in fields:
+            value = row.get(field)
+            if isinstance(value, (int, float)) and float(value) != 0.0:
+                return True
+        return False
+
+    def _get_lead_table_data_bounds(self, *, client_id: int) -> tuple[date | None, date | None]:
+        self._ensure_schema()
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    WITH perf AS (
+                        SELECT
+                            apr.report_date,
+                            apr.platform,
+                            apr.spend,
+                            apr.client_id AS perf_client_id,
+                            map.client_id AS mapped_client_id
+                        FROM ads_platform_reporting apr
+                        LEFT JOIN ads_platform_accounts map
+                          ON map.platform = apr.platform
+                         AND map.account_id = apr.account_id
+                    ), scoped AS (
+                        SELECT
+                            report_date,
+                            spend,
+                            COALESCE(perf_client_id, mapped_client_id) AS resolved_client_id
+                        FROM perf
+                        WHERE platform IN ('google_ads', 'meta_ads', 'tiktok_ads')
+                    )
+                    SELECT MIN(report_date), MAX(report_date)
+                    FROM scoped
+                    WHERE resolved_client_id = %s
+                      AND COALESCE(spend, 0) <> 0
+                    """,
+                    (int(client_id),),
+                )
+                automated_row = cur.fetchone()
+
+                cur.execute(
+                    """
+                    SELECT MIN(metric_date), MAX(metric_date)
+                    FROM media_buying_lead_daily_manual_values
+                    WHERE client_id = %s
+                      AND (
+                        COALESCE(leads, 0) <> 0
+                        OR COALESCE(phones, 0) <> 0
+                        OR COALESCE(custom_value_1_count, 0) <> 0
+                        OR COALESCE(custom_value_2_count, 0) <> 0
+                        OR COALESCE(custom_value_3_amount_ron, 0) <> 0
+                        OR COALESCE(custom_value_4_amount_ron, 0) <> 0
+                        OR COALESCE(custom_value_5_amount_ron, 0) <> 0
+                        OR COALESCE(sales_count, 0) <> 0
+                      )
+                    """,
+                    (int(client_id),),
+                )
+                manual_row = cur.fetchone()
+
+        candidates_min: list[date] = []
+        candidates_max: list[date] = []
+        for row in (automated_row, manual_row):
+            if not isinstance(row, tuple):
+                continue
+            min_value = row[0] if len(row) > 0 and isinstance(row[0], date) else None
+            max_value = row[1] if len(row) > 1 and isinstance(row[1], date) else None
+            if min_value is not None:
+                candidates_min.append(min_value)
+            if max_value is not None:
+                candidates_max.append(max_value)
+
+        earliest = min(candidates_min) if candidates_min else None
+        latest = max(candidates_max) if candidates_max else None
+        return earliest, latest
 
 
     def get_config(self, *, client_id: int) -> dict[str, object]:

@@ -3371,3 +3371,22 @@
 - [x] Removed positive-value red styling on `custom_value_4_amount_ron` in both month total rows and day rows; custom value/rate cells now render in black/default text.
 - [x] Added frontend regression checks for no color classes on custom value/rate headers/cells, dynamic custom labels, and non-custom semantic style preservation.
 - [x] Verification: `pnpm --dir apps/frontend test src/app/sub/[id]/media-buying/page.test.tsx` and `pnpm --dir apps/frontend build`.
+
+---
+
+# TODO — Media Buying pasul 10: luni/zile doar cu date reale + range efectiv
+
+- [x] Sync workspace la ultima stare disponibilă și confirmare constrângeri remote.
+- [x] Audit read API/store Media Buying lead pentru default range, grupare luni și construcție zile.
+- [x] Implementare backend: effective_date_from/to derivat din date reale + filtrare zile fără date + eliminare luni goale.
+- [x] Păstrare suport range explicit, dar cu filtrare internă a zilelor/lunilor fără date.
+- [x] Extindere metadata răspuns (effective/earliest/latest/available_months) și wiring frontend pentru text range.
+- [x] Adăugare/actualizare teste backend+frontend pentru cazurile cerute.
+- [x] Rulare teste relevante backend/frontend + frontend build; documentare rezultate.
+
+## Review
+- [x] Endpointul `GET /clients/{client_id}/media-buying/lead/table` acceptă acum și range lipsă; backend derivă intervalul din date reale (`_get_lead_table_data_bounds`) și returnează metadata `effective_date_from/effective_date_to/earliest_data_date/latest_data_date`.
+- [x] Zilele fără date reale sunt excluse prin regula explicită `day has data` (cost_google/meta/tiktok, leads, phones, custom1, custom2, custom3, custom4, custom5, sales_count diferit de 0).
+- [x] Lunile fără zile cu date nu mai sunt returnate; totalurile lunare se calculează doar din zilele rămase.
+- [x] Frontend Media Buying folosește range-ul efectiv din metadata API și nu mai trimite implicit query de 90 zile la load inițial.
+- [x] Verificare: `pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py`, `pnpm --dir apps/frontend test src/app/sub/[id]/media-buying/page.test.tsx`, `pnpm --dir apps/frontend build`.
