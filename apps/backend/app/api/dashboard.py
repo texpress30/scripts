@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from pydantic import BaseModel
 
 from app.api.dependencies import enforce_action_scope, get_current_user
 from app.services.audit import audit_log_service
@@ -8,6 +9,14 @@ from app.services.auth import AuthUser
 from app.services.dashboard import unified_dashboard_service
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+
+
+class TikTokAccountDailyRepairRequest(BaseModel):
+    start_date: date
+    end_date: date
+    account_id: str | None = None
+    dry_run: bool = True
+
 
 
 @router.get("/agency/summary")
@@ -89,6 +98,55 @@ def client_platform_sync_audit_debug(
         },
     )
     return payload
+<<<<<<< codex/set-up-new-workspace-and-sync-with-github-68tz6w
+
+
+@router.post("/debug/clients/{client_id}/tiktok-account-daily-repair")
+def client_tiktok_account_daily_repair_debug(
+    client_id: int,
+    payload: TikTokAccountDailyRepairRequest,
+    user: AuthUser = Depends(get_current_user),
+    response: Response = None,
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="dashboard:view", scope="agency")
+
+    if payload.start_date > payload.end_date:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="start_date must be <= end_date")
+
+    try:
+        result = unified_dashboard_service.repair_client_tiktok_account_daily(
+            client_id=client_id,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            account_id=payload.account_id,
+            dry_run=bool(payload.dry_run),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    if response is not None:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="dashboard.debug.tiktok_account_daily_repair.run",
+        resource=f"client:{client_id}:tiktok_ads",
+        details={
+            "start_date": payload.start_date.isoformat(),
+            "end_date": payload.end_date.isoformat(),
+            "account_id": payload.account_id,
+            "dry_run": bool(payload.dry_run),
+            "safe_repair_candidate_units": result.get("safe_repair_candidate_units"),
+            "applied_units": result.get("applied_units"),
+            "skipped_units": result.get("skipped_units"),
+        },
+    )
+    return result
+
+=======
+>>>>>>> main
 @router.get("/debug/clients/{client_id}/dashboard-reconciliation")
 def client_dashboard_reconciliation_debug(
     client_id: int,

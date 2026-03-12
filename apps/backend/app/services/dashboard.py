@@ -21,6 +21,7 @@ from app.services.snapchat_ads import snapchat_ads_service
 from app.services.sync_run_chunks_store import sync_run_chunks_store
 from app.services.sync_runs_store import sync_runs_store
 from app.services.tiktok_ads import tiktok_ads_service
+from app.services.tiktok_account_daily_identity_resolver import resolve_tiktok_account_daily_persistence_identity
 
 try:
     import psycopg
@@ -3983,6 +3984,1108 @@ class UnifiedDashboardService:
             "suspected_root_causes": suspected_root_causes,
             "recommended_next_fix_scope": recommended_next_fix_scope,
         }
+
+    def get_client_dashboard_reconciliation(
+        self,
+        *,
+        client_id: int,
+        start_date: date,
+        end_date: date,
+    ) -> dict[str, object]:
+        performance_reports_store.initialize_schema()
+        currency_decision = self._client_reporting_currency_decision(client_id=client_id)
+        reporting_currency = str(currency_decision.get("reporting_currency") or "USD")
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(self._client_mappings_query(), (client_id,))
+                mapping_rows = cur.fetchall()
+                cur.execute(self._client_dashboard_reconciliation_rows_query(), (client_id, start_date, end_date))
+                report_rows = cur.fetchall()
+
+        mappings = [
+            {
+                "platform": str(row[0] or ""),
+                "account_id": str(row[1] or ""),
+                "client_id": _to_int(row[2]),
+                "account_currency": self._normalize_currency_code(row[3], fallback="RON"),
+                "created_at": str(row[4]) if row[4] is not None else None,
+            }
+            for row in mapping_rows
+        ]
+
+        raw_totals_by_group: dict[tuple[str, str, str | None], dict[str, object]] = {}
+        included_totals_by_group: dict[tuple[str, str, str], dict[str, object]] = {}
+
+        raw_before = self._empty_metric_totals()
+        included_before = self._empty_metric_totals()
+        included_after = self._empty_metric_totals()
+
+        per_platform: dict[str, dict[str, object]] = {}
+        per_account: dict[str, dict[str, object]] = {}
+
+        excluded_rows: list[dict[str, object]] = []
+        currency_fallback_rows: list[dict[str, object]] = []
+        included_count = 0
+        excluded_count = 0
+
+        for row in report_rows:
+            platform = str(row[0] or "")
+            customer_id = str(row[1] or "")
+            report_date = row[2] if isinstance(row[2], date) else end_date
+            spend = _to_float(row[3])
+            impressions = _to_int(row[4])
+            clicks = _to_int(row[5])
+            conversions = _to_float(row[6])
+            revenue = _to_float(row[7])
+            grain_resolved = str(row[9] or "account_daily")
+            report_currency = self._normalize_currency_code(row[10], fallback="RON") if row[10] else None
+            resolved_currency = self._normalize_currency_code(row[13], fallback="RON")
+            currency_source = str(row[14] or "fallback_ron")
+            has_mapping = bool(row[15])
+
+            raw_key = (platform, customer_id, report_currency)
+            raw_entry = raw_totals_by_group.setdefault(
+                raw_key,
+                {
+                    "platform": platform,
+                    "account_id": customer_id,
+                    "report_currency": report_currency,
+                    "totals": self._empty_metric_totals(),
+                },
+            )
+            self._add_to_metric_totals(raw_entry["totals"], spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+            self._add_to_metric_totals(raw_before, spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+
+            is_included = has_mapping and grain_resolved == "account_daily"
+            reasons: list[str] = []
+            if not has_mapping:
+                reasons.append("missing_mapping")
+            if grain_resolved != "account_daily":
+                reasons.append("grain_not_account_daily")
+            if currency_source == "fallback_ron":
+                reasons.append("currency_resolution_fallback")
+
+            normalized_spend = self._normalize_money(
+                amount=spend,
+                from_currency=resolved_currency,
+                to_currency=reporting_currency,
+                rate_date=report_date,
+            )
+            normalized_revenue = self._normalize_money(
+                amount=revenue,
+                from_currency=resolved_currency,
+                to_currency=reporting_currency,
+                rate_date=report_date,
+            )
+
+            platform_bucket = per_platform.setdefault(
+                platform,
+                {
+                    "platform": platform,
+                    "included_rows": 0,
+                    "excluded_rows": 0,
+                    "raw_before_conversion": self._empty_metric_totals(),
+                    "included_before_conversion": self._empty_metric_totals(),
+                    "included_after_conversion": self._empty_metric_totals(),
+                },
+            )
+            account_key = f"{platform}:{customer_id}"
+            account_bucket = per_account.setdefault(
+                account_key,
+                {
+                    "platform": platform,
+                    "account_id": customer_id,
+                    "included_rows": 0,
+                    "excluded_rows": 0,
+                    "raw_before_conversion": self._empty_metric_totals(),
+                    "included_before_conversion": self._empty_metric_totals(),
+                    "included_after_conversion": self._empty_metric_totals(),
+                },
+            )
+            self._add_to_metric_totals(platform_bucket["raw_before_conversion"], spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+            self._add_to_metric_totals(account_bucket["raw_before_conversion"], spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+
+            if currency_source == "fallback_ron":
+                currency_fallback_rows.append(
+                    {
+                        "platform": platform,
+                        "account_id": customer_id,
+                        "report_date": report_date.isoformat(),
+                        "resolved_currency": resolved_currency,
+                    }
+                )
+
+            if is_included:
+                included_count += 1
+                platform_bucket["included_rows"] = _to_int(platform_bucket.get("included_rows")) + 1
+                account_bucket["included_rows"] = _to_int(account_bucket.get("included_rows")) + 1
+                self._add_to_metric_totals(included_before, spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+                self._add_to_metric_totals(included_after, spend=normalized_spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=normalized_revenue)
+                self._add_to_metric_totals(platform_bucket["included_before_conversion"], spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+                self._add_to_metric_totals(account_bucket["included_before_conversion"], spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+                self._add_to_metric_totals(platform_bucket["included_after_conversion"], spend=normalized_spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=normalized_revenue)
+                self._add_to_metric_totals(account_bucket["included_after_conversion"], spend=normalized_spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=normalized_revenue)
+
+                included_key = (platform, customer_id, resolved_currency)
+                included_entry = included_totals_by_group.setdefault(
+                    included_key,
+                    {
+                        "platform": platform,
+                        "account_id": customer_id,
+                        "resolved_currency": resolved_currency,
+                        "totals_before_conversion": self._empty_metric_totals(),
+                        "totals_after_conversion": self._empty_metric_totals(),
+                    },
+                )
+                self._add_to_metric_totals(included_entry["totals_before_conversion"], spend=spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=revenue)
+                self._add_to_metric_totals(included_entry["totals_after_conversion"], spend=normalized_spend, impressions=impressions, clicks=clicks, conversions=conversions, revenue=normalized_revenue)
+            else:
+                excluded_count += 1
+                platform_bucket["excluded_rows"] = _to_int(platform_bucket.get("excluded_rows")) + 1
+                account_bucket["excluded_rows"] = _to_int(account_bucket.get("excluded_rows")) + 1
+                excluded_rows.append(
+                    {
+                        "platform": platform,
+                        "account_id": customer_id,
+                        "report_date": report_date.isoformat(),
+                        "grain": grain_resolved,
+                        "resolved_currency": resolved_currency,
+                        "currency_source": currency_source,
+                        "reasons": reasons,
+                        "metrics": {
+                            "spend": spend,
+                            "impressions": impressions,
+                            "clicks": clicks,
+                            "conversions": conversions,
+                            "revenue": revenue,
+                        },
+                    }
+                )
+
+        return {
+            "client_id": client_id,
+            "date_range": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
+            "reporting_currency": reporting_currency,
+            "reporting_currency_source": str(currency_decision.get("reporting_currency_source") or "safe_fallback"),
+            "mixed_attached_account_currencies": bool(currency_decision.get("mixed_attached_account_currencies")),
+            "attached_account_currency_summary": currency_decision.get("attached_account_currency_summary") if isinstance(currency_decision.get("attached_account_currency_summary"), list) else [],
+            "attached_account_mappings": mappings,
+            "counts": {
+                "total_rows_scanned": len(report_rows),
+                "included_rows": included_count,
+                "excluded_rows": excluded_count,
+                "currency_fallback_rows": len(currency_fallback_rows),
+            },
+            "raw_db_totals_by_platform_account_currency": list(raw_totals_by_group.values()),
+            "included_dashboard_totals_by_platform_account_currency": list(included_totals_by_group.values()),
+            "excluded_rows": excluded_rows,
+            "currency_resolution_fallback_rows": currency_fallback_rows,
+            "summed_metrics": {
+                "before_conversion": {
+                    "raw_db": raw_before,
+                    "included_dashboard": included_before,
+                },
+                "after_conversion": {
+                    "included_dashboard": included_after,
+                },
+            },
+            "per_platform_summary": list(per_platform.values()),
+            "per_account_summary": list(per_account.values()),
+        }
+
+
+    def _client_dashboard_reconciliation_rows_query(self) -> str:
+        effective_currency_sql = self._effective_attached_account_currency_sql(
+            mapping_currency_expr="mapped.account_currency",
+            platform_currency_expr="apa.currency_code",
+            client_currency_expr="client.currency",
+            fallback_literal="RON",
+        )
+        return f"""
+                        SELECT
+                            apr.platform,
+                            apr.customer_id,
+                            apr.report_date,
+                            COALESCE(apr.spend, 0) AS spend,
+                            COALESCE(apr.impressions, 0) AS impressions,
+                            COALESCE(apr.clicks, 0) AS clicks,
+                            COALESCE(apr.conversions, 0) AS conversions,
+                            COALESCE(apr.conversion_value, 0) AS conversion_value,
+                            NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'grain', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'grain', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'grain', '') ELSE '' END), '') AS grain_raw,
+                            COALESCE(
+                                NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'grain', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'grain', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'grain', '') ELSE '' END), ''),
+                                'account_daily'
+                            ) AS grain_resolved,
+                            NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'account_currency', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'account_currency', '') ELSE '' END), '') AS report_currency,
+                            NULLIF(TRIM(apa.currency_code), '') AS platform_account_currency,
+                            NULLIF(TRIM(mapped.account_currency), '') AS mapped_account_currency,
+                            COALESCE(
+                                NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'account_currency', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'account_currency', '') ELSE '' END), ''),
+                                {effective_currency_sql}
+                            ) AS resolved_currency,
+                            CASE
+                                WHEN NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'account_currency', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'account_currency', '') ELSE '' END), '') IS NOT NULL THEN 'report_extra_metrics'
+                                WHEN NULLIF(TRIM(mapped.account_currency), '') IS NOT NULL THEN 'mapping_account_currency'
+                                WHEN NULLIF(TRIM(apa.currency_code), '') IS NOT NULL THEN 'platform_account_currency'
+                                WHEN NULLIF(TRIM(client.currency), '') IS NOT NULL THEN 'client_currency'
+                                ELSE 'fallback_ron'
+                            END AS currency_source,
+                            mapped.client_id IS NOT NULL AS has_mapping
+                        FROM ad_performance_reports apr
+                        LEFT JOIN agency_account_client_mappings mapped
+                          ON mapped.platform = apr.platform
+                         AND mapped.client_id = %s
+                         AND (
+                              mapped.account_id = apr.customer_id
+                              OR (
+                                  apr.platform = 'google_ads'
+                                  AND regexp_replace(mapped.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                              )
+                         )
+                        LEFT JOIN agency_platform_accounts apa
+                          ON apa.platform = apr.platform
+                         AND (
+                              apa.account_id = apr.customer_id
+                              OR (
+                                  apr.platform = 'google_ads'
+                                  AND regexp_replace(apa.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                              )
+                         )
+                        LEFT JOIN agency_clients client
+                          ON client.id = mapped.client_id
+                        WHERE apr.report_date BETWEEN %s AND %s
+                          AND apr.platform IN ('google_ads', 'meta_ads', 'tiktok_ads', 'pinterest_ads', 'snapchat_ads')
+                        """
+
+
+    def _client_mappings_query(self) -> str:
+        return """
+                SELECT
+                    platform,
+                    account_id,
+                    client_id,
+                    account_currency,
+                    created_at
+                FROM agency_account_client_mappings
+                WHERE client_id = %s
+                ORDER BY platform, account_id
+                """
+
+    def _empty_metric_totals(self) -> dict[str, float | int]:
+        return {
+            "spend": 0.0,
+            "impressions": 0,
+            "clicks": 0,
+            "conversions": 0.0,
+            "revenue": 0.0,
+        }
+
+    def _add_to_metric_totals(self, totals: dict[str, float | int], *, spend: float, impressions: int, clicks: int, conversions: float, revenue: float) -> None:
+        totals["spend"] = _to_float(totals.get("spend")) + spend
+        totals["impressions"] = _to_int(totals.get("impressions")) + impressions
+        totals["clicks"] = _to_int(totals.get("clicks")) + clicks
+        totals["conversions"] = _to_float(totals.get("conversions")) + conversions
+        totals["revenue"] = _to_float(totals.get("revenue")) + revenue
+
+    def _platform_sync_audit_rows_query(self) -> str:
+        return """
+                    SELECT
+                        apr.id,
+                        apr.customer_id,
+                        apr.report_date,
+                        COALESCE(apr.spend, 0) AS spend,
+                        COALESCE(apr.impressions, 0) AS impressions,
+                        COALESCE(apr.clicks, 0) AS clicks,
+                        COALESCE(apr.conversions, 0) AS conversions,
+                        COALESCE(apr.conversion_value, 0) AS conversion_value,
+                        apr.client_id,
+                        COALESCE(
+                            NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'grain', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'grain', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'grain', '') ELSE '' END), ''),
+                            'account_daily'
+                        ) AS grain,
+                        NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'account_currency', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'account_currency', '') ELSE '' END), '') AS report_currency,
+                        COALESCE(apr.extra_metrics, '{}'::jsonb) AS extra_metrics
+                    FROM ad_performance_reports apr
+                    WHERE apr.platform = %s
+                      AND apr.report_date BETWEEN %s AND %s
+                      AND (%s::text IS NULL OR apr.customer_id = %s::text)
+                      AND (
+                            apr.client_id = %s
+                            OR apr.customer_id = ANY(%s::text[])
+                      )
+                    ORDER BY apr.report_date ASC, apr.customer_id ASC, apr.id ASC
+                    """
+
+    def _tiktok_account_daily_repair_rows_query(self) -> str:
+        return """
+                    SELECT
+                        apr.id,
+                        apr.customer_id,
+                        apr.report_date,
+                        COALESCE(apr.spend, 0) AS spend,
+                        COALESCE(apr.impressions, 0) AS impressions,
+                        COALESCE(apr.clicks, 0) AS clicks,
+                        COALESCE(apr.conversions, 0) AS conversions,
+                        COALESCE(apr.conversion_value, 0) AS conversion_value,
+                        apr.client_id,
+                        COALESCE(apr.extra_metrics, '{}'::jsonb) AS extra_metrics
+                    FROM ad_performance_reports apr
+                    WHERE apr.platform = 'tiktok_ads'
+                      AND apr.report_date BETWEEN %s AND %s
+                      AND (
+                            apr.client_id = %s
+                            OR apr.customer_id = ANY(%s::text[])
+                      )
+                      AND COALESCE(
+                            NULLIF(TRIM(COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'grain', '')), ''),
+                            'account_daily'
+                      ) = 'account_daily'
+                    ORDER BY apr.report_date ASC, apr.customer_id ASC, apr.id ASC
+                    """
+
+    def _tiktok_repair_provider_ids_for_row(self, *, customer_id: str, extra_metrics: dict[str, object]) -> list[str]:
+        ids: list[str] = []
+        normalized_customer = str(customer_id or '').strip()
+        if normalized_customer != '':
+            ids.append(normalized_customer)
+
+        tiktok_meta = extra_metrics.get('tiktok_ads') if isinstance(extra_metrics, dict) else None
+        if isinstance(tiktok_meta, dict):
+            candidates = tiktok_meta.get('provider_identity_candidates')
+            if isinstance(candidates, list):
+                for raw in candidates:
+                    normalized = str(raw or '').strip()
+                    if normalized != '':
+                        ids.append(normalized)
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for value in ids:
+            if value in seen:
+                continue
+            seen.add(value)
+            deduped.append(value)
+        return deduped
+
+    def _tiktok_repair_metrics_signature(self, row: dict[str, object]) -> tuple[float, int, int, float, float]:
+        return (
+            round(_to_float(row.get('spend')), 6),
+            _to_int(row.get('impressions')),
+            _to_int(row.get('clicks')),
+            round(_to_float(row.get('conversions')), 6),
+            round(_to_float(row.get('conversion_value')), 6),
+        )
+
+    def _resolve_tiktok_repair_attached_account(self, *, row: dict[str, object], attached_account_ids: list[str]) -> str | None:
+        customer_id = str(row.get('customer_id') or '').strip()
+        if customer_id in attached_account_ids:
+            return customer_id
+        provider_ids = self._tiktok_repair_provider_ids_for_row(customer_id=customer_id, extra_metrics=row.get('extra_metrics') if isinstance(row.get('extra_metrics'), dict) else {})
+        matched = sorted({pid for pid in provider_ids if pid in set(attached_account_ids)})
+        if len(matched) == 1:
+            return matched[0]
+        return None
+
+    def _platform_sync_audit_rows_query(self) -> str:
+        return """
+                    SELECT
+                        apr.id,
+                        apr.customer_id,
+                        apr.report_date,
+                        COALESCE(apr.spend, 0) AS spend,
+                        COALESCE(apr.impressions, 0) AS impressions,
+                        COALESCE(apr.clicks, 0) AS clicks,
+                        COALESCE(apr.conversions, 0) AS conversions,
+                        COALESCE(apr.conversion_value, 0) AS conversion_value,
+                        apr.client_id,
+                        COALESCE(
+                            NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'grain', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'grain', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'grain', '') ELSE '' END), ''),
+                            'account_daily'
+                        ) AS grain,
+                        NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'account_currency', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'account_currency', '') ELSE '' END), '') AS report_currency,
+                        COALESCE(apr.extra_metrics, '{}'::jsonb) AS extra_metrics
+                    FROM ad_performance_reports apr
+                    WHERE apr.platform = %s
+                      AND apr.report_date BETWEEN %s AND %s
+                      AND (%s::text IS NULL OR apr.customer_id = %s::text)
+                      AND (
+                            apr.client_id = %s
+                            OR apr.customer_id = ANY(%s::text[])
+                      )
+                    ORDER BY apr.report_date ASC, apr.customer_id ASC, apr.id ASC
+                    """
+
+    def _sanitize_error_details(self, value: object) -> object:
+        blocked_tokens = ("token", "secret", "password", "authorization", "auth", "cookie", "apikey", "api_key", "access_key")
+        if isinstance(value, dict):
+            sanitized: dict[str, object] = {}
+            for key, item in value.items():
+                key_text = str(key)
+                if any(flag in key_text.lower() for flag in blocked_tokens):
+                    sanitized[key_text] = "[redacted]"
+                else:
+                    sanitized[key_text] = self._sanitize_error_details(item)
+            return sanitized
+        if isinstance(value, list):
+            return [self._sanitize_error_details(item) for item in value]
+        if isinstance(value, str) and any(flag in value.lower() for flag in ("bearer ", "ghp_", "github_pat_")):
+            return "[redacted]"
+        return value
+
+    def _platform_supported_history_floor(self, *, platform: str) -> date | None:
+        if str(platform) == "tiktok_ads":
+            return date(2024, 9, 1)
+        return None
+
+    def _build_platform_sync_runs_summary(self, *, client_id: int, platform: str, attached_account_ids: list[str]) -> list[dict[str, object]]:
+        runs: list[dict[str, object]] = []
+        for account_id in attached_account_ids:
+            for run in sync_runs_store.list_sync_runs_for_account(platform=platform, account_id=account_id, limit=20):
+                run_client_id = run.get("client_id")
+                if run_client_id is not None and int(run_client_id) != int(client_id):
+                    continue
+                chunk_counts = sync_run_chunks_store.get_sync_run_chunk_status_counts(str(run.get("job_id") or "")) if run.get("job_id") else {}
+                metadata = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
+                runs.append(
+                    {
+                        "job_id": run.get("job_id"),
+                        "platform": run.get("platform"),
+                        "account_id": run.get("account_id"),
+                        "client_id": run.get("client_id"),
+                        "job_type": run.get("job_type"),
+                        "trigger_source": metadata.get("trigger_source"),
+                        "status": run.get("status"),
+                        "grain": run.get("grain"),
+                        "date_start": run.get("date_start"),
+                        "date_end": run.get("date_end"),
+                        "chunks_total": run.get("chunks_total"),
+                        "chunks_done": run.get("chunks_done"),
+                        "chunk_status_counts": chunk_counts,
+                        "rows_written": run.get("rows_written"),
+                        "last_error_summary": run.get("error"),
+                        "last_error_details": self._sanitize_error_details(metadata.get("error_details") or metadata.get("last_error_details")),
+                        "created_at": run.get("created_at"),
+                        "updated_at": run.get("updated_at"),
+                        "started_at": run.get("started_at"),
+                        "finished_at": run.get("finished_at"),
+                    }
+                )
+        runs.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+        return runs[:100]
+
+    def get_client_platform_sync_audit(
+        self,
+        *,
+        client_id: int,
+        platform: str,
+        start_date: date,
+        end_date: date,
+        account_id: str | None = None,
+        include_daily_breakdown: bool = False,
+    ) -> dict[str, object]:
+        normalized_platform = str(platform).strip().lower()
+        if normalized_platform not in {"meta_ads", "tiktok_ads"}:
+            raise ValueError("platform must be one of: meta_ads, tiktok_ads")
+
+        attached_accounts_all = client_registry_service.list_client_platform_accounts(platform=normalized_platform, client_id=client_id)
+        if account_id is not None and str(account_id).strip() != "":
+            filter_account_id = str(account_id).strip()
+            attached_accounts = [item for item in attached_accounts_all if str(item.get("id") or "") == filter_account_id]
+        else:
+            filter_account_id = None
+            attached_accounts = list(attached_accounts_all)
+
+        attached_account_ids = [str(item.get("id") or "") for item in attached_accounts if str(item.get("id") or "") != ""]
+        platform_rows = client_registry_service.list_platform_accounts_for_mapping(platform=normalized_platform)
+        platform_meta_by_id = {
+            str(item.get("account_id") or ""): item
+            for item in platform_rows
+            if str(item.get("client_id") or "") == str(client_id)
+        }
+
+        performance_reports_store.initialize_schema()
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    self._platform_sync_audit_rows_query(),
+                    (
+                        normalized_platform,
+                        start_date,
+                        end_date,
+                        filter_account_id,
+                        filter_account_id,
+                        client_id,
+                        attached_account_ids,
+                    ),
+                )
+                report_rows = cur.fetchall() or []
+
+        persisted_rows: list[dict[str, object]] = []
+        for row in report_rows:
+            persisted_rows.append(
+                {
+                    "row_id": _to_int(row[0]),
+                    "customer_id": str(row[1] or ""),
+                    "report_date": row[2].isoformat() if isinstance(row[2], date) else str(row[2] or ""),
+                    "spend": _to_float(row[3]),
+                    "impressions": _to_int(row[4]),
+                    "clicks": _to_int(row[5]),
+                    "conversions": _to_float(row[6]),
+                    "revenue": _to_float(row[7]),
+                    "client_id": _to_int(row[8]) if row[8] is not None else None,
+                    "grain": str(row[9] or "account_daily"),
+                    "report_currency": self._normalize_currency_code(row[10], fallback="") if row[10] else None,
+                    "extra_metrics": row[11] if isinstance(row[11], dict) else {},
+                }
+            )
+
+        by_grain: dict[str, dict[str, object]] = {}
+        per_account_grain: dict[tuple[str, str], dict[str, object]] = {}
+        account_daily_by_account_day: dict[tuple[str, str], list[dict[str, object]]] = {}
+        lower_grain_by_account_day: dict[tuple[str, str], list[dict[str, object]]] = {}
+        rows_present_no_mapping = 0
+        duplicate_like_map: dict[tuple[str, str, str, str | None], int] = {}
+        currency_mismatches: list[dict[str, object]] = []
+
+        attached_currency_map = {
+            str(item.get("id") or ""): str(item.get("effective_account_currency") or item.get("currency") or "").upper()
+            for item in attached_accounts
+        }
+
+        for item in persisted_rows:
+            grain = str(item.get("grain") or "account_daily")
+            customer_id_value = str(item.get("customer_id") or "")
+            day = str(item.get("report_date") or "")
+            report_currency = str(item.get("report_currency") or "").upper() or None
+
+            summary = by_grain.setdefault(
+                grain,
+                {
+                    "grain": grain,
+                    "row_count": 0,
+                    "spend": 0.0,
+                    "impressions": 0,
+                    "clicks": 0,
+                    "conversions": 0.0,
+                    "revenue": 0.0,
+                },
+            )
+            summary["row_count"] = _to_int(summary.get("row_count")) + 1
+            summary["spend"] = _to_float(summary.get("spend")) + _to_float(item.get("spend"))
+            summary["impressions"] = _to_int(summary.get("impressions")) + _to_int(item.get("impressions"))
+            summary["clicks"] = _to_int(summary.get("clicks")) + _to_int(item.get("clicks"))
+            summary["conversions"] = _to_float(summary.get("conversions")) + _to_float(item.get("conversions"))
+            summary["revenue"] = _to_float(summary.get("revenue")) + _to_float(item.get("revenue"))
+
+            key = (customer_id_value, grain)
+            per_account = per_account_grain.setdefault(
+                key,
+                {
+                    "customer_id": customer_id_value,
+                    "grain": grain,
+                    "row_count": 0,
+                    "first_date": day,
+                    "last_date": day,
+                    "spend": 0.0,
+                    "report_currencies": set(),
+                },
+            )
+            per_account["row_count"] = _to_int(per_account.get("row_count")) + 1
+            per_account["first_date"] = min(str(per_account.get("first_date") or day), day)
+            per_account["last_date"] = max(str(per_account.get("last_date") or day), day)
+            per_account["spend"] = _to_float(per_account.get("spend")) + _to_float(item.get("spend"))
+            if report_currency:
+                per_account["report_currencies"].add(report_currency)
+
+            dup_key = (customer_id_value, day, grain, report_currency)
+            duplicate_like_map[dup_key] = duplicate_like_map.get(dup_key, 0) + 1
+
+            if customer_id_value not in set(attached_account_ids):
+                rows_present_no_mapping += 1
+
+            account_currency = attached_currency_map.get(customer_id_value)
+            if account_currency and report_currency and account_currency != report_currency:
+                currency_mismatches.append(
+                    {
+                        "customer_id": customer_id_value,
+                        "report_date": day,
+                        "expected_currency": account_currency,
+                        "report_currency": report_currency,
+                        "grain": grain,
+                    }
+                )
+
+            bucket_key = (customer_id_value, day)
+            if grain == "account_daily":
+                account_daily_by_account_day.setdefault(bucket_key, []).append(item)
+            else:
+                lower_grain_by_account_day.setdefault(bucket_key, []).append(item)
+
+        duplicate_like_rows = [
+            {
+                "customer_id": key[0],
+                "report_date": key[1],
+                "grain": key[2],
+                "report_currency": key[3],
+                "row_count": count,
+            }
+            for key, count in duplicate_like_map.items()
+            if count > 1
+        ]
+        multiple_account_daily = [
+            {
+                "customer_id": key[0],
+                "report_date": key[1],
+                "row_count": len(rows),
+            }
+            for key, rows in account_daily_by_account_day.items()
+            if len(rows) > 1
+        ]
+        lower_without_account_daily = [
+            {
+                "customer_id": key[0],
+                "report_date": key[1],
+                "lower_grain_rows": len(rows),
+            }
+            for key, rows in lower_grain_by_account_day.items()
+            if key not in account_daily_by_account_day
+        ]
+
+        missing_account_daily_days: list[dict[str, object]] = []
+        if len(attached_account_ids) > 0:
+            days: list[date] = []
+            cursor_day = start_date
+            while cursor_day <= end_date:
+                days.append(cursor_day)
+                cursor_day += timedelta(days=1)
+            for attached_id in attached_account_ids:
+                present_days = {key[1] for key in account_daily_by_account_day.keys() if key[0] == attached_id}
+                missing = [day.isoformat() for day in days if day.isoformat() not in present_days]
+                if len(missing) > 0:
+                    missing_account_daily_days.append({"account_id": attached_id, "missing_days": missing})
+
+        supported_floor = self._platform_supported_history_floor(platform=normalized_platform)
+        rows_before_floor = []
+        if supported_floor is not None:
+            for item in persisted_rows:
+                try:
+                    row_date = date.fromisoformat(str(item.get("report_date") or ""))
+                except Exception:
+                    continue
+                if row_date < supported_floor:
+                    rows_before_floor.append(
+                        {
+                            "customer_id": item.get("customer_id"),
+                            "report_date": item.get("report_date"),
+                            "grain": item.get("grain"),
+                        }
+                    )
+
+        account_daily_totals: list[dict[str, object]] = []
+        for (customer_id_value, day), rows in sorted(account_daily_by_account_day.items()):
+            account_daily_totals.append(
+                {
+                    "customer_id": customer_id_value,
+                    "report_date": day,
+                    "row_count": len(rows),
+                    "spend": sum(_to_float(row.get("spend")) for row in rows),
+                    "impressions": sum(_to_int(row.get("impressions")) for row in rows),
+                    "clicks": sum(_to_int(row.get("clicks")) for row in rows),
+                    "conversions": sum(_to_float(row.get("conversions")) for row in rows),
+                    "revenue": sum(_to_float(row.get("revenue")) for row in rows),
+                }
+            )
+
+        lower_grain_totals: dict[str, object] = {
+            "by_grain": [value for key, value in sorted(by_grain.items()) if key != "account_daily"],
+            "daily_breakdown": [],
+        }
+        if include_daily_breakdown:
+            lower_grain_totals["daily_breakdown"] = [
+                {
+                    "customer_id": key[0],
+                    "report_date": key[1],
+                    "row_count": len(rows),
+                    "spend": sum(_to_float(row.get("spend")) for row in rows),
+                    "grains": sorted({str(row.get("grain") or "") for row in rows}),
+                }
+                for key, rows in sorted(lower_grain_by_account_day.items())
+            ]
+
+        mixed_ids_for_same_day = False
+        if normalized_platform == "tiktok_ads":
+            if len(attached_account_ids) == 1:
+                day_to_ids: dict[str, set[str]] = {}
+                for item in persisted_rows:
+                    if str(item.get("grain")) != "account_daily":
+                        continue
+                    day_key = str(item.get("report_date") or "")
+                    day_to_ids.setdefault(day_key, set()).add(str(item.get("customer_id") or ""))
+                mixed_ids_for_same_day = any(len(ids) > 1 for ids in day_to_ids.values())
+
+        grains_with_rows = [grain for grain, summary in by_grain.items() if _to_int(summary.get("row_count")) > 0]
+        possible_overcount = len(grains_with_rows) > 1 and _to_float(by_grain.get("account_daily", {}).get("spend", 0.0)) > 0
+
+        anomaly_flags = {
+            "duplicate_like_rows_on_natural_key": len(duplicate_like_rows) > 0,
+            "multiple_account_daily_rows_same_account_same_day": len(multiple_account_daily) > 0,
+            "lower_grain_rows_present_without_account_daily": len(lower_without_account_daily) > 0,
+            "account_daily_missing_for_days_inside_range": len(missing_account_daily_days) > 0,
+            "persisted_dates_before_platform_supported_start": len(rows_before_floor) > 0,
+            "mixed_customer_ids_for_same_attached_account": mixed_ids_for_same_day,
+            "currency_mismatch_with_attached_account_currency": len(currency_mismatches) > 0,
+            "rows_present_but_no_attached_mapping": rows_present_no_mapping > 0,
+            "possible_overcount_if_summing_multiple_grains": possible_overcount,
+        }
+
+        suspected_root_causes: list[str] = []
+        if anomaly_flags["duplicate_like_rows_on_natural_key"]:
+            suspected_root_causes.append("duplicate-like persisted rows on natural key")
+        if anomaly_flags["multiple_account_daily_rows_same_account_same_day"]:
+            suspected_root_causes.append("duplicate account_daily rows for same account/day")
+        if anomaly_flags["lower_grain_rows_present_without_account_daily"]:
+            suspected_root_causes.append("lower-grain persistence without account_daily coverage")
+        if anomaly_flags["account_daily_missing_for_days_inside_range"]:
+            suspected_root_causes.append("partial date coverage in account_daily")
+        if anomaly_flags["rows_present_but_no_attached_mapping"]:
+            suspected_root_causes.append("persisted rows exist for non-attached customer ids")
+        if anomaly_flags["mixed_customer_ids_for_same_attached_account"]:
+            suspected_root_causes.append("same logical attached account/day appears under multiple customer ids")
+        if anomaly_flags["currency_mismatch_with_attached_account_currency"]:
+            suspected_root_causes.append("persisted row currency mismatches attached-account effective currency")
+        if anomaly_flags["persisted_dates_before_platform_supported_start"]:
+            suspected_root_causes.append("rows persisted before supported platform historical floor")
+        if anomaly_flags["possible_overcount_if_summing_multiple_grains"]:
+            suspected_root_causes.append("summing multiple grains would overcount spend")
+
+        recommended_next_fix_scope = [
+            "verify write-path dedupe key per provider grain/account/day",
+            "verify sync-run chunk failures and retry gaps for missing account_daily dates",
+            "verify mapping/customer-id consistency between attached accounts and persisted customer_id",
+        ]
+
+        attached_accounts_payload = []
+        for item in attached_accounts:
+            aid = str(item.get("id") or "")
+            meta = platform_meta_by_id.get(aid, {})
+            attached_accounts_payload.append(
+                {
+                    "account_id": aid,
+                    "account_name": item.get("name"),
+                    "effective_account_currency": item.get("effective_account_currency") or item.get("currency"),
+                    "account_currency_source": item.get("account_currency_source"),
+                    "last_sync_at": meta.get("last_success_at") or meta.get("last_synced_at"),
+                    "last_error": meta.get("last_error"),
+                    "last_error_summary": (str(meta.get("last_error") or "")[:200] or None),
+                    "last_error_details": self._sanitize_error_details(meta.get("last_error")),
+                }
+            )
+
+        sync_runs = self._build_platform_sync_runs_summary(
+            client_id=client_id,
+            platform=normalized_platform,
+            attached_account_ids=attached_account_ids,
+        )
+
+        per_account_grain_summary = []
+        for item in per_account_grain.values():
+            per_account_grain_summary.append(
+                {
+                    "customer_id": item.get("customer_id"),
+                    "grain": item.get("grain"),
+                    "row_count": item.get("row_count"),
+                    "first_date": item.get("first_date"),
+                    "last_date": item.get("last_date"),
+                    "spend": round(_to_float(item.get("spend")), 4),
+                    "report_currencies": sorted(item.get("report_currencies") if isinstance(item.get("report_currencies"), set) else []),
+                }
+            )
+        per_account_grain_summary.sort(key=lambda v: (str(v.get("customer_id") or ""), str(v.get("grain") or "")))
+
+        return {
+            "client_platform_context": {
+                "client_id": client_id,
+                "platform": normalized_platform,
+                "date_range": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
+                "filters": {"account_id": filter_account_id, "include_daily_breakdown": bool(include_daily_breakdown)},
+                "platform_supported_history_floor": supported_floor.isoformat() if supported_floor is not None else None,
+            },
+            "attached_accounts": attached_accounts_payload,
+            "sync_run_summary": {
+                "recent_runs": sync_runs,
+                "run_count": len(sync_runs),
+            },
+            "persisted_rows_summary": {
+                "total_rows": len(persisted_rows),
+                "row_counts_by_grain": [by_grain[key] for key in sorted(by_grain.keys())],
+                "per_account_grain_coverage": per_account_grain_summary,
+            },
+            "account_daily_totals": account_daily_totals,
+            "lower_grain_totals": lower_grain_totals,
+            "anomaly_flags": anomaly_flags,
+            "anomaly_details": {
+                "duplicate_like_rows_on_natural_key": duplicate_like_rows,
+                "multiple_account_daily_rows_same_account_same_day": multiple_account_daily,
+                "lower_grain_rows_present_without_account_daily": lower_without_account_daily,
+                "account_daily_missing_for_days_inside_range": missing_account_daily_days,
+                "persisted_dates_before_platform_supported_start": rows_before_floor,
+                "currency_mismatch_with_attached_account_currency": currency_mismatches,
+                "rows_present_but_no_attached_mapping_count": rows_present_no_mapping,
+            },
+            "suspected_root_causes": suspected_root_causes,
+            "recommended_next_fix_scope": recommended_next_fix_scope,
+        }
+
+
+    def repair_client_tiktok_account_daily(
+        self,
+        *,
+        client_id: int,
+        start_date: date,
+        end_date: date,
+        account_id: str | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, object]:
+        if start_date > end_date:
+            raise ValueError("start_date must be <= end_date")
+
+        attached_accounts_all = client_registry_service.list_client_platform_accounts(platform="tiktok_ads", client_id=int(client_id))
+        attached_accounts = [item for item in attached_accounts_all if isinstance(item, dict) and str(item.get("id") or "").strip() != ""]
+        if account_id is not None and str(account_id).strip() != "":
+            attached_filter = str(account_id).strip()
+            attached_accounts = [item for item in attached_accounts if str(item.get("id") or "") == attached_filter]
+        attached_account_ids = sorted({str(item.get("id") or "") for item in attached_accounts if str(item.get("id") or "") != ""})
+
+        performance_reports_store.initialize_schema()
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    self._tiktok_account_daily_repair_rows_query(),
+                    (
+                        start_date,
+                        end_date,
+                        int(client_id),
+                        attached_account_ids,
+                    ),
+                )
+                raw_rows = cur.fetchall() or []
+
+            persisted_rows: list[dict[str, object]] = []
+            for row in raw_rows:
+                persisted_rows.append(
+                    {
+                        "row_id": _to_int(row[0]),
+                        "customer_id": str(row[1] or "").strip(),
+                        "report_date": row[2].isoformat() if isinstance(row[2], date) else str(row[2] or ""),
+                        "spend": _to_float(row[3]),
+                        "impressions": _to_int(row[4]),
+                        "clicks": _to_int(row[5]),
+                        "conversions": _to_float(row[6]),
+                        "conversion_value": _to_float(row[7]),
+                        "client_id": _to_int(row[8]) if row[8] is not None else None,
+                        "extra_metrics": row[9] if isinstance(row[9], dict) else {},
+                    }
+                )
+
+            units: dict[tuple[str, str], list[dict[str, object]]] = {}
+            unresolved_units: list[dict[str, object]] = []
+            for row in persisted_rows:
+                mapped_attached_id = self._resolve_tiktok_repair_attached_account(row=row, attached_account_ids=attached_account_ids)
+                if mapped_attached_id is None:
+                    unresolved_units.append(
+                        {
+                            "attached_account_id": None,
+                            "report_date": str(row.get("report_date") or ""),
+                            "row_ids": [row.get("row_id")],
+                            "customer_ids": [str(row.get("customer_id") or "")],
+                            "reason": "missing_attached_mapping",
+                        }
+                    )
+                    continue
+                key = (mapped_attached_id, str(row.get("report_date") or ""))
+                units.setdefault(key, []).append(row)
+
+            safe_units: list[dict[str, object]] = []
+            skipped_units: list[dict[str, object]] = list(unresolved_units)
+            per_account_summary: dict[str, dict[str, object]] = {}
+
+            attached_id_set = set(attached_account_ids)
+            for (attached_id, report_day), rows in sorted(units.items()):
+                provider_ids: list[str] = []
+                for row in rows:
+                    row_provider_ids = self._tiktok_repair_provider_ids_for_row(
+                        customer_id=str(row.get("customer_id") or ""),
+                        extra_metrics=row.get("extra_metrics") if isinstance(row.get("extra_metrics"), dict) else {},
+                    )
+                    provider_ids.extend([item for item in row_provider_ids if item in attached_id_set])
+
+                identity = resolve_tiktok_account_daily_persistence_identity(
+                    attached_account_id=attached_id,
+                    provider_ids_in_scope=provider_ids,
+                )
+                if identity.is_ambiguous or identity.canonical_persistence_customer_id is None:
+                    skipped_units.append(
+                        {
+                            "attached_account_id": attached_id,
+                            "report_date": report_day,
+                            "row_ids": [row.get("row_id") for row in rows],
+                            "customer_ids": sorted({str(row.get("customer_id") or "") for row in rows}),
+                            "reason": "ambiguous_identity",
+                        }
+                    )
+                    continue
+
+                canonical_id = str(identity.canonical_persistence_customer_id)
+                signatures = {self._tiktok_repair_metrics_signature(row) for row in rows}
+                if len(signatures) > 1:
+                    skipped_units.append(
+                        {
+                            "attached_account_id": attached_id,
+                            "report_date": report_day,
+                            "row_ids": [row.get("row_id") for row in rows],
+                            "customer_ids": sorted({str(row.get("customer_id") or "") for row in rows}),
+                            "reason": "conflicting_metrics",
+                        }
+                    )
+                    continue
+
+                canonical_rows = [row for row in rows if str(row.get("customer_id") or "") == canonical_id]
+                noncanonical_rows = [row for row in rows if str(row.get("customer_id") or "") != canonical_id]
+                rewrite_row_id: int | None = None
+                delete_row_ids: list[int] = []
+
+                if len(rows) == 1 and len(noncanonical_rows) == 1:
+                    rewrite_row_id = int(noncanonical_rows[0].get("row_id") or 0)
+                elif len(rows) > 1:
+                    if len(canonical_rows) > 0:
+                        canonical_rows_sorted = sorted(canonical_rows, key=lambda item: int(item.get("row_id") or 0))
+                        survivor_id = int(canonical_rows_sorted[0].get("row_id") or 0)
+                        delete_row_ids = [int(item.get("row_id") or 0) for item in rows if int(item.get("row_id") or 0) != survivor_id]
+                    else:
+                        sorted_rows = sorted(rows, key=lambda item: int(item.get("row_id") or 0))
+                        survivor_id = int(sorted_rows[0].get("row_id") or 0)
+                        rewrite_row_id = survivor_id
+                        delete_row_ids = [int(item.get("row_id") or 0) for item in sorted_rows[1:]]
+
+                if rewrite_row_id is None and len(delete_row_ids) == 0:
+                    account_summary = per_account_summary.setdefault(attached_id, {"safe_candidate_units": 0, "applied_units": 0, "skipped_units": 0, "rewritten_rows": 0, "deleted_rows": 0})
+                    account_summary["safe_candidate_units"] = _to_int(account_summary.get("safe_candidate_units")) + 1
+                    continue
+
+                unit = {
+                    "attached_account_id": attached_id,
+                    "report_date": report_day,
+                    "canonical_customer_id": canonical_id,
+                    "rewrite_row_id": rewrite_row_id,
+                    "delete_row_ids": [item for item in delete_row_ids if item > 0],
+                    "customer_ids": sorted({str(row.get("customer_id") or "") for row in rows}),
+                    "row_ids": [int(row.get("row_id") or 0) for row in rows],
+                }
+                safe_units.append(unit)
+                account_summary = per_account_summary.setdefault(attached_id, {"safe_candidate_units": 0, "applied_units": 0, "skipped_units": 0, "rewritten_rows": 0, "deleted_rows": 0})
+                account_summary["safe_candidate_units"] = _to_int(account_summary.get("safe_candidate_units")) + 1
+
+            rewritten_rows = 0
+            deleted_rows = 0
+            applied_units = 0
+
+            if not dry_run:
+                with conn.cursor() as cur:
+                    for unit in safe_units:
+                        try:
+                            cur.execute("SAVEPOINT tiktok_repair_unit")
+                            rewrite_row_id = unit.get("rewrite_row_id")
+                            if isinstance(rewrite_row_id, int) and rewrite_row_id > 0:
+                                cur.execute(
+                                    """
+                                    UPDATE ad_performance_reports
+                                    SET customer_id = %s,
+                                        synced_at = NOW()
+                                    WHERE id = %s
+                                      AND platform = 'tiktok_ads'
+                                    """,
+                                    (str(unit.get("canonical_customer_id") or ""), int(rewrite_row_id)),
+                                )
+                                rewritten_rows += 1
+
+                            delete_ids = [int(item) for item in (unit.get("delete_row_ids") or []) if int(item) > 0]
+                            if len(delete_ids) > 0:
+                                cur.execute(
+                                    """
+                                    DELETE FROM ad_performance_reports
+                                    WHERE id = ANY(%s::int[])
+                                      AND platform = 'tiktok_ads'
+                                    """,
+                                    (delete_ids,),
+                                )
+                                deleted_rows += len(delete_ids)
+
+                            cur.execute("RELEASE SAVEPOINT tiktok_repair_unit")
+                            applied_units += 1
+                        except Exception:
+                            cur.execute("ROLLBACK TO SAVEPOINT tiktok_repair_unit")
+                            skipped_units.append(
+                                {
+                                    "attached_account_id": unit.get("attached_account_id"),
+                                    "report_date": unit.get("report_date"),
+                                    "row_ids": unit.get("row_ids") or [],
+                                    "customer_ids": unit.get("customer_ids") or [],
+                                    "reason": "canonical_target_conflict",
+                                }
+                            )
+                    conn.commit()
+
+            for item in skipped_units:
+                attached_id = str(item.get("attached_account_id") or "")
+                if attached_id == "":
+                    continue
+                account_summary = per_account_summary.setdefault(attached_id, {"safe_candidate_units": 0, "applied_units": 0, "skipped_units": 0, "rewritten_rows": 0, "deleted_rows": 0})
+                account_summary["skipped_units"] = _to_int(account_summary.get("skipped_units")) + 1
+
+            if not dry_run:
+                for unit in safe_units[:applied_units]:
+                    attached_id = str(unit.get("attached_account_id") or "")
+                    if attached_id == "":
+                        continue
+                    account_summary = per_account_summary.setdefault(attached_id, {"safe_candidate_units": 0, "applied_units": 0, "skipped_units": 0, "rewritten_rows": 0, "deleted_rows": 0})
+                    account_summary["applied_units"] = _to_int(account_summary.get("applied_units")) + 1
+                    if isinstance(unit.get("rewrite_row_id"), int) and int(unit.get("rewrite_row_id") or 0) > 0:
+                        account_summary["rewritten_rows"] = _to_int(account_summary.get("rewritten_rows")) + 1
+                    account_summary["deleted_rows"] = _to_int(account_summary.get("deleted_rows")) + len(unit.get("delete_row_ids") or [])
+
+        skipped_reason_examples: dict[str, int] = {}
+        for item in skipped_units:
+            reason = str(item.get("reason") or "unknown")
+            skipped_reason_examples[reason] = _to_int(skipped_reason_examples.get(reason)) + 1
+
+        return {
+            "client_id": int(client_id),
+            "platform": "tiktok_ads",
+            "date_range": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
+            "account_id": str(account_id).strip() if account_id is not None and str(account_id).strip() != "" else None,
+            "dry_run": bool(dry_run),
+            "total_units_scanned": len(units) + len(unresolved_units),
+            "safe_repair_candidate_units": len(safe_units),
+            "applied_units": int(applied_units),
+            "skipped_units": len(skipped_units),
+            "rewritten_rows": int(rewritten_rows),
+            "deleted_rows": int(deleted_rows),
+            "unresolved_units": skipped_units,
+            "per_account_summary": [
+                {"account_id": account_id_key, **summary}
+                for account_id_key, summary in sorted(per_account_summary.items())
+            ],
+            "example_skipped_reasons": [
+                {"reason": reason, "count": count}
+                for reason, count in sorted(skipped_reason_examples.items())
+            ],
+            "suspected_remaining_issues_needing_provider_resync": [
+                "rows skipped due to conflicting_metrics",
+                "rows skipped due to ambiguous_identity",
+                "rows skipped due to missing_attached_mapping",
+            ],
+        }
+
 
     def get_client_dashboard_reconciliation(
         self,
