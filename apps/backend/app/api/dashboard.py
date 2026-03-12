@@ -73,6 +73,8 @@ def client_dashboard_reconciliation_debug(
         details={"start_date": resolved_start.isoformat(), "end_date": resolved_end.isoformat()},
     )
     return payload
+
+
 @router.get("/{client_id}")
 def client_dashboard(
     client_id: int,
