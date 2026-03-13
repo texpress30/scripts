@@ -14,6 +14,8 @@ from app.schemas.client import (
     UpdateClientProfileRequest,
     MediaBuyingConfigUpdateRequest,
     MediaBuyingLeadDailyValueUpsertRequest,
+    MediaTrackerWorksheetManualValuesUpsertRequest,
+    MediaTrackerWorksheetEurRonRateUpsertRequest,
 )
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
@@ -505,6 +507,44 @@ def get_media_tracker_weekly_worksheet_foundation(
             granularity=str(granularity).strip().lower(),
             anchor_date=anchor_date,
             client_id=client_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
+@router.put("/{client_id}/media-tracker/worksheet/manual-values")
+def upsert_media_tracker_weekly_manual_values(
+    client_id: int,
+    payload: MediaTrackerWorksheetManualValuesUpsertRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    _ensure_client_exists_or_404(client_id=client_id)
+    try:
+        return media_tracker_worksheet_service.upsert_weekly_manual_values(
+            client_id=client_id,
+            granularity=payload.granularity,
+            anchor_date=payload.anchor_date,
+            entries=[entry.model_dump() for entry in payload.entries],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
+@router.put("/{client_id}/media-tracker/worksheet/eur-ron-rate")
+def upsert_media_tracker_scope_eur_ron_rate(
+    client_id: int,
+    payload: MediaTrackerWorksheetEurRonRateUpsertRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    _ensure_client_exists_or_404(client_id=client_id)
+    try:
+        return media_tracker_worksheet_service.upsert_scope_eur_ron_rate(
+            client_id=client_id,
+            granularity=payload.granularity,
+            anchor_date=payload.anchor_date,
+            value=payload.value,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc

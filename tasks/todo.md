@@ -3686,3 +3686,21 @@
 - [x] Weekly aggregation now sums full visible Monday-Sunday weeks, including boundary weeks that extend outside resolved period.
 - [x] Added auto metric keys: `cost_total`, `cost_google`, `cost_meta`, `cost_tiktok`, `total_leads`, `applications`, `approved_applications`; `history_value` equals sum of weekly values per key.
 - [x] Preserved existing worksheet foundation shape and placeholder sections.
+
+---
+
+# TODO — Media Tracker worksheet manual weekly inputs + EUR/RON storage (backend-only)
+
+- [x] Refresh workspace and inspect current worksheet foundation/aggregation backend and API routing.
+- [x] Implement persistence and idempotent upsert/clear logic for weekly manual values keyed by client/week_start/field_key.
+- [x] Implement persistence and idempotent upsert/clear logic for worksheet-scope EUR/RON rate keyed by client/granularity/period_start/period_end.
+- [x] Extend worksheet GET response with manual field definitions, manual metrics/history, eur_ron_rate, and eur_ron_rate_scope.
+- [x] Add API write endpoints for manual weekly values and scope EUR/RON rate with validation.
+- [x] Add/update backend tests for validation, idempotency, scope reuse/readback, clear semantics, and compatibility with existing auto metrics.
+- [x] Run focused backend tests and record outcomes.
+
+## Review
+- [x] Reused existing weekly scope resolver and visible-week ordering from worksheet foundation.
+- [x] Manual values now persist per weekly key and are returned aligned to visible weeks with history sums.
+- [x] EUR/RON rate now persists per canonical worksheet scope and reads back consistently for anchor dates within same scope.
+- [x] No formulas/manual-derived final rows/frontend changes were introduced in this step.
