@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
@@ -7,9 +8,34 @@ import { ArrowLeft, Check, Loader2, Pencil } from "lucide-react";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
+import { AccountSyncStatus } from "@/components/AccountSyncStatus";
 import { apiRequest } from "@/lib/api";
+import { deriveAccountSyncStatus } from "@/lib/accountSyncStatus";
 
-type Account = { id: string; name: string; client_type?: string; account_manager?: string; currency?: string };
+type Account = {
+  id: string;
+  name: string;
+  client_type?: string;
+  account_manager?: string;
+  currency?: string;
+  coverage_status?: string;
+  sync_health_status?: string;
+  last_error?: string;
+  last_error_summary?: string;
+  last_error_details?: Record<string, unknown> | string;
+  last_sync_at?: string;
+  last_success_at?: string;
+  requested_start_date?: string;
+  requested_end_date?: string;
+  total_chunk_count?: number;
+  successful_chunk_count?: number;
+  failed_chunk_count?: number;
+  retry_attempted?: boolean;
+  retry_recovered_chunk_count?: number;
+  rows_written_count?: number;
+  first_persisted_date?: string;
+  last_persisted_date?: string;
+};
 type PlatformInfo = { platform: string; enabled: boolean; count: number; accounts: Account[] };
 type ClientDetails = {
   client: {
@@ -24,7 +50,7 @@ type ClientDetails = {
   platforms: PlatformInfo[];
 };
 
-type SaveField = "name" | "row";
+type SaveField = "name" | "clientCurrency" | "row";
 type RowField = "clientType" | "accountManager" | "currency";
 type RowDraft = { clientType: string; accountManager: string; currency: string };
 
@@ -56,9 +82,11 @@ export default function AgencyClientDetailsPage() {
   const [error, setError] = useState("");
 
   const [editingName, setEditingName] = useState(false);
+  const [editingClientCurrency, setEditingClientCurrency] = useState(false);
   const [editingRowFieldKey, setEditingRowFieldKey] = useState<string | null>(null);
 
   const [nameInput, setNameInput] = useState("");
+  const [clientCurrencyInput, setClientCurrencyInput] = useState("USD");
   const [rowDrafts, setRowDrafts] = useState<Record<string, RowDraft>>({});
 
   const [savingField, setSavingField] = useState<SaveField | null>(null);
@@ -90,6 +118,7 @@ export default function AgencyClientDetailsPage() {
       const payload = await apiRequest<ClientDetails>(`/clients/display/${displayId}`);
       setData(payload);
       setNameInput(payload.client.name);
+      setClientCurrencyInput((payload.client.currency ?? "USD").toUpperCase());
       setAllRowDraftsFromPayload(payload);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Nu am putut încărca detaliile clientului.");
@@ -113,6 +142,7 @@ export default function AgencyClientDetailsPage() {
       });
       setData(response);
       setNameInput(response.client.name);
+      setClientCurrencyInput((response.client.currency ?? "USD").toUpperCase());
       setAllRowDraftsFromPayload(response);
       markSaved(successKey);
     } catch (err) {
@@ -134,6 +164,21 @@ export default function AgencyClientDetailsPage() {
     }
     await patchProfile({ name: trimmed }, "name", "name");
     setEditingName(false);
+  }
+
+  async function saveClientCurrencyIfChanged(nextValue?: string) {
+    if (!data) return;
+    const normalizedCurrency = (nextValue ?? clientCurrencyInput).trim().toUpperCase();
+    const currentCurrency = (data.client.currency ?? "USD").toUpperCase();
+
+    if (normalizedCurrency === "" || normalizedCurrency === currentCurrency) {
+      setClientCurrencyInput(currentCurrency);
+      setEditingClientCurrency(false);
+      return;
+    }
+
+    await patchProfile({ currency: normalizedCurrency }, "clientCurrency", "clientCurrency");
+    setEditingClientCurrency(false);
   }
 
   async function saveRowFieldIfChanged(key: string, platform: string, accountId: string, field: RowField, nextDraft?: RowDraft) {
@@ -189,6 +234,23 @@ export default function AgencyClientDetailsPage() {
   }
 
   const title = useMemo(() => (data ? `Client: ${data.client.name}` : `Client #${displayId}`), [data, displayId]);
+
+  const sectionSyncSummary = useMemo(() => {
+    if (!data) return {} as Record<string, { warning: number; error: number }>;
+    const byPlatform: Record<string, { warning: number; error: number }> = {};
+    for (const platform of data.platforms) {
+      const normalized = String(platform.platform || "").toLowerCase();
+      if (normalized !== "meta_ads" && normalized !== "tiktok_ads") continue;
+      const counter = { warning: 0, error: 0 };
+      for (const account of platform.accounts) {
+        const ui = deriveAccountSyncStatus(platform.platform, account as unknown as Record<string, unknown>);
+        if (ui.uiStatus === "warning") counter.warning += 1;
+        if (ui.uiStatus === "error") counter.error += 1;
+      }
+      byPlatform[platform.platform] = counter;
+    }
+    return byPlatform;
+  }, [data]);
 
   return (
     <ProtectedPage>
@@ -253,12 +315,65 @@ export default function AgencyClientDetailsPage() {
                   </button>
                 </div>
                 <p className="text-sm text-slate-600">Owner: {data.client.owner_email}</p>
+                <div className="flex items-center justify-between gap-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-500">Moneda clientului:</span>
+                    {editingClientCurrency ? (
+                      <select
+                        value={clientCurrencyInput}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setClientCurrencyInput(value);
+                          void saveClientCurrencyIfChanged(value);
+                        }}
+                        className="rounded border border-slate-300 px-2 py-1 text-xs"
+                        disabled={savingField === "clientCurrency"}
+                        autoFocus
+                      >
+                        {CURRENCY_OPTIONS.map((currency) => (
+                          <option key={currency} value={currency}>
+                            {currency}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="font-medium text-slate-700">{(data.client.currency ?? "USD").toUpperCase()}</span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setClientCurrencyInput((data.client.currency ?? "USD").toUpperCase());
+                      setEditingClientCurrency(true);
+                    }}
+                    className="rounded p-1 text-slate-500 hover:bg-slate-100"
+                    title="Editează moneda clientului"
+                    disabled={savingField === "clientCurrency"}
+                  >
+                    {savingField === "clientCurrency" ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-500" />
+                    ) : savedField === "clientCurrency" ? (
+                      <Check className="h-3.5 w-3.5 text-emerald-600" />
+                    ) : (
+                      <Pencil className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                </div>
               </section>
 
               <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {data.platforms.map((platform) => (
                   <article key={platform.platform} className="wm-card p-4">
-                    <h3 className="text-base font-semibold text-slate-900">{prettyPlatform(platform.platform)}</h3>
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="text-base font-semibold text-slate-900">{prettyPlatform(platform.platform)}</h3>
+                      {sectionSyncSummary[platform.platform] && (sectionSyncSummary[platform.platform].warning > 0 || sectionSyncSummary[platform.platform].error > 0) ? (
+                        <span className="text-xs font-medium text-slate-600">
+                          {sectionSyncSummary[platform.platform].error > 0 ? `${sectionSyncSummary[platform.platform].error} error` : null}
+                          {sectionSyncSummary[platform.platform].error > 0 && sectionSyncSummary[platform.platform].warning > 0 ? " • " : null}
+                          {sectionSyncSummary[platform.platform].warning > 0 ? `${sectionSyncSummary[platform.platform].warning} warning` : null}
+                        </span>
+                      ) : null}
+                    </div>
                     <p className="mt-1 text-xs text-slate-500">Activ: {platform.enabled ? "Da" : "Nu"}</p>
                     <p className="text-xs text-slate-500">Conturi atașate: {platform.count}</p>
                     <ul className="mt-2 space-y-2">
@@ -279,6 +394,10 @@ export default function AgencyClientDetailsPage() {
                                 {account.name} <span className="text-xs text-slate-500">({account.id})</span>
                               </div>
                             </div>
+
+                            {(platform.platform === "meta_ads" || platform.platform === "tiktok_ads") ? (
+                              <AccountSyncStatus platform={platform.platform} account={account as unknown as Record<string, unknown>} />
+                            ) : null}
 
                             <div className="mt-2 space-y-2 text-xs">
                               <div className="flex items-center justify-between gap-2">
