@@ -4001,3 +4001,20 @@
 - [x] Added per-month inline loading/error/no-days rows so a failed month fetch does not break the whole page.
 - [x] Existing month/day formatting, labels, and currency behavior remain unchanged.
 - [x] Verification: `pnpm vitest run src/app/sub/[id]/media-buying/page.test.tsx` (pass).
+
+---
+
+# TODO — Media Buying no-range manual-values regression fix (backend)
+
+- [x] Refresh workspace and inspect `media_buying_store` no-range lead-table/manual-values path.
+- [x] Make `list_lead_daily_manual_values(...)` null-safe for `(date_from, date_to) == (None, None)` and keep date-pair validation explicit.
+- [x] Preserve optimized no-range `get_lead_table(...)` flow without reintroducing old double-scan bounds query.
+- [x] Add regression tests for no-range automated-only, automated+manual, manual-only, explicit-range compatibility, include_days=false compatibility, and null-safe manual helper behavior.
+- [x] Run targeted backend tests and document outcomes.
+
+## Review
+- [x] Regression cause confirmed: optimized no-range path invoked `list_lead_daily_manual_values(..., None, None)` while helper compared `date_from > date_to` unguarded.
+- [x] `list_lead_daily_manual_values` now supports `(None, None)` by querying all manual rows for client; one-sided None remains a clean validation error.
+- [x] No-range `get_lead_table` remains optimized (no restored old heavy bounds scan); it still derives effective range from already fetched automated+manual rows.
+- [x] Added focused backend tests in `test_media_buying_store.py` for null-safety and no-range scenarios (automated-only, automated+manual, manual-only + include_days=false).
+- [x] Verification: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py apps/backend/tests/test_client_registry_account_currency_resolution.py apps/backend/tests/test_dashboard_currency_normalization.py` (pass).

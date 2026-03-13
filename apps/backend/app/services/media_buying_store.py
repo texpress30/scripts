@@ -960,38 +960,63 @@ class MediaBuyingStore:
         self,
         *,
         client_id: int,
-        date_from: date,
-        date_to: date,
+        date_from: date | None,
+        date_to: date | None,
     ) -> list[dict[str, object]]:
         self._ensure_schema()
-        if date_from > date_to:
+        if (date_from is None) != (date_to is None):
+            raise ValueError("date_from and date_to must be provided together")
+        if date_from is not None and date_to is not None and date_from > date_to:
             raise ValueError("date_from must be less than or equal to date_to")
 
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT
-                        client_id,
-                        metric_date,
-                        leads,
-                        phones,
-                        custom_value_1_count,
-                        custom_value_2_count,
-                        custom_value_3_amount_ron,
-                        custom_value_4_amount_ron,
-                        custom_value_5_amount_ron,
-                        sales_count,
-                        created_at,
-                        updated_at
-                    FROM media_buying_lead_daily_manual_values
-                    WHERE client_id = %s
-                      AND metric_date >= %s
-                      AND metric_date <= %s
-                    ORDER BY metric_date ASC
-                    """,
-                    (int(client_id), date_from, date_to),
-                )
+                if date_from is None or date_to is None:
+                    cur.execute(
+                        """
+                        SELECT
+                            client_id,
+                            metric_date,
+                            leads,
+                            phones,
+                            custom_value_1_count,
+                            custom_value_2_count,
+                            custom_value_3_amount_ron,
+                            custom_value_4_amount_ron,
+                            custom_value_5_amount_ron,
+                            sales_count,
+                            created_at,
+                            updated_at
+                        FROM media_buying_lead_daily_manual_values
+                        WHERE client_id = %s
+                        ORDER BY metric_date ASC
+                        """,
+                        (int(client_id),),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT
+                            client_id,
+                            metric_date,
+                            leads,
+                            phones,
+                            custom_value_1_count,
+                            custom_value_2_count,
+                            custom_value_3_amount_ron,
+                            custom_value_4_amount_ron,
+                            custom_value_5_amount_ron,
+                            sales_count,
+                            created_at,
+                            updated_at
+                        FROM media_buying_lead_daily_manual_values
+                        WHERE client_id = %s
+                          AND metric_date >= %s
+                          AND metric_date <= %s
+                        ORDER BY metric_date ASC
+                        """,
+                        (int(client_id), date_from, date_to),
+                    )
                 rows = cur.fetchall() or []
 
         return [self._daily_from_row(row) for row in rows]

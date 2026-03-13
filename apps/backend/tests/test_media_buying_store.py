@@ -89,6 +89,16 @@ class _MediaBuyingCursor:
             self._fetchall = rows
             return
 
+        if "FROM media_buying_lead_daily_manual_values" in q and "WHERE client_id = %s" in q and "metric_date >= %s" not in q:
+            client_id = int(params[0])
+            rows = []
+            for (cid, _), row in self.state.get("daily", {}).items():
+                if cid == client_id:
+                    rows.append(row)
+            rows.sort(key=lambda r: r[1])
+            self._fetchall = rows
+            return
+
         raise AssertionError(f"Unexpected query: {q}")
 
     def fetchone(self):
@@ -316,6 +326,95 @@ class MediaBuyingStoreTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["date"], "2026-03-10")
         self.assertEqual(rows[0]["custom_value_5_amount_ron"], -2.0)
+
+    def test_list_manual_values_is_null_safe_when_both_dates_missing(self):
+        store, _ = self._build_store()
+        store.upsert_lead_daily_manual_value(
+            client_id=12,
+            metric_date=date(2026, 3, 9),
+            leads=1,
+            phones=0,
+            custom_value_1_count=0,
+            custom_value_2_count=0,
+            custom_value_3_amount_ron=10,
+            custom_value_4_amount_ron=0,
+            custom_value_5_amount_ron=0,
+            sales_count=0,
+        )
+
+        rows = store.list_lead_daily_manual_values(client_id=12, date_from=None, date_to=None)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["date"], "2026-03-09")
+
+    def test_list_manual_values_requires_both_dates_or_none(self):
+        store, _ = self._build_store()
+        with self.assertRaisesRegex(ValueError, "provided together"):
+            store.list_lead_daily_manual_values(client_id=12, date_from=date(2026, 3, 1), date_to=None)
+
+    def test_get_lead_table_no_range_automated_only_no_crash(self):
+        store, _ = self._build_store()
+        store.get_config = lambda **kwargs: {"client_id": 12, "template_type": "lead", "display_currency": "RON"}
+        store._list_automated_daily_costs = lambda **kwargs: [
+            {"date": date(2026, 3, 10), "platform": "google_ads", "account_currency": "RON", "spend": 100.0},
+        ]
+        store._normalize_money_to_display_currency = lambda **kwargs: kwargs["amount"]
+
+        payload = store.get_lead_table(client_id=12)
+
+        self.assertEqual(payload["meta"]["date_from"], "2026-03-10")
+        self.assertEqual(payload["days"][0]["date"], "2026-03-10")
+
+    def test_get_lead_table_no_range_automated_and_manual_no_crash(self):
+        store, _ = self._build_store()
+        store.get_config = lambda **kwargs: {"client_id": 12, "template_type": "lead", "display_currency": "RON"}
+        store.upsert_lead_daily_manual_value(
+            client_id=12,
+            metric_date=date(2026, 3, 11),
+            leads=3,
+            phones=0,
+            custom_value_1_count=0,
+            custom_value_2_count=0,
+            custom_value_3_amount_ron=0,
+            custom_value_4_amount_ron=0,
+            custom_value_5_amount_ron=0,
+            sales_count=0,
+        )
+        store._list_automated_daily_costs = lambda **kwargs: [
+            {"date": date(2026, 3, 10), "platform": "google_ads", "account_currency": "RON", "spend": 100.0},
+        ]
+        store._normalize_money_to_display_currency = lambda **kwargs: kwargs["amount"]
+
+        payload = store.get_lead_table(client_id=12)
+
+        self.assertEqual(payload["meta"]["date_from"], "2026-03-10")
+        self.assertEqual(payload["meta"]["date_to"], "2026-03-11")
+        self.assertEqual([row["date"] for row in payload["days"]], ["2026-03-10", "2026-03-11"])
+
+    def test_get_lead_table_no_range_manual_only_no_crash_and_include_days_false(self):
+        store, _ = self._build_store()
+        store.get_config = lambda **kwargs: {"client_id": 12, "template_type": "lead", "display_currency": "RON", "display_currency_source": "agency_client_currency"}
+        store.upsert_lead_daily_manual_value(
+            client_id=12,
+            metric_date=date(2026, 3, 12),
+            leads=2,
+            phones=0,
+            custom_value_1_count=0,
+            custom_value_2_count=0,
+            custom_value_3_amount_ron=0,
+            custom_value_4_amount_ron=0,
+            custom_value_5_amount_ron=0,
+            sales_count=0,
+        )
+        store._list_automated_daily_costs = lambda **kwargs: []
+        store._normalize_money_to_display_currency = lambda **kwargs: kwargs["amount"]
+
+        payload = store.get_lead_table(client_id=12, include_days=False)
+
+        self.assertEqual(payload["meta"]["date_from"], "2026-03-12")
+        self.assertEqual(payload["days"], [])
+        self.assertEqual(payload["months"][0]["day_count"], 1)
+
 
 
 class MediaBuyingLeadTableReadTests(unittest.TestCase):
