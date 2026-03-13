@@ -149,7 +149,8 @@ class MediaBuyingStoreTests(unittest.TestCase):
 
         self.assertEqual(result["client_id"], 12)
         self.assertEqual(result["template_type"], "lead")
-        self.assertEqual(result["display_currency"], "RON")
+        self.assertEqual(result["display_currency"], "USD")
+        self.assertEqual(result["display_currency_source"], "safe_fallback")
         self.assertEqual(result["custom_label_1"], "Apeluri")
         self.assertEqual(result["custom_label_5"], "Refund")
 
@@ -173,6 +174,44 @@ class MediaBuyingStoreTests(unittest.TestCase):
         self.assertEqual(cfg["custom_cost_label_1"], "Cost A")
         self.assertEqual(cfg["custom_cost_label_2"], "Cost B")
         self.assertEqual(cfg["visible_columns"], ["date", "cost_total"])
+
+
+    def test_get_config_overrides_stale_local_display_currency_with_client_display_currency(self):
+        store, state = self._build_store()
+        state["configs"][12] = (
+            12,
+            "lead",
+            "RON",
+            "Custom Value 1",
+            "Custom Value 2",
+            "Custom Value 3",
+            "Custom Value 4",
+            "Custom Value 5",
+            "Custom Value Rate 1",
+            "Custom Value Rate 2",
+            "Cost Custom Value 1",
+            "Cost Custom Value 2",
+            ["date", "cost_total"],
+            True,
+            "2026-03-11T10:00:00+00:00",
+            "2026-03-11T11:00:00+00:00",
+        )
+        store._resolve_client_display_currency_decision = lambda **kwargs: ("USD", "agency_client_currency")
+
+        cfg = store.get_config(client_id=12)
+
+        self.assertEqual(cfg["display_currency"], "USD")
+        self.assertEqual(cfg["display_currency_source"], "agency_client_currency")
+
+    def test_upsert_config_ignores_incoming_display_currency_and_syncs_to_client_display_currency(self):
+        store, state = self._build_store()
+        store._resolve_client_display_currency_decision = lambda **kwargs: ("EUR", "agency_client_currency")
+
+        cfg = store.upsert_config(client_id=12, display_currency="RON", custom_label_1="Apeluri")
+
+        self.assertEqual(cfg["display_currency"], "EUR")
+        self.assertEqual(cfg["display_currency_source"], "agency_client_currency")
+        self.assertEqual(state["configs"][12][2], "EUR")
 
     def test_upsert_lead_daily_values_is_idempotent_for_same_day(self):
         store, state = self._build_store()
@@ -341,6 +380,86 @@ class MediaBuyingLeadTableReadTests(unittest.TestCase):
         self.assertEqual(row["custom_value_4_amount_ron"], 105.0)
         self.assertEqual(row["custom_value_5_amount_ron"], -5.0)
         self.assertIsNone(row["percent_change"])
+
+
+    def test_lead_table_uses_client_display_currency_not_stale_local_config_currency(self):
+        store, state = MediaBuyingStoreTests()._build_store()
+        state["configs"][12] = (
+            12,
+            "lead",
+            "RON",
+            "Custom Value 1",
+            "Custom Value 2",
+            "Custom Value 3",
+            "Custom Value 4",
+            "Custom Value 5",
+            "Custom Value Rate 1",
+            "Custom Value Rate 2",
+            "Cost Custom Value 1",
+            "Cost Custom Value 2",
+            ["date", "cost_total"],
+            True,
+            "2026-03-11T10:00:00+00:00",
+            "2026-03-11T11:00:00+00:00",
+        )
+        store._resolve_client_display_currency_decision = lambda **kwargs: ("USD", "agency_client_currency")
+        store.list_lead_daily_manual_values = lambda **kwargs: []
+        store._list_automated_daily_costs = lambda **kwargs: [
+            {"date": date(2026, 3, 10), "platform": "google_ads", "account_currency": "RON", "spend": 100.0},
+        ]
+        store._normalize_money_to_display_currency = lambda **kwargs: kwargs["amount"] / 5.0 if kwargs["display_currency"] == "USD" else kwargs["amount"]
+
+        payload = store.get_lead_table(client_id=12, date_from=date(2026, 3, 10), date_to=date(2026, 3, 10))
+
+        self.assertEqual(payload["meta"]["display_currency"], "USD")
+        self.assertEqual(payload["meta"]["display_currency_source"], "agency_client_currency")
+        self.assertAlmostEqual(float(payload["days"][0]["cost_google"]), 20.0)
+
+    def test_lead_table_display_currency_is_client_specific_for_multiple_clients(self):
+        store = self._build_store()
+        currency_by_client = {
+            10: ("USD", 1.0),
+            20: ("RON", 5.0),
+            30: ("EUR", 0.9),
+        }
+
+        def _config(*, client_id: int):
+            code, _ = currency_by_client[int(client_id)]
+            return {
+                "client_id": client_id,
+                "template_type": "lead",
+                "display_currency": code,
+                "display_currency_source": "agency_client_currency",
+            }
+
+        store.get_config = _config
+        store.list_lead_daily_manual_values = lambda **kwargs: []
+        store._list_automated_daily_costs = lambda **kwargs: [
+            {"date": date(2026, 3, 10), "platform": "google_ads", "account_currency": "USD", "spend": 10.0},
+        ]
+
+        def _normalize(*, amount: float, from_currency: str, display_currency: str, rate_date: date):
+            if display_currency == "USD":
+                return amount
+            if display_currency == "RON":
+                return amount * 5.0
+            if display_currency == "EUR":
+                return amount * 0.9
+            return amount
+
+        store._normalize_money_to_display_currency = _normalize
+
+        usd = store.get_lead_table(client_id=10, date_from=date(2026, 3, 10), date_to=date(2026, 3, 10))
+        ron = store.get_lead_table(client_id=20, date_from=date(2026, 3, 10), date_to=date(2026, 3, 10))
+        eur = store.get_lead_table(client_id=30, date_from=date(2026, 3, 10), date_to=date(2026, 3, 10))
+
+        self.assertEqual(usd["meta"]["display_currency"], "USD")
+        self.assertEqual(ron["meta"]["display_currency"], "RON")
+        self.assertEqual(eur["meta"]["display_currency"], "EUR")
+
+        self.assertAlmostEqual(float(usd["days"][0]["cost_total"]), 10.0)
+        self.assertAlmostEqual(float(ron["days"][0]["cost_total"]), 50.0)
+        self.assertAlmostEqual(float(eur["days"][0]["cost_total"]), 9.0)
 
     def test_monthly_totals_are_recomputed_from_month_sums_and_missing_manual_is_zero(self):
         store = self._build_store()
