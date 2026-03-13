@@ -3670,3 +3670,19 @@
 - [x] Added deterministic week metadata fields: index, week_start/end, label, first-week flag, period boundary intersection flags.
 - [x] Added tests for month/quarter/year resolution, ordering, boundary intersection, first-week flag, and history week-count consistency.
 - [x] Verification: service tests pass; API test collection blocked in this environment due missing FastAPI dependency.
+
+---
+
+# TODO — Media Tracker weekly worksheet automatic weekly aggregation (backend-only)
+
+- [x] Refresh workspace and inspect existing daily Media Buying/Media Tracker source-of-truth and current worksheet foundation service.
+- [x] Extend worksheet service to aggregate raw automatic weekly metrics from existing daily source for full visible weeks.
+- [x] Keep contract stable and include `auto_metrics` with history sums aligned to visible weekly values.
+- [x] Add focused tests for weekly aggregation, boundary full-week behavior, history alignment, ordering, leads/applications mapping, and null safety.
+- [x] Run focused backend tests and record outcomes.
+
+## Review
+- [x] Reused `media_buying_store.get_lead_table(...).days` as daily source-of-truth (no second conflicting path).
+- [x] Weekly aggregation now sums full visible Monday-Sunday weeks, including boundary weeks that extend outside resolved period.
+- [x] Added auto metric keys: `cost_total`, `cost_google`, `cost_meta`, `cost_tiktok`, `total_leads`, `applications`, `approved_applications`; `history_value` equals sum of weekly values per key.
+- [x] Preserved existing worksheet foundation shape and placeholder sections.

@@ -504,6 +504,7 @@ def get_media_tracker_weekly_worksheet_foundation(
         return media_tracker_worksheet_service.build_weekly_worksheet_foundation(
             granularity=str(granularity).strip().lower(),
             anchor_date=anchor_date,
+            client_id=client_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc

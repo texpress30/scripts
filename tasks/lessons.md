@@ -300,3 +300,4 @@
 - 2026-03-12: După feedback că observability write-side era incompletă, pentru Meta backfill/sync trebuie propagat explicit coverage_status + retry metadata din execuția chunked către payload-uri run/account și marcat status error când rămân chunk-uri nerecuperate.
 - 2026-03-13: After user dissatisfaction with prior PR scope, re-audit actual target pages/payloads first and ship the narrowly requested UX on the primary page before adding broad cross-cutting changes.
 - 2026-03-13: When product scope says backend-only foundation, avoid mixing frontend or formula work; deliver a stable contract + deterministic calendar bucketing first.
+- 2026-03-13: For follow-up worksheet tasks, reuse existing daily source methods directly (e.g., media_buying_store day rows) instead of introducing parallel raw-query paths.

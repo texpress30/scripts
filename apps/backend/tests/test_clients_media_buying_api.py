@@ -8,6 +8,7 @@ from app.api import clients as clients_api
 from app.schemas.client import MediaBuyingConfigUpdateRequest, MediaBuyingLeadDailyValueUpsertRequest
 from app.services.auth import AuthUser
 from app.services.client_registry import client_registry_service
+from app.services import media_tracker_worksheet as worksheet_module
 
 
 class ClientsMediaBuyingApiTests(unittest.TestCase):
@@ -129,9 +130,12 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
                 return payload
 
         clients_api.media_buying_store = _StoreStub()
+        self.original_worksheet_store = worksheet_module.media_buying_store
+        worksheet_module.media_buying_store = clients_api.media_buying_store
 
     def tearDown(self):
         clients_api.media_buying_store = self.original_store
+        worksheet_module.media_buying_store = self.original_worksheet_store
         clients_api.enforce_action_scope = self.original_enforce
         client_registry_service._is_test_mode = self.original_is_test_mode
         os.environ.clear()
