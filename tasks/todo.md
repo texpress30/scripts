@@ -3940,3 +3940,22 @@
 - [x] Auto-repair currently targets `media_buying_configs.display_currency` drift only; attached-account currency metadata remains read-only by design.
 - [x] Added `apps/backend/tests/test_dashboard_currency_drift_repair.py` covering dry-run/apply/multi-currency/no-op/filter/skip behavior.
 - [x] Verification attempted: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q apps/backend/tests/test_dashboard_currency_drift_repair.py` (environment warning: missing `requests` dependency in this runner during import).
+
+---
+
+# TODO — Media Buying lead-table hot path timeout reduction (backend)
+
+- [x] Refresh workspace state and inspect current `MediaBuyingStore.get_lead_table` hot path before coding.
+- [x] Remove the default-path double scan of `ad_performance_reports` (bounds scan + cost scan) by deriving implicit bounds from the same fetched datasets.
+- [x] Optimize automated-cost SQL matching path by pre-scoping mappings/accounts and precomputing normalized Google account ids in CTEs.
+- [x] Add compact hot-path timing instrumentation for bounds resolution, automated query, manual query, and total duration.
+- [x] Keep response shape/currency contract unchanged (`meta`, `days`, `months`, display currency metadata).
+- [x] Add targeted backend tests for no-range behavior, explicit range behavior, optimized matching query contract, and timing log hook.
+- [x] Run focused backend tests and record outcomes.
+
+## Review
+- [x] `get_lead_table` no-range flow now fetches automated/manual data once and computes earliest/latest non-zero data bounds in memory, removing the previous extra `ad_performance_reports` scan from normal default loading.
+- [x] `_list_automated_daily_costs` now uses scoped CTEs for mappings/accounts and precomputed `account_id_digits`, reducing repeated inline normalization work in Google account matching.
+- [x] Added single compact `media_buying_lead_table_timing` info log per request with `bounds_ms`, `automated_query_ms`, `manual_query_ms`, `total_ms`, and row/result counters.
+- [x] Added/updated tests in `apps/backend/tests/test_media_buying_store.py` for no-range and explicit-range query behavior, timing log emission, and SQL shape assertions for scoped matching CTEs.
+- [x] Verification: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py apps/backend/tests/test_client_registry_account_currency_resolution.py` (pass), plus `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q apps/backend/tests/test_dashboard_currency_normalization.py` (pass).

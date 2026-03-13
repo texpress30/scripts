@@ -614,6 +614,84 @@ class MediaBuyingLeadTableReadTests(unittest.TestCase):
         self.assertEqual([row["date"] for row in payload["days"]], ["2026-03-14"])
         self.assertEqual(payload["months"][0]["totals"]["leads"], 1)
 
+    def test_default_range_does_not_call_bounds_query_and_uses_full_scan_rows(self):
+        store = self._build_store()
+        store.get_config = lambda **kwargs: {"client_id": 12, "template_type": "lead", "display_currency": "RON"}
+        store._get_lead_table_data_bounds = lambda **kwargs: (_ for _ in ()).throw(AssertionError("bounds query should not be used"))
+
+        automated_call = {}
+        manual_call = {}
+
+        def _auto(**kwargs):
+            automated_call.update(kwargs)
+            return [{"date": date(2026, 1, 2), "platform": "google_ads", "account_currency": "RON", "spend": 10.0}]
+
+        def _manual(**kwargs):
+            manual_call.update(kwargs)
+            return []
+
+        store._list_automated_daily_costs = _auto
+        store.list_lead_daily_manual_values = _manual
+        store._normalize_money_to_display_currency = lambda **kwargs: kwargs["amount"]
+
+        payload = store.get_lead_table(client_id=12)
+
+        self.assertEqual(payload["meta"]["date_from"], "2026-01-02")
+        self.assertEqual(payload["meta"]["date_to"], "2026-01-02")
+        self.assertIsNone(automated_call["date_from"])
+        self.assertIsNone(automated_call["date_to"])
+        self.assertIsNone(manual_call["date_from"])
+        self.assertIsNone(manual_call["date_to"])
+
+    def test_explicit_range_passes_date_filters_to_queries(self):
+        store = self._build_store()
+        store.get_config = lambda **kwargs: {"client_id": 12, "template_type": "lead", "display_currency": "RON"}
+
+        automated_call = {}
+        manual_call = {}
+
+        def _auto(**kwargs):
+            automated_call.update(kwargs)
+            return []
+
+        def _manual(**kwargs):
+            manual_call.update(kwargs)
+            return []
+
+        store._list_automated_daily_costs = _auto
+        store.list_lead_daily_manual_values = _manual
+
+        _ = store.get_lead_table(client_id=12, date_from=date(2026, 3, 1), date_to=date(2026, 3, 31))
+
+        self.assertEqual(automated_call["date_from"], date(2026, 3, 1))
+        self.assertEqual(automated_call["date_to"], date(2026, 3, 31))
+        self.assertEqual(manual_call["date_from"], date(2026, 3, 1))
+        self.assertEqual(manual_call["date_to"], date(2026, 3, 31))
+
+    def test_get_lead_table_logs_timing_once_per_call(self):
+        store = self._build_store()
+        store.get_config = lambda **kwargs: {"client_id": 12, "template_type": "lead", "display_currency": "RON"}
+        store._list_automated_daily_costs = lambda **kwargs: [{"date": date(2026, 3, 12), "platform": "google_ads", "account_currency": "RON", "spend": 10.0}]
+        store.list_lead_daily_manual_values = lambda **kwargs: []
+        store._normalize_money_to_display_currency = lambda **kwargs: kwargs["amount"]
+
+        import app.services.media_buying_store as media_buying_module
+
+        captured = []
+        original_info = media_buying_module.logger.info
+        try:
+            media_buying_module.logger.info = lambda message, extra=None: captured.append((message, extra))
+            _ = store.get_lead_table(client_id=12)
+        finally:
+            media_buying_module.logger.info = original_info
+
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(captured[0][0], "media_buying_lead_table_timing")
+        self.assertEqual(captured[0][1]["client_id"], 12)
+        self.assertIn("automated_query_ms", captured[0][1])
+        self.assertIn("manual_query_ms", captured[0][1])
+        self.assertIn("total_ms", captured[0][1])
+
     def test_non_lead_template_is_not_implemented(self):
         store = self._build_store()
         store.get_config = lambda **kwargs: {"client_id": 12, "template_type": "lead", "display_currency": "RON"}
@@ -717,10 +795,11 @@ class MediaBuyingStoreBoundsQueryTests(unittest.TestCase):
         self.assertIn("mapped.client_id = %s", captured_query)
         self.assertNotIn("mapped.created_at::date <= apr.report_date", captured_query)
         self.assertIn("agency_platform_accounts apa", captured_query)
+        self.assertIn("scoped_mapped", captured_query)
+        self.assertIn("account_id_digits", captured_query)
         self.assertIn("apa.currency_code", captured_query)
         self.assertNotIn("apa.account_currency", captured_query)
         self.assertIn("'account_daily'", captured_query)
-        self.assertLess(captured_query.index("apa.currency_code"), captured_query.index("mapped.account_currency"))
 
     def test_tiktok_ron_costs_do_not_get_reconverted_when_display_currency_is_ron(self):
         store = MediaBuyingStore()
