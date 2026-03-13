@@ -1,3 +1,23 @@
+# TODO — Sub-account frontend currency rendering alignment (Media Buying + Media Tracker)
+
+- [x] Refresh workspace and inspect sub-account frontend money-formatting paths for Media Buying, Media Tracker, and Weekly Worksheet.
+- [x] Add shared frontend sub-account currency formatting helper driven by backend display-currency metadata and worksheet value metadata.
+- [x] Apply helper to Media Buying monetary rendering and remove RON-default frontend assumptions.
+- [x] Apply helper to Weekly Worksheet rendering for `currency_display`/`currency_eur` and preserve non-currency/manual-editing behavior.
+- [x] Add minimal visible currency indicator in sub-account Media Buying / Media Tracker worksheet context.
+- [x] Update/add targeted frontend tests for USD/RON/EUR behavior, worksheet value-kind currency behavior, null placeholders, and existing interactions.
+- [x] Run focused frontend tests and document outcomes.
+
+## Review
+- [x] Added shared `subAccountCurrency` formatter utility (`normalizeCurrencyCode`, `formatCurrencyValue`, `formatWorksheetValueByKind`) with safe non-RON fallback semantics.
+- [x] Media Buying now formats money via shared helper and uses `meta.display_currency` with safe normalization; added compact `Currency: <code>` indicator on sub-account page.
+- [x] Weekly Worksheet table now formats by row/page metadata (`value_kind`, `currency_code`, `displayCurrency`) and no longer assumes `currency_ron` for display-currency rows.
+- [x] Media Tracker worksheet page now passes `display_currency` metadata into table formatting and shows compact `Currency: <code>` indicator near rate controls.
+- [x] Frontend tests updated/added for multi-currency media-buying rendering, worksheet currency_display vs currency_eur rendering, null-safe behavior, and existing editing/navigation stability.
+- [x] Verification: focused Vitest suites pass for updated sub-account surfaces and helper utility.
+
+---
+
 # TODO — Media Tracker backend display-currency alignment (backend only)
 
 - [x] Refresh workspace and inspect Media Tracker backend read path + worksheet service currency metadata.

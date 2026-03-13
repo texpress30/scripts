@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import SubMediaTrackerPage from "./page";
+import { formatCurrencyValue } from "@/lib/subAccountCurrency";
 
 const apiMock = vi.hoisted(() => ({ apiRequest: vi.fn() }));
 
@@ -21,8 +22,11 @@ vi.mock("@/components/AppShell", () => ({
 function worksheetPayload(
   weeks: Array<{ week_start: string; week_end: string; label?: string }>,
   rate: number | null = 5.09,
+  displayCurrency: string = "USD",
 ) {
   return {
+    display_currency: displayCurrency,
+    display_currency_source: "agency_client_currency",
     eur_ron_rate: rate,
     eur_ron_rate_scope: { granularity: "month", period_start: "2026-03-01", period_end: "2026-03-31" },
     weeks,
@@ -34,7 +38,8 @@ function worksheetPayload(
           {
             row_key: "cost",
             label: "Cost",
-            value_kind: "currency_ron",
+            value_kind: "currency_display",
+            currency_code: displayCurrency,
             source_kind: "computed",
             history_value: 300,
             weekly_values: weeks.map((w, idx) => ({ week_start: w.week_start, week_end: w.week_end, value: idx + 100 })),
@@ -42,12 +47,22 @@ function worksheetPayload(
           {
             row_key: "weekly_cogs_taxes",
             label: "Total COGS + Taxe",
-            value_kind: "currency_ron",
+            value_kind: "currency_display",
+            currency_code: displayCurrency,
             source_kind: "manual",
             is_manual_input_row: true,
             dependencies: ["manual_metrics.weekly_cogs_taxes"],
             history_value: 30,
             weekly_values: weeks.map((w, idx) => ({ week_start: w.week_start, week_end: w.week_end, value: idx + 10 })),
+          },
+          {
+            row_key: "ncac_eur",
+            label: "nCAC EUR",
+            value_kind: "currency_eur",
+            currency_code: "EUR",
+            source_kind: "computed",
+            history_value: 20,
+            weekly_values: weeks.map((w) => ({ week_start: w.week_start, week_end: w.week_end, value: 10 })),
           },
           {
             row_key: "cost_wow_pct",
@@ -205,6 +220,27 @@ describe("SubMediaTrackerPage", () => {
         expect.objectContaining({ method: "PUT" })
       );
     });
+  });
+
+
+  it("renders worksheet currency_display rows with page/row currency metadata and EUR rows in EUR", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy" }] };
+      if (path.includes("/clients/96/media-tracker/worksheet-foundation")) return worksheetPayload(monthWeeks, 5.09, "USD");
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaTrackerPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Weekly Worksheet" }));
+
+    await screen.findByRole("columnheader", { name: "Săpt. 10" });
+    expect(screen.getByText("Currency: USD")).toBeInTheDocument();
+
+    const historyCost = screen.getByTestId("history-summary-cost");
+    expect(historyCost.textContent).toBe(formatCurrencyValue(300, "USD", "USD"));
+
+    const eurCell = screen.getByTestId("cell-summary-ncac_eur-2026-03-02");
+    expect(eurCell.textContent).toBe(formatCurrencyValue(10, "EUR", "EUR"));
   });
 
   it("loading and error states for worksheet fetch still work", async () => {

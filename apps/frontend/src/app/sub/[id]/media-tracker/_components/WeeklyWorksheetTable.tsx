@@ -1,5 +1,7 @@
 import React, { useMemo, useRef, useState } from "react";
 
+import { formatWorksheetValueByKind } from "@/lib/subAccountCurrency";
+
 export type WorksheetWeek = { week_start: string; week_end: string; label?: string };
 export type WorksheetRowValue = { week_start: string; week_end: string; value: number | null };
 export type WorksheetRow = {
@@ -7,6 +9,7 @@ export type WorksheetRow = {
   label: string;
   history_value: number | null;
   value_kind?: string;
+  currency_code?: string | null;
   source_kind?: string;
   is_manual_input_row?: boolean;
   dependencies?: string[];
@@ -16,26 +19,18 @@ export type WorksheetSection = { key: string; label: string; rows: WorksheetRow[
 
 const DASHED_COL = "border-r border-black border-dashed";
 
-function formatWorksheetValue(value: number | null | undefined, valueKind: string | undefined): string {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
-
-  if (valueKind === "currency_ron") {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency: "RON", maximumFractionDigits: 2 }).format(value);
-  }
-  if (valueKind === "currency_eur") {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency: "EUR", maximumFractionDigits: 2 }).format(value);
-  }
-  if (valueKind === "integer") {
-    return Math.trunc(value).toLocaleString();
-  }
-  if (valueKind === "percent_ratio") {
-    return `${(value * 100).toFixed(2)}%`;
-  }
-  if (valueKind === "decimal") {
-    return value.toLocaleString(undefined, { maximumFractionDigits: 4 });
-  }
-
-  return value.toLocaleString(undefined, { maximumFractionDigits: 4 });
+function formatWorksheetValue(
+  value: number | null | undefined,
+  valueKind: string | undefined,
+  currencyCode: string | null | undefined,
+  displayCurrency: string,
+): string {
+  return formatWorksheetValueByKind({
+    value,
+    valueKind,
+    currencyCode,
+    displayCurrency,
+  });
 }
 
 function rowLabelClass(row: WorksheetRow): string {
@@ -69,12 +64,16 @@ function EditableWeeklyCell(
   {
     value,
     valueKind,
+    currencyCode,
+    displayCurrency,
     fieldKey,
     weekStart,
     onCommit,
   }: {
     value: number | null;
     valueKind: string | undefined;
+    currencyCode: string | null | undefined;
+    displayCurrency: string;
     fieldKey: string;
     weekStart: string;
     onCommit: (payload: { fieldKey: string; weekStart: string; value: number | null }) => Promise<void>;
@@ -86,7 +85,7 @@ function EditableWeeklyCell(
   const [error, setError] = useState<string>("");
   const submittingRef = useRef(false);
 
-  const displayValue = useMemo(() => formatWorksheetValue(value, valueKind), [value, valueKind]);
+  const displayValue = useMemo(() => formatWorksheetValue(value, valueKind, currencyCode, displayCurrency), [value, valueKind, currencyCode, displayCurrency]);
 
   const submit = async () => {
     if (submittingRef.current || saving) return;
@@ -168,10 +167,12 @@ export function WeeklyWorksheetTable(
   {
     weeks,
     sections,
+    displayCurrency,
     onManualCellCommit,
   }: {
     weeks: WorksheetWeek[];
     sections: WorksheetSection[];
+    displayCurrency: string;
     onManualCellCommit?: (payload: { fieldKey: string; weekStart: string; value: number | null }) => Promise<void>;
   }
 ) {
@@ -209,7 +210,7 @@ export function WeeklyWorksheetTable(
                 return (
                   <tr key={`${section.key}:${row.row_key}`} className="border-t border-slate-100">
                     <td className={`sticky left-0 z-10 bg-white ${rowLabelClass(row)} ${DASHED_COL}`}>{row.label}</td>
-                    <td data-testid={`history-${section.key}-${row.row_key}`} className={`${rowCellClass(row)} ${DASHED_COL}`}>{formatWorksheetValue(row.history_value, row.value_kind)}</td>
+                    <td data-testid={`history-${section.key}-${row.row_key}`} className={`${rowCellClass(row)} ${DASHED_COL}`}>{formatWorksheetValue(row.history_value, row.value_kind, row.currency_code, displayCurrency)}</td>
                     {row.weekly_values.map((cell) => {
                       const editable = !!manualFieldKey && typeof onManualCellCommit === "function";
                       return (
@@ -218,11 +219,13 @@ export function WeeklyWorksheetTable(
                             <EditableWeeklyCell
                               value={cell.value}
                               valueKind={row.value_kind}
+                              currencyCode={row.currency_code}
+                              displayCurrency={displayCurrency}
                               fieldKey={manualFieldKey}
                               weekStart={cell.week_start}
                               onCommit={onManualCellCommit}
                             />
-                          ) : formatWorksheetValue(cell.value, row.value_kind)}
+                          ) : formatWorksheetValue(cell.value, row.value_kind, row.currency_code, displayCurrency)}
                         </td>
                       );
                     })}

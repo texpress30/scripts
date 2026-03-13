@@ -7,6 +7,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
+import { normalizeCurrencyCode } from "@/lib/subAccountCurrency";
 
 import { WeeklyWorksheetTable, type WorksheetSection, type WorksheetWeek } from "./_components/WeeklyWorksheetTable";
 
@@ -15,6 +16,8 @@ type WorksheetGranularity = "month" | "quarter" | "year";
 type WorksheetPayload = {
   weeks: WorksheetWeek[];
   sections: WorksheetSection[];
+  display_currency?: string;
+  display_currency_source?: string;
   eur_ron_rate?: number | null;
   eur_ron_rate_scope?: { granularity: string; period_start: string; period_end: string };
   resolved_period?: { period_start: string; period_end: string };
@@ -187,6 +190,7 @@ export default function SubMediaTrackerPage() {
   const scopeLabel = useMemo(() => formatScopeLabel(worksheetAnchorDate, worksheetGranularity), [worksheetAnchorDate, worksheetGranularity]);
 
   const hasRows = !!worksheetData?.sections?.some((section) => section.rows.length > 0);
+  const worksheetDisplayCurrency = normalizeCurrencyCode(worksheetData?.display_currency, "USD");
 
   useEffect(() => {
     if (rateEditing) return;
@@ -258,6 +262,8 @@ export default function SubMediaTrackerPage() {
                 </div>
 
                 <div className="flex items-center gap-2 text-sm">
+                  <span className="font-medium text-slate-700">Currency: {worksheetDisplayCurrency}</span>
+                  <span className="text-slate-300">|</span>
                   <span className="font-medium text-slate-700">EUR/RON</span>
                   {!rateEditing ? (
                     <button
@@ -310,7 +316,7 @@ export default function SubMediaTrackerPage() {
               {!worksheetLoading && !worksheetError && worksheetData && !hasRows ? <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">No worksheet rows for selected scope.</div> : null}
 
               {!worksheetLoading && !worksheetError && worksheetData && hasRows ? (
-                <WeeklyWorksheetTable weeks={worksheetData.weeks} sections={worksheetData.sections} onManualCellCommit={saveManualCell} />
+                <WeeklyWorksheetTable weeks={worksheetData.weeks} sections={worksheetData.sections} displayCurrency={worksheetDisplayCurrency} onManualCellCommit={saveManualCell} />
               ) : null}
             </div>
           )}
