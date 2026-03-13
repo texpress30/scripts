@@ -1,3 +1,21 @@
+# TODO — Media Buying display-currency contract alignment (backend)
+
+- [x] Refresh workspace and inspect Media Buying store/API display-currency sources.
+- [x] Align Media Buying read target currency with shared client display-currency decision (`agency_clients.currency`).
+- [x] Prevent local config drift by syncing/overriding `media_buying_configs.display_currency` to resolved client display currency on writes/reads.
+- [x] Expose aligned display-currency metadata in Media Buying responses.
+- [x] Add/update backend tests for override, multi-client behavior, config drift prevention, and monetary normalization path.
+- [x] Run focused backend tests and document results.
+
+## Review
+- [x] `MediaBuyingStore.get_config` now resolves display currency/source from the shared client reporting/display decision and no longer trusts local config currency as source of truth.
+- [x] `MediaBuyingStore.upsert_config` now ignores incoming `display_currency` and persists the resolved client display currency to keep `media_buying_configs` synchronized.
+- [x] `MediaBuyingStore.get_lead_table` now uses resolved display currency metadata and returns `display_currency_source` in response meta while preserving existing conversion/formula flow.
+- [x] Added/updated backend unit tests for stale-config override, drift-preventing upsert behavior, per-client currency behavior (USD/RON/EUR), and representative cost normalization in resolved display currency.
+- [x] Verification: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_client_registry_account_currency_resolution.py apps/backend/tests/test_clients_media_buying_api.py` (pass).
+
+---
+
 # TODO — Sub-account display currency contract fix (backend)
 
 - [x] Refresh local workspace state and inspect current backend currency resolver/client registry tests.

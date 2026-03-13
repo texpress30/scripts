@@ -310,3 +310,4 @@
 - 2026-03-13: For frontend currency/rate editors, assert test outputs using robust selectors/payload checks instead of locale-fragile exact formatted strings.
 - 2026-03-13: For worksheet header labels, never use local visible-week indexes; always map from real ISO calendar week numbers derived from week_start (including year-boundary behavior).
 - 2026-03-13: For sub-account views, never let attached-account currency override client display currency; always derive display currency from `agency_clients.currency` and treat attached currencies strictly as source-metadata inputs.
+- 2026-03-13: For Media Buying backend reads, treat `media_buying_configs.display_currency` as synchronized storage only; always resolve actual sub-account display currency from shared client display-currency decision (`agency_clients.currency`).
