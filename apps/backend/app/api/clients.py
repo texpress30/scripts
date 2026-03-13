@@ -482,16 +482,31 @@ def get_media_buying_lead_table(
     client_id: int,
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
+    include_days: bool = Query(default=True),
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
     _ensure_client_exists_or_404(client_id=client_id)
     try:
-        return media_buying_store.get_lead_table(client_id=client_id, date_from=date_from, date_to=date_to)
+        return media_buying_store.get_lead_table(client_id=client_id, date_from=date_from, date_to=date_to, include_days=bool(include_days))
     except NotImplementedError as exc:
         raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+@router.get("/{client_id}/media-buying/lead/month-days")
+def get_media_buying_lead_month_days(
+    client_id: int,
+    month_start: date = Query(...),
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    _ensure_client_exists_or_404(client_id=client_id)
+    try:
+        return media_buying_store.get_lead_month_days(client_id=client_id, month_start=month_start)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
 
 @router.get("/{client_id}/media-tracker/worksheet-foundation")
 def get_media_tracker_weekly_worksheet_foundation(

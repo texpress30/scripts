@@ -440,6 +440,7 @@ class MediaBuyingStore:
         client_id: int,
         date_from: date | None = None,
         date_to: date | None = None,
+        include_days: bool = True,
     ) -> dict[str, object]:
         self._ensure_schema()
         if (date_from is None) != (date_to is None):
@@ -506,6 +507,7 @@ class MediaBuyingStore:
                 extra={
                     "client_id": int(client_id),
                     "has_explicit_range": has_explicit_range,
+                    "include_days": bool(include_days),
                     "bounds_ms": round(bounds_ms, 2),
                     "automated_query_ms": round(automated_ms, 2),
                     "manual_query_ms": round(manual_ms, 2),
@@ -576,21 +578,25 @@ class MediaBuyingStore:
             bucket = costs_by_date.setdefault(day_key, {"google_ads": 0.0, "meta_ads": 0.0, "tiktok_ads": 0.0})
             bucket[platform] = float(bucket.get(platform, 0.0)) + float(spend)
 
-        day_rows_unfiltered: list[dict[str, object]] = []
-        cursor = date_from
-        while cursor <= date_to:
-            day_key = cursor.isoformat()
-            day_rows_unfiltered.append(
-                self._build_daily_row(
-                    row_date=cursor,
-                    display_currency=display_currency,
-                    daily_costs=costs_by_date.get(day_key, {}),
-                    manual_row=manual_by_date.get(day_key),
-                )
-            )
-            cursor = cursor + timedelta(days=1)
+        active_dates: set[date] = set()
+        for day_key, platforms in costs_by_date.items():
+            if abs(float(platforms.get("google_ads", 0.0))) > 0.0 or abs(float(platforms.get("meta_ads", 0.0))) > 0.0 or abs(float(platforms.get("tiktok_ads", 0.0))) > 0.0:
+                active_dates.add(date.fromisoformat(day_key))
+        for item in manual_rows:
+            raw_day = item.get("date")
+            if isinstance(raw_day, str) and self._manual_row_has_data(item):
+                active_dates.add(date.fromisoformat(raw_day))
 
-        day_rows = [row for row in day_rows_unfiltered if self._lead_table_day_has_data(row)]
+        day_rows = [
+            self._build_daily_row(
+                row_date=row_date,
+                display_currency=display_currency,
+                daily_costs=costs_by_date.get(row_date.isoformat(), {}),
+                manual_row=manual_by_date.get(row_date.isoformat()),
+            )
+            for row_date in sorted(active_dates)
+            if date_from <= row_date <= date_to
+        ]
 
         if day_rows:
             if earliest_data_date is None:
@@ -605,10 +611,11 @@ class MediaBuyingStore:
             monthly_grouped.setdefault(key, []).append(row)
 
         previous_day_total: float | None = None
-        for row in day_rows:
-            current_total = float(row.get("cost_total", 0.0))
-            row["percent_change"] = self._build_percent_change(current_total=current_total, previous_total=previous_day_total)
-            previous_day_total = current_total
+        if include_days:
+            for row in day_rows:
+                current_total = float(row.get("cost_total", 0.0))
+                row["percent_change"] = self._build_percent_change(current_total=current_total, previous_total=previous_day_total)
+                previous_day_total = current_total
 
         months = [self._rollup_month(month=month, day_rows=rows) for month, rows in sorted(monthly_grouped.items(), key=lambda item: item[0])]
 
@@ -620,6 +627,29 @@ class MediaBuyingStore:
             current_month_total = float(totals.get("cost_total", 0.0))
             totals["percent_change"] = self._build_percent_change(current_total=current_month_total, previous_total=previous_month_total)
             previous_month_total = current_month_total
+            if include_days:
+                continue
+            month_days = month.pop("days", [])
+            month["day_count"] = len(month_days) if isinstance(month_days, list) else 0
+            month["has_days"] = month.get("day_count", 0) > 0
+
+        total_ms = (time.perf_counter() - total_start) * 1000.0
+        logger.info(
+            "media_buying_lead_table_timing",
+            extra={
+                "client_id": int(client_id),
+                "has_explicit_range": has_explicit_range,
+                "include_days": bool(include_days),
+                "bounds_ms": round(bounds_ms, 2),
+                "automated_query_ms": round(automated_ms, 2),
+                "manual_query_ms": round(manual_ms, 2),
+                "total_ms": round(total_ms, 2),
+                "automated_rows": len(automated_rows),
+                "manual_rows": len(manual_rows),
+                "days": len(day_rows) if include_days else 0,
+                "months": len(months),
+            },
+        )
 
         total_ms = (time.perf_counter() - total_start) * 1000.0
         logger.info(
@@ -662,8 +692,49 @@ class MediaBuyingStore:
                 "latest_data_date": latest_data_date.isoformat() if latest_data_date else None,
                 "available_months": [item["month"] for item in months],
             },
-            "days": day_rows,
+            "days": day_rows if include_days else [],
             "months": months,
+        }
+
+    def get_lead_month_days(
+        self,
+        *,
+        client_id: int,
+        month_start: date,
+    ) -> dict[str, object]:
+        month_start_value = date(month_start.year, month_start.month, 1)
+        if month_start != month_start_value:
+            raise ValueError("month_start must be the first day of month")
+
+        month_end = date(month_start.year + (1 if month_start.month == 12 else 0), 1 if month_start.month == 12 else month_start.month + 1, 1) - timedelta(days=1)
+
+        start = time.perf_counter()
+        payload = self.get_lead_table(
+            client_id=int(client_id),
+            date_from=month_start,
+            date_to=month_end,
+            include_days=True,
+        )
+        days = payload.get("days") if isinstance(payload, dict) else []
+        month_rows = payload.get("months") if isinstance(payload, dict) else []
+
+        if not isinstance(month_rows, list) or len(month_rows) <= 0:
+            raise ValueError("month_start is outside available media buying range")
+
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+        logger.info(
+            "media_buying_lead_month_days_timing",
+            extra={
+                "client_id": int(client_id),
+                "month_start": month_start.isoformat(),
+                "total_ms": round(elapsed_ms, 2),
+                "days": len(days) if isinstance(days, list) else 0,
+            },
+        )
+        return {
+            "meta": payload.get("meta", {}),
+            "month_start": month_start.isoformat(),
+            "days": days if isinstance(days, list) else [],
         }
 
     def _lead_table_day_has_data(self, row: dict[str, object]) -> bool:

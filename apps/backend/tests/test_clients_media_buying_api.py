@@ -79,6 +79,7 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
             def get_lead_table(self, **kwargs):
                 if self.config.get("template_type") != "lead":
                     raise NotImplementedError("Media Buying table is implemented only for template_type=lead in this task")
+                include_days = bool(kwargs.get("include_days", True))
                 date_from = kwargs.get("date_from")
                 date_to = kwargs.get("date_to")
                 if date_from is not None and date_to is not None and date_from > date_to:
@@ -86,6 +87,10 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
                 if date_from is None and date_to is None:
                     date_from = date(2026, 3, 11)
                     date_to = date(2026, 3, 11)
+                month_payload = {"month": "2026-03", "totals": {"percent_change": None}, "days": [{"date": "2026-03-11"}]}
+                if not include_days:
+                    month_payload = {"month": "2026-03", "totals": {"percent_change": None}, "day_count": 1, "has_days": True}
+
                 return {
                     "meta": {
                         "client_id": kwargs["client_id"],
@@ -109,8 +114,17 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
                         "latest_data_date": "2026-03-11",
                         "available_months": ["2026-03"],
                     },
-                    "days": [{"date": "2026-03-11", "percent_change": None}],
-                    "months": [{"month": "2026-03", "totals": {"percent_change": None}, "days": [{"date": "2026-03-11"}]}],
+                    "days": [{"date": "2026-03-11", "percent_change": None}] if include_days else [],
+                    "months": [month_payload],
+                }
+
+            def get_lead_month_days(self, **kwargs):
+                if kwargs["month_start"] != date(2026, 3, 1):
+                    raise ValueError("month_start is outside available media buying range")
+                return {
+                    "meta": {"client_id": kwargs["client_id"], "display_currency": "RON", "display_currency_source": "agency_client_currency"},
+                    "month_start": "2026-03-01",
+                    "days": [{"date": "2026-03-11", "percent_change": None, "display_currency": "RON"}],
                 }
 
             def upsert_lead_daily_manual_value(self, **kwargs):
@@ -253,6 +267,36 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
             user=self.user,
         )
         self.assertEqual(payload["meta"]["effective_date_from"], "2026-03-11")
+
+    def test_get_lead_table_endpoint_supports_include_days_false(self):
+        payload = clients_api.get_media_buying_lead_table(
+            client_id=self.client_id,
+            date_from=date(2026, 3, 1),
+            date_to=date(2026, 3, 31),
+            include_days=False,
+            user=self.user,
+        )
+        self.assertEqual(payload["days"], [])
+        self.assertEqual(payload["months"][0]["day_count"], 1)
+        self.assertTrue(payload["months"][0]["has_days"])
+
+    def test_get_lead_month_days_endpoint(self):
+        payload = clients_api.get_media_buying_lead_month_days(
+            client_id=self.client_id,
+            month_start=date(2026, 3, 1),
+            user=self.user,
+        )
+        self.assertEqual(payload["month_start"], "2026-03-01")
+        self.assertEqual(payload["days"][0]["display_currency"], "RON")
+
+    def test_get_lead_month_days_validation_error(self):
+        with self.assertRaises(HTTPException) as ctx:
+            clients_api.get_media_buying_lead_month_days(
+                client_id=self.client_id,
+                month_start=date(2026, 4, 1),
+                user=self.user,
+            )
+        self.assertEqual(ctx.exception.status_code, 422)
 
     def test_get_media_tracker_weekly_worksheet_foundation_endpoint(self):
         payload = clients_api.get_media_tracker_weekly_worksheet_foundation(

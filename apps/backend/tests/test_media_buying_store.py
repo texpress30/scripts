@@ -692,6 +692,46 @@ class MediaBuyingLeadTableReadTests(unittest.TestCase):
         self.assertIn("manual_query_ms", captured[0][1])
         self.assertIn("total_ms", captured[0][1])
 
+    def test_get_lead_table_include_days_false_returns_months_without_eager_days(self):
+        store = self._build_store()
+        store.get_config = lambda **kwargs: {"client_id": 12, "template_type": "lead", "display_currency": "RON", "display_currency_source": "agency_client_currency"}
+        store.list_lead_daily_manual_values = lambda **kwargs: []
+        store._list_automated_daily_costs = lambda **kwargs: [
+            {"date": date(2026, 3, 12), "platform": "google_ads", "account_currency": "RON", "spend": 120.0},
+            {"date": date(2026, 3, 13), "platform": "google_ads", "account_currency": "RON", "spend": 50.0},
+        ]
+        store._normalize_money_to_display_currency = lambda **kwargs: kwargs["amount"]
+
+        payload = store.get_lead_table(client_id=12, date_from=date(2026, 3, 1), date_to=date(2026, 3, 31), include_days=False)
+
+        self.assertEqual(payload["days"], [])
+        self.assertEqual(payload["meta"]["display_currency"], "RON")
+        self.assertEqual(payload["months"][0]["month"], "2026-03")
+        self.assertEqual(payload["months"][0]["day_count"], 2)
+        self.assertTrue(payload["months"][0]["has_days"])
+        self.assertNotIn("days", payload["months"][0])
+
+    def test_get_lead_month_days_returns_single_month_rows(self):
+        store = self._build_store()
+        store.get_config = lambda **kwargs: {"client_id": 12, "template_type": "lead", "display_currency": "USD", "display_currency_source": "agency_client_currency"}
+        store.list_lead_daily_manual_values = lambda **kwargs: []
+        store._list_automated_daily_costs = lambda **kwargs: [
+            {"date": date(2026, 3, 12), "platform": "google_ads", "account_currency": "USD", "spend": 20.0},
+            {"date": date(2026, 4, 2), "platform": "google_ads", "account_currency": "USD", "spend": 30.0},
+        ]
+        store._normalize_money_to_display_currency = lambda **kwargs: kwargs["amount"]
+
+        payload = store.get_lead_month_days(client_id=12, month_start=date(2026, 3, 1))
+
+        self.assertEqual(payload["month_start"], "2026-03-01")
+        self.assertEqual([item["date"] for item in payload["days"]], ["2026-03-12"])
+        self.assertEqual(payload["days"][0]["display_currency"], "USD")
+
+    def test_get_lead_month_days_validation(self):
+        store = self._build_store()
+        with self.assertRaisesRegex(ValueError, "first day of month"):
+            store.get_lead_month_days(client_id=12, month_start=date(2026, 3, 2))
+
     def test_non_lead_template_is_not_implemented(self):
         store = self._build_store()
         store.get_config = lambda **kwargs: {"client_id": 12, "template_type": "lead", "display_currency": "RON"}

@@ -315,3 +315,4 @@
 - 2026-03-13: For sub-account frontend money rendering, never hardcode RON defaults; always derive currency from backend `display_currency` plus row-level worksheet metadata (`value_kind`, `currency_code`) with safe USD fallback.
 - 2026-03-13: For bulk currency drift repairs, default to dry-run semantics and skip `safe_fallback` clients instead of forcing guessed updates; only mutate deterministic client-level mirror fields (e.g., `media_buying_configs.display_currency`).
 - 2026-03-13: After user dissatisfaction on a performance bug, re-open the exact backend hot path first and ship a narrow backend-only optimization (query count + matching cost + timing logs) before touching unrelated areas.
+- 2026-03-13: For large read payloads after backend query optimization, add an opt-in lightweight response mode plus dedicated drill-down endpoint (months-first + month-days) before frontend rewiring, while keeping default behavior backward compatible.

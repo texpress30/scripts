@@ -3959,3 +3959,24 @@
 - [x] Added single compact `media_buying_lead_table_timing` info log per request with `bounds_ms`, `automated_query_ms`, `manual_query_ms`, `total_ms`, and row/result counters.
 - [x] Added/updated tests in `apps/backend/tests/test_media_buying_store.py` for no-range and explicit-range query behavior, timing log emission, and SQL shape assertions for scoped matching CTEs.
 - [x] Verification: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py apps/backend/tests/test_client_registry_account_currency_resolution.py` (pass), plus `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q apps/backend/tests/test_dashboard_currency_normalization.py` (pass).
+
+---
+
+# TODO — Media Buying months-first lazy day-loading backend foundation
+
+- [x] Refresh workspace and inspect current Media Buying read contract + optimized lead-table hot path.
+- [x] Extend lead-table read path with backward-compatible `include_days` option (default true).
+- [x] Implement lightweight months-first mode (`include_days=false`) returning month summaries without eager top-level day payload.
+- [x] Add dedicated backend month-days read path for one month bucket and validate `month_start` semantics.
+- [x] Reuse existing lead-table row-building/currency logic to keep day/month formulas and metadata consistent.
+- [x] Add compact timing logs for month-days path.
+- [x] Add/update focused tests for lightweight mode, default compatibility, month-days output, and validation.
+- [x] Run targeted backend tests and document outcomes.
+
+## Review
+- [x] Main endpoint `GET /clients/{client_id}/media-buying/lead/table` now accepts `include_days` (default `true`) and preserves prior behavior when omitted.
+- [x] In `include_days=false`, backend returns `meta` + `months` with per-month `day_count`/`has_days`, and top-level `days` is empty.
+- [x] Added `GET /clients/{client_id}/media-buying/lead/month-days?month_start=YYYY-MM-DD` returning day rows for that month only; validates first-day-of-month and returns 422 on invalid/out-of-range values.
+- [x] Month-days path reuses `get_lead_table(... include_days=True)` with scoped month date range so day-row formulas/currency semantics stay identical.
+- [x] Added compact `media_buying_lead_month_days_timing` instrumentation with elapsed time and returned row count.
+- [x] Verification: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py apps/backend/tests/test_client_registry_account_currency_resolution.py apps/backend/tests/test_dashboard_currency_normalization.py` (pass).
