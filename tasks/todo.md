@@ -3817,3 +3817,22 @@
 - [x] Scope-specific save uses current worksheet granularity + anchor_date and backend canonical scope resolution.
 - [x] Successful saves update worksheet state from backend response; failures show inline error while preserving draft.
 - [x] Focused media-tracker frontend tests pass.
+
+---
+
+# TODO — Weekly Worksheet real ISO week labels + dashed vertical separators (frontend)
+
+- [x] Refresh workspace and inspect existing worksheet table component + backend week metadata contract.
+- [x] Replace local visible week indexing with real ISO calendar week numbers derived from week_start.
+- [x] Handle ISO year-boundary week labeling correctly (e.g., 2025-12-29 => week 1).
+- [x] Add 1px black dashed vertical separators across header/body worksheet columns.
+- [x] Keep existing worksheet layout, scrolling, and editing behavior unchanged.
+- [x] Add/update focused frontend tests for month/quarter/year labels, boundary week case, header row 2 dates, and dashed border classes.
+- [x] Run focused frontend tests and record outcomes.
+
+## Review
+- [x] Week labels now use real ISO week numbers from week_start and are consistent across Month/Quarter/Year views.
+- [x] Year-boundary ISO semantics are handled via ISO week calculation logic.
+- [x] Vertical 1px black dashed separators are applied across table header and body columns.
+- [x] Existing worksheet shell and inline editing remain intact.
+- [x] Focused media-tracker frontend tests pass.

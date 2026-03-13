@@ -14,6 +14,8 @@ export type WorksheetRow = {
 };
 export type WorksheetSection = { key: string; label: string; rows: WorksheetRow[] };
 
+const DASHED_COL = "border-r border-black border-dashed";
+
 function formatWorksheetValue(value: number | null | undefined, valueKind: string | undefined): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "—";
 
@@ -44,6 +46,15 @@ function rowLabelClass(row: WorksheetRow): string {
 function rowCellClass(row: WorksheetRow): string {
   if (row.source_kind === "comparison") return "px-3 py-2 text-right text-slate-500";
   return "px-3 py-2 text-right text-slate-700";
+}
+
+function isoWeekNumberFromWeekStart(weekStart: string): number {
+  const [year, month, day] = weekStart.split("-").map(Number);
+  const date = new Date(Date.UTC(year, (month || 1) - 1, day || 1));
+  const dayNumber = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNumber);
+  const isoYearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  return Math.ceil((((date.getTime() - isoYearStart.getTime()) / 86400000) + 1) / 7);
 }
 
 function getManualFieldKey(row: WorksheetRow): string | null {
@@ -169,19 +180,19 @@ export function WeeklyWorksheetTable(
       <table className="min-w-full text-sm">
         <thead>
           <tr className="bg-slate-100">
-            <th className="sticky left-0 z-20 min-w-56 border-b border-slate-200 bg-slate-100 px-3 py-2 text-left font-semibold text-slate-800">Săptămâna</th>
-            <th className="min-w-32 border-b border-slate-200 px-3 py-2 text-right font-semibold text-slate-800">Istorie</th>
-            {weeks.map((week, idx) => (
-              <th key={`week-index:${week.week_start}`} className="min-w-32 border-b border-slate-200 px-3 py-2 text-right font-semibold text-slate-700">
-                Săpt. {idx + 1}
+            <th className={`sticky left-0 z-20 min-w-56 border-b border-slate-200 bg-slate-100 px-3 py-2 text-left font-semibold text-slate-800 ${DASHED_COL}`}>Săptămâna</th>
+            <th className={`min-w-32 border-b border-slate-200 px-3 py-2 text-right font-semibold text-slate-800 ${DASHED_COL}`}>Istorie</th>
+            {weeks.map((week) => (
+              <th key={`week-index:${week.week_start}`} className={`min-w-32 border-b border-slate-200 px-3 py-2 text-right font-semibold text-slate-700 ${DASHED_COL}`}>
+                Săpt. {isoWeekNumberFromWeekStart(week.week_start)}
               </th>
             ))}
           </tr>
           <tr className="bg-slate-50">
-            <th className="sticky left-0 z-20 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left font-medium text-slate-600">Data Începere</th>
-            <th className="border-b border-slate-200 px-3 py-2 text-right text-slate-500">&nbsp;</th>
+            <th className={`sticky left-0 z-20 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left font-medium text-slate-600 ${DASHED_COL}`}>Data Începere</th>
+            <th className={`border-b border-slate-200 px-3 py-2 text-right text-slate-500 ${DASHED_COL}`}>&nbsp;</th>
             {weeks.map((week) => (
-              <th key={`week-start:${week.week_start}`} className="border-b border-slate-200 px-3 py-2 text-right font-medium text-slate-600">
+              <th key={`week-start:${week.week_start}`} className={`border-b border-slate-200 px-3 py-2 text-right font-medium text-slate-600 ${DASHED_COL}`}>
                 {week.week_start}
               </th>
             ))}
@@ -191,18 +202,18 @@ export function WeeklyWorksheetTable(
           {sections.map((section) => (
             <React.Fragment key={section.key}>
               <tr className="bg-slate-200/70">
-                <td colSpan={2 + weeks.length} className="px-3 py-2 text-left font-semibold text-slate-800">{section.label}</td>
+                <td colSpan={2 + weeks.length} className={`px-3 py-2 text-left font-semibold text-slate-800 ${DASHED_COL}`}>{section.label}</td>
               </tr>
               {section.rows.map((row) => {
                 const manualFieldKey = getManualFieldKey(row);
                 return (
                   <tr key={`${section.key}:${row.row_key}`} className="border-t border-slate-100">
-                    <td className={`sticky left-0 z-10 bg-white ${rowLabelClass(row)}`}>{row.label}</td>
-                    <td data-testid={`history-${section.key}-${row.row_key}`} className={rowCellClass(row)}>{formatWorksheetValue(row.history_value, row.value_kind)}</td>
+                    <td className={`sticky left-0 z-10 bg-white ${rowLabelClass(row)} ${DASHED_COL}`}>{row.label}</td>
+                    <td data-testid={`history-${section.key}-${row.row_key}`} className={`${rowCellClass(row)} ${DASHED_COL}`}>{formatWorksheetValue(row.history_value, row.value_kind)}</td>
                     {row.weekly_values.map((cell) => {
                       const editable = !!manualFieldKey && typeof onManualCellCommit === "function";
                       return (
-                        <td key={`${row.row_key}:${cell.week_start}`} data-testid={`cell-${section.key}-${row.row_key}-${cell.week_start}`} className={rowCellClass(row)}>
+                        <td key={`${row.row_key}:${cell.week_start}`} data-testid={`cell-${section.key}-${row.row_key}-${cell.week_start}`} className={`${rowCellClass(row)} ${DASHED_COL}`}>
                           {editable ? (
                             <EditableWeeklyCell
                               value={cell.value}
