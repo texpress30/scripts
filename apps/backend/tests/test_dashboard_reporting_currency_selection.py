@@ -46,7 +46,7 @@ class _FakeConn:
 def test_dashboard_and_reconciliation_share_reporting_currency_decision_metadata():
     decision_payload = {
         "reporting_currency": "EUR",
-        "reporting_currency_source": "client_default_mixed_attached_currencies",
+        "reporting_currency_source": "agency_client_currency",
         "mixed_attached_account_currencies": True,
         "attached_account_currency_summary": [
             {"currency": "EUR", "account_count": 1},
@@ -107,9 +107,9 @@ def test_dashboard_and_reconciliation_share_reporting_currency_decision_metadata
         dashboard_module.snapchat_ads_service.get_metrics = original_snapchat
 
     assert dashboard_payload["reporting_currency"] == "EUR"
-    assert dashboard_payload["reporting_currency_source"] == "client_default_mixed_attached_currencies"
+    assert dashboard_payload["reporting_currency_source"] == "agency_client_currency"
     assert dashboard_payload["mixed_attached_account_currencies"] is True
 
     assert reconciliation_payload["reporting_currency"] == "EUR"
-    assert reconciliation_payload["reporting_currency_source"] == "client_default_mixed_attached_currencies"
+    assert reconciliation_payload["reporting_currency_source"] == "agency_client_currency"
     assert reconciliation_payload["mixed_attached_account_currencies"] is True

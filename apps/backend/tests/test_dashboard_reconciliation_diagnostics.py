@@ -62,7 +62,7 @@ def test_client_dashboard_reconciliation_reports_included_excluded_and_fallbacks
         unified_dashboard_service._connect = lambda: fake_conn
         dashboard_module.client_registry_service.get_client_reporting_currency_decision = lambda **kwargs: {
             "reporting_currency": "RON",
-            "reporting_currency_source": "single_attached_account_currency",
+            "reporting_currency_source": "agency_client_currency",
             "mixed_attached_account_currencies": False,
             "attached_account_currency_summary": [{"currency": "RON", "account_count": 2}],
         }
@@ -82,7 +82,7 @@ def test_client_dashboard_reconciliation_reports_included_excluded_and_fallbacks
 
     assert payload["client_id"] == 77
     assert payload["reporting_currency"] == "RON"
-    assert payload["reporting_currency_source"] == "single_attached_account_currency"
+    assert payload["reporting_currency_source"] == "agency_client_currency"
     assert payload["mixed_attached_account_currencies"] is False
     assert payload["counts"] == {
         "total_rows_scanned": 4,

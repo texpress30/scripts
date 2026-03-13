@@ -47,34 +47,47 @@ def sql_effective_attached_account_currency_expression(
     )
 
 
-def resolve_client_reporting_currency(
+def _summarize_attached_effective_currencies(
     *,
     attached_effective_currencies: list[object],
-    client_currency: object,
-    fallback: str = "USD",
-) -> tuple[str, str, bool, list[dict[str, object]]]:
-    normalized: list[str] = []
+) -> tuple[bool, list[dict[str, object]]]:
     counts: dict[str, int] = {}
     for value in attached_effective_currencies:
         code = str(value or "").strip().upper()
         if len(code) == 3 and code.isalpha():
-            normalized.append(code)
             counts[code] = counts.get(code, 0) + 1
 
     summary = [
         {"currency": currency, "account_count": counts[currency]}
         for currency in sorted(counts.keys())
     ]
-    distinct = sorted(set(normalized))
+    mixed = len(summary) > 1
+    return mixed, summary
 
-    if len(distinct) == 1:
-        return distinct[0], "single_attached_account_currency", False, summary
 
+def resolve_client_display_currency(
+    *,
+    client_currency: object,
+    fallback: str = "USD",
+) -> tuple[str, str]:
     client_code = str(client_currency or "").strip().upper()
-    client_valid = len(client_code) == 3 and client_code.isalpha()
-    if client_valid:
-        if len(distinct) > 1:
-            return client_code, "client_default_mixed_attached_currencies", True, summary
-        return client_code, "client_default_no_attached_currency", False, summary
+    if len(client_code) == 3 and client_code.isalpha():
+        return client_code, "agency_client_currency"
 
-    return normalize_currency_code(fallback, fallback="USD"), "safe_fallback", len(distinct) > 1, summary
+    return normalize_currency_code(fallback, fallback="USD"), "safe_fallback"
+
+
+def resolve_client_reporting_currency(
+    *,
+    attached_effective_currencies: list[object],
+    client_currency: object,
+    fallback: str = "USD",
+) -> tuple[str, str, bool, list[dict[str, object]]]:
+    mixed, summary = _summarize_attached_effective_currencies(
+        attached_effective_currencies=attached_effective_currencies,
+    )
+    display_currency, display_currency_source = resolve_client_display_currency(
+        client_currency=client_currency,
+        fallback=fallback,
+    )
+    return display_currency, display_currency_source, mixed, summary

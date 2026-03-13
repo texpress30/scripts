@@ -119,7 +119,7 @@ class ClientRegistryAccountCurrencyResolutionTests(unittest.TestCase):
 
 
 
-    def test_reporting_currency_single_attached_currency(self):
+    def test_display_currency_uses_agency_client_currency_even_when_single_attached_currency_differs(self):
         client_registry_service.upsert_platform_accounts(platform="google_ads", accounts=[{"id": "ga_1", "name": "Google One"}])
         client_registry_service.update_platform_account_operational_metadata(platform="google_ads", account_id="ga_1", currency_code="EUR")
         client_id = self._create_client(currency="USD")
@@ -127,11 +127,13 @@ class ClientRegistryAccountCurrencyResolutionTests(unittest.TestCase):
 
         decision = client_registry_service.get_client_reporting_currency_decision(client_id=client_id)
 
-        self.assertEqual(decision["reporting_currency"], "EUR")
-        self.assertEqual(decision["reporting_currency_source"], "single_attached_account_currency")
+        self.assertEqual(decision["reporting_currency"], "USD")
+        self.assertEqual(decision["client_display_currency"], "USD")
+        self.assertEqual(decision["reporting_currency_source"], "agency_client_currency")
+        self.assertEqual(decision["display_currency_source"], "agency_client_currency")
         self.assertFalse(decision["mixed_attached_account_currencies"])
 
-    def test_reporting_currency_mixed_attached_currencies_falls_back_to_client(self):
+    def test_display_currency_uses_agency_client_currency_with_mixed_attached_currencies(self):
         client_registry_service.upsert_platform_accounts(platform="google_ads", accounts=[{"id": "ga_1", "name": "Google One"}])
         client_registry_service.upsert_platform_accounts(platform="meta_ads", accounts=[{"id": "act_1", "name": "Meta One"}])
         client_registry_service.update_platform_account_operational_metadata(platform="google_ads", account_id="ga_1", currency_code="EUR")
@@ -145,16 +147,27 @@ class ClientRegistryAccountCurrencyResolutionTests(unittest.TestCase):
         decision = client_registry_service.get_client_reporting_currency_decision(client_id=client_id)
 
         self.assertEqual(decision["reporting_currency"], "USD")
-        self.assertEqual(decision["reporting_currency_source"], "client_default_mixed_attached_currencies")
+        self.assertEqual(decision["reporting_currency_source"], "agency_client_currency")
         self.assertTrue(decision["mixed_attached_account_currencies"])
 
-    def test_reporting_currency_no_attached_currency_falls_back_to_client(self):
+    def test_display_currency_uses_agency_client_currency_with_no_attached_accounts(self):
         client_id = self._create_client(currency="GBP")
 
         decision = client_registry_service.get_client_reporting_currency_decision(client_id=client_id)
 
         self.assertEqual(decision["reporting_currency"], "GBP")
-        self.assertEqual(decision["reporting_currency_source"], "client_default_no_attached_currency")
+        self.assertEqual(decision["reporting_currency_source"], "agency_client_currency")
+        self.assertFalse(decision["mixed_attached_account_currencies"])
+
+    def test_display_currency_safe_fallback_when_client_currency_invalid(self):
+        client_id = self._create_client(currency="12")
+
+        decision = client_registry_service.get_client_reporting_currency_decision(client_id=client_id)
+
+        self.assertEqual(decision["reporting_currency"], "USD")
+        self.assertEqual(decision["client_display_currency"], "USD")
+        self.assertEqual(decision["reporting_currency_source"], "safe_fallback")
+        self.assertEqual(decision["display_currency_source"], "safe_fallback")
         self.assertFalse(decision["mixed_attached_account_currencies"])
 
 class ClientRegistryBackfillSqlTests(unittest.TestCase):

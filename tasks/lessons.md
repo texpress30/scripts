@@ -309,3 +309,4 @@
 - 2026-03-13: For worksheet inline editing, derive editability from backend row metadata (`is_manual_input_row`, `source_kind`, manual dependency key) instead of brittle label-based checks.
 - 2026-03-13: For frontend currency/rate editors, assert test outputs using robust selectors/payload checks instead of locale-fragile exact formatted strings.
 - 2026-03-13: For worksheet header labels, never use local visible-week indexes; always map from real ISO calendar week numbers derived from week_start (including year-boundary behavior).
+- 2026-03-13: For sub-account views, never let attached-account currency override client display currency; always derive display currency from `agency_clients.currency` and treat attached currencies strictly as source-metadata inputs.

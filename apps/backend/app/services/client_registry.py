@@ -1628,6 +1628,8 @@ class ClientRegistryService:
         return {
             "reporting_currency": reporting_currency,
             "reporting_currency_source": source,
+            "client_display_currency": reporting_currency,
+            "display_currency_source": source,
             "mixed_attached_account_currencies": mixed,
             "attached_account_currency_summary": summary,
             "attached_account_count": len(attached_accounts),

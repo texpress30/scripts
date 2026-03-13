@@ -1,3 +1,20 @@
+# TODO — Sub-account display currency contract fix (backend)
+
+- [x] Refresh local workspace state and inspect current backend currency resolver/client registry tests.
+- [x] Implement shared display-currency resolver driven by `agency_clients.currency` with explicit safe fallback.
+- [x] Update client registry reporting-currency decision payload to use display-currency contract while preserving attached-account currency metadata.
+- [x] Update backend tests that encoded attached-account-driven display currency.
+- [x] Run focused backend currency tests and document results.
+
+## Review
+- [x] Added `resolve_client_display_currency(...)` and routed reporting/display currency to client currency (`agency_clients.currency`) with `safe_fallback` only when client currency is blank/invalid.
+- [x] Kept attached-account effective currency resolver unchanged for source-account metadata and still expose mixed/summaries from attached accounts.
+- [x] Extended client registry decision payload with `client_display_currency` and `display_currency_source` aliases for explicit contract clarity.
+- [x] Updated currency tests to assert client currency remains display currency regardless of attached-account currencies and added invalid-client-currency fallback coverage.
+- [x] Verification: `pytest -q apps/backend/tests/test_client_registry_account_currency_resolution.py apps/backend/tests/test_dashboard_reporting_currency_selection.py apps/backend/tests/test_dashboard_reconciliation_diagnostics.py` (pass).
+
+---
+
 # TODO — Summary worksheet CPA label normalization
 
 - [x] Confirm AGENTS instructions and inspect current worksheet summary label definitions.
