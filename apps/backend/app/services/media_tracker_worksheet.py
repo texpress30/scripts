@@ -334,11 +334,13 @@ class MediaTrackerWorksheetService:
         dependencies: list[str],
         requires_eur_ron_rate: bool = False,
         is_manual_input_row: bool = False,
+        currency_code: str | None = None,
     ) -> dict[str, object]:
         return {
             "row_key": row_key,
             "label": label,
             "value_kind": value_kind,
+            "currency_code": str(currency_code) if currency_code is not None else None,
             "source_kind": "manual" if is_manual_input_row else "computed",
             "is_manual_input_row": is_manual_input_row,
             "is_derived_row": not is_manual_input_row,
@@ -420,6 +422,7 @@ class MediaTrackerWorksheetService:
         auto_metrics: dict[str, dict[str, object]],
         manual_metrics: dict[str, dict[str, object]],
         eur_ron_rate: float | None,
+        display_currency: str,
     ) -> list[dict[str, object]]:
         week_count = len(weeks)
         auto_cost_total = self._extract_weekly_values(metrics=auto_metrics, key="cost_total")
@@ -501,25 +504,25 @@ class MediaTrackerWorksheetService:
         gross_h = None if cogs_h is None or has_missing_cogs else revenue_h - cogs_h
 
         summary_rows = [
-            self._build_row(weeks=weeks, row_key="cost", label="Cost", value_kind="currency_ron", weekly_values=summary_cost, history_value=cost_h, dependencies=["auto_metrics.cost_total"]),
-            self._build_row(weeks=weeks, row_key="avg_daily_spend", label="Avg. Daily Spend", value_kind="currency_ron", weekly_values=summary_avg_daily_spend, history_value=self._safe_div(cost_h, float(week_count)) if week_count > 0 else None, dependencies=["summary.cost"]),
-            self._build_row(weeks=weeks, row_key="revenue", label="Venit", value_kind="currency_ron", weekly_values=summary_revenue, history_value=revenue_h, dependencies=["manual_metrics.google_revenue_manual", "manual_metrics.meta_revenue_manual", "manual_metrics.tiktok_revenue_manual"]),
-            self._build_row(weeks=weeks, row_key="revenue_target_per_day", label="Venit Țintă / Zi", value_kind="currency_ron", weekly_values=summary_revenue_target_per_day, history_value=self._safe_div(revenue_h, float(week_count)) if week_count > 0 else None, dependencies=["summary.revenue"]),
+            self._build_row(weeks=weeks, row_key="cost", label="Cost", value_kind="currency_display", weekly_values=summary_cost, currency_code=display_currency, history_value=cost_h, dependencies=["auto_metrics.cost_total"]),
+            self._build_row(weeks=weeks, row_key="avg_daily_spend", label="Avg. Daily Spend", value_kind="currency_display", weekly_values=summary_avg_daily_spend, currency_code=display_currency, history_value=self._safe_div(cost_h, float(week_count)) if week_count > 0 else None, dependencies=["summary.cost"]),
+            self._build_row(weeks=weeks, row_key="revenue", label="Venit", value_kind="currency_display", weekly_values=summary_revenue, currency_code=display_currency, history_value=revenue_h, dependencies=["manual_metrics.google_revenue_manual", "manual_metrics.meta_revenue_manual", "manual_metrics.tiktok_revenue_manual"]),
+            self._build_row(weeks=weeks, row_key="revenue_target_per_day", label="Venit Țintă / Zi", value_kind="currency_display", weekly_values=summary_revenue_target_per_day, currency_code=display_currency, history_value=self._safe_div(revenue_h, float(week_count)) if week_count > 0 else None, dependencies=["summary.revenue"]),
             self._build_row(weeks=weeks, row_key="sales", label="Vânzări", value_kind="integer", weekly_values=summary_sales, history_value=sales_h, dependencies=["manual_metrics.google_sales_manual", "manual_metrics.meta_sales_manual", "manual_metrics.tiktok_sales_manual"]),
-            self._build_row(weeks=weeks, row_key="aov", label="AOV", value_kind="currency_ron", weekly_values=summary_aov, history_value=self._safe_div(revenue_h, sales_h), dependencies=["summary.revenue", "summary.sales"]),
+            self._build_row(weeks=weeks, row_key="aov", label="AOV", value_kind="currency_display", weekly_values=summary_aov, currency_code=display_currency, history_value=self._safe_div(revenue_h, sales_h), dependencies=["summary.revenue", "summary.sales"]),
             self._build_row(weeks=weeks, row_key="leads", label="Leads", value_kind="integer", weekly_values=summary_leads, history_value=leads_h, dependencies=["auto_metrics.total_leads"]),
-            self._build_row(weeks=weeks, row_key="cpa_leads", label="CPA", value_kind="currency_ron", weekly_values=summary_cpa_leads, history_value=self._safe_div(cost_h, leads_h), dependencies=["summary.cost", "summary.leads"]),
+            self._build_row(weeks=weeks, row_key="cpa_leads", label="CPA", value_kind="currency_display", weekly_values=summary_cpa_leads, currency_code=display_currency, history_value=self._safe_div(cost_h, leads_h), dependencies=["summary.cost", "summary.leads"]),
             self._build_row(weeks=weeks, row_key="applications", label="Aplicații", value_kind="integer", weekly_values=summary_apps, history_value=apps_h, dependencies=["auto_metrics.applications"]),
-            self._build_row(weeks=weeks, row_key="cpa_applications", label="CPA", value_kind="currency_ron", weekly_values=summary_cpa_apps, history_value=self._safe_div(cost_h, apps_h), dependencies=["summary.cost", "summary.applications"]),
+            self._build_row(weeks=weeks, row_key="cpa_applications", label="CPA", value_kind="currency_display", weekly_values=summary_cpa_apps, currency_code=display_currency, history_value=self._safe_div(cost_h, apps_h), dependencies=["summary.cost", "summary.applications"]),
             self._build_row(weeks=weeks, row_key="approved_applications", label="Aplicații Aprobate", value_kind="integer", weekly_values=summary_approved, history_value=approved_h, dependencies=["auto_metrics.approved_applications"]),
-            self._build_row(weeks=weeks, row_key="cpa_approved_applications", label="CPA", value_kind="currency_ron", weekly_values=summary_cpa_approved, history_value=self._safe_div(cost_h, approved_h), dependencies=["summary.cost", "summary.approved_applications"]),
+            self._build_row(weeks=weeks, row_key="cpa_approved_applications", label="CPA", value_kind="currency_display", weekly_values=summary_cpa_approved, currency_code=display_currency, history_value=self._safe_div(cost_h, approved_h), dependencies=["summary.cost", "summary.approved_applications"]),
             self._build_row(weeks=weeks, row_key="cost_vs_revenue", label="Cost vs Venit", value_kind="percent_ratio", weekly_values=summary_cost_vs_revenue, history_value=self._safe_div(cost_h, revenue_h), dependencies=["summary.cost", "summary.revenue"]),
             self._build_row(weeks=weeks, row_key="mer", label="MER", value_kind="decimal", weekly_values=summary_mer, history_value=self._safe_div(revenue_h, cost_h), dependencies=["summary.revenue", "summary.cost"]),
             self._build_row(weeks=weeks, row_key="mer_net", label="MER NET", value_kind="decimal", weekly_values=summary_mer_net, history_value=self._safe_div(gross_h, cost_h) if gross_h is not None else None, dependencies=["summary.gross_profit", "summary.cost"]),
             self._build_row(weeks=weeks, row_key="weekly_cogs_taxes", label="Total COGS + Taxe", value_kind="currency_ron", weekly_values=cogs, history_value=cogs_h, dependencies=["manual_metrics.weekly_cogs_taxes"], is_manual_input_row=True),
-            self._build_row(weeks=weeks, row_key="gross_profit", label="Profit Brut", value_kind="currency_ron", weekly_values=summary_gross_profit, history_value=gross_h, dependencies=["summary.revenue", "summary.weekly_cogs_taxes"]),
-            self._build_row(weeks=weeks, row_key="gpt", label="GPT", value_kind="currency_ron", weekly_values=summary_gpt, history_value=(self._safe_div(revenue_h, sales_h) - self._safe_div(cost_h, sales_h)) if self._safe_div(revenue_h, sales_h) is not None and self._safe_div(cost_h, sales_h) is not None else None, dependencies=["summary.aov", "new_clients.cost_per_new_client"]),
-            self._build_row(weeks=weeks, row_key="profit_contribution", label="Profit Contribution", value_kind="currency_ron", weekly_values=summary_profit_contribution, history_value=(gross_h - cost_h) if gross_h is not None else None, dependencies=["summary.gross_profit", "summary.cost"]),
+            self._build_row(weeks=weeks, row_key="gross_profit", label="Profit Brut", value_kind="currency_display", weekly_values=summary_gross_profit, currency_code=display_currency, history_value=gross_h, dependencies=["summary.revenue", "summary.weekly_cogs_taxes"]),
+            self._build_row(weeks=weeks, row_key="gpt", label="GPT", value_kind="currency_display", weekly_values=summary_gpt, currency_code=display_currency, history_value=(self._safe_div(revenue_h, sales_h) - self._safe_div(cost_h, sales_h)) if self._safe_div(revenue_h, sales_h) is not None and self._safe_div(cost_h, sales_h) is not None else None, dependencies=["summary.aov", "new_clients.cost_per_new_client"]),
+            self._build_row(weeks=weeks, row_key="profit_contribution", label="Profit Contribution", value_kind="currency_display", weekly_values=summary_profit_contribution, currency_code=display_currency, history_value=(gross_h - cost_h) if gross_h is not None else None, dependencies=["summary.gross_profit", "summary.cost"]),
             self._build_row(weeks=weeks, row_key="applications_per_sale", label="Aplicații / Vânzări", value_kind="decimal", weekly_values=summary_apps_per_sale, history_value=self._safe_div(apps_h, sales_h), dependencies=["summary.applications", "summary.sales"]),
             self._build_row(weeks=weeks, row_key="applications_per_approved_application", label="Aplicații / Aplicații Aprobate", value_kind="decimal", weekly_values=summary_apps_per_approved, history_value=self._safe_div(apps_h, approved_h), dependencies=["summary.applications", "summary.approved_applications"]),
             self._build_row(weeks=weeks, row_key="approved_applications_per_sale", label="Aplicații Aprobate / Vânzări", value_kind="decimal", weekly_values=summary_approved_per_sale, history_value=self._safe_div(approved_h, sales_h), dependencies=["summary.approved_applications", "summary.sales"]),
@@ -534,19 +537,19 @@ class MediaTrackerWorksheetService:
             sales_h_local = additive(sales_values)
             revenue_h_local = self._sum_history_nullable(revenue_values)
             return [
-                self._build_row(weeks=weeks, row_key="cost", label="Cost", value_kind="currency_ron", weekly_values=[self._to_float(v) for v in cost_values], history_value=cost_h_local, dependencies=[f"auto_metrics.cost_{prefix}"]),
+                self._build_row(weeks=weeks, row_key="cost", label="Cost", value_kind="currency_display", weekly_values=[self._to_float(v) for v in cost_values], currency_code=display_currency, history_value=cost_h_local, dependencies=[f"auto_metrics.cost_{prefix}"]),
                 self._build_row(weeks=weeks, row_key="leads_manual", label="Leads", value_kind="integer", weekly_values=leads_values, history_value=leads_h_local, dependencies=[f"manual_metrics.{prefix}_leads_manual"], is_manual_input_row=True),
-                self._build_row(weeks=weeks, row_key="cpa", label="CPA", value_kind="currency_ron", weekly_values=cpa_values, history_value=self._safe_div(cost_h_local, leads_h_local), dependencies=["cost", "leads_manual"]),
+                self._build_row(weeks=weeks, row_key="cpa", label="CPA", value_kind="currency_display", weekly_values=cpa_values, currency_code=display_currency, history_value=self._safe_div(cost_h_local, leads_h_local), dependencies=["cost", "leads_manual"]),
                 self._build_row(weeks=weeks, row_key="sales_manual", label="Vânzări", value_kind="integer", weekly_values=sales_values, history_value=sales_h_local, dependencies=[f"manual_metrics.{prefix}_sales_manual"], is_manual_input_row=True),
-                self._build_row(weeks=weeks, row_key="revenue_manual", label="Val. Vânzare", value_kind="currency_ron", weekly_values=revenue_values, history_value=revenue_h_local, dependencies=[f"manual_metrics.{prefix}_revenue_manual"], is_manual_input_row=True),
-                self._build_row(weeks=weeks, row_key="ncac", label="nCAC", value_kind="currency_ron", weekly_values=ncac_values, history_value=self._safe_div(cost_h_local, sales_h_local), dependencies=["cost", "sales_manual"]),
-                self._build_row(weeks=weeks, row_key="ncac_eur", label="nCAC EUR", value_kind="currency_eur", weekly_values=ncac_eur_values, history_value=(self._safe_div(self._safe_div(cost_h_local, sales_h_local), eur_ron_rate) if eur_ron_rate not in {None, 0} else None), dependencies=["ncac", "eur_ron_rate"], requires_eur_ron_rate=True),
+                self._build_row(weeks=weeks, row_key="revenue_manual", label="Val. Vânzare", value_kind="currency_display", weekly_values=revenue_values, currency_code=display_currency, history_value=revenue_h_local, dependencies=[f"manual_metrics.{prefix}_revenue_manual"], is_manual_input_row=True),
+                self._build_row(weeks=weeks, row_key="ncac", label="nCAC", value_kind="currency_display", weekly_values=ncac_values, currency_code=display_currency, history_value=self._safe_div(cost_h_local, sales_h_local), dependencies=["cost", "sales_manual"]),
+                self._build_row(weeks=weeks, row_key="ncac_eur", label="nCAC EUR", value_kind="currency_eur", weekly_values=ncac_eur_values, currency_code="EUR", history_value=(self._safe_div(self._safe_div(cost_h_local, sales_h_local), eur_ron_rate) if eur_ron_rate not in {None, 0} else None), dependencies=["ncac", "eur_ron_rate"], requires_eur_ron_rate=True),
             ]
 
         new_clients_rows = [
-            self._build_row(weeks=weeks, row_key="combined_spend", label="Google + Meta + TikTok Spend", value_kind="currency_ron", weekly_values=new_clients_combined_spend, history_value=cost_h, dependencies=["summary.cost"]),
-            self._build_row(weeks=weeks, row_key="cost_per_new_client", label="Cost per Client Nou", value_kind="currency_ron", weekly_values=new_clients_cost_per_new_client, history_value=self._safe_div(cost_h, sales_h), dependencies=["new_clients.combined_spend", "summary.sales"]),
-            self._build_row(weeks=weeks, row_key="cost_per_new_client_eur", label="Cost per Client Nou EUR", value_kind="currency_eur", weekly_values=new_clients_cost_per_new_client_eur, history_value=(self._safe_div(self._safe_div(cost_h, sales_h), eur_ron_rate) if eur_ron_rate not in {None, 0} else None), dependencies=["new_clients.cost_per_new_client", "eur_ron_rate"], requires_eur_ron_rate=True),
+            self._build_row(weeks=weeks, row_key="combined_spend", label="Google + Meta + TikTok Spend", value_kind="currency_display", weekly_values=new_clients_combined_spend, currency_code=display_currency, history_value=cost_h, dependencies=["summary.cost"]),
+            self._build_row(weeks=weeks, row_key="cost_per_new_client", label="Cost per Client Nou", value_kind="currency_display", weekly_values=new_clients_cost_per_new_client, currency_code=display_currency, history_value=self._safe_div(cost_h, sales_h), dependencies=["new_clients.combined_spend", "summary.sales"]),
+            self._build_row(weeks=weeks, row_key="cost_per_new_client_eur", label="Cost per Client Nou EUR", value_kind="currency_eur", weekly_values=new_clients_cost_per_new_client_eur, currency_code="EUR", history_value=(self._safe_div(self._safe_div(cost_h, sales_h), eur_ron_rate) if eur_ron_rate not in {None, 0} else None), dependencies=["new_clients.cost_per_new_client", "eur_ron_rate"], requires_eur_ron_rate=True),
         ]
 
         google_rows = platform_rows("google", "Google", auto_cost_google, g_leads, g_sales, g_revenue)
@@ -743,6 +746,9 @@ class MediaTrackerWorksheetService:
         last_week_end = date.fromisoformat(str(weeks[-1]["week_end"])) if len(weeks) > 0 else period_end
 
         lead_table = media_buying_store.get_lead_table(client_id=int(client_id), date_from=first_week_start, date_to=last_week_end)
+        lead_meta = lead_table.get("meta") if isinstance(lead_table.get("meta"), dict) else {}
+        display_currency = str(lead_meta.get("display_currency") or "USD").strip().upper() or "USD"
+        display_currency_source = str(lead_meta.get("display_currency_source") or "safe_fallback")
         day_rows = lead_table.get("days") if isinstance(lead_table.get("days"), list) else []
         auto_metrics = self._build_auto_metrics(weeks=weeks, day_rows=day_rows)
 
@@ -770,6 +776,8 @@ class MediaTrackerWorksheetService:
                 "definition": "aggregate_of_all_visible_week_columns",
             },
             "weeks": weeks,
+            "display_currency": display_currency,
+            "display_currency_source": display_currency_source,
             "eur_ron_rate": eur_ron_rate,
             "eur_ron_rate_scope": {
                 "granularity": normalized_granularity,
@@ -784,6 +792,7 @@ class MediaTrackerWorksheetService:
                 auto_metrics=auto_metrics,
                 manual_metrics=manual_metrics,
                 eur_ron_rate=eur_ron_rate,
+                display_currency=display_currency,
             ),
         }
 

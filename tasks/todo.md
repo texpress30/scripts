@@ -1,3 +1,20 @@
+# TODO — Media Tracker backend display-currency alignment (backend only)
+
+- [x] Refresh workspace and inspect Media Tracker backend read path + worksheet service currency metadata.
+- [x] Propagate shared client display currency metadata through worksheet foundation payload (`display_currency`, `display_currency_source`).
+- [x] Replace RON-hardcoded value metadata for primary worksheet monetary rows with display-aware metadata while keeping EUR rows explicit.
+- [x] Add/update backend tests for multi-currency metadata propagation, primary monetary row metadata, and EUR-row safe-null behavior without eur_ron_rate.
+- [x] Run focused backend tests and confirm Task 1/Task 2 behavior remains intact.
+
+## Review
+- [x] Media Tracker worksheet foundation now reads display currency metadata from Media Buying lead-table meta (already aligned to shared client display-currency contract).
+- [x] Worksheet payload now includes `display_currency` and `display_currency_source` top-level fields for sub-account consumers.
+- [x] Primary monetary worksheet rows now use `value_kind=currency_display` + `currency_code=<display_currency>` instead of hardcoded `currency_ron`; EUR-specific rows remain `currency_eur` + `currency_code=EUR`.
+- [x] EUR-denominated rows continue to fail safely (`None`) when `eur_ron_rate` is missing/zero under current contract.
+- [x] Verification: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q apps/backend/tests/test_media_tracker_worksheet.py apps/backend/tests/test_clients_media_buying_api.py apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_client_registry_account_currency_resolution.py apps/backend/tests/test_dashboard_currency_normalization.py` (pass).
+
+---
+
 # TODO — Media Buying display-currency contract alignment (backend)
 
 - [x] Refresh workspace and inspect Media Buying store/API display-currency sources.

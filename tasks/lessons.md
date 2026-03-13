@@ -311,3 +311,4 @@
 - 2026-03-13: For worksheet header labels, never use local visible-week indexes; always map from real ISO calendar week numbers derived from week_start (including year-boundary behavior).
 - 2026-03-13: For sub-account views, never let attached-account currency override client display currency; always derive display currency from `agency_clients.currency` and treat attached currencies strictly as source-metadata inputs.
 - 2026-03-13: For Media Buying backend reads, treat `media_buying_configs.display_currency` as synchronized storage only; always resolve actual sub-account display currency from shared client display-currency decision (`agency_clients.currency`).
+- 2026-03-13: For Media Tracker worksheet payloads, propagate display currency from Media Buying/client contract and mark primary money rows as display-aware (`currency_display` + `currency_code`) instead of hardcoded `currency_ron`; keep EUR rows explicit and null-safe without rate.

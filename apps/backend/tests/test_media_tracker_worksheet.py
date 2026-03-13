@@ -8,16 +8,28 @@ from app.services import media_tracker_worksheet as worksheet_module
 
 
 class _MediaBuyingStoreStub:
-    def __init__(self, days: list[dict[str, object]]) -> None:
+    def __init__(self, days: list[dict[str, object]], *, display_currency: str = "USD", display_currency_source: str = "agency_client_currency") -> None:
         self.days = days
+        self.display_currency = display_currency
+        self.display_currency_source = display_currency_source
 
     def get_lead_table(self, *, client_id: int, date_from: date, date_to: date) -> dict[str, object]:
-        return {"days": self.days, "meta": {"client_id": client_id, "date_from": date_from.isoformat(), "date_to": date_to.isoformat()}}
+        return {
+            "days": self.days,
+            "meta": {
+                "client_id": client_id,
+                "date_from": date_from.isoformat(),
+                "date_to": date_to.isoformat(),
+                "display_currency": self.display_currency,
+                "display_currency_source": self.display_currency_source,
+            },
+        }
 
 
-def _set_store(days: list[dict[str, object]]):
+def _set_store(days: list[dict[str, object]], *, display_currency: str = "USD", display_currency_source: str = "agency_client_currency"):
+
     original = worksheet_module.media_buying_store
-    worksheet_module.media_buying_store = _MediaBuyingStoreStub(days=days)
+    worksheet_module.media_buying_store = _MediaBuyingStoreStub(days=days, display_currency=display_currency, display_currency_source=display_currency_source)
     worksheet_module.media_tracker_worksheet_service._is_test_mode = lambda: True
     worksheet_module.media_tracker_worksheet_service.reset_test_state()
     return original
@@ -37,6 +49,8 @@ def test_month_scope_resolution_and_visible_weeks_are_monday_sunday_oldest_first
     assert payload["requested_scope"]["granularity"] == "month"
     assert payload["resolved_period"] == {"period_start": "2026-03-01", "period_end": "2026-03-31"}
     assert payload["eur_ron_rate_scope"] == {"granularity": "month", "period_start": "2026-03-01", "period_end": "2026-03-31"}
+    assert payload["display_currency"] == "USD"
+    assert payload["display_currency_source"] == "agency_client_currency"
 
     weeks = payload["weeks"]
     assert len(weeks) == 6
@@ -315,6 +329,119 @@ def test_manual_value_clear_semantics_delete_stored_value() -> None:
     target = next(item for item in payload["manual_metrics"]["weekly_cogs_taxes"]["weekly_values"] if item["week_start"] == "2026-03-09")
     assert target["value"] is None
     assert payload["manual_metrics"]["weekly_cogs_taxes"]["history_value"] == 0.0
+
+
+
+def test_display_currency_metadata_follows_media_buying_source_for_multiple_clients() -> None:
+    service = worksheet_module.media_tracker_worksheet_service
+
+    original_store = _set_store(days=[], display_currency="USD")
+    try:
+        usd_payload = service.build_weekly_worksheet_foundation(granularity="month", anchor_date=date(2026, 3, 15), client_id=1)
+    finally:
+        worksheet_module.media_buying_store = original_store
+
+    original_store = _set_store(days=[], display_currency="RON")
+    try:
+        ron_payload = service.build_weekly_worksheet_foundation(granularity="month", anchor_date=date(2026, 3, 15), client_id=2)
+    finally:
+        worksheet_module.media_buying_store = original_store
+
+    original_store = _set_store(days=[], display_currency="EUR")
+    try:
+        eur_payload = service.build_weekly_worksheet_foundation(granularity="month", anchor_date=date(2026, 3, 15), client_id=3)
+    finally:
+        worksheet_module.media_buying_store = original_store
+
+    assert usd_payload["display_currency"] == "USD"
+    assert ron_payload["display_currency"] == "RON"
+    assert eur_payload["display_currency"] == "EUR"
+
+
+def test_primary_monetary_rows_use_display_currency_metadata_and_eur_rows_stay_eur() -> None:
+    days = [
+        {"date": "2026-03-02", "cost_total": 100, "cost_google": 30, "cost_meta": 40, "cost_tiktok": 30, "total_leads": 14, "custom_value_1_count": 7, "sales_count": 3},
+    ]
+    original_store = _set_store(days=days, display_currency="USD")
+    service = worksheet_module.media_tracker_worksheet_service
+    try:
+        payload = service.upsert_weekly_manual_values(
+            client_id=220,
+            granularity="month",
+            anchor_date=date(2026, 3, 15),
+            entries=[
+                {"week_start": "2026-03-02", "field_key": "google_revenue_manual", "value": 100},
+                {"week_start": "2026-03-02", "field_key": "meta_revenue_manual", "value": 200},
+                {"week_start": "2026-03-02", "field_key": "tiktok_revenue_manual", "value": 300},
+                {"week_start": "2026-03-02", "field_key": "google_sales_manual", "value": 2},
+                {"week_start": "2026-03-02", "field_key": "meta_sales_manual", "value": 2},
+                {"week_start": "2026-03-02", "field_key": "tiktok_sales_manual", "value": 2},
+                {"week_start": "2026-03-02", "field_key": "google_leads_manual", "value": 5},
+                {"week_start": "2026-03-02", "field_key": "meta_leads_manual", "value": 5},
+                {"week_start": "2026-03-02", "field_key": "tiktok_leads_manual", "value": 5},
+            ],
+        )
+    finally:
+        worksheet_module.media_buying_store = original_store
+
+    assert payload["display_currency"] == "USD"
+    summary = _row_map(payload, "summary")
+    google = _row_map(payload, "google_spend")
+    new_clients = _row_map(payload, "new_clients")
+
+    for key in (
+        "cost",
+        "avg_daily_spend",
+        "revenue",
+        "revenue_target_per_day",
+        "aov",
+        "cpa_leads",
+        "cpa_applications",
+        "cpa_approved_applications",
+        "gross_profit",
+        "gpt",
+        "profit_contribution",
+    ):
+        assert summary[key]["value_kind"] == "currency_display"
+        assert summary[key]["currency_code"] == "USD"
+
+    for key in ("cost", "cpa", "revenue_manual", "ncac"):
+        assert google[key]["value_kind"] == "currency_display"
+        assert google[key]["currency_code"] == "USD"
+
+    assert new_clients["combined_spend"]["value_kind"] == "currency_display"
+    assert new_clients["combined_spend"]["currency_code"] == "USD"
+    assert new_clients["cost_per_new_client"]["value_kind"] == "currency_display"
+    assert new_clients["cost_per_new_client"]["currency_code"] == "USD"
+
+    assert new_clients["cost_per_new_client_eur"]["value_kind"] == "currency_eur"
+    assert new_clients["cost_per_new_client_eur"]["currency_code"] == "EUR"
+
+
+def test_eur_rows_are_safe_null_when_no_eur_ron_rate() -> None:
+    days = [
+        {"date": "2026-03-02", "cost_total": 100, "cost_google": 30, "cost_meta": 40, "cost_tiktok": 30, "total_leads": 14, "custom_value_1_count": 7, "sales_count": 3},
+    ]
+    original_store = _set_store(days=days, display_currency="USD")
+    service = worksheet_module.media_tracker_worksheet_service
+    try:
+        payload = service.upsert_weekly_manual_values(
+            client_id=221,
+            granularity="month",
+            anchor_date=date(2026, 3, 15),
+            entries=[
+                {"week_start": "2026-03-02", "field_key": "google_sales_manual", "value": 2},
+                {"week_start": "2026-03-02", "field_key": "google_leads_manual", "value": 5},
+            ],
+        )
+    finally:
+        worksheet_module.media_buying_store = original_store
+
+    new_clients = _row_map(payload, "new_clients")
+    google = _row_map(payload, "google_spend")
+
+    assert all(item["value"] is None for item in new_clients["cost_per_new_client_eur"]["weekly_values"])
+    assert all(item["value"] is None for item in google["ncac_eur"]["weekly_values"])
 
 
 def _row_map(payload: dict[str, object], section_key: str) -> dict[str, dict[str, object]]:
