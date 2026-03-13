@@ -3776,3 +3776,23 @@
 - [x] Implemented two-row worksheet header, section band rows, and comparison-row visual hierarchy in backend-provided order.
 - [x] Added value formatting by `value_kind` (RON/EUR/integer/decimal/percent_ratio/null).
 - [x] Preserved existing worksheet shell controls/states and verified with targeted Vitest suite.
+
+---
+
+# TODO — Media Tracker worksheet inline editing for weekly manual cells (frontend)
+
+- [x] Refresh workspace state and inspect current worksheet frontend table component plus backend manual-values API contract.
+- [x] Add inline edit capability only for weekly manual input cells in worksheet table.
+- [x] Keep history/computed/auto/comparison cells read-only and preserve existing worksheet layout/order.
+- [x] Integrate save flow with `PUT /clients/{id}/media-tracker/worksheet/manual-values` using granularity+anchor_date+single entry payload.
+- [x] Support clear semantics (empty input => null), saving state, escape cancel, and inline error feedback.
+- [x] Update page wiring to pass save handler and refresh worksheet data from backend response after successful save.
+- [x] Add/adjust focused frontend tests for editability boundaries, payloads, clear behavior, success/error paths, and existing shell states.
+- [x] Run focused frontend tests and record outcomes.
+
+## Review
+- [x] Inline editing is limited to rows marked as direct manual inputs via backend metadata/dependencies mapping.
+- [x] Save interaction uses Enter or blur, Escape cancels local edit, empty values clear persisted manual entries via null.
+- [x] Successful save updates worksheet data from backend response so computed rows remain backend-driven.
+- [x] Non-manual rows, comparison rows, and history column remain read-only.
+- [x] Focused media-tracker frontend tests pass.

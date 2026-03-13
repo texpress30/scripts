@@ -117,6 +117,25 @@ export default function SubMediaTrackerPage() {
     void loadWorksheet();
   }, [activeView, loadWorksheet]);
 
+
+  const saveManualCell = useCallback(async ({ fieldKey, weekStart, value }: { fieldKey: string; weekStart: string; value: number | null }) => {
+    if (!Number.isFinite(clientId)) throw new Error("Client invalid");
+    const payload = await apiRequest<WorksheetPayload>(
+      `/clients/${clientId}/media-tracker/worksheet/manual-values`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          granularity: worksheetGranularity,
+          anchor_date: worksheetAnchorDate,
+          entries: [{ week_start: weekStart, field_key: fieldKey, value }],
+        }),
+      }
+    );
+    if (!isWorksheetPayload(payload)) throw new Error("Răspuns worksheet invalid");
+    setWorksheetData(payload);
+    setWorksheetError("");
+  }, [clientId, worksheetAnchorDate, worksheetGranularity]);
+
   const composedTitle = useMemo(() => `Media Tracker - ${clientName}`, [clientName]);
   const scopeLabel = useMemo(() => formatScopeLabel(worksheetAnchorDate, worksheetGranularity), [worksheetAnchorDate, worksheetGranularity]);
 
@@ -191,7 +210,7 @@ export default function SubMediaTrackerPage() {
               {!worksheetLoading && !worksheetError && worksheetData && !hasRows ? <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">No worksheet rows for selected scope.</div> : null}
 
               {!worksheetLoading && !worksheetError && worksheetData && hasRows ? (
-                <WeeklyWorksheetTable weeks={worksheetData.weeks} sections={worksheetData.sections} />
+                <WeeklyWorksheetTable weeks={worksheetData.weeks} sections={worksheetData.sections} onManualCellCommit={saveManualCell} />
               ) : null}
             </div>
           )}
