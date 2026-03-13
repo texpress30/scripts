@@ -651,23 +651,6 @@ class MediaBuyingStore:
             },
         )
 
-        total_ms = (time.perf_counter() - total_start) * 1000.0
-        logger.info(
-            "media_buying_lead_table_timing",
-            extra={
-                "client_id": int(client_id),
-                "has_explicit_range": has_explicit_range,
-                "bounds_ms": round(bounds_ms, 2),
-                "automated_query_ms": round(automated_ms, 2),
-                "manual_query_ms": round(manual_ms, 2),
-                "total_ms": round(total_ms, 2),
-                "automated_rows": len(automated_rows),
-                "manual_rows": len(manual_rows),
-                "days": len(day_rows),
-                "months": len(months),
-            },
-        )
-
         return {
             "meta": {
                 "client_id": int(client_id),

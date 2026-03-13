@@ -149,6 +149,34 @@ function leadPayloadWithMonths() {
   };
 }
 
+
+function leadPayloadMonthsFirst() {
+  const base = leadPayload();
+  return {
+    ...base,
+    days: [],
+    months: [
+      {
+        month: "2026-03",
+        date_from: "2026-03-01",
+        date_to: "2026-03-31",
+        totals: { ...base.months[0].totals },
+        day_count: 1,
+        has_days: true,
+      },
+    ],
+  };
+}
+
+function monthDaysPayload() {
+  const base = leadPayload();
+  return {
+    meta: base.meta,
+    month_start: "2026-03-01",
+    days: base.days,
+  };
+}
+
 describe("SubMediaBuyingPage", () => {
   beforeEach(() => {
     apiMock.apiRequest.mockReset();
@@ -557,7 +585,7 @@ describe("SubMediaBuyingPage", () => {
   it("uses effective range metadata from API and requests table without implicit date query params", async () => {
     apiMock.apiRequest.mockImplementation(async (path: string) => {
       if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
-      if (path === "/clients/96/media-buying/lead/table") {
+      if (path === "/clients/96/media-buying/lead/table?include_days=false") {
         const payload = leadPayload();
         payload.meta.date_from = "2025-12-13";
         payload.meta.date_to = "2026-03-12";
@@ -571,6 +599,62 @@ describe("SubMediaBuyingPage", () => {
     render(<SubMediaBuyingPage />);
 
     expect(await screen.findByText(/Range: 2026-01-01 - 2026-03-11/i)).toBeInTheDocument();
-    expect(apiMock.apiRequest).toHaveBeenCalledWith("/clients/96/media-buying/lead/table");
+    expect(apiMock.apiRequest).toHaveBeenCalledWith("/clients/96/media-buying/lead/table?include_days=false");
   });
+
+  it("uses include_days=false on initial request and lazy-loads month days on expand", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
+      if (path === "/clients/96/media-buying/lead/table?include_days=false") return leadPayloadMonthsFirst();
+      if (path === "/clients/96/media-buying/lead/month-days?month_start=2026-03-01") return monthDaysPayload();
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaBuyingPage />);
+    expect(await screen.findByRole("button", { name: /Mar 2026/i })).toBeInTheDocument();
+    expect(apiMock.apiRequest).toHaveBeenCalledWith("/clients/96/media-buying/lead/table?include_days=false");
+    expect(await screen.findByText("11 Mar")).toBeInTheDocument();
+  });
+
+  it("re-expanding an already loaded month uses cached rows without refetch", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
+      if (path === "/clients/96/media-buying/lead/table?include_days=false") return leadPayloadMonthsFirst();
+      if (path === "/clients/96/media-buying/lead/month-days?month_start=2026-03-01") return monthDaysPayload();
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaBuyingPage />);
+    const monthButton = await screen.findByRole("button", { name: /Mar 2026/i });
+    await screen.findByText("11 Mar");
+
+    fireEvent.click(monthButton);
+    expect(screen.queryByText("11 Mar")).toBeNull();
+    fireEvent.click(monthButton);
+    expect(await screen.findByText("11 Mar")).toBeInTheDocument();
+
+    const monthCalls = apiMock.apiRequest.mock.calls.filter(([path]) => String(path).includes("/media-buying/lead/month-days"));
+    expect(monthCalls).toHaveLength(1);
+  });
+
+  it("shows month-level error and allows retry without breaking the table", async () => {
+    let monthAttempt = 0;
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
+      if (path === "/clients/96/media-buying/lead/table?include_days=false") return leadPayloadMonthsFirst();
+      if (path === "/clients/96/media-buying/lead/month-days?month_start=2026-03-01") {
+        monthAttempt += 1;
+        if (monthAttempt === 1) throw new Error("month boom");
+        return monthDaysPayload();
+      }
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaBuyingPage />);
+    expect(await screen.findByRole("button", { name: /Mar 2026/i })).toBeInTheDocument();
+    expect(await screen.findByText("month boom")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Retry/i }));
+    expect(await screen.findByText("11 Mar")).toBeInTheDocument();
+  });
+
 });

@@ -3980,3 +3980,24 @@
 - [x] Month-days path reuses `get_lead_table(... include_days=True)` with scoped month date range so day-row formulas/currency semantics stay identical.
 - [x] Added compact `media_buying_lead_month_days_timing` instrumentation with elapsed time and returned row count.
 - [x] Verification: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py apps/backend/tests/test_client_registry_account_currency_resolution.py apps/backend/tests/test_dashboard_currency_normalization.py` (pass).
+
+---
+
+# TODO — Media Buying frontend months-first lazy month-day loading
+
+- [x] Refresh workspace and inspect current Media Buying page state/render + backend lightweight/month-days contract.
+- [x] Switch initial lead-table fetch to `include_days=false` while preserving existing page structure/formatting.
+- [x] Add per-month lazy day fetch on month expand via new month-days endpoint with cache reuse.
+- [x] Add per-month loading/error state and inline retry without breaking entire table.
+- [x] Reset month-day cache/loading/error state on overall table reload context.
+- [x] Keep currency formatting and row semantics unchanged.
+- [x] Add/update focused frontend tests for initial request contract, lazy fetch, cache reuse, and month-level error/retry.
+- [x] Run focused frontend tests and document outcomes.
+
+## Review
+- [x] Initial Media Buying request now uses `/clients/{id}/media-buying/lead/table?include_days=false` (months-first).
+- [x] Month expand now lazy-loads `/clients/{id}/media-buying/lead/month-days?month_start=YYYY-MM-DD` only when needed and caches per month.
+- [x] Collapsing a month keeps cached rows; re-expand does not re-fetch unless retry is requested after error.
+- [x] Added per-month inline loading/error/no-days rows so a failed month fetch does not break the whole page.
+- [x] Existing month/day formatting, labels, and currency behavior remain unchanged.
+- [x] Verification: `pnpm vitest run src/app/sub/[id]/media-buying/page.test.tsx` (pass).
