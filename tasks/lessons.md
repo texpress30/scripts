@@ -306,3 +306,4 @@
 - 2026-03-13: When editing files in this runner, use the dedicated apply_patch tool directly instead of wrapping apply_patch via shell exec.
 - 2026-03-13: After backend worksheet milestones, inspect current frontend surface before implementation and ship a minimal integrated worksheet shell first (toggle + scope + fetch + read-only scaffold), without redesign/editing.
 - 2026-03-13: For worksheet frontend increments, split display scaffolds into dedicated table components early so formatting/hierarchy improvements stay focused without touching shell navigation state.
+- 2026-03-13: After backend worksheet milestones, inspect current frontend surface before implementation and ship a minimal integrated worksheet shell first (toggle + scope + fetch + read-only scaffold), without redesign/editing.
