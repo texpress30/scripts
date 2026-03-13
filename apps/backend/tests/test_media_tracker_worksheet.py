@@ -315,3 +315,109 @@ def test_manual_value_clear_semantics_delete_stored_value() -> None:
     target = next(item for item in payload["manual_metrics"]["weekly_cogs_taxes"]["weekly_values"] if item["week_start"] == "2026-03-09")
     assert target["value"] is None
     assert payload["manual_metrics"]["weekly_cogs_taxes"]["history_value"] == 0.0
+
+
+def _row_map(payload: dict[str, object], section_key: str) -> dict[str, dict[str, object]]:
+    section = next(item for item in payload["sections"] if item["key"] == section_key)
+    return {row["row_key"]: row for row in section["rows"]}
+
+
+def test_formula_engine_core_rows_and_ratio_history_recompute() -> None:
+    days = [
+        {"date": "2026-03-02", "cost_total": 70, "cost_google": 30, "cost_meta": 20, "cost_tiktok": 20, "total_leads": 14, "custom_value_1_count": 7, "sales_count": 3},
+        {"date": "2026-03-09", "cost_total": 140, "cost_google": 60, "cost_meta": 40, "cost_tiktok": 40, "total_leads": 28, "custom_value_1_count": 14, "sales_count": 6},
+    ]
+    original_store = _set_store(days=days)
+    service = worksheet_module.media_tracker_worksheet_service
+    try:
+        service.upsert_weekly_manual_values(
+            client_id=99,
+            granularity="month",
+            anchor_date=date(2026, 3, 15),
+            entries=[
+                {"week_start": "2026-03-02", "field_key": "google_revenue_manual", "value": 1000},
+                {"week_start": "2026-03-02", "field_key": "meta_revenue_manual", "value": 500},
+                {"week_start": "2026-03-02", "field_key": "tiktok_revenue_manual", "value": 500},
+                {"week_start": "2026-03-02", "field_key": "google_sales_manual", "value": 10},
+                {"week_start": "2026-03-02", "field_key": "meta_sales_manual", "value": 5},
+                {"week_start": "2026-03-02", "field_key": "tiktok_sales_manual", "value": 5},
+                {"week_start": "2026-03-02", "field_key": "google_leads_manual", "value": 50},
+                {"week_start": "2026-03-02", "field_key": "meta_leads_manual", "value": 30},
+                {"week_start": "2026-03-02", "field_key": "tiktok_leads_manual", "value": 20},
+                {"week_start": "2026-03-02", "field_key": "weekly_cogs_taxes", "value": 600},
+                {"week_start": "2026-03-09", "field_key": "google_revenue_manual", "value": 500},
+                {"week_start": "2026-03-09", "field_key": "meta_revenue_manual", "value": 250},
+                {"week_start": "2026-03-09", "field_key": "tiktok_revenue_manual", "value": 250},
+                {"week_start": "2026-03-09", "field_key": "google_sales_manual", "value": 5},
+                {"week_start": "2026-03-09", "field_key": "meta_sales_manual", "value": 2},
+                {"week_start": "2026-03-09", "field_key": "tiktok_sales_manual", "value": 3},
+                {"week_start": "2026-03-09", "field_key": "google_leads_manual", "value": 25},
+                {"week_start": "2026-03-09", "field_key": "meta_leads_manual", "value": 15},
+                {"week_start": "2026-03-09", "field_key": "tiktok_leads_manual", "value": 10},
+                {"week_start": "2026-03-09", "field_key": "weekly_cogs_taxes", "value": 300},
+            ],
+        )
+        payload = service.upsert_scope_eur_ron_rate(
+            client_id=99,
+            granularity="month",
+            anchor_date=date(2026, 3, 15),
+            value=5.0,
+        )
+    finally:
+        worksheet_module.media_buying_store = original_store
+
+    summary = _row_map(payload, "summary")
+    new_clients = _row_map(payload, "new_clients")
+    google = _row_map(payload, "google_spend")
+
+    cost_week = next(x for x in summary["cost"]["weekly_values"] if x["week_start"] == "2026-03-02")
+    assert cost_week["value"] == 70.0
+
+    avg_daily_week = next(x for x in summary["avg_daily_spend"]["weekly_values"] if x["week_start"] == "2026-03-02")
+    assert avg_daily_week["value"] == 10.0
+
+    revenue_week = next(x for x in summary["revenue"]["weekly_values"] if x["week_start"] == "2026-03-02")
+    assert revenue_week["value"] == 2000.0
+
+    aov_history = summary["aov"]["history_value"]
+    assert aov_history == 100.0
+
+    cost_vs_revenue_history = summary["cost_vs_revenue"]["history_value"]
+    assert round(cost_vs_revenue_history, 4) == round((210.0 / 3000.0), 4)
+
+    cost_per_new_client = new_clients["cost_per_new_client"]["history_value"]
+    assert cost_per_new_client == 7.0
+    assert new_clients["cost_per_new_client_eur"]["history_value"] == 1.4
+
+    google_ncac_week = next(x for x in google["ncac"]["weekly_values"] if x["week_start"] == "2026-03-02")
+    assert google_ncac_week["value"] == 3.0
+
+
+def test_formula_engine_null_handling_for_cogs_and_eur_rate() -> None:
+    days = [{"date": "2026-03-02", "cost_total": 70, "cost_google": 30, "cost_meta": 20, "cost_tiktok": 20, "total_leads": 14, "custom_value_1_count": 7, "sales_count": 3}]
+    original_store = _set_store(days=days)
+    service = worksheet_module.media_tracker_worksheet_service
+    try:
+        payload = service.upsert_weekly_manual_values(
+            client_id=109,
+            granularity="month",
+            anchor_date=date(2026, 3, 15),
+            entries=[
+                {"week_start": "2026-03-02", "field_key": "google_revenue_manual", "value": 100},
+                {"week_start": "2026-03-02", "field_key": "meta_revenue_manual", "value": 100},
+                {"week_start": "2026-03-02", "field_key": "tiktok_revenue_manual", "value": 100},
+                {"week_start": "2026-03-02", "field_key": "google_sales_manual", "value": 3},
+            ],
+        )
+    finally:
+        worksheet_module.media_buying_store = original_store
+
+    summary = _row_map(payload, "summary")
+    new_clients = _row_map(payload, "new_clients")
+
+    gross_week = next(x for x in summary["gross_profit"]["weekly_values"] if x["week_start"] == "2026-03-02")
+    assert gross_week["value"] is None
+    assert summary["gross_profit"]["history_value"] is None
+    assert summary["mer_net"]["history_value"] is None
+    assert summary["profit_contribution"]["history_value"] is None
+    assert new_clients["cost_per_new_client_eur"]["history_value"] is None

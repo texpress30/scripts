@@ -147,6 +147,23 @@ class MediaTrackerWorksheetService:
             return float(value)
         return 0.0
 
+    def _safe_div(self, numerator: float | None, denominator: float | None) -> float | None:
+        if numerator is None or denominator is None:
+            return None
+        if abs(float(denominator)) <= 0.0:
+            return None
+        return float(numerator) / float(denominator)
+
+    def _sum_history_nullable(self, values: list[float | None]) -> float | None:
+        seen = False
+        total = 0.0
+        for item in values:
+            if item is None:
+                continue
+            seen = True
+            total += float(item)
+        return round(total, 2) if seen else None
+
     def _validate_granularity(self, *, granularity: str) -> WorksheetGranularity:
         normalized_granularity = str(granularity).strip().lower()
         if normalized_granularity not in {"month", "quarter", "year"}:
@@ -208,11 +225,12 @@ class MediaTrackerWorksheetService:
         if len(week_starts) <= 0:
             return {}
         if self._is_test_mode():
+            week_start_set = set(week_starts)
             with self._memory_lock:
                 return {
                     (week_start_iso, field_key): value
                     for (stored_client_id, week_start_iso, field_key), value in self._memory_manual_values.items()
-                    if int(stored_client_id) == int(client_id) and date.fromisoformat(week_start_iso) in set(week_starts)
+                    if int(stored_client_id) == int(client_id) and date.fromisoformat(week_start_iso) in week_start_set
                 }
 
         self._ensure_schema()
@@ -295,6 +313,195 @@ class MediaTrackerWorksheetService:
             )
 
         return metrics
+
+    def _extract_weekly_values(self, *, metrics: dict[str, dict[str, object]], key: str) -> list[float | None]:
+        payload = metrics.get(key) if isinstance(metrics.get(key), dict) else {}
+        weekly_values = payload.get("weekly_values") if isinstance(payload.get("weekly_values"), list) else []
+        return [
+            (float(item.get("value")) if isinstance(item, dict) and item.get("value") is not None else None)
+            for item in weekly_values
+        ]
+
+    def _build_row(
+        self,
+        *,
+        weeks: list[dict[str, object]],
+        row_key: str,
+        label: str,
+        value_kind: str,
+        weekly_values: list[float | None],
+        history_value: float | None,
+        dependencies: list[str],
+        requires_eur_ron_rate: bool = False,
+        is_manual_input_row: bool = False,
+    ) -> dict[str, object]:
+        return {
+            "row_key": row_key,
+            "label": label,
+            "value_kind": value_kind,
+            "source_kind": "manual" if is_manual_input_row else "computed",
+            "is_manual_input_row": is_manual_input_row,
+            "is_derived_row": not is_manual_input_row,
+            "requires_eur_ron_rate": requires_eur_ron_rate,
+            "dependencies": dependencies,
+            "history_value": round(history_value, 4) if isinstance(history_value, (int, float)) else None,
+            "weekly_values": [
+                {
+                    "week_start": week["week_start"],
+                    "week_end": week["week_end"],
+                    "value": round(weekly_values[idx], 4) if isinstance(weekly_values[idx], (int, float)) else None,
+                }
+                for idx, week in enumerate(weeks)
+            ],
+        }
+
+    def _build_computed_sections(
+        self,
+        *,
+        weeks: list[dict[str, object]],
+        auto_metrics: dict[str, dict[str, object]],
+        manual_metrics: dict[str, dict[str, object]],
+        eur_ron_rate: float | None,
+    ) -> list[dict[str, object]]:
+        week_count = len(weeks)
+        auto_cost_total = self._extract_weekly_values(metrics=auto_metrics, key="cost_total")
+        auto_cost_google = self._extract_weekly_values(metrics=auto_metrics, key="cost_google")
+        auto_cost_meta = self._extract_weekly_values(metrics=auto_metrics, key="cost_meta")
+        auto_cost_tiktok = self._extract_weekly_values(metrics=auto_metrics, key="cost_tiktok")
+        auto_leads = self._extract_weekly_values(metrics=auto_metrics, key="total_leads")
+        auto_apps = self._extract_weekly_values(metrics=auto_metrics, key="applications")
+        auto_approved = self._extract_weekly_values(metrics=auto_metrics, key="approved_applications")
+
+        g_leads = self._extract_weekly_values(metrics=manual_metrics, key="google_leads_manual")
+        g_sales = self._extract_weekly_values(metrics=manual_metrics, key="google_sales_manual")
+        g_revenue = self._extract_weekly_values(metrics=manual_metrics, key="google_revenue_manual")
+        m_leads = self._extract_weekly_values(metrics=manual_metrics, key="meta_leads_manual")
+        m_sales = self._extract_weekly_values(metrics=manual_metrics, key="meta_sales_manual")
+        m_revenue = self._extract_weekly_values(metrics=manual_metrics, key="meta_revenue_manual")
+        t_leads = self._extract_weekly_values(metrics=manual_metrics, key="tiktok_leads_manual")
+        t_sales = self._extract_weekly_values(metrics=manual_metrics, key="tiktok_sales_manual")
+        t_revenue = self._extract_weekly_values(metrics=manual_metrics, key="tiktok_revenue_manual")
+        cogs = self._extract_weekly_values(metrics=manual_metrics, key="weekly_cogs_taxes")
+
+        summary_cost = [self._to_float(item) for item in auto_cost_total]
+        summary_revenue = [self._to_float(g_revenue[i]) + self._to_float(m_revenue[i]) + self._to_float(t_revenue[i]) for i in range(week_count)]
+        summary_sales = [self._to_float(g_sales[i]) + self._to_float(m_sales[i]) + self._to_float(t_sales[i]) for i in range(week_count)]
+        summary_leads = [self._to_float(item) for item in auto_leads]
+        summary_apps = [self._to_float(item) for item in auto_apps]
+        summary_approved = [self._to_float(item) for item in auto_approved]
+
+        summary_avg_daily_spend = [self._safe_div(summary_cost[i], 7.0) for i in range(week_count)]
+        summary_revenue_target_per_day = [self._safe_div(summary_revenue[i], 7.0) for i in range(week_count)]
+        summary_aov = [self._safe_div(summary_revenue[i], summary_sales[i]) for i in range(week_count)]
+        summary_cpa_leads = [self._safe_div(summary_cost[i], summary_leads[i]) for i in range(week_count)]
+        summary_cpa_apps = [self._safe_div(summary_cost[i], summary_apps[i]) for i in range(week_count)]
+        summary_cpa_approved = [self._safe_div(summary_cost[i], summary_approved[i]) for i in range(week_count)]
+        summary_cost_vs_revenue = [self._safe_div(summary_cost[i], summary_revenue[i]) for i in range(week_count)]
+        summary_mer = [self._safe_div(summary_revenue[i], summary_cost[i]) for i in range(week_count)]
+
+        summary_gross_profit: list[float | None] = []
+        summary_profit_contribution: list[float | None] = []
+        for idx in range(week_count):
+            if cogs[idx] is None:
+                summary_gross_profit.append(None)
+                summary_profit_contribution.append(None)
+                continue
+            gross = summary_revenue[idx] - self._to_float(cogs[idx])
+            summary_gross_profit.append(gross)
+            summary_profit_contribution.append(gross - summary_cost[idx])
+
+        new_clients_combined_spend = list(summary_cost)
+        new_clients_cost_per_new_client = [self._safe_div(new_clients_combined_spend[i], summary_sales[i]) for i in range(week_count)]
+        new_clients_cost_per_new_client_eur = [
+            self._safe_div(new_clients_cost_per_new_client[i], eur_ron_rate) if eur_ron_rate not in {None, 0} else None
+            for i in range(week_count)
+        ]
+
+        summary_gpt: list[float | None] = []
+        for idx in range(week_count):
+            if summary_aov[idx] is None or new_clients_cost_per_new_client[idx] is None:
+                summary_gpt.append(None)
+            else:
+                summary_gpt.append(summary_aov[idx] - new_clients_cost_per_new_client[idx])
+
+        summary_mer_net = [self._safe_div(summary_gross_profit[i], summary_cost[i]) for i in range(week_count)]
+        summary_apps_per_sale = [self._safe_div(summary_apps[i], summary_sales[i]) for i in range(week_count)]
+        summary_apps_per_approved = [self._safe_div(summary_apps[i], summary_approved[i]) for i in range(week_count)]
+        summary_approved_per_sale = [self._safe_div(summary_approved[i], summary_sales[i]) for i in range(week_count)]
+
+        def additive(values: list[float | None]) -> float | None:
+            return round(sum(self._to_float(item) for item in values if item is not None), 4)
+
+        cost_h = additive(summary_cost)
+        revenue_h = additive(summary_revenue)
+        sales_h = additive(summary_sales)
+        leads_h = additive(summary_leads)
+        apps_h = additive(summary_apps)
+        approved_h = additive(summary_approved)
+        cogs_h = self._sum_history_nullable(cogs)
+        has_missing_cogs = any(item is None for item in cogs)
+        gross_h = None if cogs_h is None or has_missing_cogs else revenue_h - cogs_h
+
+        summary_rows = [
+            self._build_row(weeks=weeks, row_key="cost", label="Cost", value_kind="currency_ron", weekly_values=summary_cost, history_value=cost_h, dependencies=["auto_metrics.cost_total"]),
+            self._build_row(weeks=weeks, row_key="avg_daily_spend", label="Avg. Daily Spend", value_kind="currency_ron", weekly_values=summary_avg_daily_spend, history_value=self._safe_div(cost_h, float(week_count)) if week_count > 0 else None, dependencies=["summary.cost"]),
+            self._build_row(weeks=weeks, row_key="revenue", label="Venit", value_kind="currency_ron", weekly_values=summary_revenue, history_value=revenue_h, dependencies=["manual_metrics.google_revenue_manual", "manual_metrics.meta_revenue_manual", "manual_metrics.tiktok_revenue_manual"]),
+            self._build_row(weeks=weeks, row_key="revenue_target_per_day", label="Venit Țintă / Zi", value_kind="currency_ron", weekly_values=summary_revenue_target_per_day, history_value=self._safe_div(revenue_h, float(week_count)) if week_count > 0 else None, dependencies=["summary.revenue"]),
+            self._build_row(weeks=weeks, row_key="sales", label="Vânzări", value_kind="integer", weekly_values=summary_sales, history_value=sales_h, dependencies=["manual_metrics.google_sales_manual", "manual_metrics.meta_sales_manual", "manual_metrics.tiktok_sales_manual"]),
+            self._build_row(weeks=weeks, row_key="aov", label="AOV", value_kind="currency_ron", weekly_values=summary_aov, history_value=self._safe_div(revenue_h, sales_h), dependencies=["summary.revenue", "summary.sales"]),
+            self._build_row(weeks=weeks, row_key="leads", label="Leads", value_kind="integer", weekly_values=summary_leads, history_value=leads_h, dependencies=["auto_metrics.total_leads"]),
+            self._build_row(weeks=weeks, row_key="cpa_leads", label="CPA Leads", value_kind="currency_ron", weekly_values=summary_cpa_leads, history_value=self._safe_div(cost_h, leads_h), dependencies=["summary.cost", "summary.leads"]),
+            self._build_row(weeks=weeks, row_key="applications", label="Aplicații", value_kind="integer", weekly_values=summary_apps, history_value=apps_h, dependencies=["auto_metrics.applications"]),
+            self._build_row(weeks=weeks, row_key="cpa_applications", label="CPA Aplicații", value_kind="currency_ron", weekly_values=summary_cpa_apps, history_value=self._safe_div(cost_h, apps_h), dependencies=["summary.cost", "summary.applications"]),
+            self._build_row(weeks=weeks, row_key="approved_applications", label="Aplicații Aprobate", value_kind="integer", weekly_values=summary_approved, history_value=approved_h, dependencies=["auto_metrics.approved_applications"]),
+            self._build_row(weeks=weeks, row_key="cpa_approved_applications", label="CPA Aplicații Aprobate", value_kind="currency_ron", weekly_values=summary_cpa_approved, history_value=self._safe_div(cost_h, approved_h), dependencies=["summary.cost", "summary.approved_applications"]),
+            self._build_row(weeks=weeks, row_key="cost_vs_revenue", label="Cost vs Venit", value_kind="percent_ratio", weekly_values=summary_cost_vs_revenue, history_value=self._safe_div(cost_h, revenue_h), dependencies=["summary.cost", "summary.revenue"]),
+            self._build_row(weeks=weeks, row_key="mer", label="MER", value_kind="decimal", weekly_values=summary_mer, history_value=self._safe_div(revenue_h, cost_h), dependencies=["summary.revenue", "summary.cost"]),
+            self._build_row(weeks=weeks, row_key="mer_net", label="MER NET", value_kind="decimal", weekly_values=summary_mer_net, history_value=self._safe_div(gross_h, cost_h) if gross_h is not None else None, dependencies=["summary.gross_profit", "summary.cost"]),
+            self._build_row(weeks=weeks, row_key="weekly_cogs_taxes", label="Total COGS + Taxe", value_kind="currency_ron", weekly_values=cogs, history_value=cogs_h, dependencies=["manual_metrics.weekly_cogs_taxes"], is_manual_input_row=True),
+            self._build_row(weeks=weeks, row_key="gross_profit", label="Profit Brut", value_kind="currency_ron", weekly_values=summary_gross_profit, history_value=gross_h, dependencies=["summary.revenue", "summary.weekly_cogs_taxes"]),
+            self._build_row(weeks=weeks, row_key="gpt", label="GPT", value_kind="currency_ron", weekly_values=summary_gpt, history_value=(self._safe_div(revenue_h, sales_h) - self._safe_div(cost_h, sales_h)) if self._safe_div(revenue_h, sales_h) is not None and self._safe_div(cost_h, sales_h) is not None else None, dependencies=["summary.aov", "new_clients.cost_per_new_client"]),
+            self._build_row(weeks=weeks, row_key="profit_contribution", label="Profit Contribution", value_kind="currency_ron", weekly_values=summary_profit_contribution, history_value=(gross_h - cost_h) if gross_h is not None else None, dependencies=["summary.gross_profit", "summary.cost"]),
+            self._build_row(weeks=weeks, row_key="applications_per_sale", label="Aplicații / Vânzări", value_kind="decimal", weekly_values=summary_apps_per_sale, history_value=self._safe_div(apps_h, sales_h), dependencies=["summary.applications", "summary.sales"]),
+            self._build_row(weeks=weeks, row_key="applications_per_approved_application", label="Aplicații / Aplicații Aprobate", value_kind="decimal", weekly_values=summary_apps_per_approved, history_value=self._safe_div(apps_h, approved_h), dependencies=["summary.applications", "summary.approved_applications"]),
+            self._build_row(weeks=weeks, row_key="approved_applications_per_sale", label="Aplicații Aprobate / Vânzări", value_kind="decimal", weekly_values=summary_approved_per_sale, history_value=self._safe_div(approved_h, sales_h), dependencies=["summary.approved_applications", "summary.sales"]),
+        ]
+
+        def platform_rows(prefix: str, label_prefix: str, cost_values: list[float | None], leads_values: list[float | None], sales_values: list[float | None], revenue_values: list[float | None]) -> list[dict[str, object]]:
+            cpa_values = [self._safe_div(self._to_float(cost_values[i]), self._to_float(leads_values[i])) for i in range(week_count)]
+            ncac_values = [self._safe_div(self._to_float(cost_values[i]), self._to_float(sales_values[i])) for i in range(week_count)]
+            ncac_eur_values = [self._safe_div(ncac_values[i], eur_ron_rate) if eur_ron_rate not in {None, 0} else None for i in range(week_count)]
+            cost_h_local = additive(cost_values)
+            leads_h_local = additive(leads_values)
+            sales_h_local = additive(sales_values)
+            revenue_h_local = self._sum_history_nullable(revenue_values)
+            return [
+                self._build_row(weeks=weeks, row_key="cost", label="Cost", value_kind="currency_ron", weekly_values=[self._to_float(v) for v in cost_values], history_value=cost_h_local, dependencies=[f"auto_metrics.cost_{prefix}"]),
+                self._build_row(weeks=weeks, row_key="leads_manual", label="Leads", value_kind="integer", weekly_values=leads_values, history_value=leads_h_local, dependencies=[f"manual_metrics.{prefix}_leads_manual"], is_manual_input_row=True),
+                self._build_row(weeks=weeks, row_key="cpa", label="CPA", value_kind="currency_ron", weekly_values=cpa_values, history_value=self._safe_div(cost_h_local, leads_h_local), dependencies=["cost", "leads_manual"]),
+                self._build_row(weeks=weeks, row_key="sales_manual", label="Vânzări", value_kind="integer", weekly_values=sales_values, history_value=sales_h_local, dependencies=[f"manual_metrics.{prefix}_sales_manual"], is_manual_input_row=True),
+                self._build_row(weeks=weeks, row_key="revenue_manual", label="Val. Vânzare", value_kind="currency_ron", weekly_values=revenue_values, history_value=revenue_h_local, dependencies=[f"manual_metrics.{prefix}_revenue_manual"], is_manual_input_row=True),
+                self._build_row(weeks=weeks, row_key="ncac", label="nCAC", value_kind="currency_ron", weekly_values=ncac_values, history_value=self._safe_div(cost_h_local, sales_h_local), dependencies=["cost", "sales_manual"]),
+                self._build_row(weeks=weeks, row_key="ncac_eur", label="nCAC EUR", value_kind="currency_eur", weekly_values=ncac_eur_values, history_value=(self._safe_div(self._safe_div(cost_h_local, sales_h_local), eur_ron_rate) if eur_ron_rate not in {None, 0} else None), dependencies=["ncac", "eur_ron_rate"], requires_eur_ron_rate=True),
+            ]
+
+        new_clients_rows = [
+            self._build_row(weeks=weeks, row_key="combined_spend", label="Google + Meta + TikTok Spend", value_kind="currency_ron", weekly_values=new_clients_combined_spend, history_value=cost_h, dependencies=["summary.cost"]),
+            self._build_row(weeks=weeks, row_key="cost_per_new_client", label="Cost per Client Nou", value_kind="currency_ron", weekly_values=new_clients_cost_per_new_client, history_value=self._safe_div(cost_h, sales_h), dependencies=["new_clients.combined_spend", "summary.sales"]),
+            self._build_row(weeks=weeks, row_key="cost_per_new_client_eur", label="Cost per Client Nou EUR", value_kind="currency_eur", weekly_values=new_clients_cost_per_new_client_eur, history_value=(self._safe_div(self._safe_div(cost_h, sales_h), eur_ron_rate) if eur_ron_rate not in {None, 0} else None), dependencies=["new_clients.cost_per_new_client", "eur_ron_rate"], requires_eur_ron_rate=True),
+        ]
+
+        google_rows = platform_rows("google", "Google", auto_cost_google, g_leads, g_sales, g_revenue)
+        meta_rows = platform_rows("meta", "Meta", auto_cost_meta, m_leads, m_sales, m_revenue)
+        tiktok_rows = platform_rows("tiktok", "TikTok", auto_cost_tiktok, t_leads, t_sales, t_revenue)
+
+        return [
+            {"key": "summary", "label": "Rezumat", "rows": summary_rows},
+            {"key": "new_clients", "label": "Clienti Noi", "rows": new_clients_rows},
+            {"key": "google_spend", "label": "Google Spend", "rows": google_rows},
+            {"key": "meta_spend", "label": "Meta Spend", "rows": meta_rows},
+            {"key": "tiktok_spend", "label": "TikTok Spend", "rows": tiktok_rows},
+        ]
 
     def upsert_weekly_manual_values(
         self,
@@ -481,13 +688,12 @@ class MediaTrackerWorksheetService:
             "manual_field_definitions": self._build_manual_field_definitions(),
             "manual_metrics": manual_metrics,
             "auto_metrics": auto_metrics,
-            "sections": [
-                {"key": "summary", "label": "Rezumat", "rows": []},
-                {"key": "new_clients", "label": "Clienti Noi", "rows": []},
-                {"key": "google_spend", "label": "Google Spend", "rows": []},
-                {"key": "meta_spend", "label": "Meta Spend", "rows": []},
-                {"key": "tiktok_spend", "label": "TikTok Spend", "rows": []},
-            ],
+            "sections": self._build_computed_sections(
+                weeks=weeks,
+                auto_metrics=auto_metrics,
+                manual_metrics=manual_metrics,
+                eur_ron_rate=eur_ron_rate,
+            ),
         }
 
 

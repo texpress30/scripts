@@ -3704,3 +3704,21 @@
 - [x] Manual values now persist per weekly key and are returned aligned to visible weeks with history sums.
 - [x] EUR/RON rate now persists per canonical worksheet scope and reads back consistently for anchor dates within same scope.
 - [x] No formulas/manual-derived final rows/frontend changes were introduced in this step.
+
+---
+
+# TODO — Media Tracker worksheet core formula engine rows (backend-only, no % rows)
+
+- [x] Refresh workspace and inspect existing worksheet foundation + auto/manual metrics + EUR/RON response.
+- [x] Add internal formula catalog/helper for deterministic section row computation from auto/manual/rate inputs.
+- [x] Compute weekly and history values for confirmed core business rows (summary/new_clients/google/meta/tiktok) without % comparison rows.
+- [x] Preserve existing response keys and enrich `sections[].rows` with computed row payloads aligned to weeks ordering.
+- [x] Add/update backend tests for formulas, additive vs ratio history behavior, null-safe divide/rate/cogs handling, and ordering alignment.
+- [x] Run focused backend tests and record outcomes.
+
+## Review
+- [x] Added core computed-row engine for worksheet sections using existing `auto_metrics`, `manual_metrics`, and scope `eur_ron_rate`.
+- [x] Kept response backward-compatible (raw metrics remain) and enriched `sections[].rows` with deterministic weekly/history values and minimal row metadata.
+- [x] Implemented additive history as sum of weekly values and ratio history as recomputed numerator/denominator (no summed weekly ratios).
+- [x] Added null-safe handling for divide-by-zero, missing EUR rate, missing manual rows, and COGS-dependent formulas.
+- [x] Verification: focused backend worksheet/API tests pass locally.

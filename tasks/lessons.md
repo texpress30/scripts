@@ -302,3 +302,4 @@
 - 2026-03-13: When product scope says backend-only foundation, avoid mixing frontend or formula work; deliver a stable contract + deterministic calendar bucketing first.
 - 2026-03-13: For follow-up worksheet tasks, reuse existing daily source methods directly (e.g., media_buying_store day rows) instead of introducing parallel raw-query paths.
 - 2026-03-13: For scope-based editable values, persist against canonical resolved period keys so different anchor dates in same scope update the same logical record.
+- 2026-03-13: For staged worksheet delivery, compute core numeric rows in backend sections from existing raw metrics first, and explicitly defer comparison/% rows to later tasks.
