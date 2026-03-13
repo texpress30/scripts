@@ -19,6 +19,7 @@ from app.services.entity_performance_reports import (
 )
 from app.services.integration_secrets_store import integration_secrets_store
 from app.services.performance_reports import performance_reports_store
+from app.services.tiktok_account_daily_identity_resolver import resolve_tiktok_account_daily_persistence_identity
 from app.services.tiktok_store import tiktok_snapshot_store
 
 try:
@@ -1204,6 +1205,19 @@ class TikTokAdsService:
                         "tiktok_ads": {
                             "dimensions": dimensions,
                             "metrics": metrics,
+                            "provider_identity_candidates": [
+                                str(value).strip()
+                                for value in (
+                                    account_id,
+                                    dimensions.get("advertiser_id"),
+                                    dimensions.get("customer_id"),
+                                    dimensions.get("account_id"),
+                                    item.get("advertiser_id"),
+                                    item.get("customer_id"),
+                                    item.get("account_id"),
+                                )
+                                if str(value or "").strip() != ""
+                            ],
                             "source": "report.integrated.get",
                             "grain": "account_daily",
                         }
@@ -1909,6 +1923,27 @@ class TikTokAdsService:
     def _normalize_account_id(self, value: object) -> str:
         return str(value or "").strip()
 
+    def _collapse_account_daily_rows_for_persistence(
+        self,
+        *,
+        rows: list[TikTokDailyMetric],
+        canonical_persistence_customer_id: str,
+    ) -> tuple[list[TikTokDailyMetric], int]:
+        # Deterministic last-write-wins collapse within a single write batch for the
+        # same logical natural key: (platform=tiktok_ads, grain=account_daily,
+        # report_date, canonical_persistence_customer_id).
+        by_natural_key: dict[tuple[str, str], tuple[int, TikTokDailyMetric]] = {}
+        duplicate_candidates = 0
+        for index, row in enumerate(rows):
+            natural_key = (row.report_date.isoformat(), canonical_persistence_customer_id)
+            if natural_key in by_natural_key:
+                duplicate_candidates += 1
+            by_natural_key[natural_key] = (index, row)
+
+        ordered_keys = sorted(by_natural_key.keys(), key=lambda key: key[0])
+        collapsed_rows = [by_natural_key[key][1] for key in ordered_keys]
+        return collapsed_rows, duplicate_candidates
+
     def _resolve_target_account_ids(self, *, client_id: int, account_id: str | None = None) -> list[str]:
         attached_accounts = client_registry_service.list_client_platform_accounts(platform="tiktok_ads", client_id=int(client_id))
         attached_by_normalized: dict[str, str] = {}
@@ -1971,6 +2006,7 @@ class TikTokAdsService:
         rows_downloaded = 0
         rows_mapped = 0
         zero_row_observability: list[dict[str, object]] = []
+        account_daily_identity_warnings: list[dict[str, object]] = []
         totals = {
             "spend": 0.0,
             "impressions": 0,
@@ -1996,11 +2032,59 @@ class TikTokAdsService:
                 rows_mapped += int(fetch_stats.get("rows_mapped") or 0)
                 if fetch_stats.get("zero_row_marker") is not None:
                     zero_row_observability.append(fetch_stats)
+                provider_ids_in_scope: list[str] = []
                 for row in daily_rows:
+                    provider_ids_in_scope.append(self._normalize_account_id(row.account_id))
+                    tiktok_meta = row.extra_metrics.get("tiktok_ads") if isinstance(row.extra_metrics, dict) else None
+                    if isinstance(tiktok_meta, dict):
+                        candidates = tiktok_meta.get("provider_identity_candidates")
+                        if isinstance(candidates, list):
+                            for candidate in candidates:
+                                normalized_candidate = self._normalize_account_id(candidate)
+                                if normalized_candidate != "":
+                                    provider_ids_in_scope.append(normalized_candidate)
+
+                identity_resolution = resolve_tiktok_account_daily_persistence_identity(
+                    attached_account_id=account_id,
+                    provider_ids_in_scope=provider_ids_in_scope,
+                )
+                if identity_resolution.is_ambiguous or identity_resolution.canonical_persistence_customer_id is None:
+                    account_daily_identity_warnings.append(
+                        {
+                            "account_id": account_id,
+                            "canonical_persistence_customer_id": identity_resolution.canonical_persistence_customer_id,
+                            "identity_source": identity_resolution.identity_source,
+                            "provider_ids_seen": list(identity_resolution.provider_ids_seen),
+                            "is_ambiguous": identity_resolution.is_ambiguous,
+                            "ambiguity_reason": identity_resolution.ambiguity_reason,
+                            "action": "skipped_account_daily_persistence",
+                        }
+                    )
+                    continue
+
+                persistence_rows, duplicate_candidates = self._collapse_account_daily_rows_for_persistence(
+                    rows=daily_rows,
+                    canonical_persistence_customer_id=identity_resolution.canonical_persistence_customer_id,
+                )
+                if duplicate_candidates > 0:
+                    account_daily_identity_warnings.append(
+                        {
+                            "account_id": account_id,
+                            "canonical_persistence_customer_id": identity_resolution.canonical_persistence_customer_id,
+                            "identity_source": identity_resolution.identity_source,
+                            "provider_ids_seen": list(identity_resolution.provider_ids_seen),
+                            "is_ambiguous": False,
+                            "ambiguity_reason": None,
+                            "action": "collapsed_duplicate_write_candidates",
+                            "duplicate_candidates": int(duplicate_candidates),
+                        }
+                    )
+
+                for row in persistence_rows:
                     performance_reports_store.write_daily_report(
                         report_date=row.report_date,
                         platform="tiktok_ads",
-                        customer_id=row.account_id,
+                        customer_id=identity_resolution.canonical_persistence_customer_id,
                         client_id=int(client_id),
                         spend=row.spend,
                         impressions=row.impressions,
@@ -2127,6 +2211,7 @@ class TikTokAdsService:
             "rows_mapped": rows_mapped,
             "rows_written": rows_written,
             "zero_row_observability": zero_row_observability,
+            "account_daily_identity_warnings": account_daily_identity_warnings,
             "token_source": token_source,
             **snapshot,
         }

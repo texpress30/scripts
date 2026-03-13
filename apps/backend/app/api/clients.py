@@ -20,6 +20,7 @@ from app.services.auth import AuthUser
 from app.services.client_registry import PlatformAccountAlreadyAttachedError, client_registry_service
 from app.services.client_business_inputs_import_service import client_business_inputs_import_service
 from app.services.media_buying_store import media_buying_store
+from app.services.media_tracker_worksheet import media_tracker_worksheet_service
 from app.services.sync_constants import (
     PLATFORM_GOOGLE_ADS,
     PLATFORM_META_ADS,
@@ -489,6 +490,25 @@ def get_media_buying_lead_table(
         raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+@router.get("/{client_id}/media-tracker/worksheet-foundation")
+def get_media_tracker_weekly_worksheet_foundation(
+    client_id: int,
+    granularity: str = Query(...),
+    anchor_date: date = Query(...),
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    _ensure_client_exists_or_404(client_id=client_id)
+    try:
+        return media_tracker_worksheet_service.build_weekly_worksheet_foundation(
+            granularity=str(granularity).strip().lower(),
+            anchor_date=anchor_date,
+            client_id=client_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
 
 @router.get("/{client_id}/accounts")
 def list_client_accounts(

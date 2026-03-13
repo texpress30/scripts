@@ -8,6 +8,7 @@ from app.api import clients as clients_api
 from app.schemas.client import MediaBuyingConfigUpdateRequest, MediaBuyingLeadDailyValueUpsertRequest
 from app.services.auth import AuthUser
 from app.services.client_registry import client_registry_service
+from app.services import media_tracker_worksheet as worksheet_module
 
 
 class ClientsMediaBuyingApiTests(unittest.TestCase):
@@ -129,9 +130,12 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
                 return payload
 
         clients_api.media_buying_store = _StoreStub()
+        self.original_worksheet_store = worksheet_module.media_buying_store
+        worksheet_module.media_buying_store = clients_api.media_buying_store
 
     def tearDown(self):
         clients_api.media_buying_store = self.original_store
+        worksheet_module.media_buying_store = self.original_worksheet_store
         clients_api.enforce_action_scope = self.original_enforce
         client_registry_service._is_test_mode = self.original_is_test_mode
         os.environ.clear()
@@ -243,6 +247,27 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
             user=self.user,
         )
         self.assertEqual(payload["meta"]["effective_date_from"], "2026-03-11")
+
+    def test_get_media_tracker_weekly_worksheet_foundation_endpoint(self):
+        payload = clients_api.get_media_tracker_weekly_worksheet_foundation(
+            client_id=self.client_id,
+            granularity="month",
+            anchor_date=date(2026, 3, 15),
+            user=self.user,
+        )
+        self.assertEqual(payload["requested_scope"]["granularity"], "month")
+        self.assertEqual(payload["resolved_period"]["period_start"], "2026-03-01")
+        self.assertEqual(payload["history"]["visible_week_count"], len(payload["weeks"]))
+
+    def test_get_media_tracker_weekly_worksheet_foundation_validation(self):
+        with self.assertRaises(HTTPException) as ctx:
+            clients_api.get_media_tracker_weekly_worksheet_foundation(
+                client_id=self.client_id,
+                granularity="week",
+                anchor_date=date(2026, 3, 15),
+                user=self.user,
+            )
+        self.assertEqual(ctx.exception.status_code, 422)
 
 
 if __name__ == "__main__":
