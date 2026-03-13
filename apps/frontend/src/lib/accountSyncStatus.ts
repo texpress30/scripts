@@ -25,6 +25,15 @@ export type SyncStatusUi = {
   details: SyncStatusDetails;
 };
 
+export type PlatformSyncSummaryUi = {
+  uiStatus: UiSyncStatus;
+  uiLabel: string;
+  affectedAccountCount: number;
+  warningCount: number;
+  errorCount: number;
+  accounts: Array<{ id: string; name: string; ui: SyncStatusUi }>;
+};
+
 function toNumberOrUndefined(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "") {
@@ -97,4 +106,28 @@ export function deriveAccountSyncStatus(platform: string, account: Record<string
   }
 
   return { uiStatus: "unknown", uiLabel: "Unknown", shortReason: "No sync metadata", details };
+}
+
+export function derivePlatformSyncStatus(platform: string, accounts: Array<Record<string, unknown>>): PlatformSyncSummaryUi {
+  const accountRows = accounts.map((account) => ({
+    id: toStringOrUndefined(account.id) ?? "",
+    name: toStringOrUndefined(account.name) ?? toStringOrUndefined(account.id) ?? "Unknown account",
+    ui: deriveAccountSyncStatus(platform, account),
+  }));
+
+  const errorCount = accountRows.filter((item) => item.ui.uiStatus === "error").length;
+  const warningCount = accountRows.filter((item) => item.ui.uiStatus === "warning").length;
+  const healthyCount = accountRows.filter((item) => item.ui.uiStatus === "healthy").length;
+
+  const uiStatus: UiSyncStatus = errorCount > 0 ? "error" : warningCount > 0 ? "warning" : healthyCount > 0 ? "healthy" : "unknown";
+  const uiLabel = uiStatus === "error" ? "Error" : uiStatus === "warning" ? "Warning" : uiStatus === "healthy" ? "Healthy" : "Unknown";
+
+  return {
+    uiStatus,
+    uiLabel,
+    affectedAccountCount: errorCount + warningCount,
+    warningCount,
+    errorCount,
+    accounts: accountRows,
+  };
 }

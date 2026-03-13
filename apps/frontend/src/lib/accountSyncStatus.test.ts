@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { deriveAccountSyncStatus } from "@/lib/accountSyncStatus";
+import { deriveAccountSyncStatus, derivePlatformSyncStatus } from "@/lib/accountSyncStatus";
 
 describe("deriveAccountSyncStatus", () => {
   it("maps failed_request_coverage to Error", () => {
@@ -31,5 +31,17 @@ describe("deriveAccountSyncStatus", () => {
   it("maps no metadata to Unknown", () => {
     const result = deriveAccountSyncStatus("meta_ads", {});
     expect(result.uiStatus).toBe("unknown");
+  });
+
+  it("derives platform status by worst attached account state", () => {
+    const result = derivePlatformSyncStatus("meta_ads", [
+      { id: "1", name: "A", coverage_status: "full_request_coverage" },
+      { id: "2", name: "B", coverage_status: "partial_request_coverage" },
+      { id: "3", name: "C", coverage_status: "failed_request_coverage" },
+    ]);
+    expect(result.uiStatus).toBe("error");
+    expect(result.affectedAccountCount).toBe(2);
+    expect(result.warningCount).toBe(1);
+    expect(result.errorCount).toBe(1);
   });
 });

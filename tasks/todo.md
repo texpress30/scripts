@@ -8,7 +8,11 @@
 - [ ] Run backend tests and document outcomes.
 
 ## Review
-- [ ] Pending.
+- [x] Added backend `platform_sync_summary` to client dashboard payload for Meta/TikTok using latest sync-run metadata per attached account.
+- [x] Added compact page-level sync warning banner plus per-platform status chips on sub-account dashboard rows.
+- [x] Added expandable concise affected-account details (name/id, status, reason, last sync, failed chunks/retry).
+- [x] Extended sync-status utility with platform-level worst-status derivation and affected counts.
+- [x] Verification run: frontend targeted Vitest suite passed; backend targeted pytest collection failed in this environment due missing `requests` dependency.
 
 ---
 
@@ -3630,3 +3634,21 @@
 - [x] Fix: mapping-ul rămâne strict pentru membership (`mapped.client_id` + account/platform match), dar fără filtrare temporală pe `created_at`; bounds/istoric vin din datele reale `account_daily` din `ad_performance_reports` (+ manual non-zero pentru Media Buying bounds).
 - [x] Problemă Meta ianuarie invalid nu se rezolvă prin clamp pe mapping-created-at; root cause trebuie adresată prin membership/source corect, nu prin tăiere globală de istoric.
 - [x] Verificare: `pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_dashboard_currency_normalization.py apps/backend/tests/test_clients_platform_account_mappings.py apps/backend/tests/test_clients_media_buying_api.py apps/backend/tests/test_dashboard_agency_summary_integration_health.py` (pass).
+
+---
+
+# TODO — Sub-account dashboard sync health surfacing (Meta/TikTok)
+
+- [x] Refresh workspace and inspect current sub-account dashboard frontend + backend payload availability.
+- [x] Add minimal `platform_sync_summary` payload on `GET /dashboard/{client_id}` for Meta/TikTok using attached-account sync metadata only.
+- [x] Add compact dashboard sync-health banner + platform chips + concise details interaction in sub-account dashboard UI.
+- [x] Reuse shared sync-status utility/component logic where possible; keep KPI calculations/layout unchanged.
+- [x] Add/update targeted frontend/backend tests for banner visibility, platform status derivation, affected counts, and details panel content.
+- [x] Run focused test commands and record outcomes.
+
+## Review
+- [x] Added backend `platform_sync_summary` to client dashboard payload for Meta/TikTok using latest sync-run metadata per attached account.
+- [x] Added compact page-level sync warning banner plus per-platform status chips on sub-account dashboard rows.
+- [x] Added expandable concise affected-account details (name/id, status, reason, last sync, failed chunks/retry).
+- [x] Extended sync-status utility with platform-level worst-status derivation and affected counts.
+- [x] Verification run: frontend targeted Vitest suite passed; backend targeted pytest collection failed in this environment due missing `requests` dependency.
