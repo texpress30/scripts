@@ -1,3 +1,106 @@
+# TODO — TikTok account_daily write-side idempotency hardening
+
+- [x] Refresh workspace and document remote divergence constraints.
+- [ ] Inspect TikTok sync + persistence write path and current sync error/status propagation.
+- [ ] Add focused TikTok canonical persistence identity resolver for account_daily writes.
+- [ ] Enforce deterministic/idempotent TikTok account_daily writes across reruns/overlaps and add ambiguity guardrails with explicit errors.
+- [ ] Add targeted TikTok tests for rerun idempotency, rolling overlap, ambiguity, and error visibility (without Meta changes).
+- [ ] Run backend tests and document outcomes.
+
+## Review
+- [x] Added backend `platform_sync_summary` to client dashboard payload for Meta/TikTok using latest sync-run metadata per attached account.
+- [x] Added compact page-level sync warning banner plus per-platform status chips on sub-account dashboard rows.
+- [x] Added expandable concise affected-account details (name/id, status, reason, last sync, failed chunks/retry).
+- [x] Extended sync-status utility with platform-level worst-status derivation and affected counts.
+- [x] Verification run: frontend targeted Vitest suite passed; backend targeted pytest collection failed in this environment due missing `requests` dependency.
+
+---
+
+# TODO — Platform sync write-side audit endpoint (Meta/TikTok)
+
+- [x] Refresh workspace and document remote divergence constraints.
+- [x] Inspect backend sync write/persistence code paths (Meta/TikTok services, performance reports store, sync runs/chunks) and existing debug endpoint pattern.
+- [x] Implement read-only `platform-sync-audit` debug endpoint for one client/platform with optional account filter + daily breakdown.
+- [x] Add persisted data summaries and anomaly flags (duplicates, missing coverage, lower-grain risk, id/currency mismatches, unsupported history floor checks).
+- [x] Add targeted backend tests for TikTok duplicate/floor/id mismatch and Meta missing-account-daily with sync errors + multi-account client coverage.
+- [x] Run backend tests and document outcomes.
+
+## Review
+- [x] Added backend-only debug endpoint `GET /dashboard/debug/clients/{client_id}/platform-sync-audit` with platform/date filters, optional account filter, optional lower-grain daily breakdown, agency scope enforcement, and audit logging.
+- [x] Implemented platform sync audit service output with: client/platform context, attached account metadata + effective account currency, recent sync runs/chunk status snapshots, persisted-row summaries by grain/account/day/currency, anomaly flags, suspected root causes, and recommended next fix scope.
+- [x] Added anomaly detection for duplicate-like rows, multiple account_daily rows same account/day, lower-grain without account_daily, missing account_daily days in range, rows before supported TikTok floor, mixed customer ids, currency mismatch vs attached effective currency, no-mapping rows, and multi-grain overcount risk.
+- [x] Added targeted backend tests covering TikTok duplication/floor/id mismatch, Meta partial coverage with sync error exposure, and multi-account platform behavior.
+- [x] Verification: `python -m pytest apps/backend/tests/test_dashboard_platform_sync_audit.py apps/backend/tests/test_dashboard_reporting_currency_selection.py apps/backend/tests/test_dashboard_reconciliation_diagnostics.py apps/backend/tests/test_dashboard_currency_normalization.py apps/backend/tests/test_client_registry_account_currency_resolution.py -q` (pass).
+
+---
+
+# TODO — Client dashboard reporting/display currency resolver
+
+- [x] Refresh workspace from remote and document divergence constraints.
+- [x] Inspect Task 2 attached-account currency resolver and current dashboard/reconciliation reporting-currency selection path.
+- [x] Add shared client reporting-currency resolver using attached-account effective currencies with deterministic mixed/no-account fallbacks.
+- [x] Wire resolver into client dashboard + reconciliation payload metadata (`reporting_currency`, source, mixed flag, summary) while preserving existing fields.
+- [x] Add targeted backend tests for single-currency, mixed-currency, no-currency fallback, and dashboard/reconciliation consistency.
+- [x] Run backend tests and document outcomes.
+
+## Review
+- [x] Added shared `resolve_client_reporting_currency` helper that computes deterministic reporting currency + source + mixed flag + summary from attached effective account currencies.
+- [x] Added `client_registry_service.get_client_reporting_currency_decision(...)` to centralize client reporting/display currency choice across dashboard platforms.
+- [x] Updated dashboard and reconciliation service paths to use the same reporting-currency decision and to expose metadata (`reporting_currency`, `reporting_currency_source`, `mixed_attached_account_currencies`, `attached_account_currency_summary`) while preserving `currency` for compatibility.
+- [x] Kept source-account precedence unchanged from Task 2; this task changes only target reporting/display currency selection.
+- [x] Verification: `python -m pytest apps/backend/tests/test_client_registry_account_currency_resolution.py apps/backend/tests/test_dashboard_reporting_currency_selection.py apps/backend/tests/test_dashboard_currency_normalization.py apps/backend/tests/test_dashboard_reconciliation_diagnostics.py -q` (pass).
+
+---
+
+# TODO — Attached account currency precedence consistency (backend)
+
+- [x] Refresh workspace from remote and note sync constraints if local branch diverges.
+- [x] Inspect client registry + dashboard read-side currency fallback paths and identify shared resolver insertion points.
+- [x] Implement shared effective attached-account currency resolver and reuse in attach/listing/dashboard paths.
+- [x] Add safe backfill for mapping account_currency only when blank/null.
+- [x] Add targeted backend tests for attach seeding, non-overwrite behavior, backfill safety, and precedence consistency.
+- [x] Run relevant backend tests and document outcomes.
+
+## Review
+- [x] Added reusable backend resolver `account_currency_resolver` with explicit precedence `mapping -> platform -> client -> fallback` and reused it in client-registry test-path resolution + dashboard SQL expression builder usage.
+- [x] Updated attach/upsert behavior so mapping `account_currency` seeds from `agency_platform_accounts.currency_code` then client currency and does not overwrite existing non-blank mapping currencies on conflict.
+- [x] Added safe backfill hook run at schema initialization that only updates mapping rows where `account_currency` is null/blank using `agency_platform_accounts.currency_code` (no overwrite for explicit values).
+- [x] Extended attached-account listing payloads to include `effective_account_currency` and `account_currency_source` while preserving `currency` compatibility field.
+- [x] Updated dashboard read-side + reconciliation read-side to apply source-account fallback order via shared SQL helper (`mapping -> platform -> client -> RON`) without changing reporting currency strategy.
+- [x] Verification: `python -m pytest apps/backend/tests/test_client_registry_account_currency_resolution.py -q` and `python -m pytest apps/backend/tests/test_dashboard_currency_normalization.py apps/backend/tests/test_dashboard_reconciliation_diagnostics.py -q` (pass).
+
+---
+
+# TODO — Client dashboard reconciliation diagnostics endpoint
+
+- [x] Refresh workspace from remote and document sync constraints if branch is diverged.
+- [x] Inspect dashboard read-side, client mapping, and performance reports storage code paths.
+- [x] Implement internal debug endpoint for client dashboard reconciliation without changing business logic.
+- [x] Add focused backend tests for diagnostic payload and exclusion reasons.
+- [x] Run backend tests and document review outcomes.
+
+## Review
+- [x] Synced remote refs with `git fetch --all --prune`; `git pull --ff-only origin main` reported divergence on local branch, so implementation continued on updated local branch without history rewrite.
+- [x] Added backend-only debug endpoint `GET /dashboard/debug/clients/{client_id}/dashboard-reconciliation` with agency-scope authorization and audit logging.
+- [x] Added reconciliation diagnostics in dashboard service: mapping snapshot, raw grouped totals, included grouped totals, excluded rows with reasons (`missing_mapping`, `grain_not_account_daily`, `currency_resolution_fallback`), row counts, pre/post-conversion summaries, per-platform summaries, and per-account summaries.
+- [x] Added targeted service test covering multi-account rows, inclusion/exclusion logic, and currency fallback visibility.
+- [x] Verification: `pytest -q apps/backend/tests/test_dashboard_reconciliation_diagnostics.py apps/backend/tests/test_dashboard_currency_normalization.py` (pass).
+
+---
+
+# TODO — Remote sync via Connector workspace
+
+- [x] Confirm instructions and run requested remote/fetch/pull commands exactly as provided.
+- [x] Verify git remotes and current branch state after sync.
+- [x] Record review notes with command outcomes.
+
+## Review
+- [x] Executed the exact requested remote/add-or-set + fetch + pull commands in a fresh terminal session for this run.
+- [x] Fetch completed successfully and pulled `origin/main` with response `Already up to date.`
+- [x] Verified `origin` URL and current branch (`work`) via `git remote -v`, `git branch --show-current`, and `git status --short --branch`.
+
+---
+
 # TODO — Fix Meta/TikTok historical backfill progress UI in Agency Accounts
 
 - [x] Rebaseline branch from clean baseline and document constraints if requested remote baseline is unavailable.
@@ -3531,3 +3634,21 @@
 - [x] Fix: mapping-ul rămâne strict pentru membership (`mapped.client_id` + account/platform match), dar fără filtrare temporală pe `created_at`; bounds/istoric vin din datele reale `account_daily` din `ad_performance_reports` (+ manual non-zero pentru Media Buying bounds).
 - [x] Problemă Meta ianuarie invalid nu se rezolvă prin clamp pe mapping-created-at; root cause trebuie adresată prin membership/source corect, nu prin tăiere globală de istoric.
 - [x] Verificare: `pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_dashboard_currency_normalization.py apps/backend/tests/test_clients_platform_account_mappings.py apps/backend/tests/test_clients_media_buying_api.py apps/backend/tests/test_dashboard_agency_summary_integration_health.py` (pass).
+
+---
+
+# TODO — Sub-account dashboard sync health surfacing (Meta/TikTok)
+
+- [x] Refresh workspace and inspect current sub-account dashboard frontend + backend payload availability.
+- [x] Add minimal `platform_sync_summary` payload on `GET /dashboard/{client_id}` for Meta/TikTok using attached-account sync metadata only.
+- [x] Add compact dashboard sync-health banner + platform chips + concise details interaction in sub-account dashboard UI.
+- [x] Reuse shared sync-status utility/component logic where possible; keep KPI calculations/layout unchanged.
+- [x] Add/update targeted frontend/backend tests for banner visibility, platform status derivation, affected counts, and details panel content.
+- [x] Run focused test commands and record outcomes.
+
+## Review
+- [x] Added backend `platform_sync_summary` to client dashboard payload for Meta/TikTok using latest sync-run metadata per attached account.
+- [x] Added compact page-level sync warning banner plus per-platform status chips on sub-account dashboard rows.
+- [x] Added expandable concise affected-account details (name/id, status, reason, last sync, failed chunks/retry).
+- [x] Extended sync-status utility with platform-level worst-status derivation and affected counts.
+- [x] Verification run: frontend targeted Vitest suite passed; backend targeted pytest collection failed in this environment due missing `requests` dependency.
