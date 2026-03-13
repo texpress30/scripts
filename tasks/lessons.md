@@ -297,3 +297,4 @@
 - 2026-03-12: După corecție de workflow, aplic modificări de fișiere prin patch/edit direct (nu prin comenzi shell care învelesc patch-uri) ca să respect convențiile runner-ului.
 - 2026-03-12: După feedback că fixul TikTok precedent era incomplet, pentru pași de hardening write-side livrează următorul increment strict pe persistență idempotentă (natural key + teste rerun/overlap), fără extinderi cross-platform.
 - 2026-03-12: Pentru cleanup istoric write-side TikTok, nu marca automat alias + canonical ca ambiguu; restrânge identitatea de reparație la setul conturilor atașate și tratează aliasurile non-atașate ca candidate de rescriere/ștergere doar în cazuri cu metrici identice.
+- 2026-03-12: După feedback că observability write-side era incompletă, pentru Meta backfill/sync trebuie propagat explicit coverage_status + retry metadata din execuția chunked către payload-uri run/account și marcat status error când rămân chunk-uri nerecuperate.
