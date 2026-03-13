@@ -8,17 +8,10 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
 
+import { WeeklyWorksheetTable, type WorksheetSection, type WorksheetWeek } from "./_components/WeeklyWorksheetTable";
+
 type ClientItem = { id: number; name: string };
 type WorksheetGranularity = "month" | "quarter" | "year";
-type WorksheetWeek = { week_start: string; week_end: string; label?: string };
-type WorksheetRowValue = { week_start: string; week_end: string; value: number | null };
-type WorksheetRow = {
-  row_key: string;
-  label: string;
-  history_value: number | null;
-  weekly_values: WorksheetRowValue[];
-};
-type WorksheetSection = { key: string; label: string; rows: WorksheetRow[] };
 type WorksheetPayload = {
   weeks: WorksheetWeek[];
   sections: WorksheetSection[];
@@ -54,11 +47,6 @@ function formatScopeLabel(anchorDate: string, granularity: WorksheetGranularity)
     return `Q${quarter} ${date.getFullYear()}`;
   }
   return new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(date);
-}
-
-function formatCell(value: number | null | undefined): string {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
-  return String(Number(value.toFixed(4)));
 }
 
 function isWorksheetPayload(value: unknown): value is WorksheetPayload {
@@ -203,37 +191,7 @@ export default function SubMediaTrackerPage() {
               {!worksheetLoading && !worksheetError && worksheetData && !hasRows ? <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">No worksheet rows for selected scope.</div> : null}
 
               {!worksheetLoading && !worksheetError && worksheetData && hasRows ? (
-                <div className="overflow-auto rounded-lg border border-slate-200">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-slate-50">
-                      <tr>
-                        <th className="px-3 py-2 text-left font-semibold text-slate-700">Row</th>
-                        <th className="px-3 py-2 text-right font-semibold text-slate-700">Istorie</th>
-                        {worksheetData.weeks.map((week) => (
-                          <th key={week.week_start} className="px-3 py-2 text-right font-semibold text-slate-700">{week.label || week.week_start}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {worksheetData.sections.map((section) => (
-                        <React.Fragment key={section.key}>
-                          <tr className="bg-slate-100">
-                            <td colSpan={2 + worksheetData.weeks.length} className="px-3 py-2 font-semibold text-slate-800">{section.label}</td>
-                          </tr>
-                          {section.rows.map((row) => (
-                            <tr key={`${section.key}:${row.row_key}`} className="border-t border-slate-100">
-                              <td className="px-3 py-2 text-slate-800">{row.label}</td>
-                              <td className="px-3 py-2 text-right text-slate-700">{formatCell(row.history_value)}</td>
-                              {row.weekly_values.map((cell) => (
-                                <td key={`${row.row_key}:${cell.week_start}`} className="px-3 py-2 text-right text-slate-700">{formatCell(cell.value)}</td>
-                              ))}
-                            </tr>
-                          ))}
-                        </React.Fragment>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <WeeklyWorksheetTable weeks={worksheetData.weeks} sections={worksheetData.sections} />
               ) : null}
             </div>
           )}

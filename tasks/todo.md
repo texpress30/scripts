@@ -3758,3 +3758,21 @@
 - [x] Implemented granularity + previous/next period navigation with worksheet backend fetching and state handling.
 - [x] Rendered a minimal read-only worksheet scaffold in backend order with `Istorie` before weekly columns, including `%` rows.
 - [x] Verified via focused frontend Vitest suite for media-tracker page.
+
+---
+
+# TODO — Media Tracker frontend worksheet read-only table component (structured)
+
+- [x] Refresh workspace state and inspect current worksheet frontend shell plus backend worksheet row/section response shape.
+- [x] Extract worksheet rendering into a dedicated reusable component and wire it into Media Tracker worksheet view.
+- [x] Implement worksheet-style two-row header (Săptămâna/Istorie + Data Începere/week_start) preserving backend week order.
+- [x] Render section bands and rows in backend order with comparison-row visual distinction, read-only only.
+- [x] Add focused value formatter by `value_kind` (RON/EUR/integer/decimal/percent_ratio/null placeholder).
+- [x] Add/adjust targeted frontend tests for header structure, ordering, comparison placement, formatting, and shell behavior.
+- [x] Run focused frontend tests and record outcomes.
+
+## Review
+- [x] Replaced temporary worksheet scaffold with dedicated `WeeklyWorksheetTable` component used by Media Tracker worksheet mode.
+- [x] Implemented two-row worksheet header, section band rows, and comparison-row visual hierarchy in backend-provided order.
+- [x] Added value formatting by `value_kind` (RON/EUR/integer/decimal/percent_ratio/null).
+- [x] Preserved existing worksheet shell controls/states and verified with targeted Vitest suite.
