@@ -118,7 +118,8 @@ def test_client_dashboard_query_uses_account_daily_membership_and_currency_prece
     assert "apr.extra_metrics -> 'tiktok_ads' ->> 'account_currency'" in client_query
     assert "apr.extra_metrics -> 'google_ads' ->> 'account_currency'" in client_query
     assert "apa.currency_code" in client_query
-    assert client_query.index("apa.currency_code") < client_query.index("mapped.account_currency")
+    assert "client.currency" in client_query
+    assert client_query.index("mapped.account_currency") < client_query.index("apa.currency_code")
 
 
 def test_tiktok_ron_to_ron_is_not_double_converted_observed_case_805_85():

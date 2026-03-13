@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from decimal import Decimal
+import logging
 from threading import Lock
+import time
 
 from app.core.config import load_settings
 from app.services.dashboard import unified_dashboard_service
@@ -50,6 +52,9 @@ _DEFAULT_VISIBLE_COLUMNS = [
     "cost_custom_value_2",
     "cost_per_sale",
 ]
+
+
+logger = logging.getLogger(__name__)
 
 
 class MediaBuyingStore:
@@ -194,15 +199,34 @@ class MediaBuyingStore:
         self,
         *,
         client_id: int,
-        date_from: date,
-        date_to: date,
+        date_from: date | None,
+        date_to: date | None,
     ) -> list[dict[str, object]]:
         self._ensure_schema()
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    WITH perf AS (
+                    WITH scoped_mapped AS (
+                        SELECT
+                            mapped.platform,
+                            mapped.account_id,
+                            NULLIF(regexp_replace(mapped.account_id, '[^0-9]', '', 'g'), '') AS account_id_digits,
+                            mapped.account_currency
+                        FROM agency_account_client_mappings mapped
+                        WHERE mapped.client_id = %s
+                          AND mapped.platform IN ('google_ads', 'meta_ads', 'tiktok_ads')
+                    ),
+                    scoped_accounts AS (
+                        SELECT
+                            apa.platform,
+                            apa.account_id,
+                            NULLIF(regexp_replace(apa.account_id, '[^0-9]', '', 'g'), '') AS account_id_digits,
+                            apa.currency_code
+                        FROM agency_platform_accounts apa
+                        WHERE apa.platform IN ('google_ads', 'meta_ads', 'tiktok_ads')
+                    ),
+                    perf AS (
                         SELECT
                             apr.platform,
                             apr.report_date,
@@ -214,38 +238,39 @@ class MediaBuyingStore:
                             ) AS account_currency,
                             COALESCE(apr.spend, 0) AS spend
                         FROM ad_performance_reports apr
-                        JOIN agency_account_client_mappings mapped
+                        JOIN scoped_mapped mapped
                           ON mapped.platform = apr.platform
-                         AND mapped.client_id = %s
                          AND (
                               mapped.account_id = apr.customer_id
                               OR (
                                   apr.platform = 'google_ads'
-                                  AND regexp_replace(mapped.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                                  AND mapped.account_id_digits IS NOT NULL
+                                  AND mapped.account_id_digits = NULLIF(regexp_replace(apr.customer_id, '[^0-9]', '', 'g'), '')
                               )
                          )
-                        LEFT JOIN agency_platform_accounts apa
+                        LEFT JOIN scoped_accounts apa
                           ON apa.platform = apr.platform
                          AND (
                               apa.account_id = apr.customer_id
                               OR (
                                   apr.platform = 'google_ads'
-                                  AND regexp_replace(apa.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                                  AND apa.account_id_digits IS NOT NULL
+                                  AND apa.account_id_digits = NULLIF(regexp_replace(apr.customer_id, '[^0-9]', '', 'g'), '')
                               )
                          )
                         WHERE COALESCE(
                             NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'grain', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'grain', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'grain', '') ELSE '' END), ''),
                             'account_daily'
                         ) = 'account_daily'
+                          AND (%s::date IS NULL OR apr.report_date >= %s::date)
+                          AND (%s::date IS NULL OR apr.report_date <= %s::date)
                     )
                     SELECT report_date, platform, account_currency, SUM(spend)
                     FROM perf
-                    WHERE platform IN ('google_ads', 'meta_ads', 'tiktok_ads')
-                      AND report_date BETWEEN %s AND %s
                     GROUP BY report_date, platform, account_currency
                     ORDER BY report_date ASC
                     """,
-                    (int(client_id), date_from, date_to),
+                    (int(client_id), date_from, date_from, date_to, date_to),
                 )
                 rows = cur.fetchall() or []
 
@@ -261,6 +286,23 @@ class MediaBuyingStore:
                 }
             )
         return payload
+
+    def _manual_row_has_data(self, row: dict[str, object]) -> bool:
+        fields = [
+            "leads",
+            "phones",
+            "custom_value_1_count",
+            "custom_value_2_count",
+            "custom_value_3_amount_ron",
+            "custom_value_4_amount_ron",
+            "custom_value_5_amount_ron",
+            "sales_count",
+        ]
+        for field in fields:
+            value = row.get(field)
+            if isinstance(value, (int, float, Decimal)) and float(value) != 0.0:
+                return True
+        return False
 
     def _build_percent_change(self, *, current_total: float | None, previous_total: float | None) -> float | None:
         if current_total is None or previous_total is None:
@@ -376,6 +418,22 @@ class MediaBuyingStore:
             return raw
         return "lead"
 
+    def _resolve_client_display_currency_decision(self, *, client_id: int) -> tuple[str, str]:
+        decision = client_registry_service.get_client_reporting_currency_decision(client_id=int(client_id))
+        display_currency = self._normalize_currency(
+            str(
+                decision.get("client_display_currency")
+                or decision.get("reporting_currency")
+                or "USD"
+            )
+        )
+        source = str(
+            decision.get("display_currency_source")
+            or decision.get("reporting_currency_source")
+            or "agency_client_currency"
+        )
+        return display_currency, source
+
     def get_lead_table(
         self,
         *,
@@ -395,22 +453,75 @@ class MediaBuyingStore:
             raise NotImplementedError("Media Buying table is implemented only for template_type=lead in this task")
 
         has_explicit_range = date_from is not None and date_to is not None
-        display_currency = self._normalize_currency(str(config.get("display_currency") or "RON"))
+        display_currency = self._normalize_currency(str(config.get("display_currency") or "USD"))
+        display_currency_source = str(config.get("display_currency_source") or "agency_client_currency")
         earliest_data_date: date | None = None
         latest_data_date: date | None = None
 
+        total_start = time.perf_counter()
+
+        bounds_start = time.perf_counter()
+        query_date_from = date_from if has_explicit_range else None
+        query_date_to = date_to if has_explicit_range else None
+        bounds_ms = (time.perf_counter() - bounds_start) * 1000.0
+
+        automated_start = time.perf_counter()
+        automated_rows = self._list_automated_daily_costs(
+            client_id=int(client_id),
+            date_from=query_date_from,
+            date_to=query_date_to,
+        )
+        automated_ms = (time.perf_counter() - automated_start) * 1000.0
+
+        manual_start = time.perf_counter()
+        manual_rows = self.list_lead_daily_manual_values(
+            client_id=int(client_id),
+            date_from=query_date_from,
+            date_to=query_date_to,
+        )
+        manual_ms = (time.perf_counter() - manual_start) * 1000.0
+
         if not has_explicit_range:
-            earliest_data_date, latest_data_date = self._get_lead_table_data_bounds(client_id=int(client_id))
-        if not has_explicit_range:
+            automated_dates = [
+                item.get("date")
+                for item in automated_rows
+                if isinstance(item.get("date"), date) and float(item.get("spend") or 0.0) != 0.0
+            ]
+            manual_dates = [
+                date.fromisoformat(str(item.get("date")))
+                for item in manual_rows
+                if self._manual_row_has_data(item)
+                and isinstance(item.get("date"), str)
+            ]
+            all_dates = automated_dates + manual_dates
+            earliest_data_date = min(all_dates) if all_dates else None
+            latest_data_date = max(all_dates) if all_dates else None
             date_from = earliest_data_date
             date_to = latest_data_date
 
         if date_from is None or date_to is None:
+            total_ms = (time.perf_counter() - total_start) * 1000.0
+            logger.info(
+                "media_buying_lead_table_timing",
+                extra={
+                    "client_id": int(client_id),
+                    "has_explicit_range": has_explicit_range,
+                    "bounds_ms": round(bounds_ms, 2),
+                    "automated_query_ms": round(automated_ms, 2),
+                    "manual_query_ms": round(manual_ms, 2),
+                    "total_ms": round(total_ms, 2),
+                    "automated_rows": len(automated_rows),
+                    "manual_rows": len(manual_rows),
+                    "days": 0,
+                    "months": 0,
+                },
+            )
             return {
                 "meta": {
                     "client_id": int(client_id),
                     "template_type": effective_template_type,
                     "display_currency": display_currency,
+                    "display_currency_source": display_currency_source,
                     "custom_label_1": str(config.get("custom_label_1") or _DEFAULT_LABELS["custom_label_1"]),
                     "custom_label_2": str(config.get("custom_label_2") or _DEFAULT_LABELS["custom_label_2"]),
                     "custom_label_3": str(config.get("custom_label_3") or _DEFAULT_LABELS["custom_label_3"]),
@@ -433,8 +544,18 @@ class MediaBuyingStore:
                 "months": [],
             }
 
-        automated_rows = self._list_automated_daily_costs(client_id=int(client_id), date_from=date_from, date_to=date_to)
-        manual_rows = self.list_lead_daily_manual_values(client_id=int(client_id), date_from=date_from, date_to=date_to)
+        if not has_explicit_range:
+            automated_rows = [
+                item
+                for item in automated_rows
+                if isinstance(item.get("date"), date) and date_from <= item.get("date") <= date_to
+            ]
+            manual_rows = [
+                item
+                for item in manual_rows
+                if isinstance(item.get("date"), str)
+                and date_from <= date.fromisoformat(str(item.get("date"))) <= date_to
+            ]
 
         manual_by_date = {str(item.get("date")): item for item in manual_rows}
         costs_by_date: dict[str, dict[str, float]] = {}
@@ -500,11 +621,29 @@ class MediaBuyingStore:
             totals["percent_change"] = self._build_percent_change(current_total=current_month_total, previous_total=previous_month_total)
             previous_month_total = current_month_total
 
+        total_ms = (time.perf_counter() - total_start) * 1000.0
+        logger.info(
+            "media_buying_lead_table_timing",
+            extra={
+                "client_id": int(client_id),
+                "has_explicit_range": has_explicit_range,
+                "bounds_ms": round(bounds_ms, 2),
+                "automated_query_ms": round(automated_ms, 2),
+                "manual_query_ms": round(manual_ms, 2),
+                "total_ms": round(total_ms, 2),
+                "automated_rows": len(automated_rows),
+                "manual_rows": len(manual_rows),
+                "days": len(day_rows),
+                "months": len(months),
+            },
+        )
+
         return {
             "meta": {
                 "client_id": int(client_id),
                 "template_type": effective_template_type,
                 "display_currency": display_currency,
+                "display_currency_source": display_currency_source,
                 "custom_label_1": str(config.get("custom_label_1") or _DEFAULT_LABELS["custom_label_1"]),
                 "custom_label_2": str(config.get("custom_label_2") or _DEFAULT_LABELS["custom_label_2"]),
                 "custom_label_3": str(config.get("custom_label_3") or _DEFAULT_LABELS["custom_label_3"]),
@@ -649,15 +788,20 @@ class MediaBuyingStore:
                 )
                 row = cur.fetchone()
 
+        resolved_display_currency, display_currency_source = self._resolve_client_display_currency_decision(client_id=int(client_id))
+
         payload = self._config_from_row(row)
         if payload is not None:
+            payload["display_currency"] = resolved_display_currency
+            payload["display_currency_source"] = display_currency_source
             return payload
 
         effective_template_type = self._resolve_client_template_type(client_id=int(client_id))
         return {
             "client_id": int(client_id),
             "template_type": effective_template_type,
-            "display_currency": "RON",
+            "display_currency": resolved_display_currency,
+            "display_currency_source": display_currency_source,
             "custom_label_1": _DEFAULT_LABELS["custom_label_1"],
             "custom_label_2": _DEFAULT_LABELS["custom_label_2"],
             "custom_label_3": _DEFAULT_LABELS["custom_label_3"],
@@ -696,7 +840,8 @@ class MediaBuyingStore:
 
         effective_template_type = self._resolve_client_template_type(client_id=int(client_id))
         next_template_type = self._normalize_template_type(effective_template_type)
-        next_currency = self._normalize_currency(display_currency or str(current["display_currency"]))
+        resolved_display_currency, _ = self._resolve_client_display_currency_decision(client_id=int(client_id))
+        next_currency = self._normalize_currency(resolved_display_currency)
 
         with self._connect() as conn:
             with conn.cursor() as cur:
