@@ -1,0 +1,227 @@
+import React, { useMemo, useRef, useState } from "react";
+
+export type WorksheetWeek = { week_start: string; week_end: string; label?: string };
+export type WorksheetRowValue = { week_start: string; week_end: string; value: number | null };
+export type WorksheetRow = {
+  row_key: string;
+  label: string;
+  history_value: number | null;
+  value_kind?: string;
+  source_kind?: string;
+  is_manual_input_row?: boolean;
+  dependencies?: string[];
+  weekly_values: WorksheetRowValue[];
+};
+export type WorksheetSection = { key: string; label: string; rows: WorksheetRow[] };
+
+function formatWorksheetValue(value: number | null | undefined, valueKind: string | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+
+  if (valueKind === "currency_ron") {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency: "RON", maximumFractionDigits: 2 }).format(value);
+  }
+  if (valueKind === "currency_eur") {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency: "EUR", maximumFractionDigits: 2 }).format(value);
+  }
+  if (valueKind === "integer") {
+    return Math.trunc(value).toLocaleString();
+  }
+  if (valueKind === "percent_ratio") {
+    return `${(value * 100).toFixed(2)}%`;
+  }
+  if (valueKind === "decimal") {
+    return value.toLocaleString(undefined, { maximumFractionDigits: 4 });
+  }
+
+  return value.toLocaleString(undefined, { maximumFractionDigits: 4 });
+}
+
+function rowLabelClass(row: WorksheetRow): string {
+  if (row.source_kind === "comparison") return "px-3 py-2 pl-6 text-slate-500 italic";
+  return "px-3 py-2 text-slate-800";
+}
+
+function rowCellClass(row: WorksheetRow): string {
+  if (row.source_kind === "comparison") return "px-3 py-2 text-right text-slate-500";
+  return "px-3 py-2 text-right text-slate-700";
+}
+
+function getManualFieldKey(row: WorksheetRow): string | null {
+  if (!row.is_manual_input_row || row.source_kind !== "manual") return null;
+  if (!Array.isArray(row.dependencies)) return null;
+  const manualDep = row.dependencies.find((item) => String(item).startsWith("manual_metrics."));
+  if (!manualDep) return null;
+  return manualDep.replace("manual_metrics.", "").trim() || null;
+}
+
+function EditableWeeklyCell(
+  {
+    value,
+    valueKind,
+    fieldKey,
+    weekStart,
+    onCommit,
+  }: {
+    value: number | null;
+    valueKind: string | undefined;
+    fieldKey: string;
+    weekStart: string;
+    onCommit: (payload: { fieldKey: string; weekStart: string; value: number | null }) => Promise<void>;
+  }
+) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<string>(value == null ? "" : String(value));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string>("");
+  const submittingRef = useRef(false);
+
+  const displayValue = useMemo(() => formatWorksheetValue(value, valueKind), [value, valueKind]);
+
+  const submit = async () => {
+    if (submittingRef.current || saving) return;
+    const normalized = draft.trim();
+    const parsed = normalized === "" ? null : Number(normalized);
+    if (normalized !== "" && !Number.isFinite(parsed)) {
+      setError("Valoare invalidă");
+      return;
+    }
+
+    submittingRef.current = true;
+    setSaving(true);
+    setError("");
+    try {
+      await onCommit({ fieldKey, weekStart, value: parsed });
+      setEditing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nu am putut salva");
+    } finally {
+      submittingRef.current = false;
+      setSaving(false);
+    }
+  };
+
+  if (!editing) {
+    return (
+      <div className="space-y-1">
+        <button
+          type="button"
+          className="w-full cursor-text rounded px-1 py-0.5 text-right transition-colors hover:bg-indigo-50"
+          onClick={() => {
+            setDraft(value == null ? "" : String(value));
+            setError("");
+            setEditing(true);
+          }}
+        >
+          {displayValue}
+        </button>
+        {error ? <div className="text-xs text-rose-600">{error}</div> : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      <input
+        autoFocus
+        value={draft}
+        disabled={saving}
+        inputMode="decimal"
+        className="w-full rounded border border-indigo-300 bg-white px-2 py-1 text-right text-sm"
+        onChange={(event) => {
+          setDraft(event.target.value);
+          if (error) setError("");
+        }}
+        onBlur={() => {
+          void submit();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            void submit();
+          }
+          if (event.key === "Escape") {
+            event.preventDefault();
+            setDraft(value == null ? "" : String(value));
+            setError("");
+            setEditing(false);
+          }
+        }}
+      />
+      {saving ? <div className="text-xs text-slate-500">Saving...</div> : null}
+      {error ? <div className="text-xs text-rose-600">{error}</div> : null}
+    </div>
+  );
+}
+
+export function WeeklyWorksheetTable(
+  {
+    weeks,
+    sections,
+    onManualCellCommit,
+  }: {
+    weeks: WorksheetWeek[];
+    sections: WorksheetSection[];
+    onManualCellCommit?: (payload: { fieldKey: string; weekStart: string; value: number | null }) => Promise<void>;
+  }
+) {
+  return (
+    <div className="overflow-auto rounded-lg border border-slate-200">
+      <table className="min-w-full text-sm">
+        <thead>
+          <tr className="bg-slate-100">
+            <th className="sticky left-0 z-20 min-w-56 border-b border-slate-200 bg-slate-100 px-3 py-2 text-left font-semibold text-slate-800">Săptămâna</th>
+            <th className="min-w-32 border-b border-slate-200 px-3 py-2 text-right font-semibold text-slate-800">Istorie</th>
+            {weeks.map((week, idx) => (
+              <th key={`week-index:${week.week_start}`} className="min-w-32 border-b border-slate-200 px-3 py-2 text-right font-semibold text-slate-700">
+                Săpt. {idx + 1}
+              </th>
+            ))}
+          </tr>
+          <tr className="bg-slate-50">
+            <th className="sticky left-0 z-20 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left font-medium text-slate-600">Data Începere</th>
+            <th className="border-b border-slate-200 px-3 py-2 text-right text-slate-500">&nbsp;</th>
+            {weeks.map((week) => (
+              <th key={`week-start:${week.week_start}`} className="border-b border-slate-200 px-3 py-2 text-right font-medium text-slate-600">
+                {week.week_start}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {sections.map((section) => (
+            <React.Fragment key={section.key}>
+              <tr className="bg-slate-200/70">
+                <td colSpan={2 + weeks.length} className="px-3 py-2 text-left font-semibold text-slate-800">{section.label}</td>
+              </tr>
+              {section.rows.map((row) => {
+                const manualFieldKey = getManualFieldKey(row);
+                return (
+                  <tr key={`${section.key}:${row.row_key}`} className="border-t border-slate-100">
+                    <td className={`sticky left-0 z-10 bg-white ${rowLabelClass(row)}`}>{row.label}</td>
+                    <td data-testid={`history-${section.key}-${row.row_key}`} className={rowCellClass(row)}>{formatWorksheetValue(row.history_value, row.value_kind)}</td>
+                    {row.weekly_values.map((cell) => {
+                      const editable = !!manualFieldKey && typeof onManualCellCommit === "function";
+                      return (
+                        <td key={`${row.row_key}:${cell.week_start}`} data-testid={`cell-${section.key}-${row.row_key}-${cell.week_start}`} className={rowCellClass(row)}>
+                          {editable ? (
+                            <EditableWeeklyCell
+                              value={cell.value}
+                              valueKind={row.value_kind}
+                              fieldKey={manualFieldKey}
+                              weekStart={cell.week_start}
+                              onCommit={onManualCellCommit}
+                            />
+                          ) : formatWorksheetValue(cell.value, row.value_kind)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </React.Fragment>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}

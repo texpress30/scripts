@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
@@ -7,9 +8,34 @@ import { ArrowLeft, Check, Loader2, Pencil } from "lucide-react";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
+import { AccountSyncStatus } from "@/components/AccountSyncStatus";
 import { apiRequest } from "@/lib/api";
+import { deriveAccountSyncStatus } from "@/lib/accountSyncStatus";
 
-type Account = { id: string; name: string; client_type?: string; account_manager?: string; currency?: string };
+type Account = {
+  id: string;
+  name: string;
+  client_type?: string;
+  account_manager?: string;
+  currency?: string;
+  coverage_status?: string;
+  sync_health_status?: string;
+  last_error?: string;
+  last_error_summary?: string;
+  last_error_details?: Record<string, unknown> | string;
+  last_sync_at?: string;
+  last_success_at?: string;
+  requested_start_date?: string;
+  requested_end_date?: string;
+  total_chunk_count?: number;
+  successful_chunk_count?: number;
+  failed_chunk_count?: number;
+  retry_attempted?: boolean;
+  retry_recovered_chunk_count?: number;
+  rows_written_count?: number;
+  first_persisted_date?: string;
+  last_persisted_date?: string;
+};
 type PlatformInfo = { platform: string; enabled: boolean; count: number; accounts: Account[] };
 type ClientDetails = {
   client: {
@@ -190,6 +216,23 @@ export default function AgencyClientDetailsPage() {
 
   const title = useMemo(() => (data ? `Client: ${data.client.name}` : `Client #${displayId}`), [data, displayId]);
 
+  const sectionSyncSummary = useMemo(() => {
+    if (!data) return {} as Record<string, { warning: number; error: number }>;
+    const byPlatform: Record<string, { warning: number; error: number }> = {};
+    for (const platform of data.platforms) {
+      const normalized = String(platform.platform || "").toLowerCase();
+      if (normalized !== "meta_ads" && normalized !== "tiktok_ads") continue;
+      const counter = { warning: 0, error: 0 };
+      for (const account of platform.accounts) {
+        const ui = deriveAccountSyncStatus(platform.platform, account as unknown as Record<string, unknown>);
+        if (ui.uiStatus === "warning") counter.warning += 1;
+        if (ui.uiStatus === "error") counter.error += 1;
+      }
+      byPlatform[platform.platform] = counter;
+    }
+    return byPlatform;
+  }, [data]);
+
   return (
     <ProtectedPage>
       <AppShell
@@ -258,7 +301,16 @@ export default function AgencyClientDetailsPage() {
               <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {data.platforms.map((platform) => (
                   <article key={platform.platform} className="wm-card p-4">
-                    <h3 className="text-base font-semibold text-slate-900">{prettyPlatform(platform.platform)}</h3>
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="text-base font-semibold text-slate-900">{prettyPlatform(platform.platform)}</h3>
+                      {sectionSyncSummary[platform.platform] && (sectionSyncSummary[platform.platform].warning > 0 || sectionSyncSummary[platform.platform].error > 0) ? (
+                        <span className="text-xs font-medium text-slate-600">
+                          {sectionSyncSummary[platform.platform].error > 0 ? `${sectionSyncSummary[platform.platform].error} error` : null}
+                          {sectionSyncSummary[platform.platform].error > 0 && sectionSyncSummary[platform.platform].warning > 0 ? " • " : null}
+                          {sectionSyncSummary[platform.platform].warning > 0 ? `${sectionSyncSummary[platform.platform].warning} warning` : null}
+                        </span>
+                      ) : null}
+                    </div>
                     <p className="mt-1 text-xs text-slate-500">Activ: {platform.enabled ? "Da" : "Nu"}</p>
                     <p className="text-xs text-slate-500">Conturi atașate: {platform.count}</p>
                     <ul className="mt-2 space-y-2">
@@ -279,6 +331,10 @@ export default function AgencyClientDetailsPage() {
                                 {account.name} <span className="text-xs text-slate-500">({account.id})</span>
                               </div>
                             </div>
+
+                            {(platform.platform === "meta_ads" || platform.platform === "tiktok_ads") ? (
+                              <AccountSyncStatus platform={platform.platform} account={account as unknown as Record<string, unknown>} />
+                            ) : null}
 
                             <div className="mt-2 space-y-2 text-xs">
                               <div className="flex items-center justify-between gap-2">
