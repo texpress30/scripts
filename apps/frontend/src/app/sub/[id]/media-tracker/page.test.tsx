@@ -18,8 +18,10 @@ vi.mock("@/components/AppShell", () => ({
   ),
 }));
 
-function worksheetPayload() {
+function worksheetPayload(rate: number | null = 5.09) {
   return {
+    eur_ron_rate: rate,
+    eur_ron_rate_scope: { granularity: "month", period_start: "2026-03-01", period_end: "2026-03-31" },
     weeks: [
       { week_start: "2026-03-02", week_end: "2026-03-08", label: "2026-03-02" },
       { week_start: "2026-03-09", week_end: "2026-03-15", label: "2026-03-09" },
@@ -62,17 +64,6 @@ function worksheetPayload() {
             weekly_values: [
               { week_start: "2026-03-02", week_end: "2026-03-08", value: 10 },
               { week_start: "2026-03-09", week_end: "2026-03-15", value: 20 },
-            ],
-          },
-          {
-            row_key: "aov",
-            label: "AOV",
-            value_kind: "decimal",
-            source_kind: "computed",
-            history_value: 2.34567,
-            weekly_values: [
-              { week_start: "2026-03-02", week_end: "2026-03-08", value: 1.23456 },
-              { week_start: "2026-03-09", week_end: "2026-03-15", value: null },
             ],
           },
         ],
@@ -119,29 +110,25 @@ describe("SubMediaTrackerPage", () => {
     apiMock.apiRequest.mockReset();
   });
 
-  it("renders worksheet header/order and keeps overview switch", async () => {
+  it("renders worksheet shell and EUR/RON value from payload", async () => {
     apiMock.apiRequest.mockImplementation(async (path: string) => {
       if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy" }] };
-      if (path.includes("/clients/96/media-tracker/worksheet-foundation")) return worksheetPayload();
+      if (path.includes("/clients/96/media-tracker/worksheet-foundation")) return worksheetPayload(5.09);
       throw new Error(`Unexpected path ${path}`);
     });
 
     render(<SubMediaTrackerPage />);
-    expect(screen.getByText("Coming Soon")).toBeInTheDocument();
-
     fireEvent.click(screen.getByRole("button", { name: "Weekly Worksheet" }));
-    const headers = await screen.findAllByRole("columnheader");
-    expect(headers.map((h) => h.textContent)).toEqual([
-      "Săptămâna", "Istorie", "Săpt. 1", "Săpt. 2",
-      "Data Începere", " ", "2026-03-02", "2026-03-09",
-    ]);
-    expect(screen.getByRole("button", { name: "Overview" })).toBeInTheDocument();
+
+    expect(await screen.findByRole("columnheader", { name: "Săptămâna" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "5.09" })).toBeInTheDocument();
+    expect(screen.getByText("EUR/RON")).toBeInTheDocument();
   });
 
-  it("only manual weekly cells are editable; history/computed/comparison remain read-only", async () => {
+  it("renders clean placeholder when eur_ron_rate is null", async () => {
     apiMock.apiRequest.mockImplementation(async (path: string) => {
       if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy" }] };
-      if (path.includes("/clients/96/media-tracker/worksheet-foundation")) return worksheetPayload();
+      if (path.includes("/clients/96/media-tracker/worksheet-foundation")) return worksheetPayload(null);
       throw new Error(`Unexpected path ${path}`);
     });
 
@@ -149,33 +136,95 @@ describe("SubMediaTrackerPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Weekly Worksheet" }));
     await screen.findByRole("columnheader", { name: "Săptămâna" });
 
-    fireEvent.click(screen.getByTestId("cell-summary-weekly_cogs_taxes-2026-03-02").querySelector("button")!);
-    expect(screen.getByDisplayValue("10")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByTestId("cell-summary-cost-2026-03-02"));
-    expect(screen.queryByDisplayValue("100")).toBeNull();
-
-    fireEvent.click(screen.getByTestId("cell-summary-cost_wow_pct-2026-03-09"));
-    expect(screen.queryByDisplayValue("1")).toBeNull();
-
-    fireEvent.click(screen.getByTestId("history-summary-weekly_cogs_taxes"));
-    expect(screen.queryByDisplayValue("30")).toBeNull();
+    expect(screen.getByRole("button", { name: "—" })).toBeInTheDocument();
   });
 
-  it("submits manual cell edit with correct PUT payload", async () => {
+  it("submits EUR/RON save with correct payload for current scope", async () => {
     apiMock.apiRequest.mockImplementation(async (path: string, options?: RequestInit) => {
       if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy" }] };
-      if (path.includes("/clients/96/media-tracker/worksheet-foundation")) return worksheetPayload();
-      if (path === "/clients/96/media-tracker/worksheet/manual-values") {
+      if (path.includes("/clients/96/media-tracker/worksheet-foundation")) return worksheetPayload(5.09);
+      if (path === "/clients/96/media-tracker/worksheet/eur-ron-rate") {
         expect(options?.method).toBe("PUT");
         const parsed = JSON.parse(String(options?.body || "{}"));
         expect(parsed.granularity).toBe("month");
         expect(typeof parsed.anchor_date).toBe("string");
+        expect(parsed.value).toBe(5.2);
+        return worksheetPayload(5.2);
+      }
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaTrackerPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Weekly Worksheet" }));
+    await screen.findByRole("columnheader", { name: "Săptămâna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "5.09" }));
+    const input = screen.getByDisplayValue("5.09");
+    fireEvent.change(input, { target: { value: "5.2" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(apiMock.apiRequest).toHaveBeenCalledWith(
+        "/clients/96/media-tracker/worksheet/eur-ron-rate",
+        expect.objectContaining({ method: "PUT" })
+      );
+    });
+    expect(screen.getByRole("button", { name: "5.20" })).toBeInTheDocument();
+  });
+
+  it("empty EUR/RON input sends null clear semantics", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string, options?: RequestInit) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy" }] };
+      if (path.includes("/clients/96/media-tracker/worksheet-foundation")) return worksheetPayload(5.09);
+      if (path === "/clients/96/media-tracker/worksheet/eur-ron-rate") {
+        const parsed = JSON.parse(String(options?.body || "{}"));
+        expect(parsed.value).toBeNull();
+        return worksheetPayload(null);
+      }
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaTrackerPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Weekly Worksheet" }));
+    await screen.findByRole("columnheader", { name: "Săptămâna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "5.09" }));
+    const input = screen.getByDisplayValue("5.09");
+    fireEvent.change(input, { target: { value: " " } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "—" })).toBeInTheDocument());
+  });
+
+  it("EUR/RON save failure shows error and keeps edit value", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy" }] };
+      if (path.includes("/clients/96/media-tracker/worksheet-foundation")) return worksheetPayload(5.09);
+      if (path === "/clients/96/media-tracker/worksheet/eur-ron-rate") throw new Error("rate save failed");
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaTrackerPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Weekly Worksheet" }));
+    await screen.findByRole("columnheader", { name: "Săptămâna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "5.09" }));
+    const input = screen.getByDisplayValue("5.09");
+    fireEvent.change(input, { target: { value: "4.99" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(await screen.findByText("rate save failed")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("4.99")).toBeInTheDocument();
+  });
+
+  it("manual weekly editing behavior remains intact", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string, options?: RequestInit) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy" }] };
+      if (path.includes("/clients/96/media-tracker/worksheet-foundation")) return worksheetPayload();
+      if (path === "/clients/96/media-tracker/worksheet/manual-values") {
+        const parsed = JSON.parse(String(options?.body || "{}"));
         expect(parsed.entries).toEqual([{ week_start: "2026-03-02", field_key: "weekly_cogs_taxes", value: 15.5 }]);
-        const payload = worksheetPayload();
-        payload.sections[0].rows[2].weekly_values[0].value = 15.5;
-        payload.sections[0].rows[2].history_value = 35.5;
-        return payload;
+        return worksheetPayload();
       }
       throw new Error(`Unexpected path ${path}`);
     });
@@ -197,54 +246,7 @@ describe("SubMediaTrackerPage", () => {
     });
   });
 
-  it("empty input sends null clear semantics", async () => {
-    apiMock.apiRequest.mockImplementation(async (path: string, options?: RequestInit) => {
-      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy" }] };
-      if (path.includes("/clients/96/media-tracker/worksheet-foundation")) return worksheetPayload();
-      if (path === "/clients/96/media-tracker/worksheet/manual-values") {
-        const parsed = JSON.parse(String(options?.body || "{}"));
-        expect(parsed.entries).toEqual([{ week_start: "2026-03-02", field_key: "weekly_cogs_taxes", value: null }]);
-        const payload = worksheetPayload();
-        payload.sections[0].rows[2].weekly_values[0].value = null;
-        return payload;
-      }
-      throw new Error(`Unexpected path ${path}`);
-    });
-
-    render(<SubMediaTrackerPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Weekly Worksheet" }));
-    await screen.findByRole("columnheader", { name: "Săptămâna" });
-
-    fireEvent.click(screen.getByTestId("cell-summary-weekly_cogs_taxes-2026-03-02").querySelector("button")!);
-    const input = screen.getByDisplayValue("10");
-    fireEvent.change(input, { target: { value: "   " } });
-    fireEvent.keyDown(input, { key: "Enter" });
-
-    await screen.findAllByText("—");
-  });
-
-  it("save failure keeps edit mode and shows inline error", async () => {
-    apiMock.apiRequest.mockImplementation(async (path: string) => {
-      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy" }] };
-      if (path.includes("/clients/96/media-tracker/worksheet-foundation")) return worksheetPayload();
-      if (path === "/clients/96/media-tracker/worksheet/manual-values") throw new Error("save failed");
-      throw new Error(`Unexpected path ${path}`);
-    });
-
-    render(<SubMediaTrackerPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Weekly Worksheet" }));
-    await screen.findByRole("columnheader", { name: "Săptămâna" });
-
-    fireEvent.click(screen.getByTestId("cell-summary-weekly_cogs_taxes-2026-03-02").querySelector("button")!);
-    const input = screen.getByDisplayValue("10");
-    fireEvent.change(input, { target: { value: "22" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-
-    expect(await screen.findByText("save failed")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("22")).toBeInTheDocument();
-  });
-
-  it("loading and error state for worksheet fetch still work", async () => {
+  it("loading and error states for worksheet fetch still work", async () => {
     let resolver: ((value: unknown) => void) | null = null;
     apiMock.apiRequest.mockImplementation((path: string) => {
       if (path === "/clients") return Promise.resolve({ items: [{ id: 96, name: "Active Life Therapy" }] });

@@ -307,3 +307,4 @@
 - 2026-03-13: After backend worksheet milestones, inspect current frontend surface before implementation and ship a minimal integrated worksheet shell first (toggle + scope + fetch + read-only scaffold), without redesign/editing.
 - 2026-03-13: For worksheet frontend increments, split display scaffolds into dedicated table components early so formatting/hierarchy improvements stay focused without touching shell navigation state.
 - 2026-03-13: For worksheet inline editing, derive editability from backend row metadata (`is_manual_input_row`, `source_kind`, manual dependency key) instead of brittle label-based checks.
+- 2026-03-13: For frontend currency/rate editors, assert test outputs using robust selectors/payload checks instead of locale-fragile exact formatted strings.

@@ -3796,3 +3796,24 @@
 - [x] Successful save updates worksheet data from backend response so computed rows remain backend-driven.
 - [x] Non-manual rows, comparison rows, and history column remain read-only.
 - [x] Focused media-tracker frontend tests pass.
+
+---
+
+# TODO — Media Tracker worksheet scope EUR/RON inline editor (frontend)
+
+- [x] Refresh workspace state and inspect current worksheet header shell plus backend eur-ron-rate API contract.
+- [x] Surface current EUR/RON value in worksheet control area with compact scope context.
+- [x] Add inline edit mode for EUR/RON with save on Enter/blur and Escape cancel.
+- [x] Integrate save flow to `PUT /clients/{id}/media-tracker/worksheet/eur-ron-rate` using current granularity + anchor_date.
+- [x] Support clear semantics (empty input => null), saving state, invalid input feedback, and error message on failure.
+- [x] Refresh worksheet data from backend response after successful rate save so EUR-derived rows update from backend truth.
+- [x] Keep existing manual weekly editing behavior and worksheet layout/shell controls unchanged.
+- [x] Add/adjust focused frontend tests for EUR/RON render/edit/save/clear/error and regressions.
+- [x] Run focused frontend tests and record outcomes.
+
+## Review
+- [x] Added compact EUR/RON scope editor in worksheet controls area without page redesign.
+- [x] Save/cancel/clear interactions mirror inline-edit patterns used in worksheet manual cell editing.
+- [x] Scope-specific save uses current worksheet granularity + anchor_date and backend canonical scope resolution.
+- [x] Successful saves update worksheet state from backend response; failures show inline error while preserving draft.
+- [x] Focused media-tracker frontend tests pass.

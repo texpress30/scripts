@@ -15,6 +15,8 @@ type WorksheetGranularity = "month" | "quarter" | "year";
 type WorksheetPayload = {
   weeks: WorksheetWeek[];
   sections: WorksheetSection[];
+  eur_ron_rate?: number | null;
+  eur_ron_rate_scope?: { granularity: string; period_start: string; period_end: string };
   resolved_period?: { period_start: string; period_end: string };
 };
 
@@ -49,6 +51,12 @@ function formatScopeLabel(anchorDate: string, granularity: WorksheetGranularity)
   return new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(date);
 }
 
+
+function formatRateDisplay(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+}
+
 function isWorksheetPayload(value: unknown): value is WorksheetPayload {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
@@ -73,6 +81,10 @@ export default function SubMediaTrackerPage() {
   const [worksheetData, setWorksheetData] = useState<WorksheetPayload | null>(null);
   const [worksheetLoading, setWorksheetLoading] = useState(false);
   const [worksheetError, setWorksheetError] = useState("");
+  const [rateEditing, setRateEditing] = useState(false);
+  const [rateDraft, setRateDraft] = useState("");
+  const [rateSaving, setRateSaving] = useState(false);
+  const [rateError, setRateError] = useState("");
 
   useEffect(() => {
     let ignore = false;
@@ -136,10 +148,51 @@ export default function SubMediaTrackerPage() {
     setWorksheetError("");
   }, [clientId, worksheetAnchorDate, worksheetGranularity]);
 
+
+
+  const saveScopeRate = useCallback(async () => {
+    const normalized = rateDraft.trim();
+    const parsed = normalized === "" ? null : Number(normalized);
+    if (normalized !== "" && !Number.isFinite(parsed)) {
+      setRateError("Valoare invalidă");
+      return;
+    }
+
+    setRateSaving(true);
+    setRateError("");
+    try {
+      const payload = await apiRequest<WorksheetPayload>(
+        `/clients/${clientId}/media-tracker/worksheet/eur-ron-rate`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            granularity: worksheetGranularity,
+            anchor_date: worksheetAnchorDate,
+            value: parsed,
+          }),
+        }
+      );
+      if (!isWorksheetPayload(payload)) throw new Error("Răspuns worksheet invalid");
+      setWorksheetData(payload);
+      setWorksheetError("");
+      setRateEditing(false);
+    } catch (err) {
+      setRateError(err instanceof Error ? err.message : "Nu am putut salva rata");
+    } finally {
+      setRateSaving(false);
+    }
+  }, [clientId, rateDraft, worksheetAnchorDate, worksheetGranularity]);
+
   const composedTitle = useMemo(() => `Media Tracker - ${clientName}`, [clientName]);
   const scopeLabel = useMemo(() => formatScopeLabel(worksheetAnchorDate, worksheetGranularity), [worksheetAnchorDate, worksheetGranularity]);
 
   const hasRows = !!worksheetData?.sections?.some((section) => section.rows.length > 0);
+
+  useEffect(() => {
+    if (rateEditing) return;
+    setRateDraft(worksheetData?.eur_ron_rate == null ? "" : String(worksheetData.eur_ron_rate));
+  }, [worksheetData?.eur_ron_rate, rateEditing]);
+
 
   return (
     <ProtectedPage>
@@ -202,6 +255,53 @@ export default function SubMediaTrackerPage() {
                   >
                     Next
                   </button>
+                </div>
+
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="font-medium text-slate-700">EUR/RON</span>
+                  {!rateEditing ? (
+                    <button
+                      type="button"
+                      className="rounded border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50"
+                      onClick={() => {
+                        setRateDraft(worksheetData?.eur_ron_rate == null ? "" : String(worksheetData.eur_ron_rate));
+                        setRateError("");
+                        setRateEditing(true);
+                      }}
+                    >
+                      {formatRateDisplay(worksheetData?.eur_ron_rate)}
+                    </button>
+                  ) : (
+                    <input
+                      autoFocus
+                      inputMode="decimal"
+                      value={rateDraft}
+                      disabled={rateSaving}
+                      className="w-24 rounded border border-indigo-300 px-2 py-1 text-right"
+                      onChange={(event) => {
+                        setRateDraft(event.target.value);
+                        if (rateError) setRateError("");
+                      }}
+                      onBlur={() => {
+                        void saveScopeRate();
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void saveScopeRate();
+                        }
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          setRateDraft(worksheetData?.eur_ron_rate == null ? "" : String(worksheetData.eur_ron_rate));
+                          setRateError("");
+                          setRateEditing(false);
+                        }
+                      }}
+                    />
+                  )}
+                  <span className="text-xs text-slate-500">pentru {scopeLabel}</span>
+                  {rateSaving ? <span className="text-xs text-slate-500">Saving...</span> : null}
+                  {rateError ? <span className="text-xs text-rose-600">{rateError}</span> : null}
                 </div>
               </div>
 
