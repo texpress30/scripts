@@ -376,6 +376,22 @@ class MediaBuyingStore:
             return raw
         return "lead"
 
+    def _resolve_client_display_currency_decision(self, *, client_id: int) -> tuple[str, str]:
+        decision = client_registry_service.get_client_reporting_currency_decision(client_id=int(client_id))
+        display_currency = self._normalize_currency(
+            str(
+                decision.get("client_display_currency")
+                or decision.get("reporting_currency")
+                or "USD"
+            )
+        )
+        source = str(
+            decision.get("display_currency_source")
+            or decision.get("reporting_currency_source")
+            or "agency_client_currency"
+        )
+        return display_currency, source
+
     def get_lead_table(
         self,
         *,
@@ -395,7 +411,8 @@ class MediaBuyingStore:
             raise NotImplementedError("Media Buying table is implemented only for template_type=lead in this task")
 
         has_explicit_range = date_from is not None and date_to is not None
-        display_currency = self._normalize_currency(str(config.get("display_currency") or "RON"))
+        display_currency = self._normalize_currency(str(config.get("display_currency") or "USD"))
+        display_currency_source = str(config.get("display_currency_source") or "agency_client_currency")
         earliest_data_date: date | None = None
         latest_data_date: date | None = None
 
@@ -411,6 +428,7 @@ class MediaBuyingStore:
                     "client_id": int(client_id),
                     "template_type": effective_template_type,
                     "display_currency": display_currency,
+                    "display_currency_source": display_currency_source,
                     "custom_label_1": str(config.get("custom_label_1") or _DEFAULT_LABELS["custom_label_1"]),
                     "custom_label_2": str(config.get("custom_label_2") or _DEFAULT_LABELS["custom_label_2"]),
                     "custom_label_3": str(config.get("custom_label_3") or _DEFAULT_LABELS["custom_label_3"]),
@@ -505,6 +523,7 @@ class MediaBuyingStore:
                 "client_id": int(client_id),
                 "template_type": effective_template_type,
                 "display_currency": display_currency,
+                "display_currency_source": display_currency_source,
                 "custom_label_1": str(config.get("custom_label_1") or _DEFAULT_LABELS["custom_label_1"]),
                 "custom_label_2": str(config.get("custom_label_2") or _DEFAULT_LABELS["custom_label_2"]),
                 "custom_label_3": str(config.get("custom_label_3") or _DEFAULT_LABELS["custom_label_3"]),
@@ -649,15 +668,20 @@ class MediaBuyingStore:
                 )
                 row = cur.fetchone()
 
+        resolved_display_currency, display_currency_source = self._resolve_client_display_currency_decision(client_id=int(client_id))
+
         payload = self._config_from_row(row)
         if payload is not None:
+            payload["display_currency"] = resolved_display_currency
+            payload["display_currency_source"] = display_currency_source
             return payload
 
         effective_template_type = self._resolve_client_template_type(client_id=int(client_id))
         return {
             "client_id": int(client_id),
             "template_type": effective_template_type,
-            "display_currency": "RON",
+            "display_currency": resolved_display_currency,
+            "display_currency_source": display_currency_source,
             "custom_label_1": _DEFAULT_LABELS["custom_label_1"],
             "custom_label_2": _DEFAULT_LABELS["custom_label_2"],
             "custom_label_3": _DEFAULT_LABELS["custom_label_3"],
@@ -696,7 +720,8 @@ class MediaBuyingStore:
 
         effective_template_type = self._resolve_client_template_type(client_id=int(client_id))
         next_template_type = self._normalize_template_type(effective_template_type)
-        next_currency = self._normalize_currency(display_currency or str(current["display_currency"]))
+        resolved_display_currency, _ = self._resolve_client_display_currency_decision(client_id=int(client_id))
+        next_currency = self._normalize_currency(resolved_display_currency)
 
         with self._connect() as conn:
             with conn.cursor() as cur:
