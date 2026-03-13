@@ -9,6 +9,7 @@ import { format } from "date-fns";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
+import { formatCurrencyValue, normalizeCurrencyCode } from "@/lib/subAccountCurrency";
 
 type ClientItem = { id: number; name: string; client_type?: string };
 
@@ -48,6 +49,7 @@ type LeadTableMeta = {
   client_id: number;
   template_type: string;
   display_currency: string;
+  display_currency_source?: string;
   custom_label_1?: string;
   custom_label_2?: string;
   custom_label_3?: string;
@@ -176,8 +178,7 @@ function toIso(value: Date): string {
 }
 
 function formatMoney(value: number | null | undefined, currencyCode: string): string {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
-  return new Intl.NumberFormat(undefined, { style: "currency", currency: currencyCode, maximumFractionDigits: 2 }).format(value);
+  return formatCurrencyValue(value, currencyCode, "USD");
 }
 
 function formatCount(value: number | null | undefined): string {
@@ -375,7 +376,7 @@ export default function SubMediaBuyingPage() {
 
   const title = `Media Buying - ${clientName}`;
 
-  const displayCurrency = tableData?.meta.display_currency || "RON";
+  const displayCurrency = normalizeCurrencyCode(tableData?.meta.display_currency, "USD");
   const labelMap: Record<LabelFieldKey, string> = {
     custom_label_1: fallbackLabel(tableData?.meta.custom_label_1, "Custom Value 1"),
     custom_label_2: fallbackLabel(tableData?.meta.custom_label_2, "Custom Value 2"),
@@ -591,6 +592,7 @@ export default function SubMediaBuyingPage() {
           <p className="mt-2 text-sm text-slate-600">
             Range: {tableData?.meta.effective_date_from ?? tableData?.meta.date_from ?? "—"} - {tableData?.meta.effective_date_to ?? tableData?.meta.date_to ?? "—"}
           </p>
+          <p className="mt-1 text-xs text-slate-500">Currency: {displayCurrency}</p>
 
           {isLeadTemplate ? (
             <div className="mt-3 flex items-center gap-2">

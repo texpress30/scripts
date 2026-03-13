@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import SubMediaBuyingPage from "./page";
+import { formatCurrencyValue } from "@/lib/subAccountCurrency";
 
 const apiMock = vi.hoisted(() => ({ apiRequest: vi.fn() }));
 
@@ -18,12 +19,12 @@ vi.mock("@/components/AppShell", () => ({
   ),
 }));
 
-function leadPayload() {
+function leadPayload(displayCurrency: string = "RON") {
   return {
     meta: {
       client_id: 96,
       template_type: "lead",
-      display_currency: "RON",
+      display_currency: displayCurrency,
       custom_label_1: "Appointments",
       custom_label_2: "Qualified",
       custom_label_3: "Val. Aprobata",
@@ -151,6 +152,27 @@ function leadPayloadWithMonths() {
 describe("SubMediaBuyingPage", () => {
   beforeEach(() => {
     apiMock.apiRequest.mockReset();
+  });
+
+
+  it("renders monetary values using response display_currency (USD/RON/EUR)", async () => {
+    for (const currency of ["USD", "RON", "EUR"]) {
+      apiMock.apiRequest.mockReset();
+      apiMock.apiRequest.mockImplementation(async (path: string) => {
+        if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
+        if (path.startsWith("/clients/96/media-buying/lead/table")) return leadPayload(currency);
+        throw new Error(`Unexpected path ${path}`);
+      });
+
+      const { unmount } = render(<SubMediaBuyingPage />);
+      await screen.findByRole("button", { name: /Mar 2026/i });
+      expect(screen.getByText(`Currency: ${currency}`)).toBeInTheDocument();
+      const expectedMoney = formatCurrencyValue(350, currency, "USD");
+      const normalizedExpected = expectedMoney.replace(/ /g, " ");
+      const moneyCells = screen.getAllByText((content) => content.replace(/ /g, " ") === normalizedExpected);
+      expect(moneyCells.length).toBeGreaterThan(0);
+      unmount();
+    }
   });
 
   it("reads client_type from Agency Clients and renders lead table only for lead", async () => {
@@ -355,7 +377,7 @@ describe("SubMediaBuyingPage", () => {
     expect(screen.getByRole("columnheader", { name: /Cost Total/i }).className).toContain("border-dashed");
     expect(screen.getByRole("columnheader", { name: /Total Lead-uri/i }).className).toContain("border-dashed");
 
-    const unrealizedCells = screen.getAllByText(/\(RON\s?40\.00\)|\(.*40.*RON.*\)/i);
+    const unrealizedCells = screen.getAllByText((content) => content.includes("40") && content.toUpperCase().includes("RON") && content.includes("("));
     expect(unrealizedCells.length).toBeGreaterThan(0);
     expect(unrealizedCells[0].className || "").toContain("text-slate-900");
     expect(unrealizedCells[0].className || "").not.toContain("text-red-600");
