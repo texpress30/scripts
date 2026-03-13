@@ -3740,3 +3740,21 @@
 - [x] Inserted `_wow_pct` rows immediately after approved source rows in summary/google/meta/tiktok; left `new_clients` unchanged.
 - [x] Preserved existing non-% row formulas and section payload shape from Task 4A.
 - [x] Verified with focused worksheet tests (`13 passed`).
+
+---
+
+# TODO — Media Tracker frontend weekly worksheet shell (view + scope + fetch + scaffold)
+
+- [x] Refresh workspace state and inspect existing Media Tracker page structure plus worksheet backend endpoint contract.
+- [x] Add a new Weekly Worksheet view mode inside Media Tracker while preserving existing overview behavior.
+- [x] Implement worksheet state (granularity + anchor_date) with previous/next period navigation semantics.
+- [x] Integrate frontend fetch to worksheet backend endpoint and handle loading/error/empty/invalid states.
+- [x] Render a minimal read-only worksheet scaffold (history first, week columns, sections/rows backend order).
+- [x] Add targeted frontend tests for view switch, request params, navigation, states, and row rendering order.
+- [x] Run focused frontend test suite and record outcomes.
+
+## Review
+- [x] Added a new Weekly Worksheet view mode inside Media Tracker while preserving the existing overview surface.
+- [x] Implemented granularity + previous/next period navigation with worksheet backend fetching and state handling.
+- [x] Rendered a minimal read-only worksheet scaffold in backend order with `Istorie` before weekly columns, including `%` rows.
+- [x] Verified via focused frontend Vitest suite for media-tracker page.
