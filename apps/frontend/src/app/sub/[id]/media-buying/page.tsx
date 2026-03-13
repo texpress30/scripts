@@ -11,7 +11,7 @@ import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
 import { formatCurrencyValue, normalizeCurrencyCode } from "@/lib/subAccountCurrency";
 
-type ClientItem = { id: number; name: string; client_type?: string };
+type ClientItem = { id: number; name: string; client_type?: string; currency?: string | null };
 
 type LeadTableRow = {
   date: string;
@@ -310,6 +310,7 @@ export default function SubMediaBuyingPage() {
 
   const [clientName, setClientName] = useState<string>(`Sub-account #${clientId}`);
   const [clientType, setClientType] = useState<string>("lead");
+  const [clientCurrency, setClientCurrency] = useState<string | null>(null);
   const [clientContextLoaded, setClientContextLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -368,12 +369,14 @@ export default function SubMediaBuyingPage() {
         if (!ignore) {
           if (match?.name) setClientName(match.name);
           if (match?.client_type) setClientType(normalizedClientType(match.client_type));
+          setClientCurrency(typeof match?.currency === "string" ? match.currency : null);
           setClientContextLoaded(true);
         }
       } catch {
         if (!ignore) {
           setClientName(`Sub-account #${clientId}`);
           setClientType("lead");
+          setClientCurrency(null);
           setClientContextLoaded(true);
         }
       }
@@ -397,7 +400,13 @@ export default function SubMediaBuyingPage() {
 
   const title = `Media Buying - ${clientName}`;
 
-  const displayCurrency = normalizeCurrencyCode(tableData?.meta.display_currency, "USD");
+  const displayCurrencyFromTable = String(tableData?.meta.display_currency || "").trim().toUpperCase();
+  const displayCurrencyFromClient = String(clientCurrency || "").trim().toUpperCase();
+  const resolvedDisplayCurrency = /^[A-Z]{3}$/.test(displayCurrencyFromTable)
+    ? displayCurrencyFromTable
+    : (/^[A-Z]{3}$/.test(displayCurrencyFromClient) ? displayCurrencyFromClient : null);
+  const displayCurrency = normalizeCurrencyCode(resolvedDisplayCurrency, "USD");
+  const displayCurrencyLabel = resolvedDisplayCurrency ?? "—";
   const labelMap: Record<LabelFieldKey, string> = {
     custom_label_1: fallbackLabel(tableData?.meta.custom_label_1, "Custom Value 1"),
     custom_label_2: fallbackLabel(tableData?.meta.custom_label_2, "Custom Value 2"),
@@ -671,7 +680,7 @@ export default function SubMediaBuyingPage() {
           <p className="mt-2 text-sm text-slate-600">
             Range: {tableData?.meta.effective_date_from ?? tableData?.meta.date_from ?? "—"} - {tableData?.meta.effective_date_to ?? tableData?.meta.date_to ?? "—"}
           </p>
-          <p className="mt-1 text-xs text-slate-500">Currency: {displayCurrency}</p>
+          <p className="mt-1 text-xs text-slate-500">Currency: {displayCurrencyLabel}</p>
 
           {isLeadTemplate ? (
             <div className="mt-3 flex items-center gap-2">

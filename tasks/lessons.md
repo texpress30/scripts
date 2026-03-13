@@ -318,3 +318,4 @@
 - 2026-03-13: For large read payloads after backend query optimization, add an opt-in lightweight response mode plus dedicated drill-down endpoint (months-first + month-days) before frontend rewiring, while keeping default behavior backward compatible.
 - 2026-03-13: For frontend lazy-loading migrations, prevent automatic silent re-fetch loops after month-level fetch errors; persist per-scope month error state and require explicit retry.
 - 2026-03-13: When converting read paths to optional/no-range fetching, harden helper method signatures and guard null date comparisons (`None > None`) before rollout; add regression tests for no-range automated-only/manual-only mixes.
+- 2026-03-13: For frontend currency labels, never display a fabricated hardcoded fallback (e.g., USD) when metadata is missing; prefer real source priority (table -> client context) then neutral placeholder.

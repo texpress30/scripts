@@ -4018,3 +4018,21 @@
 - [x] No-range `get_lead_table` remains optimized (no restored old heavy bounds scan); it still derives effective range from already fetched automated+manual rows.
 - [x] Added focused backend tests in `test_media_buying_store.py` for null-safety and no-range scenarios (automated-only, automated+manual, manual-only + include_days=false).
 - [x] Verification: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py apps/backend/tests/test_client_registry_account_currency_resolution.py apps/backend/tests/test_dashboard_currency_normalization.py` (pass).
+
+---
+
+# TODO — Media Buying frontend currency fallback correctness (no fake USD)
+
+- [x] Refresh workspace and inspect current Media Buying sub-account page currency derivation.
+- [x] Remove hardcoded USD fallback for currency label display when table data is missing/loading/error.
+- [x] Add client-context currency fallback (table meta currency first, then client currency, else placeholder).
+- [x] Keep formatting/rendering behavior unchanged outside label-currency correctness.
+- [x] Add/update focused tests for table currency, client fallback currency, placeholder behavior, and error-state correctness.
+- [x] Run targeted frontend tests and document outcomes.
+
+## Review
+- [x] Currency label now resolves in priority order: `tableData.meta.display_currency` -> client context currency -> `—` placeholder.
+- [x] Removed fake USD fallback from label rendering path; loading/error states no longer display misleading USD.
+- [x] Existing monetary formatting/layout/editing flows remain unchanged.
+- [x] Added focused tests validating RON/EUR fallback correctness and placeholder behavior when currency unavailable.
+- [x] Verification: `pnpm vitest run src/app/sub/[id]/media-buying/page.test.tsx` (pass).

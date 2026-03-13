@@ -582,6 +582,51 @@ describe("SubMediaBuyingPage", () => {
     expect(await screen.findByText("boom")).toBeInTheDocument();
   });
 
+
+  it("uses client context currency when table display_currency is missing", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead", currency: "RON" }] };
+      if (path.startsWith("/clients/96/media-buying/lead/table")) {
+        const payload = leadPayload();
+        delete payload.meta.display_currency;
+        return payload;
+      }
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaBuyingPage />);
+    expect(await screen.findByText("Currency: RON")).toBeInTheDocument();
+  });
+
+  it("shows placeholder currency when table and client context currencies are unavailable", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
+      if (path.startsWith("/clients/96/media-buying/lead/table")) {
+        const payload = leadPayload();
+        delete payload.meta.display_currency;
+        return payload;
+      }
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaBuyingPage />);
+    expect(await screen.findByText("Currency: —")).toBeInTheDocument();
+    expect(screen.queryByText("Currency: USD")).toBeNull();
+  });
+
+  it("keeps non-USD currency label on table error using client context currency", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead", currency: "EUR" }] };
+      if (path.startsWith("/clients/96/media-buying/lead/table")) throw new Error("boom");
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaBuyingPage />);
+    expect(await screen.findByText("boom")).toBeInTheDocument();
+    expect(screen.getByText("Currency: EUR")).toBeInTheDocument();
+    expect(screen.queryByText("Currency: USD")).toBeNull();
+  });
+
   it("uses effective range metadata from API and requests table without implicit date query params", async () => {
     apiMock.apiRequest.mockImplementation(async (path: string) => {
       if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
