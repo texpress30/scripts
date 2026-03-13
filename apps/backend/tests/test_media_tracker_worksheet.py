@@ -370,6 +370,10 @@ def test_formula_engine_core_rows_and_ratio_history_recompute() -> None:
     new_clients = _row_map(payload, "new_clients")
     google = _row_map(payload, "google_spend")
 
+    assert summary["cpa_leads"]["label"] == "CPA"
+    assert summary["cpa_applications"]["label"] == "CPA"
+    assert summary["cpa_approved_applications"]["label"] == "CPA"
+
     cost_week = next(x for x in summary["cost"]["weekly_values"] if x["week_start"] == "2026-03-02")
     assert cost_week["value"] == 70.0
 

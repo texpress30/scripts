@@ -1,3 +1,17 @@
+# TODO — Summary worksheet CPA label normalization
+
+- [x] Confirm AGENTS instructions and inspect current worksheet summary label definitions.
+- [x] Normalize summary display labels for CPA rows to `CPA` while preserving row keys and formulas.
+- [x] Add/adjust backend test coverage to assert CPA labels in summary rows.
+- [x] Run targeted backend worksheet tests.
+
+## Review
+- [x] Updated backend worksheet summary row labels for `cpa_leads`, `cpa_applications`, and `cpa_approved_applications` to display `CPA`.
+- [x] Added regression assertions ensuring CPA summary labels remain normalized while row keys continue unchanged.
+- [x] Verification: `pytest -q apps/backend/tests/test_media_tracker_worksheet.py` (pass).
+
+---
+
 # TODO — TikTok account_daily write-side idempotency hardening
 
 - [x] Refresh workspace and document remote divergence constraints.
