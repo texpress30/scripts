@@ -12,6 +12,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiRequest } from "@/lib/api";
+import { derivePlatformSyncStatus } from "@/lib/accountSyncStatus";
 
 type DashboardResponse = {
   client_id: number;
@@ -30,6 +31,10 @@ type DashboardResponse = {
     tiktok_ads?: PlatformMetrics;
     pinterest_ads?: PlatformMetrics;
     snapchat_ads?: PlatformMetrics;
+  };
+  platform_sync_summary?: {
+    meta_ads?: { accounts?: Array<Record<string, unknown>> };
+    tiktok_ads?: { accounts?: Array<Record<string, unknown>> };
   };
 };
 
@@ -115,6 +120,13 @@ function normalizeMetrics(value?: PlatformMetrics): NormalizedMetrics {
   };
 }
 
+const STATUS_STYLES: Record<string, string> = {
+  healthy: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  warning: "bg-amber-50 text-amber-700 border-amber-200",
+  error: "bg-rose-50 text-rose-700 border-rose-200",
+  unknown: "bg-slate-100 text-slate-600 border-slate-200",
+};
+
 export default function SubDashboardPage() {
   const params = useParams<{ id: string }>();
   const clientId = Number(params.id);
@@ -128,6 +140,7 @@ export default function SubDashboardPage() {
   const [appliedRange, setAppliedRange] = useState<DateRange>(initialRange);
   const [draftPreset, setDraftPreset] = useState<DatePresetKey>("last30");
   const [draftRange, setDraftRange] = useState<DateRange>(initialRange);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const appliedFrom = appliedRange.from ?? subDays(new Date(), 29);
   const appliedTo = appliedRange.to ?? appliedFrom;
@@ -188,6 +201,12 @@ export default function SubDashboardPage() {
   const tiktok = normalizeMetrics(data?.platforms.tiktok_ads);
   const pinterest = normalizeMetrics(data?.platforms.pinterest_ads);
   const snapchat = normalizeMetrics(data?.platforms.snapchat_ads);
+
+  const metaSync = derivePlatformSyncStatus("meta_ads", data?.platform_sync_summary?.meta_ads?.accounts ?? []);
+  const tiktokSync = derivePlatformSyncStatus("tiktok_ads", data?.platform_sync_summary?.tiktok_ads?.accounts ?? []);
+  const flaggedPlatforms = [metaSync, tiktokSync].filter((item) => item.uiStatus === "warning" || item.uiStatus === "error");
+  const flaggedPlatformCount = flaggedPlatforms.length;
+  const affectedAccountCount = flaggedPlatforms.reduce((sum, item) => sum + item.affectedAccountCount, 0);
 
   return (
     <ProtectedPage>
@@ -264,6 +283,46 @@ export default function SubDashboardPage() {
           <MetricCard title="ROAS" value={loading ? "..." : totals.roas.toFixed(2)} />
         </section>
 
+        {flaggedPlatformCount > 0 ? (
+          <section className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            <button type="button" className="flex w-full items-center justify-between gap-2 text-left" onClick={() => setDetailsOpen((current) => !current)}>
+              <span>Some platform totals may be incomplete due to sync issues.</span>
+              <span className="text-xs font-medium">{flaggedPlatformCount} platform {flaggedPlatformCount === 1 ? "warning" : "warnings"} • {affectedAccountCount} affected account{affectedAccountCount === 1 ? "" : "s"}</span>
+            </button>
+            {detailsOpen ? (
+              <div className="mt-2 space-y-2 border-t border-amber-200 pt-2 text-xs">
+                {[{ name: "Meta Ads", summary: metaSync }, { name: "TikTok Ads", summary: tiktokSync }]
+                  .filter((item) => item.summary.uiStatus === "warning" || item.summary.uiStatus === "error")
+                  .map((item) => (
+                    <div key={item.name}>
+                      <p className="font-semibold text-amber-900">{item.name}</p>
+                      <ul className="mt-1 space-y-1">
+                        {item.summary.accounts
+                          .filter((account) => account.ui.uiStatus === "warning" || account.ui.uiStatus === "error")
+                          .map((account) => (
+                            <li key={`${item.name}:${account.id}`} className="rounded border border-amber-200 bg-amber-100/60 px-2 py-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-medium text-amber-900">{account.name} ({account.id})</span>
+                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 font-medium ${STATUS_STYLES[account.ui.uiStatus]}`}>{account.ui.uiLabel}</span>
+                              </div>
+                              <p className="truncate text-amber-800">{account.ui.shortReason ?? account.ui.details.coverageStatus ?? "Sync issue"}</p>
+                              <p className="truncate text-amber-700">
+                                {account.ui.details.lastSyncAt ? `Last sync: ${account.ui.details.lastSyncAt}` : "Last sync: n/a"}
+                                {account.ui.details.requestedStartDate && account.ui.details.requestedEndDate ? ` · Requested: ${account.ui.details.requestedStartDate} → ${account.ui.details.requestedEndDate}` : ""}
+                                {account.ui.details.firstPersistedDate && account.ui.details.lastPersistedDate ? ` · Persisted: ${account.ui.details.firstPersistedDate} → ${account.ui.details.lastPersistedDate}` : ""}
+                                {account.ui.details.failedChunkCount !== undefined ? ` · Failed chunks: ${account.ui.details.failedChunkCount}` : ""}
+                                {account.ui.details.retryAttempted !== undefined ? ` · Retry: ${account.ui.details.retryAttempted ? "yes" : "no"}` : ""}
+                              </p>
+                            </li>
+                          ))}
+                      </ul>
+                    </div>
+                  ))}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
         <section className="mt-6 overflow-x-auto">
           <table className="min-w-full wm-card text-left text-sm">
             <thead className="text-slate-500">
@@ -285,12 +344,20 @@ export default function SubDashboardPage() {
                 ["Pinterest Ads", "pinterest-ads", pinterest],
                 ["Snapchat Ads", "snapchat-ads", snapchat],
               ] as Array<[string, string, NormalizedMetrics]>).map(([name, slug, m]) => {
+                const platformSummary = name === "Meta Ads" ? metaSync : name === "TikTok Ads" ? tiktokSync : null;
                 return (
                   <tr key={name} className="border-t border-slate-200 text-slate-900">
                     <td className="px-4 py-3">
-                      <Link href={`/sub/${clientId}/${slug}`} className="text-slate-900 transition-colors hover:text-indigo-700 hover:underline">
-                        {name}
-                      </Link>
+                      <div className="flex items-center gap-2">
+                        <Link href={`/sub/${clientId}/${slug}`} className="text-slate-900 transition-colors hover:text-indigo-700 hover:underline">
+                          {name}
+                        </Link>
+                        {platformSummary ? (
+                          <button type="button" onClick={() => setDetailsOpen((current) => !current)} className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[platformSummary.uiStatus]}`}>
+                            {platformSummary.uiLabel}{platformSummary.affectedAccountCount > 0 ? ` (${platformSummary.affectedAccountCount})` : ""}
+                          </button>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-4 py-3">{loading ? "..." : formatCurrency(m.spend, currencyCode)}</td>
                     <td className="px-4 py-3">{loading ? "..." : m.impressions.toLocaleString()}</td>

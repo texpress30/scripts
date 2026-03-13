@@ -1,3 +1,155 @@
+# TODO — Media Buying display-currency contract alignment (backend)
+
+- [x] Refresh workspace and inspect Media Buying store/API display-currency sources.
+- [x] Align Media Buying read target currency with shared client display-currency decision (`agency_clients.currency`).
+- [x] Prevent local config drift by syncing/overriding `media_buying_configs.display_currency` to resolved client display currency on writes/reads.
+- [x] Expose aligned display-currency metadata in Media Buying responses.
+- [x] Add/update backend tests for override, multi-client behavior, config drift prevention, and monetary normalization path.
+- [x] Run focused backend tests and document results.
+
+## Review
+- [x] `MediaBuyingStore.get_config` now resolves display currency/source from the shared client reporting/display decision and no longer trusts local config currency as source of truth.
+- [x] `MediaBuyingStore.upsert_config` now ignores incoming `display_currency` and persists the resolved client display currency to keep `media_buying_configs` synchronized.
+- [x] `MediaBuyingStore.get_lead_table` now uses resolved display currency metadata and returns `display_currency_source` in response meta while preserving existing conversion/formula flow.
+- [x] Added/updated backend unit tests for stale-config override, drift-preventing upsert behavior, per-client currency behavior (USD/RON/EUR), and representative cost normalization in resolved display currency.
+- [x] Verification: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_client_registry_account_currency_resolution.py apps/backend/tests/test_clients_media_buying_api.py` (pass).
+
+---
+
+# TODO — Sub-account display currency contract fix (backend)
+
+- [x] Refresh local workspace state and inspect current backend currency resolver/client registry tests.
+- [x] Implement shared display-currency resolver driven by `agency_clients.currency` with explicit safe fallback.
+- [x] Update client registry reporting-currency decision payload to use display-currency contract while preserving attached-account currency metadata.
+- [x] Update backend tests that encoded attached-account-driven display currency.
+- [x] Run focused backend currency tests and document results.
+
+## Review
+- [x] Added `resolve_client_display_currency(...)` and routed reporting/display currency to client currency (`agency_clients.currency`) with `safe_fallback` only when client currency is blank/invalid.
+- [x] Kept attached-account effective currency resolver unchanged for source-account metadata and still expose mixed/summaries from attached accounts.
+- [x] Extended client registry decision payload with `client_display_currency` and `display_currency_source` aliases for explicit contract clarity.
+- [x] Updated currency tests to assert client currency remains display currency regardless of attached-account currencies and added invalid-client-currency fallback coverage.
+- [x] Verification: `pytest -q apps/backend/tests/test_client_registry_account_currency_resolution.py apps/backend/tests/test_dashboard_reporting_currency_selection.py apps/backend/tests/test_dashboard_reconciliation_diagnostics.py` (pass).
+
+---
+
+# TODO — Summary worksheet CPA label normalization
+
+- [x] Confirm AGENTS instructions and inspect current worksheet summary label definitions.
+- [x] Normalize summary display labels for CPA rows to `CPA` while preserving row keys and formulas.
+- [x] Add/adjust backend test coverage to assert CPA labels in summary rows.
+- [x] Run targeted backend worksheet tests.
+
+## Review
+- [x] Updated backend worksheet summary row labels for `cpa_leads`, `cpa_applications`, and `cpa_approved_applications` to display `CPA`.
+- [x] Added regression assertions ensuring CPA summary labels remain normalized while row keys continue unchanged.
+- [x] Verification: `pytest -q apps/backend/tests/test_media_tracker_worksheet.py` (pass).
+
+---
+
+# TODO — TikTok account_daily write-side idempotency hardening
+
+- [x] Refresh workspace and document remote divergence constraints.
+- [ ] Inspect TikTok sync + persistence write path and current sync error/status propagation.
+- [ ] Add focused TikTok canonical persistence identity resolver for account_daily writes.
+- [ ] Enforce deterministic/idempotent TikTok account_daily writes across reruns/overlaps and add ambiguity guardrails with explicit errors.
+- [ ] Add targeted TikTok tests for rerun idempotency, rolling overlap, ambiguity, and error visibility (without Meta changes).
+- [ ] Run backend tests and document outcomes.
+
+## Review
+- [x] Added backend `platform_sync_summary` to client dashboard payload for Meta/TikTok using latest sync-run metadata per attached account.
+- [x] Added compact page-level sync warning banner plus per-platform status chips on sub-account dashboard rows.
+- [x] Added expandable concise affected-account details (name/id, status, reason, last sync, failed chunks/retry).
+- [x] Extended sync-status utility with platform-level worst-status derivation and affected counts.
+- [x] Verification run: frontend targeted Vitest suite passed; backend targeted pytest collection failed in this environment due missing `requests` dependency.
+
+---
+
+# TODO — Platform sync write-side audit endpoint (Meta/TikTok)
+
+- [x] Refresh workspace and document remote divergence constraints.
+- [x] Inspect backend sync write/persistence code paths (Meta/TikTok services, performance reports store, sync runs/chunks) and existing debug endpoint pattern.
+- [x] Implement read-only `platform-sync-audit` debug endpoint for one client/platform with optional account filter + daily breakdown.
+- [x] Add persisted data summaries and anomaly flags (duplicates, missing coverage, lower-grain risk, id/currency mismatches, unsupported history floor checks).
+- [x] Add targeted backend tests for TikTok duplicate/floor/id mismatch and Meta missing-account-daily with sync errors + multi-account client coverage.
+- [x] Run backend tests and document outcomes.
+
+## Review
+- [x] Added backend-only debug endpoint `GET /dashboard/debug/clients/{client_id}/platform-sync-audit` with platform/date filters, optional account filter, optional lower-grain daily breakdown, agency scope enforcement, and audit logging.
+- [x] Implemented platform sync audit service output with: client/platform context, attached account metadata + effective account currency, recent sync runs/chunk status snapshots, persisted-row summaries by grain/account/day/currency, anomaly flags, suspected root causes, and recommended next fix scope.
+- [x] Added anomaly detection for duplicate-like rows, multiple account_daily rows same account/day, lower-grain without account_daily, missing account_daily days in range, rows before supported TikTok floor, mixed customer ids, currency mismatch vs attached effective currency, no-mapping rows, and multi-grain overcount risk.
+- [x] Added targeted backend tests covering TikTok duplication/floor/id mismatch, Meta partial coverage with sync error exposure, and multi-account platform behavior.
+- [x] Verification: `python -m pytest apps/backend/tests/test_dashboard_platform_sync_audit.py apps/backend/tests/test_dashboard_reporting_currency_selection.py apps/backend/tests/test_dashboard_reconciliation_diagnostics.py apps/backend/tests/test_dashboard_currency_normalization.py apps/backend/tests/test_client_registry_account_currency_resolution.py -q` (pass).
+
+---
+
+# TODO — Client dashboard reporting/display currency resolver
+
+- [x] Refresh workspace from remote and document divergence constraints.
+- [x] Inspect Task 2 attached-account currency resolver and current dashboard/reconciliation reporting-currency selection path.
+- [x] Add shared client reporting-currency resolver using attached-account effective currencies with deterministic mixed/no-account fallbacks.
+- [x] Wire resolver into client dashboard + reconciliation payload metadata (`reporting_currency`, source, mixed flag, summary) while preserving existing fields.
+- [x] Add targeted backend tests for single-currency, mixed-currency, no-currency fallback, and dashboard/reconciliation consistency.
+- [x] Run backend tests and document outcomes.
+
+## Review
+- [x] Added shared `resolve_client_reporting_currency` helper that computes deterministic reporting currency + source + mixed flag + summary from attached effective account currencies.
+- [x] Added `client_registry_service.get_client_reporting_currency_decision(...)` to centralize client reporting/display currency choice across dashboard platforms.
+- [x] Updated dashboard and reconciliation service paths to use the same reporting-currency decision and to expose metadata (`reporting_currency`, `reporting_currency_source`, `mixed_attached_account_currencies`, `attached_account_currency_summary`) while preserving `currency` for compatibility.
+- [x] Kept source-account precedence unchanged from Task 2; this task changes only target reporting/display currency selection.
+- [x] Verification: `python -m pytest apps/backend/tests/test_client_registry_account_currency_resolution.py apps/backend/tests/test_dashboard_reporting_currency_selection.py apps/backend/tests/test_dashboard_currency_normalization.py apps/backend/tests/test_dashboard_reconciliation_diagnostics.py -q` (pass).
+
+---
+
+# TODO — Attached account currency precedence consistency (backend)
+
+- [x] Refresh workspace from remote and note sync constraints if local branch diverges.
+- [x] Inspect client registry + dashboard read-side currency fallback paths and identify shared resolver insertion points.
+- [x] Implement shared effective attached-account currency resolver and reuse in attach/listing/dashboard paths.
+- [x] Add safe backfill for mapping account_currency only when blank/null.
+- [x] Add targeted backend tests for attach seeding, non-overwrite behavior, backfill safety, and precedence consistency.
+- [x] Run relevant backend tests and document outcomes.
+
+## Review
+- [x] Added reusable backend resolver `account_currency_resolver` with explicit precedence `mapping -> platform -> client -> fallback` and reused it in client-registry test-path resolution + dashboard SQL expression builder usage.
+- [x] Updated attach/upsert behavior so mapping `account_currency` seeds from `agency_platform_accounts.currency_code` then client currency and does not overwrite existing non-blank mapping currencies on conflict.
+- [x] Added safe backfill hook run at schema initialization that only updates mapping rows where `account_currency` is null/blank using `agency_platform_accounts.currency_code` (no overwrite for explicit values).
+- [x] Extended attached-account listing payloads to include `effective_account_currency` and `account_currency_source` while preserving `currency` compatibility field.
+- [x] Updated dashboard read-side + reconciliation read-side to apply source-account fallback order via shared SQL helper (`mapping -> platform -> client -> RON`) without changing reporting currency strategy.
+- [x] Verification: `python -m pytest apps/backend/tests/test_client_registry_account_currency_resolution.py -q` and `python -m pytest apps/backend/tests/test_dashboard_currency_normalization.py apps/backend/tests/test_dashboard_reconciliation_diagnostics.py -q` (pass).
+
+---
+
+# TODO — Client dashboard reconciliation diagnostics endpoint
+
+- [x] Refresh workspace from remote and document sync constraints if branch is diverged.
+- [x] Inspect dashboard read-side, client mapping, and performance reports storage code paths.
+- [x] Implement internal debug endpoint for client dashboard reconciliation without changing business logic.
+- [x] Add focused backend tests for diagnostic payload and exclusion reasons.
+- [x] Run backend tests and document review outcomes.
+
+## Review
+- [x] Synced remote refs with `git fetch --all --prune`; `git pull --ff-only origin main` reported divergence on local branch, so implementation continued on updated local branch without history rewrite.
+- [x] Added backend-only debug endpoint `GET /dashboard/debug/clients/{client_id}/dashboard-reconciliation` with agency-scope authorization and audit logging.
+- [x] Added reconciliation diagnostics in dashboard service: mapping snapshot, raw grouped totals, included grouped totals, excluded rows with reasons (`missing_mapping`, `grain_not_account_daily`, `currency_resolution_fallback`), row counts, pre/post-conversion summaries, per-platform summaries, and per-account summaries.
+- [x] Added targeted service test covering multi-account rows, inclusion/exclusion logic, and currency fallback visibility.
+- [x] Verification: `pytest -q apps/backend/tests/test_dashboard_reconciliation_diagnostics.py apps/backend/tests/test_dashboard_currency_normalization.py` (pass).
+
+---
+
+# TODO — Remote sync via Connector workspace
+
+- [x] Confirm instructions and run requested remote/fetch/pull commands exactly as provided.
+- [x] Verify git remotes and current branch state after sync.
+- [x] Record review notes with command outcomes.
+
+## Review
+- [x] Executed the exact requested remote/add-or-set + fetch + pull commands in a fresh terminal session for this run.
+- [x] Fetch completed successfully and pulled `origin/main` with response `Already up to date.`
+- [x] Verified `origin` URL and current branch (`work`) via `git remote -v`, `git branch --show-current`, and `git status --short --branch`.
+
+---
+
 # TODO — Fix Meta/TikTok historical backfill progress UI in Agency Accounts
 
 - [x] Rebaseline branch from clean baseline and document constraints if requested remote baseline is unavailable.
@@ -3531,3 +3683,205 @@
 - [x] Fix: mapping-ul rămâne strict pentru membership (`mapped.client_id` + account/platform match), dar fără filtrare temporală pe `created_at`; bounds/istoric vin din datele reale `account_daily` din `ad_performance_reports` (+ manual non-zero pentru Media Buying bounds).
 - [x] Problemă Meta ianuarie invalid nu se rezolvă prin clamp pe mapping-created-at; root cause trebuie adresată prin membership/source corect, nu prin tăiere globală de istoric.
 - [x] Verificare: `pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_dashboard_currency_normalization.py apps/backend/tests/test_clients_platform_account_mappings.py apps/backend/tests/test_clients_media_buying_api.py apps/backend/tests/test_dashboard_agency_summary_integration_health.py` (pass).
+
+---
+
+# TODO — Sub-account dashboard sync health surfacing (Meta/TikTok)
+
+- [x] Refresh workspace and inspect current sub-account dashboard frontend + backend payload availability.
+- [x] Add minimal `platform_sync_summary` payload on `GET /dashboard/{client_id}` for Meta/TikTok using attached-account sync metadata only.
+- [x] Add compact dashboard sync-health banner + platform chips + concise details interaction in sub-account dashboard UI.
+- [x] Reuse shared sync-status utility/component logic where possible; keep KPI calculations/layout unchanged.
+- [x] Add/update targeted frontend/backend tests for banner visibility, platform status derivation, affected counts, and details panel content.
+- [x] Run focused test commands and record outcomes.
+
+## Review
+- [x] Added backend `platform_sync_summary` to client dashboard payload for Meta/TikTok using latest sync-run metadata per attached account.
+- [x] Added compact page-level sync warning banner plus per-platform status chips on sub-account dashboard rows.
+- [x] Added expandable concise affected-account details (name/id, status, reason, last sync, failed chunks/retry).
+- [x] Extended sync-status utility with platform-level worst-status derivation and affected counts.
+- [x] Verification run: frontend targeted Vitest suite passed; backend targeted pytest collection failed in this environment due missing `requests` dependency.
+
+---
+
+# TODO — Media Tracker weekly worksheet foundation (backend-only)
+
+- [x] Refresh workspace and inspect current Media Tracker/backend routing architecture.
+- [x] Add shared scope-resolution helper for month/quarter/year using anchor_date.
+- [x] Add deterministic Monday-Sunday visible week bucket generation for intersecting full weeks.
+- [x] Expose minimal backend contract endpoint for worksheet foundation metadata only (no formulas/inputs).
+- [x] Add targeted backend tests for scope resolution, week ordering/intersection flags, first-week flag, and history count consistency.
+- [x] Run focused backend tests and record outcomes.
+
+## Review
+- [x] Added `media_tracker_worksheet_service` with month/quarter/year period resolution from `anchor_date` and Monday-Sunday full-week bucket generation.
+- [x] Added backend endpoint `GET /clients/{client_id}/media-tracker/worksheet-foundation` returning stable worksheet foundation metadata only (no formulas/manual inputs).
+- [x] Added deterministic week metadata fields: index, week_start/end, label, first-week flag, period boundary intersection flags.
+- [x] Added tests for month/quarter/year resolution, ordering, boundary intersection, first-week flag, and history week-count consistency.
+- [x] Verification: service tests pass; API test collection blocked in this environment due missing FastAPI dependency.
+
+---
+
+# TODO — Media Tracker weekly worksheet automatic weekly aggregation (backend-only)
+
+- [x] Refresh workspace and inspect existing daily Media Buying/Media Tracker source-of-truth and current worksheet foundation service.
+- [x] Extend worksheet service to aggregate raw automatic weekly metrics from existing daily source for full visible weeks.
+- [x] Keep contract stable and include `auto_metrics` with history sums aligned to visible weekly values.
+- [x] Add focused tests for weekly aggregation, boundary full-week behavior, history alignment, ordering, leads/applications mapping, and null safety.
+- [x] Run focused backend tests and record outcomes.
+
+## Review
+- [x] Reused `media_buying_store.get_lead_table(...).days` as daily source-of-truth (no second conflicting path).
+- [x] Weekly aggregation now sums full visible Monday-Sunday weeks, including boundary weeks that extend outside resolved period.
+- [x] Added auto metric keys: `cost_total`, `cost_google`, `cost_meta`, `cost_tiktok`, `total_leads`, `applications`, `approved_applications`; `history_value` equals sum of weekly values per key.
+- [x] Preserved existing worksheet foundation shape and placeholder sections.
+
+---
+
+# TODO — Media Tracker worksheet manual weekly inputs + EUR/RON storage (backend-only)
+
+- [x] Refresh workspace and inspect current worksheet foundation/aggregation backend and API routing.
+- [x] Implement persistence and idempotent upsert/clear logic for weekly manual values keyed by client/week_start/field_key.
+- [x] Implement persistence and idempotent upsert/clear logic for worksheet-scope EUR/RON rate keyed by client/granularity/period_start/period_end.
+- [x] Extend worksheet GET response with manual field definitions, manual metrics/history, eur_ron_rate, and eur_ron_rate_scope.
+- [x] Add API write endpoints for manual weekly values and scope EUR/RON rate with validation.
+- [x] Add/update backend tests for validation, idempotency, scope reuse/readback, clear semantics, and compatibility with existing auto metrics.
+- [x] Run focused backend tests and record outcomes.
+
+## Review
+- [x] Reused existing weekly scope resolver and visible-week ordering from worksheet foundation.
+- [x] Manual values now persist per weekly key and are returned aligned to visible weeks with history sums.
+- [x] EUR/RON rate now persists per canonical worksheet scope and reads back consistently for anchor dates within same scope.
+- [x] No formulas/manual-derived final rows/frontend changes were introduced in this step.
+
+---
+
+# TODO — Media Tracker worksheet core formula engine rows (backend-only, no % rows)
+
+- [x] Refresh workspace and inspect existing worksheet foundation + auto/manual metrics + EUR/RON response.
+- [x] Add internal formula catalog/helper for deterministic section row computation from auto/manual/rate inputs.
+- [x] Compute weekly and history values for confirmed core business rows (summary/new_clients/google/meta/tiktok) without % comparison rows.
+- [x] Preserve existing response keys and enrich `sections[].rows` with computed row payloads aligned to weeks ordering.
+- [x] Add/update backend tests for formulas, additive vs ratio history behavior, null-safe divide/rate/cogs handling, and ordering alignment.
+- [x] Run focused backend tests and record outcomes.
+
+## Review
+- [x] Added core computed-row engine for worksheet sections using existing `auto_metrics`, `manual_metrics`, and scope `eur_ron_rate`.
+- [x] Kept response backward-compatible (raw metrics remain) and enriched `sections[].rows` with deterministic weekly/history values and minimal row metadata.
+- [x] Implemented additive history as sum of weekly values and ratio history as recomputed numerator/denominator (no summed weekly ratios).
+- [x] Added null-safe handling for divide-by-zero, missing EUR rate, missing manual rows, and COGS-dependent formulas.
+- [x] Verification: focused backend worksheet/API tests pass locally.
+
+---
+
+# TODO — Media Tracker worksheet week-over-week comparison rows (backend-only)
+
+- [x] Refresh workspace/update branch state and inspect current worksheet backend payload after Task 4A.
+- [x] Add reusable backend helper to build WoW percent-ratio comparison rows from source row weekly values.
+- [x] Insert comparison rows only for approved rows in summary/google/meta/tiktok sections, immediately after source rows.
+- [x] Keep new_clients section unchanged and preserve existing non-% formulas/row ordering otherwise.
+- [x] Add/update backend tests for WoW math, null/zero handling, row inclusion/exclusion, ordering, week alignment, and history_value null.
+- [x] Run focused backend tests and record outcomes.
+
+
+## Review
+- [x] Added reusable WoW comparison-row generation with strict null/zero guards and history_value=null.
+- [x] Inserted `_wow_pct` rows immediately after approved source rows in summary/google/meta/tiktok; left `new_clients` unchanged.
+- [x] Preserved existing non-% row formulas and section payload shape from Task 4A.
+- [x] Verified with focused worksheet tests (`13 passed`).
+
+---
+
+# TODO — Media Tracker frontend weekly worksheet shell (view + scope + fetch + scaffold)
+
+- [x] Refresh workspace state and inspect existing Media Tracker page structure plus worksheet backend endpoint contract.
+- [x] Add a new Weekly Worksheet view mode inside Media Tracker while preserving existing overview behavior.
+- [x] Implement worksheet state (granularity + anchor_date) with previous/next period navigation semantics.
+- [x] Integrate frontend fetch to worksheet backend endpoint and handle loading/error/empty/invalid states.
+- [x] Render a minimal read-only worksheet scaffold (history first, week columns, sections/rows backend order).
+- [x] Add targeted frontend tests for view switch, request params, navigation, states, and row rendering order.
+- [x] Run focused frontend test suite and record outcomes.
+
+## Review
+- [x] Added a new Weekly Worksheet view mode inside Media Tracker while preserving the existing overview surface.
+- [x] Implemented granularity + previous/next period navigation with worksheet backend fetching and state handling.
+- [x] Rendered a minimal read-only worksheet scaffold in backend order with `Istorie` before weekly columns, including `%` rows.
+- [x] Verified via focused frontend Vitest suite for media-tracker page.
+
+---
+
+# TODO — Media Tracker frontend worksheet read-only table component (structured)
+
+- [x] Refresh workspace state and inspect current worksheet frontend shell plus backend worksheet row/section response shape.
+- [x] Extract worksheet rendering into a dedicated reusable component and wire it into Media Tracker worksheet view.
+- [x] Implement worksheet-style two-row header (Săptămâna/Istorie + Data Începere/week_start) preserving backend week order.
+- [x] Render section bands and rows in backend order with comparison-row visual distinction, read-only only.
+- [x] Add focused value formatter by `value_kind` (RON/EUR/integer/decimal/percent_ratio/null placeholder).
+- [x] Add/adjust targeted frontend tests for header structure, ordering, comparison placement, formatting, and shell behavior.
+- [x] Run focused frontend tests and record outcomes.
+
+## Review
+- [x] Replaced temporary worksheet scaffold with dedicated `WeeklyWorksheetTable` component used by Media Tracker worksheet mode.
+- [x] Implemented two-row worksheet header, section band rows, and comparison-row visual hierarchy in backend-provided order.
+- [x] Added value formatting by `value_kind` (RON/EUR/integer/decimal/percent_ratio/null).
+- [x] Preserved existing worksheet shell controls/states and verified with targeted Vitest suite.
+
+---
+
+# TODO — Media Tracker worksheet inline editing for weekly manual cells (frontend)
+
+- [x] Refresh workspace state and inspect current worksheet frontend table component plus backend manual-values API contract.
+- [x] Add inline edit capability only for weekly manual input cells in worksheet table.
+- [x] Keep history/computed/auto/comparison cells read-only and preserve existing worksheet layout/order.
+- [x] Integrate save flow with `PUT /clients/{id}/media-tracker/worksheet/manual-values` using granularity+anchor_date+single entry payload.
+- [x] Support clear semantics (empty input => null), saving state, escape cancel, and inline error feedback.
+- [x] Update page wiring to pass save handler and refresh worksheet data from backend response after successful save.
+- [x] Add/adjust focused frontend tests for editability boundaries, payloads, clear behavior, success/error paths, and existing shell states.
+- [x] Run focused frontend tests and record outcomes.
+
+## Review
+- [x] Inline editing is limited to rows marked as direct manual inputs via backend metadata/dependencies mapping.
+- [x] Save interaction uses Enter or blur, Escape cancels local edit, empty values clear persisted manual entries via null.
+- [x] Successful save updates worksheet data from backend response so computed rows remain backend-driven.
+- [x] Non-manual rows, comparison rows, and history column remain read-only.
+- [x] Focused media-tracker frontend tests pass.
+
+---
+
+# TODO — Media Tracker worksheet scope EUR/RON inline editor (frontend)
+
+- [x] Refresh workspace state and inspect current worksheet header shell plus backend eur-ron-rate API contract.
+- [x] Surface current EUR/RON value in worksheet control area with compact scope context.
+- [x] Add inline edit mode for EUR/RON with save on Enter/blur and Escape cancel.
+- [x] Integrate save flow to `PUT /clients/{id}/media-tracker/worksheet/eur-ron-rate` using current granularity + anchor_date.
+- [x] Support clear semantics (empty input => null), saving state, invalid input feedback, and error message on failure.
+- [x] Refresh worksheet data from backend response after successful rate save so EUR-derived rows update from backend truth.
+- [x] Keep existing manual weekly editing behavior and worksheet layout/shell controls unchanged.
+- [x] Add/adjust focused frontend tests for EUR/RON render/edit/save/clear/error and regressions.
+- [x] Run focused frontend tests and record outcomes.
+
+## Review
+- [x] Added compact EUR/RON scope editor in worksheet controls area without page redesign.
+- [x] Save/cancel/clear interactions mirror inline-edit patterns used in worksheet manual cell editing.
+- [x] Scope-specific save uses current worksheet granularity + anchor_date and backend canonical scope resolution.
+- [x] Successful saves update worksheet state from backend response; failures show inline error while preserving draft.
+- [x] Focused media-tracker frontend tests pass.
+
+---
+
+# TODO — Weekly Worksheet real ISO week labels + dashed vertical separators (frontend)
+
+- [x] Refresh workspace and inspect existing worksheet table component + backend week metadata contract.
+- [x] Replace local visible week indexing with real ISO calendar week numbers derived from week_start.
+- [x] Handle ISO year-boundary week labeling correctly (e.g., 2025-12-29 => week 1).
+- [x] Add 1px black dashed vertical separators across header/body worksheet columns.
+- [x] Keep existing worksheet layout, scrolling, and editing behavior unchanged.
+- [x] Add/update focused frontend tests for month/quarter/year labels, boundary week case, header row 2 dates, and dashed border classes.
+- [x] Run focused frontend tests and record outcomes.
+
+## Review
+- [x] Week labels now use real ISO week numbers from week_start and are consistent across Month/Quarter/Year views.
+- [x] Year-boundary ISO semantics are handled via ISO week calculation logic.
+- [x] Vertical 1px black dashed separators are applied across table header and body columns.
+- [x] Existing worksheet shell and inline editing remain intact.
+- [x] Focused media-tracker frontend tests pass.
