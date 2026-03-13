@@ -355,6 +355,64 @@ class MediaTrackerWorksheetService:
             ],
         }
 
+    def _compute_week_over_week_values(self, *, source_weekly_values: list[dict[str, object]]) -> list[float | None]:
+        values: list[float | None] = []
+        for idx, item in enumerate(source_weekly_values):
+            current_raw = item.get("value") if isinstance(item, dict) else None
+            current = float(current_raw) if isinstance(current_raw, (int, float)) else None
+            if idx == 0:
+                values.append(None)
+                continue
+
+            previous_raw = source_weekly_values[idx - 1].get("value") if isinstance(source_weekly_values[idx - 1], dict) else None
+            previous = float(previous_raw) if isinstance(previous_raw, (int, float)) else None
+            if current is None or previous is None or abs(previous) <= 0.0:
+                values.append(None)
+                continue
+            values.append((current - previous) / previous)
+        return values
+
+    def _build_wow_comparison_row(self, *, weeks: list[dict[str, object]], source_row: dict[str, object]) -> dict[str, object]:
+        source_row_key = str(source_row.get("row_key") or "")
+        source_weekly_values = source_row.get("weekly_values") if isinstance(source_row.get("weekly_values"), list) else []
+        wow_values = self._compute_week_over_week_values(source_weekly_values=source_weekly_values)
+        return {
+            "row_key": f"{source_row_key}_wow_pct",
+            "label": "%",
+            "value_kind": "percent_ratio",
+            "source_kind": "comparison",
+            "is_manual_input_row": False,
+            "is_derived_row": True,
+            "requires_eur_ron_rate": False,
+            "dependencies": [source_row_key],
+            "comparison_kind": "week_over_week",
+            "compares_row_key": source_row_key,
+            "history_value": None,
+            "weekly_values": [
+                {
+                    "week_start": week["week_start"],
+                    "week_end": week["week_end"],
+                    "value": round(wow_values[idx], 4) if isinstance(wow_values[idx], (int, float)) else None,
+                }
+                for idx, week in enumerate(weeks)
+            ],
+        }
+
+    def _insert_wow_rows(
+        self,
+        *,
+        weeks: list[dict[str, object]],
+        rows: list[dict[str, object]],
+        source_row_keys: set[str],
+    ) -> list[dict[str, object]]:
+        enriched_rows: list[dict[str, object]] = []
+        for row in rows:
+            enriched_rows.append(row)
+            row_key = str(row.get("row_key") or "")
+            if row_key in source_row_keys:
+                enriched_rows.append(self._build_wow_comparison_row(weeks=weeks, source_row=row))
+        return enriched_rows
+
     def _build_computed_sections(
         self,
         *,
@@ -495,12 +553,45 @@ class MediaTrackerWorksheetService:
         meta_rows = platform_rows("meta", "Meta", auto_cost_meta, m_leads, m_sales, m_revenue)
         tiktok_rows = platform_rows("tiktok", "TikTok", auto_cost_tiktok, t_leads, t_sales, t_revenue)
 
+        summary_rows_with_wow = self._insert_wow_rows(
+            weeks=weeks,
+            rows=summary_rows,
+            source_row_keys={
+                "cost",
+                "avg_daily_spend",
+                "revenue",
+                "sales",
+                "aov",
+                "leads",
+                "cpa_leads",
+                "applications",
+                "cpa_applications",
+                "approved_applications",
+                "cpa_approved_applications",
+            },
+        )
+        google_rows_with_wow = self._insert_wow_rows(
+            weeks=weeks,
+            rows=google_rows,
+            source_row_keys={"cost", "leads_manual", "cpa", "sales_manual", "revenue_manual"},
+        )
+        meta_rows_with_wow = self._insert_wow_rows(
+            weeks=weeks,
+            rows=meta_rows,
+            source_row_keys={"cost", "leads_manual", "cpa", "sales_manual", "revenue_manual"},
+        )
+        tiktok_rows_with_wow = self._insert_wow_rows(
+            weeks=weeks,
+            rows=tiktok_rows,
+            source_row_keys={"cost", "leads_manual", "cpa", "sales_manual", "revenue_manual"},
+        )
+
         return [
-            {"key": "summary", "label": "Rezumat", "rows": summary_rows},
+            {"key": "summary", "label": "Rezumat", "rows": summary_rows_with_wow},
             {"key": "new_clients", "label": "Clienti Noi", "rows": new_clients_rows},
-            {"key": "google_spend", "label": "Google Spend", "rows": google_rows},
-            {"key": "meta_spend", "label": "Meta Spend", "rows": meta_rows},
-            {"key": "tiktok_spend", "label": "TikTok Spend", "rows": tiktok_rows},
+            {"key": "google_spend", "label": "Google Spend", "rows": google_rows_with_wow},
+            {"key": "meta_spend", "label": "Meta Spend", "rows": meta_rows_with_wow},
+            {"key": "tiktok_spend", "label": "TikTok Spend", "rows": tiktok_rows_with_wow},
         ]
 
     def upsert_weekly_manual_values(

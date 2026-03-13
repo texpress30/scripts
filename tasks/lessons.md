@@ -303,3 +303,4 @@
 - 2026-03-13: For follow-up worksheet tasks, reuse existing daily source methods directly (e.g., media_buying_store day rows) instead of introducing parallel raw-query paths.
 - 2026-03-13: For scope-based editable values, persist against canonical resolved period keys so different anchor dates in same scope update the same logical record.
 - 2026-03-13: For staged worksheet delivery, compute core numeric rows in backend sections from existing raw metrics first, and explicitly defer comparison/% rows to later tasks.
+- 2026-03-13: When editing files in this runner, use the dedicated apply_patch tool directly instead of wrapping apply_patch via shell exec.

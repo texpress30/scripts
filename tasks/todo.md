@@ -3722,3 +3722,21 @@
 - [x] Implemented additive history as sum of weekly values and ratio history as recomputed numerator/denominator (no summed weekly ratios).
 - [x] Added null-safe handling for divide-by-zero, missing EUR rate, missing manual rows, and COGS-dependent formulas.
 - [x] Verification: focused backend worksheet/API tests pass locally.
+
+---
+
+# TODO — Media Tracker worksheet week-over-week comparison rows (backend-only)
+
+- [x] Refresh workspace/update branch state and inspect current worksheet backend payload after Task 4A.
+- [x] Add reusable backend helper to build WoW percent-ratio comparison rows from source row weekly values.
+- [x] Insert comparison rows only for approved rows in summary/google/meta/tiktok sections, immediately after source rows.
+- [x] Keep new_clients section unchanged and preserve existing non-% formulas/row ordering otherwise.
+- [x] Add/update backend tests for WoW math, null/zero handling, row inclusion/exclusion, ordering, week alignment, and history_value null.
+- [x] Run focused backend tests and record outcomes.
+
+
+## Review
+- [x] Added reusable WoW comparison-row generation with strict null/zero guards and history_value=null.
+- [x] Inserted `_wow_pct` rows immediately after approved source rows in summary/google/meta/tiktok; left `new_clients` unchanged.
+- [x] Preserved existing non-% row formulas and section payload shape from Task 4A.
+- [x] Verified with focused worksheet tests (`13 passed`).
