@@ -244,6 +244,27 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
         )
         self.assertEqual(payload["meta"]["effective_date_from"], "2026-03-11")
 
+    def test_get_media_tracker_weekly_worksheet_foundation_endpoint(self):
+        payload = clients_api.get_media_tracker_weekly_worksheet_foundation(
+            client_id=self.client_id,
+            granularity="month",
+            anchor_date=date(2026, 3, 15),
+            user=self.user,
+        )
+        self.assertEqual(payload["requested_scope"]["granularity"], "month")
+        self.assertEqual(payload["resolved_period"]["period_start"], "2026-03-01")
+        self.assertEqual(payload["history"]["visible_week_count"], len(payload["weeks"]))
+
+    def test_get_media_tracker_weekly_worksheet_foundation_validation(self):
+        with self.assertRaises(HTTPException) as ctx:
+            clients_api.get_media_tracker_weekly_worksheet_foundation(
+                client_id=self.client_id,
+                granularity="week",
+                anchor_date=date(2026, 3, 15),
+                user=self.user,
+            )
+        self.assertEqual(ctx.exception.status_code, 422)
+
 
 if __name__ == "__main__":
     unittest.main()

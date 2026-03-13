@@ -3652,3 +3652,21 @@
 - [x] Added expandable concise affected-account details (name/id, status, reason, last sync, failed chunks/retry).
 - [x] Extended sync-status utility with platform-level worst-status derivation and affected counts.
 - [x] Verification run: frontend targeted Vitest suite passed; backend targeted pytest collection failed in this environment due missing `requests` dependency.
+
+---
+
+# TODO — Media Tracker weekly worksheet foundation (backend-only)
+
+- [x] Refresh workspace and inspect current Media Tracker/backend routing architecture.
+- [x] Add shared scope-resolution helper for month/quarter/year using anchor_date.
+- [x] Add deterministic Monday-Sunday visible week bucket generation for intersecting full weeks.
+- [x] Expose minimal backend contract endpoint for worksheet foundation metadata only (no formulas/inputs).
+- [x] Add targeted backend tests for scope resolution, week ordering/intersection flags, first-week flag, and history count consistency.
+- [x] Run focused backend tests and record outcomes.
+
+## Review
+- [x] Added `media_tracker_worksheet_service` with month/quarter/year period resolution from `anchor_date` and Monday-Sunday full-week bucket generation.
+- [x] Added backend endpoint `GET /clients/{client_id}/media-tracker/worksheet-foundation` returning stable worksheet foundation metadata only (no formulas/manual inputs).
+- [x] Added deterministic week metadata fields: index, week_start/end, label, first-week flag, period boundary intersection flags.
+- [x] Added tests for month/quarter/year resolution, ordering, boundary intersection, first-week flag, and history week-count consistency.
+- [x] Verification: service tests pass; API test collection blocked in this environment due missing FastAPI dependency.
