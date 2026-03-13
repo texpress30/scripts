@@ -7,6 +7,7 @@ from threading import Lock
 import os
 
 from app.core.config import load_settings
+from app.services.account_currency_resolver import resolve_client_reporting_currency, resolve_effective_attached_account_currency
 from app.services.platform_account_watermarks_store import list_platform_account_watermarks
 
 try:
@@ -348,8 +349,29 @@ class ClientRegistryService:
                 )
             conn.commit()
 
+    def _backfill_blank_mapping_account_currency(self, *, conn) -> None:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE agency_account_client_mappings m
+                SET account_currency = apa.currency_code,
+                    updated_at = NOW()
+                FROM agency_platform_accounts apa
+                WHERE m.platform = apa.platform
+                  AND m.account_id = apa.account_id
+                  AND (m.account_currency IS NULL OR TRIM(m.account_currency) = '')
+                  AND apa.currency_code IS NOT NULL
+                  AND TRIM(apa.currency_code) <> ''
+                """
+            )
+
     def initialize_schema(self) -> None:
         self._ensure_schema()
+        if self._is_test_mode():
+            return
+        with self._connect_or_raise() as conn:
+            self._backfill_blank_mapping_account_currency(conn=conn)
+            conn.commit()
 
     def create_client(self, name: str, owner_email: str) -> dict[str, str | int | None]:
 
@@ -488,7 +510,19 @@ class ClientRegistryService:
                 client = next(c for c in self._clients if c.id == client_id)
                 per_platform = self._memory_account_profiles.setdefault(platform, {})
                 per_account = per_platform.setdefault(account_id, {})
-                per_account.setdefault(client_id, {"client_type": client.client_type, "account_manager": client.account_manager, "account_currency": client.currency})
+                existing_profile = per_account.get(client_id, {}) if isinstance(per_account.get(client_id), dict) else {}
+                resolved_currency, _ = resolve_effective_attached_account_currency(
+                    mapping_account_currency=existing_profile.get("account_currency"),
+                    platform_account_currency_code=(platform_accounts.get(account_id) or {}).get("currency_code"),
+                    client_currency=client.currency,
+                    fallback="USD",
+                )
+                if client_id not in per_account:
+                    per_account[client_id] = {"client_type": client.client_type, "account_manager": client.account_manager, "account_currency": resolved_currency}
+                else:
+                    current = str(existing_profile.get("account_currency") or "").strip()
+                    if current == "":
+                        per_account[client_id]["account_currency"] = resolved_currency
                 return {
                     "id": client.id,
                     "name": client.name,
@@ -534,12 +568,21 @@ class ClientRegistryService:
                         %s,
                         (SELECT client_type FROM agency_clients WHERE id = %s),
                         (SELECT account_manager FROM agency_clients WHERE id = %s),
-                        (SELECT currency FROM agency_clients WHERE id = %s)
+                        COALESCE(
+                            NULLIF(TRIM((SELECT currency_code FROM agency_platform_accounts WHERE platform = %s AND account_id = %s)), ''),
+                            (SELECT currency FROM agency_clients WHERE id = %s)
+                        )
                     )
                     ON CONFLICT(platform, account_id, client_id)
-                    DO UPDATE SET updated_at = NOW()
+                    DO UPDATE SET
+                        account_currency = CASE
+                            WHEN agency_account_client_mappings.account_currency IS NULL OR TRIM(agency_account_client_mappings.account_currency) = ''
+                                THEN EXCLUDED.account_currency
+                            ELSE agency_account_client_mappings.account_currency
+                        END,
+                        updated_at = NOW()
                     """,
-                    (platform, account_id, client_id, client_id, client_id, client_id),
+                    (platform, account_id, client_id, client_id, client_id, platform, account_id, client_id),
                 )
                 if platform == "google_ads":
                     # Keep legacy column in sync (best effort; not used as source-of-truth).
@@ -1226,12 +1269,22 @@ class ClientRegistryService:
                     info = accounts.get(account_id)
                     if info:
                         profile = profiles.get(account_id, {}).get(client_id, {})
+                        effective_currency, currency_source = resolve_effective_attached_account_currency(
+                            mapping_account_currency=profile.get("account_currency"),
+                            platform_account_currency_code=info.get("currency_code") if isinstance(info, dict) else None,
+                            client_currency=next((c.currency for c in self._clients if c.id == client_id), "USD"),
+                            fallback="USD",
+                        )
                         result.append({
                             "id": info["id"],
                             "name": info["name"],
                             "client_type": str(profile.get("client_type", "lead")),
                             "account_manager": str(profile.get("account_manager", "")),
-                            "currency": str(profile.get("account_currency", "USD")),
+                            "currency": effective_currency,
+                            "effective_account_currency": effective_currency,
+                            "account_currency_source": currency_source,
+                            "mapping_account_currency": profile.get("account_currency"),
+                            "platform_account_currency": info.get("currency_code") if isinstance(info, dict) else None,
                         })
                 return sorted(result, key=lambda item: item["id"])
 
@@ -1239,17 +1292,47 @@ class ClientRegistryService:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT a.account_id, a.account_name, m.client_type, m.account_manager, m.account_currency
+                    SELECT
+                        a.account_id,
+                        a.account_name,
+                        m.client_type,
+                        m.account_manager,
+                        m.account_currency,
+                        a.currency_code,
+                        c.currency,
+                        COALESCE(NULLIF(TRIM(m.account_currency), ''), NULLIF(TRIM(a.currency_code), ''), NULLIF(TRIM(c.currency), ''), 'USD') AS effective_account_currency,
+                        CASE
+                            WHEN NULLIF(TRIM(m.account_currency), '') IS NOT NULL THEN 'mapping_account_currency'
+                            WHEN NULLIF(TRIM(a.currency_code), '') IS NOT NULL THEN 'platform_account_currency'
+                            WHEN NULLIF(TRIM(c.currency), '') IS NOT NULL THEN 'client_currency'
+                            ELSE 'fallback'
+                        END AS account_currency_source
                     FROM agency_account_client_mappings m
                     JOIN agency_platform_accounts a
                       ON a.platform = m.platform AND a.account_id = m.account_id
+                    JOIN agency_clients c
+                      ON c.id = m.client_id
                     WHERE m.platform = %s AND m.client_id = %s
                     ORDER BY m.updated_at DESC, m.created_at DESC
                     """,
                     (platform, client_id),
                 )
                 rows = cur.fetchall()
-        return [{"id": str(row[0]), "name": str(row[1]), "client_type": str(row[2]) if row[2] else "lead", "account_manager": str(row[3]) if row[3] else "", "currency": str(row[4]) if row[4] else "USD"} for row in rows]
+        return [
+            {
+                "id": str(row[0]),
+                "name": str(row[1]),
+                "client_type": str(row[2]) if row[2] else "lead",
+                "account_manager": str(row[3]) if row[3] else "",
+                "currency": str(row[7]) if row[7] else "USD",
+                "effective_account_currency": str(row[7]) if row[7] else "USD",
+                "account_currency_source": str(row[8]) if row[8] else "fallback",
+                "mapping_account_currency": str(row[4]) if row[4] else None,
+                "platform_account_currency": str(row[5]) if row[5] else None,
+                "client_currency": str(row[6]) if row[6] else None,
+            }
+            for row in rows
+        ]
 
     def list_client_accounts(self, *, client_id: int, platform: str | None = None) -> list[dict[str, object]]:
         target_platforms = [str(platform)] if platform else ["google_ads", "meta_ads", "tiktok_ads", "pinterest_ads", "snapchat_ads", "reddit_ads"]
@@ -1269,6 +1352,8 @@ class ClientRegistryService:
                     "client_type": item.get("client_type"),
                     "account_manager": item.get("account_manager"),
                     "currency": item.get("currency"),
+                    "effective_account_currency": item.get("effective_account_currency") or item.get("currency"),
+                    "account_currency_source": item.get("account_currency_source"),
                 })
         return rows
 
@@ -1510,13 +1595,49 @@ class ClientRegistryService:
         return self.get_client_details(client_id=client_id)
 
 
+    def get_client_reporting_currency_decision(
+        self,
+        *,
+        client_id: int,
+        platforms: tuple[str, ...] = ("google_ads", "meta_ads", "tiktok_ads"),
+        safe_fallback: str = "USD",
+    ) -> dict[str, object]:
+        platform_set = {str(item) for item in platforms}
+        attached_accounts = [
+            item
+            for item in self.list_client_accounts(client_id=client_id)
+            if str(item.get("platform") or "") in platform_set
+        ]
+        attached_effective_currencies = [
+            item.get("effective_account_currency") or item.get("currency")
+            for item in attached_accounts
+        ]
+
+        client_currency = None
+        for item in self.list_clients():
+            if int(item.get("id") or 0) == int(client_id):
+                client_currency = item.get("currency")
+                break
+
+        reporting_currency, source, mixed, summary = resolve_client_reporting_currency(
+            attached_effective_currencies=attached_effective_currencies,
+            client_currency=client_currency,
+            fallback=safe_fallback,
+        )
+
+        return {
+            "reporting_currency": reporting_currency,
+            "reporting_currency_source": source,
+            "mixed_attached_account_currencies": mixed,
+            "attached_account_currency_summary": summary,
+            "attached_account_count": len(attached_accounts),
+            "client_default_currency": str(client_currency or "").strip().upper() or None,
+            "platforms_considered": sorted(platform_set),
+        }
+
     def get_preferred_currency_for_client(self, *, client_id: int) -> str:
-        accounts = self.list_client_platform_accounts(platform="google_ads", client_id=client_id)
-        for account in accounts:
-            currency = str(account.get("currency") or account.get("account_currency") or "").upper()
-            if len(currency) == 3 and currency.isalpha():
-                return currency
-        return "USD"
+        decision = self.get_client_reporting_currency_decision(client_id=client_id)
+        return str(decision.get("reporting_currency") or "USD")
 
 
     def list_media_storage_usage(
