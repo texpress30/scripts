@@ -3922,3 +3922,21 @@
 - [x] Vertical 1px black dashed separators are applied across table header and body columns.
 - [x] Existing worksheet shell and inline editing remain intact.
 - [x] Focused media-tracker frontend tests pass.
+
+---
+
+# TODO — Dashboard debug currency drift audit/repair endpoint
+
+- [x] Inspect dashboard debug endpoint/service patterns and existing display-currency resolver contract.
+- [x] Add backend-only debug endpoint `POST /dashboard/debug/currency-drift-repair` with optional `client_id` and `dry_run`.
+- [x] Implement service audit/repair flow that scans persisted client-level display-currency mirrors and repairs stale `media_buying_configs.display_currency` drift in apply mode.
+- [x] Keep behavior conservative: skip ambiguous expected currency (`safe_fallback`) and never mutate attached-account metadata/platform data.
+- [x] Add focused backend tests for dry-run detection, apply repair, multi-currency behavior, no-op aligned path, single-client filter, and metadata isolation.
+- [x] Run targeted backend tests and document outcomes.
+
+## Review
+- [x] Added debug endpoint `POST /dashboard/debug/currency-drift-repair` under existing dashboard debug scope with no-cache headers and audit log details.
+- [x] Added `UnifiedDashboardService.audit_and_repair_client_display_currency_drift(...)` with client/all-clients scan, expected-currency resolution via shared client reporting/display decision, structured findings, dry-run/apply modes, and conservative skip semantics for ambiguous decisions.
+- [x] Auto-repair currently targets `media_buying_configs.display_currency` drift only; attached-account currency metadata remains read-only by design.
+- [x] Added `apps/backend/tests/test_dashboard_currency_drift_repair.py` covering dry-run/apply/multi-currency/no-op/filter/skip behavior.
+- [x] Verification attempted: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q apps/backend/tests/test_dashboard_currency_drift_repair.py` (environment warning: missing `requests` dependency in this runner during import).

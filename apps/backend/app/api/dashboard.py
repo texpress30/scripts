@@ -18,6 +18,11 @@ class TikTokAccountDailyRepairRequest(BaseModel):
     dry_run: bool = True
 
 
+class CurrencyDriftRepairRequest(BaseModel):
+    client_id: int | None = None
+    dry_run: bool = True
+
+
 
 @router.get("/agency/summary")
 def agency_dashboard_summary(
@@ -143,6 +148,42 @@ def client_tiktok_account_daily_repair_debug(
         },
     )
     return result
+
+@router.post("/debug/currency-drift-repair")
+def currency_drift_repair_debug(
+    payload: CurrencyDriftRepairRequest,
+    user: AuthUser = Depends(get_current_user),
+    response: Response = None,
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="dashboard:view", scope="agency")
+
+    result = unified_dashboard_service.audit_and_repair_client_display_currency_drift(
+        client_id=payload.client_id,
+        dry_run=bool(payload.dry_run),
+    )
+
+    if response is not None:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+
+    resource = f"client:{payload.client_id}" if payload.client_id is not None else "agency:clients"
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="dashboard.debug.currency_drift_repair.run",
+        resource=resource,
+        details={
+            "client_id": payload.client_id,
+            "dry_run": bool(payload.dry_run),
+            "total_clients_scanned": result.get("total_clients_scanned"),
+            "clients_with_drift": result.get("clients_with_drift"),
+            "clients_repaired": result.get("clients_repaired"),
+            "configs_repaired": result.get("configs_repaired"),
+            "clients_skipped": result.get("clients_skipped"),
+        },
+    )
+    return result
+
 
 @router.get("/debug/clients/{client_id}/dashboard-reconciliation")
 def client_dashboard_reconciliation_debug(
