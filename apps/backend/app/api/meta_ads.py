@@ -338,17 +338,46 @@ def _run_meta_historical_backfill_job(
     accounts_processed_max = 0
     token_source: str | None = None
     execution_log: list[dict[str, object]] = []
+    total_chunk_count = len(chunks)
+    successful_chunk_count = 0
+    failed_chunk_count = 0
+    retry_attempted = False
+    retry_recovered_chunk_count = 0
+    first_persisted_date: str | None = None
+    last_persisted_date: str | None = None
+    last_error_summary: str | None = None
+    last_error_details: dict[str, object] | None = None
 
     try:
         for grain in grains:
+            failed_windows_for_retry: list[tuple[date, date]] = []
             for chunk_start, chunk_end in chunks:
-                snapshot = meta_ads_service.sync_client(
-                    client_id=int(client_id),
-                    start_date=chunk_start,
-                    end_date=chunk_end,
-                    grain=grain,
-                    update_snapshot=False,
-                )
+                try:
+                    snapshot = meta_ads_service.sync_client(
+                        client_id=int(client_id),
+                        start_date=chunk_start,
+                        end_date=chunk_end,
+                        grain=grain,
+                        update_snapshot=False,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    if grain == "account_daily":
+                        failed_windows_for_retry.append((chunk_start, chunk_end))
+                        last_error_summary = str(exc)[:300]
+                        last_error_details = {"error_summary": str(exc)[:300]}
+                    execution_log.append(
+                        {
+                            "grain": grain,
+                            "start_date": chunk_start.isoformat(),
+                            "end_date": chunk_end.isoformat(),
+                            "rows_written": 0,
+                            "accounts_processed": 0,
+                            "status": "error",
+                            "error": str(exc)[:300],
+                        }
+                    )
+                    continue
+
                 rows_written = int(snapshot.get("rows_written") or 0)
                 accounts_processed = int(snapshot.get("accounts_processed") or 0)
                 rows_written_total += rows_written
@@ -362,8 +391,90 @@ def _run_meta_historical_backfill_job(
                         "end_date": chunk_end.isoformat(),
                         "rows_written": rows_written,
                         "accounts_processed": accounts_processed,
+                        "coverage_status": snapshot.get("coverage_status"),
+                        "status": snapshot.get("status"),
                     }
                 )
+                if grain == "account_daily":
+                    coverage_status = str(snapshot.get("coverage_status") or "").strip()
+                    if coverage_status == "":
+                        snapshot_status = str(snapshot.get("status") or "ok").strip().lower()
+                        coverage_status = "failed_request_coverage" if snapshot_status in {"error", "failed"} else ("empty_success" if int(rows_written) <= 0 else "full_request_coverage")
+                    if coverage_status in {"full_request_coverage", "empty_success"}:
+                        successful_chunk_count += 1
+                        if rows_written > 0:
+                            iso_start = chunk_start.isoformat()
+                            iso_end = chunk_end.isoformat()
+                            first_persisted_date = iso_start if first_persisted_date is None or iso_start < first_persisted_date else first_persisted_date
+                            last_persisted_date = iso_end if last_persisted_date is None or iso_end > last_persisted_date else last_persisted_date
+                    else:
+                        failed_windows_for_retry.append((chunk_start, chunk_end))
+                        if snapshot.get("last_error_summary") is not None:
+                            last_error_summary = str(snapshot.get("last_error_summary"))[:300]
+                        if isinstance(snapshot.get("last_error_details"), dict):
+                            last_error_details = snapshot.get("last_error_details")
+
+            if grain == "account_daily" and len(failed_windows_for_retry) > 0:
+                retry_attempted = True
+                unrecovered: list[tuple[date, date]] = []
+                for chunk_start, chunk_end in failed_windows_for_retry:
+                    try:
+                        snapshot = meta_ads_service.sync_client(
+                            client_id=int(client_id),
+                            start_date=chunk_start,
+                            end_date=chunk_end,
+                            grain=grain,
+                            update_snapshot=False,
+                        )
+                        coverage_status = str(snapshot.get("coverage_status") or "").strip()
+                        rows_written = int(snapshot.get("rows_written") or 0)
+                        if coverage_status == "":
+                            snapshot_status = str(snapshot.get("status") or "ok").strip().lower()
+                            coverage_status = "failed_request_coverage" if snapshot_status in {"error", "failed"} else ("empty_success" if rows_written <= 0 else "full_request_coverage")
+                        execution_log.append(
+                            {
+                                "grain": grain,
+                                "start_date": chunk_start.isoformat(),
+                                "end_date": chunk_end.isoformat(),
+                                "rows_written": rows_written,
+                                "accounts_processed": int(snapshot.get("accounts_processed") or 0),
+                                "coverage_status": snapshot.get("coverage_status"),
+                                "status": snapshot.get("status"),
+                                "retry_attempt": True,
+                            }
+                        )
+                        if coverage_status in {"full_request_coverage", "empty_success"}:
+                            retry_recovered_chunk_count += 1
+                            successful_chunk_count += 1
+                            rows_written_total += rows_written
+                            if rows_written > 0:
+                                iso_start = chunk_start.isoformat()
+                                iso_end = chunk_end.isoformat()
+                                first_persisted_date = iso_start if first_persisted_date is None or iso_start < first_persisted_date else first_persisted_date
+                                last_persisted_date = iso_end if last_persisted_date is None or iso_end > last_persisted_date else last_persisted_date
+                        else:
+                            unrecovered.append((chunk_start, chunk_end))
+                            if snapshot.get("last_error_summary") is not None:
+                                last_error_summary = str(snapshot.get("last_error_summary"))[:300]
+                            if isinstance(snapshot.get("last_error_details"), dict):
+                                last_error_details = snapshot.get("last_error_details")
+                    except Exception as exc:  # noqa: BLE001
+                        unrecovered.append((chunk_start, chunk_end))
+                        last_error_summary = str(exc)[:300]
+                        last_error_details = {"error_summary": str(exc)[:300]}
+                        execution_log.append(
+                            {
+                                "grain": grain,
+                                "start_date": chunk_start.isoformat(),
+                                "end_date": chunk_end.isoformat(),
+                                "rows_written": 0,
+                                "accounts_processed": 0,
+                                "status": "error",
+                                "error": str(exc)[:300],
+                                "retry_attempt": True,
+                            }
+                        )
+                failed_chunk_count = len(unrecovered)
 
         rebuilt_snapshot = None
         if "account_daily" in grains:
@@ -373,8 +484,20 @@ def _run_meta_historical_backfill_job(
                 end_date=end_date,
             )
 
+        if "account_daily" in grains:
+            if successful_chunk_count <= 0 and total_chunk_count > 0:
+                coverage_status = "failed_request_coverage"
+            elif failed_chunk_count > 0:
+                coverage_status = "partial_request_coverage"
+            elif rows_written_total <= 0:
+                coverage_status = "empty_success"
+            else:
+                coverage_status = "full_request_coverage"
+        else:
+            coverage_status = "full_request_coverage"
+
         result = {
-            "status": SYNC_STATUS_DONE,
+            "status": SYNC_STATUS_ERROR if coverage_status in {"partial_request_coverage", "failed_request_coverage"} else SYNC_STATUS_DONE,
             "mode": "historical_backfill",
             "message": "Meta Ads historical backfill completed.",
             "job_id": job_id,
@@ -391,8 +514,26 @@ def _run_meta_historical_backfill_job(
             "token_source": token_source,
             "runs": execution_log,
             "snapshot_rebuilt": rebuilt_snapshot is not None,
+            "sync_health_status": coverage_status,
+            "coverage_status": coverage_status,
+            "requested_start_date": start_date.isoformat(),
+            "requested_end_date": end_date.isoformat(),
+            "total_chunk_count": total_chunk_count,
+            "successful_chunk_count": successful_chunk_count,
+            "failed_chunk_count": failed_chunk_count,
+            "retry_attempted": retry_attempted,
+            "retry_recovered_chunk_count": retry_recovered_chunk_count,
+            "rows_written_count": rows_written_total,
+            "first_persisted_date": first_persisted_date,
+            "last_persisted_date": last_persisted_date,
+            "last_error": last_error_summary if coverage_status in {"partial_request_coverage", "failed_request_coverage"} else None,
+            "last_error_summary": last_error_summary if coverage_status in {"partial_request_coverage", "failed_request_coverage"} else None,
+            "last_error_details": last_error_details if coverage_status in {"partial_request_coverage", "failed_request_coverage"} else None,
         }
-        backfill_job_store.set_done(job_id, result=result)
+        if result.get("status") == SYNC_STATUS_ERROR:
+            backfill_job_store.set_error(job_id, error=str(result.get("last_error_summary") or "Meta Ads historical backfill completed with unrecovered chunk failures.")[:300])
+        else:
+            backfill_job_store.set_done(job_id, result=result)
     except Exception as exc:  # noqa: BLE001
         backfill_job_store.set_error(job_id, error=str(exc)[:300])
 
