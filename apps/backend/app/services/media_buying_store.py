@@ -226,7 +226,21 @@ class MediaBuyingStore:
                         FROM agency_platform_accounts apa
                         WHERE apa.platform IN ('google_ads', 'meta_ads', 'tiktok_ads')
                     ),
+                    scoped_reports AS (
+                        SELECT
+                            apr.platform,
+                            apr.customer_id,
+                            apr.report_date,
+                            NULLIF(regexp_replace(apr.customer_id, '[^0-9]', '', 'g'), '') AS customer_id_digits,
+                            COALESCE(apr.spend, 0) AS spend,
+                            apr.extra_metrics
+                        FROM ad_performance_reports apr
+                        WHERE apr.platform IN ('google_ads', 'meta_ads', 'tiktok_ads')
+                          AND (%s::date IS NULL OR apr.report_date >= %s::date)
+                          AND (%s::date IS NULL OR apr.report_date <= %s::date)
+                    ),
                     perf AS (
+                        -- TODO: confirm DB has index optimized for this path: ad_performance_reports(platform, customer_id, report_date)
                         SELECT
                             apr.platform,
                             apr.report_date,
@@ -236,26 +250,26 @@ class MediaBuyingStore:
                                 NULLIF(TRIM(mapped.account_currency), ''),
                                 'USD'
                             ) AS account_currency,
-                            COALESCE(apr.spend, 0) AS spend
-                        FROM ad_performance_reports apr
+                            apr.spend
+                        FROM scoped_reports apr
                         JOIN scoped_mapped mapped
-                          ON mapped.platform = apr.platform
+                          ON apr.platform = mapped.platform
                          AND (
                               mapped.account_id = apr.customer_id
                               OR (
                                   apr.platform = 'google_ads'
                                   AND mapped.account_id_digits IS NOT NULL
-                                  AND mapped.account_id_digits = NULLIF(regexp_replace(apr.customer_id, '[^0-9]', '', 'g'), '')
+                                  AND mapped.account_id_digits = apr.customer_id_digits
                               )
                          )
                         LEFT JOIN scoped_accounts apa
-                          ON apa.platform = apr.platform
+                          ON apr.platform = apa.platform
                          AND (
                               apa.account_id = apr.customer_id
                               OR (
                                   apr.platform = 'google_ads'
                                   AND apa.account_id_digits IS NOT NULL
-                                  AND apa.account_id_digits = NULLIF(regexp_replace(apr.customer_id, '[^0-9]', '', 'g'), '')
+                                  AND apa.account_id_digits = apr.customer_id_digits
                               )
                          )
                         WHERE COALESCE(
