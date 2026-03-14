@@ -276,6 +276,8 @@ class MediaBuyingStore:
                             NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'grain', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'grain', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'grain', '') ELSE '' END), ''),
                             'account_daily'
                         ) = 'account_daily'
+                          AND (%s::date IS NULL OR apr.report_date >= %s::date)
+                          AND (%s::date IS NULL OR apr.report_date <= %s::date)
                     )
                     SELECT report_date, platform, account_currency, SUM(spend)
                     FROM perf
