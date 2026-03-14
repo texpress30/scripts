@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 import json
+import time
 from decimal import Decimal
 import logging
 
@@ -43,10 +44,13 @@ def _to_int(value: object) -> int:
 
 logger = logging.getLogger(__name__)
 
+_MODULE_FX_CACHE: dict[tuple[str, str], tuple[float, float]] = {}
+_MODULE_FX_CACHE_TTL_SECONDS = 6 * 60 * 60
+
 
 class UnifiedDashboardService:
     def __init__(self) -> None:
-        self._fx_cache: dict[tuple[str, str], float] = {}
+        self._fx_cache = _MODULE_FX_CACHE
 
     def _is_test_mode(self) -> bool:
         return load_settings().app_env == "test"
@@ -79,23 +83,30 @@ class UnifiedDashboardService:
         if normalized_currency == "RON":
             return 1.0
 
+        cache_store = _MODULE_FX_CACHE
+        instance_cache = getattr(self, "_fx_cache", None)
+        if isinstance(instance_cache, dict) and instance_cache is not _MODULE_FX_CACHE:
+            cache_store = instance_cache
+
         cache_key = (rate_date.isoformat(), normalized_currency)
-        cached = self._fx_cache.get(cache_key)
+        cached = cache_store.get(cache_key)
         if cached is not None:
-            return cached
+            cached_rate, cached_at = cached
+            if (time.time() - float(cached_at)) <= _MODULE_FX_CACHE_TTL_SECONDS:
+                return float(cached_rate)
 
         for day_offset in range(0, 7):
             target_date = rate_date - timedelta(days=day_offset)
             url = f"https://api.frankfurter.app/{target_date.isoformat()}"
             try:
-                response = requests.get(url, params={"from": normalized_currency, "to": "RON"}, timeout=6)
+                response = requests.get(url, params={"from": normalized_currency, "to": "RON"}, timeout=3)
                 response.raise_for_status()
                 payload = response.json() if response.content else {}
                 rates = payload.get("rates", {}) if isinstance(payload, dict) else {}
                 value = rates.get("RON")
                 if isinstance(value, (int, float)) and float(value) > 0:
                     rate = float(value)
-                    self._fx_cache[cache_key] = rate
+                    cache_store[cache_key] = (rate, time.time())
                     return rate
             except Exception:  # noqa: BLE001
                 continue
@@ -105,7 +116,7 @@ class UnifiedDashboardService:
             "agency_dashboard_fx_fallback",
             extra={"currency": normalized_currency, "date": rate_date.isoformat(), "fallback_rate": fallback_rate},
         )
-        self._fx_cache[cache_key] = fallback_rate
+        cache_store[cache_key] = (fallback_rate, time.time())
         return fallback_rate
 
     def _normalize_money(self, *, amount: float, from_currency: object, to_currency: object, rate_date: date) -> float:
