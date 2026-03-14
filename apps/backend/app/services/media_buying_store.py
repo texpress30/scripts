@@ -94,7 +94,7 @@ class MediaBuyingStore:
         return normalized
 
     def _normalize_currency(self, value: str | None) -> str:
-        normalized = str(value or "RON").strip().upper()
+        normalized = str(value or "USD").strip().upper()
         if len(normalized) != 3:
             raise ValueError("display_currency must be a 3-letter ISO currency code")
         return normalized
@@ -234,7 +234,7 @@ class MediaBuyingStore:
                                 NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'account_currency', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'account_currency', '') ELSE '' END), ''),
                                 NULLIF(TRIM(apa.currency_code), ''),
                                 NULLIF(TRIM(mapped.account_currency), ''),
-                                'RON'
+                                'USD'
                             ) AS account_currency,
                             COALESCE(apr.spend, 0) AS spend
                         FROM ad_performance_reports apr
@@ -281,7 +281,7 @@ class MediaBuyingStore:
                 {
                     "date": report_date,
                     "platform": str(row[1]),
-                    "account_currency": str(row[2] or "RON").upper(),
+                    "account_currency": str(row[2] or "USD").upper(),
                     "spend": float(row[3] or 0.0),
                 }
             )
@@ -571,7 +571,7 @@ class MediaBuyingStore:
                 continue
             spend = self._normalize_money_to_display_currency(
                 amount=float(item.get("spend") or 0.0),
-                from_currency=str(item.get("account_currency") or "RON"),
+                from_currency=str(item.get("account_currency") or "USD"),
                 display_currency=display_currency,
                 rate_date=report_date,
             )
