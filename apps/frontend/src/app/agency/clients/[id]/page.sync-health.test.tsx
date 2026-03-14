@@ -150,6 +150,8 @@ describe("Agency client detail sync health UI", () => {
 
     expect(screen.getAllByText("Moneda contului:").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByTitle("Editează moneda contului sursă"));
+    expect(screen.getAllByText("Moneda contului:").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByTitle("Editează moneda contului sursă"));
     fireEvent.change(screen.getByDisplayValue("USD"), { target: { value: "EUR" } });
 
     expect(apiMock.apiRequest).toHaveBeenNthCalledWith(
