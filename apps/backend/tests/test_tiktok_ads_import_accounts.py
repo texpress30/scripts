@@ -887,7 +887,7 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
         self.assertEqual(len(writes), 2)
         self.assertEqual({item.get("customer_id") for item in writes}, {"401"})
 
-    def test_sync_client_account_daily_skips_ambiguous_provider_identities(self):
+    def test_sync_client_account_daily_raises_explicit_error_on_ambiguous_provider_identities(self):
         service = TikTokAdsService()
         os.environ["FF_TIKTOK_INTEGRATION"] = "1"
 
@@ -917,13 +917,14 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
             performance_reports_store.write_daily_report = lambda **kwargs: writes.append(kwargs)
             tiktok_snapshot_store.upsert_snapshot = lambda **kwargs: None
 
-            payload = service.sync_client(
-                client_id=1,
-                start_date=date(2026, 3, 1),
-                end_date=date(2026, 3, 1),
-                grain="account_daily",
-                account_id="401",
-            )
+            with self.assertRaises(TikTokAdsIntegrationError) as ctx:
+                service.sync_client(
+                    client_id=1,
+                    start_date=date(2026, 3, 1),
+                    end_date=date(2026, 3, 1),
+                    grain="account_daily",
+                    account_id="401",
+                )
         finally:
             service._access_token_with_source = original_access
             service._resolve_target_account_ids = original_resolve_ids
@@ -932,12 +933,11 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
             performance_reports_store.write_daily_report = original_write
             tiktok_snapshot_store.upsert_snapshot = original_snapshot_upsert
 
-        self.assertEqual(payload.get("rows_written"), 0)
         self.assertEqual(writes, [])
-        warnings = payload.get("account_daily_identity_warnings")
-        self.assertIsInstance(warnings, list)
-        self.assertEqual(warnings[0].get("is_ambiguous"), True)
-        self.assertEqual(warnings[0].get("ambiguity_reason"), "conflicting_provider_identities_in_scope")
+        self.assertEqual(ctx.exception.provider_error_code, "acct_daily_ambiguous")
+        self.assertEqual(ctx.exception.error_category, "local_attachment_error")
+        self.assertEqual(ctx.exception.advertiser_id, "401")
+        self.assertIn("\"identity_source\": \"ambiguous\"", str(ctx.exception.provider_error_message or ""))
 
     def test_sync_client_campaign_daily_unchanged_and_has_no_account_daily_identity_warnings(self):
         service = TikTokAdsService()
@@ -1184,7 +1184,7 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
         warnings = payload.get("account_daily_identity_warnings") or []
         self.assertTrue(any(item.get("action") == "collapsed_duplicate_write_candidates" for item in warnings))
 
-    def test_sync_client_account_daily_ambiguous_identity_still_skips_persistence(self):
+    def test_sync_client_account_daily_ambiguous_identity_blocks_persistence_with_explicit_error(self):
         service = TikTokAdsService()
         os.environ["FF_TIKTOK_INTEGRATION"] = "1"
         os.environ["APP_ENV"] = "test"
@@ -1213,7 +1213,8 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
             ]
             tiktok_snapshot_store.upsert_snapshot = lambda **kwargs: None
 
-            payload = service.sync_client(client_id=1, start_date=date(2026, 3, 6), end_date=date(2026, 3, 6), grain="account_daily", account_id="401")
+            with self.assertRaises(TikTokAdsIntegrationError) as ctx:
+                service.sync_client(client_id=1, start_date=date(2026, 3, 6), end_date=date(2026, 3, 6), grain="account_daily", account_id="401")
         finally:
             service._access_token_with_source = original_access
             service._resolve_target_account_ids = original_resolve_ids
@@ -1223,9 +1224,8 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
 
         rows = [row for row in performance_reports_store._memory_rows if row.get("platform") == "tiktok_ads" and row.get("report_date") == "2026-03-06"]
         self.assertEqual(rows, [])
-        self.assertEqual(payload.get("rows_written"), 0)
-        warnings = payload.get("account_daily_identity_warnings") or []
-        self.assertTrue(any(item.get("is_ambiguous") is True for item in warnings))
+        self.assertEqual(ctx.exception.provider_error_code, "acct_daily_ambiguous")
+        self.assertEqual(ctx.exception.advertiser_id, "401")
 
 
 if __name__ == "__main__":

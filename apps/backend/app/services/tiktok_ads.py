@@ -2049,18 +2049,24 @@ class TikTokAdsService:
                     provider_ids_in_scope=provider_ids_in_scope,
                 )
                 if identity_resolution.is_ambiguous or identity_resolution.canonical_persistence_customer_id is None:
-                    account_daily_identity_warnings.append(
-                        {
-                            "account_id": account_id,
-                            "canonical_persistence_customer_id": identity_resolution.canonical_persistence_customer_id,
-                            "identity_source": identity_resolution.identity_source,
-                            "provider_ids_seen": list(identity_resolution.provider_ids_seen),
-                            "is_ambiguous": identity_resolution.is_ambiguous,
-                            "ambiguity_reason": identity_resolution.ambiguity_reason,
-                            "action": "skipped_account_daily_persistence",
-                        }
+                    ambiguity_payload = {
+                        "account_id": account_id,
+                        "canonical_persistence_customer_id": identity_resolution.canonical_persistence_customer_id,
+                        "identity_source": identity_resolution.identity_source,
+                        "provider_ids_seen": list(identity_resolution.provider_ids_seen),
+                        "is_ambiguous": identity_resolution.is_ambiguous,
+                        "ambiguity_reason": identity_resolution.ambiguity_reason,
+                        "action": "blocked_account_daily_persistence",
+                    }
+                    account_daily_identity_warnings.append(ambiguity_payload)
+                    raise TikTokAdsIntegrationError(
+                        "TikTok account_daily persistence identity is ambiguous; refusing write to prevent non-deterministic account_daily rows.",
+                        error_category="local_attachment_error",
+                        advertiser_id=account_id,
+                        provider_error_code="acct_daily_ambiguous",
+                        provider_error_message=json.dumps(ambiguity_payload, ensure_ascii=False),
+                        token_source=token_source,
                     )
-                    continue
 
                 persistence_rows, duplicate_candidates = self._collapse_account_daily_rows_for_persistence(
                     rows=daily_rows,

@@ -151,11 +151,17 @@
 # TODO — TikTok account_daily write-side idempotency hardening
 
 - [x] Refresh workspace and document remote divergence constraints.
-- [ ] Inspect TikTok sync + persistence write path and current sync error/status propagation.
-- [ ] Add focused TikTok canonical persistence identity resolver for account_daily writes.
-- [ ] Enforce deterministic/idempotent TikTok account_daily writes across reruns/overlaps and add ambiguity guardrails with explicit errors.
-- [ ] Add targeted TikTok tests for rerun idempotency, rolling overlap, ambiguity, and error visibility (without Meta changes).
-- [ ] Run backend tests and document outcomes.
+- [x] Inspect TikTok sync + persistence write path and current sync error/status propagation.
+- [x] Add focused TikTok canonical persistence identity resolver for account_daily writes.
+- [x] Enforce deterministic/idempotent TikTok account_daily writes across reruns/overlaps and add ambiguity guardrails with explicit errors.
+- [x] Add targeted TikTok tests for rerun idempotency, rolling overlap, ambiguity, and error visibility (without Meta changes).
+- [x] Run backend tests and document outcomes.
+
+## Review
+- [x] TikTok `account_daily` sync now fails fast with `acct_daily_ambiguous` when provider identities conflict, preventing silent partial writes and surfacing actionable error metadata (`advertiser_id`, ambiguity payload).
+- [x] Deterministic in-batch duplicate collapse and rerun/overlap idempotency behavior remain intact for canonical single-identity account_daily writes.
+- [x] Updated targeted TikTok tests to assert explicit ambiguity error visibility while retaining rerun/overlap/idempotency coverage without Meta changes.
+- [x] Verification: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q apps/backend/tests/test_tiktok_ads_import_accounts.py apps/backend/tests/test_tiktok_account_daily_identity_resolver.py` (pass).
 
 ## Review
 - [x] Added backend `platform_sync_summary` to client dashboard payload for Meta/TikTok using latest sync-run metadata per attached account.
