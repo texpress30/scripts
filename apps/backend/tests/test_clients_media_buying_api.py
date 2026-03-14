@@ -5,9 +5,15 @@ from datetime import date
 from fastapi import HTTPException
 
 from app.api import clients as clients_api
-from app.schemas.client import MediaBuyingConfigUpdateRequest, MediaBuyingLeadDailyValueUpsertRequest
+from app.schemas.client import (
+    MediaBuyingConfigUpdateRequest,
+    MediaBuyingLeadDailyValueUpsertRequest,
+    MediaTrackerWorksheetManualValuesUpsertRequest,
+    MediaTrackerWorksheetEurRonRateUpsertRequest,
+)
 from app.services.auth import AuthUser
 from app.services.client_registry import client_registry_service
+from app.services import media_tracker_worksheet as worksheet_module
 
 
 class ClientsMediaBuyingApiTests(unittest.TestCase):
@@ -73,6 +79,7 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
             def get_lead_table(self, **kwargs):
                 if self.config.get("template_type") != "lead":
                     raise NotImplementedError("Media Buying table is implemented only for template_type=lead in this task")
+                include_days = bool(kwargs.get("include_days", True))
                 date_from = kwargs.get("date_from")
                 date_to = kwargs.get("date_to")
                 if date_from is not None and date_to is not None and date_from > date_to:
@@ -80,6 +87,10 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
                 if date_from is None and date_to is None:
                     date_from = date(2026, 3, 11)
                     date_to = date(2026, 3, 11)
+                month_payload = {"month": "2026-03", "totals": {"percent_change": None}, "days": [{"date": "2026-03-11"}]}
+                if not include_days:
+                    month_payload = {"month": "2026-03", "totals": {"percent_change": None}, "day_count": 1, "has_days": True}
+
                 return {
                     "meta": {
                         "client_id": kwargs["client_id"],
@@ -103,8 +114,17 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
                         "latest_data_date": "2026-03-11",
                         "available_months": ["2026-03"],
                     },
-                    "days": [{"date": "2026-03-11", "percent_change": None}],
-                    "months": [{"month": "2026-03", "totals": {"percent_change": None}, "days": [{"date": "2026-03-11"}]}],
+                    "days": [{"date": "2026-03-11", "percent_change": None}] if include_days else [],
+                    "months": [month_payload],
+                }
+
+            def get_lead_month_days(self, **kwargs):
+                if kwargs["month_start"] != date(2026, 3, 1):
+                    raise ValueError("month_start is outside available media buying range")
+                return {
+                    "meta": {"client_id": kwargs["client_id"], "display_currency": "RON", "display_currency_source": "agency_client_currency"},
+                    "month_start": "2026-03-01",
+                    "days": [{"date": "2026-03-11", "percent_change": None, "display_currency": "RON"}],
                 }
 
             def upsert_lead_daily_manual_value(self, **kwargs):
@@ -129,9 +149,13 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
                 return payload
 
         clients_api.media_buying_store = _StoreStub()
+        self.original_worksheet_store = worksheet_module.media_buying_store
+        worksheet_module.media_buying_store = clients_api.media_buying_store
+        worksheet_module.media_tracker_worksheet_service.reset_test_state()
 
     def tearDown(self):
         clients_api.media_buying_store = self.original_store
+        worksheet_module.media_buying_store = self.original_worksheet_store
         clients_api.enforce_action_scope = self.original_enforce
         client_registry_service._is_test_mode = self.original_is_test_mode
         os.environ.clear()
@@ -243,6 +267,147 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
             user=self.user,
         )
         self.assertEqual(payload["meta"]["effective_date_from"], "2026-03-11")
+
+    def test_get_lead_table_endpoint_supports_include_days_false(self):
+        payload = clients_api.get_media_buying_lead_table(
+            client_id=self.client_id,
+            date_from=date(2026, 3, 1),
+            date_to=date(2026, 3, 31),
+            include_days=False,
+            user=self.user,
+        )
+        self.assertEqual(payload["days"], [])
+        self.assertEqual(payload["months"][0]["day_count"], 1)
+        self.assertTrue(payload["months"][0]["has_days"])
+
+    def test_get_lead_month_days_endpoint(self):
+        payload = clients_api.get_media_buying_lead_month_days(
+            client_id=self.client_id,
+            month_start=date(2026, 3, 1),
+            user=self.user,
+        )
+        self.assertEqual(payload["month_start"], "2026-03-01")
+        self.assertEqual(payload["days"][0]["display_currency"], "RON")
+
+    def test_get_lead_month_days_validation_error(self):
+        with self.assertRaises(HTTPException) as ctx:
+            clients_api.get_media_buying_lead_month_days(
+                client_id=self.client_id,
+                month_start=date(2026, 4, 1),
+                user=self.user,
+            )
+        self.assertEqual(ctx.exception.status_code, 422)
+
+    def test_get_media_tracker_weekly_worksheet_foundation_endpoint(self):
+        payload = clients_api.get_media_tracker_weekly_worksheet_foundation(
+            client_id=self.client_id,
+            granularity="month",
+            anchor_date=date(2026, 3, 15),
+            user=self.user,
+        )
+        self.assertEqual(payload["requested_scope"]["granularity"], "month")
+        self.assertEqual(payload["resolved_period"]["period_start"], "2026-03-01")
+        self.assertEqual(payload["history"]["visible_week_count"], len(payload["weeks"]))
+
+    def test_get_media_tracker_weekly_worksheet_foundation_validation(self):
+        with self.assertRaises(HTTPException) as ctx:
+            clients_api.get_media_tracker_weekly_worksheet_foundation(
+                client_id=self.client_id,
+                granularity="week",
+                anchor_date=date(2026, 3, 15),
+                user=self.user,
+            )
+        self.assertEqual(ctx.exception.status_code, 422)
+
+
+    def test_upsert_media_tracker_manual_values_and_get_readback(self):
+        payload = clients_api.upsert_media_tracker_weekly_manual_values(
+            client_id=self.client_id,
+            payload=MediaTrackerWorksheetManualValuesUpsertRequest(
+                granularity="month",
+                anchor_date=date(2026, 3, 15),
+                entries=[
+                    {"week_start": date(2026, 3, 2), "field_key": "google_leads_manual", "value": 12},
+                    {"week_start": date(2026, 3, 2), "field_key": "weekly_cogs_taxes", "value": 25450},
+                ],
+            ),
+            user=self.user,
+        )
+        google_week = next(item for item in payload["manual_metrics"]["google_leads_manual"]["weekly_values"] if item["week_start"] == "2026-03-02")
+        assert google_week["value"] == 12.0
+
+        updated = clients_api.upsert_media_tracker_weekly_manual_values(
+            client_id=self.client_id,
+            payload=MediaTrackerWorksheetManualValuesUpsertRequest(
+                granularity="month",
+                anchor_date=date(2026, 3, 18),
+                entries=[
+                    {"week_start": date(2026, 3, 2), "field_key": "google_leads_manual", "value": 13},
+                ],
+            ),
+            user=self.user,
+        )
+        google_week_updated = next(item for item in updated["manual_metrics"]["google_leads_manual"]["weekly_values"] if item["week_start"] == "2026-03-02")
+        assert google_week_updated["value"] == 13.0
+
+    def test_upsert_media_tracker_manual_values_validation(self):
+        with self.assertRaises(HTTPException) as ctx_field:
+            clients_api.upsert_media_tracker_weekly_manual_values(
+                client_id=self.client_id,
+                payload=MediaTrackerWorksheetManualValuesUpsertRequest(
+                    granularity="month",
+                    anchor_date=date(2026, 3, 15),
+                    entries=[{"week_start": date(2026, 3, 2), "field_key": "bad_field", "value": 1}],
+                ),
+                user=self.user,
+            )
+        self.assertEqual(ctx_field.exception.status_code, 422)
+
+        with self.assertRaises(HTTPException) as ctx_monday:
+            clients_api.upsert_media_tracker_weekly_manual_values(
+                client_id=self.client_id,
+                payload=MediaTrackerWorksheetManualValuesUpsertRequest(
+                    granularity="month",
+                    anchor_date=date(2026, 3, 15),
+                    entries=[{"week_start": date(2026, 3, 3), "field_key": "google_leads_manual", "value": 1}],
+                ),
+                user=self.user,
+            )
+        self.assertEqual(ctx_monday.exception.status_code, 422)
+
+    def test_upsert_media_tracker_eur_ron_rate_and_clear(self):
+        payload = clients_api.upsert_media_tracker_scope_eur_ron_rate(
+            client_id=self.client_id,
+            payload=MediaTrackerWorksheetEurRonRateUpsertRequest(
+                granularity="month",
+                anchor_date=date(2026, 3, 15),
+                value=5.09,
+            ),
+            user=self.user,
+        )
+        self.assertEqual(payload["eur_ron_rate"], 5.09)
+
+        updated = clients_api.upsert_media_tracker_scope_eur_ron_rate(
+            client_id=self.client_id,
+            payload=MediaTrackerWorksheetEurRonRateUpsertRequest(
+                granularity="month",
+                anchor_date=date(2026, 3, 1),
+                value=5.11,
+            ),
+            user=self.user,
+        )
+        self.assertEqual(updated["eur_ron_rate"], 5.11)
+
+        cleared = clients_api.upsert_media_tracker_scope_eur_ron_rate(
+            client_id=self.client_id,
+            payload=MediaTrackerWorksheetEurRonRateUpsertRequest(
+                granularity="month",
+                anchor_date=date(2026, 3, 20),
+                value=None,
+            ),
+            user=self.user,
+        )
+        self.assertIsNone(cleared["eur_ron_rate"])
 
 
 if __name__ == "__main__":
