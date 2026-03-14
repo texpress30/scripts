@@ -473,7 +473,7 @@ export default function AgencyClientDetailsPage() {
 
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2">
-                                  <span className="text-slate-500">Monedă:</span>
+                                  <span className="text-slate-500">Moneda contului:</span>
                                   {editingRowFieldKey === currencyFieldId ? (
                                     <select
                                       value={draft.currency}
@@ -501,7 +501,7 @@ export default function AgencyClientDetailsPage() {
                                   type="button"
                                   onClick={() => setEditingRowFieldKey(currencyFieldId)}
                                   className="rounded p-1 text-slate-500 hover:bg-slate-100"
-                                  title="Editează moneda contului"
+                                  title="Editează moneda contului sursă"
                                   disabled={savingRowFieldKey === currencyFieldId}
                                 >
                                   {savingRowFieldKey === currencyFieldId ? <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-500" /> : savedField === currencyFieldId ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Pencil className="h-3.5 w-3.5" />}

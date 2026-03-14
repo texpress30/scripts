@@ -1,3 +1,19 @@
+# TODO — Agency Clients account-currency label clarity
+
+- [x] Refresh workspace state and inspect current account-card currency label/tooltip text on agency client details.
+- [x] Rename the account-card currency label to clarify this field edits account/source currency.
+- [x] Update related tooltip copy for account-level currency edit control without changing behavior.
+- [x] Update focused frontend test assertions for the renamed label and existing account-level edit payload.
+- [x] Run focused frontend tests and record results.
+
+## Review
+- [x] Account-card field label changed from `Monedă` to `Moneda contului` to reduce confusion with client-level currency.
+- [x] Account currency edit tooltip text now explicitly references source-account currency (`Editează moneda contului sursă`).
+- [x] Account currency edit request contract is unchanged and still PATCHes with `currency + platform + account_id`.
+- [x] Verification: `cd apps/frontend && pnpm vitest run src/app/agency/clients/[id]/page.sync-health.test.tsx` (pass).
+
+---
+
 # TODO — Agency client-level currency editor split from account currency
 
 - [x] Review current agency client details page currency edit flow and API payload behavior.

@@ -148,7 +148,12 @@ describe("Agency client detail sync health UI", () => {
     render(<AgencyClientDetailsPage />);
     await screen.findByText("Meta One");
 
+<<<<<<< codex/set-up-new-workspace-and-sync-with-github-2t2fh2
+    expect(screen.getAllByText("Moneda contului:").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByTitle("Editează moneda contului sursă"));
+=======
     fireEvent.click(screen.getByTitle("Editează moneda contului"));
+>>>>>>> main
     fireEvent.change(screen.getByDisplayValue("USD"), { target: { value: "EUR" } });
 
     expect(apiMock.apiRequest).toHaveBeenNthCalledWith(

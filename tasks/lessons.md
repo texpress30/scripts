@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-13: For UX wording fixes on existing flows, keep scope strictly frontend copy/labels/tooltips, preserve request payload behavior, and add a focused regression assertion proving behavior is unchanged.
+
 - 2026-03-08: When adding a new sync grain, keep prior grains behavior unchanged and add explicit regression tests for previous grain paths plus omitted-grain defaults.
 - 2026-03-08: When extending sync grain support, enforce grain validation at both request model and service layer, while keeping omitted-grain behavior strictly backward compatible.
 - 2026-03-08: When implementing provider sync upgrades, remove synthetic metric sources from the main write path and preserve only minimal compatibility snapshots derived from real fetched totals.
