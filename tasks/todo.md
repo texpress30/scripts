@@ -1,3 +1,19 @@
+# TODO — Agency client-level currency editor split from account currency
+
+- [x] Review current agency client details page currency edit flow and API payload behavior.
+- [x] Add dedicated client-level currency control in the top card using `client.currency`.
+- [x] Keep existing account-level currency editing scoped with `platform` + `account_id` payload fields.
+- [x] Add focused frontend tests for client-level patch payload and account-level payload regression.
+- [x] Run focused frontend checks and record results.
+
+## Review
+- [x] Added a separate `Moneda clientului` editor in the profile card and wired save flow to PATCH with `{ currency }` only.
+- [x] Row-level account currency editing remains unchanged and still sends scoped account payload.
+- [x] Added targeted page tests that assert request payloads for both edit paths.
+- [x] Verification: `cd apps/frontend && pnpm vitest run src/app/agency/clients/[id]/page.sync-health.test.tsx` (pass).
+
+---
+
 # TODO — Sub-account frontend currency rendering alignment (Media Buying + Media Tracker)
 
 - [x] Refresh workspace and inspect sub-account frontend money-formatting paths for Media Buying, Media Tracker, and Weekly Worksheet.

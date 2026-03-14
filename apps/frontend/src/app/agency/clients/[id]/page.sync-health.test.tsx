@@ -74,4 +74,90 @@ describe("Agency client detail sync health UI", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Details" })[0]);
     expect(screen.getByText("Coverage")).toBeInTheDocument();
   });
+
+  it("renders and updates client currency without account scope", async () => {
+    apiMock.apiRequest.mockReset();
+    apiMock.apiRequest
+      .mockResolvedValueOnce({
+        client: { id: 1, display_id: 1, name: "Client A", owner_email: "owner@example.com", currency: "RON" },
+        platforms: [
+          {
+            platform: "meta_ads",
+            enabled: true,
+            count: 1,
+            accounts: [{ id: "act_1", name: "Meta One", currency: "USD" }],
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        client: { id: 1, display_id: 1, name: "Client A", owner_email: "owner@example.com", currency: "EUR" },
+        platforms: [
+          {
+            platform: "meta_ads",
+            enabled: true,
+            count: 1,
+            accounts: [{ id: "act_1", name: "Meta One", currency: "USD" }],
+          },
+        ],
+      });
+
+    render(<AgencyClientDetailsPage />);
+    await screen.findByText("Client A");
+
+    expect(screen.getByText("RON")).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle("Editează moneda clientului"));
+    fireEvent.change(screen.getByDisplayValue("RON"), { target: { value: "EUR" } });
+
+    expect(apiMock.apiRequest).toHaveBeenNthCalledWith(
+      2,
+      "/clients/display/1",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ currency: "EUR" }),
+      }),
+    );
+    expect(screen.getByText("EUR")).toBeInTheDocument();
+  });
+
+  it("keeps account currency edits scoped to platform/account_id", async () => {
+    apiMock.apiRequest.mockReset();
+    apiMock.apiRequest
+      .mockResolvedValueOnce({
+        client: { id: 1, display_id: 1, name: "Client A", owner_email: "owner@example.com", currency: "RON" },
+        platforms: [
+          {
+            platform: "meta_ads",
+            enabled: true,
+            count: 1,
+            accounts: [{ id: "act_1", name: "Meta One", currency: "USD" }],
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        client: { id: 1, display_id: 1, name: "Client A", owner_email: "owner@example.com", currency: "RON" },
+        platforms: [
+          {
+            platform: "meta_ads",
+            enabled: true,
+            count: 1,
+            accounts: [{ id: "act_1", name: "Meta One", currency: "EUR" }],
+          },
+        ],
+      });
+
+    render(<AgencyClientDetailsPage />);
+    await screen.findByText("Meta One");
+
+    fireEvent.click(screen.getByTitle("Editează moneda contului"));
+    fireEvent.change(screen.getByDisplayValue("USD"), { target: { value: "EUR" } });
+
+    expect(apiMock.apiRequest).toHaveBeenNthCalledWith(
+      2,
+      "/clients/display/1",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ currency: "EUR", platform: "meta_ads", account_id: "act_1" }),
+      }),
+    );
+  });
 });
