@@ -597,6 +597,20 @@ def create_batch_sync_runs(payload: CreateBatchSyncRunsRequest, user: AuthUser =
                 "grain": grain,
                 "batch_id": batch_id,
             }
+            if account_sync_start_date is None:
+                try:
+                    client_registry_service.update_platform_account_operational_metadata(
+                        platform=payload.platform,
+                        account_id=stored_account_id,
+                        sync_start_date=effective_start_date,
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "sync_runs.metadata_sync_start_update_failed platform=%s account_id=%s effective_start=%s",
+                        payload.platform,
+                        stored_account_id,
+                        effective_start_date,
+                    )
             if payload.job_type == "historical_backfill":
                 outcome = sync_runs_store.create_historical_sync_run_if_not_active(
                     job_id=job_id,
