@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-14: For SQL CTE refactors, add a regression that asserts placeholder count matches bound parameter count, and cover both direct store calls and API-dependent flows to catch runtime ProgrammingError early.
+
 - 2026-03-14: For sync-health “Unknown/No sync metadata” issues, verify both worker-driven and API-driven sync paths persist `sync_start_date`, `last_success_at`, and `backfill_completed_through`; do not assume one path covers all triggers.
 
 - 2026-03-13: For UX wording fixes on existing flows, keep scope strictly frontend copy/labels/tooltips, preserve request payload behavior, and add a focused regression assertion proving behavior is unchanged.

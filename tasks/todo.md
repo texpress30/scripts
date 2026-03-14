@@ -1,3 +1,20 @@
+# TODO — Fix placeholder mismatch crash in media buying automated costs SQL
+
+- [x] Refresh workspace and inspect `_list_automated_daily_costs` SQL placeholder/parameter usage.
+- [x] Keep date predicates only in `scoped_reports` and ensure no duplicate placeholder groups in `perf` path.
+- [x] Add regression tests for placeholder/param contract and include_days=false path through `get_lead_table`.
+- [x] Add worksheet-foundation regression exercising real `MediaBuyingStore` SQL path.
+- [x] Run targeted backend tests for media buying + worksheet paths.
+
+## Review
+- [x] Root cause: SQL used duplicate date predicates in prior shape, creating more `%s` placeholders than parameters passed to `cur.execute(...)`, causing `ProgrammingError` and 500s.
+- [x] Fix: date filtering is applied only in `scoped_reports`; `perf` consumes pre-filtered rows and no longer introduces redundant placeholder groups.
+- [x] Added direct regression asserting placeholder count equals param count for explicit date range in `_list_automated_daily_costs`.
+- [x] Added regression for `get_lead_table(... include_days=False)` and worksheet foundation using real `MediaBuyingStore` SQL path with placeholder-contract guard cursor.
+- [x] Verification: `APP_ENV=test APP_AUTH_SECRET=test-secret python -m pytest tests/test_media_buying_store.py tests/test_clients_media_buying_api.py tests/test_media_tracker_worksheet.py -v` (pass).
+
+---
+
 # TODO — Persist sync metadata fields for Meta/TikTok operational status
 
 - [x] Inspect Meta/TikTok sync paths plus sync orchestration and sync-runs store for persistence of `sync_start_date`, `backfill_completed_through`, and `last_success_at`.

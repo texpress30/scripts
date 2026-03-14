@@ -5,6 +5,7 @@ os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("APP_AUTH_SECRET", "test-secret")
 
 from app.services import media_tracker_worksheet as worksheet_module
+from app.services.media_buying_store import MediaBuyingStore
 
 
 class _MediaBuyingStoreStub:
@@ -647,3 +648,56 @@ def test_week_over_week_comparison_rows_insertion_and_rules() -> None:
     summary_revenue = summary["revenue"]
     first_week_revenue = next(x for x in summary_revenue["weekly_values"] if x["week_start"] == "2026-03-02")
     assert first_week_revenue["value"] == 350.0
+
+
+def test_worksheet_foundation_works_with_real_media_buying_store_automated_sql_placeholder_contract() -> None:
+    class _Cursor:
+        def execute(self, query, params=None):
+            query_text = str(query)
+            placeholder_count = query_text.count("%s")
+            provided_count = len(tuple(params or ()))
+            if placeholder_count != provided_count:
+                raise AssertionError(f"placeholder mismatch: {placeholder_count} vs {provided_count}")
+
+        def fetchall(self):
+            return [(date(2026, 3, 11), "google_ads", "USD", 100.0)]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class _Conn:
+        def cursor(self):
+            return _Cursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    store = MediaBuyingStore()
+    store._ensure_schema = lambda: None
+    store._connect = lambda: _Conn()
+    store.get_config = lambda **kwargs: {"client_id": kwargs["client_id"], "template_type": "lead", "display_currency": "USD"}
+    store._resolve_client_template_type = lambda **kwargs: "lead"
+    store.list_lead_daily_manual_values = lambda **kwargs: []
+    store._normalize_money_to_display_currency = lambda **kwargs: float(kwargs["amount"])
+
+    original_store = worksheet_module.media_buying_store
+    worksheet_module.media_buying_store = store
+    worksheet_module.media_tracker_worksheet_service._is_test_mode = lambda: True
+    worksheet_module.media_tracker_worksheet_service.reset_test_state()
+    try:
+        payload = worksheet_module.media_tracker_worksheet_service.build_weekly_worksheet_foundation(
+            granularity="month",
+            anchor_date=date(2026, 3, 15),
+            client_id=11,
+        )
+    finally:
+        worksheet_module.media_buying_store = original_store
+
+    assert payload["requested_scope"]["granularity"] == "month"
+    assert payload["history"]["visible_week_count"] == len(payload["weeks"])

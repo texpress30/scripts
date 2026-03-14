@@ -940,6 +940,90 @@ class MediaBuyingStoreBoundsQueryTests(unittest.TestCase):
         self.assertNotIn("apa.account_currency", captured_query)
         self.assertIn("'account_daily'", captured_query)
 
+    def test_automated_costs_query_placeholder_count_matches_params_for_explicit_range(self):
+        class _Cursor:
+            def execute(self, query, params=None):
+                query_text = str(query)
+                placeholder_count = query_text.count("%s")
+                provided_count = len(tuple(params or ()))
+                if placeholder_count != provided_count:
+                    raise AssertionError(f"placeholder mismatch: {placeholder_count} vs {provided_count}")
+
+            def fetchall(self):
+                return [(date(2026, 2, 1), "meta_ads", "USD", 125.0)]
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _Conn:
+            def cursor(self):
+                return _Cursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        store = MediaBuyingStore()
+        store._ensure_schema = lambda: None
+        store._connect = lambda: _Conn()
+
+        rows = store._list_automated_daily_costs(client_id=97, date_from=date(2026, 2, 1), date_to=date(2026, 2, 28))
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["platform"], "meta_ads")
+
+    def test_get_lead_table_include_days_false_does_not_hit_placeholder_mismatch(self):
+        class _Cursor:
+            def execute(self, query, params=None):
+                query_text = str(query)
+                placeholder_count = query_text.count("%s")
+                provided_count = len(tuple(params or ()))
+                if placeholder_count != provided_count:
+                    raise AssertionError(f"placeholder mismatch: {placeholder_count} vs {provided_count}")
+
+            def fetchall(self):
+                return [(date(2026, 3, 11), "google_ads", "USD", 100.0)]
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _Conn:
+            def cursor(self):
+                return _Cursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        store = MediaBuyingStore()
+        store._ensure_schema = lambda: None
+        store._connect = lambda: _Conn()
+        store.get_config = lambda **kwargs: {"client_id": kwargs["client_id"], "template_type": "lead", "display_currency": "USD"}
+        store._resolve_client_template_type = lambda **kwargs: "lead"
+        store.list_lead_daily_manual_values = lambda **kwargs: []
+        store._normalize_money_to_display_currency = lambda **kwargs: float(kwargs["amount"])
+
+        payload = store.get_lead_table(
+            client_id=97,
+            date_from=date(2026, 3, 1),
+            date_to=date(2026, 3, 31),
+            include_days=False,
+        )
+
+        self.assertEqual(payload["days"], [])
+        self.assertEqual(len(payload["months"]), 1)
+        self.assertEqual(payload["months"][0]["day_count"], 1)
+
     def test_tiktok_ron_costs_do_not_get_reconverted_when_display_currency_is_ron(self):
         store = MediaBuyingStore()
         store._ensure_schema = lambda: None
@@ -999,7 +1083,7 @@ class MediaBuyingStoreBoundsQueryTests(unittest.TestCase):
 
         self.assertNotIn("mapped.created_at::date <= apr.report_date", captured_query)
 
-    def test_automated_costs_falls_back_to_ron_when_currency_missing(self):
+    def test_automated_costs_falls_back_to_usd_when_currency_missing(self):
         class _Cursor:
             def execute(self, query, params=None):
                 return None
@@ -1030,7 +1114,7 @@ class MediaBuyingStoreBoundsQueryTests(unittest.TestCase):
         rows = store._list_automated_daily_costs(client_id=97, date_from=date(2026, 2, 1), date_to=date(2026, 2, 28))
 
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["account_currency"], "RON")
+        self.assertEqual(rows[0]["account_currency"], "USD")
         self.assertEqual(rows[0]["platform"], "meta_ads")
 
     def test_bounds_merge_manual_and_automated_dates(self):
