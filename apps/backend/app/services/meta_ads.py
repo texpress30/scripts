@@ -33,6 +33,7 @@ _META_LEAD_ACTION_TYPE_PRIORITY: tuple[str, ...] = (
     "offsite_conversion.meta_pixel_lead",
 )
 _META_LEAD_ACTION_TYPES: set[str] = set(_META_LEAD_ACTION_TYPE_PRIORITY)
+_META_ACCOUNT_DAILY_CHUNK_DAYS = 7
 
 
 class MetaAdsIntegrationError(RuntimeError):
@@ -444,6 +445,27 @@ class MetaAdsService:
             time_increment=1,
         )
 
+    def _build_sync_chunks(self, *, start_date: date, end_date: date, chunk_days: int) -> list[tuple[date, date]]:
+        if start_date > end_date:
+            return []
+        cursor = start_date
+        ranges: list[tuple[date, date]] = []
+        window = max(1, int(chunk_days))
+        while cursor <= end_date:
+            chunk_end = min(end_date, cursor + timedelta(days=window - 1))
+            ranges.append((cursor, chunk_end))
+            cursor = chunk_end + timedelta(days=1)
+        return ranges
+
+    def _classify_account_daily_coverage_status(self, *, total_chunk_count: int, successful_chunk_count: int, rows_written_count: int) -> str:
+        if total_chunk_count <= 0:
+            return "empty_success"
+        if successful_chunk_count == total_chunk_count:
+            return "empty_success" if int(rows_written_count) <= 0 else "full_request_coverage"
+        if successful_chunk_count <= 0:
+            return "failed_request_coverage"
+        return "partial_request_coverage"
+
     def _fetch_campaign_daily_insights(self, *, account_id: str, start_date: date, end_date: date, access_token: str) -> list[dict[str, object]]:
         return self._fetch_insights(
             account_id=account_id,
@@ -664,47 +686,136 @@ class MetaAdsService:
             resolved_account_currency = self._resolve_attached_account_currency(client_id=int(client_id), account_id=account_id)
 
             if resolved_grain == "account_daily":
-                insights_rows = self._fetch_account_daily_insights(
-                    account_id=account_id,
-                    start_date=resolved_start,
-                    end_date=resolved_end,
-                    access_token=access_token,
-                )
-                for item in insights_rows:
-                    report_date_raw = str(item.get("date_start") or "").strip()
-                    if report_date_raw == "":
-                        continue
+                chunk_windows = self._build_sync_chunks(start_date=resolved_start, end_date=resolved_end, chunk_days=_META_ACCOUNT_DAILY_CHUNK_DAYS)
+                total_chunk_count = len(chunk_windows)
+                successful_chunk_count = 0
+                retry_attempted = False
+                retry_recovered_chunk_count = 0
+                failed_chunk_windows: list[tuple[date, date]] = []
+                last_error_summary: str | None = None
+                last_error_details: dict[str, object] | None = None
+                first_persisted_date: str | None = None
+                last_persisted_date: str | None = None
+
+                def _persist_insights_rows(insights_rows: list[dict[str, object]]) -> int:
+                    nonlocal rows_written, account_rows_written, first_persisted_date, last_persisted_date
+                    persisted = 0
+                    for item in insights_rows:
+                        report_date_raw = str(item.get("date_start") or "").strip()
+                        if report_date_raw == "":
+                            continue
+                        try:
+                            report_date_value = date.fromisoformat(report_date_raw)
+                        except ValueError:
+                            continue
+
+                        spend = self._parse_numeric(item.get("spend"))
+                        impressions = self._parse_int(item.get("impressions"))
+                        clicks = self._parse_int(item.get("clicks"))
+                        lead_conversion_details = self._derive_lead_conversion_details(actions=item.get("actions"))
+                        conversions = float(lead_conversion_details.get("conversions") or 0.0)
+                        conversion_value = self._derive_conversion_value(action_values=item.get("action_values"))
+
+                        performance_reports_store.write_daily_report(
+                            report_date=report_date_value,
+                            platform="meta_ads",
+                            customer_id=account_id,
+                            client_id=int(client_id),
+                            spend=spend,
+                            impressions=impressions,
+                            clicks=clicks,
+                            conversions=conversions,
+                            conversion_value=conversion_value,
+                            extra_metrics={"meta_ads": {**self._base_extra_metrics(item), "account_currency": resolved_account_currency, **self._lead_conversion_observability(details=lead_conversion_details), "grain": "account_daily"}},
+                        )
+                        rows_written += 1
+                        account_rows_written += 1
+                        persisted += 1
+                        iso_day = report_date_value.isoformat()
+                        first_persisted_date = iso_day if first_persisted_date is None or iso_day < first_persisted_date else first_persisted_date
+                        last_persisted_date = iso_day if last_persisted_date is None or iso_day > last_persisted_date else last_persisted_date
+                        account_totals["spend"] += spend
+                        account_totals["impressions"] += impressions
+                        account_totals["clicks"] += clicks
+                        account_totals["conversions"] += conversions
+                        account_totals["conversion_value"] += conversion_value
+                    return persisted
+
+                for chunk_start, chunk_end in chunk_windows:
                     try:
-                        report_date_value = date.fromisoformat(report_date_raw)
-                    except ValueError:
-                        continue
+                        insights_rows = self._fetch_account_daily_insights(
+                            account_id=account_id,
+                            start_date=chunk_start,
+                            end_date=chunk_end,
+                            access_token=access_token,
+                        )
+                        _persist_insights_rows(insights_rows)
+                        successful_chunk_count += 1
+                    except MetaAdsIntegrationError as exc:
+                        failed_chunk_windows.append((chunk_start, chunk_end))
+                        last_error_summary = str(exc)
+                        last_error_details = sanitize_payload(exc.to_details()) if hasattr(exc, "to_details") else {"error_summary": str(exc)}
+                    except Exception as exc:  # noqa: BLE001
+                        failed_chunk_windows.append((chunk_start, chunk_end))
+                        last_error_summary = sanitize_text(str(exc), max_len=300)
+                        last_error_details = {"error_summary": sanitize_text(str(exc), max_len=300)}
 
-                    spend = self._parse_numeric(item.get("spend"))
-                    impressions = self._parse_int(item.get("impressions"))
-                    clicks = self._parse_int(item.get("clicks"))
-                    lead_conversion_details = self._derive_lead_conversion_details(actions=item.get("actions"))
-                    conversions = float(lead_conversion_details.get("conversions") or 0.0)
-                    conversion_value = self._derive_conversion_value(action_values=item.get("action_values"))
+                if len(failed_chunk_windows) > 0:
+                    retry_attempted = True
+                    initial_failed = list(failed_chunk_windows)
+                    failed_chunk_windows = []
+                    for chunk_start, chunk_end in initial_failed:
+                        try:
+                            insights_rows = self._fetch_account_daily_insights(
+                                account_id=account_id,
+                                start_date=chunk_start,
+                                end_date=chunk_end,
+                                access_token=access_token,
+                            )
+                            _persist_insights_rows(insights_rows)
+                            successful_chunk_count += 1
+                            retry_recovered_chunk_count += 1
+                        except MetaAdsIntegrationError as exc:
+                            failed_chunk_windows.append((chunk_start, chunk_end))
+                            last_error_summary = str(exc)
+                            last_error_details = sanitize_payload(exc.to_details()) if hasattr(exc, "to_details") else {"error_summary": str(exc)}
+                        except Exception as exc:  # noqa: BLE001
+                            failed_chunk_windows.append((chunk_start, chunk_end))
+                            last_error_summary = sanitize_text(str(exc), max_len=300)
+                            last_error_details = {"error_summary": sanitize_text(str(exc), max_len=300)}
 
-                    performance_reports_store.write_daily_report(
-                        report_date=report_date_value,
-                        platform="meta_ads",
-                        customer_id=account_id,
-                        client_id=int(client_id),
-                        spend=spend,
-                        impressions=impressions,
-                        clicks=clicks,
-                        conversions=conversions,
-                        conversion_value=conversion_value,
-                        extra_metrics={"meta_ads": {**self._base_extra_metrics(item), "account_currency": resolved_account_currency, **self._lead_conversion_observability(details=lead_conversion_details)}},
-                    )
-                    rows_written += 1
-                    account_rows_written += 1
-                    account_totals["spend"] += spend
-                    account_totals["impressions"] += impressions
-                    account_totals["clicks"] += clicks
-                    account_totals["conversions"] += conversions
-                    account_totals["conversion_value"] += conversion_value
+                coverage_status = self._classify_account_daily_coverage_status(
+                    total_chunk_count=total_chunk_count,
+                    successful_chunk_count=successful_chunk_count,
+                    rows_written_count=account_rows_written,
+                )
+                account_summaries.append(
+                    {
+                        "account_id": account_id,
+                        "account_path": probe.get("account_path"),
+                        "rows_written": account_rows_written,
+                        "rows_written_count": account_rows_written,
+                        "spend": round(account_totals["spend"], 2),
+                        "impressions": account_totals["impressions"],
+                        "clicks": account_totals["clicks"],
+                        "conversions": round(account_totals["conversions"], 4),
+                        "conversion_value": round(account_totals["conversion_value"], 2),
+                        "sync_health_status": coverage_status,
+                        "coverage_status": coverage_status,
+                        "requested_start_date": resolved_start.isoformat(),
+                        "requested_end_date": resolved_end.isoformat(),
+                        "total_chunk_count": total_chunk_count,
+                        "successful_chunk_count": successful_chunk_count,
+                        "failed_chunk_count": max(0, total_chunk_count - successful_chunk_count),
+                        "retry_attempted": retry_attempted,
+                        "retry_recovered_chunk_count": retry_recovered_chunk_count,
+                        "first_persisted_date": first_persisted_date,
+                        "last_persisted_date": last_persisted_date,
+                        "last_error": last_error_summary if coverage_status in {"partial_request_coverage", "failed_request_coverage"} else None,
+                        "last_error_summary": last_error_summary if coverage_status in {"partial_request_coverage", "failed_request_coverage"} else None,
+                        "last_error_details": last_error_details if coverage_status in {"partial_request_coverage", "failed_request_coverage"} else None,
+                    }
+                )
             elif resolved_grain == "campaign_daily":
                 insights_rows = self._fetch_campaign_daily_insights(
                     account_id=account_id,
@@ -895,21 +1006,35 @@ class MetaAdsService:
             totals["conversions"] += account_totals["conversions"]
             totals["revenue"] += account_totals["conversion_value"]
 
-            account_summaries.append(
-                {
-                    "account_id": account_id,
-                    "account_path": probe.get("account_path"),
-                    "rows_written": account_rows_written,
-                    "spend": round(account_totals["spend"], 2),
-                    "impressions": account_totals["impressions"],
-                    "clicks": account_totals["clicks"],
-                    "conversions": round(account_totals["conversions"], 4),
-                    "conversion_value": round(account_totals["conversion_value"], 2),
-                }
-            )
+            if resolved_grain != "account_daily":
+                account_summaries.append(
+                    {
+                        "account_id": account_id,
+                        "account_path": probe.get("account_path"),
+                        "rows_written": account_rows_written,
+                        "spend": round(account_totals["spend"], 2),
+                        "impressions": account_totals["impressions"],
+                        "clicks": account_totals["clicks"],
+                        "conversions": round(account_totals["conversions"], 4),
+                        "conversion_value": round(account_totals["conversion_value"], 2),
+                    }
+                )
+
+        account_daily_coverages = [str(item.get("coverage_status") or "") for item in account_summaries if isinstance(item, dict) and str(item.get("coverage_status") or "") != ""]
+        if len(account_daily_coverages) > 0:
+            if any(value == "failed_request_coverage" for value in account_daily_coverages):
+                sync_health_status = "failed_request_coverage"
+            elif any(value == "partial_request_coverage" for value in account_daily_coverages):
+                sync_health_status = "partial_request_coverage"
+            elif all(value == "empty_success" for value in account_daily_coverages):
+                sync_health_status = "empty_success"
+            else:
+                sync_health_status = "full_request_coverage"
+        else:
+            sync_health_status = "full_request_coverage"
 
         snapshot = {
-            "status": "ok",
+            "status": "error" if sync_health_status in {"partial_request_coverage", "failed_request_coverage"} else "ok",
             "message": f"Meta Ads {resolved_grain} sync completed.",
             "platform": "meta_ads",
             "grain": resolved_grain,
@@ -926,8 +1051,18 @@ class MetaAdsService:
             "conversions": round(totals["conversions"], 4),
             "revenue": round(totals["revenue"], 2),
             "accounts": account_summaries,
+            "sync_health_status": sync_health_status,
+            "coverage_status": sync_health_status,
             "synced_at": datetime.now(timezone.utc).isoformat(),
         }
+
+        if resolved_grain == "account_daily":
+            failing_accounts = [item for item in account_summaries if str(item.get("coverage_status") or "") in {"partial_request_coverage", "failed_request_coverage"}]
+            if len(failing_accounts) > 0:
+                first = failing_accounts[0]
+                snapshot["last_error"] = first.get("last_error")
+                snapshot["last_error_summary"] = first.get("last_error_summary")
+                snapshot["last_error_details"] = first.get("last_error_details")
 
         if resolved_grain == "account_daily" and bool(update_snapshot):
             meta_snapshot_store.upsert_snapshot(

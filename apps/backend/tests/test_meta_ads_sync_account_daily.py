@@ -909,6 +909,50 @@ class MetaAdsSyncDailyTests(unittest.TestCase):
         result = payload.get("result") or {}
         self.assertEqual(result.get("snapshot_rebuilt"), True)
 
+    def test_backfill_account_daily_retries_failed_chunk_windows_once(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Meta Backfill Retry", account_ids=["act_7701"])
+        meta_ads_service.integration_status = lambda: {"token_source": "database", "status": "connected"}
+        calls: dict[str, int] = {}
+
+        def _sync_client(**kwargs):
+            key = f"{kwargs.get('grain')}:{kwargs['start_date'].isoformat()}->{kwargs['end_date'].isoformat()}"
+            calls[key] = int(calls.get(key) or 0) + 1
+            if kwargs.get("grain") == "account_daily" and kwargs["start_date"] == date(2026, 3, 1) and calls[key] == 1:
+                return {
+                    "status": "error",
+                    "grain": "account_daily",
+                    "accounts_processed": 1,
+                    "rows_written": 0,
+                    "token_source": "database",
+                    "coverage_status": "failed_request_coverage",
+                    "last_error_summary": "chunk fail",
+                    "last_error_details": {"message": "boom"},
+                }
+            return {
+                "status": "ok",
+                "grain": kwargs.get("grain"),
+                "accounts_processed": 1,
+                "rows_written": 1,
+                "token_source": "database",
+                "coverage_status": "full_request_coverage",
+            }
+
+        meta_ads_service.sync_client = _sync_client
+        job_id = backfill_job_store.create(payload={"platform": "meta_ads", "client_id": client_id})
+        meta_ads_api._run_meta_historical_backfill_job(
+            job_id,
+            client_id=client_id,
+            start_date=date(2026, 3, 1),
+            end_date=date(2026, 3, 3),
+            grains=["account_daily"],
+            chunk_days=30,
+        )
+
+        payload = backfill_job_store.get(job_id) or {}
+        result = payload.get("result") or {}
+        self.assertEqual(result.get("coverage_status"), "full_request_coverage")
+        self.assertEqual(result.get("retry_attempted"), True)
+        self.assertEqual(result.get("retry_recovered_chunk_count"), 1)
     def test_recompute_snapshot_endpoint_rebuilds_from_account_daily_rows(self):
         client_id = self._create_client_with_meta_accounts(client_name="Client Recompute", account_ids=["act_5001"])
         performance_reports_store.write_daily_report(
@@ -947,6 +991,80 @@ class MetaAdsSyncDailyTests(unittest.TestCase):
         self.assertEqual(snapshot.get("spend"), 50.0)
         self.assertEqual(snapshot.get("revenue"), 100.0)
         self.assertEqual(snapshot.get("clicks"), 50)
+
+
+    def test_account_daily_full_request_coverage_success(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Meta Full", account_ids=["act_701"])
+        meta_ads_service._resolve_active_access_token_with_source = lambda: ("tok", "database", None, None)
+        meta_ads_service._fetch_account_daily_insights = lambda **kwargs: [
+            {"date_start": kwargs["start_date"].isoformat(), "date_stop": kwargs["start_date"].isoformat(), "spend": "10", "impressions": "100", "clicks": "10", "actions": [], "action_values": []}
+        ]
+
+        payload = meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 10), grain="account_daily")
+
+        self.assertEqual(payload["coverage_status"], "full_request_coverage")
+        self.assertEqual(payload["status"], "ok")
+        self.assertIsNone(payload.get("last_error"))
+
+    def test_account_daily_empty_success_when_all_chunks_return_no_rows(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Meta Empty", account_ids=["act_702"])
+        meta_ads_service._resolve_active_access_token_with_source = lambda: ("tok", "database", None, None)
+        meta_ads_service._fetch_account_daily_insights = lambda **kwargs: []
+
+        payload = meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 10), grain="account_daily")
+
+        self.assertEqual(payload["coverage_status"], "empty_success")
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["rows_written"], 0)
+
+    def test_account_daily_partial_then_retry_recovers_to_full(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Meta Retry", account_ids=["act_703"])
+        meta_ads_service._resolve_active_access_token_with_source = lambda: ("tok", "database", None, None)
+        seen: dict[str, int] = {}
+
+        def _fetch(**kwargs):
+            key = f"{kwargs['start_date'].isoformat()}->{kwargs['end_date'].isoformat()}"
+            seen[key] = int(seen.get(key) or 0) + 1
+            if kwargs["start_date"] == date(2026, 3, 8) and seen[key] == 1:
+                raise MetaAdsIntegrationError("provider timeout", retryable=True, http_status=500)
+            return [{"date_start": kwargs["start_date"].isoformat(), "date_stop": kwargs["start_date"].isoformat(), "spend": "9", "impressions": "90", "clicks": "9", "actions": [], "action_values": []}]
+
+        meta_ads_service._fetch_account_daily_insights = _fetch
+        payload = meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 10), grain="account_daily")
+
+        self.assertEqual(payload["coverage_status"], "full_request_coverage")
+        self.assertEqual(payload["status"], "ok")
+        account = payload["accounts"][0]
+        self.assertEqual(account.get("retry_attempted"), True)
+        self.assertEqual(account.get("retry_recovered_chunk_count"), 1)
+
+    def test_account_daily_partial_unrecovered_is_error(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Meta Partial", account_ids=["act_704"])
+        meta_ads_service._resolve_active_access_token_with_source = lambda: ("tok", "database", None, None)
+
+        def _fetch(**kwargs):
+            if kwargs["start_date"] == date(2026, 3, 8):
+                raise MetaAdsIntegrationError("provider timeout", retryable=True, http_status=500)
+            return [{"date_start": kwargs["start_date"].isoformat(), "date_stop": kwargs["start_date"].isoformat(), "spend": "7", "impressions": "70", "clicks": "7", "actions": [], "action_values": []}]
+
+        meta_ads_service._fetch_account_daily_insights = _fetch
+        payload = meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 10), grain="account_daily")
+
+        self.assertEqual(payload["coverage_status"], "partial_request_coverage")
+        self.assertEqual(payload["status"], "error")
+        self.assertIsNotNone(payload.get("last_error_summary"))
+        self.assertGreaterEqual(int(payload["accounts"][0].get("failed_chunk_count") or 0), 1)
+
+    def test_account_daily_complete_failure_is_failed_request_coverage(self):
+        client_id = self._create_client_with_meta_accounts(client_name="Meta Failed", account_ids=["act_705"])
+        meta_ads_service._resolve_active_access_token_with_source = lambda: ("tok", "database", None, None)
+        meta_ads_service._fetch_account_daily_insights = lambda **kwargs: (_ for _ in ()).throw(MetaAdsIntegrationError("meta down", retryable=False, http_status=503))
+
+        payload = meta_ads_service.sync_client(client_id=client_id, start_date=date(2026, 3, 1), end_date=date(2026, 3, 2), grain="account_daily")
+
+        self.assertEqual(payload["coverage_status"], "failed_request_coverage")
+        self.assertEqual(payload["status"], "error")
+        self.assertEqual(payload["rows_written"], 0)
 
 
 if __name__ == "__main__":
