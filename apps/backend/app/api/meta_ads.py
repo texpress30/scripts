@@ -132,6 +132,8 @@ def _mirror_meta_platform_account_operational_metadata(
     account_context: dict[str, str] | None,
     sync_start_date: date,
     last_synced_at: datetime | None = None,
+    last_success_at: datetime | None = None,
+    backfill_completed_through: date | None = None,
 ) -> None:
     account_id = str((account_context or {}).get("account_id") or "").strip()
     if account_id == "":
@@ -154,6 +156,10 @@ def _mirror_meta_platform_account_operational_metadata(
         payload["account_timezone"] = raw_timezone
     if last_synced_at is not None:
         payload["last_synced_at"] = last_synced_at
+    if last_success_at is not None:
+        payload["last_success_at"] = last_success_at
+    if backfill_completed_through is not None:
+        payload["backfill_completed_through"] = backfill_completed_through
 
     try:
         client_registry_service.update_platform_account_operational_metadata(**payload)
@@ -296,6 +302,7 @@ def _run_meta_sync_job(job_id: str, *, client_id: int, account_context: dict[str
             account_context=resolved_account_context,
             sync_start_date=date_start,
             last_synced_at=success_now,
+            last_success_at=success_now,
         )
         done_metadata = {"client_id": int(client_id)}
         if meta_account_id is not None:
@@ -533,6 +540,15 @@ def _run_meta_historical_backfill_job(
         if result.get("status") == SYNC_STATUS_ERROR:
             backfill_job_store.set_error(job_id, error=str(result.get("last_error_summary") or "Meta Ads historical backfill completed with unrecovered chunk failures.")[:300])
         else:
+            success_now = datetime.utcnow()
+            _mirror_meta_platform_account_operational_metadata(
+                job_id=job_id,
+                account_context=_resolve_meta_account_context(client_id=int(client_id), job_id=job_id),
+                sync_start_date=start_date,
+                last_synced_at=success_now,
+                last_success_at=success_now,
+                backfill_completed_through=end_date,
+            )
             backfill_job_store.set_done(job_id, result=result)
     except Exception as exc:  # noqa: BLE001
         backfill_job_store.set_error(job_id, error=str(exc)[:300])

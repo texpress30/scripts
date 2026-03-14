@@ -1,3 +1,18 @@
+# TODO — Persist sync metadata fields for Meta/TikTok operational status
+
+- [x] Inspect Meta/TikTok sync paths plus sync orchestration and sync-runs store for persistence of `sync_start_date`, `backfill_completed_through`, and `last_success_at`.
+- [x] Add missing operational metadata persistence in API-driven Meta/TikTok sync success/backfill paths.
+- [x] Ensure sync trigger path seeds `sync_start_date` when missing at run enqueue time.
+- [x] Run requested backend tests and capture outcomes.
+
+## Review
+- [x] Meta API sync success now persists `last_success_at`; Meta historical backfill success now persists `last_success_at` and `backfill_completed_through` alongside existing `sync_start_date`/`last_synced_at`.
+- [x] TikTok API sync success now persists `last_success_at`; TikTok historical backfill success now persists `last_success_at` and `backfill_completed_through`.
+- [x] Sync orchestration batch creation now best-effort seeds `sync_start_date` for accounts where it is missing.
+- [x] Verification: `cd apps/backend && python -m pytest tests/test_meta_ads_sync_account_daily.py tests/test_tiktok_ads_import_accounts.py tests/test_sync_orchestration_api.py -v 2>&1 | tail -20`.
+
+---
+
 # TODO — Agency Clients account-currency label clarity
 
 - [x] Refresh workspace state and inspect current account-card currency label/tooltip text on agency client details.
