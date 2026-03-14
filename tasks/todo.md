@@ -1,3 +1,18 @@
+# TODO — Hotfix Railway 500 placeholder mismatch (Media Buying / Media Tracker)
+
+- [x] Refresh workspace state and inspect `_list_automated_daily_costs` SQL placeholder/param contract.
+- [x] Keep date predicates only in `scoped_reports` and confirm no duplicate date placeholder groups in `perf`.
+- [x] Add/refresh focused regression coverage for placeholder-count contract and single-date-filter-location behavior.
+- [x] Run targeted backend tests for Media Buying store, Clients Media Buying API, and Media Tracker worksheet paths.
+
+## Review
+- [x] Confirmed root cause pattern: duplicate date predicates in both `scoped_reports` and `perf` can raise `psycopg.ProgrammingError: the query has 9 placeholders but 5 parameters were passed`.
+- [x] Kept `_list_automated_daily_costs` query contract with one date-filter location (`scoped_reports`) and execute params `(client_id, date_from, date_from, date_to, date_to)`.
+- [x] Added regression asserting date predicates appear once and are absent from `perf` to prevent reintroducing the Railway 500.
+- [x] Verification: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q apps/backend/tests/test_media_buying_store.py apps/backend/tests/test_clients_media_buying_api.py apps/backend/tests/test_media_tracker_worksheet.py`.
+
+---
+
 # TODO — Fix placeholder mismatch crash in media buying automated costs SQL
 
 - [x] Refresh workspace and inspect `_list_automated_daily_costs` SQL placeholder/parameter usage.

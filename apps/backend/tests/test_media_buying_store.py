@@ -977,6 +977,45 @@ class MediaBuyingStoreBoundsQueryTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["platform"], "meta_ads")
 
+    def test_automated_costs_query_keeps_date_predicates_only_in_scoped_reports(self):
+        captured_query = ""
+
+        class _Cursor:
+            def execute(self, query, params=None):
+                nonlocal captured_query
+                captured_query = " ".join(str(query).split())
+
+            def fetchall(self):
+                return []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class _Conn:
+            def cursor(self):
+                return _Cursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        store = MediaBuyingStore()
+        store._ensure_schema = lambda: None
+        store._connect = lambda: _Conn()
+
+        _ = store._list_automated_daily_costs(client_id=97, date_from=date(2026, 2, 1), date_to=date(2026, 2, 28))
+
+        self.assertEqual(captured_query.count("apr.report_date >= %s::date"), 1)
+        self.assertEqual(captured_query.count("apr.report_date <= %s::date"), 1)
+        perf_section = captured_query.split("perf AS", maxsplit=1)[1]
+        self.assertNotIn("apr.report_date >= %s::date", perf_section)
+        self.assertNotIn("apr.report_date <= %s::date", perf_section)
+
     def test_get_lead_table_include_days_false_does_not_hit_placeholder_mismatch(self):
         class _Cursor:
             def execute(self, query, params=None):

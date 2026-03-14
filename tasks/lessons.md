@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-14: Când userul cere hotfix de producție cu scope strict, evită schimbările pe buguri paralele și livrează doar fixul minim + teste țintite exact pe endpointurile afectate.
+
 - 2026-03-14: For SQL CTE refactors, add a regression that asserts placeholder count matches bound parameter count, and cover both direct store calls and API-dependent flows to catch runtime ProgrammingError early.
 
 - 2026-03-14: For sync-health “Unknown/No sync metadata” issues, verify both worker-driven and API-driven sync paths persist `sync_start_date`, `last_success_at`, and `backfill_completed_through`; do not assume one path covers all triggers.

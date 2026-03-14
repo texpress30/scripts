@@ -240,8 +240,8 @@ class MediaBuyingStore:
                           AND (%s::date IS NULL OR apr.report_date <= %s::date)
                     ),
                     perf AS (
-                        -- Date range predicates are intentionally applied only in scoped_reports to avoid duplicate SQL placeholders here.
-                        -- TODO: confirm DB has index optimized for this path: ad_performance_reports(platform, customer_id, report_date)
+                        -- Date range predicates stay only in scoped_reports so placeholder count
+                        -- remains aligned with execute params: (client_id, date_from, date_from, date_to, date_to).
                         SELECT
                             apr.platform,
                             apr.report_date,
