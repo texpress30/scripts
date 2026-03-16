@@ -285,7 +285,7 @@ class MediaBuyingStore:
                     GROUP BY report_date, platform, account_currency
                     ORDER BY report_date ASC
                     """,
-                    (int(client_id), date_from, date_from, date_to, date_to),
+                    (int(client_id), date_from, date_from, date_to, date_to, date_from, date_from, date_to, date_to),
                 )
                 rows = cur.fetchall() or []
 
