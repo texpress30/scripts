@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import SubMediaBuyingPage from "./page";
+import { formatCurrencyValue } from "@/lib/subAccountCurrency";
 
 const apiMock = vi.hoisted(() => ({ apiRequest: vi.fn() }));
 
@@ -18,12 +19,12 @@ vi.mock("@/components/AppShell", () => ({
   ),
 }));
 
-function leadPayload() {
+function leadPayload(displayCurrency: string = "RON") {
   return {
     meta: {
       client_id: 96,
       template_type: "lead",
-      display_currency: "RON",
+      display_currency: displayCurrency,
       custom_label_1: "Appointments",
       custom_label_2: "Qualified",
       custom_label_3: "Val. Aprobata",
@@ -148,9 +149,58 @@ function leadPayloadWithMonths() {
   };
 }
 
+
+function leadPayloadMonthsFirst() {
+  const base = leadPayload();
+  return {
+    ...base,
+    days: [],
+    months: [
+      {
+        month: "2026-03",
+        date_from: "2026-03-01",
+        date_to: "2026-03-31",
+        totals: { ...base.months[0].totals },
+        day_count: 1,
+        has_days: true,
+      },
+    ],
+  };
+}
+
+function monthDaysPayload() {
+  const base = leadPayload();
+  return {
+    meta: base.meta,
+    month_start: "2026-03-01",
+    days: base.days,
+  };
+}
+
 describe("SubMediaBuyingPage", () => {
   beforeEach(() => {
     apiMock.apiRequest.mockReset();
+  });
+
+
+  it("renders monetary values using response display_currency (USD/RON/EUR)", async () => {
+    for (const currency of ["USD", "RON", "EUR"]) {
+      apiMock.apiRequest.mockReset();
+      apiMock.apiRequest.mockImplementation(async (path: string) => {
+        if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
+        if (path.startsWith("/clients/96/media-buying/lead/table")) return leadPayload(currency);
+        throw new Error(`Unexpected path ${path}`);
+      });
+
+      const { unmount } = render(<SubMediaBuyingPage />);
+      await screen.findByRole("button", { name: /Mar 2026/i });
+      expect(screen.getByText(`Currency: ${currency}`)).toBeInTheDocument();
+      const expectedMoney = formatCurrencyValue(350, currency, "USD");
+      const normalizedExpected = expectedMoney.replace(/ /g, " ");
+      const moneyCells = screen.getAllByText((content) => content.replace(/ /g, " ") === normalizedExpected);
+      expect(moneyCells.length).toBeGreaterThan(0);
+      unmount();
+    }
   });
 
   it("reads client_type from Agency Clients and renders lead table only for lead", async () => {
@@ -355,7 +405,7 @@ describe("SubMediaBuyingPage", () => {
     expect(screen.getByRole("columnheader", { name: /Cost Total/i }).className).toContain("border-dashed");
     expect(screen.getByRole("columnheader", { name: /Total Lead-uri/i }).className).toContain("border-dashed");
 
-    const unrealizedCells = screen.getAllByText(/\(RON\s?40\.00\)|\(.*40.*RON.*\)/i);
+    const unrealizedCells = screen.getAllByText((content) => content.includes("40") && content.toUpperCase().includes("RON") && content.includes("("));
     expect(unrealizedCells.length).toBeGreaterThan(0);
     expect(unrealizedCells[0].className || "").toContain("text-slate-900");
     expect(unrealizedCells[0].className || "").not.toContain("text-red-600");
@@ -532,10 +582,55 @@ describe("SubMediaBuyingPage", () => {
     expect(await screen.findByText("boom")).toBeInTheDocument();
   });
 
+
+  it("uses client context currency when table display_currency is missing", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead", currency: "RON" }] };
+      if (path.startsWith("/clients/96/media-buying/lead/table")) {
+        const payload = leadPayload();
+        delete payload.meta.display_currency;
+        return payload;
+      }
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaBuyingPage />);
+    expect(await screen.findByText("Currency: RON")).toBeInTheDocument();
+  });
+
+  it("shows placeholder currency when table and client context currencies are unavailable", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
+      if (path.startsWith("/clients/96/media-buying/lead/table")) {
+        const payload = leadPayload();
+        delete payload.meta.display_currency;
+        return payload;
+      }
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaBuyingPage />);
+    expect(await screen.findByText("Currency: —")).toBeInTheDocument();
+    expect(screen.queryByText("Currency: USD")).toBeNull();
+  });
+
+  it("keeps non-USD currency label on table error using client context currency", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead", currency: "EUR" }] };
+      if (path.startsWith("/clients/96/media-buying/lead/table")) throw new Error("boom");
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaBuyingPage />);
+    expect(await screen.findByText("boom")).toBeInTheDocument();
+    expect(screen.getByText("Currency: EUR")).toBeInTheDocument();
+    expect(screen.queryByText("Currency: USD")).toBeNull();
+  });
+
   it("uses effective range metadata from API and requests table without implicit date query params", async () => {
     apiMock.apiRequest.mockImplementation(async (path: string) => {
       if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
-      if (path === "/clients/96/media-buying/lead/table") {
+      if (path === "/clients/96/media-buying/lead/table?include_days=false") {
         const payload = leadPayload();
         payload.meta.date_from = "2025-12-13";
         payload.meta.date_to = "2026-03-12";
@@ -549,6 +644,62 @@ describe("SubMediaBuyingPage", () => {
     render(<SubMediaBuyingPage />);
 
     expect(await screen.findByText(/Range: 2026-01-01 - 2026-03-11/i)).toBeInTheDocument();
-    expect(apiMock.apiRequest).toHaveBeenCalledWith("/clients/96/media-buying/lead/table");
+    expect(apiMock.apiRequest).toHaveBeenCalledWith("/clients/96/media-buying/lead/table?include_days=false");
   });
+
+  it("uses include_days=false on initial request and lazy-loads month days on expand", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
+      if (path === "/clients/96/media-buying/lead/table?include_days=false") return leadPayloadMonthsFirst();
+      if (path === "/clients/96/media-buying/lead/month-days?month_start=2026-03-01") return monthDaysPayload();
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaBuyingPage />);
+    expect(await screen.findByRole("button", { name: /Mar 2026/i })).toBeInTheDocument();
+    expect(apiMock.apiRequest).toHaveBeenCalledWith("/clients/96/media-buying/lead/table?include_days=false");
+    expect(await screen.findByText("11 Mar")).toBeInTheDocument();
+  });
+
+  it("re-expanding an already loaded month uses cached rows without refetch", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
+      if (path === "/clients/96/media-buying/lead/table?include_days=false") return leadPayloadMonthsFirst();
+      if (path === "/clients/96/media-buying/lead/month-days?month_start=2026-03-01") return monthDaysPayload();
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaBuyingPage />);
+    const monthButton = await screen.findByRole("button", { name: /Mar 2026/i });
+    await screen.findByText("11 Mar");
+
+    fireEvent.click(monthButton);
+    expect(screen.queryByText("11 Mar")).toBeNull();
+    fireEvent.click(monthButton);
+    expect(await screen.findByText("11 Mar")).toBeInTheDocument();
+
+    const monthCalls = apiMock.apiRequest.mock.calls.filter(([path]) => String(path).includes("/media-buying/lead/month-days"));
+    expect(monthCalls).toHaveLength(1);
+  });
+
+  it("shows month-level error and allows retry without breaking the table", async () => {
+    let monthAttempt = 0;
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
+      if (path === "/clients/96/media-buying/lead/table?include_days=false") return leadPayloadMonthsFirst();
+      if (path === "/clients/96/media-buying/lead/month-days?month_start=2026-03-01") {
+        monthAttempt += 1;
+        if (monthAttempt === 1) throw new Error("month boom");
+        return monthDaysPayload();
+      }
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaBuyingPage />);
+    expect(await screen.findByRole("button", { name: /Mar 2026/i })).toBeInTheDocument();
+    expect(await screen.findByText("month boom")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Retry/i }));
+    expect(await screen.findByText("11 Mar")).toBeInTheDocument();
+  });
+
 });
