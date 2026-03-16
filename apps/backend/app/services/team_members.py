@@ -72,12 +72,11 @@ class TeamMembersService:
                         phone TEXT NOT NULL DEFAULT '',
                         extension TEXT NOT NULL DEFAULT '',
                         platform_language TEXT NOT NULL DEFAULT 'ro',
-                        password_hash TEXT NOT NULL DEFAULT %s,
+                        password_hash TEXT NOT NULL DEFAULT '',
                         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                     )
-                    """,
-                    (default_hash,),
+                    """
                 )
                 cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE")
                 cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS must_reset_password BOOLEAN NOT NULL DEFAULT FALSE")

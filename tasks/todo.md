@@ -4321,3 +4321,20 @@
 - [x] Erorile backend sunt afișate direct prin mesajele venite din `apiRequest`; fallback generic rămâne doar pentru erori non-standard.
 - [x] Loading/error pentru subaccount options este non-blocking (mesaje locale în list/create view).
 - [x] Verificări: `pnpm vitest run src/app/settings/team/page.test.tsx` și `pnpm build` (frontend compile OK).
+
+---
+
+# TODO — Hotfix startup crash în team_members.initialize_schema (DDL bind param)
+
+- [x] Audit fișierul `team_members.py` și confirm query-ul DDL parametrizat care cauzează `IndeterminateDatatype`.
+- [x] Elimin bind-parameter din DDL-ul `CREATE TABLE users` (fără `%s` în DEFAULT).
+- [x] Verific dacă mai există alte DDL-uri parametrizate în același serviciu.
+- [x] Rulez teste backend relevante + startup/import check.
+- [x] Documentez review + lecție și pregătesc commit/PR.
+
+## Review
+- [x] Cauza exactă: `CREATE TABLE IF NOT EXISTS users` folosea `password_hash TEXT NOT NULL DEFAULT %s` cu parametru bind în DDL; psycopg3 nu poate deduce tipul în acest context și ridică `IndeterminateDatatype` la startup.
+- [x] Hotfix: am înlocuit default-ul DDL cu unul static (`DEFAULT ''`) și am eliminat complet `cur.execute(..., params)` pentru acel statement.
+- [x] Verificare suplimentară: în `team_members.py` nu au mai rămas alte DDL-uri parametrizate.
+- [x] Verificări rulate: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q tests/test_team_members_foundation.py` și import/startup check `python -c "from app.main import app; print('ok')"`.
+- [x] Scope păstrat: doar backend, fără schimbări de API contract/frontend/auth flow.
