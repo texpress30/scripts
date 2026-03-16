@@ -1,3 +1,20 @@
+# TODO — Sub-Account Profil Business interface (frontend)
+
+- [x] Refresh workspace and inspect current sub-account profile settings route/component.
+- [x] Implement Business Profile UI in Romanian with required sections, fields, responsive two-column layout, and card styling.
+- [x] Add client-side validations (email/telefon/url/required) and success toast feedback on update actions.
+- [x] Keep scope frontend-only without backend/API/schema changes.
+- [x] Add focused frontend tests for section rendering and validation/toast behavior.
+- [x] Run targeted frontend tests for touched file.
+
+## Review
+- [x] Replaced placeholder sub-account profile settings content with full `Profil Business` interface organized into four cards: Informații generale, Informații business, Adresă fizică business, Reprezentant autorizat.
+- [x] Added logo upload zone (350x180, 2.5MB check), Romanian labels/options, and per-form update buttons with local success toast.
+- [x] Added client-side validation for required fields plus format checks for email/telefon/url; form submit is blocked on errors.
+- [x] Verification: `cd apps/frontend && pnpm vitest run src/app/subaccount/[id]/settings/profile/page.test.tsx`.
+
+---
+
 # TODO — Media Tracker dynamic labels for Custom Value 1/2 from Media Buying config
 
 - [x] Refresh workspace and inspect worksheet summary row label construction and lead-table meta usage.

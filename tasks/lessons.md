@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-14: Pentru formulare UI mari cu mai multe carduri de update, adaugă teste separate pentru render-ul secțiunilor obligatorii și validările critice (email/telefon/url) plus confirmare toast pe submit valid.
+
 - 2026-03-14: Pentru label-uri dinamice bazate pe config, testează separat cazul explicit cu label-uri setate și fallback-ul pentru null/whitespace, plus un assert de no-regression numeric pe același payload.
 
 - 2026-03-14: Pentru metrici derivate din câmpuri custom, adaugă teste cu valori divergente între sursa veche și sursa nouă (ex. `sales_count` vs `custom_value_2_count`) ca să blochezi false-positive pe mapping.
