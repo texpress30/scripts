@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import React, { FormEvent, useEffect, useMemo, useState } from "react";
 import { Camera, ChevronLeft, Loader2, Pencil, Search, Trash2, UserCircle2 } from "lucide-react";
 
 import { AppShell } from "@/components/AppShell";
@@ -27,6 +27,16 @@ type TeamListResponse = {
   page_size: number;
 };
 
+type SubaccountOption = {
+  id: number;
+  name: string;
+  label: string;
+};
+
+type SubaccountOptionsResponse = {
+  items: SubaccountOption[];
+};
+
 const PAGE_SIZE = 10;
 
 function initials(firstName: string, lastName: string) {
@@ -50,6 +60,10 @@ export default function SettingsTeamPage() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
 
+  const [subaccountOptions, setSubaccountOptions] = useState<SubaccountOption[]>([]);
+  const [subaccountOptionsLoading, setSubaccountOptionsLoading] = useState(false);
+  const [subaccountOptionsError, setSubaccountOptionsError] = useState("");
+
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -59,7 +73,8 @@ export default function SettingsTeamPage() {
   const [userType, setUserType] = useState("agency");
   const [userRole, setUserRole] = useState("member");
   const [location, setLocation] = useState("România");
-  const [subaccount, setSubaccount] = useState("Toate");
+  const [subaccount, setSubaccount] = useState("");
+  const [subaccountFieldError, setSubaccountFieldError] = useState("");
   const [password, setPassword] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -68,6 +83,25 @@ export default function SettingsTeamPage() {
   function showToast(message: string) {
     setToastMessage(message);
     window.setTimeout(() => setToastMessage(""), 2200);
+  }
+
+  async function loadSubaccountOptions() {
+    setSubaccountOptionsLoading(true);
+    setSubaccountOptionsError("");
+    try {
+      const data = await apiRequest<SubaccountOptionsResponse>("/team/subaccount-options");
+      const normalized = (data.items ?? []).map((item) => ({
+        id: Number(item.id),
+        name: String(item.name ?? "").trim(),
+        label: String(item.label ?? "").trim() || String(item.name ?? "").trim(),
+      }));
+      setSubaccountOptions(normalized.filter((item) => item.name !== "" && Number.isFinite(item.id)));
+    } catch (err) {
+      setSubaccountOptions([]);
+      setSubaccountOptionsError(err instanceof Error ? err.message : "Nu am putut încărca sub-conturile.");
+    } finally {
+      setSubaccountOptionsLoading(false);
+    }
   }
 
   async function loadMembers() {
@@ -96,10 +130,21 @@ export default function SettingsTeamPage() {
   }
 
   useEffect(() => {
+    void loadSubaccountOptions();
+  }, []);
+
+  useEffect(() => {
     if (mode === "list") {
       void loadMembers();
     }
   }, [mode, page, search, userTypeFilter, userRoleFilter, subaccountFilter]);
+
+  useEffect(() => {
+    if (userType === "agency") {
+      setSubaccount("");
+      setSubaccountFieldError("");
+    }
+  }, [userType]);
 
   function resetCreateForm() {
     setFirstName("");
@@ -110,7 +155,8 @@ export default function SettingsTeamPage() {
     setUserType("agency");
     setUserRole("member");
     setLocation("România");
-    setSubaccount("Toate");
+    setSubaccount("");
+    setSubaccountFieldError("");
     setPassword("");
     setAdvancedOpen(false);
   }
@@ -119,6 +165,13 @@ export default function SettingsTeamPage() {
     event.preventDefault();
     setSaving(true);
     setErrorMessage("");
+    setSubaccountFieldError("");
+
+    if (userType === "client" && !subaccount.trim()) {
+      setSaving(false);
+      setSubaccountFieldError("Selectarea unui sub-cont este obligatorie pentru utilizatorii de tip client.");
+      return;
+    }
 
     try {
       await apiRequest<{ item: TeamMember }>("/team/members", {
@@ -132,7 +185,7 @@ export default function SettingsTeamPage() {
           user_type: userType,
           user_role: userRole,
           location,
-          subaccount,
+          subaccount: userType === "client" ? subaccount : "",
           password: advancedOpen ? password : undefined,
         }),
       });
@@ -163,6 +216,8 @@ export default function SettingsTeamPage() {
               </header>
 
               <div className="wm-card space-y-4 p-4">
+                {subaccountOptionsError ? <p className="text-xs text-amber-700">Sub-conturile nu au putut fi încărcate: {subaccountOptionsError}</p> : null}
+
                 <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
                   <select className="wm-input" value={userTypeFilter} onChange={(e) => { setPage(1); setUserTypeFilter(e.target.value); }}>
                     <option value="">Tip Utilizator</option>
@@ -176,27 +231,20 @@ export default function SettingsTeamPage() {
                     <option value="viewer">Viewer</option>
                   </select>
                   <select className="wm-input" value={subaccountFilter} onChange={(e) => { setPage(1); setSubaccountFilter(e.target.value); }}>
-                    <option value="">Selectează Sub-cont</option>
-                    <option value="Toate">Toate</option>
-                    <option value="OMAROSA">OMAROSA</option>
+                    <option value="">Toate</option>
+                    {subaccountOptions.map((item) => (
+                      <option key={item.id} value={String(item.id)}>{item.label || item.name}</option>
+                    ))}
                   </select>
-                  <label className="relative block">
+                  <label className="relative">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <input
-                      className="wm-input pl-9"
-                      placeholder="nume, email, telefon, id-uri"
-                      value={search}
-                      onChange={(e) => {
-                        setPage(1);
-                        setSearch(e.target.value);
-                      }}
-                    />
+                    <input className="wm-input pl-9" placeholder="Caută nume, email, telefon" value={search} onChange={(e) => { setPage(1); setSearch(e.target.value); }} />
                   </label>
                 </div>
 
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-slate-50 text-left text-slate-600">
+                <div className="overflow-hidden rounded-lg border border-slate-200">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                       <tr>
                         <th className="px-3 py-2">Nume</th>
                         <th className="px-3 py-2">Email</th>
@@ -209,11 +257,11 @@ export default function SettingsTeamPage() {
                     <tbody>
                       {loadingMembers ? (
                         <tr>
-                          <td colSpan={6} className="px-3 py-6 text-center text-slate-500">Se încarcă utilizatorii...</td>
+                          <td className="px-3 py-6 text-center text-slate-500" colSpan={6}>Se încarcă membri...</td>
                         </tr>
                       ) : members.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="px-3 py-6 text-center text-slate-500">Nu există utilizatori pentru filtrele selectate.</td>
+                          <td className="px-3 py-6 text-center text-slate-500" colSpan={6}>Nu există membri pentru filtrele curente.</td>
                         </tr>
                       ) : (
                         members.map((member) => (
@@ -246,20 +294,10 @@ export default function SettingsTeamPage() {
                 <footer className="flex items-center justify-between border-t border-slate-100 pt-3 text-sm text-slate-600">
                   <span>Pagina {page} din {totalPages}</span>
                   <div className="flex items-center gap-2">
-                    <button
-                      className="wm-btn-secondary"
-                      type="button"
-                      onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                      disabled={page <= 1}
-                    >
+                    <button className="wm-btn-secondary" type="button" onClick={() => setPage((prev) => Math.max(1, prev - 1))} disabled={page <= 1}>
                       Înapoi
                     </button>
-                    <button
-                      className="wm-btn-secondary"
-                      type="button"
-                      onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
-                      disabled={page >= totalPages}
-                    >
+                    <button className="wm-btn-secondary" type="button" onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))} disabled={page >= totalPages}>
                       Înainte
                     </button>
                   </div>
@@ -283,6 +321,9 @@ export default function SettingsTeamPage() {
 
                 <form className="wm-card space-y-4 p-4" onSubmit={submitCreateForm}>
                   <h2 className="text-lg font-semibold text-slate-900">Informații Utilizator</h2>
+
+                  {subaccountOptionsError ? <p className="text-xs text-amber-700">Sub-conturile nu au putut fi încărcate: {subaccountOptionsError}</p> : null}
+                  {subaccountOptionsLoading ? <p className="text-xs text-slate-500">Se încarcă sub-conturile...</p> : null}
 
                   <div className="flex flex-col gap-3 md:flex-row md:items-center">
                     <div className="relative h-24 w-24 rounded-full border border-slate-200 bg-slate-50">
@@ -338,16 +379,26 @@ export default function SettingsTeamPage() {
                     </label>
                     <label className="text-sm text-slate-700">
                       Sub-cont
-                      <input className="wm-input mt-1" value={subaccount} onChange={(e) => setSubaccount(e.target.value)} />
+                      <select
+                        className="wm-input mt-1"
+                        value={subaccount}
+                        onChange={(e) => {
+                          setSubaccount(e.target.value);
+                          setSubaccountFieldError("");
+                        }}
+                        disabled={userType === "agency"}
+                      >
+                        <option value="">Selectează Sub-cont</option>
+                        {subaccountOptions.map((item) => (
+                          <option key={item.id} value={String(item.id)}>{item.label || item.name}</option>
+                        ))}
+                      </select>
+                      {subaccountFieldError ? <p className="mt-1 text-xs text-red-600">{subaccountFieldError}</p> : null}
                     </label>
                   </div>
 
                   <div>
-                    <button
-                      type="button"
-                      className="text-sm font-medium text-indigo-600 hover:text-indigo-700"
-                      onClick={() => setAdvancedOpen((prev) => !prev)}
-                    >
+                    <button type="button" className="text-sm font-medium text-indigo-600 hover:text-indigo-700" onClick={() => setAdvancedOpen((prev) => !prev)}>
                       Setări Avansate
                     </button>
                     {advancedOpen ? (
@@ -363,11 +414,7 @@ export default function SettingsTeamPage() {
                       Anulează
                     </button>
                     <button type="submit" className="wm-btn-primary" disabled={saving}>
-                      {saving ? (
-                        <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Se salvează...</span>
-                      ) : (
-                        "Pasul Următor"
-                      )}
+                      {saving ? <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Se salvează...</span> : "Pasul Următor"}
                     </button>
                   </div>
                 </form>
