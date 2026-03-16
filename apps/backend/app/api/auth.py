@@ -5,7 +5,7 @@ from app.schemas.auth import ImpersonateRequest, ImpersonateResponse, LoginReque
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser, create_access_token, validate_login_credentials
 from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
-from app.services.rbac import ROLE_PERMISSIONS
+from app.services.rbac import is_supported_role, normalize_role
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.post("/login", response_model=LoginResponse)
 def login(payload: LoginRequest) -> LoginResponse:
     email = payload.email.strip().lower()
-    role = payload.role.strip().lower()
+    role = normalize_role(payload.role)
 
     try:
         rate_limiter_service.check(f"auth:{email}", limit=20, window_seconds=60)
@@ -27,7 +27,7 @@ def login(payload: LoginRequest) -> LoginResponse:
         )
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
-    if role not in ROLE_PERMISSIONS:
+    if not is_supported_role(payload.role):
         audit_log_service.log(
             actor_email=email,
             actor_role="anonymous",
@@ -60,12 +60,12 @@ def login(payload: LoginRequest) -> LoginResponse:
 
 @router.post("/impersonate", response_model=ImpersonateResponse)
 def impersonate(payload: ImpersonateRequest, user: AuthUser = Depends(get_current_user)) -> ImpersonateResponse:
-    actor_role = user.role.strip().lower()
+    actor_role = normalize_role(user.role)
     if actor_role not in {"super_admin", "agency_owner", "agency_admin"}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admin roles can impersonate users")
 
-    target_role = payload.role.strip().lower()
-    if target_role not in ROLE_PERMISSIONS:
+    target_role = normalize_role(payload.role)
+    if not is_supported_role(payload.role):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported role: {payload.role}")
 
     target_email = payload.email.strip().lower()
