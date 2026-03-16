@@ -4400,3 +4400,16 @@
 
 ## Review
 - [x] Implementat endpointurile sub-account team list/create + helper scope enforcement și acoperire de teste unitare țintite (`test_team_subaccount_api` + `test_team_members_foundation`).
+
+---
+
+# TODO — Hotfix startup crash `_hash_password` NameError
+
+- [x] Re-auditez `team_members.py`, `auth.py` și helperii de hash disponibili.
+- [x] Identific cauza exactă: referințe legacy `_hash_password` rămase după standardizarea helperului pe `hash_password`.
+- [x] Aplic hotfix minim: elimin referințele `_hash_password` din backend și folosesc helperul comun `hash_password`.
+- [x] Verific că nu există alte referințe `_hash_password` în backend.
+- [x] Rulez testele backend relevante + comanda de startup cerută cu `APP_AUTH_SECRET`.
+
+## Review
+- [x] Hotfix aplicat fără modificări de contract API/frontend/auth-flow; startup import check confirmat `ok`.
