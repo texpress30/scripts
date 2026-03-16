@@ -4255,3 +4255,26 @@
 - [x] Fetched from `origin` successfully; remote refs were downloaded.
 - [x] Pulled `origin/main --allow-unrelated-histories` successfully; repository reported `Already up to date.`
 - [x] Post-check `git remote -v` confirms `origin` points to `github.com/texpress30/scripts.git` (token masked in logs).
+<<<<<<< codex/setup-new-workspace-and-sync-with-github-yod78q
+
+---
+
+# TODO — Implementare completă „Echipa Mea” (listare + formular adăugare directă)
+
+- [x] Re-auditez pagina actuală `subaccount/[id]/settings/team` și definesc fluxul direct fără ecran intermediar.
+- [x] Implementez vizualizarea principală de listare: header, filtru rol, căutare, buton `+ Adaugă Utilizator`, tabel cu coloanele/acțiunile cerute și paginare.
+- [x] Implementez formularul Add/Edit deschis direct din `+ Adaugă Utilizator` și `Editare`, cu tab-uri stânga (`Informații Utilizator`, `Roluri și Permisiuni`), upload avatar, setări avansate colapsate, footer și localizare RO.
+- [x] Adaug validări frontend pentru câmpurile obligatorii (Prenume/Nume/Email), format email și extensie numerică.
+- [x] Adaug feedback toast pentru `Copiere ID` și păstrez designul curat (carduri albe, colțuri rotunjite).
+- [x] Actualizez testele focalizate pentru listare, flux direct add/edit, toast copy ID, toggle setări avansate și validări.
+- [x] Rulez testele relevante, documentez rezultatele în review, capturez screenshot pentru schimbarea vizuală.
+
+## Review
+- [x] Pagina `Echipa Mea` folosește acum listare principală cu filtru rol, căutare, tabel utilizatori, acțiuni pe rând și paginare (`Anterior` / `Următor`).
+- [x] Fluxul direct este activ: click pe `Adaugă Utilizator` sau iconița de editare deschide imediat formularul Add/Edit, fără ecran intermediar.
+- [x] Formularul are localizare română, tab-uri verticale cerute, bloc `Setări Avansate` colapsat implicit, validări pentru Prenume/Nume/Email + email format + extensie numerică.
+- [x] Acțiunea `Copiere ID` afișează toast `ID Copiat`; operațiile adăugare/editare/ștergere/dezactivare afișează feedback toast.
+- [x] Verificare: `cd apps/frontend && pnpm vitest run src/app/subaccount/[id]/settings/team/page.test.tsx`.
+- [x] Încercare screenshot: server Next pornit local (`pnpm dev --port 3100`) + Playwright, dar browser container a eșuat (SIGSEGV la launch Chromium), deci nu s-a putut genera captură în acest mediu.
+=======
+>>>>>>> main
