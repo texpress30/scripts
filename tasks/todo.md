@@ -4413,3 +4413,14 @@
 
 ## Review
 - [x] Hotfix aplicat fără modificări de contract API/frontend/auth-flow; startup import check confirmat `ok`.
+
+---
+
+# TODO — Verify startup crash report for `_hash_password` in team_members
+
+- [x] Re-verify `team_members.py` and `auth.py` helper usage on latest branch state.
+- [x] Run backend-wide search for `_hash_password(`.
+- [x] Run startup import check with `APP_AUTH_SECRET=test-secret`.
+
+## Review
+- [x] No `_hash_password` references remain in backend; startup import check returns `ok`.

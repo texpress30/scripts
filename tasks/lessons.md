@@ -346,3 +346,4 @@
 - 2026-03-16: Când userul cere auth DB-first, prioritizează explicit validarea membership-ului la login (inclusiv caz ambiguu 409) și păstrează fallback-ul env admin strict ca mecanism de urgență.
 - 2026-03-16: Pentru endpointuri sub-account, aplică enforcement în doi pași: întâi RBAC scope `subaccount`, apoi restricție pe `subaccount_id` din token pentru rolurile `subaccount_*`; nu te baza doar pe rol.
 - 2026-03-16: După renumirea/helper unificarea funcțiilor de hash, caută global referințele legacy (ex. `_hash_password`) înainte de livrare și rulează startup import check pentru a preveni NameError la boot.
+- 2026-03-16: Când primești un crash report pe o linie specifică, rulează imediat verificările exacte cerute (`rg '_hash_password\('` + startup import) înainte de a presupune că fixul precedent nu a fost aplicat.
