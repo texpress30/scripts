@@ -34,8 +34,8 @@ function formatWorksheetValue(
 }
 
 function rowLabelClass(row: WorksheetRow): string {
-  if (row.source_kind === "comparison") return "px-3 py-2 pl-6 text-slate-500 italic";
-  return "px-3 py-2 text-slate-800";
+  if (row.source_kind === "comparison") return "px-3 py-2 pr-6 text-right text-slate-500 italic";
+  return "px-3 py-2 text-right text-slate-800";
 }
 
 function rowCellClass(row: WorksheetRow): string {

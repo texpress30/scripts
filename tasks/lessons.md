@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-14: Pentru ajustări UI de aliniere în tabele sticky, testează direct clasa pe celula concretă (`closest("td")`) pentru rând normal + rând comparison, ca să previi regresii subtile de alignment.
+
 - 2026-03-14: Când userul cere hotfix de producție cu scope strict, evită schimbările pe buguri paralele și livrează doar fixul minim + teste țintite exact pe endpointurile afectate.
 
 - 2026-03-14: For SQL CTE refactors, add a regression that asserts placeholder count matches bound parameter count, and cover both direct store calls and API-dependent flows to catch runtime ProgrammingError early.

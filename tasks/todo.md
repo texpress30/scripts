@@ -1,3 +1,19 @@
+# TODO — Weekly Worksheet metric labels right alignment (frontend hotfix)
+
+- [x] Refresh workspace and inspect `WeeklyWorksheetTable` first-column label classes (`rowLabelClass`, sticky label td).
+- [x] Update only label-column styling so all metric labels (normal + comparison rows) align right, preserving sticky and existing visual differentiation.
+- [x] Keep headers/section titles unchanged and avoid layout/business-logic changes outside metric label body cells.
+- [x] Add focused frontend regression test for normal/comparison label alignment classes.
+- [x] Run only relevant frontend tests.
+
+## Review
+- [x] Root cause: metric label cells in the sticky first column used left/default alignment (`text-left`/no text-right) and comparison rows used left indent (`pl-6`), causing inconsistent visual alignment.
+- [x] Fix: normal labels now include `text-right`; comparison labels remain italic + muted but use `text-right` with right-side spacing (`pr-6`) instead of left indent.
+- [x] Scope kept minimal to `WeeklyWorksheetTable` and a dedicated component test.
+- [x] Verification: `cd apps/frontend && pnpm vitest run src/app/sub/[id]/media-tracker/_components/WeeklyWorksheetTable.test.tsx src/app/sub/[id]/media-tracker/page.test.tsx`.
+
+---
+
 # TODO — Hotfix Railway 500 placeholder mismatch (Media Buying / Media Tracker)
 
 - [x] Refresh workspace state and inspect `_list_automated_daily_costs` SQL placeholder/param contract.
