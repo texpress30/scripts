@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-14: Pentru label-uri dinamice bazate pe config, testează separat cazul explicit cu label-uri setate și fallback-ul pentru null/whitespace, plus un assert de no-regression numeric pe același payload.
+
 - 2026-03-14: Pentru metrici derivate din câmpuri custom, adaugă teste cu valori divergente între sursa veche și sursa nouă (ex. `sales_count` vs `custom_value_2_count`) ca să blochezi false-positive pe mapping.
 
 - 2026-03-14: Pentru ajustări UI de aliniere în tabele sticky, testează direct clasa pe celula concretă (`closest("td")`) pentru rând normal + rând comparison, ca să previi regresii subtile de alignment.

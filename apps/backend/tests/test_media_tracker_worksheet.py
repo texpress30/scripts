@@ -9,10 +9,20 @@ from app.services.media_buying_store import MediaBuyingStore
 
 
 class _MediaBuyingStoreStub:
-    def __init__(self, days: list[dict[str, object]], *, display_currency: str = "USD", display_currency_source: str = "agency_client_currency") -> None:
+    def __init__(
+        self,
+        days: list[dict[str, object]],
+        *,
+        display_currency: str = "USD",
+        display_currency_source: str = "agency_client_currency",
+        custom_label_1: str | None = None,
+        custom_label_2: str | None = None,
+    ) -> None:
         self.days = days
         self.display_currency = display_currency
         self.display_currency_source = display_currency_source
+        self.custom_label_1 = custom_label_1
+        self.custom_label_2 = custom_label_2
 
     def get_lead_table(self, *, client_id: int, date_from: date, date_to: date) -> dict[str, object]:
         return {
@@ -23,14 +33,29 @@ class _MediaBuyingStoreStub:
                 "date_to": date_to.isoformat(),
                 "display_currency": self.display_currency,
                 "display_currency_source": self.display_currency_source,
+                "custom_label_1": self.custom_label_1,
+                "custom_label_2": self.custom_label_2,
             },
         }
 
 
-def _set_store(days: list[dict[str, object]], *, display_currency: str = "USD", display_currency_source: str = "agency_client_currency"):
+def _set_store(
+    days: list[dict[str, object]],
+    *,
+    display_currency: str = "USD",
+    display_currency_source: str = "agency_client_currency",
+    custom_label_1: str | None = None,
+    custom_label_2: str | None = None,
+):
 
     original = worksheet_module.media_buying_store
-    worksheet_module.media_buying_store = _MediaBuyingStoreStub(days=days, display_currency=display_currency, display_currency_source=display_currency_source)
+    worksheet_module.media_buying_store = _MediaBuyingStoreStub(
+        days=days,
+        display_currency=display_currency,
+        display_currency_source=display_currency_source,
+        custom_label_1=custom_label_1,
+        custom_label_2=custom_label_2,
+    )
     worksheet_module.media_tracker_worksheet_service._is_test_mode = lambda: True
     worksheet_module.media_tracker_worksheet_service.reset_test_state()
     return original
@@ -526,6 +551,77 @@ def _row_map(payload: dict[str, object], section_key: str) -> dict[str, dict[str
     section = next(item for item in payload["sections"] if item["key"] == section_key)
     return {row["row_key"]: row for row in section["rows"]}
 
+
+def test_summary_custom_value_labels_are_dynamic_from_media_buying_meta() -> None:
+    days = [
+        {
+            "date": "2026-03-02",
+            "cost_total": 100,
+            "cost_google": 30,
+            "cost_meta": 40,
+            "cost_tiktok": 30,
+            "total_leads": 12,
+            "custom_value_1_count": 8,
+            "custom_value_2_count": 2,
+            "sales_count": 1,
+        },
+    ]
+    original_store = _set_store(days=days, custom_label_1="Programări", custom_label_2="Programări Confirmate")
+    service = worksheet_module.media_tracker_worksheet_service
+    try:
+        payload = service.upsert_weekly_manual_values(
+            client_id=336,
+            granularity="month",
+            anchor_date=date(2026, 3, 15),
+            entries=[{"week_start": "2026-03-02", "field_key": "google_sales_manual", "value": 4}],
+        )
+    finally:
+        worksheet_module.media_buying_store = original_store
+
+    summary = _row_map(payload, "summary")
+    assert summary["applications"]["label"] == "Programări"
+    assert summary["approved_applications"]["label"] == "Programări Confirmate"
+    assert summary["applications_per_sale"]["label"] == "Programări / Vânzări"
+    assert summary["applications_per_approved_application"]["label"] == "Programări / Programări Confirmate"
+    assert summary["approved_applications_per_sale"]["label"] == "Programări Confirmate / Vânzări"
+
+    # numeric logic unchanged
+    apps_week = next(item for item in summary["applications"]["weekly_values"] if item["week_start"] == "2026-03-02")
+    approved_week = next(item for item in summary["approved_applications"]["weekly_values"] if item["week_start"] == "2026-03-02")
+    assert apps_week["value"] == 8.0
+    assert approved_week["value"] == 2.0
+
+
+def test_summary_custom_value_labels_fallback_when_missing_or_blank() -> None:
+    days = [
+        {
+            "date": "2026-03-02",
+            "cost_total": 50,
+            "cost_google": 20,
+            "cost_meta": 15,
+            "cost_tiktok": 15,
+            "total_leads": 6,
+            "custom_value_1_count": 3,
+            "custom_value_2_count": 1,
+            "sales_count": 5,
+        },
+    ]
+    original_store = _set_store(days=days, custom_label_1="   ", custom_label_2=None)
+    try:
+        payload = worksheet_module.media_tracker_worksheet_service.build_weekly_worksheet_foundation(
+            granularity="month",
+            anchor_date=date(2026, 3, 15),
+            client_id=337,
+        )
+    finally:
+        worksheet_module.media_buying_store = original_store
+
+    summary = _row_map(payload, "summary")
+    assert summary["applications"]["label"] == "Custom Value 1"
+    assert summary["approved_applications"]["label"] == "Custom Value 2"
+    assert summary["applications_per_sale"]["label"] == "Custom Value 1 / Vânzări"
+    assert summary["applications_per_approved_application"]["label"] == "Custom Value 1 / Custom Value 2"
+    assert summary["approved_applications_per_sale"]["label"] == "Custom Value 2 / Vânzări"
 
 def test_formula_engine_core_rows_and_ratio_history_recompute() -> None:
     days = [

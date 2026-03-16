@@ -147,6 +147,10 @@ class MediaTrackerWorksheetService:
             return float(value)
         return 0.0
 
+    def _normalized_label(self, value: object, *, fallback: str) -> str:
+        raw = str(value or "").strip()
+        return raw if raw != "" else fallback
+
     def _safe_div(self, numerator: float | None, denominator: float | None) -> float | None:
         if numerator is None or denominator is None:
             return None
@@ -423,6 +427,8 @@ class MediaTrackerWorksheetService:
         manual_metrics: dict[str, dict[str, object]],
         eur_ron_rate: float | None,
         display_currency: str,
+        custom_label_1: str,
+        custom_label_2: str,
     ) -> list[dict[str, object]]:
         week_count = len(weeks)
         auto_cost_total = self._extract_weekly_values(metrics=auto_metrics, key="cost_total")
@@ -512,9 +518,9 @@ class MediaTrackerWorksheetService:
             self._build_row(weeks=weeks, row_key="aov", label="AOV", value_kind="currency_display", weekly_values=summary_aov, currency_code=display_currency, history_value=self._safe_div(revenue_h, sales_h), dependencies=["summary.revenue", "summary.sales"]),
             self._build_row(weeks=weeks, row_key="leads", label="Leads", value_kind="integer", weekly_values=summary_leads, history_value=leads_h, dependencies=["auto_metrics.total_leads"]),
             self._build_row(weeks=weeks, row_key="cpa_leads", label="CPA", value_kind="currency_display", weekly_values=summary_cpa_leads, currency_code=display_currency, history_value=self._safe_div(cost_h, leads_h), dependencies=["summary.cost", "summary.leads"]),
-            self._build_row(weeks=weeks, row_key="applications", label="Aplicații", value_kind="integer", weekly_values=summary_apps, history_value=apps_h, dependencies=["auto_metrics.applications"]),
+            self._build_row(weeks=weeks, row_key="applications", label=custom_label_1, value_kind="integer", weekly_values=summary_apps, history_value=apps_h, dependencies=["auto_metrics.applications"]),
             self._build_row(weeks=weeks, row_key="cpa_applications", label="CPA", value_kind="currency_display", weekly_values=summary_cpa_apps, currency_code=display_currency, history_value=self._safe_div(cost_h, apps_h), dependencies=["summary.cost", "summary.applications"]),
-            self._build_row(weeks=weeks, row_key="approved_applications", label="Aplicații Aprobate", value_kind="integer", weekly_values=summary_approved, history_value=approved_h, dependencies=["auto_metrics.approved_applications"]),
+            self._build_row(weeks=weeks, row_key="approved_applications", label=custom_label_2, value_kind="integer", weekly_values=summary_approved, history_value=approved_h, dependencies=["auto_metrics.approved_applications"]),
             self._build_row(weeks=weeks, row_key="cpa_approved_applications", label="CPA", value_kind="currency_display", weekly_values=summary_cpa_approved, currency_code=display_currency, history_value=self._safe_div(cost_h, approved_h), dependencies=["summary.cost", "summary.approved_applications"]),
             self._build_row(weeks=weeks, row_key="cost_vs_revenue", label="Cost vs Venit", value_kind="percent_ratio", weekly_values=summary_cost_vs_revenue, history_value=self._safe_div(cost_h, revenue_h), dependencies=["summary.cost", "summary.revenue"]),
             self._build_row(weeks=weeks, row_key="mer", label="MER", value_kind="decimal", weekly_values=summary_mer, history_value=self._safe_div(revenue_h, cost_h), dependencies=["summary.revenue", "summary.cost"]),
@@ -523,9 +529,9 @@ class MediaTrackerWorksheetService:
             self._build_row(weeks=weeks, row_key="gross_profit", label="Profit Brut", value_kind="currency_display", weekly_values=summary_gross_profit, currency_code=display_currency, history_value=gross_h, dependencies=["summary.revenue", "summary.weekly_cogs_taxes"]),
             self._build_row(weeks=weeks, row_key="gpt", label="GPT", value_kind="currency_display", weekly_values=summary_gpt, currency_code=display_currency, history_value=(self._safe_div(revenue_h, sales_h) - self._safe_div(cost_h, sales_h)) if self._safe_div(revenue_h, sales_h) is not None and self._safe_div(cost_h, sales_h) is not None else None, dependencies=["summary.aov", "new_clients.cost_per_new_client"]),
             self._build_row(weeks=weeks, row_key="profit_contribution", label="Profit Contribution", value_kind="currency_display", weekly_values=summary_profit_contribution, currency_code=display_currency, history_value=(gross_h - cost_h) if gross_h is not None else None, dependencies=["summary.gross_profit", "summary.cost"]),
-            self._build_row(weeks=weeks, row_key="applications_per_sale", label="Aplicații / Vânzări", value_kind="decimal", weekly_values=summary_apps_per_sale, history_value=self._safe_div(apps_h, sales_h), dependencies=["summary.applications", "summary.sales"]),
-            self._build_row(weeks=weeks, row_key="applications_per_approved_application", label="Aplicații / Aplicații Aprobate", value_kind="decimal", weekly_values=summary_apps_per_approved, history_value=self._safe_div(apps_h, approved_h), dependencies=["summary.applications", "summary.approved_applications"]),
-            self._build_row(weeks=weeks, row_key="approved_applications_per_sale", label="Aplicații Aprobate / Vânzări", value_kind="decimal", weekly_values=summary_approved_per_sale, history_value=self._safe_div(approved_h, sales_h), dependencies=["summary.approved_applications", "summary.sales"]),
+            self._build_row(weeks=weeks, row_key="applications_per_sale", label=f"{custom_label_1} / Vânzări", value_kind="decimal", weekly_values=summary_apps_per_sale, history_value=self._safe_div(apps_h, sales_h), dependencies=["summary.applications", "summary.sales"]),
+            self._build_row(weeks=weeks, row_key="applications_per_approved_application", label=f"{custom_label_1} / {custom_label_2}", value_kind="decimal", weekly_values=summary_apps_per_approved, history_value=self._safe_div(apps_h, approved_h), dependencies=["summary.applications", "summary.approved_applications"]),
+            self._build_row(weeks=weeks, row_key="approved_applications_per_sale", label=f"{custom_label_2} / Vânzări", value_kind="decimal", weekly_values=summary_approved_per_sale, history_value=self._safe_div(approved_h, sales_h), dependencies=["summary.approved_applications", "summary.sales"]),
         ]
 
         def platform_rows(prefix: str, label_prefix: str, cost_values: list[float | None], leads_values: list[float | None], sales_values: list[float | None], revenue_values: list[float | None]) -> list[dict[str, object]]:
@@ -749,6 +755,8 @@ class MediaTrackerWorksheetService:
         lead_meta = lead_table.get("meta") if isinstance(lead_table.get("meta"), dict) else {}
         display_currency = str(lead_meta.get("display_currency") or "USD").strip().upper() or "USD"
         display_currency_source = str(lead_meta.get("display_currency_source") or "safe_fallback")
+        custom_label_1 = self._normalized_label(lead_meta.get("custom_label_1"), fallback="Custom Value 1")
+        custom_label_2 = self._normalized_label(lead_meta.get("custom_label_2"), fallback="Custom Value 2")
         day_rows = lead_table.get("days") if isinstance(lead_table.get("days"), list) else []
         auto_metrics = self._build_auto_metrics(weeks=weeks, day_rows=day_rows)
 
@@ -793,6 +801,8 @@ class MediaTrackerWorksheetService:
                 manual_metrics=manual_metrics,
                 eur_ron_rate=eur_ron_rate,
                 display_currency=display_currency,
+                custom_label_1=custom_label_1,
+                custom_label_2=custom_label_2,
             ),
         }
 

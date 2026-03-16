@@ -1,3 +1,19 @@
+# TODO — Media Tracker dynamic labels for Custom Value 1/2 from Media Buying config
+
+- [x] Refresh workspace and inspect worksheet summary row label construction and lead-table meta usage.
+- [x] Add safe label normalization from `lead_meta.custom_label_1` / `lead_meta.custom_label_2` with fallbacks `Custom Value 1` / `Custom Value 2`.
+- [x] Apply dynamic labels only to summary rows tied to Custom Value 1/2 and dependent ratio labels, keeping row keys/calculations unchanged.
+- [x] Add focused backend tests for dynamic labels, composed ratio labels, fallback behavior, and numeric no-regression.
+- [x] Run targeted worksheet backend tests.
+
+## Review
+- [x] Root cause: worksheet summary labels for `applications`/`approved_applications` and related ratios were hardcoded, so UI labels did not reflect client Media Buying custom label config.
+- [x] Fix: payload labels now resolve from `lead_meta.custom_label_1` / `custom_label_2` each fetch with whitespace/null-safe fallbacks.
+- [x] Scope remained backend-only for worksheet payload labels; no changes to row keys, dependencies, value kinds, numeric formulas, API shape, or frontend components.
+- [x] Verification: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q apps/backend/tests/test_media_tracker_worksheet.py`.
+
+---
+
 # TODO — Media Tracker approved applications source hotfix (custom_value_2)
 
 - [x] Refresh workspace and inspect Media Tracker worksheet metric mapping for `applications`/`approved_applications`.
