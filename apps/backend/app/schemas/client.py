@@ -76,3 +76,21 @@ class MediaBuyingLeadDailyValueUpsertRequest(BaseModel):
     custom_value_4_amount_ron: float
     custom_value_5_amount_ron: float
     sales_count: int
+
+
+class MediaTrackerWorksheetManualValueEntry(BaseModel):
+    week_start: date
+    field_key: str
+    value: float | None = None
+
+
+class MediaTrackerWorksheetManualValuesUpsertRequest(BaseModel):
+    granularity: Literal["month", "quarter", "year"]
+    anchor_date: date
+    entries: list[MediaTrackerWorksheetManualValueEntry]
+
+
+class MediaTrackerWorksheetEurRonRateUpsertRequest(BaseModel):
+    granularity: Literal["month", "quarter", "year"]
+    anchor_date: date
+    value: float | None = None
