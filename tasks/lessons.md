@@ -1,5 +1,19 @@
 # Lessons
 
+- 2026-03-14: Pentru label-uri dinamice bazate pe config, testează separat cazul explicit cu label-uri setate și fallback-ul pentru null/whitespace, plus un assert de no-regression numeric pe același payload.
+
+- 2026-03-14: Pentru metrici derivate din câmpuri custom, adaugă teste cu valori divergente între sursa veche și sursa nouă (ex. `sales_count` vs `custom_value_2_count`) ca să blochezi false-positive pe mapping.
+
+- 2026-03-14: Pentru ajustări UI de aliniere în tabele sticky, testează direct clasa pe celula concretă (`closest("td")`) pentru rând normal + rând comparison, ca să previi regresii subtile de alignment.
+
+- 2026-03-14: Când userul cere hotfix de producție cu scope strict, evită schimbările pe buguri paralele și livrează doar fixul minim + teste țintite exact pe endpointurile afectate.
+
+- 2026-03-14: For SQL CTE refactors, add a regression that asserts placeholder count matches bound parameter count, and cover both direct store calls and API-dependent flows to catch runtime ProgrammingError early.
+
+- 2026-03-14: For sync-health “Unknown/No sync metadata” issues, verify both worker-driven and API-driven sync paths persist `sync_start_date`, `last_success_at`, and `backfill_completed_through`; do not assume one path covers all triggers.
+
+- 2026-03-13: For UX wording fixes on existing flows, keep scope strictly frontend copy/labels/tooltips, preserve request payload behavior, and add a focused regression assertion proving behavior is unchanged.
+
 - 2026-03-08: When adding a new sync grain, keep prior grains behavior unchanged and add explicit regression tests for previous grain paths plus omitted-grain defaults.
 - 2026-03-08: When extending sync grain support, enforce grain validation at both request model and service layer, while keeping omitted-grain behavior strictly backward compatible.
 - 2026-03-08: When implementing provider sync upgrades, remove synthetic metric sources from the main write path and preserve only minimal compatibility snapshots derived from real fetched totals.
@@ -290,3 +304,32 @@
 - When fixing attribution regressions, treat currency source precedence as a correctness contract: prefer row/account source-of-truth currency over client-level mapping currency to avoid accidental double conversion.
 - Dashboard and Media Buying must share the same attribution contract (account_daily grain, mapping validity window, account-level currency precedence); if one path diverges, platform totals will drift even when ingestion is correct.
 - Do not use mapping audit timestamps (`created_at`) as historical lower bounds in read-side analytics; that turns membership metadata into data-loss filters and truncates valid history.
+- 2026-03-12: După feedback că PR-ul anterior nu a adresat problema reală, pentru buguri de totals read-side livrează observability backend first (endpoint diagnostic + teste de reconciliere) înainte de orice refactor de business logic.
+- 2026-03-12: După feedback că diagnosticul anterior nu era suficient, fixul de monedă pentru conturi atașate trebuie implementat cu resolver unic reutilizabil (aceeași precedență în attach/listing/dashboard) + backfill doar pentru valori blank, fără overwrite la override-uri explicite.
+- 2026-03-12: După feedback pe currency pentru sub-account dashboard, separă clar rezolvarea monedei sursă per cont atașat de selecția monedei de raportare client; folosește resolver dedicat pentru reporting currency (single vs mixed vs no-account) și reutilizează-l identic în dashboard + endpointul de reconciliere.
+- 2026-03-12: După feedback că read-side currency fixes nu explică discrepanțele finale, livrează un endpoint de write-side audit care corelează persisted rows (grains/dates/currencies/customer_id) cu sync run/chunk errors și semnale explicite de anomalie înainte de orice schimbare de logică de sync.
+- 2026-03-12: După corecție de workflow, aplic modificări de fișiere prin patch/edit direct (nu prin comenzi shell care învelesc patch-uri) ca să respect convențiile runner-ului.
+- 2026-03-12: După feedback că fixul TikTok precedent era incomplet, pentru pași de hardening write-side livrează următorul increment strict pe persistență idempotentă (natural key + teste rerun/overlap), fără extinderi cross-platform.
+- 2026-03-12: Pentru cleanup istoric write-side TikTok, nu marca automat alias + canonical ca ambiguu; restrânge identitatea de reparație la setul conturilor atașate și tratează aliasurile non-atașate ca candidate de rescriere/ștergere doar în cazuri cu metrici identice.
+- 2026-03-12: După feedback că observability write-side era incompletă, pentru Meta backfill/sync trebuie propagat explicit coverage_status + retry metadata din execuția chunked către payload-uri run/account și marcat status error când rămân chunk-uri nerecuperate.
+- 2026-03-13: After user dissatisfaction with prior PR scope, re-audit actual target pages/payloads first and ship the narrowly requested UX on the primary page before adding broad cross-cutting changes.
+- 2026-03-13: When product scope says backend-only foundation, avoid mixing frontend or formula work; deliver a stable contract + deterministic calendar bucketing first.
+- 2026-03-13: For follow-up worksheet tasks, reuse existing daily source methods directly (e.g., media_buying_store day rows) instead of introducing parallel raw-query paths.
+- 2026-03-13: For scope-based editable values, persist against canonical resolved period keys so different anchor dates in same scope update the same logical record.
+- 2026-03-13: For staged worksheet delivery, compute core numeric rows in backend sections from existing raw metrics first, and explicitly defer comparison/% rows to later tasks.
+- 2026-03-13: When editing files in this runner, use the dedicated apply_patch tool directly instead of wrapping apply_patch via shell exec.
+- 2026-03-13: After backend worksheet milestones, inspect current frontend surface before implementation and ship a minimal integrated worksheet shell first (toggle + scope + fetch + read-only scaffold), without redesign/editing.
+- 2026-03-13: For worksheet frontend increments, split display scaffolds into dedicated table components early so formatting/hierarchy improvements stay focused without touching shell navigation state.
+- 2026-03-13: For worksheet inline editing, derive editability from backend row metadata (`is_manual_input_row`, `source_kind`, manual dependency key) instead of brittle label-based checks.
+- 2026-03-13: For frontend currency/rate editors, assert test outputs using robust selectors/payload checks instead of locale-fragile exact formatted strings.
+- 2026-03-13: For worksheet header labels, never use local visible-week indexes; always map from real ISO calendar week numbers derived from week_start (including year-boundary behavior).
+- 2026-03-13: For sub-account views, never let attached-account currency override client display currency; always derive display currency from `agency_clients.currency` and treat attached currencies strictly as source-metadata inputs.
+- 2026-03-13: For Media Buying backend reads, treat `media_buying_configs.display_currency` as synchronized storage only; always resolve actual sub-account display currency from shared client display-currency decision (`agency_clients.currency`).
+- 2026-03-13: For Media Tracker worksheet payloads, propagate display currency from Media Buying/client contract and mark primary money rows as display-aware (`currency_display` + `currency_code`) instead of hardcoded `currency_ron`; keep EUR rows explicit and null-safe without rate.
+- 2026-03-13: For sub-account frontend money rendering, never hardcode RON defaults; always derive currency from backend `display_currency` plus row-level worksheet metadata (`value_kind`, `currency_code`) with safe USD fallback.
+- 2026-03-13: For bulk currency drift repairs, default to dry-run semantics and skip `safe_fallback` clients instead of forcing guessed updates; only mutate deterministic client-level mirror fields (e.g., `media_buying_configs.display_currency`).
+- 2026-03-13: After user dissatisfaction on a performance bug, re-open the exact backend hot path first and ship a narrow backend-only optimization (query count + matching cost + timing logs) before touching unrelated areas.
+- 2026-03-13: For large read payloads after backend query optimization, add an opt-in lightweight response mode plus dedicated drill-down endpoint (months-first + month-days) before frontend rewiring, while keeping default behavior backward compatible.
+- 2026-03-13: For frontend lazy-loading migrations, prevent automatic silent re-fetch loops after month-level fetch errors; persist per-scope month error state and require explicit retry.
+- 2026-03-13: When converting read paths to optional/no-range fetching, harden helper method signatures and guard null date comparisons (`None > None`) before rollout; add regression tests for no-range automated-only/manual-only mixes.
+- 2026-03-13: For frontend currency labels, never display a fabricated hardcoded fallback (e.g., USD) when metadata is missing; prefer real source priority (table -> client context) then neutral placeholder.
