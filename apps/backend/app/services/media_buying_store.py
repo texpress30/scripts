@@ -277,13 +277,15 @@ class MediaBuyingStore:
                             NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'grain', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'grain', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'grain', '') ELSE '' END), ''),
                             'account_daily'
                         ) = 'account_daily'
+                          AND (%s::date IS NULL OR apr.report_date >= %s::date)
+                          AND (%s::date IS NULL OR apr.report_date <= %s::date)
                     )
                     SELECT report_date, platform, account_currency, SUM(spend)
                     FROM perf
                     GROUP BY report_date, platform, account_currency
                     ORDER BY report_date ASC
                     """,
-                    (int(client_id), date_from, date_from, date_to, date_to),
+                    (int(client_id), date_from, date_from, date_to, date_to, date_from, date_from, date_to, date_to),
                 )
                 rows = cur.fetchall() or []
 
