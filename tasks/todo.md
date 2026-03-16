@@ -4298,3 +4298,26 @@
 - [x] Endpoint nou: `GET /team/subaccount-options` returnează `{ id, name, label }` pe baza `client_registry_service.list_clients()`.
 - [x] Teste backend adăugate pentru schema init idempotent, create agency/subaccount, reject invalid client subaccount, list/filter contract și subaccount-options.
 - [x] Verificare rulată: `cd apps/backend && APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q tests/test_team_members_foundation.py` + import check app startup.
+
+---
+
+# TODO — Agency Team frontend conectat la sub-account options reale
+
+- [x] Re-auditez pagina Agency Team + contract `GET /team/subaccount-options`.
+- [x] Înlocuiesc opțiunile hardcodate de sub-account cu loader real din backend în list filter și create form.
+- [x] Aplic reguli UI pentru sub-account în funcție de `userType` (agency disable/reset, client required).
+- [x] Adaug validare frontend pentru client user fără sub-account și submit payload compatibil (`subaccount` id string doar pentru client).
+- [x] Păstrez fluxul existent de creare/listare + toast/reload după succes, fără redesign.
+- [x] Adaug loading/error state pentru subaccount options fără blocarea întregii pagini.
+- [x] Adaug teste frontend pentru integrarea sub-account options + validarea client user.
+- [x] Rulez testele/build frontend și documentez review.
+
+## Review
+- [x] Pagina Agency Team încarcă acum opțiunile reale din `GET /team/subaccount-options` și le folosește atât în filtrul de listă, cât și în formularul de creare (`value=String(id)`, `label || name`).
+- [x] Filtrul de listă păstrează opțiunea `Toate` și trimite `subaccount=<id>` la reload-ul listării când este selectat un sub-account.
+- [x] Formularul de creare nu mai pornește cu `Toate`; folosește placeholder `Selectează Sub-cont`.
+- [x] Reguli UI implementate: pentru `userType=agency` câmpul sub-account este dezactivat/resetat; pentru `userType=client` câmpul este activ și validat explicit.
+- [x] Submit payload: pentru `client` trimite `subaccount` cu id-ul selectat (string), pentru `agency` trimite `subaccount` gol compatibil cu backendul nou.
+- [x] Erorile backend sunt afișate direct prin mesajele venite din `apiRequest`; fallback generic rămâne doar pentru erori non-standard.
+- [x] Loading/error pentru subaccount options este non-blocking (mesaje locale în list/create view).
+- [x] Verificări: `pnpm vitest run src/app/settings/team/page.test.tsx` și `pnpm build` (frontend compile OK).

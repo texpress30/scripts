@@ -340,3 +340,4 @@
 - 2026-03-16: După feedback că schimbarea pentru "Echipa Mea" a deviat spre listă/tabel, la task-uri de UI trebuie revalidat explicit ecranul țintă și fluxul cerut (ex. wizard Add/Edit) înainte de implementare, fără a înlocui produsul cu altă interfață necerută.
 - 2026-03-16: După feedback că soluția precedentă nu a adresat taskul real, la cereri de UI trebuie livrată implementarea efectivă în ruta țintă (component + teste), nu doar actualizare de documentație/task list.
 - 2026-03-16: După feedback că taskul a fost mutat greșit pe frontend, pentru cerințe backend-only livrează fundația de date/API + teste fără redesign UI și fără schimbări de login dacă sunt explicit out-of-scope.
+- 2026-03-16: După feedback pe Agency Team, când backend livrează endpoint dedicat de options, frontendul trebuie legat la acel endpoint (fără opțiuni hardcodate) și validarea dependentă de tip utilizator trebuie acoperită prin teste de submit payload.
