@@ -9,8 +9,9 @@ import { format } from "date-fns";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
+import { formatCurrencyValue, normalizeCurrencyCode } from "@/lib/subAccountCurrency";
 
-type ClientItem = { id: number; name: string; client_type?: string };
+type ClientItem = { id: number; name: string; client_type?: string; currency?: string | null };
 
 type LeadTableRow = {
   date: string;
@@ -41,13 +42,16 @@ type LeadTableMonth = {
   date_from: string;
   date_to: string;
   totals: LeadTableRow;
-  days: LeadTableRow[];
+  days?: LeadTableRow[];
+  day_count?: number;
+  has_days?: boolean;
 };
 
 type LeadTableMeta = {
   client_id: number;
   template_type: string;
   display_currency: string;
+  display_currency_source?: string;
   custom_label_1?: string;
   custom_label_2?: string;
   custom_label_3?: string;
@@ -71,6 +75,12 @@ type LeadTableResponse = {
   meta: LeadTableMeta;
   days: LeadTableRow[];
   months: LeadTableMonth[];
+};
+
+type LeadMonthDaysResponse = {
+  meta: LeadTableMeta;
+  month_start: string;
+  days: LeadTableRow[];
 };
 
 type EditableDraft = {
@@ -176,8 +186,7 @@ function toIso(value: Date): string {
 }
 
 function formatMoney(value: number | null | undefined, currencyCode: string): string {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
-  return new Intl.NumberFormat(undefined, { style: "currency", currency: currencyCode, maximumFractionDigits: 2 }).format(value);
+  return formatCurrencyValue(value, currencyCode, "USD");
 }
 
 function formatCount(value: number | null | undefined): string {
@@ -219,6 +228,10 @@ function monthLabel(value: string): string {
   const [year, month] = value.split("-");
   const monthIndex = Number(month) - 1;
   return `${RO_MONTH_SHORT[Math.max(0, Math.min(11, monthIndex))]} ${year}`;
+}
+
+function monthStartFromKey(value: string): string {
+  return `${value}-01`;
 }
 
 function shortDayLabel(value: string): string {
@@ -297,11 +310,15 @@ export default function SubMediaBuyingPage() {
 
   const [clientName, setClientName] = useState<string>(`Sub-account #${clientId}`);
   const [clientType, setClientType] = useState<string>("lead");
+  const [clientCurrency, setClientCurrency] = useState<string | null>(null);
   const [clientContextLoaded, setClientContextLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [tableData, setTableData] = useState<LeadTableResponse | null>(null);
   const [expandedMonths, setExpandedMonths] = useState<Record<string, boolean>>({});
+  const [monthDaysByMonth, setMonthDaysByMonth] = useState<Record<string, LeadTableRow[]>>({});
+  const [monthLoadingByMonth, setMonthLoadingByMonth] = useState<Record<string, boolean>>({});
+  const [monthErrorByMonth, setMonthErrorByMonth] = useState<Record<string, string>>({});
   const [editingByDate, setEditingByDate] = useState<Record<string, EditableDraft>>({});
   const [savingByDate, setSavingByDate] = useState<Record<string, boolean>>({});
   const [rowFeedback, setRowFeedback] = useState<Record<string, { kind: "success" | "error"; message: string }>>({});
@@ -320,16 +337,22 @@ export default function SubMediaBuyingPage() {
     setError("");
     try {
       const payload = await apiRequest<LeadTableResponse>(
-        `/clients/${clientId}/media-buying/lead/table`
+        `/clients/${clientId}/media-buying/lead/table?include_days=false`
       );
       setTableData(payload);
       setEditingByDate({});
+      setMonthDaysByMonth({});
+      setMonthLoadingByMonth({});
+      setMonthErrorByMonth({});
       if (!preserveExpanded) {
         const latestMonth = [...payload.months].sort((a, b) => b.month.localeCompare(a.month))[0]?.month;
         setExpandedMonths(latestMonth ? { [latestMonth]: true } : {});
       }
     } catch (err) {
       setTableData(null);
+      setMonthDaysByMonth({});
+      setMonthLoadingByMonth({});
+      setMonthErrorByMonth({});
       setError(err instanceof Error ? err.message : "Nu am putut încărca tabelul Media Buying");
     } finally {
       setLoading(false);
@@ -346,12 +369,14 @@ export default function SubMediaBuyingPage() {
         if (!ignore) {
           if (match?.name) setClientName(match.name);
           if (match?.client_type) setClientType(normalizedClientType(match.client_type));
+          setClientCurrency(typeof match?.currency === "string" ? match.currency : null);
           setClientContextLoaded(true);
         }
       } catch {
         if (!ignore) {
           setClientName(`Sub-account #${clientId}`);
           setClientType("lead");
+          setClientCurrency(null);
           setClientContextLoaded(true);
         }
       }
@@ -375,7 +400,13 @@ export default function SubMediaBuyingPage() {
 
   const title = `Media Buying - ${clientName}`;
 
-  const displayCurrency = tableData?.meta.display_currency || "RON";
+  const displayCurrencyFromTable = String(tableData?.meta.display_currency || "").trim().toUpperCase();
+  const displayCurrencyFromClient = String(clientCurrency || "").trim().toUpperCase();
+  const resolvedDisplayCurrency = /^[A-Z]{3}$/.test(displayCurrencyFromTable)
+    ? displayCurrencyFromTable
+    : (/^[A-Z]{3}$/.test(displayCurrencyFromClient) ? displayCurrencyFromClient : null);
+  const displayCurrency = normalizeCurrencyCode(resolvedDisplayCurrency, "USD");
+  const displayCurrencyLabel = resolvedDisplayCurrency ?? "—";
   const labelMap: Record<LabelFieldKey, string> = {
     custom_label_1: fallbackLabel(tableData?.meta.custom_label_1, "Custom Value 1"),
     custom_label_2: fallbackLabel(tableData?.meta.custom_label_2, "Custom Value 2"),
@@ -417,6 +448,64 @@ export default function SubMediaBuyingPage() {
     () => (tableData ? [...tableData.months].sort((a, b) => b.month.localeCompare(a.month)) : []),
     [tableData]
   );
+  const monthsByKey = useMemo(() => Object.fromEntries(sortedMonths.map((item) => [item.month, item])), [sortedMonths]);
+
+  const ensureMonthDays = useCallback(async (month: LeadTableMonth, force: boolean = false) => {
+    const monthKey = month.month;
+    const hasInlineDays = Array.isArray(month.days) && month.days.length > 0;
+    if (!force && (hasInlineDays || monthDaysByMonth[monthKey] || monthLoadingByMonth[monthKey])) return;
+
+    const hasDaysHint = month.has_days ?? ((typeof month.day_count === "number" ? month.day_count : 0) > 0);
+    if (!hasDaysHint && !force) {
+      setMonthDaysByMonth((prev) => ({ ...prev, [monthKey]: [] }));
+      setMonthErrorByMonth((prev) => {
+        const next = { ...prev };
+        delete next[monthKey];
+        return next;
+      });
+      return;
+    }
+
+    setMonthLoadingByMonth((prev) => ({ ...prev, [monthKey]: true }));
+    setMonthErrorByMonth((prev) => {
+      const next = { ...prev };
+      delete next[monthKey];
+      return next;
+    });
+    try {
+      const payload = await apiRequest<LeadMonthDaysResponse>(
+        `/clients/${clientId}/media-buying/lead/month-days?month_start=${monthStartFromKey(monthKey)}`
+      );
+      setMonthDaysByMonth((prev) => ({ ...prev, [monthKey]: Array.isArray(payload.days) ? payload.days : [] }));
+    } catch (err) {
+      setMonthErrorByMonth((prev) => ({
+        ...prev,
+        [monthKey]: err instanceof Error ? err.message : "Nu am putut încărca zilele pentru lună",
+      }));
+    } finally {
+      setMonthLoadingByMonth((prev) => ({ ...prev, [monthKey]: false }));
+    }
+  }, [clientId, monthDaysByMonth, monthLoadingByMonth]);
+
+  const toggleMonth = useCallback((month: LeadTableMonth) => {
+    const open = Boolean(expandedMonths[month.month]);
+    if (open) {
+      setExpandedMonths((prev) => ({ ...prev, [month.month]: false }));
+      return;
+    }
+    setExpandedMonths((prev) => ({ ...prev, [month.month]: true }));
+    void ensureMonthDays(month);
+  }, [ensureMonthDays, expandedMonths]);
+
+  useEffect(() => {
+    const openKeys = Object.entries(expandedMonths).filter(([, isOpen]) => Boolean(isOpen)).map(([key]) => key);
+    for (const monthKey of openKeys) {
+      const month = monthsByKey[monthKey];
+      if (!month) continue;
+      if (monthDaysByMonth[monthKey] || monthLoadingByMonth[monthKey] || monthErrorByMonth[monthKey]) continue;
+      void ensureMonthDays(month);
+    }
+  }, [ensureMonthDays, expandedMonths, monthDaysByMonth, monthLoadingByMonth, monthErrorByMonth, monthsByKey]);
 
   useEffect(() => {
     const raw = tableData?.meta.visible_columns;
@@ -591,6 +680,7 @@ export default function SubMediaBuyingPage() {
           <p className="mt-2 text-sm text-slate-600">
             Range: {tableData?.meta.effective_date_from ?? tableData?.meta.date_from ?? "—"} - {tableData?.meta.effective_date_to ?? tableData?.meta.date_to ?? "—"}
           </p>
+          <p className="mt-1 text-xs text-slate-500">Currency: {displayCurrencyLabel}</p>
 
           {isLeadTemplate ? (
             <div className="mt-3 flex items-center gap-2">
@@ -673,13 +763,17 @@ export default function SubMediaBuyingPage() {
                   {sortedMonths.map((month) => {
                     const open = Boolean(expandedMonths[month.month]);
                     const monthTotals = month.totals;
+                    const monthDays = Array.isArray(month.days) ? month.days : (monthDaysByMonth[month.month] || []);
+                    const isMonthLoading = Boolean(monthLoadingByMonth[month.month]);
+                    const monthError = monthErrorByMonth[month.month];
+                    const hasDaysHint = month.has_days ?? ((typeof month.day_count === "number" ? month.day_count : monthDays.length) > 0);
                     return (
                       <React.Fragment key={month.month}>
                         <tr className="border-t border-slate-300 bg-slate-100 font-semibold text-slate-900">
                           <td {...visibilityProps("date")} className={`${classFor("date")} ${stickyDateCellClass("month")}`}>
                             <button
                               type="button"
-                              onClick={() => setExpandedMonths((prev) => ({ ...prev, [month.month]: !open }))}
+                              onClick={() => toggleMonth(month)}
                               className="text-left"
                             >
                               {open ? "▾" : "▸"} {monthLabel(month.month)}
@@ -707,8 +801,41 @@ export default function SubMediaBuyingPage() {
                           <td {...visibilityProps("cost_per_sale")} className={classFor("cost_per_sale")}>{formatMoney(monthTotals.cost_per_sale, displayCurrency)}</td>
                         </tr>
 
+                        {open && isMonthLoading ? (
+                          <tr className="border-t border-slate-200 bg-white text-slate-600">
+                            <td colSpan={columnsMenu.filter((item) => isVisible(item.key)).length} className="px-3 py-2 text-sm">
+                              Loading daily rows...
+                            </td>
+                          </tr>
+                        ) : null}
+
+                        {open && !isMonthLoading && monthError ? (
+                          <tr className="border-t border-red-200 bg-red-50 text-red-700">
+                            <td colSpan={columnsMenu.filter((item) => isVisible(item.key)).length} className="px-3 py-2 text-sm">
+                              <div className="flex items-center gap-2">
+                                <span>{monthError}</span>
+                                <button
+                                  type="button"
+                                  className="rounded border border-red-300 bg-white px-2 py-0.5 text-xs text-red-700 hover:bg-red-50"
+                                  onClick={() => void ensureMonthDays(month, true)}
+                                >
+                                  Retry
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : null}
+
+                        {open && !isMonthLoading && !monthError && !hasDaysHint ? (
+                          <tr className="border-t border-slate-200 bg-white text-slate-500">
+                            <td colSpan={columnsMenu.filter((item) => isVisible(item.key)).length} className="px-3 py-2 text-sm">
+                              No daily rows for this month.
+                            </td>
+                          </tr>
+                        ) : null}
+
                         {open
-                          ? month.days.map((day) => {
+                          ? monthDays.map((day) => {
                               const draft = editingByDate[day.date];
                               const errors = draft ? validateDraft(draft) : {};
                               const changed = draft ? hasChanges(draft, day) : false;

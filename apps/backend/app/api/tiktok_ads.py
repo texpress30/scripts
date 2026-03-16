@@ -220,6 +220,8 @@ def _mirror_tiktok_platform_account_operational_metadata(
     account_context: dict[str, str] | None,
     sync_start_date: date,
     last_synced_at: datetime | None = None,
+    last_success_at: datetime | None = None,
+    backfill_completed_through: date | None = None,
 ) -> None:
     account_id = str((account_context or {}).get("account_id") or "").strip()
     if account_id == "":
@@ -242,6 +244,10 @@ def _mirror_tiktok_platform_account_operational_metadata(
         update_payload["account_timezone"] = raw_timezone
     if last_synced_at is not None:
         update_payload["last_synced_at"] = last_synced_at
+    if last_success_at is not None:
+        update_payload["last_success_at"] = last_success_at
+    if backfill_completed_through is not None:
+        update_payload["backfill_completed_through"] = backfill_completed_through
 
     try:
         client_registry_service.update_platform_account_operational_metadata(**update_payload)
@@ -317,6 +323,7 @@ def _run_tiktok_sync_job(job_id: str, *, client_id: int, account_id: str | None 
             account_context=account_context,
             sync_start_date=date_start,
             last_synced_at=success_now,
+            last_success_at=success_now,
         )
         _mirror_sync_run_status(
             job_id=job_id,
@@ -388,6 +395,16 @@ def _run_tiktok_historical_backfill_job(
             "account_ids": sorted(account_ids_seen),
             "rows_written": rows_written,
         }
+        success_now = datetime.utcnow()
+        account_context = _resolve_tiktok_account_operational_context(client_id=int(client_id), account_id=None, job_id=job_id)
+        _mirror_tiktok_platform_account_operational_metadata(
+            job_id=job_id,
+            account_context=account_context,
+            sync_start_date=start_date,
+            last_synced_at=success_now,
+            last_success_at=success_now,
+            backfill_completed_through=end_date,
+        )
         backfill_job_store.set_done(job_id, result=result_payload)
     except Exception as exc:  # noqa: BLE001
         backfill_job_store.set_error(job_id, error=str(exc)[:300])
