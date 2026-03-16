@@ -91,8 +91,11 @@ export default function LoginPage() {
                   <Shield className="h-4 w-4 text-slate-400" />
                   <select value={role} onChange={(e) => setRole(e.target.value)} className="h-10 w-full bg-transparent text-sm outline-none">
                     <option value="agency_admin">Agency Admin</option>
-                    <option value="account_manager">Account Manager</option>
-                    <option value="client_viewer">Client Viewer</option>
+                    <option value="agency_member">Agency Member</option>
+                    <option value="agency_viewer">Agency Viewer</option>
+                    <option value="subaccount_admin">Subaccount Admin</option>
+                    <option value="subaccount_user">Subaccount User</option>
+                    <option value="subaccount_viewer">Subaccount Viewer</option>
                   </select>
                 </div>
               </label>
