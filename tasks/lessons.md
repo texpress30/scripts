@@ -338,3 +338,7 @@
 - 2026-03-13: When converting read paths to optional/no-range fetching, harden helper method signatures and guard null date comparisons (`None > None`) before rollout; add regression tests for no-range automated-only/manual-only mixes.
 - 2026-03-13: For frontend currency labels, never display a fabricated hardcoded fallback (e.g., USD) when metadata is missing; prefer real source priority (table -> client context) then neutral placeholder.
 - 2026-03-16: După feedback că schimbarea pentru "Echipa Mea" a deviat spre listă/tabel, la task-uri de UI trebuie revalidat explicit ecranul țintă și fluxul cerut (ex. wizard Add/Edit) înainte de implementare, fără a înlocui produsul cu altă interfață necerută.
+- 2026-03-16: După feedback că soluția precedentă nu a adresat taskul real, la cereri de UI trebuie livrată implementarea efectivă în ruta țintă (component + teste), nu doar actualizare de documentație/task list.
+- 2026-03-16: După feedback că taskul a fost mutat greșit pe frontend, pentru cerințe backend-only livrează fundația de date/API + teste fără redesign UI și fără schimbări de login dacă sunt explicit out-of-scope.
+- 2026-03-16: După feedback pe Agency Team, când backend livrează endpoint dedicat de options, frontendul trebuie legat la acel endpoint (fără opțiuni hardcodate) și validarea dependentă de tip utilizator trebuie acoperită prin teste de submit payload.
+- 2026-03-16: Pentru psycopg3, evită parametrizarea DDL (`CREATE TABLE ... DEFAULT %s`); folosește SQL static sau `sql.Literal`, altfel startup poate crăpa cu `IndeterminateDatatype`.

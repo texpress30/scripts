@@ -225,3 +225,12 @@ cd apps/frontend && npm run build
   - `HISTORICAL_REPAIR_SWEEPER_STALE_MINUTES` (override la `SYNC_RUN_REPAIR_STALE_MINUTES`)
   - `HISTORICAL_REPAIR_SWEEPER_LIMIT` (default `100`)
 - Loop-ul loghează explicit `iteration_started`/`iteration_finished` + summary; dacă o iterație eșuează, eroarea este logată și loop-ul continuă la următoarea iterație.
+
+## Team management foundation (users + user_memberships)
+- Backend team management folosește acum modelul normalizat `users` (identity) + `user_memberships` (scope + rol canonic) pentru a pregăti autentificarea reală în pasul următor.
+- Contractul API existent pentru `GET/POST /team/members` rămâne compatibil cu frontend-ul curent (payload/shape legacy), dar persistența nouă este făcută în `users` + `user_memberships`.
+- Rolurile canonice interne pentru memberships sunt:
+  - `agency_admin`, `agency_member`, `agency_viewer`
+  - `subaccount_admin`, `subaccount_user`, `subaccount_viewer`
+- Endpoint nou: `GET /team/subaccount-options` (id, name, label) pentru selecția de sub-account în flow-urile viitoare.
+- Login/token flow nu este modificat în acest pas; acest task pregătește migrarea către auth real user-based în pasul următor.
