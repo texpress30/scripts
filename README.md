@@ -234,3 +234,5 @@ cd apps/frontend && npm run build
   - `subaccount_admin`, `subaccount_user`, `subaccount_viewer`
 - Endpoint nou: `GET /team/subaccount-options` (id, name, label) pentru selecția de sub-account în flow-urile viitoare.
 - Login/token flow nu este modificat în acest pas; acest task pregătește migrarea către auth real user-based în pasul următor.
+- RBAC/session folosesc acum rolurile canonice ca sursă de adevăr (`agency_admin`, `agency_member`, `agency_viewer`, `subaccount_admin`, `subaccount_user`, `subaccount_viewer`).
+- Aliasurile legacy rămân tranzitoriu compatibile: `account_manager` -> `subaccount_user`, `client_viewer` -> `subaccount_viewer`.

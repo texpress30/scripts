@@ -4338,3 +4338,26 @@
 - [x] Verificare suplimentară: în `team_members.py` nu au mai rămas alte DDL-uri parametrizate.
 - [x] Verificări rulate: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q tests/test_team_members_foundation.py` și import/startup check `python -c "from app.main import app; print('ok')"`.
 - [x] Scope păstrat: doar backend, fără schimbări de API contract/frontend/auth flow.
+
+---
+
+# TODO — Migrare roluri/permisii pe model canonic + compat legacy
+
+- [x] Re-auditez RBAC/auth/session helper-ele actuale pentru modelul vechi de roluri.
+- [x] Introduc helper de normalizare roluri (canonic + aliasuri legacy) și îl aplic în RBAC (`require_permission`/`require_action`).
+- [x] Actualizez matricea `ROLE_SCOPES`/`ROLE_PERMISSIONS`/`ACTION_POLICIES` pentru rolurile canonice + roluri speciale.
+- [x] Păstrez backward compatibility pentru `account_manager` și `client_viewer` în validarea auth API.
+- [x] Actualizez frontend session helpers + AppShell impersonation mapping pentru roluri canonice.
+- [x] Adaug teste backend dedicate pentru normalizare + permission/action checks + legacy aliases.
+- [x] Adaug teste frontend mici pentru `session.ts` (parser + read-only).
+- [x] Rulez teste backend relevante + build frontend și documentez review.
+
+## Review
+- [x] `rbac.py` tratează acum rolurile canonice ca sursă de adevăr și normalizează aliasurile legacy prin helper central (`normalize_role`).
+- [x] `require_permission()` și `require_action()` operează pe rol normalizat, nu pe string brut.
+- [x] Matricea de permisiuni/scopes pentru `agency_member/agency_viewer/subaccount_admin/subaccount_user/subaccount_viewer` este explicită și consistentă cu `ACTION_POLICIES`.
+- [x] `auth` API acceptă roluri canonice și aliasuri legacy (`account_manager`, `client_viewer`) prin `is_supported_role` + `normalize_role`, fără schimbarea contractului request/response.
+- [x] `session.ts` și `AppShell` înțeleg rolurile canonice și păstrează compatibilitate pentru aliasurile legacy.
+- [x] Teste backend adăugate pentru normalizare/permisiuni/scope + compat alias-uri și pentru login role normalization.
+- [x] Test frontend adăugat pentru `session.ts` (normalizare + read-only).
+- [x] Verificări rulate: pytest țintit backend, vitest țintit frontend, build frontend (pass).
