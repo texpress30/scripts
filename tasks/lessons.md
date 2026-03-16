@@ -343,3 +343,4 @@
 - 2026-03-16: După feedback pe Agency Team, când backend livrează endpoint dedicat de options, frontendul trebuie legat la acel endpoint (fără opțiuni hardcodate) și validarea dependentă de tip utilizator trebuie acoperită prin teste de submit payload.
 - 2026-03-16: Pentru psycopg3, evită parametrizarea DDL (`CREATE TABLE ... DEFAULT %s`); folosește SQL static sau `sql.Literal`, altfel startup poate crăpa cu `IndeterminateDatatype`.
 - 2026-03-16: La migrarea rolurilor, normalizează central aliasurile legacy înainte de verificări RBAC/Auth și testează explicit mapping-ul (`account_manager`/`client_viewer`) ca să eviți regressii de compatibilitate.
+- 2026-03-16: Când userul cere auth DB-first, prioritizează explicit validarea membership-ului la login (inclusiv caz ambiguu 409) și păstrează fallback-ul env admin strict ca mecanism de urgență.

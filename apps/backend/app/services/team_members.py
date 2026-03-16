@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 
 from app.core.config import load_settings
+from app.services.auth import hash_password
 from app.services.client_registry import client_registry_service
 
 try:
@@ -43,10 +43,6 @@ _CANONICAL_TO_UI_ROLE_MAP: dict[str, tuple[str, str]] = {
 class SubaccountRef:
     id: int
     name: str
-
-
-def _hash_password(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 class TeamMembersService:
@@ -182,7 +178,7 @@ class TeamMembersService:
         password: str | None,
     ) -> int:
         settings = load_settings()
-        password_hash = _hash_password(password.strip()) if password and password.strip() else _hash_password(settings.app_login_password)
+        password_hash = hash_password(password.strip()) if password and password.strip() else hash_password(settings.app_login_password)
 
         with self._connect() as conn:
             with conn.cursor() as cur:

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { isReadOnlyRole, normalizeAppRole } from "./session";
+import { getCurrentRole, getSessionInfo, isReadOnlyRole, normalizeAppRole } from "./session";
+
+function makeToken(payload: Record<string, unknown>) {
+  const encoded = Buffer.from(JSON.stringify(payload), "utf-8").toString("base64url");
+  return `${encoded}.sig`;
+}
 
 describe("session role normalization", () => {
   it("maps legacy roles to canonical roles", () => {
@@ -19,5 +24,26 @@ describe("session role normalization", () => {
     expect(isReadOnlyRole("subaccount_viewer")).toBe(true);
     expect(isReadOnlyRole("client_viewer")).toBe(true);
     expect(isReadOnlyRole("subaccount_user")).toBe(false);
+  });
+
+  it("parses old and new token payloads without breaking compatibility", () => {
+    localStorage.setItem("mcc_token", makeToken({ email: "old@example.com", role: "agency_admin" }));
+    expect(getCurrentRole()).toBe("agency_admin");
+    expect(getSessionInfo().email).toBe("old@example.com");
+
+    localStorage.setItem(
+      "mcc_token",
+      makeToken({
+        email: "new@example.com",
+        role: "subaccount_user",
+        user_id: 7,
+        scope_type: "subaccount",
+        membership_id: 22,
+        subaccount_id: 3,
+        subaccount_name: "Client A",
+      })
+    );
+    expect(getCurrentRole()).toBe("subaccount_user");
+    expect(getSessionInfo().email).toBe("new@example.com");
   });
 });

@@ -3,7 +3,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.api.dependencies import get_current_user
 from app.schemas.auth import ImpersonateRequest, ImpersonateResponse, LoginRequest, LoginResponse
 from app.services.audit import audit_log_service
-from app.services.auth import AuthUser, create_access_token, validate_login_credentials
+from app.services.auth import (
+    AuthLoginError,
+    AuthUser,
+    authenticate_user_from_db,
+    create_access_token,
+    validate_login_credentials,
+)
 from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
 from app.services.rbac import is_supported_role, normalize_role
 
@@ -13,7 +19,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.post("/login", response_model=LoginResponse)
 def login(payload: LoginRequest) -> LoginResponse:
     email = payload.email.strip().lower()
-    role = normalize_role(payload.role)
+    requested_role = normalize_role(payload.role)
 
     try:
         rate_limiter_service.check(f"auth:{email}", limit=20, window_seconds=60)
@@ -23,7 +29,7 @@ def login(payload: LoginRequest) -> LoginResponse:
             actor_role="anonymous",
             action="auth.login.rate_limited",
             resource="auth:login",
-            details={"role": role},
+            details={"role": requested_role},
         )
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
@@ -37,25 +43,57 @@ def login(payload: LoginRequest) -> LoginResponse:
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported role: {payload.role}")
 
-    if not validate_login_credentials(payload.email, payload.password):
+    try:
+        db_user = authenticate_user_from_db(email=payload.email, password=payload.password, requested_role=payload.role)
+        access_token = create_access_token(
+            email=db_user.email,
+            role=db_user.role,
+            user_id=db_user.user_id,
+            scope_type=db_user.scope_type,
+            membership_id=db_user.membership_id,
+            subaccount_id=db_user.subaccount_id,
+            subaccount_name=db_user.subaccount_name,
+            is_env_admin=db_user.is_env_admin,
+        )
         audit_log_service.log(
             actor_email=email,
-            actor_role=role,
+            actor_role=db_user.role,
+            action="auth.login.succeeded",
+            resource="auth:login",
+            details={
+                "source": "db",
+                "role": db_user.role,
+                "membership_id": db_user.membership_id,
+                "scope_type": db_user.scope_type,
+                "subaccount_id": db_user.subaccount_id,
+            },
+        )
+        return LoginResponse(access_token=access_token)
+    except AuthLoginError as db_exc:
+        if validate_login_credentials(payload.email, payload.password):
+            access_token = create_access_token(
+                email=email,
+                role="super_admin",
+                scope_type="agency",
+                is_env_admin=True,
+            )
+            audit_log_service.log(
+                actor_email=email,
+                actor_role="super_admin",
+                action="auth.login.succeeded",
+                resource="auth:login",
+                details={"source": "env_fallback", "requested_role": requested_role},
+            )
+            return LoginResponse(access_token=access_token)
+
+        audit_log_service.log(
+            actor_email=email,
+            actor_role=requested_role,
             action="auth.login.failed",
             resource="auth:login",
-            details={"reason": "invalid_credentials"},
+            details={"reason": db_exc.reason, "status_code": db_exc.status_code},
         )
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
-
-    access_token = create_access_token(email=payload.email, role=role)
-    audit_log_service.log(
-        actor_email=email,
-        actor_role=role,
-        action="auth.login.succeeded",
-        resource="auth:login",
-        details={"role": role},
-    )
-    return LoginResponse(access_token=access_token)
+        raise HTTPException(status_code=db_exc.status_code, detail=db_exc.message) from db_exc
 
 
 @router.post("/impersonate", response_model=ImpersonateResponse)

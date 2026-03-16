@@ -4361,3 +4361,26 @@
 - [x] Teste backend adăugate pentru normalizare/permisiuni/scope + compat alias-uri și pentru login role normalization.
 - [x] Test frontend adăugat pentru `session.ts` (normalizare + read-only).
 - [x] Verificări rulate: pytest țintit backend, vitest țintit frontend, build frontend (pass).
+
+---
+
+# TODO — Auth DB-first + token cu context membership (contract login neschimbat)
+
+- [x] Re-auditez fișierele auth/rbac/team/session/login indicate.
+- [x] Implementez autentificare DB-first în `users` + `user_memberships` cu validare user activ/parolă/rol normalizat.
+- [x] Păstrez fallback env admin de urgență (`super_admin`) fără schimbare de contract login.
+- [x] Extind token/AuthUser cu context membership și păstrez decode backward-compatible pentru tokenuri vechi.
+- [x] Actualizez `POST /auth/login` audit logging pe scenarii: succes DB, succes env fallback, invalid creds, role_not_owned, ambiguous_membership.
+- [x] Ajustez minim frontend login dropdown cu roluri canonice și verific compatibilitatea `session.ts`.
+- [x] Adaug teste backend pentru toate scenariile de login cerute + decode old/new token.
+- [x] Rulez teste backend/frontend + build frontend + startup check backend și documentez review.
+
+## Review
+- [x] `auth` service are flow DB-first: user lookup în `users`, verificare `is_active`, verificare hash parolă, lookup membership activ pe rol normalizat.
+- [x] Login DB reușit doar când există exact un membership activ pentru rolul cerut; 0 membership => 403, >1 membership => 409 cu mesaj clar de context ambiguu.
+- [x] `/auth/login` păstrează contractul extern, dar folosește flow DB-first și fallback env admin (`super_admin`, `is_env_admin=true`) doar la eșec DB auth când credentials env sunt valide.
+- [x] Token/AuthUser extinse cu: `user_id`, `scope_type`, `membership_id`, `subaccount_id`, `subaccount_name`, `is_env_admin`; decode rămâne compatibil cu tokenuri vechi (`email`, `role`).
+- [x] Login page păstrează același UX, dar dropdown-ul folosește roluri canonice utile (`agency_*`, `subaccount_*`).
+- [x] `session.ts` rămâne compatibil cu tokenuri vechi și parsează sigur payload-uri noi (câmpurile extra nu rup parserul).
+- [x] Teste adăugate/rulate pentru scenariile cerute: DB success agency/subaccount, invalid password, user inactiv, role not owned, alias legacy, ambiguous membership 409, env fallback success, decode old/new token.
+- [x] Verificări rulate: pytest backend relevant, vitest frontend relevant, `pnpm build`, startup check `from app.main import app`.
