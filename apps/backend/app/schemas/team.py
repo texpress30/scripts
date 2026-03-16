@@ -36,3 +36,13 @@ class CreateTeamMemberRequest(BaseModel):
 
 class TeamMemberResponse(BaseModel):
     item: TeamMemberItem
+
+
+class TeamSubaccountOptionItem(BaseModel):
+    id: int
+    name: str
+    label: str
+
+
+class TeamSubaccountOptionsResponse(BaseModel):
+    items: list[TeamSubaccountOptionItem]

@@ -4239,3 +4239,62 @@
 - [x] Updated focused team page tests to cover wizard rendering and advanced collapse/validation behavior.
 - [x] Verification: `cd apps/frontend && pnpm vitest run src/app/subaccount/[id]/settings/team/page.test.tsx`.
 - [x] Screenshot: `browser:/tmp/codex_browser_invocations/68482988e210eeba/artifacts/reports/team-user-wizard.png`.
+
+---
+
+# TODO — Reconnect git remote and sync with GitHub origin
+
+- [x] Start fresh workspace context and verify git remote connectivity workflow.
+- [x] Run the exact remote add/set-url command provided by user.
+- [x] Run `git fetch origin`.
+- [x] Run `git pull origin main --allow-unrelated-histories`.
+- [x] Document sync outcome in review section.
+
+## Review
+- [x] Executed the exact remote reconciliation command provided by user (`git remote add ... || git remote set-url ...`) to ensure `origin` is configured.
+- [x] Fetched from `origin` successfully; remote refs were downloaded.
+- [x] Pulled `origin/main --allow-unrelated-histories` successfully; repository reported `Already up to date.`
+- [x] Post-check `git remote -v` confirms `origin` points to `github.com/texpress30/scripts.git` (token masked in logs).
+
+---
+
+# TODO — Implementare completă „Echipa Mea” (listare + formular adăugare directă)
+
+- [x] Re-auditez pagina actuală `subaccount/[id]/settings/team` și definesc fluxul direct fără ecran intermediar.
+- [x] Implementez vizualizarea principală de listare: header, filtru rol, căutare, buton `+ Adaugă Utilizator`, tabel cu coloanele/acțiunile cerute și paginare.
+- [x] Implementez formularul Add/Edit deschis direct din `+ Adaugă Utilizator` și `Editare`, cu tab-uri stânga (`Informații Utilizator`, `Roluri și Permisiuni`), upload avatar, setări avansate colapsate, footer și localizare RO.
+- [x] Adaug validări frontend pentru câmpurile obligatorii (Prenume/Nume/Email), format email și extensie numerică.
+- [x] Adaug feedback toast pentru `Copiere ID` și păstrez designul curat (carduri albe, colțuri rotunjite).
+- [x] Actualizez testele focalizate pentru listare, flux direct add/edit, toast copy ID, toggle setări avansate și validări.
+- [x] Rulez testele relevante, documentez rezultatele în review, capturez screenshot pentru schimbarea vizuală.
+
+## Review
+- [x] Pagina `Echipa Mea` folosește acum listare principală cu filtru rol, căutare, tabel utilizatori, acțiuni pe rând și paginare (`Anterior` / `Următor`).
+- [x] Fluxul direct este activ: click pe `Adaugă Utilizator` sau iconița de editare deschide imediat formularul Add/Edit, fără ecran intermediar.
+- [x] Formularul are localizare română, tab-uri verticale cerute, bloc `Setări Avansate` colapsat implicit, validări pentru Prenume/Nume/Email + email format + extensie numerică.
+- [x] Acțiunea `Copiere ID` afișează toast `ID Copiat`; operațiile adăugare/editare/ștergere/dezactivare afișează feedback toast.
+- [x] Verificare: `cd apps/frontend && pnpm vitest run src/app/subaccount/[id]/settings/team/page.test.tsx`.
+- [x] Încercare screenshot: server Next pornit local (`pnpm dev --port 3100`) + Playwright, dar browser container a eșuat (SIGSEGV la launch Chromium), deci nu s-a putut genera captură în acest mediu.
+
+---
+
+# TODO — Backend foundation users + user_memberships pentru Team Management
+
+- [x] Re-auditez fișierele backend indicate și contractul actual `/team/members` folosit de frontend.
+- [x] Extind idempotent schema `users` cu câmpurile de status/auth viitoare și adaug schema nouă `user_memberships` cu constrângeri/indexuri.
+- [x] Introduc catalogul canonic de roluri + mapping din payload (`user_type`/`user_role`) către `role_key`.
+- [x] Refactorizez `team_members_service` ca noul flow să scrie/citească din `users` + `user_memberships`, păstrând response shape-ul existent.
+- [x] Adaug validări backend clare (required fields, rol valid, subaccount obligatoriu pentru client user, duplicate-safe membership).
+- [x] Adaug endpoint nou `GET /team/subaccount-options` bazat pe `client_registry_service`.
+- [x] Adaug teste backend pentru schema init idempotent, create/list/filter/reject și subaccount-options.
+- [x] Actualizez documentația minimă despre modelul nou și ce rămâne pentru taskul următor.
+
+## Review
+- [x] `team_members_service` folosește acum modelul nou `users` + `user_memberships`; tabelul `team_members` este păstrat explicit doar ca legacy transitional.
+- [x] Schema este idempotentă: `users` primește coloane noi (`is_active`, `must_reset_password`, `last_login_at`, `avatar_url`) și se creează `user_memberships` cu check constraints + indexuri.
+- [x] Rolurile canonice (`agency_*`, `subaccount_*`) au mapping clar din payload-ul actual (`user_type` + `user_role`) și mapping invers pentru response contract legacy.
+- [x] Regula de business pentru client users este aplicată: fără sub-account real (`''`/`Toate`/inexistent) se întoarce 400 cu mesaj explicit.
+- [x] `GET /team/members` păstrează shape-ul vechi și citește din noul model; `POST /team/members` scrie în noul model.
+- [x] Endpoint nou: `GET /team/subaccount-options` returnează `{ id, name, label }` pe baza `client_registry_service.list_clients()`.
+- [x] Teste backend adăugate pentru schema init idempotent, create agency/subaccount, reject invalid client subaccount, list/filter contract și subaccount-options.
+- [x] Verificare rulată: `cd apps/backend && APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q tests/test_team_members_foundation.py` + import check app startup.
