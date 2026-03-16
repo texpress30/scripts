@@ -4255,6 +4255,7 @@
 - [x] Fetched from `origin` successfully; remote refs were downloaded.
 - [x] Pulled `origin/main --allow-unrelated-histories` successfully; repository reported `Already up to date.`
 - [x] Post-check `git remote -v` confirms `origin` points to `github.com/texpress30/scripts.git` (token masked in logs).
+<<<<<<< codex/setup-new-workspace-and-sync-with-github-yod78q
 
 ---
 
@@ -4275,3 +4276,5 @@
 - [x] Acțiunea `Copiere ID` afișează toast `ID Copiat`; operațiile adăugare/editare/ștergere/dezactivare afișează feedback toast.
 - [x] Verificare: `cd apps/frontend && pnpm vitest run src/app/subaccount/[id]/settings/team/page.test.tsx`.
 - [x] Încercare screenshot: server Next pornit local (`pnpm dev --port 3100`) + Playwright, dar browser container a eșuat (SIGSEGV la launch Chromium), deci nu s-a putut genera captură în acest mediu.
+=======
+>>>>>>> main
