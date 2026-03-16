@@ -15,37 +15,48 @@ vi.mock("@/components/AppShell", () => ({
   ),
 }));
 
-describe("SubAccount Team table", () => {
-  it("renders team listing controls and table headers", () => {
+describe("SubAccount Team user form", () => {
+  it("renders left tabs and user info form in Romanian", () => {
     render(<SubAccountTeamPage />);
 
-    expect(screen.getByText("Echipa Mea")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "+ Adaugă Utilizator" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "← Înapoi" })).toBeInTheDocument();
+    expect(screen.getByText("Editează sau gestionează echipa ta.")).toBeInTheDocument();
 
-    expect(screen.getByRole("combobox")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Nume, email, telefon, id-uri")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Informații Utilizator" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Roluri și Permisiuni" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Setări Apeluri și Mesaje Vocale" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Disponibilitate Utilizator" })).toBeInTheDocument();
 
-    expect(screen.getByRole("columnheader", { name: "Nume" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "Email" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "Telefon" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "Tip Utilizator" })).toBeInTheDocument();
-    expect(screen.getByText("Pagina 1")).toBeInTheDocument();
-    expect(screen.getByText("Andrei Pop")).toBeInTheDocument();
+    expect(screen.getByText("Imagine Profil")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Prenume")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Nume")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Email")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Telefon")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Extensie")).toBeInTheDocument();
+    expect(screen.getByText("Semnătură Utilizator")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Anulează" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Înainte" })).toBeInTheDocument();
   });
 
-  it("filters by role, supports search reset, and shows copy toast", () => {
+  it("keeps advanced settings collapsed by default, toggles password field, and validates required fields", () => {
     render(<SubAccountTeamPage />);
 
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "ACCOUNT-ADMIN" } });
-    expect(screen.getByText("Mihai Sava")).toBeInTheDocument();
-    expect(screen.queryByText("Andrei Pop")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Parolă")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Setări Avansate/i }));
+    expect(screen.getByPlaceholderText("Parolă")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText("Nume, email, telefon, id-uri"), { target: { value: "nu-exista" } });
-    expect(screen.getByText("Nu există utilizatori pentru filtrele selectate.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Înainte" }));
+    expect(screen.getByText("Prenumele este obligatoriu.")).toBeInTheDocument();
+    expect(screen.getByText("Numele este obligatoriu.")).toBeInTheDocument();
+    expect(screen.getByText("Email-ul este obligatoriu.")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText("Nume, email, telefon, id-uri"), { target: { value: "" } });
-    const copyIdButton = screen.getByRole("button", { name: "t91Ks0QazP2nL8mN56cx" });
-    fireEvent.click(copyIdButton);
-    expect(screen.getByText("ID Copiat")).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("Prenume"), { target: { value: "Ana" } });
+    fireEvent.change(screen.getByPlaceholderText("Nume"), { target: { value: "Ionescu" } });
+    fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "ana@acme.ro" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Înainte" }));
+    expect(screen.queryByText("Prenumele este obligatoriu.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Numele este obligatoriu.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Email-ul este obligatoriu.")).not.toBeInTheDocument();
   });
 });

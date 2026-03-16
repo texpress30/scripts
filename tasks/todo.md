@@ -4219,3 +4219,23 @@
 - [x] Verified pending change replaces legacy team user form with team listing table, filters, search, actions, and pagination.
 - [x] Refreshed `page.test.tsx` assertions to validate listing controls/headers and filter + copy toast flows.
 - [x] Verification: `cd apps/frontend && pnpm vitest run src/app/subaccount/[id]/settings/team/page.test.tsx`.
+
+---
+
+# TODO — Revert team settings page to Add/Edit user wizard UI
+
+- [x] Re-audit current `subaccount/[id]/settings/team` implementation versus requested wizard spec.
+- [x] Replace listing/table interface with left-vertical-tab wizard shell and Romanian copy.
+- [x] Implement required fields, advanced password collapse, and footer actions with client-side validation.
+- [x] Update focused frontend tests for rendering, advanced toggle behavior, and required-field validation.
+- [x] Run targeted frontend tests for the touched team settings route.
+- [x] Capture updated UI screenshot for the visual frontend change.
+- [x] Prepare commit and PR metadata.
+
+## Review
+- [x] Restored the requested Add/Edit user wizard layout for Echipa Mea with left vertical tabs, back button, and Romanian subtitle text.
+- [x] Implemented full "Informații Utilizator" content: avatar area, required fields (`Prenume`, `Nume`, `Email`), optional phone/extension, advanced password section, signature section, and footer actions (`Anulează`, `Înainte`).
+- [x] Added client-side validation for required fields, email format, and numeric extension constraints.
+- [x] Updated focused team page tests to cover wizard rendering and advanced collapse/validation behavior.
+- [x] Verification: `cd apps/frontend && pnpm vitest run src/app/subaccount/[id]/settings/team/page.test.tsx`.
+- [x] Screenshot: `browser:/tmp/codex_browser_invocations/68482988e210eeba/artifacts/reports/team-user-wizard.png`.
