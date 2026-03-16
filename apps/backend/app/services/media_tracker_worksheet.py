@@ -178,7 +178,7 @@ class MediaTrackerWorksheetService:
             "cost_tiktok": {"aggregation": "sum", "source_field": "cost_tiktok", "history_value": 0.0, "weekly_values": []},
             "total_leads": {"aggregation": "sum", "source_field": "total_leads", "history_value": 0.0, "weekly_values": []},
             "applications": {"aggregation": "sum", "source_field": "custom_value_1_count", "history_value": 0.0, "weekly_values": []},
-            "approved_applications": {"aggregation": "sum", "source_field": "sales_count", "history_value": 0.0, "weekly_values": []},
+            "approved_applications": {"aggregation": "sum", "source_field": "custom_value_2_count", "history_value": 0.0, "weekly_values": []},
         }
 
         parsed_rows: list[tuple[date, dict[str, object]]] = []
@@ -204,7 +204,7 @@ class MediaTrackerWorksheetService:
                 "cost_tiktok": round(sum(self._to_float(row.get("cost_tiktok")) for _, row in in_week_rows), 2),
                 "total_leads": round(sum(self._to_float(row.get("total_leads")) for _, row in in_week_rows), 2),
                 "applications": round(sum(self._to_float(row.get("custom_value_1_count")) for _, row in in_week_rows), 2),
-                "approved_applications": round(sum(self._to_float(row.get("sales_count")) for _, row in in_week_rows), 2),
+                "approved_applications": round(sum(self._to_float(row.get("custom_value_2_count")) for _, row in in_week_rows), 2),
             }
 
             for key, value in weekly_values.items():

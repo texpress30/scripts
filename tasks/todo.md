@@ -1,3 +1,19 @@
+# TODO — Media Tracker approved applications source hotfix (custom_value_2)
+
+- [x] Refresh workspace and inspect Media Tracker worksheet metric mapping for `applications`/`approved_applications`.
+- [x] Change `approved_applications` source from `sales_count` to `custom_value_2_count` in auto metrics, weekly aggregates, and history rollup.
+- [x] Keep payload shape, labels, API contracts, and non-approved sales-based metrics unchanged.
+- [x] Add focused worksheet tests covering divergent `sales_count` vs `custom_value_2_count`, dependent summary ratios, and null-safe handling.
+- [x] Run targeted backend test file for media tracker worksheet.
+
+## Review
+- [x] Root cause: worksheet `approved_applications` still mapped to `sales_count`, so approved-related ratios could silently follow sales instead of Custom Value 2.
+- [x] Fix: `approved_applications` now aggregates from `custom_value_2_count` everywhere in auto-metric computation; history and weekly values inherit the corrected source.
+- [x] Added regression proving old mapping cannot pass accidentally (`sales_count=99` vs `custom_value_2_count=2`) and validating null-safe behavior for `custom_value_2_count=None`.
+- [x] Verification: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q apps/backend/tests/test_media_tracker_worksheet.py`.
+
+---
+
 # TODO — Weekly Worksheet metric labels right alignment (frontend hotfix)
 
 - [x] Refresh workspace and inspect `WeeklyWorksheetTable` first-column label classes (`rowLabelClass`, sticky label td).

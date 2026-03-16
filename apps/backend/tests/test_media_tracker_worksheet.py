@@ -158,6 +158,83 @@ def test_weekly_auto_metrics_aggregate_full_visible_boundary_weeks_and_history_a
     assert auto["approved_applications"]["history_value"] == round(sum(item["value"] for item in auto["approved_applications"]["weekly_values"]), 2)
 
 
+def test_approved_applications_uses_custom_value_2_not_sales_count_and_ratios_follow_new_source() -> None:
+    days = [
+        {
+            "date": "2026-03-02",
+            "cost_total": 100,
+            "cost_google": 30,
+            "cost_meta": 40,
+            "cost_tiktok": 30,
+            "total_leads": 10,
+            "custom_value_1_count": 8,
+            "custom_value_2_count": 2,
+            "sales_count": 99,
+        },
+    ]
+    original_store = _set_store(days=days)
+    service = worksheet_module.media_tracker_worksheet_service
+    try:
+        payload = service.upsert_weekly_manual_values(
+            client_id=334,
+            granularity="month",
+            anchor_date=date(2026, 3, 15),
+            entries=[
+                {"week_start": "2026-03-02", "field_key": "google_sales_manual", "value": 4},
+            ],
+        )
+    finally:
+        worksheet_module.media_buying_store = original_store
+
+    auto = payload["auto_metrics"]
+    assert auto["approved_applications"]["source_field"] == "custom_value_2_count"
+    approved_week = next(item for item in auto["approved_applications"]["weekly_values"] if item["week_start"] == "2026-03-02")
+    assert approved_week["value"] == 2.0
+    assert auto["approved_applications"]["history_value"] == 2.0
+
+    summary = _row_map(payload, "summary")
+    apps_week = next(item for item in summary["applications"]["weekly_values"] if item["week_start"] == "2026-03-02")
+    approved_summary_week = next(item for item in summary["approved_applications"]["weekly_values"] if item["week_start"] == "2026-03-02")
+    apps_per_sale_week = next(item for item in summary["applications_per_sale"]["weekly_values"] if item["week_start"] == "2026-03-02")
+    apps_per_approved_week = next(item for item in summary["applications_per_approved_application"]["weekly_values"] if item["week_start"] == "2026-03-02")
+    approved_per_sale_week = next(item for item in summary["approved_applications_per_sale"]["weekly_values"] if item["week_start"] == "2026-03-02")
+
+    assert apps_week["value"] == 8.0
+    assert approved_summary_week["value"] == 2.0
+    assert apps_per_sale_week["value"] == 2.0
+    assert apps_per_approved_week["value"] == 4.0
+    assert approved_per_sale_week["value"] == 0.5
+
+
+def test_approved_applications_custom_value_2_is_null_safe() -> None:
+    days = [
+        {
+            "date": "2026-03-11",
+            "cost_total": 5.0,
+            "cost_google": 2.0,
+            "cost_meta": 2.0,
+            "cost_tiktok": 1.0,
+            "total_leads": 2,
+            "custom_value_1_count": 1,
+            "custom_value_2_count": None,
+            "sales_count": 7,
+        },
+    ]
+    original_store = _set_store(days=days)
+    try:
+        payload = worksheet_module.media_tracker_worksheet_service.build_weekly_worksheet_foundation(
+            granularity="month",
+            anchor_date=date(2026, 3, 15),
+            client_id=335,
+        )
+    finally:
+        worksheet_module.media_buying_store = original_store
+
+    auto = payload["auto_metrics"]
+    approved_week = next(item for item in auto["approved_applications"]["weekly_values"] if item["week_start"] == "2026-03-09")
+    assert approved_week["value"] == 0.0
+    assert auto["approved_applications"]["history_value"] == 0.0
+
 def test_weekly_auto_metrics_are_null_safe() -> None:
     days = [
         {"date": "2026-03-10", "cost_total": None, "cost_google": 1.5, "cost_meta": None, "cost_tiktok": 2.5, "total_leads": None, "custom_value_1_count": None, "sales_count": 1},
