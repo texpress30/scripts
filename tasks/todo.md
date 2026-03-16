@@ -4205,3 +4205,17 @@
 - [x] Existing monetary formatting/layout/editing flows remain unchanged.
 - [x] Added focused tests validating RON/EUR fallback correctness and placeholder behavior when currency unavailable.
 - [x] Verification: `pnpm vitest run src/app/sub/[id]/media-buying/page.test.tsx` (pass).
+
+---
+
+# TODO — Commit pending sub-account team page refresh
+
+- [x] Inspect existing uncommitted diff to confirm scope and impacted tests.
+- [x] Update outdated team page test expectations to match current team listing UI behavior.
+- [x] Run targeted frontend test for the touched team page route.
+- [x] Prepare commit and PR metadata.
+
+## Review
+- [x] Verified pending change replaces legacy team user form with team listing table, filters, search, actions, and pagination.
+- [x] Refreshed `page.test.tsx` assertions to validate listing controls/headers and filter + copy toast flows.
+- [x] Verification: `cd apps/frontend && pnpm vitest run src/app/subaccount/[id]/settings/team/page.test.tsx`.
