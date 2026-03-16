@@ -344,3 +344,4 @@
 - 2026-03-16: Pentru psycopg3, evită parametrizarea DDL (`CREATE TABLE ... DEFAULT %s`); folosește SQL static sau `sql.Literal`, altfel startup poate crăpa cu `IndeterminateDatatype`.
 - 2026-03-16: La migrarea rolurilor, normalizează central aliasurile legacy înainte de verificări RBAC/Auth și testează explicit mapping-ul (`account_manager`/`client_viewer`) ca să eviți regressii de compatibilitate.
 - 2026-03-16: Când userul cere auth DB-first, prioritizează explicit validarea membership-ului la login (inclusiv caz ambiguu 409) și păstrează fallback-ul env admin strict ca mecanism de urgență.
+- 2026-03-16: Pentru endpointuri sub-account, aplică enforcement în doi pași: întâi RBAC scope `subaccount`, apoi restricție pe `subaccount_id` din token pentru rolurile `subaccount_*`; nu te baza doar pe rol.

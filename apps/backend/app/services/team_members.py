@@ -438,4 +438,243 @@ class TeamMembersService:
         return items, total
 
 
+    def _resolve_subaccount_by_id(self, *, subaccount_id: int) -> SubaccountRef:
+        for item in client_registry_service.list_clients():
+            try:
+                item_id = int(item.get("id"))
+            except Exception:  # noqa: BLE001
+                continue
+            if item_id == int(subaccount_id):
+                name = str(item.get("name") or "").strip()
+                if name == "":
+                    name = f"Sub-account {item_id}"
+                return SubaccountRef(id=item_id, name=name)
+        raise ValueError("Sub-account inexistent")
+
+    def _role_label(self, *, role_key: str) -> str:
+        labels = {
+            "agency_admin": "Agency Admin",
+            "agency_member": "Agency Member",
+            "agency_viewer": "Agency Viewer",
+            "subaccount_admin": "Subaccount Admin",
+            "subaccount_user": "Subaccount User",
+            "subaccount_viewer": "Subaccount Viewer",
+        }
+        return labels.get(role_key, role_key)
+
+    def list_subaccount_members(
+        self,
+        *,
+        subaccount_id: int,
+        search: str,
+        user_role: str,
+        page: int,
+        page_size: int,
+    ) -> tuple[list[dict[str, object]], int]:
+        subaccount_ref = self._resolve_subaccount_by_id(subaccount_id=subaccount_id)
+        clauses_direct: list[str] = [
+            "um.status = 'active'",
+            "um.scope_type = 'subaccount'",
+            "um.subaccount_id = %s",
+        ]
+        values_direct: list[object] = [int(subaccount_id)]
+
+        clauses_agency: list[str] = [
+            "um.status = 'active'",
+            "um.scope_type = 'agency'",
+        ]
+        values_agency: list[object] = []
+
+        if search.strip():
+            token = f"%{search.strip().lower()}%"
+            matcher = "(LOWER(u.first_name || ' ' || u.last_name) LIKE %s OR LOWER(u.email) LIKE %s OR LOWER(u.phone) LIKE %s)"
+            clauses_direct.append(matcher)
+            clauses_agency.append(matcher)
+            values_direct.extend([token, token, token])
+            values_agency.extend([token, token, token])
+
+        if user_role.strip():
+            role_candidate = user_role.strip().lower()
+            if role_candidate in {"admin", "member", "viewer"}:
+                role_candidate = {
+                    "admin": "subaccount_admin",
+                    "member": "subaccount_user",
+                    "viewer": "subaccount_viewer",
+                }[role_candidate]
+            if role_candidate not in CANONICAL_ROLE_KEYS:
+                raise ValueError("Rol invalid")
+            if role_candidate.startswith("agency_"):
+                clauses_agency.append("um.role_key = %s")
+                values_agency.append(role_candidate)
+                clauses_direct.append("1=0")
+            else:
+                clauses_direct.append("um.role_key = %s")
+                values_direct.append(role_candidate)
+                clauses_agency.append("1=0")
+
+        where_direct = f"WHERE {' AND '.join(clauses_direct)}"
+        where_agency = f"WHERE {' AND '.join(clauses_agency)}"
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT COUNT(*) FROM (
+                        SELECT um.id
+                        FROM user_memberships um
+                        JOIN users u ON u.id = um.user_id
+                        {where_direct}
+                        UNION ALL
+                        SELECT um.id
+                        FROM user_memberships um
+                        JOIN users u ON u.id = um.user_id
+                        {where_agency}
+                    ) t
+                    """,
+                    tuple(values_direct + values_agency),
+                )
+                total = int(cur.fetchone()[0])
+
+                offset = (page - 1) * page_size
+                cur.execute(
+                    f"""
+                    SELECT * FROM (
+                        SELECT
+                            um.id AS membership_id,
+                            u.id AS user_id,
+                            u.first_name,
+                            u.last_name,
+                            u.email,
+                            u.phone,
+                            u.extension,
+                            um.role_key,
+                            um.status,
+                            'subaccount' AS source_scope,
+                            FALSE AS is_inherited,
+                            um.subaccount_name AS source_label
+                        FROM user_memberships um
+                        JOIN users u ON u.id = um.user_id
+                        {where_direct}
+                        UNION ALL
+                        SELECT
+                            um.id AS membership_id,
+                            u.id AS user_id,
+                            u.first_name,
+                            u.last_name,
+                            u.email,
+                            u.phone,
+                            u.extension,
+                            um.role_key,
+                            um.status,
+                            'agency' AS source_scope,
+                            TRUE AS is_inherited,
+                            'Agency access' AS source_label
+                        FROM user_memberships um
+                        JOIN users u ON u.id = um.user_id
+                        {where_agency}
+                    ) combined
+                    ORDER BY membership_id DESC
+                    LIMIT %s OFFSET %s
+                    """,
+                    tuple(values_direct + values_agency + [page_size, offset]),
+                )
+                rows = cur.fetchall()
+
+        items: list[dict[str, object]] = []
+        for row in rows:
+            role_key = str(row[7])
+            membership_id = int(row[0])
+            user_id = int(row[1])
+            items.append(
+                {
+                    "membership_id": membership_id,
+                    "user_id": user_id,
+                    "display_id": f"TM-{membership_id}",
+                    "first_name": str(row[2]),
+                    "last_name": str(row[3]),
+                    "email": str(row[4]),
+                    "phone": str(row[5]),
+                    "extension": str(row[6]),
+                    "role_key": role_key,
+                    "role_label": self._role_label(role_key=role_key),
+                    "source_scope": str(row[9]),
+                    "source_label": str(row[11] or subaccount_ref.name),
+                    "is_active": str(row[8]) == "active",
+                    "is_inherited": bool(row[10]),
+                }
+            )
+        return items, total
+
+    def create_subaccount_member(
+        self,
+        *,
+        subaccount_id: int,
+        first_name: str,
+        last_name: str,
+        email: str,
+        phone: str,
+        extension: str,
+        user_role: str,
+        password: str | None,
+    ) -> dict[str, object]:
+        normalized_email = email.strip().lower()
+        normalized_first_name = first_name.strip()
+        normalized_last_name = last_name.strip()
+        normalized_phone = phone.strip()
+        normalized_extension = extension.strip()
+
+        if normalized_email == "":
+            raise ValueError("Email este obligatoriu")
+        if normalized_first_name == "":
+            raise ValueError("Prenumele este obligatoriu")
+        if normalized_last_name == "":
+            raise ValueError("Numele este obligatoriu")
+
+        role_key = user_role.strip().lower() or "subaccount_user"
+        if role_key in {"admin", "member", "viewer"}:
+            role_key = {
+                "admin": "subaccount_admin",
+                "member": "subaccount_user",
+                "viewer": "subaccount_viewer",
+            }[role_key]
+        if role_key not in {"subaccount_admin", "subaccount_user", "subaccount_viewer"}:
+            raise ValueError("Rol invalid pentru endpointul de sub-account")
+
+        sub_ref = self._resolve_subaccount_by_id(subaccount_id=subaccount_id)
+
+        user_id = self._upsert_user(
+            first_name=normalized_first_name,
+            last_name=normalized_last_name,
+            email=normalized_email,
+            phone=normalized_phone,
+            extension=normalized_extension,
+            avatar_url="",
+            password=password,
+        )
+        membership_id = self._upsert_membership(
+            user_id=user_id,
+            role_key=role_key,
+            scope_type="subaccount",
+            subaccount_id=sub_ref.id,
+            subaccount_name=sub_ref.name,
+        )
+
+        return {
+            "membership_id": membership_id,
+            "user_id": user_id,
+            "display_id": f"TM-{membership_id}",
+            "first_name": normalized_first_name,
+            "last_name": normalized_last_name,
+            "email": normalized_email,
+            "phone": normalized_phone,
+            "extension": normalized_extension,
+            "role_key": role_key,
+            "role_label": self._role_label(role_key=role_key),
+            "source_scope": "subaccount",
+            "source_label": sub_ref.name,
+            "is_active": True,
+            "is_inherited": False,
+        }
+
+
 team_members_service = TeamMembersService()

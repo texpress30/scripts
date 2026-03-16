@@ -238,3 +238,8 @@ cd apps/frontend && npm run build
 - Aliasurile legacy rămân tranzitoriu compatibile: `account_manager` -> `subaccount_user`, `client_viewer` -> `subaccount_viewer`.
 - Autentificarea `/auth/login` este acum DB-first (`users` + `user_memberships`) cu fallback de urgență pe credentials din env (token `super_admin` cu `is_env_admin=true`).
 - Când un user are mai multe memberships active pentru același rol, login-ul returnează `409` până la implementarea selecției explicite de sub-account la autentificare.
+- Endpointuri noi Sub-account Team (backend):
+  - `GET /team/subaccounts/{subaccount_id}/members`
+  - `POST /team/subaccounts/{subaccount_id}/members`
+- Scope enforcement: rolurile `subaccount_*` sunt limitate la propriul `subaccount_id` din token; rolurile agency/global pot accesa orice sub-account permis de RBAC.
+- În acest pas nu sunt implementate încă: edit/deactivate/delete member, reassignment din UI, invite/reset password.

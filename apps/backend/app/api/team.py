@@ -1,8 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.api.dependencies import enforce_action_scope, get_current_user
+from app.api.dependencies import enforce_action_scope, enforce_subaccount_action, get_current_user
 from app.schemas.team import (
+    CreateSubaccountTeamMemberRequest,
     CreateTeamMemberRequest,
+    SubaccountTeamMemberListResponse,
+    SubaccountTeamMemberResponse,
     TeamMemberListResponse,
     TeamMemberResponse,
     TeamSubaccountOptionItem,
@@ -78,3 +81,55 @@ def list_subaccount_options(user: AuthUser = Depends(get_current_user)) -> TeamS
         label = f"#{display_id} — {name}" if display_id is not None else name
         items.append(TeamSubaccountOptionItem(id=int(client_id), name=name, label=label))
     return TeamSubaccountOptionsResponse(items=items)
+
+
+@router.get("/subaccounts/{subaccount_id}/members", response_model=SubaccountTeamMemberListResponse)
+def list_subaccount_team_members(
+    subaccount_id: int,
+    search: str = Query(default=""),
+    user_role: str = Query(default=""),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=500),
+    user: AuthUser = Depends(get_current_user),
+) -> SubaccountTeamMemberListResponse:
+    enforce_subaccount_action(user=user, action="team:subaccount:list", subaccount_id=subaccount_id)
+    try:
+        items, total = team_members_service.list_subaccount_members(
+            subaccount_id=subaccount_id,
+            search=search,
+            user_role=user_role,
+            page=page,
+            page_size=page_size,
+        )
+    except ValueError as exc:
+        if "inexistent" in str(exc).lower():
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return SubaccountTeamMemberListResponse(items=items, total=total, page=page, page_size=page_size, subaccount_id=subaccount_id)
+
+
+@router.post("/subaccounts/{subaccount_id}/members", response_model=SubaccountTeamMemberResponse)
+def create_subaccount_team_member(
+    subaccount_id: int,
+    payload: CreateSubaccountTeamMemberRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> SubaccountTeamMemberResponse:
+    enforce_subaccount_action(user=user, action="team:subaccount:create", subaccount_id=subaccount_id)
+    try:
+        item = team_members_service.create_subaccount_member(
+            subaccount_id=subaccount_id,
+            first_name=payload.first_name,
+            last_name=payload.last_name,
+            email=payload.email,
+            phone=payload.phone,
+            extension=payload.extension,
+            user_role=payload.user_role,
+            password=payload.password,
+        )
+    except ValueError as exc:
+        if "inexistent" in str(exc).lower():
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return SubaccountTeamMemberResponse(item=item)

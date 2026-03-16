@@ -4384,3 +4384,19 @@
 - [x] `session.ts` rămâne compatibil cu tokenuri vechi și parsează sigur payload-uri noi (câmpurile extra nu rup parserul).
 - [x] Teste adăugate/rulate pentru scenariile cerute: DB success agency/subaccount, invalid password, user inactiv, role not owned, alias legacy, ambiguous membership 409, env fallback success, decode old/new token.
 - [x] Verificări rulate: pytest backend relevant, vitest frontend relevant, `pnpm build`, startup check `from app.main import app`.
+
+---
+
+# TODO — Backend real Sub-account Team endpoints + scope enforcement
+
+- [x] Re-auditez fișierele backend relevante și contractul UI sub-account team.
+- [x] Adaug helper `enforce_subaccount_action` pentru RBAC + restricție pe `subaccount_id` pentru rolurile subaccount-scoped.
+- [x] Adaug endpointuri noi `GET/POST /team/subaccounts/{subaccount_id}/members` fără a rupe endpointurile agency existente.
+- [x] Implementez listarea sub-account members (direct + inherited agency access) cu contract orientat UI.
+- [x] Implementez create sub-account member cu validări (required fields, roluri permise doar `subaccount_*`, sub-account existent, duplicate-safe).
+- [x] Adaug teste backend pentru scope enforcement, list/create, rol invalid, sub-account inexistent, duplicate membership.
+- [x] Rulez testele backend relevante + startup check backend.
+- [x] Actualizez docs minim + review.
+
+## Review
+- [x] Implementat endpointurile sub-account team list/create + helper scope enforcement și acoperire de teste unitare țintite (`test_team_subaccount_api` + `test_team_members_foundation`).
