@@ -4239,3 +4239,19 @@
 - [x] Updated focused team page tests to cover wizard rendering and advanced collapse/validation behavior.
 - [x] Verification: `cd apps/frontend && pnpm vitest run src/app/subaccount/[id]/settings/team/page.test.tsx`.
 - [x] Screenshot: `browser:/tmp/codex_browser_invocations/68482988e210eeba/artifacts/reports/team-user-wizard.png`.
+
+---
+
+# TODO — Reconnect git remote and sync with GitHub origin
+
+- [x] Start fresh workspace context and verify git remote connectivity workflow.
+- [x] Run the exact remote add/set-url command provided by user.
+- [x] Run `git fetch origin`.
+- [x] Run `git pull origin main --allow-unrelated-histories`.
+- [x] Document sync outcome in review section.
+
+## Review
+- [x] Executed the exact remote reconciliation command provided by user (`git remote add ... || git remote set-url ...`) to ensure `origin` is configured.
+- [x] Fetched from `origin` successfully; remote refs were downloaded.
+- [x] Pulled `origin/main --allow-unrelated-histories` successfully; repository reported `Already up to date.`
+- [x] Post-check `git remote -v` confirms `origin` points to `github.com/texpress30/scripts.git` (token masked in logs).
