@@ -339,3 +339,4 @@
 - 2026-03-13: For frontend currency labels, never display a fabricated hardcoded fallback (e.g., USD) when metadata is missing; prefer real source priority (table -> client context) then neutral placeholder.
 - 2026-03-16: După feedback că schimbarea pentru "Echipa Mea" a deviat spre listă/tabel, la task-uri de UI trebuie revalidat explicit ecranul țintă și fluxul cerut (ex. wizard Add/Edit) înainte de implementare, fără a înlocui produsul cu altă interfață necerută.
 - 2026-03-16: După feedback că soluția precedentă nu a adresat taskul real, la cereri de UI trebuie livrată implementarea efectivă în ruta țintă (component + teste), nu doar actualizare de documentație/task list.
+- 2026-03-16: După feedback că taskul a fost mutat greșit pe frontend, pentru cerințe backend-only livrează fundația de date/API + teste fără redesign UI și fără schimbări de login dacă sunt explicit out-of-scope.

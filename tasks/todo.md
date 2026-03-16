@@ -4255,7 +4255,6 @@
 - [x] Fetched from `origin` successfully; remote refs were downloaded.
 - [x] Pulled `origin/main --allow-unrelated-histories` successfully; repository reported `Already up to date.`
 - [x] Post-check `git remote -v` confirms `origin` points to `github.com/texpress30/scripts.git` (token masked in logs).
-<<<<<<< codex/setup-new-workspace-and-sync-with-github-yod78q
 
 ---
 
@@ -4276,5 +4275,26 @@
 - [x] Acțiunea `Copiere ID` afișează toast `ID Copiat`; operațiile adăugare/editare/ștergere/dezactivare afișează feedback toast.
 - [x] Verificare: `cd apps/frontend && pnpm vitest run src/app/subaccount/[id]/settings/team/page.test.tsx`.
 - [x] Încercare screenshot: server Next pornit local (`pnpm dev --port 3100`) + Playwright, dar browser container a eșuat (SIGSEGV la launch Chromium), deci nu s-a putut genera captură în acest mediu.
-=======
->>>>>>> main
+
+---
+
+# TODO — Backend foundation users + user_memberships pentru Team Management
+
+- [x] Re-auditez fișierele backend indicate și contractul actual `/team/members` folosit de frontend.
+- [x] Extind idempotent schema `users` cu câmpurile de status/auth viitoare și adaug schema nouă `user_memberships` cu constrângeri/indexuri.
+- [x] Introduc catalogul canonic de roluri + mapping din payload (`user_type`/`user_role`) către `role_key`.
+- [x] Refactorizez `team_members_service` ca noul flow să scrie/citească din `users` + `user_memberships`, păstrând response shape-ul existent.
+- [x] Adaug validări backend clare (required fields, rol valid, subaccount obligatoriu pentru client user, duplicate-safe membership).
+- [x] Adaug endpoint nou `GET /team/subaccount-options` bazat pe `client_registry_service`.
+- [x] Adaug teste backend pentru schema init idempotent, create/list/filter/reject și subaccount-options.
+- [x] Actualizez documentația minimă despre modelul nou și ce rămâne pentru taskul următor.
+
+## Review
+- [x] `team_members_service` folosește acum modelul nou `users` + `user_memberships`; tabelul `team_members` este păstrat explicit doar ca legacy transitional.
+- [x] Schema este idempotentă: `users` primește coloane noi (`is_active`, `must_reset_password`, `last_login_at`, `avatar_url`) și se creează `user_memberships` cu check constraints + indexuri.
+- [x] Rolurile canonice (`agency_*`, `subaccount_*`) au mapping clar din payload-ul actual (`user_type` + `user_role`) și mapping invers pentru response contract legacy.
+- [x] Regula de business pentru client users este aplicată: fără sub-account real (`''`/`Toate`/inexistent) se întoarce 400 cu mesaj explicit.
+- [x] `GET /team/members` păstrează shape-ul vechi și citește din noul model; `POST /team/members` scrie în noul model.
+- [x] Endpoint nou: `GET /team/subaccount-options` returnează `{ id, name, label }` pe baza `client_registry_service.list_clients()`.
+- [x] Teste backend adăugate pentru schema init idempotent, create agency/subaccount, reject invalid client subaccount, list/filter contract și subaccount-options.
+- [x] Verificare rulată: `cd apps/backend && APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q tests/test_team_members_foundation.py` + import check app startup.
