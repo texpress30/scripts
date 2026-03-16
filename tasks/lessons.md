@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-14: Pentru ecrane tip wizard cu tab-uri verticale, validează în teste atât starea implicită (tab activ + secțiune avansată colapsată), cât și tranziția de expand + erori câmpuri obligatorii după submit.
+
 - 2026-03-14: Pentru formulare UI mari cu mai multe carduri de update, adaugă teste separate pentru render-ul secțiunilor obligatorii și validările critice (email/telefon/url) plus confirmare toast pe submit valid.
 
 - 2026-03-14: Pentru label-uri dinamice bazate pe config, testează separat cazul explicit cu label-uri setate și fallback-ul pentru null/whitespace, plus un assert de no-regression numeric pe același payload.

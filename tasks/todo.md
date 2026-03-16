@@ -1,3 +1,22 @@
+# TODO — Formular Adăugare/Editare Utilizator (Echipa Mea, Sub-Account)
+
+- [x] Refresh workspace and inspect current sub-account `settings/team` route.
+- [x] Replace placeholder with requested UI layout: left vertical tabs + active user info form + top back/subtitle.
+- [x] Implement required user fields, avatar area, advanced settings collapse/expand for password, and signature section in Romanian.
+- [x] Add client-side validation for required fields (Prenume, Nume, Email) and email format.
+- [x] Keep frontend-only scope, without backend/API/schema changes.
+- [x] Add focused frontend tests for tabs/render, advanced toggle, and required-field validation.
+- [x] Run targeted frontend test for touched page.
+
+## Review
+- [x] Implemented complete sub-account team user form UI with requested left-nav tabs and localized Romanian labels/messages.
+- [x] Advanced settings are collapsed by default and expand smoothly to reveal password input.
+- [x] Added explicit required-field and email validation for `Prenume`, `Nume`, `Email`; footer actions `Anulează` + `Înainte` included.
+- [x] Added signature section and avatar/info area with requested helper text.
+- [x] Verification: `cd apps/frontend && pnpm vitest run src/app/subaccount/[id]/settings/team/page.test.tsx`.
+
+---
+
 # TODO — Sub-Account Profil Business interface (frontend)
 
 - [x] Refresh workspace and inspect current sub-account profile settings route/component.
