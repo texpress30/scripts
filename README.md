@@ -225,3 +225,21 @@ cd apps/frontend && npm run build
   - `HISTORICAL_REPAIR_SWEEPER_STALE_MINUTES` (override la `SYNC_RUN_REPAIR_STALE_MINUTES`)
   - `HISTORICAL_REPAIR_SWEEPER_LIMIT` (default `100`)
 - Loop-ul loghează explicit `iteration_started`/`iteration_finished` + summary; dacă o iterație eșuează, eroarea este logată și loop-ul continuă la următoarea iterație.
+
+## Team management foundation (users + user_memberships)
+- Backend team management folosește acum modelul normalizat `users` (identity) + `user_memberships` (scope + rol canonic) pentru a pregăti autentificarea reală în pasul următor.
+- Contractul API existent pentru `GET/POST /team/members` rămâne compatibil cu frontend-ul curent (payload/shape legacy), dar persistența nouă este făcută în `users` + `user_memberships`.
+- Rolurile canonice interne pentru memberships sunt:
+  - `agency_admin`, `agency_member`, `agency_viewer`
+  - `subaccount_admin`, `subaccount_user`, `subaccount_viewer`
+- Endpoint nou: `GET /team/subaccount-options` (id, name, label) pentru selecția de sub-account în flow-urile viitoare.
+- Login/token flow nu este modificat în acest pas; acest task pregătește migrarea către auth real user-based în pasul următor.
+- RBAC/session folosesc acum rolurile canonice ca sursă de adevăr (`agency_admin`, `agency_member`, `agency_viewer`, `subaccount_admin`, `subaccount_user`, `subaccount_viewer`).
+- Aliasurile legacy rămân tranzitoriu compatibile: `account_manager` -> `subaccount_user`, `client_viewer` -> `subaccount_viewer`.
+- Autentificarea `/auth/login` este acum DB-first (`users` + `user_memberships`) cu fallback de urgență pe credentials din env (token `super_admin` cu `is_env_admin=true`).
+- Când un user are mai multe memberships active pentru același rol, login-ul returnează `409` până la implementarea selecției explicite de sub-account la autentificare.
+- Endpointuri noi Sub-account Team (backend):
+  - `GET /team/subaccounts/{subaccount_id}/members`
+  - `POST /team/subaccounts/{subaccount_id}/members`
+- Scope enforcement: rolurile `subaccount_*` sunt limitate la propriul `subaccount_id` din token; rolurile agency/global pot accesa orice sub-account permis de RBAC.
+- În acest pas nu sunt implementate încă: edit/deactivate/delete member, reassignment din UI, invite/reset password.
