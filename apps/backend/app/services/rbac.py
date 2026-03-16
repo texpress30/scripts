@@ -13,13 +13,44 @@ class ActionPolicy:
     scopes: tuple[Scope, ...]
 
 
+CANONICAL_ROLES: set[str] = {
+    "agency_admin",
+    "agency_member",
+    "agency_viewer",
+    "subaccount_admin",
+    "subaccount_user",
+    "subaccount_viewer",
+}
+
+SPECIAL_ROLES: set[str] = {"super_admin", "agency_owner"}
+
+LEGACY_ROLE_ALIASES: dict[str, str] = {
+    "account_manager": "subaccount_user",
+    "client_viewer": "subaccount_viewer",
+}
+
+
+def normalize_role(role: str) -> str:
+    candidate = role.strip().lower()
+    if candidate in CANONICAL_ROLES or candidate in SPECIAL_ROLES:
+        return candidate
+    return LEGACY_ROLE_ALIASES.get(candidate, candidate)
+
+
+def is_supported_role(role: str) -> bool:
+    normalized = normalize_role(role)
+    return normalized in ROLE_PERMISSIONS
+
 
 ROLE_SCOPES: dict[str, set[Scope]] = {
     "super_admin": {"agency", "subaccount"},
     "agency_owner": {"agency", "subaccount"},
     "agency_admin": {"agency", "subaccount"},
-    "account_manager": {"subaccount"},
-    "client_viewer": {"subaccount"},
+    "agency_member": {"agency", "subaccount"},
+    "agency_viewer": {"agency", "subaccount"},
+    "subaccount_admin": {"subaccount"},
+    "subaccount_user": {"subaccount"},
+    "subaccount_viewer": {"subaccount"},
 }
 
 ROLE_PERMISSIONS: dict[str, set[str]] = {
@@ -69,6 +100,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "creative:read",
         "creative:write",
     },
+    # Canonical agency roles
     "agency_admin": {
         "clients:create",
         "clients:read",
@@ -92,17 +124,70 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "creative:read",
         "creative:write",
     },
-    "account_manager": {
+    "agency_member": {
         "clients:read",
+        "integrations:status",
+        "integrations:tiktok:status",
+        "integrations:pinterest:status",
+        "integrations:snapchat:status",
+        "rules:read",
+        "rules:write",
+        "insights:read",
+        "insights:generate",
+        "exports:read",
+        "exports:run",
+        "recommendations:read",
+        "recommendations:review",
+        "creative:read",
+        "creative:write",
+    },
+    "agency_viewer": {
+        "clients:read",
+        "integrations:status",
+        "integrations:tiktok:status",
+        "integrations:pinterest:status",
+        "integrations:snapchat:status",
         "rules:read",
         "insights:read",
+        "exports:read",
         "recommendations:read",
         "creative:read",
     },
-    "client_viewer": {
+    # Canonical subaccount roles
+    "subaccount_admin": {
+        "clients:read",
+        "integrations:sync",
+        "integrations:tiktok:sync",
+        "integrations:pinterest:sync",
+        "integrations:snapchat:sync",
+        "rules:read",
+        "rules:write",
+        "insights:read",
+        "insights:generate",
+        "exports:read",
+        "exports:run",
+        "recommendations:read",
+        "recommendations:review",
+        "creative:read",
+        "creative:write",
+    },
+    "subaccount_user": {
+        "clients:read",
+        "rules:read",
+        "rules:write",
+        "insights:read",
+        "insights:generate",
+        "exports:read",
+        "exports:run",
+        "recommendations:read",
+        "creative:read",
+        "creative:write",
+    },
+    "subaccount_viewer": {
         "clients:read",
         "rules:read",
         "insights:read",
+        "exports:read",
         "recommendations:read",
         "creative:read",
     },
@@ -143,12 +228,14 @@ class AuthorizationError(RuntimeError):
 
 
 def require_permission(role: str, permission: str) -> None:
-    permissions = ROLE_PERMISSIONS.get(role, set())
+    normalized_role = normalize_role(role)
+    permissions = ROLE_PERMISSIONS.get(normalized_role, set())
     if permission not in permissions:
-        raise AuthorizationError(f"Role '{role}' does not have permission '{permission}'")
+        raise AuthorizationError(f"Role '{normalized_role}' does not have permission '{permission}'")
 
 
 def require_action(role: str, action: str, scope: Scope) -> None:
+    normalized_role = normalize_role(role)
     policy = ACTION_POLICIES.get(action)
     if policy is None:
         raise AuthorizationError(f"Unknown action '{action}'")
@@ -158,8 +245,8 @@ def require_action(role: str, action: str, scope: Scope) -> None:
             f"Action '{action}' is not allowed in scope '{scope}' (expected one of: {expected})"
         )
 
-    role_scopes = ROLE_SCOPES.get(role, set())
+    role_scopes = ROLE_SCOPES.get(normalized_role, set())
     if scope not in role_scopes:
-        raise AuthorizationError(f"Role '{role}' is not allowed in scope '{scope}'")
+        raise AuthorizationError(f"Role '{normalized_role}' is not allowed in scope '{scope}'")
 
-    require_permission(role, policy.permission)
+    require_permission(normalized_role, policy.permission)
