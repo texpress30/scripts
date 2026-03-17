@@ -1,17 +1,12 @@
 from __future__ import annotations
 
-import hashlib
-
 from app.core.config import load_settings
+from app.services.auth import hash_password
 
 try:
     import psycopg
 except Exception:  # noqa: BLE001
     psycopg = None
-
-
-def _hash_password(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 class UserProfileService:
@@ -47,7 +42,7 @@ class UserProfileService:
 
     def _ensure_user(self, *, email: str) -> None:
         settings = load_settings()
-        default_hash = _hash_password(settings.app_login_password)
+        default_hash = hash_password(settings.app_login_password)
         with self._connect_or_raise() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -116,8 +111,8 @@ class UserProfileService:
 
     def update_password(self, *, email: str, current_password: str, password: str) -> None:
         self._ensure_user(email=email)
-        current_hash = _hash_password(current_password)
-        new_hash = _hash_password(password)
+        current_hash = hash_password(current_password)
+        new_hash = hash_password(password)
         with self._connect_or_raise() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT password_hash FROM users WHERE email = %s", (email,))

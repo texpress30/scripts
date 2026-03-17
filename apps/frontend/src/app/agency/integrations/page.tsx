@@ -8,6 +8,7 @@ import { apiRequest } from "@/lib/api";
 
 import { MetaIntegrationCard } from "./MetaIntegrationCard";
 import { TikTokIntegrationCard } from "./TikTokIntegrationCard";
+import { MailgunIntegrationCard } from "./MailgunIntegrationCard";
 
 type GoogleConnectResponse = {
   authorize_url: string;
@@ -288,6 +289,8 @@ export default function AgencyIntegrationsPage() {
           <MetaIntegrationCard />
 
           <TikTokIntegrationCard />
+
+          <MailgunIntegrationCard />
 
           <article className="wm-card p-4">
             <h2 className="text-base font-semibold text-slate-900">Pinterest Ads</h2>
