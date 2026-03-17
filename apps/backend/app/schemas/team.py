@@ -117,3 +117,12 @@ class TeamGrantableModuleItem(BaseModel):
 
 class TeamGrantableModulesResponse(BaseModel):
     items: list[TeamGrantableModuleItem]
+
+
+class TeamSubaccountMyAccessResponse(BaseModel):
+    subaccount_id: int
+    role: str
+    module_keys: list[str] = Field(default_factory=list)
+    source_scope: str = "subaccount"
+    access_scope: str = "subaccount"
+    unrestricted_modules: bool = False
