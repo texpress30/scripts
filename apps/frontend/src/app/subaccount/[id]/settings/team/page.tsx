@@ -24,17 +24,6 @@ type TeamUser = {
   roleKey: string;
   sourceLabel: string;
   inherited: boolean;
-};
-
-type TeamUserType = "ACCOUNT-USER" | "AGENCY-USER" | "ACCOUNT-ADMIN";
-
-type TeamUser = {
-  id: string;
-  prenume: string;
-  nume: string;
-  email: string;
-  telefon: string;
-  tip: TeamUserType;
   deactivated?: boolean;
 };
 

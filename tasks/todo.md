@@ -4439,3 +4439,15 @@
 
 ## Review
 - [x] Pagina sub-account team este conectată la endpointurile reale GET/POST, fără mock local, cu filtre/paginare/create/refetch și acoperire de teste + build frontend.
+
+---
+
+# TODO — Hotfix Vercel Build Duplicate Identifier
+
+- [x] Analyze Vercel deployment logs showing `Type error: Duplicate identifier 'TeamUser'`.
+- [x] Checkout the PR branch `codex/setup-new-workspace-and-sync-with-github-d1mc1y` producing the error.
+- [x] Merge duplicate definitions of `TeamUser` in `src/app/subaccount/[id]/settings/team/page.tsx` directly on the branch.
+- [x] Commit and push fix to trigger Vercel rebuild automatically.
+
+## Review
+- [x] Frontend type error resolved without changing business logic, preparing PR for successful merge.
