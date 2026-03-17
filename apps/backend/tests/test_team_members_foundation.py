@@ -197,6 +197,45 @@ class TeamMembersFoundationTests(unittest.TestCase):
         finally:
             team_api.team_members_service.list_members = original
 
+    def test_list_members_endpoint_returns_empty_when_db_is_unavailable(self):
+        original = team_api.team_members_service.list_members
+        try:
+            team_api.team_members_service.list_members = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("connection refused"))
+            resp = team_api.list_team_members(search="", user_type="", user_role="", subaccount="", page=1, page_size=10, user=self.user)
+            self.assertEqual(resp.total, 0)
+            self.assertEqual(resp.items, [])
+        finally:
+            team_api.team_members_service.list_members = original
+
+    def test_list_members_endpoint_normalizes_malformed_rows(self):
+        original = team_api.team_members_service.list_members
+        try:
+            team_api.team_members_service.list_members = lambda **kwargs: (
+                [
+                    {"id": "bad", "email": "skip@example.com"},
+                    {
+                        "id": "10",
+                        "membership_id": "x",
+                        "user_id": "2",
+                        "first_name": "Ana",
+                        "last_name": None,
+                        "email": "ana@example.com",
+                        "user_type": "agency",
+                        "user_role": "admin",
+                        "module_keys": ["Dashboard", "dashboard", None],
+                    },
+                ],
+                2,
+            )
+            resp = team_api.list_team_members(search="", user_type="", user_role="", subaccount="", page=1, page_size=10, user=self.user)
+            self.assertEqual(resp.total, 2)
+            self.assertEqual(len(resp.items), 1)
+            self.assertEqual(resp.items[0].id, 10)
+            self.assertIsNone(resp.items[0].membership_id)
+            self.assertEqual(resp.items[0].module_keys, ["dashboard"])
+        finally:
+            team_api.team_members_service.list_members = original
+
     def test_subaccount_options_endpoint(self):
         original = team_api.client_registry_service.list_clients
         try:
@@ -225,6 +264,15 @@ class TeamMembersFoundationTests(unittest.TestCase):
             self.assertEqual(resp.items[0].name, "Sub-account 5")
             self.assertEqual(resp.items[0].label, "#X5 — Sub-account 5")
             self.assertEqual(resp.items[1].id, 6)
+        finally:
+            team_api.client_registry_service.list_clients = original
+
+    def test_subaccount_options_endpoint_returns_empty_when_db_is_unavailable(self):
+        original = team_api.client_registry_service.list_clients
+        try:
+            team_api.client_registry_service.list_clients = lambda: (_ for _ in ()).throw(RuntimeError("connection failed"))
+            resp = team_api.list_subaccount_options(user=self.user)
+            self.assertEqual(resp.items, [])
         finally:
             team_api.client_registry_service.list_clients = original
 
@@ -380,6 +428,15 @@ class TeamMembersFoundationTests(unittest.TestCase):
             resp = team_api.get_team_module_catalog(scope="subaccount", user=self.user)
             self.assertEqual(len(resp.items), 2)
             self.assertEqual(resp.items[0].key, "dashboard")
+        finally:
+            team_api.team_members_service.list_module_catalog = original
+
+    def test_module_catalog_endpoint_returns_empty_when_db_is_unavailable(self):
+        original = team_api.team_members_service.list_module_catalog
+        try:
+            team_api.team_members_service.list_module_catalog = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("connection refused"))
+            resp = team_api.get_team_module_catalog(scope="subaccount", user=self.user)
+            self.assertEqual(resp.items, [])
         finally:
             team_api.team_members_service.list_module_catalog = original
 

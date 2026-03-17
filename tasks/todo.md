@@ -4712,3 +4712,19 @@
 - [x] Pentru agency users, secțiunea de module nu este afișată și payload-ul de create rămâne fără `module_keys`.
 - [x] Frontend blochează submit-ul când toate modulele sunt debifate în contextul client/sub-account.
 - [x] Invite/auto-invite și restul fluxului Agency Team au fost păstrate.
+
+---
+
+# TODO — Backend hotfix Team endpoints DB-unavailable fallback
+
+- [x] Reproduce/inspect 500 paths for `/team/members`, `/team/subaccount-options`, `/team/module-catalog`.
+- [x] Add backend API guards to return stable empty `200` payloads when DB is unavailable.
+- [x] Normalize list payloads defensively to avoid serialization errors on malformed legacy rows.
+- [x] Add targeted regression tests for DB-unavailable fallback and normalization behavior.
+- [x] Run focused backend tests for touched team API foundation file.
+
+## Review
+- [x] Added DB-unavailable detection helper in Team API and applied fallback responses for members list, module catalog, and subaccount options endpoints.
+- [x] Added endpoint-level normalization for members/module catalog payloads to keep response contract valid under legacy malformed data.
+- [x] Added regression tests covering DB outage fallbacks and row normalization.
+- [x] Verification: `cd apps/backend && python -m pytest tests/test_team_members_foundation.py`.

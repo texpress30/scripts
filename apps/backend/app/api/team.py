@@ -21,7 +21,87 @@ from app.services.client_registry import client_registry_service
 from app.services.mailgun_service import MailgunIntegrationError, mailgun_service
 from app.services.team_members import team_members_service
 
+try:
+    import psycopg
+except Exception:  # noqa: BLE001
+    psycopg = None
+
 router = APIRouter(prefix="/team", tags=["team"])
+
+
+def _is_db_unavailable_error(error: Exception) -> bool:
+    if psycopg is not None and isinstance(error, psycopg.OperationalError):
+        return True
+    name = error.__class__.__name__.lower()
+    text = str(error).lower()
+    return "operationalerror" in name or "connection refused" in text or "connection failed" in text
+
+
+def _normalize_module_keys(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        key = str(item or "").strip().lower()
+        if key and key not in out:
+            out.append(key)
+    return out
+
+
+def _normalize_member_item(raw: dict[str, object]) -> dict[str, object] | None:
+    try:
+        member_id = int(raw.get("id"))
+    except Exception:  # noqa: BLE001
+        return None
+
+    membership_id_raw = raw.get("membership_id")
+    user_id_raw = raw.get("user_id")
+
+    membership_id: int | None
+    user_id: int | None
+    try:
+        membership_id = int(membership_id_raw) if membership_id_raw is not None else None
+    except Exception:  # noqa: BLE001
+        membership_id = None
+    try:
+        user_id = int(user_id_raw) if user_id_raw is not None else None
+    except Exception:  # noqa: BLE001
+        user_id = None
+
+    return {
+        "id": member_id,
+        "membership_id": membership_id,
+        "user_id": user_id,
+        "first_name": str(raw.get("first_name") or ""),
+        "last_name": str(raw.get("last_name") or ""),
+        "email": str(raw.get("email") or ""),
+        "phone": str(raw.get("phone") or ""),
+        "extension": str(raw.get("extension") or ""),
+        "user_type": str(raw.get("user_type") or "agency"),
+        "user_role": str(raw.get("user_role") or "member"),
+        "location": str(raw.get("location") or "România"),
+        "subaccount": str(raw.get("subaccount") or "Toate"),
+        "module_keys": _normalize_module_keys(raw.get("module_keys")),
+    }
+
+
+def _normalize_module_catalog(items: list[dict[str, object]], *, requested_scope: str) -> list[dict[str, object]]:
+    normalized: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for idx, item in enumerate(items, start=1):
+        key = str(item.get("key") or "").strip().lower()
+        if key == "" or key in seen:
+            continue
+        seen.add(key)
+        label = str(item.get("label") or "").strip() or key.replace("_", " ").title()
+        try:
+            order = int(item.get("order"))
+        except Exception:  # noqa: BLE001
+            order = idx
+        scope = str(item.get("scope") or requested_scope).strip().lower() or requested_scope
+        normalized.append({"key": key, "label": label, "order": order, "scope": scope})
+    normalized.sort(key=lambda row: (int(row["order"]), str(row["label"]).lower()))
+    return normalized
 
 
 @router.get("/members", response_model=TeamMemberListResponse)
@@ -36,7 +116,7 @@ def list_team_members(
 ) -> TeamMemberListResponse:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
     try:
-        items, total = team_members_service.list_members(
+        raw_items, total = team_members_service.list_members(
             search=search,
             user_type=user_type,
             user_role=user_role,
@@ -44,8 +124,13 @@ def list_team_members(
             page=page,
             page_size=page_size,
         )
+        items = [item for raw in raw_items if isinstance(raw, dict) for item in [_normalize_member_item(raw)] if item is not None]
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        if _is_db_unavailable_error(exc):
+            return TeamMemberListResponse(items=[], total=0, page=page, page_size=page_size)
+        raise
     return TeamMemberListResponse(items=items, total=total, page=page, page_size=page_size)
 
 
@@ -162,9 +247,14 @@ def get_team_module_catalog(
     user: AuthUser = Depends(get_current_user),
 ) -> TeamModuleCatalogResponse:
     try:
-        items = team_members_service.list_module_catalog(scope=scope)
+        raw_items = team_members_service.list_module_catalog(scope=scope)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        if _is_db_unavailable_error(exc):
+            return TeamModuleCatalogResponse(items=[])
+        raise
+    items = _normalize_module_catalog([item for item in raw_items if isinstance(item, dict)], requested_scope=scope)
     return TeamModuleCatalogResponse(items=items)
 
 
@@ -172,7 +262,14 @@ def get_team_module_catalog(
 def list_subaccount_options(user: AuthUser = Depends(get_current_user)) -> TeamSubaccountOptionsResponse:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
     items: list[TeamSubaccountOptionItem] = []
-    for row in client_registry_service.list_clients():
+    try:
+        rows = client_registry_service.list_clients()
+    except Exception as exc:  # noqa: BLE001
+        if _is_db_unavailable_error(exc):
+            return TeamSubaccountOptionsResponse(items=[])
+        raise
+
+    for row in rows:
         try:
             client_id = int(row.get("id"))
         except Exception:  # noqa: BLE001
