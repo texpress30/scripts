@@ -4424,3 +4424,30 @@
 
 ## Review
 - [x] No `_hash_password` references remain in backend; startup import check returns `ok`.
+
+---
+
+# TODO — Conectare pagina Sub-account Team la endpointuri reale backend
+
+- [x] Re-auditez pagina frontend sub-account team + `api.ts` + contractele backend.
+- [x] Elimin complet sursele mock locale (ex. `INITIAL_USERS`) și leg listarea la `GET /team/subaccounts/{subaccount_id}/members`.
+- [x] Conectez create la `POST /team/subaccounts/{subaccount_id}/members` cu validări minime și roluri `subaccount_*`.
+- [x] Tratez stările loading/empty/error + mesaje clare pentru 403/404/400.
+- [x] Marchez vizual membership-urile inherited/agency în listă.
+- [x] Adaug teste frontend compacte pentru list/create/roluri/403 și elimin dependența de mock users locali.
+- [x] Rulez testele frontend relevante și build-ul frontend.
+
+## Review
+- [x] Pagina sub-account team este conectată la endpointurile reale GET/POST, fără mock local, cu filtre/paginare/create/refetch și acoperire de teste + build frontend.
+
+---
+
+# TODO — Hotfix Vercel Build Duplicate Identifier
+
+- [x] Analyze Vercel deployment logs showing `Type error: Duplicate identifier 'TeamUser'`.
+- [x] Checkout the PR branch `codex/setup-new-workspace-and-sync-with-github-d1mc1y` producing the error.
+- [x] Merge duplicate definitions of `TeamUser` in `src/app/subaccount/[id]/settings/team/page.tsx` directly on the branch.
+- [x] Commit and push fix to trigger Vercel rebuild automatically.
+
+## Review
+- [x] Frontend type error resolved without changing business logic, preparing PR for successful merge.
