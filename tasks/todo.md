@@ -4751,3 +4751,49 @@
   - `cd apps/backend && python -m pytest tests/test_team_subaccount_api.py tests/test_team_members_foundation.py`
   - `cd apps/frontend && pnpm vitest run src/app/subaccount/[id]/settings/team/page.test.tsx`
   - `cd apps/frontend && pnpm build`
+
+## 2026-03-17 Connector workspace sync task
+- [x] Draft plan with explicit sync steps and verification commands.
+- [x] Start a fresh terminal session (do not reuse previous session) for connector-style commands.
+- [x] Run requested remote/add-or-set, fetch, and pull commands exactly as provided.
+- [x] Verify remote configuration and fetch visibility in the new session.
+- [x] Document review/results for this task.
+
+### Check-in before execution
+Plan reviewed: execute the exact user-provided Git commands in a newly started terminal session, then verify `git remote -v` and fetch state, and record outcome.
+
+### Review
+- Executed the exact three Git commands in a fresh terminal session.
+- `origin` now points to the provided GitHub URL for both fetch and push.
+- `git fetch origin` succeeded and `git pull origin main --allow-unrelated-histories` reported repository already up to date.
+
+## 2026-03-17 AppShell subaccount module filtering + access-context
+- [x] Review existing frontend/backend files for session, AppShell, routing helpers, and team access contracts.
+- [x] Draft implementation plan with compatibility/fallback behavior for subaccount-scoped vs agency/global roles.
+- [ ] Add/adjust backend access-context endpoint contract for current subaccount module access (with legacy fallback + 403).
+- [ ] Add backend tests for access-context response shape, scoped access, denied access, agency/global compatibility, legacy fallback.
+- [ ] Add frontend API helper for current subaccount access-context retrieval.
+- [ ] Update AppShell sidebar filtering by module keys for subaccount routes and keep agency/global behavior unchanged.
+- [ ] Add safe redirect on manual navigation to disallowed module route (first allowed module fallback order).
+- [ ] Add/adjust frontend tests for filtered sidebar, hidden modules, agency/global unchanged, safe redirect, and loading fallback.
+- [ ] Run frontend tests and build; run backend tests + startup check for changed contract.
+- [ ] Document review/results and intentional follow-ups.
+
+### Check-in before execution
+Plan verified: implement minimal access-context foundation, consume it in AppShell for subaccount-scoped users only, preserve agency/global behavior, then validate with focused frontend/backend tests and build.
+- [x] Add/adjust backend access-context endpoint contract for current subaccount module access (with legacy fallback + 403).
+- [x] Add backend tests for access-context response shape, scoped access, denied access, agency/global compatibility, legacy fallback.
+- [x] Add frontend API helper for current subaccount access-context retrieval.
+- [x] Update AppShell sidebar filtering by module keys for subaccount routes and keep agency/global behavior unchanged.
+- [x] Add safe redirect on manual navigation to disallowed module route (first allowed module fallback order).
+- [x] Add/adjust frontend tests for filtered sidebar, hidden modules, agency/global unchanged, safe redirect, and loading fallback.
+- [x] Run frontend tests and build; run backend tests + startup check for changed contract.
+- [x] Document review/results and intentional follow-ups.
+
+### Review
+- Added backend endpoint `GET /team/subaccounts/{subaccount_id}/my-access` with minimal response contract (`subaccount_id`, `role`, `module_keys`, `source_scope`, `access_scope`, `unrestricted_modules`).
+- Subaccount-scoped users now receive effective membership module keys for the current sub-account, with safe legacy fallback to full catalog when explicit context is unavailable; no-access remains 403.
+- Agency/global roles return unrestricted module context for compatibility in this task.
+- Frontend AppShell now loads current subaccount access-context for sub-account routes, filters sidebar module entries (`dashboard`, `campaigns`, `rules`, `creative`, `recommendations`) by `module_keys`, and preserves agency/global behavior.
+- Manual URL access to disallowed sub-account module routes now redirects safely to the first allowed module in fixed order; if none are allowed, fallback route is `/subaccount/{id}/settings/profile`.
+- Follow-up intentionally left: backend enforcement on each business module endpoint remains for the next task.
