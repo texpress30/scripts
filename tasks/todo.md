@@ -4797,3 +4797,21 @@ Plan verified: implement minimal access-context foundation, consume it in AppShe
 - Frontend AppShell now loads current subaccount access-context for sub-account routes, filters sidebar module entries (`dashboard`, `campaigns`, `rules`, `creative`, `recommendations`) by `module_keys`, and preserves agency/global behavior.
 - Manual URL access to disallowed sub-account module routes now redirects safely to the first allowed module in fixed order; if none are allowed, fallback route is `/subaccount/{id}/settings/profile`.
 - Follow-up intentionally left: backend enforcement on each business module endpoint remains for the next task.
+
+## 2026-03-17 Backend module enforcement for subaccount-scoped users
+- [x] Re-read dependencies/team_members/rbac/team APIs and module-serving backend routes (dashboard, campaigns, rules, creative, recommendations).
+- [x] Add reusable backend helper for subaccount module-level enforcement with scoped checks, agency/global bypass, and legacy-safe fallback.
+- [x] Define and apply clear module-to-endpoint enforcement on currently used subaccount module routes.
+- [x] Add representative backend tests for allowed/forbidden paths across dashboard/campaigns/rules/creative/recommendations, plus agency/global and legacy compatibility.
+- [x] Run backend tests and backend startup/import check.
+- [x] Document review and intentional follow-up scope.
+
+### Check-in before execution
+Plan verified: implement enforcement helper in dependencies, apply it to current module-serving routes used by UI, add a dedicated campaigns summary endpoint for clear campaigns mapping, and validate via focused backend tests + startup check.
+
+### Review
+- Added `enforce_subaccount_module_access(user, subaccount_id, module_key)` in backend dependencies to enforce scoped sub-account ownership first, then effective `module_keys` for subaccount roles.
+- Added campaigns-specific endpoint `GET /campaigns/{client_id}/summary` and switched campaigns UI metrics load to this route so campaigns module has explicit backend enforcement mapping.
+- Applied backend module enforcement on active module routes: dashboard (`/dashboard/{client_id}`), campaigns (`/campaigns/{client_id}/summary`), rules (`/rules/{client_id}` and evaluate/create paths), creative (library + asset actions), recommendations (`/ai/recommendations/*`).
+- Preserved compatibility: agency/global roles bypass module restrictions; subaccount legacy context without explicit membership module rows falls back safely to full default catalog from existing service logic.
+- Intentional follow-up left: broader mapping for ambiguous/unused legacy endpoints not currently used by UI remains for a future hardening pass.
