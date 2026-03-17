@@ -1,8 +1,9 @@
 "use client";
 
 import { Activity, Lock, Mail, Shield } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import React, { FormEvent, useEffect, useState } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiRequest } from "@/lib/api";
@@ -19,6 +20,13 @@ export default function LoginPage() {
   const [role, setRole] = useState("agency_admin");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const query = new URLSearchParams(window.location.search);
+    setResetSuccess(query.get("reset") === "success");
+  }, []);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -91,11 +99,22 @@ export default function LoginPage() {
                   <Shield className="h-4 w-4 text-slate-400" />
                   <select value={role} onChange={(e) => setRole(e.target.value)} className="h-10 w-full bg-transparent text-sm outline-none">
                     <option value="agency_admin">Agency Admin</option>
-                    <option value="account_manager">Account Manager</option>
-                    <option value="client_viewer">Client Viewer</option>
+                    <option value="agency_member">Agency Member</option>
+                    <option value="agency_viewer">Agency Viewer</option>
+                    <option value="subaccount_admin">Subaccount Admin</option>
+                    <option value="subaccount_user">Subaccount User</option>
+                    <option value="subaccount_viewer">Subaccount Viewer</option>
                   </select>
                 </div>
               </label>
+
+              <div className="flex justify-end">
+                <Link href="/forgot-password" className="text-sm text-indigo-600 hover:text-indigo-500">
+                  Ai uitat parola?
+                </Link>
+              </div>
+
+              {resetSuccess ? <p className="text-sm text-emerald-700">Parola a fost resetată. Te poți autentifica.</p> : null}
 
               {error ? <p className="text-sm text-red-600">{error}</p> : null}
 

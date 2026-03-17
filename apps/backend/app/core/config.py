@@ -16,6 +16,8 @@ class Settings:
     app_auth_secret: str
     app_login_email: str
     app_login_password: str
+    frontend_base_url: str
+    auth_reset_token_ttl_minutes: int
     openai_api_key: str
     google_ads_token: str
     google_ads_mode: str
@@ -133,6 +135,8 @@ def load_settings() -> Settings:
         app_auth_secret=_get_env("APP_AUTH_SECRET", required=True),
         app_login_email=_get_env("APP_LOGIN_EMAIL", default="admin@example.com"),
         app_login_password=_get_env("APP_LOGIN_PASSWORD", default="admin123"),
+        frontend_base_url=_get_env("FRONTEND_BASE_URL", default="http://localhost:3000"),
+        auth_reset_token_ttl_minutes=_parse_positive_int_env("AUTH_RESET_TOKEN_TTL_MINUTES", default=60),
         openai_api_key=_get_env("OPENAI_API_KEY", default=""),
         google_ads_token=_get_env("GOOGLE_ADS_TOKEN", default=""),
         google_ads_mode=_get_env("GOOGLE_ADS_MODE", default="mock").strip().lower(),
