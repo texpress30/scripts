@@ -15,6 +15,7 @@ from app.api.google_ads import router as google_ads_router
 from app.api.google_accounts import router as google_accounts_router
 from app.api.health import router as health_router
 from app.api.meta_ads import router as meta_ads_router
+from app.api.mailgun import router as mailgun_router
 from app.api.pinterest_ads import router as pinterest_ads_router
 from app.api.snapchat_ads import router as snapchat_ads_router
 from app.api.storage import router as storage_router
@@ -26,6 +27,7 @@ from app.api.rules import router as rules_router
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
 from app.services.company_settings import company_settings_service
+from app.services.auth_email_tokens import auth_email_tokens_service
 from app.services.team_members import team_members_service
 from app.services.user_profile import user_profile_service
 
@@ -59,6 +61,7 @@ app.include_router(audit_router)
 app.include_router(google_ads_router)
 app.include_router(google_accounts_router)
 app.include_router(meta_ads_router)
+app.include_router(mailgun_router)
 app.include_router(tiktok_ads_router)
 app.include_router(pinterest_ads_router)
 app.include_router(snapchat_ads_router)
@@ -98,3 +101,4 @@ def initialize_client_registry_schema() -> None:
     user_profile_service.initialize_schema()
     team_members_service.initialize_schema()
     company_settings_service.initialize_schema()
+    auth_email_tokens_service.initialize_schema()
