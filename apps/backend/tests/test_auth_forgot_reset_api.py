@@ -115,6 +115,37 @@ class AuthForgotResetApiTests(unittest.TestCase):
             auth_api.mailgun_service.assert_available = original_assert
             auth_api.load_settings = original_settings
 
+
+    def test_forgot_password_token_generation_failure_returns_clear_error(self):
+        original_rate = auth_api.rate_limiter_service.check
+        original_assert = auth_api.mailgun_service.assert_available
+        original_find = auth_api.find_active_user_by_email
+        original_create = auth_api.auth_email_tokens_service.create_password_reset_token_for_existing_user
+        original_send = auth_api.mailgun_service.send_email
+        original_settings = auth_api.load_settings
+
+        try:
+            auth_api.rate_limiter_service.check = lambda *args, **kwargs: None
+            auth_api.mailgun_service.assert_available = lambda: None
+            auth_api.find_active_user_by_email = lambda email: {"id": 9, "email": "u@example.com", "is_active": True}
+            auth_api.auth_email_tokens_service.create_password_reset_token_for_existing_user = lambda **kwargs: (_ for _ in ()).throw(
+                AuthEmailTokenError("Token generation failed", reason="persist_failed", status_code=500)
+            )
+            auth_api.mailgun_service.send_email = lambda **kwargs: (_ for _ in ()).throw(AssertionError("should not send"))
+            auth_api.load_settings = lambda: SimpleNamespace(frontend_base_url="https://app.example.com", auth_reset_token_ttl_minutes=60)
+
+            with self.assertRaises(auth_api.HTTPException) as ctx:
+                auth_api.forgot_password(ForgotPasswordRequest(email="u@example.com"))
+            self.assertEqual(ctx.exception.status_code, 503)
+            self.assertIn("nu este disponibil", str(ctx.exception.detail))
+        finally:
+            auth_api.rate_limiter_service.check = original_rate
+            auth_api.mailgun_service.assert_available = original_assert
+            auth_api.find_active_user_by_email = original_find
+            auth_api.auth_email_tokens_service.create_password_reset_token_for_existing_user = original_create
+            auth_api.mailgun_service.send_email = original_send
+            auth_api.load_settings = original_settings
+
     def test_forgot_password_missing_frontend_base_url_returns_clear_error(self):
         original_rate = auth_api.rate_limiter_service.check
         original_settings = auth_api.load_settings

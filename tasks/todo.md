@@ -4565,3 +4565,18 @@
 
 ## Review
 - [x] Agency Team are acțiune UI `Trimite invitație` conectată la backend, fără modificări în Sub-account Team și fără redesign major.
+
+---
+
+# TODO — Forgot-password token generation failure should not surface 500
+
+- [x] Audit current forgot-password flow and identify unhandled token generation failures.
+- [x] Add defensive handling in auth API to return service-unavailable response instead of uncaught 500.
+- [x] Add focused backend regression test for token generation failure path.
+- [x] Run targeted backend auth forgot/reset tests.
+
+## Review
+- [x] Root cause: forgot-password path did not handle token persistence failures, so token-service exceptions could bubble up as 500.
+- [x] Fix: wrapped reset-token creation in `AuthEmailTokenError` handling, audit-logged the failure, and returned a consistent 503 user-safe message.
+- [x] Added regression test proving token-generation failures do not attempt mail send and return HTTP 503.
+- [x] Verification: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q apps/backend/tests/test_auth_forgot_reset_api.py`.

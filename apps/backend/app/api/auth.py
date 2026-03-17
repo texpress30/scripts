@@ -151,11 +151,21 @@ def forgot_password(payload: ForgotPasswordRequest) -> ForgotPasswordResponse:
         return ForgotPasswordResponse(message=generic_message)
 
     email_ttl_minutes = max(1, int(getattr(settings, "auth_reset_token_ttl_minutes", 60)))
-    raw_token, _ = auth_email_tokens_service.create_password_reset_token_for_existing_user(
-        user_id=int(user["id"]),
-        email=str(user["email"]),
-        expires_in_minutes=email_ttl_minutes,
-    )
+    try:
+        raw_token, _ = auth_email_tokens_service.create_password_reset_token_for_existing_user(
+            user_id=int(user["id"]),
+            email=str(user["email"]),
+            expires_in_minutes=email_ttl_minutes,
+        )
+    except AuthEmailTokenError as exc:
+        audit_log_service.log(
+            actor_email=normalized_email,
+            actor_role="anonymous",
+            action="auth.forgot_password.failed",
+            resource="auth:forgot_password",
+            details={"reason": "token_generation_failed", "status_code": exc.status_code},
+        )
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Reset password nu este disponibil momentan") from exc
 
     reset_link = f"{frontend_base_url.rstrip('/')}/reset-password?token={raw_token}"
     subject = "Resetează parola"
