@@ -4616,3 +4616,22 @@
 - [x] Erori mapate explicit: 403 permisiuni, 404 membership/user inexistent, 503 indisponibil temporar, fallback generic.
 - [x] Fără modificări backend/auth/forgot/reset pentru acest task; contractul existent include deja `membership_id`.
 - [x] Verificare: `cd apps/frontend && pnpm vitest run src/app/subaccount/[id]/settings/team/page.test.tsx` și `cd apps/frontend && pnpm build`.
+
+---
+
+# TODO — Agency Team: auto-invite opțional după creare user
+
+- [x] Re-auditez Agency Team page + helperi API + contract backend create/invite.
+- [x] Adaug checkbox `Trimite invitație imediat după creare` (default debifat) în formularul Agency Team.
+- [x] Leg create + invite opțional în același submit flow, cu mesaje clare pentru success complet/parțial.
+- [x] Păstrez invite-ul manual existent neschimbat și fără impact pe Sub-account Team.
+- [x] Adaug teste frontend pentru checkbox flow (checked/unchecked, success, partial failure, create failure).
+- [x] Rulez testele frontend relevante + build frontend și actualizez review notes.
+
+## Review
+- [x] Agency Team create form include opțiunea `Trimite invitație imediat după creare` (default debifat), fără redesign major.
+- [x] Create flow rămâne identic când checkbox-ul nu este bifat; când este bifat rulează create + invite în lanț, folosind `membership_id` (fallback `id`) din create response.
+- [x] Success complet: mesaj `Utilizatorul a fost creat și invitația a fost trimisă`.
+- [x] Success parțial: utilizatorul rămâne creat, fără rollback, iar UI afișează mesajul clar `Utilizatorul a fost creat, dar invitația nu a putut fi trimisă ...`.
+- [x] Invite-ul manual din listă a rămas funcțional; Sub-account Team nu a fost modificat.
+- [x] Verificare: `cd apps/frontend && pnpm vitest run src/app/settings/team/page.test.tsx` și `cd apps/frontend && pnpm build`.
