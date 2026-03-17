@@ -369,3 +369,10 @@
 - 2026-03-17: După feedback de tip "unsatisfied" pe PR anterior, re-verific strict scope-ul cerut (evită schimbări extra), apoi livrează incremental cu teste țintite exact pe cerințe înainte de commit/PR.
 - 2026-03-17: La UI condițional cu secțiuni similare textual (ex. "Roluri și Permisiuni" în sidebar + content), în teste validează prezența controalelor funcționale (checkbox/toggle) în locul textului comun pentru a evita false-positive.
 - 2026-03-17: După feedback de tip "unsatisfied", livrează strict pe scope-ul nou cerut (fără zone adiacente) și include explicit contractele UI↔API necesare în teste (payload + grant ceiling) înainte de commit/PR.
+
+## 2026-03-17 — After user correction: avoid placeholder-only PR state
+- Pattern: User was unsatisfied with prior output where progress was not reflected as substantive feature implementation.
+- Rule: For feature requests, always implement code + tests end-to-end before finalizing; never leave a docs-only/placeholder-style change when concrete scope was requested.
+- Rule: Validate requested behavioral outcomes explicitly (not only command execution), and summarize any remaining scope as intentional next-task items.
+- 2026-03-17: După feedback de tip "unsatisfied" pe enforcement backend, mapează explicit fiecare modul din sidebar către endpointuri backend reale folosite de UI (inclusiv endpoint dedicat când mapping-ul lipsește), nu te baza doar pe filtrare frontend.
+- 2026-03-17: După feedback de tip "unsatisfied" pe foundation backend membership edit, păstrează strict modelul pe `membership` (nu `user identity`) și validează explicit prin teste separate agency vs subaccount vs inherited înainte de commit.

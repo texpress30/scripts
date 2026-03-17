@@ -23,7 +23,7 @@ import {
   X,
 } from "lucide-react";
 
-import { apiRequest } from "@/lib/api";
+import { apiRequest, getSubaccountMyAccess, type TeamSubaccountMyAccessResponse } from "@/lib/api";
 import { isPinterestIntegrationEnabled, isSnapchatIntegrationEnabled, isTikTokIntegrationEnabled } from "@/lib/featureFlags";
 import { AppRole, SessionAccessContext, getSessionAccessContext } from "@/lib/session";
 import { cn } from "@/lib/utils";
@@ -33,16 +33,26 @@ type CompanySettings = { logo_url: string; city: string; country: string; compan
 type TeamMemberItem = { id: number; first_name: string; last_name: string; email: string; user_role: string };
 type TeamMembersResponse = { items: TeamMemberItem[]; total: number };
 
-function getNavItems(pathname: string) {
+const SUBACCOUNT_MODULE_ORDER = ["dashboard", "campaigns", "rules", "creative", "recommendations"] as const;
+type SubaccountModuleKey = (typeof SUBACCOUNT_MODULE_ORDER)[number];
+
+type NavItem = {
+  href: string;
+  label: string;
+  icon: typeof Bell;
+  moduleKey?: SubaccountModuleKey;
+};
+
+function getNavItems(pathname: string): NavItem[] {
   const subMatch = pathname.match(/^\/sub\/(\d+)/);
   if (subMatch) {
     const id = subMatch[1];
     return [
-      { href: `/sub/${id}/dashboard`, label: "Dashboard", icon: LayoutDashboard },
-      { href: `/sub/${id}/campaigns`, label: "Campaigns", icon: Bell },
-      { href: `/sub/${id}/rules`, label: "Rules", icon: Sparkles },
-      { href: `/sub/${id}/creative`, label: "Creative", icon: Palette },
-      { href: `/sub/${id}/recommendations`, label: "Recommendations", icon: Users },
+      { href: `/sub/${id}/dashboard`, label: "Dashboard", icon: LayoutDashboard, moduleKey: "dashboard" },
+      { href: `/sub/${id}/campaigns`, label: "Campaigns", icon: Bell, moduleKey: "campaigns" },
+      { href: `/sub/${id}/rules`, label: "Rules", icon: Sparkles, moduleKey: "rules" },
+      { href: `/sub/${id}/creative`, label: "Creative", icon: Palette, moduleKey: "creative" },
+      { href: `/sub/${id}/recommendations`, label: "Recommendations", icon: Users, moduleKey: "recommendations" },
     ];
   }
 
@@ -177,6 +187,61 @@ export function resolveSubaccountRouteGuardDecision(params: {
   return null;
 }
 
+export function filterSubaccountNavItems(params: {
+  navItems: NavItem[];
+  role: AppRole;
+  currentSubId: number | null;
+  moduleKeys: string[] | null;
+  loading: boolean;
+}): NavItem[] {
+  const { navItems, role, currentSubId, moduleKeys, loading } = params;
+  if (!isSubaccountScopedRole(role) || currentSubId === null) {
+    return navItems;
+  }
+  if (loading || moduleKeys === null) {
+    return navItems;
+  }
+  const allowed = new Set(moduleKeys.map((key) => key.trim().toLowerCase()));
+  return navItems.filter((item) => {
+    if (!item.moduleKey) return true;
+    return allowed.has(item.moduleKey);
+  });
+}
+
+export function resolveSubaccountModuleRedirect(params: {
+  pathname: string;
+  role: AppRole;
+  currentSubId: number | null;
+  moduleKeys: string[] | null;
+  loading: boolean;
+}): string | null {
+  const { pathname, role, currentSubId, moduleKeys, loading } = params;
+  if (!isSubaccountScopedRole(role) || currentSubId === null || loading || moduleKeys === null) {
+    return null;
+  }
+
+  const subRouteMatch = pathname.match(/^\/sub\/(\d+)\/([^/?#]+)/);
+  if (!subRouteMatch || Number(subRouteMatch[1]) !== currentSubId) {
+    return null;
+  }
+
+  const requestedModule = subRouteMatch[2].trim().toLowerCase();
+  if (!SUBACCOUNT_MODULE_ORDER.includes(requestedModule as SubaccountModuleKey)) {
+    return null;
+  }
+
+  const allowedSet = new Set(moduleKeys.map((item) => item.trim().toLowerCase()));
+  if (allowedSet.has(requestedModule)) {
+    return null;
+  }
+
+  const firstAllowed = SUBACCOUNT_MODULE_ORDER.find((module) => allowedSet.has(module));
+  if (firstAllowed) {
+    return `/sub/${currentSubId}/${firstAllowed}`;
+  }
+  return `/subaccount/${currentSubId}/settings/profile`;
+}
+
 export function AppShell({
   title,
   headerPrefix,
@@ -206,6 +271,8 @@ export function AppShell({
   const [teamUsers, setTeamUsers] = useState<TeamMemberItem[]>([]);
   const [fullscreen, setFullscreen] = useState(false);
   const [impersonatingAs, setImpersonatingAs] = useState<{ email: string; role: string } | null>(null);
+  const [subaccountMyAccess, setSubaccountMyAccess] = useState<TeamSubaccountMyAccessResponse | null>(null);
+  const [subaccountMyAccessLoading, setSubaccountMyAccessLoading] = useState(false);
 
   const subMatch = pathname.match(/^\/sub\/(\d+)/);
   const currentSubId = subMatch ? Number(subMatch[1]) : null;
@@ -381,6 +448,66 @@ export function AppShell({
     }
   }, [sessionInfo.role, sessionAccessContext, allowedSubaccountIds, currentSubId, subSettingsId, pathname, router]);
 
+  useEffect(() => {
+    if (currentSubId === null || !isSubaccountScopedRole(sessionInfo.role)) {
+      setSubaccountMyAccess(null);
+      setSubaccountMyAccessLoading(false);
+      return;
+    }
+
+    const subaccountId = currentSubId;
+    let ignore = false;
+    setSubaccountMyAccessLoading(true);
+    async function loadSubaccountAccessContext() {
+      try {
+        const payload = await getSubaccountMyAccess(subaccountId);
+        if (!ignore) setSubaccountMyAccess(payload);
+      } catch {
+        if (!ignore) {
+          setSubaccountMyAccess({
+            subaccount_id: subaccountId,
+            role: sessionInfo.role,
+            module_keys: [...SUBACCOUNT_MODULE_ORDER],
+            source_scope: "fallback",
+            access_scope: "subaccount",
+            unrestricted_modules: false,
+          });
+        }
+      } finally {
+        if (!ignore) setSubaccountMyAccessLoading(false);
+      }
+    }
+    void loadSubaccountAccessContext();
+    return () => {
+      ignore = true;
+    };
+  }, [currentSubId, sessionInfo.role]);
+
+  useEffect(() => {
+    const redirectTo = resolveSubaccountModuleRedirect({
+      pathname,
+      role: sessionInfo.role,
+      currentSubId,
+      moduleKeys: subaccountMyAccess?.module_keys ?? null,
+      loading: subaccountMyAccessLoading,
+    });
+    if (redirectTo && redirectTo !== pathname) {
+      router.replace(redirectTo);
+    }
+  }, [pathname, sessionInfo.role, currentSubId, subaccountMyAccess, subaccountMyAccessLoading, router]);
+
+  const visibleNavItems = useMemo(
+    () =>
+      filterSubaccountNavItems({
+        navItems,
+        role: sessionInfo.role,
+        currentSubId,
+        moduleKeys: subaccountMyAccess?.module_keys ?? null,
+        loading: subaccountMyAccessLoading,
+      }),
+    [navItems, sessionInfo.role, currentSubId, subaccountMyAccess, subaccountMyAccessLoading]
+  );
+
   const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
 
   async function toggleFullscreen() {
@@ -538,7 +665,7 @@ export function AppShell({
                 </Link>
               );
             })
-          : navItems.map((item) => {
+          : visibleNavItems.map((item) => {
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
               const Icon = item.icon;
               return (
