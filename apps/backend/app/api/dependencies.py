@@ -30,8 +30,20 @@ def enforce_subaccount_action(*, user: AuthUser, action: str, subaccount_id: int
     enforce_action_scope(user=user, action=action, scope="subaccount")
 
     role = normalize_role(user.role)
-    if role.startswith("subaccount_") and user.subaccount_id is not None and int(user.subaccount_id) != int(subaccount_id):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Nu ai acces la acest sub-account",
-        )
+    if role.startswith("subaccount_"):
+        requested_subaccount_id = int(subaccount_id)
+
+        if len(user.allowed_subaccount_ids) > 0:
+            if requested_subaccount_id not in {int(value) for value in user.allowed_subaccount_ids}:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Nu ai acces la acest sub-account",
+                )
+            return
+
+        legacy_subaccount_id = user.subaccount_id if user.subaccount_id is not None else user.primary_subaccount_id
+        if legacy_subaccount_id is not None and int(legacy_subaccount_id) != requested_subaccount_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Nu ai acces la acest sub-account",
+            )

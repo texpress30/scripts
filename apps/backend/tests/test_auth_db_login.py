@@ -96,6 +96,9 @@ class AuthDbLoginTests(unittest.TestCase):
             user = auth_service.authenticate_user_from_db(email="member@example.com", password=password, requested_role="subaccount_user")
             self.assertEqual(user.role, "subaccount_user")
             self.assertEqual(user.scope_type, "subaccount")
+            self.assertEqual(user.access_scope, "subaccount")
+            self.assertEqual(user.allowed_subaccount_ids, (55,))
+            self.assertEqual(user.primary_subaccount_id, 55)
             self.assertEqual(user.subaccount_id, 55)
             self.assertEqual(user.subaccount_name, "Client Z")
         finally:
@@ -152,7 +155,7 @@ class AuthDbLoginTests(unittest.TestCase):
         finally:
             auth_service._connect = original_connect
 
-    def test_ambiguous_membership_returns_409(self):
+    def test_subaccount_user_multiple_memberships_login_succeeds_without_409(self):
         user_row = (17, "u@example.com", hash_password("good"), True)
         memberships = [
             (601, "subaccount", 9, "Client A", 17, "subaccount_user"),
@@ -162,9 +165,31 @@ class AuthDbLoginTests(unittest.TestCase):
         original_connect = auth_service._connect
         try:
             auth_service._connect = lambda: _FakeConn(cursor)
-            with self.assertRaises(AuthLoginError) as ctx:
-                auth_service.authenticate_user_from_db(email="u@example.com", password="good", requested_role="subaccount_user")
-            self.assertEqual(ctx.exception.status_code, 409)
+            user = auth_service.authenticate_user_from_db(email="u@example.com", password="good", requested_role="subaccount_user")
+            self.assertEqual(user.role, "subaccount_user")
+            self.assertEqual(user.access_scope, "subaccount")
+            self.assertEqual(user.allowed_subaccount_ids, (9, 10))
+            self.assertEqual(user.primary_subaccount_id, None)
+            self.assertEqual(user.subaccount_id, None)
+            self.assertEqual(user.membership_ids, (601, 602))
+        finally:
+            auth_service._connect = original_connect
+
+
+    def test_subaccount_admin_multiple_memberships_login_succeeds(self):
+        user_row = (18, "admin-sub@example.com", hash_password("good"), True)
+        memberships = [
+            (701, "subaccount", 21, "Client X", 18, "subaccount_admin"),
+            (702, "subaccount", 22, "Client Y", 18, "subaccount_admin"),
+        ]
+        cursor = _FakeCursor(user_row=user_row, memberships=memberships)
+        original_connect = auth_service._connect
+        try:
+            auth_service._connect = lambda: _FakeConn(cursor)
+            user = auth_service.authenticate_user_from_db(email="admin-sub@example.com", password="good", requested_role="subaccount_admin")
+            self.assertEqual(user.access_scope, "subaccount")
+            self.assertEqual(user.allowed_subaccount_ids, (21, 22))
+            self.assertEqual(user.primary_subaccount_id, None)
         finally:
             auth_service._connect = original_connect
 
@@ -193,6 +218,7 @@ class AuthDbLoginTests(unittest.TestCase):
         self.assertEqual(old_user.email, "old@example.com")
         self.assertEqual(old_user.role, "agency_admin")
         self.assertIsNone(old_user.membership_id)
+        self.assertEqual(old_user.allowed_subaccount_ids, ())
 
         new_token = create_access_token(
             email="new@example.com",
@@ -202,6 +228,11 @@ class AuthDbLoginTests(unittest.TestCase):
             membership_id=777,
             subaccount_id=8,
             subaccount_name="Client New",
+            access_scope="subaccount",
+            allowed_subaccount_ids=(8, 9),
+            allowed_subaccounts=({"id": 8, "name": "Client New"}, {"id": 9, "name": "Client Extra"}),
+            primary_subaccount_id=None,
+            membership_ids=(777, 778),
             is_env_admin=False,
         )
         new_user = decode_access_token(new_token)
@@ -209,6 +240,24 @@ class AuthDbLoginTests(unittest.TestCase):
         self.assertEqual(new_user.membership_id, 777)
         self.assertEqual(new_user.subaccount_id, 8)
         self.assertEqual(new_user.subaccount_name, "Client New")
+        self.assertEqual(new_user.access_scope, "subaccount")
+        self.assertEqual(new_user.allowed_subaccount_ids, (8, 9))
+        self.assertIsNone(new_user.primary_subaccount_id)
+        self.assertEqual(new_user.membership_ids, (777, 778))
+
+
+    def test_decode_legacy_single_subaccount_payload_populates_allowed_list(self):
+        legacy_token = create_access_token(
+            email="legacy@example.com",
+            role="subaccount_user",
+            scope_type="subaccount",
+            subaccount_id=44,
+            subaccount_name="Legacy Client",
+        )
+        decoded = decode_access_token(legacy_token)
+        self.assertEqual(decoded.allowed_subaccount_ids, (44,))
+        self.assertEqual(decoded.primary_subaccount_id, 44)
+        self.assertEqual(decoded.access_scope, "subaccount")
 
 
 if __name__ == "__main__":

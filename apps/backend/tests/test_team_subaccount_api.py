@@ -10,8 +10,18 @@ class TeamSubaccountApiTests(unittest.TestCase):
         user = AuthUser(email="u@example.com", role="subaccount_user", subaccount_id=12)
         deps.enforce_subaccount_action(user=user, action="team:subaccount:list", subaccount_id=12)
 
+    def test_subaccount_scoped_user_allowed_subaccount_list_ok(self):
+        user = AuthUser(email="u@example.com", role="subaccount_user", allowed_subaccount_ids=(12, 13), access_scope="subaccount")
+        deps.enforce_subaccount_action(user=user, action="team:subaccount:list", subaccount_id=13)
+
     def test_subaccount_scoped_user_other_subaccount_forbidden(self):
         user = AuthUser(email="u@example.com", role="subaccount_user", subaccount_id=12)
+        with self.assertRaises(deps.HTTPException) as ctx:
+            deps.enforce_subaccount_action(user=user, action="team:subaccount:list", subaccount_id=99)
+        self.assertEqual(ctx.exception.status_code, 403)
+
+    def test_subaccount_scoped_user_not_in_allowed_list_forbidden(self):
+        user = AuthUser(email="u@example.com", role="subaccount_user", allowed_subaccount_ids=(12, 13), access_scope="subaccount")
         with self.assertRaises(deps.HTTPException) as ctx:
             deps.enforce_subaccount_action(user=user, action="team:subaccount:list", subaccount_id=99)
         self.assertEqual(ctx.exception.status_code, 403)

@@ -24,6 +24,11 @@ class AuthUser:
     membership_id: int | None = None
     subaccount_id: int | None = None
     subaccount_name: str = ""
+    access_scope: str | None = None
+    allowed_subaccount_ids: tuple[int, ...] = ()
+    allowed_subaccounts: tuple[dict[str, object], ...] = ()
+    primary_subaccount_id: int | None = None
+    membership_ids: tuple[int, ...] = ()
     is_env_admin: bool = False
 
 
@@ -105,6 +110,41 @@ def find_active_user_by_email(email: str) -> dict[str, object] | None:
     }
 
 
+def _coerce_int(value: object) -> int | None:
+    try:
+        return int(value)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _normalize_int_list(values: object) -> tuple[int, ...]:
+    if not isinstance(values, list):
+        return ()
+    result: list[int] = []
+    for value in values:
+        numeric = _coerce_int(value)
+        if numeric is None:
+            continue
+        if numeric not in result:
+            result.append(numeric)
+    return tuple(result)
+
+
+def _normalize_subaccount_objects(values: object) -> tuple[dict[str, object], ...]:
+    if not isinstance(values, list):
+        return ()
+    normalized: list[dict[str, object]] = []
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        subaccount_id = _coerce_int(value.get("id"))
+        if subaccount_id is None:
+            continue
+        name = str(value.get("name") or "")
+        normalized.append({"id": subaccount_id, "name": name})
+    return tuple(normalized)
+
+
 def set_user_password(*, user_id: int, new_password: str) -> None:
     normalized = validate_new_password(new_password)
     password_hash = hash_password(normalized)
@@ -168,18 +208,51 @@ def authenticate_user_from_db(*, email: str, password: str, requested_role: str)
                     message="Rolul selectat nu este alocat utilizatorului",
                     reason="role_not_owned",
                 )
-            if len(memberships) > 1:
+
+            role_is_subaccount = normalized_role.startswith("subaccount_")
+            if len(memberships) > 1 and not role_is_subaccount:
                 raise AuthLoginError(
                     status_code=409,
                     message="Există mai multe accesuri active pentru acest rol și selecția de sub-account la login nu este încă implementată",
                     reason="ambiguous_membership",
                 )
 
-            membership = memberships[0]
-            membership_id = int(membership[0])
-            scope_type = str(membership[1])
-            subaccount_id = int(membership[2]) if membership[2] is not None else None
-            subaccount_name = str(membership[3] or "")
+            membership_ids = tuple(int(row[0]) for row in memberships)
+            first_membership = memberships[0]
+            scope_type = str(first_membership[1] or "") or None
+
+            allowed_subaccounts_map: dict[int, str] = {}
+            for row in memberships:
+                subaccount_id = _coerce_int(row[2])
+                if subaccount_id is None:
+                    continue
+                if subaccount_id not in allowed_subaccounts_map:
+                    allowed_subaccounts_map[subaccount_id] = str(row[3] or "")
+
+            allowed_subaccount_ids = tuple(sorted(allowed_subaccounts_map.keys()))
+            allowed_subaccounts = tuple(
+                {"id": sub_id, "name": allowed_subaccounts_map[sub_id]}
+                for sub_id in allowed_subaccount_ids
+            )
+            primary_subaccount_id = allowed_subaccount_ids[0] if len(allowed_subaccount_ids) == 1 else None
+            primary_subaccount_name = allowed_subaccounts_map.get(primary_subaccount_id or -1, "")
+
+            membership_id: int | None
+            if len(memberships) == 1:
+                membership_id = int(first_membership[0])
+            else:
+                membership_id = None
+
+            if role_is_subaccount:
+                access_scope = "subaccount"
+                resolved_scope_type = "subaccount"
+                resolved_subaccount_id = primary_subaccount_id
+                resolved_subaccount_name = primary_subaccount_name
+            else:
+                access_scope = "agency"
+                resolved_scope_type = scope_type
+                resolved_subaccount_id = _coerce_int(first_membership[2])
+                resolved_subaccount_name = str(first_membership[3] or "")
 
             cur.execute("UPDATE users SET last_login_at = NOW(), updated_at = NOW() WHERE id = %s", (user_id,))
         conn.commit()
@@ -188,10 +261,15 @@ def authenticate_user_from_db(*, email: str, password: str, requested_role: str)
         user_id=user_id,
         email=user_email,
         role=normalized_role,
-        scope_type=scope_type,
+        scope_type=resolved_scope_type,
         membership_id=membership_id,
-        subaccount_id=subaccount_id,
-        subaccount_name=subaccount_name,
+        subaccount_id=resolved_subaccount_id,
+        subaccount_name=resolved_subaccount_name,
+        access_scope=access_scope,
+        allowed_subaccount_ids=allowed_subaccount_ids,
+        allowed_subaccounts=allowed_subaccounts,
+        primary_subaccount_id=primary_subaccount_id,
+        membership_ids=membership_ids,
         is_env_admin=False,
     )
 
@@ -205,6 +283,11 @@ def create_access_token(
     membership_id: int | None = None,
     subaccount_id: int | None = None,
     subaccount_name: str = "",
+    access_scope: str | None = None,
+    allowed_subaccount_ids: tuple[int, ...] = (),
+    allowed_subaccounts: tuple[dict[str, object], ...] = (),
+    primary_subaccount_id: int | None = None,
+    membership_ids: tuple[int, ...] = (),
     is_env_admin: bool = False,
 ) -> str:
     settings = load_settings()
@@ -217,6 +300,11 @@ def create_access_token(
             "membership_id": membership_id,
             "subaccount_id": subaccount_id,
             "subaccount_name": subaccount_name,
+            "access_scope": access_scope,
+            "allowed_subaccount_ids": list(allowed_subaccount_ids),
+            "allowed_subaccounts": list(allowed_subaccounts),
+            "primary_subaccount_id": primary_subaccount_id,
+            "membership_ids": list(membership_ids),
             "is_env_admin": is_env_admin,
         },
         separators=(",", ":"),
@@ -241,14 +329,46 @@ def decode_access_token(token: str) -> AuthUser:
     try:
         raw = base64.urlsafe_b64decode(payload_encoded.encode("utf-8")).decode("utf-8")
         payload = json.loads(raw)
+
+        legacy_subaccount_id = _coerce_int(payload.get("subaccount_id"))
+        allowed_subaccount_ids = _normalize_int_list(payload.get("allowed_subaccount_ids"))
+        if not allowed_subaccount_ids and legacy_subaccount_id is not None:
+            allowed_subaccount_ids = (legacy_subaccount_id,)
+
+        allowed_subaccounts = _normalize_subaccount_objects(payload.get("allowed_subaccounts"))
+        if not allowed_subaccounts and legacy_subaccount_id is not None:
+            allowed_subaccounts = ({"id": legacy_subaccount_id, "name": str(payload.get("subaccount_name") or "")},)
+
+        primary_subaccount_id = _coerce_int(payload.get("primary_subaccount_id"))
+        if primary_subaccount_id is None and len(allowed_subaccount_ids) == 1:
+            primary_subaccount_id = allowed_subaccount_ids[0]
+
+        membership_ids = _normalize_int_list(payload.get("membership_ids"))
+        membership_id = _coerce_int(payload.get("membership_id"))
+        if not membership_ids and membership_id is not None:
+            membership_ids = (membership_id,)
+
+        access_scope = str(payload.get("access_scope") or "").strip() or None
+        if access_scope is None:
+            scope_type_raw = str(payload.get("scope_type") or "").strip()
+            if scope_type_raw:
+                access_scope = scope_type_raw
+            elif allowed_subaccount_ids:
+                access_scope = "subaccount"
+
         return AuthUser(
             email=str(payload["email"]),
             role=str(payload["role"]),
-            user_id=int(payload["user_id"]) if payload.get("user_id") is not None else None,
+            user_id=_coerce_int(payload.get("user_id")),
             scope_type=str(payload["scope_type"]) if payload.get("scope_type") is not None else None,
-            membership_id=int(payload["membership_id"]) if payload.get("membership_id") is not None else None,
-            subaccount_id=int(payload["subaccount_id"]) if payload.get("subaccount_id") is not None else None,
+            membership_id=membership_id,
+            subaccount_id=legacy_subaccount_id,
             subaccount_name=str(payload.get("subaccount_name") or ""),
+            access_scope=access_scope,
+            allowed_subaccount_ids=allowed_subaccount_ids,
+            allowed_subaccounts=allowed_subaccounts,
+            primary_subaccount_id=primary_subaccount_id,
+            membership_ids=membership_ids,
             is_env_admin=bool(payload.get("is_env_admin", False)),
         )
     except Exception as exc:  # noqa: BLE001

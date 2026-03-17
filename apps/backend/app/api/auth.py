@@ -68,6 +68,11 @@ def login(payload: LoginRequest) -> LoginResponse:
             membership_id=db_user.membership_id,
             subaccount_id=db_user.subaccount_id,
             subaccount_name=db_user.subaccount_name,
+            access_scope=db_user.access_scope,
+            allowed_subaccount_ids=db_user.allowed_subaccount_ids,
+            allowed_subaccounts=db_user.allowed_subaccounts,
+            primary_subaccount_id=db_user.primary_subaccount_id,
+            membership_ids=db_user.membership_ids,
             is_env_admin=db_user.is_env_admin,
         )
         audit_log_service.log(
@@ -90,6 +95,7 @@ def login(payload: LoginRequest) -> LoginResponse:
                 email=email,
                 role="super_admin",
                 scope_type="agency",
+                access_scope="agency",
                 is_env_admin=True,
             )
             audit_log_service.log(

@@ -4635,3 +4635,21 @@
 - [x] Success parțial: utilizatorul rămâne creat, fără rollback, iar UI afișează mesajul clar `Utilizatorul a fost creat, dar invitația nu a putut fi trimisă ...`.
 - [x] Invite-ul manual din listă a rămas funcțional; Sub-account Team nu a fost modificat.
 - [x] Verificare: `cd apps/frontend && pnpm vitest run src/app/settings/team/page.test.tsx` și `cd apps/frontend && pnpm build`.
+
+---
+
+# TODO — Backend foundation: sesiune multi-subaccount pentru roluri subaccount_*
+
+- [x] Re-auditez auth API/service/dependencies/team_members/rbac și compatibilitatea frontend session parser.
+- [x] Extind token/AuthUser pentru context multi-subaccount (`access_scope`, `allowed_subaccount_ids`, etc.) cu decode backward-compatible.
+- [x] Schimb login DB pentru rolurile `subaccount_*` astfel încât să accepte multiple memberships active (fără 409 pentru multiplu).
+- [x] Actualizez enforcement subaccount pe lista permisă, păstrând comportamentul pentru tokenuri vechi.
+- [x] Adaug teste backend pentru login single/multi subaccount, enforcement allow/deny, token legacy compat, agency/env fallback.
+- [x] Rulez testele backend relevante + startup check backend și documentez rezultatele.
+
+## Review
+- [x] `AuthUser` + token payload suportă acum context multi-subaccount (`access_scope`, `allowed_subaccount_ids`, `allowed_subaccounts`, `primary_subaccount_id`, `membership_ids`) cu default-uri sigure și compatibilitate pentru tokenuri vechi.
+- [x] Login-ul DB pentru roluri `subaccount_*` nu mai returnează 409 pe memberships multiple active; calculează lista completă de sub-account-uri permise și păstrează `primary_subaccount_id` doar când există un singur sub-account.
+- [x] `enforce_subaccount_action` validează accesul pe `allowed_subaccount_ids` când există; altfel păstrează fallback-ul legacy bazat pe `subaccount_id`/`primary_subaccount_id`.
+- [x] Agency/special roles și env-admin fallback rămân funcționale (acoperite de testele existente + actualizate).
+- [x] Verificare: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q apps/backend/tests/test_auth_db_login.py apps/backend/tests/test_team_subaccount_api.py apps/backend/tests/test_auth_role_normalization.py` și `APP_AUTH_SECRET=test-secret PYTHONPATH=apps/backend python -c "from app.main import app; print('ok')"`.
