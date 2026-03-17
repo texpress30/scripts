@@ -72,12 +72,25 @@ function initials(name: string): string {
 function roleForImpersonation(value: string): AppRole {
   const role = value.trim().toLowerCase();
   if (role === "admin") return "agency_admin";
-  if (role === "viewer") return "client_viewer";
-  if (role === "member") return "account_manager";
-  if (["super_admin", "agency_owner", "agency_admin", "account_manager", "client_viewer"].includes(role)) {
+  if (role === "viewer") return "subaccount_viewer";
+  if (role === "member") return "subaccount_user";
+  if (
+    [
+      "super_admin",
+      "agency_owner",
+      "agency_admin",
+      "agency_member",
+      "agency_viewer",
+      "subaccount_admin",
+      "subaccount_user",
+      "subaccount_viewer",
+      "account_manager",
+      "client_viewer",
+    ].includes(role)
+  ) {
     return role as AppRole;
   }
-  return "account_manager";
+  return "subaccount_user";
 }
 
 export function AppShell({
