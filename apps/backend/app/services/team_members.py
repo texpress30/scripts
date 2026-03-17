@@ -70,6 +70,8 @@ class TeamMembersService:
         return psycopg.connect(settings.database_url)
 
     def initialize_schema(self) -> None:
+        settings = load_settings()
+        default_hash = hash_password(settings.app_login_password)
         with self._connect() as conn:
             with conn.cursor() as cur:
                 # identity table reused by user_profile and future auth flow
