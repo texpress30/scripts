@@ -100,7 +100,7 @@ class MailgunServiceTests(unittest.TestCase):
             mailgun_module.integration_secrets_store = fake_store
             with self.assertRaises(mailgun_module.MailgunIntegrationError) as ctx:
                 service.send_test_email(to_email="to@example.com", subject="", text="")
-            self.assertEqual(ctx.exception.status_code, 404)
+            self.assertEqual(ctx.exception.status_code, 503)
         finally:
             mailgun_module.integration_secrets_store = original_store
 
@@ -121,7 +121,7 @@ class MailgunServiceTests(unittest.TestCase):
             )
             with self.assertRaises(mailgun_module.MailgunIntegrationError) as ctx:
                 service.send_test_email(to_email="to@example.com", subject="", text="")
-            self.assertEqual(ctx.exception.status_code, 400)
+            self.assertEqual(ctx.exception.status_code, 503)
         finally:
             mailgun_module.integration_secrets_store = original_store
 

@@ -64,6 +64,65 @@ def validate_login_credentials(email: str, password: str) -> bool:
     return email.strip().lower() == settings.app_login_email.strip().lower() and password == settings.app_login_password
 
 
+
+
+def validate_new_password(password: str) -> str:
+    candidate = str(password or "")
+    if len(candidate.strip()) < 8:
+        raise ValueError("Parola nouă trebuie să aibă cel puțin 8 caractere")
+    return candidate
+
+
+def find_active_user_by_email(email: str) -> dict[str, object] | None:
+    normalized_email = str(email or "").strip().lower()
+    if normalized_email == "":
+        return None
+
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, email, is_active
+                FROM users
+                WHERE LOWER(email) = %s
+                LIMIT 1
+                """,
+                (normalized_email,),
+            )
+            row = cur.fetchone()
+
+    if row is None:
+        return None
+
+    is_active = bool(row[2])
+    if not is_active:
+        return None
+
+    return {
+        "id": int(row[0]),
+        "email": str(row[1]).strip().lower(),
+        "is_active": True,
+    }
+
+
+def set_user_password(*, user_id: int, new_password: str) -> None:
+    normalized = validate_new_password(new_password)
+    password_hash = hash_password(normalized)
+
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE users
+                SET password_hash = %s, must_reset_password = FALSE, updated_at = NOW()
+                WHERE id = %s AND is_active = TRUE
+                """,
+                (password_hash, int(user_id)),
+            )
+            if int(cur.rowcount or 0) != 1:
+                raise ValueError("Utilizator inactiv sau inexistent")
+        conn.commit()
+
 def authenticate_user_from_db(*, email: str, password: str, requested_role: str) -> AuthUser:
     normalized_email = email.strip().lower()
     normalized_role = normalize_role(requested_role)

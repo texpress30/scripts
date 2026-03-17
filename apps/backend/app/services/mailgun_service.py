@@ -144,16 +144,24 @@ class MailgunService:
 
         return self.status()
 
-    def send_test_email(self, *, to_email: str, subject: str | None, text: str | None) -> dict[str, object]:
+    def assert_available(self) -> MailgunConfig:
         config = self.get_config()
         if config is None:
-            raise MailgunIntegrationError("Mailgun nu este configurat", status_code=404)
+            raise MailgunIntegrationError("Mailgun nu este configurat", status_code=503)
         if not config.enabled:
-            raise MailgunIntegrationError("Integrarea Mailgun este dezactivată", status_code=400)
+            raise MailgunIntegrationError("Integrarea Mailgun este dezactivată", status_code=503)
+        return config
+
+    def send_email(self, *, to_email: str, subject: str, text: str) -> dict[str, object]:
+        config = self.assert_available()
 
         normalized_to = _normalize_email(to_email, field_name="to_email")
-        normalized_subject = _normalize_text(subject or "") or "Mailgun test email"
-        normalized_text = _normalize_text(text or "") or "Acesta este un email de test trimis din platformă."
+        normalized_subject = _normalize_text(subject)
+        normalized_text = _normalize_text(text)
+        if normalized_subject == "":
+            raise ValueError("subject este obligatoriu")
+        if normalized_text == "":
+            raise ValueError("text este obligatoriu")
 
         request_url = f"{config.base_url}/v3/{config.domain}/messages"
         form_data: dict[str, str] = {
@@ -209,6 +217,11 @@ class MailgunService:
             "subject": normalized_subject,
             "sent_at": datetime.now(tz=timezone.utc).isoformat(),
         }
+
+    def send_test_email(self, *, to_email: str, subject: str | None, text: str | None) -> dict[str, object]:
+        normalized_subject = _normalize_text(subject or "") or "Mailgun test email"
+        normalized_text = _normalize_text(text or "") or "Acesta este un email de test trimis din platformă."
+        return self.send_email(to_email=to_email, subject=normalized_subject, text=normalized_text)
 
 
 mailgun_service = MailgunService()

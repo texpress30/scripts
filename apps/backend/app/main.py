@@ -27,6 +27,7 @@ from app.api.rules import router as rules_router
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
 from app.services.company_settings import company_settings_service
+from app.services.auth_email_tokens import auth_email_tokens_service
 from app.services.team_members import team_members_service
 from app.services.user_profile import user_profile_service
 
@@ -100,3 +101,4 @@ def initialize_client_registry_schema() -> None:
     user_profile_service.initialize_schema()
     team_members_service.initialize_schema()
     company_settings_service.initialize_schema()
+    auth_email_tokens_service.initialize_schema()

@@ -4469,3 +4469,19 @@
 
 ## Review
 - [x] Cardul Mailgun este conectat la endpointurile reale status/config/test, cu validări minime, mesaje clare pentru erori (inclusiv 403), masking API key și acoperire de teste frontend + build + screenshot.
+
+---
+
+# TODO — Backend forgot/reset password via Mailgun (no UI)
+
+- [x] Re-auditez auth/mailgun/config și pattern-urile backend existente.
+- [x] Adaug serviciu dedicat pentru tokenuri email one-time (`password_reset`) cu stocare hash-only și expirare.
+- [x] Adaug endpointurile publice `POST /auth/forgot-password` și `POST /auth/reset-password/confirm`.
+- [x] Integrez trimiterea emailului de reset prin Mailgun config agency-level existent.
+- [x] Adaug validări minime pentru parola nouă + consum/invalidare tokenuri.
+- [x] Adaug teste backend pentru forgot/reset success/failure/security + login old/new password.
+- [x] Rulez testele backend relevante + startup check și documentez rezultatele.
+- [x] Actualizez docs minim pentru forgot/reset backend și out-of-scope.
+
+## Review
+- [x] Implementată fundația forgot/reset backend cu tokenuri hash-only one-time + expirare, trimitere Mailgun, endpointuri publice și teste pentru scenariile principale + regresii login.
