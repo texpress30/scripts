@@ -387,6 +387,19 @@ export async function getSubaccountGrantableModules(subaccountId: number): Promi
   return apiRequest<TeamGrantableModulesResponse>(`/team/subaccounts/${encodeURIComponent(String(subaccountId))}/grantable-modules`);
 }
 
+export type TeamSubaccountMyAccessResponse = {
+  subaccount_id: number;
+  role: string;
+  module_keys: string[];
+  source_scope?: string;
+  access_scope?: string;
+  unrestricted_modules?: boolean;
+};
+
+export async function getSubaccountMyAccess(subaccountId: number): Promise<TeamSubaccountMyAccessResponse> {
+  return apiRequest<TeamSubaccountMyAccessResponse>(`/team/subaccounts/${encodeURIComponent(String(subaccountId))}/my-access`);
+}
+
 
 export type TeamInviteResponse = {
   message: string;

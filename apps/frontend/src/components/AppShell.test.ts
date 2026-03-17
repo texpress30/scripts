@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildScopedClients, resolveSubaccountRouteGuardDecision } from "./AppShell";
+import { buildScopedClients, filterSubaccountNavItems, resolveSubaccountModuleRedirect, resolveSubaccountRouteGuardDecision } from "./AppShell";
 import type { SessionAccessContext } from "@/lib/session";
 
 function context(overrides: Partial<SessionAccessContext>): SessionAccessContext {
@@ -85,5 +85,81 @@ describe("AppShell sub-account access helpers", () => {
     });
 
     expect(redirect).toBeNull();
+  });
+
+  it("filters sub-account nav items by module_keys", () => {
+    const navItems = [
+      { href: "/sub/15/dashboard", label: "Dashboard", icon: {} as never, moduleKey: "dashboard" as const },
+      { href: "/sub/15/campaigns", label: "Campaigns", icon: {} as never, moduleKey: "campaigns" as const },
+      { href: "/sub/15/rules", label: "Rules", icon: {} as never, moduleKey: "rules" as const },
+    ];
+
+    const visible = filterSubaccountNavItems({
+      navItems,
+      role: "subaccount_user",
+      currentSubId: 15,
+      moduleKeys: ["dashboard", "rules"],
+      loading: false,
+    });
+
+    expect(visible.map((item) => item.label)).toEqual(["Dashboard", "Rules"]);
+  });
+
+  it("does not filter nav items for agency roles", () => {
+    const navItems = [
+      { href: "/sub/15/dashboard", label: "Dashboard", icon: {} as never, moduleKey: "dashboard" as const },
+      { href: "/sub/15/campaigns", label: "Campaigns", icon: {} as never, moduleKey: "campaigns" as const },
+    ];
+
+    const visible = filterSubaccountNavItems({
+      navItems,
+      role: "agency_admin",
+      currentSubId: 15,
+      moduleKeys: ["dashboard"],
+      loading: false,
+    });
+
+    expect(visible).toEqual(navItems);
+  });
+
+  it("keeps sidebar stable while access context is loading", () => {
+    const navItems = [
+      { href: "/sub/15/dashboard", label: "Dashboard", icon: {} as never, moduleKey: "dashboard" as const },
+      { href: "/sub/15/campaigns", label: "Campaigns", icon: {} as never, moduleKey: "campaigns" as const },
+    ];
+
+    const visible = filterSubaccountNavItems({
+      navItems,
+      role: "subaccount_user",
+      currentSubId: 15,
+      moduleKeys: null,
+      loading: true,
+    });
+
+    expect(visible).toEqual(navItems);
+  });
+
+  it("redirects manual access to first allowed module", () => {
+    const redirect = resolveSubaccountModuleRedirect({
+      pathname: "/sub/15/campaigns",
+      role: "subaccount_user",
+      currentSubId: 15,
+      moduleKeys: ["dashboard", "rules"],
+      loading: false,
+    });
+
+    expect(redirect).toBe("/sub/15/dashboard");
+  });
+
+  it("redirects to safe settings route when no module is allowed", () => {
+    const redirect = resolveSubaccountModuleRedirect({
+      pathname: "/sub/15/rules",
+      role: "subaccount_user",
+      currentSubId: 15,
+      moduleKeys: [],
+      loading: false,
+    });
+
+    expect(redirect).toBe("/subaccount/15/settings/profile");
   });
 });
