@@ -349,3 +349,4 @@
 - 2026-03-16: Când primești un crash report pe o linie specifică, rulează imediat verificările exacte cerute (`rg '_hash_password\('` + startup import) înainte de a presupune că fixul precedent nu a fost aplicat.
 - 2026-03-17: Când utilizatorul semnalează că o pagină frontend folosește încă mock-uri locale, verifică explicit constantele de tip `INITIAL_*` și acțiunile locale CRUD, apoi înlocuiește-le cu apeluri reale + refetch.
 - 2026-03-17: Pentru integrări noi agency-level, reutilizează `integration_secrets_store` + patternul de router/audit/RBAC existent; evită sisteme paralele și testează explicit masking-ul secretelor în status/read endpoints.
+- 2026-03-17: Pentru carduri de integrare care colectează secrete (ex. API keys), UI-ul trebuie să afișeze exclusiv valori mascate din backend și să ceară reintroducerea secretului la update, fără prefill sensibil.

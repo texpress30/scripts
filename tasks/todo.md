@@ -4454,3 +4454,18 @@
 
 ## Review
 - [x] Implementată fundația Mailgun agency-level (status/config/test), stocare în integration_secrets, masking API key, RBAC admin-only pentru config/test și acoperire de teste backend cu mock HTTP pentru send.
+
+---
+
+# TODO — UI Mailgun în Agency Integrations conectat la backend
+
+- [x] Re-auditez pagina Agency Integrations, cardurile existente și contractele Mailgun backend.
+- [x] Adaug card Mailgun în Agency Integrations, în stilul existent al paginii.
+- [x] Conectez status la `GET /agency/integrations/mailgun/status` cu loading/error/retry clare.
+- [x] Conectez formularul config la `POST /agency/integrations/mailgun/config` cu validări minime.
+- [x] Conectez test email la `POST /agency/integrations/mailgun/test` cu feedback success/failure.
+- [x] Mă asigur că `api_key` nu este afișată în clar (doar `api_key_masked`).
+- [x] Rulez testele frontend relevante + build frontend + screenshot.
+
+## Review
+- [x] Cardul Mailgun este conectat la endpointurile reale status/config/test, cu validări minime, mesaje clare pentru erori (inclusiv 403), masking API key și acoperire de teste frontend + build + screenshot.
