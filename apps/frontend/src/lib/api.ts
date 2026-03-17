@@ -37,6 +37,16 @@ export type RetryFailedSyncRunResult =
       status: number;
     };
 
+export class ApiRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.status = status;
+  }
+}
+
 function extractErrorMessage(detail: string, status: number, requestUrl: string): string {
   const raw = detail.trim();
   if (!raw) return `Request failed: ${status} (${requestUrl})`;
@@ -74,7 +84,7 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
 
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error(extractErrorMessage(detail, response.status, requestUrl));
+    throw new ApiRequestError(extractErrorMessage(detail, response.status, requestUrl), response.status);
   }
 
   return (await response.json()) as T;
@@ -260,4 +270,110 @@ export async function retryFailedSyncRun(jobId: string): Promise<RetryFailedSync
   }
 
   return { ok: true, payload: parsed as RetryFailedRunApiResponse };
+}
+
+
+export type SubaccountTeamMemberItem = {
+  membership_id: number;
+  user_id: number;
+  display_id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  extension: string;
+  role_key: string;
+  role_label: string;
+  source_scope: string;
+  source_label: string;
+  is_active: boolean;
+  is_inherited: boolean;
+};
+
+export type SubaccountTeamMemberListResponse = {
+  items: SubaccountTeamMemberItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  subaccount_id: number;
+};
+
+export type ListSubaccountTeamMembersParams = {
+  subaccountId: number;
+  search?: string;
+  userRole?: string;
+  page?: number;
+  pageSize?: number;
+};
+
+export type CreateSubaccountTeamMemberPayload = {
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone?: string;
+  extension?: string;
+  user_role?: "subaccount_admin" | "subaccount_user" | "subaccount_viewer";
+  password?: string;
+};
+
+export async function listSubaccountTeamMembers(params: ListSubaccountTeamMembersParams): Promise<SubaccountTeamMemberListResponse> {
+  const qp = new URLSearchParams();
+  qp.set("search", params.search ?? "");
+  qp.set("user_role", params.userRole ?? "");
+  qp.set("page", String(params.page ?? 1));
+  qp.set("page_size", String(params.pageSize ?? 10));
+  return apiRequest<SubaccountTeamMemberListResponse>(`/team/subaccounts/${encodeURIComponent(String(params.subaccountId))}/members?${qp.toString()}`);
+}
+
+export async function createSubaccountTeamMember(subaccountId: number, payload: CreateSubaccountTeamMemberPayload): Promise<{ item: SubaccountTeamMemberItem }> {
+  return apiRequest<{ item: SubaccountTeamMemberItem }>(`/team/subaccounts/${encodeURIComponent(String(subaccountId))}/members`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+
+export type MailgunStatusResponse = {
+  configured: boolean;
+  enabled: boolean;
+  domain: string;
+  base_url: string;
+  from_email: string;
+  from_name: string;
+  reply_to: string;
+  api_key_masked: string;
+};
+
+export type MailgunConfigPayload = {
+  api_key: string;
+  domain: string;
+  base_url: string;
+  from_email: string;
+  from_name: string;
+  reply_to?: string;
+  enabled?: boolean;
+};
+
+export type MailgunTestPayload = {
+  to_email: string;
+  subject?: string;
+  text?: string;
+};
+
+export async function getMailgunStatus(): Promise<MailgunStatusResponse> {
+  return apiRequest<MailgunStatusResponse>("/agency/integrations/mailgun/status");
+}
+
+export async function saveMailgunConfig(payload: MailgunConfigPayload): Promise<MailgunStatusResponse> {
+  return apiRequest<MailgunStatusResponse>("/agency/integrations/mailgun/config", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function sendMailgunTestEmail(payload: MailgunTestPayload): Promise<{ ok: boolean; message?: string; id?: string; to_email?: string; subject?: string }> {
+  return apiRequest<{ ok: boolean; message?: string; id?: string; to_email?: string; subject?: string }>("/agency/integrations/mailgun/test", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
