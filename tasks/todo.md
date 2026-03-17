@@ -4580,3 +4580,20 @@
 - [x] Fix: wrapped reset-token creation in `AuthEmailTokenError` handling, audit-logged the failure, and returned a consistent 503 user-safe message.
 - [x] Added regression test proving token-generation failures do not attempt mail send and return HTTP 503.
 - [x] Verification: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q apps/backend/tests/test_auth_forgot_reset_api.py`.
+
+---
+
+# TODO — Agency Team 500 regression on /team/members and /team/subaccount-options
+
+- [x] Re-read team API/service/schema/client-registry/frontend API files and trace current endpoint wiring.
+- [x] Reproduce locally `GET /team/members?page=1&page_size=10` and `GET /team/subaccount-options` 500 responses with exact stack traces.
+- [x] Apply minimal backend fixes for both endpoints (no auth/forgot/reset scope), preserving Agency Team compatibility and invite flow membership_id usage.
+- [x] Add backend regression tests for endpoint 200 + response shape + legacy/incomplete data resilience.
+- [x] Run backend targeted tests + backend startup check + endpoint verification; update review notes.
+
+## Review
+- [x] Root cause `/team/subaccount-options`: API cast `int(row.get("id"))` without legacy guard; non-numeric client IDs from incomplete registry rows raised `ValueError` in `apps/backend/app/api/team.py` and bubbled to 500.
+- [x] Root cause `/team/members`: list mapping in `team_members_service.list_members` assumed fully clean DB rows and canonical role keys; malformed numeric fields or unknown legacy role keys could raise conversion/mapping exceptions during row serialization and break endpoint load path.
+- [x] Fix: added defensive normalization in `list_members` (safe int parsing + role fallback by scope) and resilient subaccount-options normalization (skip invalid IDs, safe name/label fallbacks), while keeping response contract and invite compatibility.
+- [x] Regression coverage added for both endpoint paths with malformed legacy data.
+- [x] Verification: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q apps/backend/tests/test_team_members_foundation.py apps/backend/tests/test_team_subaccount_api.py apps/backend/tests/test_team_invite_api.py` and `APP_AUTH_SECRET=test-secret PYTHONPATH=apps/backend python -c "from app.main import app; print('ok')"`.

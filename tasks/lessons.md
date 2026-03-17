@@ -357,3 +357,8 @@
 - 2026-03-17: Pentru invite backend pe memberships existente, aplică autorizare în funcție de `scope_type` al membership-ului (agency vs subaccount) și reutilizează `reset-password/confirm` pentru consumul tokenurilor `invite_user` fără schimbarea contractului public.
 
 - 2026-03-17: Pentru acțiuni UI per-rând (ex. invite), păstrează loading local pe item și mapează explicit codurile backend critice (403/404/503) în mesaje UX clare, fără blocarea întregii pagini.
+
+## 2026-03-17 — Respect bug-report scope before adjacent hotfixes
+- When user reports a concrete production blocker on specific endpoints, reproduce and fix those endpoints first before touching adjacent auth flows.
+- Add an explicit “scope guard” checklist item in `tasks/todo.md` naming out-of-scope endpoints to avoid drift.
+- For 500 regressions on list endpoints, always test malformed legacy rows (invalid IDs/unknown role keys/null-ish fields) to prevent serialization crashes.

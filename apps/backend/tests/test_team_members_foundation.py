@@ -26,6 +26,42 @@ class _FakeCursor:
         return False
 
 
+class _ListMembersCursor:
+    def __init__(self, rows):
+        self._rows = rows
+        self._fetchone = (len(rows),)
+
+    def execute(self, query, params=None):
+        if "SELECT COUNT(*)" in str(query):
+            self._fetchone = (len(self._rows),)
+
+    def fetchone(self):
+        return self._fetchone
+
+    def fetchall(self):
+        return self._rows
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class _ListMembersConnection:
+    def __init__(self, rows):
+        self._cursor = _ListMembersCursor(rows)
+
+    def cursor(self):
+        return self._cursor
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
 class _FakeConnection:
     def __init__(self):
         self.cursor_obj = _FakeCursor()
@@ -173,6 +209,41 @@ class TeamMembersFoundationTests(unittest.TestCase):
             self.assertIn("Client Alpha", resp.items[0].label)
         finally:
             team_api.client_registry_service.list_clients = original
+
+    def test_subaccount_options_endpoint_skips_invalid_legacy_rows(self):
+        original = team_api.client_registry_service.list_clients
+        try:
+            team_api.client_registry_service.list_clients = lambda: [
+                {"id": "legacy", "display_id": None, "name": "Broken"},
+                {"id": 5, "display_id": "X5", "name": ""},
+                {"id": 6, "display_id": 11, "name": "Client Gamma"},
+            ]
+            resp = team_api.list_subaccount_options(user=self.user)
+            self.assertEqual(len(resp.items), 2)
+            self.assertEqual(resp.items[0].id, 5)
+            self.assertEqual(resp.items[0].name, "Sub-account 5")
+            self.assertEqual(resp.items[0].label, "#X5 — Sub-account 5")
+            self.assertEqual(resp.items[1].id, 6)
+        finally:
+            team_api.client_registry_service.list_clients = original
+
+    def test_list_members_tolerates_legacy_role_key_and_invalid_numeric_rows(self):
+        service = TeamMembersService()
+        rows = [
+            ("broken", 9, "Skip", "Me", "skip@example.com", "", "", "agency_admin", "Toate", "agency"),
+            (10, 20, "Ana", "Ionescu", "ana@example.com", "", "", "legacy_owner", "Toate", "agency"),
+            (11, 21, "Ion", "Pop", "ion@example.com", "", "", "legacy_client", "Client A", "subaccount"),
+        ]
+        service._connect = lambda: _ListMembersConnection(rows)
+
+        items, total = service.list_members(search="", user_type="", user_role="", subaccount="", page=1, page_size=10)
+
+        self.assertEqual(total, 3)
+        self.assertEqual(len(items), 2)
+        self.assertEqual(items[0]["user_type"], "agency")
+        self.assertEqual(items[0]["user_role"], "member")
+        self.assertEqual(items[1]["user_type"], "client")
+        self.assertEqual(items[1]["user_role"], "member")
 
     def test_create_member_endpoint_returns_400_for_validation(self):
         original = team_api.team_members_service.create_member

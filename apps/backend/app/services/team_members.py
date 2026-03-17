@@ -46,6 +46,23 @@ class SubaccountRef:
 
 
 class TeamMembersService:
+    @staticmethod
+    def _safe_int(value: object) -> int | None:
+        try:
+            return int(value)
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _safe_map_member_role(self, *, role_key: object, scope_type: object) -> tuple[str, str]:
+        normalized_role_key = str(role_key or "").strip().lower()
+        try:
+            return self.map_canonical_to_payload_role(role_key=normalized_role_key)
+        except ValueError:
+            normalized_scope = str(scope_type or "").strip().lower()
+            if normalized_scope == "subaccount":
+                return ("client", "member")
+            return ("agency", "member")
+
     def _connect(self):
         settings = load_settings()
         if psycopg is None:
@@ -406,7 +423,7 @@ class TeamMembersService:
 
                 cur.execute(
                     f"""
-                    SELECT um.id, um.user_id, u.first_name, u.last_name, u.email, u.phone, u.extension, um.role_key, um.subaccount_name
+                    SELECT um.id, um.user_id, u.first_name, u.last_name, u.email, u.phone, u.extension, um.role_key, um.subaccount_name, um.scope_type
                     FROM user_memberships um
                     JOIN users u ON u.id = um.user_id
                     {where_sql}
@@ -419,19 +436,22 @@ class TeamMembersService:
 
         items: list[dict[str, object]] = []
         for row in rows:
-            role_key = str(row[7])
-            mapped_user_type, mapped_user_role = self.map_canonical_to_payload_role(role_key=role_key)
-            membership_id = int(row[0])
+            membership_id = self._safe_int(row[0])
+            user_id = self._safe_int(row[1])
+            if membership_id is None or user_id is None:
+                continue
+
+            mapped_user_type, mapped_user_role = self._safe_map_member_role(role_key=row[7], scope_type=row[9])
             items.append(
                 {
                     "id": membership_id,
                     "membership_id": membership_id,
-                    "user_id": int(row[1]),
-                    "first_name": str(row[2]),
-                    "last_name": str(row[3]),
-                    "email": str(row[4]),
-                    "phone": str(row[5]),
-                    "extension": str(row[6]),
+                    "user_id": user_id,
+                    "first_name": str(row[2] or ""),
+                    "last_name": str(row[3] or ""),
+                    "email": str(row[4] or ""),
+                    "phone": str(row[5] or ""),
+                    "extension": str(row[6] or ""),
                     "user_type": mapped_user_type,
                     "user_role": mapped_user_role,
                     "location": "România",

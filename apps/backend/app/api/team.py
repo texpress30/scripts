@@ -158,13 +158,22 @@ def list_subaccount_options(user: AuthUser = Depends(get_current_user)) -> TeamS
     enforce_action_scope(user=user, action="clients:list", scope="agency")
     items: list[TeamSubaccountOptionItem] = []
     for row in client_registry_service.list_clients():
-        client_id = row.get("id")
-        name = str(row.get("name") or "").strip()
-        if client_id is None or name == "":
+        try:
+            client_id = int(row.get("id"))
+        except Exception:  # noqa: BLE001
             continue
-        display_id = row.get("display_id")
-        label = f"#{display_id} — {name}" if display_id is not None else name
-        items.append(TeamSubaccountOptionItem(id=int(client_id), name=name, label=label))
+
+        name = str(row.get("name") or "").strip() or f"Sub-account {client_id}"
+
+        display_id_raw = str(row.get("display_id") or "").strip()
+        if display_id_raw == "":
+            label = name
+        else:
+            label = f"#{display_id_raw} — {name}"
+
+        if name == "":
+            continue
+        items.append(TeamSubaccountOptionItem(id=client_id, name=name, label=label))
     return TeamSubaccountOptionsResponse(items=items)
 
 
