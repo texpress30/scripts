@@ -10,6 +10,7 @@ from app.schemas.team import (
     TeamMemberInviteResponse,
     TeamMemberListResponse,
     TeamMemberResponse,
+    TeamModuleCatalogResponse,
     TeamSubaccountOptionItem,
     TeamSubaccountOptionsResponse,
 )
@@ -64,6 +65,8 @@ def create_team_member(payload: CreateTeamMemberRequest, user: AuthUser = Depend
             location=payload.location,
             subaccount=payload.subaccount,
             password=payload.password,
+            module_keys=payload.module_keys,
+            actor_user=user,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -153,6 +156,18 @@ def invite_team_member(membership_id: int, user: AuthUser = Depends(get_current_
     return TeamMemberInviteResponse(message="Invitația a fost trimisă")
 
 
+@router.get("/module-catalog", response_model=TeamModuleCatalogResponse)
+def get_team_module_catalog(
+    scope: str = Query(default="subaccount"),
+    user: AuthUser = Depends(get_current_user),
+) -> TeamModuleCatalogResponse:
+    try:
+        items = team_members_service.list_module_catalog(scope=scope)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return TeamModuleCatalogResponse(items=items)
+
+
 @router.get("/subaccount-options", response_model=TeamSubaccountOptionsResponse)
 def list_subaccount_options(user: AuthUser = Depends(get_current_user)) -> TeamSubaccountOptionsResponse:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
@@ -220,6 +235,8 @@ def create_subaccount_team_member(
             extension=payload.extension,
             user_role=payload.user_role,
             password=payload.password,
+            module_keys=payload.module_keys,
+            actor_user=user,
         )
     except ValueError as exc:
         if "inexistent" in str(exc).lower():

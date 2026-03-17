@@ -4670,3 +4670,24 @@
 - [x] `AppShell` filtrează lista de clienți după acces permis, completează lipsurile din metadata token și aplică guard pentru URL-uri `/sub/:id` nepermise cu redirect sigur către sub-account valid.
 - [x] Login-ul redirecționează utilizatorii scoped direct pe dashboard-ul sub-account-ului sigur (unic sau primary), păstrând fallback agency pentru roluri globale.
 - [x] Teste noi/adaptate pentru parser sesiune și helper-ele AppShell (filtrare + decizie guard) rulează cu succes; build frontend validat.
+
+---
+
+# TODO — Backend foundation module permissions pe membership (sub-account)
+
+- [x] Re-auditez serviciile/API/scheme team + dependințe RBAC pentru punctele de integrare.
+- [x] Introduc catalog canonic de module sub-account (key/label/order/scope) și helperi de service.
+- [x] Adaug storage idempotent `membership_module_permissions` + helperi read/write/default.
+- [x] Extind create flows (`/team/members`, `/team/subaccounts/{id}/members`) cu `module_keys` opțional și validări scope.
+- [x] Implementez grant ceiling pentru actori `subaccount_*` (subset din modulele actorului pe același sub-account).
+- [x] Extind payload-urile de răspuns cu `module_keys` pentru membership-uri relevante.
+- [x] Adaug endpoint `GET /team/module-catalog?scope=subaccount`.
+- [x] Adaug/rulez teste backend pentru schema, validări, defaults, ceiling, endpoint catalog și contract responses.
+- [x] Rulez startup check backend și documentez rezultatele.
+
+## Review
+- [x] `team_members` gestionează acum catalogul canonic de module sub-account și persistă module active per membership în `membership_module_permissions`.
+- [x] `module_keys` este backward-compatible (opțional), default la create pentru `subaccount_*` este „toate modulele”, iar pentru scope `agency` este respins explicit cu 400.
+- [x] Grant ceiling este activ: actorii subaccount pot acorda doar subset din modulele proprii pentru sub-account-ul țintă.
+- [x] API-ul expune catalogul de module (`/team/module-catalog`) și returnează `module_keys` în response-urile de team memberships.
+- [x] Testele backend țintite + startup check backend au fost rulate pentru validare.

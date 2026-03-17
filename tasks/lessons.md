@@ -365,3 +365,5 @@
 - 2026-03-17: Când endpointul backend pentru o acțiune UI există deja (ex. invite), reutilizează helperul API comun în toate paginile relevante înainte de a crea logică nouă; păstrează loading per-row + mapping explicit 403/404/503 pentru UX stabil.
 - 2026-03-17: Când un flux devine multi-step în același submit (ex. create + invite), tratează success complet vs success parțial explicit în UI și nu te baza pe erori globale care pot fi resetate de refetch imediat.
 - 2026-03-17: Pentru auth subaccount, evită modelul single-active-subaccount în token; păstrează listă explicită de sub-account-uri permise și tratează enforce pe această listă, cu fallback backward-compatible pentru tokenuri legacy.
+
+- 2026-03-17: După feedback de tip "unsatisfied" pe PR anterior, re-verific strict scope-ul cerut (evită schimbări extra), apoi livrează incremental cu teste țintite exact pe cerințe înainte de commit/PR.

@@ -149,6 +149,7 @@ class TeamMembersFoundationTests(unittest.TestCase):
         service._upsert_user = lambda **kwargs: 13
         service._upsert_membership = lambda **kwargs: 103
         service._resolve_subaccount_ref = lambda **kwargs: type("_S", (), {"id": 9, "name": "Client X"})()
+        service.set_membership_module_keys = lambda **kwargs: None
 
         item = service.create_member(
             first_name="Mara",
@@ -259,6 +260,181 @@ class TeamMembersFoundationTests(unittest.TestCase):
                 )
             self.assertEqual(ctx.exception.status_code, 400)
             self.assertIn("Email este obligatoriu", str(ctx.exception.detail))
+        finally:
+            team_api.team_members_service.create_member = original
+
+
+    def test_initialize_schema_creates_membership_module_permissions_table(self):
+        service = TeamMembersService()
+        conn = _FakeConnection()
+        service._connect = lambda: conn
+
+        service.initialize_schema()
+
+        joined = "\n".join(conn.cursor_obj.queries)
+        self.assertIn("CREATE TABLE IF NOT EXISTS membership_module_permissions", joined)
+        self.assertIn("idx_membership_module_permissions_unique", joined)
+
+    def test_create_subaccount_member_with_module_keys(self):
+        service = TeamMembersService()
+        service._upsert_user = lambda **kwargs: 13
+        service._upsert_membership = lambda **kwargs: 103
+        service._resolve_subaccount_ref = lambda **kwargs: type("_S", (), {"id": 9, "name": "Client X"})()
+
+        captured: dict[str, object] = {}
+
+        def _set_membership_module_keys(**kwargs):
+            captured.update(kwargs)
+
+        service.set_membership_module_keys = _set_membership_module_keys
+
+        item = service.create_member(
+            first_name="Mara",
+            last_name="Dobre",
+            email="mara@example.com",
+            phone="",
+            extension="",
+            user_type="client",
+            user_role="viewer",
+            location="România",
+            subaccount="Client X",
+            password=None,
+            module_keys=["dashboard", "creative"],
+        )
+
+        self.assertEqual(item["module_keys"], ["dashboard", "creative"])
+        self.assertEqual(captured["scope_type"], "subaccount")
+        self.assertEqual(captured["module_keys"], ["dashboard", "creative"])
+
+    def test_create_subaccount_member_without_module_keys_uses_defaults(self):
+        service = TeamMembersService()
+        service._upsert_user = lambda **kwargs: 13
+        service._upsert_membership = lambda **kwargs: 103
+        service._resolve_subaccount_ref = lambda **kwargs: type("_S", (), {"id": 9, "name": "Client X"})()
+        service.set_membership_module_keys = lambda **kwargs: None
+
+        item = service.create_member(
+            first_name="Mara",
+            last_name="Dobre",
+            email="mara@example.com",
+            phone="",
+            extension="",
+            user_type="client",
+            user_role="viewer",
+            location="România",
+            subaccount="Client X",
+            password=None,
+            module_keys=None,
+        )
+
+        self.assertEqual(item["module_keys"], ["dashboard", "campaigns", "rules", "creative", "recommendations"])
+
+    def test_create_agency_member_with_module_keys_rejected(self):
+        service = TeamMembersService()
+        service._upsert_user = lambda **kwargs: 11
+        service._upsert_membership = lambda **kwargs: 101
+
+        with self.assertRaisesRegex(ValueError, "module_keys este permis doar"):
+            service.create_member(
+                first_name="Ana",
+                last_name="Ionescu",
+                email="ANA@EXAMPLE.COM",
+                phone="+40 700",
+                extension="12",
+                user_type="agency",
+                user_role="admin",
+                location="România",
+                subaccount="Toate",
+                password=None,
+                module_keys=["dashboard"],
+            )
+
+    def test_invalid_module_key_rejected(self):
+        service = TeamMembersService()
+        service._upsert_user = lambda **kwargs: 13
+        service._upsert_membership = lambda **kwargs: 103
+        service._resolve_subaccount_ref = lambda **kwargs: type("_S", (), {"id": 9, "name": "Client X"})()
+
+        with self.assertRaisesRegex(ValueError, "Modul invalid"):
+            service.create_member(
+                first_name="Mara",
+                last_name="Dobre",
+                email="mara@example.com",
+                phone="",
+                extension="",
+                user_type="client",
+                user_role="viewer",
+                location="România",
+                subaccount="Client X",
+                password=None,
+                module_keys=["dashboard", "invalid-module"],
+            )
+
+    def test_module_catalog_endpoint_contract(self):
+        original = team_api.team_members_service.list_module_catalog
+        try:
+            team_api.team_members_service.list_module_catalog = lambda **kwargs: [
+                {"key": "dashboard", "label": "Dashboard", "order": 1, "scope": "subaccount"},
+                {"key": "campaigns", "label": "Campaigns", "order": 2, "scope": "subaccount"},
+            ]
+            resp = team_api.get_team_module_catalog(scope="subaccount", user=self.user)
+            self.assertEqual(len(resp.items), 2)
+            self.assertEqual(resp.items[0].key, "dashboard")
+        finally:
+            team_api.team_members_service.list_module_catalog = original
+
+
+    def test_create_member_endpoint_passes_module_keys_for_client_user(self):
+        original = team_api.team_members_service.create_member
+        try:
+            def _fake_create(**kwargs):
+                self.assertEqual(kwargs["module_keys"], ["dashboard", "creative"])
+                return {
+                    "id": 99,
+                    "first_name": "Ana",
+                    "last_name": "Ionescu",
+                    "email": "ana@example.com",
+                    "phone": "",
+                    "extension": "",
+                    "user_type": "client",
+                    "user_role": "member",
+                    "location": "România",
+                    "subaccount": "Client A",
+                    "module_keys": ["dashboard", "creative"],
+                }
+
+            team_api.team_members_service.create_member = _fake_create
+            payload = CreateTeamMemberRequest(
+                first_name="Ana",
+                last_name="Ionescu",
+                email="ana@example.com",
+                user_type="client",
+                user_role="member",
+                subaccount="Client A",
+                module_keys=["dashboard", "creative"],
+            )
+            resp = team_api.create_team_member(payload=payload, user=self.user)
+            self.assertEqual(resp.item.module_keys, ["dashboard", "creative"])
+        finally:
+            team_api.team_members_service.create_member = original
+
+    def test_create_member_endpoint_rejects_module_keys_for_agency_user(self):
+        original = team_api.team_members_service.create_member
+        try:
+            team_api.team_members_service.create_member = lambda **kwargs: (_ for _ in ()).throw(
+                ValueError("module_keys este permis doar pentru membership-uri de sub-account")
+            )
+            payload = CreateTeamMemberRequest(
+                first_name="Ana",
+                last_name="Ionescu",
+                email="ana@example.com",
+                user_type="agency",
+                user_role="member",
+                module_keys=["dashboard"],
+            )
+            with self.assertRaises(team_api.HTTPException) as ctx:
+                team_api.create_team_member(payload=payload, user=self.user)
+            self.assertEqual(ctx.exception.status_code, 400)
         finally:
             team_api.team_members_service.create_member = original
 

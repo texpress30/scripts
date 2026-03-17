@@ -137,10 +137,12 @@ class TeamSubaccountApiTests(unittest.TestCase):
         original_resolve = service._resolve_subaccount_by_id
         original_upsert_user = service._upsert_user
         original_upsert_membership = service._upsert_membership
+        original_set_modules = service.set_membership_module_keys
         try:
             service._resolve_subaccount_by_id = lambda **kwargs: type("_S", (), {"id": 10, "name": "Client X"})()
             service._upsert_user = lambda **kwargs: 20
             service._upsert_membership = lambda **kwargs: 500  # existing membership id reused
+            service.set_membership_module_keys = lambda **kwargs: None
             item = service.create_subaccount_member(
                 subaccount_id=10,
                 first_name="Ana",
@@ -157,7 +159,107 @@ class TeamSubaccountApiTests(unittest.TestCase):
             service._resolve_subaccount_by_id = original_resolve
             service._upsert_user = original_upsert_user
             service._upsert_membership = original_upsert_membership
+            service.set_membership_module_keys = original_set_modules
 
+    def test_subaccount_actor_cannot_grant_modules_outside_own_set(self):
+        service = team_api.team_members_service
+        original_resolve = service._resolve_subaccount_by_id
+        original_upsert_user = service._upsert_user
+        original_upsert_membership = service._upsert_membership
+        original_grantable = service.get_grantable_module_keys_for_actor
+        original_set_modules = service.set_membership_module_keys
+        try:
+            service._resolve_subaccount_by_id = lambda **kwargs: type("_S", (), {"id": 10, "name": "Client X"})()
+            service._upsert_user = lambda **kwargs: 20
+            service._upsert_membership = lambda **kwargs: 500
+            service.get_grantable_module_keys_for_actor = lambda **kwargs: {"dashboard", "creative"}
+            service.set_membership_module_keys = lambda **kwargs: None
+
+            actor = AuthUser(email="sub@example.com", role="subaccount_user", user_id=99)
+            with self.assertRaisesRegex(ValueError, "în afara permisiunilor proprii"):
+                service.create_subaccount_member(
+                    subaccount_id=10,
+                    first_name="Ana",
+                    last_name="D",
+                    email="ANA@EXAMPLE.COM",
+                    phone="",
+                    extension="",
+                    user_role="subaccount_user",
+                    password=None,
+                    module_keys=["dashboard", "campaigns"],
+                    actor_user=actor,
+                )
+        finally:
+            service._resolve_subaccount_by_id = original_resolve
+            service._upsert_user = original_upsert_user
+            service._upsert_membership = original_upsert_membership
+            service.get_grantable_module_keys_for_actor = original_grantable
+            service.set_membership_module_keys = original_set_modules
+
+    def test_agency_actor_can_grant_any_valid_modules(self):
+        service = team_api.team_members_service
+        original_resolve = service._resolve_subaccount_by_id
+        original_upsert_user = service._upsert_user
+        original_upsert_membership = service._upsert_membership
+        original_set = service.set_membership_module_keys
+        try:
+            service._resolve_subaccount_by_id = lambda **kwargs: type("_S", (), {"id": 10, "name": "Client X"})()
+            service._upsert_user = lambda **kwargs: 20
+            service._upsert_membership = lambda **kwargs: 500
+            captured = {}
+            service.set_membership_module_keys = lambda **kwargs: captured.update(kwargs)
+
+            actor = AuthUser(email="admin@example.com", role="agency_admin", user_id=1)
+            item = service.create_subaccount_member(
+                subaccount_id=10,
+                first_name="Ana",
+                last_name="D",
+                email="ANA@EXAMPLE.COM",
+                phone="",
+                extension="",
+                user_role="subaccount_user",
+                password=None,
+                module_keys=["dashboard", "campaigns"],
+                actor_user=actor,
+            )
+            self.assertEqual(item["module_keys"], ["dashboard", "campaigns"])
+            self.assertEqual(captured["module_keys"], ["dashboard", "campaigns"])
+        finally:
+            service._resolve_subaccount_by_id = original_resolve
+            service._upsert_user = original_upsert_user
+            service._upsert_membership = original_upsert_membership
+            service.set_membership_module_keys = original_set
+
+    def test_subaccount_list_response_includes_module_keys(self):
+        user = AuthUser(email="admin@example.com", role="agency_admin")
+        original = team_api.team_members_service.list_subaccount_members
+        try:
+            team_api.team_members_service.list_subaccount_members = lambda **kwargs: (
+                [
+                    {
+                        "membership_id": 1,
+                        "user_id": 4,
+                        "display_id": "TM-1",
+                        "first_name": "Ana",
+                        "last_name": "Ionescu",
+                        "email": "ana@example.com",
+                        "phone": "",
+                        "extension": "",
+                        "role_key": "subaccount_user",
+                        "role_label": "Subaccount User",
+                        "source_scope": "subaccount",
+                        "source_label": "Client A",
+                        "is_active": True,
+                        "is_inherited": False,
+                        "module_keys": ["dashboard", "creative"],
+                    }
+                ],
+                1,
+            )
+            resp = team_api.list_subaccount_team_members(subaccount_id=8, search="", user_role="", page=1, page_size=10, user=user)
+            self.assertEqual(resp.items[0].module_keys, ["dashboard", "creative"])
+        finally:
+            team_api.team_members_service.list_subaccount_members = original
 
 if __name__ == "__main__":
     unittest.main()

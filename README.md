@@ -242,6 +242,10 @@ cd apps/frontend && npm run build
   - `GET /team/subaccounts/{subaccount_id}/members`
   - `POST /team/subaccounts/{subaccount_id}/members`
 - Scope enforcement: rolurile `subaccount_*` sunt limitate la propriul `subaccount_id` din token; rolurile agency/global pot accesa orice sub-account permis de RBAC.
+- Role picker-ul rămâne sursa de adevăr pentru rolul de bază; în plus, membership-urile `subaccount` pot avea acum `module_keys` (catalog canonic: `dashboard`, `campaigns`, `rules`, `creative`, `recommendations`) pentru restricții fine pe module.
+- Pentru membership-uri `subaccount`, dacă `module_keys` lipsește la create se aplică default-ul „toate modulele”; pentru membership-uri `agency`, trimiterea `module_keys` este respinsă explicit (400).
+- Grant ceiling backend: un actor `subaccount_*` poate acorda doar subset din modulele pe care le are deja pe același sub-account; actorii agency/global pot acorda orice modul valid.
+- Endpoint nou: `GET /team/module-catalog?scope=subaccount` pentru UI-ul viitor (returnează `key`, `label`, `order`, `scope`).
 - În acest pas nu sunt implementate încă: edit/deactivate/delete member, reassignment din UI, invite/reset password.
 - Mailgun backend foundation (agency-level) este disponibilă prin endpointurile:
   - `GET /agency/integrations/mailgun/status`

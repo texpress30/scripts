@@ -3,8 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.core.config import load_settings
-from app.services.auth import hash_password
+from app.services.auth import AuthUser, hash_password
 from app.services.client_registry import client_registry_service
+from app.services.rbac import normalize_role
 
 try:
     import psycopg
@@ -43,6 +44,25 @@ _CANONICAL_TO_UI_ROLE_MAP: dict[str, tuple[str, str]] = {
 class SubaccountRef:
     id: int
     name: str
+
+
+@dataclass(frozen=True)
+class ModuleCatalogItem:
+    key: str
+    label: str
+    order: int
+    scope: str = "subaccount"
+
+
+SUBACCOUNT_MODULE_CATALOG: tuple[ModuleCatalogItem, ...] = (
+    ModuleCatalogItem(key="dashboard", label="Dashboard", order=1),
+    ModuleCatalogItem(key="campaigns", label="Campaigns", order=2),
+    ModuleCatalogItem(key="rules", label="Rules", order=3),
+    ModuleCatalogItem(key="creative", label="Creative", order=4),
+    ModuleCatalogItem(key="recommendations", label="Recommendations", order=5),
+)
+
+SUBACCOUNT_MODULE_KEY_SET: set[str] = {item.key for item in SUBACCOUNT_MODULE_CATALOG}
 
 
 class TeamMembersService:
@@ -129,6 +149,29 @@ class TeamMembersService:
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_user_memberships_role_key ON user_memberships(role_key)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_user_memberships_status ON user_memberships(status)")
 
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS membership_module_permissions (
+                        id BIGSERIAL PRIMARY KEY,
+                        membership_id BIGINT NOT NULL REFERENCES user_memberships(id) ON DELETE CASCADE,
+                        module_key TEXT NOT NULL,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_membership_module_permissions_unique
+                    ON membership_module_permissions (membership_id, module_key)
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_membership_module_permissions_membership_id
+                    ON membership_module_permissions (membership_id)
+                    """
+                )
+
                 # transitional/legacy storage retained for backward compatibility during migration.
                 cur.execute(
                     """
@@ -163,6 +206,159 @@ class TeamMembersService:
         if mapped is None:
             raise ValueError(f"Rol canonic necunoscut: {role_key}")
         return mapped
+
+    def list_module_catalog(self, *, scope: str = "subaccount") -> list[dict[str, object]]:
+        normalized_scope = str(scope or "").strip().lower()
+        if normalized_scope != "subaccount":
+            raise ValueError("Scope invalid pentru catalogul de module")
+        return [
+            {"key": item.key, "label": item.label, "order": item.order, "scope": item.scope}
+            for item in SUBACCOUNT_MODULE_CATALOG
+        ]
+
+    def default_module_keys_for_role(self, *, role_key: str) -> list[str]:
+        normalized_role = normalize_role(role_key)
+        if normalized_role.startswith("subaccount_"):
+            return [item.key for item in SUBACCOUNT_MODULE_CATALOG]
+        return []
+
+    def _normalize_subaccount_module_keys(self, module_keys: list[str] | tuple[str, ...] | None) -> list[str]:
+        if module_keys is None:
+            return []
+
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for module_key in module_keys:
+            key = str(module_key or "").strip().lower()
+            if key == "":
+                continue
+            if key in seen:
+                continue
+            if key not in SUBACCOUNT_MODULE_KEY_SET:
+                raise ValueError(f"Modul invalid: {key}")
+            seen.add(key)
+            normalized.append(key)
+        return normalized
+
+    def _resolve_create_module_keys(
+        self,
+        *,
+        scope_type: str,
+        role_key: str,
+        requested_module_keys: list[str] | None,
+        subaccount_id: int | None,
+        actor_user: AuthUser | None,
+    ) -> list[str]:
+        if scope_type != "subaccount":
+            if requested_module_keys:
+                raise ValueError("module_keys este permis doar pentru membership-uri de sub-account")
+            return []
+
+        normalized = self._normalize_subaccount_module_keys(requested_module_keys)
+        if len(normalized) == 0:
+            normalized = self.default_module_keys_for_role(role_key=role_key)
+
+        if actor_user is not None:
+            grantable = self.get_grantable_module_keys_for_actor(actor_user=actor_user, subaccount_id=int(subaccount_id or 0))
+            if len(grantable) > 0:
+                forbidden = [key for key in normalized if key not in grantable]
+                if forbidden:
+                    joined = ", ".join(forbidden)
+                    raise ValueError(f"Nu poți acorda module în afara permisiunilor proprii: {joined}")
+        return normalized
+
+    def get_membership_module_keys(self, *, membership_id: int, role_key: str, scope_type: str) -> list[str]:
+        normalized_scope = str(scope_type or "").strip().lower()
+        if normalized_scope != "subaccount":
+            return []
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT module_key
+                    FROM membership_module_permissions
+                    WHERE membership_id = %s
+                    ORDER BY module_key ASC
+                    """,
+                    (int(membership_id),),
+                )
+                rows = cur.fetchall()
+
+        try:
+            stored = self._normalize_subaccount_module_keys([str(row[0]) for row in rows])
+        except ValueError:
+            return self.default_module_keys_for_role(role_key=role_key)
+        if len(stored) == 0:
+            return self.default_module_keys_for_role(role_key=role_key)
+        return stored
+
+    def set_membership_module_keys(self, *, membership_id: int, scope_type: str, module_keys: list[str]) -> None:
+        if scope_type != "subaccount":
+            if module_keys:
+                raise ValueError("module_keys este permis doar pentru membership-uri de sub-account")
+            return
+
+        normalized = self._normalize_subaccount_module_keys(module_keys)
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM membership_module_permissions WHERE membership_id = %s", (int(membership_id),))
+                for module_key in normalized:
+                    cur.execute(
+                        """
+                        INSERT INTO membership_module_permissions (membership_id, module_key)
+                        VALUES (%s, %s)
+                        ON CONFLICT (membership_id, module_key) DO NOTHING
+                        """,
+                        (int(membership_id), module_key),
+                    )
+            conn.commit()
+
+    def _membership_module_keys_map(self, membership_rows: list[tuple[int, str, str]]) -> dict[int, list[str]]:
+        out: dict[int, list[str]] = {}
+        for membership_id, role_key, scope_type in membership_rows:
+            out[int(membership_id)] = self.get_membership_module_keys(
+                membership_id=int(membership_id),
+                role_key=str(role_key),
+                scope_type=str(scope_type),
+            )
+        return out
+
+    def get_grantable_module_keys_for_actor(self, *, actor_user: AuthUser, subaccount_id: int) -> set[str]:
+        actor_role = normalize_role(actor_user.role)
+        if not actor_role.startswith("subaccount_"):
+            return set(SUBACCOUNT_MODULE_KEY_SET)
+
+        if actor_user.user_id is None:
+            return set()
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, role_key, scope_type
+                    FROM user_memberships
+                    WHERE user_id = %s
+                      AND role_key = %s
+                      AND scope_type = 'subaccount'
+                      AND subaccount_id = %s
+                      AND status = 'active'
+                    ORDER BY id ASC
+                    LIMIT 1
+                    """,
+                    (int(actor_user.user_id), actor_role, int(subaccount_id)),
+                )
+                row = cur.fetchone()
+
+        if row is None:
+            return set()
+
+        module_keys = self.get_membership_module_keys(
+            membership_id=int(row[0]),
+            role_key=str(row[1]),
+            scope_type=str(row[2]),
+        )
+        return set(module_keys)
 
     def _resolve_subaccount_ref(self, *, subaccount: str) -> SubaccountRef:
         candidate = subaccount.strip()
@@ -299,6 +495,8 @@ class TeamMembersService:
         location: str,
         subaccount: str,
         password: str | None,
+        module_keys: list[str] | None = None,
+        actor_user: AuthUser | None = None,
     ) -> dict[str, object]:
         normalized_email = email.strip().lower()
         normalized_first_name = first_name.strip()
@@ -326,6 +524,14 @@ class TeamMembersService:
             subaccount_id = resolved.id
             subaccount_name = resolved.name
 
+        resolved_module_keys = self._resolve_create_module_keys(
+            scope_type=scope_type,
+            role_key=role_key,
+            requested_module_keys=module_keys,
+            subaccount_id=subaccount_id,
+            actor_user=actor_user,
+        )
+
         user_id = self._upsert_user(
             first_name=normalized_first_name,
             last_name=normalized_last_name,
@@ -343,6 +549,12 @@ class TeamMembersService:
             subaccount_name=subaccount_name,
         )
 
+        self.set_membership_module_keys(
+            membership_id=membership_id,
+            scope_type=scope_type,
+            module_keys=resolved_module_keys,
+        )
+
         mapped_user_type, mapped_user_role = self.map_canonical_to_payload_role(role_key=role_key)
         return {
             "id": membership_id,
@@ -355,6 +567,7 @@ class TeamMembersService:
             "user_role": mapped_user_role,
             "location": normalized_location,
             "subaccount": subaccount_name,
+            "module_keys": resolved_module_keys,
         }
 
     def list_members(
@@ -434,6 +647,12 @@ class TeamMembersService:
                 )
                 rows = cur.fetchall()
 
+        membership_module_map = self._membership_module_keys_map([
+            (int(row[0]), str(row[7] or ""), str(row[9] or ""))
+            for row in rows
+            if self._safe_int(row[0]) is not None
+        ])
+
         items: list[dict[str, object]] = []
         for row in rows:
             membership_id = self._safe_int(row[0])
@@ -456,6 +675,7 @@ class TeamMembersService:
                     "user_role": mapped_user_role,
                     "location": "România",
                     "subaccount": str(row[8] or "Toate"),
+                    "module_keys": membership_module_map.get(membership_id, []),
                 }
             )
         return items, total
@@ -603,6 +823,12 @@ class TeamMembersService:
                 )
                 rows = cur.fetchall()
 
+        membership_module_map = self._membership_module_keys_map([
+            (int(row[0]), str(row[7] or ""), str(row[9] or ""))
+            for row in rows
+            if self._safe_int(row[0]) is not None
+        ])
+
         items: list[dict[str, object]] = []
         for row in rows:
             role_key = str(row[7])
@@ -624,6 +850,7 @@ class TeamMembersService:
                     "source_label": str(row[11] or subaccount_ref.name),
                     "is_active": str(row[8]) == "active",
                     "is_inherited": bool(row[10]),
+                    "module_keys": membership_module_map.get(membership_id, []),
                 }
             )
         return items, total
@@ -639,6 +866,8 @@ class TeamMembersService:
         extension: str,
         user_role: str,
         password: str | None,
+        module_keys: list[str] | None = None,
+        actor_user: AuthUser | None = None,
     ) -> dict[str, object]:
         normalized_email = email.strip().lower()
         normalized_first_name = first_name.strip()
@@ -665,6 +894,14 @@ class TeamMembersService:
 
         sub_ref = self._resolve_subaccount_by_id(subaccount_id=subaccount_id)
 
+        resolved_module_keys = self._resolve_create_module_keys(
+            scope_type="subaccount",
+            role_key=role_key,
+            requested_module_keys=module_keys,
+            subaccount_id=sub_ref.id,
+            actor_user=actor_user,
+        )
+
         user_id = self._upsert_user(
             first_name=normalized_first_name,
             last_name=normalized_last_name,
@@ -680,6 +917,11 @@ class TeamMembersService:
             scope_type="subaccount",
             subaccount_id=sub_ref.id,
             subaccount_name=sub_ref.name,
+        )
+        self.set_membership_module_keys(
+            membership_id=membership_id,
+            scope_type="subaccount",
+            module_keys=resolved_module_keys,
         )
 
         return {
@@ -697,6 +939,7 @@ class TeamMembersService:
             "source_label": sub_ref.name,
             "is_active": True,
             "is_inherited": False,
+            "module_keys": resolved_module_keys,
         }
 
 

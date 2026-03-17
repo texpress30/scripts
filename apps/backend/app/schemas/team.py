@@ -14,6 +14,7 @@ class TeamMemberItem(BaseModel):
     user_role: str
     location: str
     subaccount: str
+    module_keys: list[str] = Field(default_factory=list)
 
 
 class TeamMemberListResponse(BaseModel):
@@ -34,6 +35,7 @@ class CreateTeamMemberRequest(BaseModel):
     location: str = "România"
     subaccount: str = "Toate"
     password: str | None = None
+    module_keys: list[str] | None = None
 
 
 class TeamMemberResponse(BaseModel):
@@ -65,6 +67,7 @@ class SubaccountTeamMemberItem(BaseModel):
     source_label: str
     is_active: bool
     is_inherited: bool
+    module_keys: list[str] = Field(default_factory=list)
 
 
 class SubaccountTeamMemberListResponse(BaseModel):
@@ -83,6 +86,7 @@ class CreateSubaccountTeamMemberRequest(BaseModel):
     extension: str = ""
     user_role: str = "subaccount_user"
     password: str | None = None
+    module_keys: list[str] | None = None
 
 
 class SubaccountTeamMemberResponse(BaseModel):
@@ -91,3 +95,14 @@ class SubaccountTeamMemberResponse(BaseModel):
 
 class TeamMemberInviteResponse(BaseModel):
     message: str
+
+
+class TeamModuleCatalogItem(BaseModel):
+    key: str
+    label: str
+    order: int
+    scope: str
+
+
+class TeamModuleCatalogResponse(BaseModel):
+    items: list[TeamModuleCatalogItem]
