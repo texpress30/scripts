@@ -4815,3 +4815,36 @@ Plan verified: implement enforcement helper in dependencies, apply it to current
 - Applied backend module enforcement on active module routes: dashboard (`/dashboard/{client_id}`), campaigns (`/campaigns/{client_id}/summary`), rules (`/rules/{client_id}` and evaluate/create paths), creative (library + asset actions), recommendations (`/ai/recommendations/*`).
 - Preserved compatibility: agency/global roles bypass module restrictions; subaccount legacy context without explicit membership module rows falls back safely to full default catalog from existing service logic.
 - Intentional follow-up left: broader mapping for ambiguous/unused legacy endpoints not currently used by UI remains for a future hardening pass.
+
+## 2026-03-17 Membership detail + patch foundation (backend)
+- [x] Re-read team API/service/schemas/dependencies/rbac and frontend team pages for contract context.
+- [x] Design membership-oriented detail + patch contracts (no identity edits) and enforcement matrix.
+- [ ] Implement `GET /team/members/{membership_id}` with edit-oriented detail response and inherited indicator.
+- [ ] Implement `PATCH /team/members/{membership_id}` for `user_role` + `module_keys` only, with scope/family validation.
+- [ ] Implement service helpers for membership detail fetch, role-family validation, and membership update operations.
+- [ ] Enforce grant ceiling for subaccount-scoped actors on module updates.
+- [ ] Reject agency membership `module_keys`, invalid/empty module lists, and inherited/non-editable targets.
+- [ ] Add/adjust backend tests for new endpoints and update rules + regression coverage for list/create/invite.
+- [ ] Run backend tests + backend startup check.
+- [ ] Document review/results and intentional next-step scope.
+
+### Check-in before execution
+Plan verified: add membership detail/patch foundations strictly on membership records (not user identity), keep create/list/invite flows untouched, and validate with focused backend tests including grant ceiling and inherited access rejection.
+- [x] Implement `GET /team/members/{membership_id}` with edit-oriented detail response and inherited indicator.
+- [x] Implement `PATCH /team/members/{membership_id}` for `user_role` + `module_keys` only, with scope/family validation.
+- [x] Implement service helpers for membership detail fetch, role-family validation, and membership update operations.
+- [x] Enforce grant ceiling for subaccount-scoped actors on module updates.
+- [x] Reject agency membership `module_keys`, invalid/empty module lists, and inherited/non-editable targets.
+- [x] Add/adjust backend tests for new endpoints and update rules + regression coverage for list/create/invite.
+- [x] Run backend tests + backend startup check.
+- [x] Document review/results and intentional next-step scope.
+
+### Review
+- Added membership-oriented backend foundation endpoints: `GET /team/members/{membership_id}` and `PATCH /team/members/{membership_id}`.
+- Implemented membership detail serialization for edit use-cases with scope/subaccount/role/module/source/inherited markers and identity display fields.
+- Implemented membership patch limited to `user_role` and `module_keys` only; no global user identity fields are updated in this task.
+- Added strict scope-family rules: agency membership accepts only agency roles and rejects `module_keys`; subaccount membership accepts only subaccount roles and validates module list (valid keys, dedup, minimum one).
+- Added grant-ceiling enforcement for subaccount-scoped actors when updating module permissions.
+- Added inherited/non-editable guard with clear conflict response; no implicit membership creation is performed.
+- Preserved create/list/invite behavior and validated with regression test execution.
+- Intentional follow-up: edit UI wiring and broader lifecycle actions (deactivate/remove membership, identity edits) remain for next tasks.

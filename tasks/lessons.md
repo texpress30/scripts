@@ -375,3 +375,4 @@
 - Rule: For feature requests, always implement code + tests end-to-end before finalizing; never leave a docs-only/placeholder-style change when concrete scope was requested.
 - Rule: Validate requested behavioral outcomes explicitly (not only command execution), and summarize any remaining scope as intentional next-task items.
 - 2026-03-17: După feedback de tip "unsatisfied" pe enforcement backend, mapează explicit fiecare modul din sidebar către endpointuri backend reale folosite de UI (inclusiv endpoint dedicat când mapping-ul lipsește), nu te baza doar pe filtrare frontend.
+- 2026-03-17: După feedback de tip "unsatisfied" pe foundation backend membership edit, păstrează strict modelul pe `membership` (nu `user identity`) și validează explicit prin teste separate agency vs subaccount vs inherited înainte de commit.

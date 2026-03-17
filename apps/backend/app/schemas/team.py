@@ -126,3 +126,30 @@ class TeamSubaccountMyAccessResponse(BaseModel):
     source_scope: str = "subaccount"
     access_scope: str = "subaccount"
     unrestricted_modules: bool = False
+
+
+class TeamMembershipDetailItem(BaseModel):
+    membership_id: int
+    user_id: int
+    scope_type: str
+    subaccount_id: int | None = None
+    subaccount_name: str
+    role_key: str
+    role_label: str
+    module_keys: list[str] = Field(default_factory=list)
+    source_scope: str
+    is_inherited: bool
+    first_name: str
+    last_name: str
+    email: str
+    phone: str
+    extension: str
+
+
+class TeamMembershipDetailResponse(BaseModel):
+    item: TeamMembershipDetailItem
+
+
+class UpdateTeamMembershipRequest(BaseModel):
+    user_role: str | None = None
+    module_keys: list[str] | None = None
