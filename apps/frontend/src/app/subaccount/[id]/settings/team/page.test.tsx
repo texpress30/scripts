@@ -7,6 +7,8 @@ import SubAccountTeamPage from "./page";
 const listSubaccountTeamMembersMock = vi.fn();
 const createSubaccountTeamMemberMock = vi.fn();
 const inviteTeamMemberMock = vi.fn();
+const deactivateTeamMemberMock = vi.fn();
+const reactivateTeamMemberMock = vi.fn();
 const getSubaccountGrantableModulesMock = vi.fn();
 
 vi.mock("next/navigation", () => ({ useParams: () => ({ id: "96" }) }));
@@ -26,6 +28,8 @@ vi.mock("@/lib/api", async () => {
     listSubaccountTeamMembers: (...args: unknown[]) => listSubaccountTeamMembersMock(...args),
     createSubaccountTeamMember: (...args: unknown[]) => createSubaccountTeamMemberMock(...args),
     inviteTeamMember: (...args: unknown[]) => inviteTeamMemberMock(...args),
+    deactivateTeamMember: (...args: unknown[]) => deactivateTeamMemberMock(...args),
+    reactivateTeamMember: (...args: unknown[]) => reactivateTeamMemberMock(...args),
     getSubaccountGrantableModules: (...args: unknown[]) => getSubaccountGrantableModulesMock(...args),
   };
 });
@@ -35,7 +39,10 @@ describe("SubAccount Team management page", () => {
     listSubaccountTeamMembersMock.mockReset();
     createSubaccountTeamMemberMock.mockReset();
     inviteTeamMemberMock.mockReset();
+    deactivateTeamMemberMock.mockReset();
+    reactivateTeamMemberMock.mockReset();
     getSubaccountGrantableModulesMock.mockReset();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     listSubaccountTeamMembersMock.mockResolvedValue({
       items: [
         {
@@ -52,6 +59,7 @@ describe("SubAccount Team management page", () => {
           source_scope: "subaccount",
           source_label: "Client 96",
           is_active: true,
+          membership_status: "active",
           is_inherited: false,
         },
         {
@@ -68,6 +76,7 @@ describe("SubAccount Team management page", () => {
           source_scope: "agency",
           source_label: "Agency access",
           is_active: true,
+          membership_status: "inactive",
           is_inherited: true,
         },
       ],
@@ -76,6 +85,8 @@ describe("SubAccount Team management page", () => {
       page_size: 5,
       subaccount_id: 96,
     });
+    deactivateTeamMemberMock.mockResolvedValue({ membership_id: 1, status: "inactive", message: "Accesul a fost dezactivat pentru sesiunile noi și pentru verificările bazate pe datele curente." });
+    reactivateTeamMemberMock.mockResolvedValue({ membership_id: 2, status: "active", message: "Accesul a fost reactivat" });
     getSubaccountGrantableModulesMock.mockResolvedValue({
       items: [
         { key: "dashboard", label: "Dashboard", order: 1, grantable: true },
@@ -243,6 +254,7 @@ describe("SubAccount Team management page", () => {
           source_scope: "subaccount",
           source_label: "Client 96",
           is_active: true,
+          membership_status: "active",
           is_inherited: false,
         },
       ],
@@ -340,6 +352,96 @@ describe("SubAccount Team management page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Înainte" }));
     expect(await screen.findByText("Nu poți acorda module în afara permisiunilor proprii: campaigns")).toBeInTheDocument();
   });
+
+  it("renders membership status badges and lifecycle actions for active/inactive rows", async () => {
+    render(<SubAccountTeamPage />);
+
+    expect(await screen.findByText("Activ")).toBeInTheDocument();
+    expect(await screen.findByText("Inactiv")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dezactivează" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reactivează" })).toBeDisabled();
+  });
+
+  it("calls deactivate for active membership and refetches list", async () => {
+    render(<SubAccountTeamPage />);
+    await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Dezactivează" }));
+
+    await waitFor(() => expect(deactivateTeamMemberMock).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText(/Accesul a fost dezactivat/i)).toBeInTheDocument();
+  });
+
+  it("reactivates inactive direct membership", async () => {
+    listSubaccountTeamMembersMock.mockResolvedValueOnce({
+      items: [
+        { membership_id: 7, user_id: 21, display_id: "TM-7", first_name: "Ira", last_name: "A", email: "ira@example.com", phone: "", extension: "", role_key: "subaccount_user", role_label: "Subaccount User", source_scope: "subaccount", source_label: "Client 96", is_active: false, membership_status: "inactive", is_inherited: false },
+      ],
+      total: 1, page: 1, page_size: 5, subaccount_id: 96,
+    });
+
+    render(<SubAccountTeamPage />);
+    const reactivateBtn = await screen.findByRole("button", { name: "Reactivează" });
+    fireEvent.click(reactivateBtn);
+    await waitFor(() => expect(reactivateTeamMemberMock).toHaveBeenCalledWith(7));
+    expect(await screen.findByText(/Accesul a fost reactivat/i)).toBeInTheDocument();
+  });
+
+  it("shows lifecycle 403 error clearly", async () => {
+    const { ApiRequestError } = await import("@/lib/api");
+
+    reactivateTeamMemberMock.mockRejectedValueOnce(new ApiRequestError("forbidden", 403));
+    listSubaccountTeamMembersMock.mockResolvedValueOnce({
+      items: [{ membership_id: 8, user_id: 22, display_id: "TM-8", first_name: "R", last_name: "B", email: "r@example.com", phone: "", extension: "", role_key: "subaccount_user", role_label: "Subaccount User", source_scope: "subaccount", source_label: "Client 96", is_active: false, membership_status: "inactive", is_inherited: false }],
+      total: 1, page: 1, page_size: 5, subaccount_id: 96,
+    });
+    render(<SubAccountTeamPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Reactivează" }));
+    expect(await screen.findByText("Nu ai permisiuni suficiente pentru această acțiune.")).toBeInTheDocument();
+  });
+
+  it("shows lifecycle 404 error clearly", async () => {
+    const { ApiRequestError } = await import("@/lib/api");
+
+    reactivateTeamMemberMock.mockRejectedValueOnce(new ApiRequestError("gone", 404));
+    listSubaccountTeamMembersMock.mockResolvedValueOnce({
+      items: [{ membership_id: 9, user_id: 22, display_id: "TM-9", first_name: "R", last_name: "B", email: "r@example.com", phone: "", extension: "", role_key: "subaccount_user", role_label: "Subaccount User", source_scope: "subaccount", source_label: "Client 96", is_active: false, membership_status: "inactive", is_inherited: false }],
+      total: 1, page: 1, page_size: 5, subaccount_id: 96,
+    });
+    render(<SubAccountTeamPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Reactivează" }));
+    expect(await screen.findByText("Membership inexistent sau inaccesibil.")).toBeInTheDocument();
+  });
+
+  it("shows lifecycle 409 error clearly", async () => {
+    const { ApiRequestError } = await import("@/lib/api");
+
+    reactivateTeamMemberMock.mockRejectedValueOnce(new ApiRequestError("conflict", 409));
+    listSubaccountTeamMembersMock.mockResolvedValueOnce({
+      items: [{ membership_id: 10, user_id: 22, display_id: "TM-10", first_name: "R", last_name: "B", email: "r@example.com", phone: "", extension: "", role_key: "subaccount_user", role_label: "Subaccount User", source_scope: "subaccount", source_label: "Client 96", is_active: false, membership_status: "inactive", is_inherited: false }],
+      total: 1, page: 1, page_size: 5, subaccount_id: 96,
+    });
+    render(<SubAccountTeamPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Reactivează" }));
+    expect(await screen.findByText("Acest access este moștenit și nu poate fi modificat aici")).toBeInTheDocument();
+  });
+
+  it("shows row-level lifecycle loading state", async () => {
+    let release: (() => void) | null = null;
+    deactivateTeamMemberMock.mockImplementation(() => new Promise((resolve) => {
+      release = () => resolve({ membership_id: 1, status: "inactive", message: "ok" });
+    }));
+
+    render(<SubAccountTeamPage />);
+    const deactivateBtn = await screen.findByRole("button", { name: "Dezactivează" });
+    fireEvent.click(deactivateBtn);
+
+    expect(await screen.findByText("Se procesează...")).toBeInTheDocument();
+    release?.();
+    await waitFor(() => expect(screen.getByText("ok")).toBeInTheDocument());
+  });
+
 
   it("shows clear 403 access message", async () => {
     const { ApiRequestError } = await import("@/lib/api");

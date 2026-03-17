@@ -194,6 +194,7 @@ class TeamMembersFoundationTests(unittest.TestCase):
             resp = team_api.list_team_members(search="ana", user_type="agency", user_role="admin", subaccount="", page=1, page_size=10, user=self.user)
             self.assertEqual(resp.total, 1)
             self.assertEqual(resp.items[0].email, "ana@example.com")
+            self.assertEqual(resp.items[0].membership_status, "active")
         finally:
             team_api.team_members_service.list_members = original
 
@@ -233,6 +234,7 @@ class TeamMembersFoundationTests(unittest.TestCase):
             self.assertEqual(resp.items[0].id, 10)
             self.assertIsNone(resp.items[0].membership_id)
             self.assertEqual(resp.items[0].module_keys, ["dashboard"])
+            self.assertEqual(resp.items[0].membership_status, "active")
         finally:
             team_api.team_members_service.list_members = original
 
