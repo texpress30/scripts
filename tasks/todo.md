@@ -4908,3 +4908,24 @@ Plan verified: keep change incremental in `apps/frontend/src/app/settings/team/p
 - Lifecycle actions use per-row loading, refetch the list on success, and map 403/404/409 to clear user-safe messages.
 - Existing create/edit/invite flows remain covered and passing in updated page tests.
 - Intentional next step: Sub-account Team lifecycle UI actions remain out of scope for this task.
+
+
+## 2026-03-17 Sub-account Team UI lifecycle actions (deactivate/reactivate)
+- [x] Re-read sub-account team page, frontend API helpers, and backend team contracts for lifecycle/status.
+- [x] Render `membership_status` in sub-account team list with compact active/inactive indicator.
+- [x] Wire row-level deactivate/reactivate actions in sub-account team actions column.
+- [x] Add per-row loading, success messaging, explicit 403/404/409 mapping, and list refetch after lifecycle actions.
+- [x] Keep create/edit/invite behavior unchanged; no Agency Team changes in this task.
+- [x] Add focused frontend tests for lifecycle UI/actions/loading/errors and regressions for existing flows.
+- [x] Run relevant frontend tests and frontend build.
+- [x] Create PR with required title/body and verify metadata is not placeholder; patch with `gh pr edit` if possible.
+
+### Check-in before execution
+Plan verified: confine code changes to sub-account team page + tests (and shared API helper usage only), with minimal/no backend changes and no redesign.
+
+### Review
+- Sub-account Team list now shows lifecycle status badges (`Activ`/`Inactiv`) using backend `membership_status` with fallback from `is_active`.
+- Added row-level deactivate/reactivate action buttons in the existing Actions column, with per-row loading state and list refetch on success.
+- Added explicit lifecycle error mapping for 403/404/409 and inherited guard in UI; inherited rows keep action disabled with clear tooltip.
+- Existing create/edit/invite behavior remained intact and passing through updated test coverage.
+- Intentional follow-up: remove membership action remains for next task; no token revocation behavior was added in this step.

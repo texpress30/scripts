@@ -383,3 +383,5 @@
 - For lifecycle tasks, verify both state transition endpoints and all read/access consumers (login, access-context, grantable modules, list/detail contracts), not just write paths.
 
 - 2026-03-17: Pentru lifecycle actions în tabele existente, mock-uiește explicit helperii noi din `@/lib/api` în teste (nu doar `apiRequest`), altfel funcțiile reale pot folosi `fetch` și dau erori de URL în test runner.
+
+- 2026-03-17: Pentru teste lifecycle pe rânduri de tabel, evită scenarii multi-eroare într-un singur test când list-refetch schimbă datele; split în teste mici (403/404/409 separat) pentru stabilitate și diagnoză rapidă.

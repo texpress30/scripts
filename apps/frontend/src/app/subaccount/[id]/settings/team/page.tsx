@@ -1,7 +1,7 @@
 "use client";
 
 import React, { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Ban, ChevronDown, Copy, Mail, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { ChevronDown, Copy, Mail, Pencil, Plus, Power, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useParams } from "next/navigation";
 
 import { AppShell } from "@/components/AppShell";
@@ -13,10 +13,12 @@ import {
   TeamGrantableModuleItem,
   TeamMembershipDetailItem,
   createSubaccountTeamMember,
+  deactivateTeamMember,
   getSubaccountGrantableModules,
   getTeamMembershipDetail,
   inviteTeamMember,
   listSubaccountTeamMembers,
+  reactivateTeamMember,
   updateTeamMembership,
 } from "@/lib/api";
 
@@ -31,6 +33,7 @@ type TeamUser = {
   roleKey: string;
   sourceLabel: string;
   inherited: boolean;
+  membershipStatus: "active" | "inactive";
 };
 
 type TeamUserForm = {
@@ -81,6 +84,7 @@ function mapMemberToUser(item: SubaccountTeamMemberItem): TeamUser {
     roleKey: item.role_key,
     sourceLabel: item.source_label,
     inherited: item.is_inherited,
+    membershipStatus: String(item.membership_status || "").trim().toLowerCase() === "inactive" || item.is_active === false ? "inactive" : "active",
   };
 }
 
@@ -134,6 +138,17 @@ function getFriendlyEditError(error: unknown): string {
   return "Nu am putut actualiza permisiunile.";
 }
 
+function getFriendlyLifecycleError(error: unknown): string {
+  if (error instanceof ApiRequestError) {
+    if (error.status === 403) return "Nu ai permisiuni suficiente pentru această acțiune.";
+    if (error.status === 404) return "Membership inexistent sau inaccesibil.";
+    if (error.status === 409) return "Acest access este moștenit și nu poate fi modificat aici";
+    if (error.message.trim()) return error.message;
+  }
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return "Nu am putut actualiza statusul accesului.";
+}
+
 function toSubaccountRole(roleKey: string): TeamUserForm["role"] {
   const key = String(roleKey || "").trim().toLowerCase();
   if (key === "subaccount_admin") return "subaccount_admin";
@@ -173,7 +188,9 @@ export default function SubAccountTeamPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
   const [invitingMembershipId, setInvitingMembershipId] = useState<number | null>(null);
+  const [lifecycleLoadingByMembership, setLifecycleLoadingByMembership] = useState<Record<number, boolean>>({});
   const [moduleOptions, setModuleOptions] = useState<TeamGrantableModuleItem[]>([]);
   const [selectedModuleKeys, setSelectedModuleKeys] = useState<string[]>([]);
   const [isLoadingModules, setIsLoadingModules] = useState(false);
@@ -236,6 +253,7 @@ export default function SubAccountTeamPage() {
     }
 
     setInviteError(null);
+    setLifecycleError(null);
     setInvitingMembershipId(user.membershipId);
     try {
       const response = await inviteTeamMember(user.membershipId);
@@ -244,6 +262,44 @@ export default function SubAccountTeamPage() {
       setInviteError(getFriendlyInviteError(error));
     } finally {
       setInvitingMembershipId((current) => (current === user.membershipId ? null : current));
+    }
+  }
+
+  async function onToggleLifecycle(user: TeamUser) {
+    if (user.membershipId === null) {
+      setLifecycleError("Membership inexistent sau inaccesibil.");
+      return;
+    }
+    if (user.inherited) {
+      setLifecycleError("Acest access este moștenit și nu poate fi modificat aici");
+      return;
+    }
+
+    if (user.membershipStatus === "active") {
+      const confirmed = window.confirm("Confirmi dezactivarea accesului pentru acest membership?");
+      if (!confirmed) return;
+    }
+
+    setInviteError(null);
+    setLifecycleError(null);
+    setLifecycleLoadingByMembership((prev) => ({ ...prev, [user.membershipId as number]: true }));
+    try {
+      if (user.membershipStatus === "active") {
+        const response = await deactivateTeamMember(user.membershipId);
+        showToast(response.message || "Accesul a fost dezactivat pentru sesiunile noi și pentru verificările bazate pe datele curente.");
+      } else {
+        const response = await reactivateTeamMember(user.membershipId);
+        showToast(response.message || "Accesul a fost reactivat");
+      }
+      await loadMembers();
+    } catch (error) {
+      setLifecycleError(getFriendlyLifecycleError(error));
+    } finally {
+      setLifecycleLoadingByMembership((prev) => {
+        const next = { ...prev };
+        delete next[user.membershipId as number];
+        return next;
+      });
     }
   }
 
@@ -280,6 +336,7 @@ export default function SubAccountTeamPage() {
     setErrors({});
     setShowAdvanced(false);
     setModuleLoadError(null);
+    setLifecycleError(null);
     setIsLoadingModules(false);
     setEditingMembershipId(null);
     setIsLoadingEditDetail(false);
@@ -483,6 +540,7 @@ export default function SubAccountTeamPage() {
 
                 {loadError ? <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{loadError}</p> : null}
                 {inviteError ? <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{inviteError}</p> : null}
+                {lifecycleError ? <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{lifecycleError}</p> : null}
                 {isLoading ? <p className="mt-4 text-sm text-slate-500">Se încarcă membrii...</p> : null}
 
                 {!isLoading && !loadError ? (
@@ -495,6 +553,7 @@ export default function SubAccountTeamPage() {
                             <th className="border-b border-slate-200 px-3 py-2">Email</th>
                             <th className="border-b border-slate-200 px-3 py-2">Telefon</th>
                             <th className="border-b border-slate-200 px-3 py-2">Tip Utilizator</th>
+                            <th className="border-b border-slate-200 px-3 py-2">Status</th>
                             <th className="border-b border-slate-200 px-3 py-2">Acțiuni</th>
                           </tr>
                         </thead>
@@ -520,6 +579,13 @@ export default function SubAccountTeamPage() {
                                 <span className={["inline-flex rounded-full px-2 py-1 text-xs font-semibold", roleBadgeClass(user.roleKey)].join(" ")}>{user.tip}</span>
                               </td>
                               <td className="border-b border-slate-100 px-3 py-3">
+                                {user.membershipStatus === "active" ? (
+                                  <span className="inline-flex rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">Activ</span>
+                                ) : (
+                                  <span className="inline-flex rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">Inactiv</span>
+                                )}
+                              </td>
+                              <td className="border-b border-slate-100 px-3 py-3">
                                 <div className="flex items-center gap-2 text-slate-500">
                                   <button
                                     type="button"
@@ -534,9 +600,27 @@ export default function SubAccountTeamPage() {
                                   <button type="button" className="rounded p-1.5 opacity-50" title="Urmează" disabled>
                                     <Pencil className="h-4 w-4" />
                                   </button>
-                                  <button type="button" className="rounded p-1.5 opacity-50" title="Urmează" disabled>
-                                    <Ban className="h-4 w-4" />
-                                  </button>
+                                  {(() => {
+                                    const lifecycleLoading = user.membershipId !== null && Boolean(lifecycleLoadingByMembership[user.membershipId]);
+                                    return (
+                                      <button
+                                        type="button"
+                                        className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-xs text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                        title={user.inherited ? "Acest access este moștenit și nu poate fi modificat aici" : user.membershipStatus === "active" ? "Dezactivează" : "Reactivează"}
+                                        aria-label={user.membershipStatus === "active" ? "Dezactivează" : "Reactivează"}
+                                        disabled={user.membershipId === null || lifecycleLoading || user.inherited}
+                                        onClick={() => { void onToggleLifecycle(user); }}
+                                      >
+                                        {lifecycleLoading ? (
+                                          "Se procesează..."
+                                        ) : user.membershipStatus === "active" ? (
+                                          <><Power className="h-3.5 w-3.5" /> Dezactivează</>
+                                        ) : (
+                                          <><RefreshCw className="h-3.5 w-3.5" /> Reactivează</>
+                                        )}
+                                      </button>
+                                    );
+                                  })()}
                                   <button type="button" className="rounded p-1.5 opacity-50" title="Urmează" disabled>
                                     <Trash2 className="h-4 w-4" />
                                   </button>
@@ -563,7 +647,7 @@ export default function SubAccountTeamPage() {
             ) : (
               <div>
                 <button type="button" className="text-sm font-medium text-slate-700 hover:text-slate-900" onClick={closeForm}>← Înapoi</button>
-                <p className="mt-2 text-sm text-slate-600">Adaugă un utilizator în echipa sub-account-ului.</p>
+                <p className="mt-2 text-sm text-slate-600">{viewMode === "edit" ? "Editează permisiunile și statusul accesului pentru membership-ul selectat." : "Adaugă un utilizator în echipa sub-account-ului."}</p>
 
                 <div className="mt-5 grid grid-cols-1 gap-6 xl:grid-cols-[260px_1fr]">
                   <aside className="space-y-2">
@@ -574,6 +658,11 @@ export default function SubAccountTeamPage() {
                   <form noValidate onSubmit={(event) => { void submit(event); }} className="space-y-5">
                     <div className="rounded-lg border border-slate-200 p-4">
                       <h2 className="text-base font-semibold text-slate-900">Informații Utilizator</h2>
+                      {viewMode === "edit" && editingMembershipId !== null ? (
+                        <p className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                          Status membership curent: <span className="font-semibold">{users.find((item) => item.membershipId === editingMembershipId)?.membershipStatus === "inactive" ? "Inactiv" : "Activ"}</span>
+                        </p>
+                      ) : null}
                       <div className="mt-4 space-y-4">
                         <div>
                           <p className="text-sm font-medium text-slate-700">Imagine Profil</p>
