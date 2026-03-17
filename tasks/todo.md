@@ -4751,3 +4751,18 @@
   - `cd apps/backend && python -m pytest tests/test_team_subaccount_api.py tests/test_team_members_foundation.py`
   - `cd apps/frontend && pnpm vitest run src/app/subaccount/[id]/settings/team/page.test.tsx`
   - `cd apps/frontend && pnpm build`
+
+## 2026-03-17 Connector workspace sync task
+- [x] Draft plan with explicit sync steps and verification commands.
+- [x] Start a fresh terminal session (do not reuse previous session) for connector-style commands.
+- [x] Run requested remote/add-or-set, fetch, and pull commands exactly as provided.
+- [x] Verify remote configuration and fetch visibility in the new session.
+- [x] Document review/results for this task.
+
+### Check-in before execution
+Plan reviewed: execute the exact user-provided Git commands in a newly started terminal session, then verify `git remote -v` and fetch state, and record outcome.
+
+### Review
+- Executed the exact three Git commands in a fresh terminal session.
+- `origin` now points to the provided GitHub URL for both fetch and push.
+- `git fetch origin` succeeded and `git pull origin main --allow-unrelated-histories` reported repository already up to date.
