@@ -4516,3 +4516,20 @@
 
 ## Review
 - [x] Implementare incrementală backend-only: forgot-password activ cu Mailgun + tokenuri hash-only one-time, fără schimbări frontend/login/impersonation.
+
+---
+
+# TODO — Frontend forgot/reset password pages connected to backend
+
+- [x] Re-auditez `login/page.tsx`, `lib/api.ts`, `lib/session.ts` și contractele backend forgot/reset.
+- [x] Adaug paginile frontend `/forgot-password` și `/reset-password` cu stări loading/success/error.
+- [x] Adaug link discret „Ai uitat parola?” în `/login` fără redesign major.
+- [x] Conectez API helper-ele frontend la `POST /auth/forgot-password` și `POST /auth/reset-password/confirm`.
+- [x] Implementez tratarea tokenului din query string + validări locale parolă/confirmare.
+- [x] Adaug teste frontend compacte pentru login link, forgot submit/success și reset token/submit/error.
+- [x] Rulez testele frontend relevante + build frontend.
+- [x] Fac screenshot pentru schimbările vizuale din frontend.
+- [x] Actualizez docs minim pentru status forgot/reset UI vs invite.
+
+## Review
+- [x] UI forgot/reset este activ în frontend, conectat la backend existent, fără auto-login și fără schimbări majore pe login/invite.

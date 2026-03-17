@@ -90,6 +90,28 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
   return (await response.json()) as T;
 }
 
+export type ForgotPasswordApiResponse = {
+  message: string;
+};
+
+export type ResetPasswordConfirmApiResponse = {
+  message: string;
+};
+
+export async function forgotPassword(email: string): Promise<ForgotPasswordApiResponse> {
+  return apiRequest<ForgotPasswordApiResponse>("/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function confirmResetPassword(token: string, newPassword: string): Promise<ResetPasswordConfirmApiResponse> {
+  return apiRequest<ResetPasswordConfirmApiResponse>("/auth/reset-password/confirm", {
+    method: "POST",
+    body: JSON.stringify({ token, new_password: newPassword }),
+  });
+}
+
 
 export type AccountSyncRun = {
   job_id: string;

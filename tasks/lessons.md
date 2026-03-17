@@ -353,3 +353,4 @@
 - 2026-03-17: La flow-uri forgot/reset, păstrează răspunsul generic pentru email necunoscut (anti-enumeration), stochează doar hash-ul tokenului și marchează tokenurile one-time cu expirare + consumed_at.
 - 2026-03-17: După corecție pe scope auth reset, când taskul cere explicit foundation backend-only trebuie eliminate endpointurile/features out-of-scope (ex. forgot-password și Mailgun send) și livrat strict contractul cerut.
 - 2026-03-17: Când taskul următor reactivează explicit forgot-password + Mailgun peste fundația reset, trebuie reintrodus endpointul incremental fără a atinge login/impersonation și cu răspuns generic anti-enumeration.
+- 2026-03-17: Pentru pagini App Router care citesc query params în client components, evită blocajele de build cu `useSearchParams` în rute statice; folosește fallback robust (ex. citire din `window.location.search` în `useEffect`) dacă nu vrei Suspense boundary.
