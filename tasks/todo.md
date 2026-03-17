@@ -4848,3 +4848,27 @@ Plan verified: add membership detail/patch foundations strictly on membership re
 - Added inherited/non-editable guard with clear conflict response; no implicit membership creation is performed.
 - Preserved create/list/invite behavior and validated with regression test execution.
 - Intentional follow-up: edit UI wiring and broader lifecycle actions (deactivate/remove membership, identity edits) remain for next tasks.
+
+## 2026-03-17 Agency Team UI edit wiring for membership role/module updates
+- [x] Re-read Agency Team page and team API contracts for membership detail/patch.
+- [x] Add frontend API helpers/types for membership detail and patch endpoints.
+- [x] Wire table edit action to fetch membership detail by `membership_id` and open edit mode.
+- [x] Reuse existing create/edit form structure for edit mode without redesign.
+- [x] Make identity fields read-only in edit mode and ensure PATCH payload excludes identity fields.
+- [x] Render agency vs subaccount-specific behavior for role/module section in edit mode.
+- [x] Handle inherited/non-editable membership states (preload + patch conflict) with blocked save and clear messaging.
+- [x] Wire save action to `PATCH /team/members/{membership_id}` with `user_role` + conditional `module_keys`.
+- [x] Add frontend tests for edit flow, detail fetch, module preselection, patch payload, inherited handling, and regressions.
+- [x] Run frontend tests and frontend build.
+
+### Check-in before execution
+Plan verified: keep Agency Team UI shape largely unchanged, add edit wiring around existing form, enforce read-only identity in edit mode, and validate via focused frontend tests plus build.
+
+### Review
+- Agency Team edit action now loads `GET /team/members/{membership_id}` and enters edit mode with membership-scoped data.
+- Save now calls `PATCH /team/members/{membership_id}` with supported fields only (`user_role`, `module_keys` for subaccount scope).
+- Edit mode enforces read-only identity fields (first_name/last_name/email/phone/extension) and shows a note that identity editing is deferred.
+- Agency membership edit keeps module section non-applicable; subaccount membership edit shows module controls with preselected `module_keys`.
+- Inherited access is blocked with clear messaging and save protection; backend conflict/error mappings (400/403/404/409) surface user-friendly feedback.
+- Existing create/invite flows remain covered by the existing and updated test suite.
+- Intentional follow-up: Sub-account Team edit UI remains out of scope for this task.

@@ -376,3 +376,4 @@
 - Rule: Validate requested behavioral outcomes explicitly (not only command execution), and summarize any remaining scope as intentional next-task items.
 - 2026-03-17: După feedback de tip "unsatisfied" pe enforcement backend, mapează explicit fiecare modul din sidebar către endpointuri backend reale folosite de UI (inclusiv endpoint dedicat când mapping-ul lipsește), nu te baza doar pe filtrare frontend.
 - 2026-03-17: După feedback de tip "unsatisfied" pe foundation backend membership edit, păstrează strict modelul pe `membership` (nu `user identity`) și validează explicit prin teste separate agency vs subaccount vs inherited înainte de commit.
+- 2026-03-17: După feedback pe taskul UI edit Agency Team, reutilizează form-ul existent pentru edit fără redesign, dar mapează strict payload-ul PATCH la câmpurile suportate de backend și blochează explicit câmpurile identity în UI.
