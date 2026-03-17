@@ -309,6 +309,7 @@ export type SubaccountTeamMemberItem = {
   source_scope: string;
   source_label: string;
   is_active: boolean;
+  membership_status?: "active" | "inactive" | string;
   is_inherited: boolean;
 };
 
@@ -387,6 +388,83 @@ export async function getSubaccountGrantableModules(subaccountId: number): Promi
   return apiRequest<TeamGrantableModulesResponse>(`/team/subaccounts/${encodeURIComponent(String(subaccountId))}/grantable-modules`);
 }
 
+export type TeamSubaccountMyAccessResponse = {
+  subaccount_id: number;
+  role: string;
+  module_keys: string[];
+  source_scope?: string;
+  access_scope?: string;
+  unrestricted_modules?: boolean;
+};
+
+export async function getSubaccountMyAccess(subaccountId: number): Promise<TeamSubaccountMyAccessResponse> {
+  return apiRequest<TeamSubaccountMyAccessResponse>(`/team/subaccounts/${encodeURIComponent(String(subaccountId))}/my-access`);
+}
+
+
+
+export type TeamMembershipDetailItem = {
+  membership_id: number;
+  user_id: number;
+  scope_type: "agency" | "subaccount" | string;
+  subaccount_id: number | null;
+  subaccount_name: string;
+  role_key: string;
+  role_label: string;
+  module_keys: string[];
+  source_scope: string;
+  is_inherited: boolean;
+  membership_status?: "active" | "inactive" | string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  extension: string;
+};
+
+export type TeamMembershipDetailResponse = {
+  item: TeamMembershipDetailItem;
+};
+
+export type UpdateTeamMembershipPayload = {
+  user_role?: string;
+  module_keys?: string[];
+};
+
+export async function getTeamMembershipDetail(membershipId: string | number): Promise<TeamMembershipDetailResponse> {
+  return apiRequest<TeamMembershipDetailResponse>(`/team/members/${encodeURIComponent(String(membershipId))}`);
+}
+
+export async function updateTeamMembership(
+  membershipId: string | number,
+  payload: UpdateTeamMembershipPayload,
+): Promise<TeamMembershipDetailResponse> {
+  return apiRequest<TeamMembershipDetailResponse>(`/team/members/${encodeURIComponent(String(membershipId))}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+
+export type TeamMembershipStatusResponse = {
+  membership_id: number;
+  status: "active" | "inactive" | string;
+  message: string;
+};
+
+export async function deactivateTeamMember(membershipId: string | number): Promise<TeamMembershipStatusResponse> {
+  return apiRequest<TeamMembershipStatusResponse>(`/team/members/${encodeURIComponent(String(membershipId))}/deactivate`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export async function reactivateTeamMember(membershipId: string | number): Promise<TeamMembershipStatusResponse> {
+  return apiRequest<TeamMembershipStatusResponse>(`/team/members/${encodeURIComponent(String(membershipId))}/reactivate`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
 
 export type TeamInviteResponse = {
   message: string;

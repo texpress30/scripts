@@ -15,6 +15,7 @@ class TeamMemberItem(BaseModel):
     location: str
     subaccount: str
     module_keys: list[str] = Field(default_factory=list)
+    membership_status: str = "active"
 
 
 class TeamMemberListResponse(BaseModel):
@@ -66,6 +67,7 @@ class SubaccountTeamMemberItem(BaseModel):
     source_scope: str
     source_label: str
     is_active: bool
+    membership_status: str = "active"
     is_inherited: bool
     module_keys: list[str] = Field(default_factory=list)
 
@@ -117,3 +119,46 @@ class TeamGrantableModuleItem(BaseModel):
 
 class TeamGrantableModulesResponse(BaseModel):
     items: list[TeamGrantableModuleItem]
+
+
+class TeamSubaccountMyAccessResponse(BaseModel):
+    subaccount_id: int
+    role: str
+    module_keys: list[str] = Field(default_factory=list)
+    source_scope: str = "subaccount"
+    access_scope: str = "subaccount"
+    unrestricted_modules: bool = False
+
+
+class TeamMembershipDetailItem(BaseModel):
+    membership_id: int
+    user_id: int
+    scope_type: str
+    subaccount_id: int | None = None
+    subaccount_name: str
+    role_key: str
+    role_label: str
+    module_keys: list[str] = Field(default_factory=list)
+    source_scope: str
+    is_inherited: bool
+    membership_status: str = "active"
+    first_name: str
+    last_name: str
+    email: str
+    phone: str
+    extension: str
+
+
+class TeamMembershipDetailResponse(BaseModel):
+    item: TeamMembershipDetailItem
+
+
+class TeamMembershipStatusResponse(BaseModel):
+    membership_id: int
+    status: str
+    message: str
+
+
+class UpdateTeamMembershipRequest(BaseModel):
+    user_role: str | None = None
+    module_keys: list[str] | None = None
