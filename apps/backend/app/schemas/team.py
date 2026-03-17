@@ -15,6 +15,7 @@ class TeamMemberItem(BaseModel):
     location: str
     subaccount: str
     module_keys: list[str] = Field(default_factory=list)
+    membership_status: str = "active"
 
 
 class TeamMemberListResponse(BaseModel):
@@ -66,6 +67,7 @@ class SubaccountTeamMemberItem(BaseModel):
     source_scope: str
     source_label: str
     is_active: bool
+    membership_status: str = "active"
     is_inherited: bool
     module_keys: list[str] = Field(default_factory=list)
 
@@ -139,6 +141,7 @@ class TeamMembershipDetailItem(BaseModel):
     module_keys: list[str] = Field(default_factory=list)
     source_scope: str
     is_inherited: bool
+    membership_status: str = "active"
     first_name: str
     last_name: str
     email: str
@@ -148,6 +151,12 @@ class TeamMembershipDetailItem(BaseModel):
 
 class TeamMembershipDetailResponse(BaseModel):
     item: TeamMembershipDetailItem
+
+
+class TeamMembershipStatusResponse(BaseModel):
+    membership_id: int
+    status: str
+    message: str
 
 
 class UpdateTeamMembershipRequest(BaseModel):

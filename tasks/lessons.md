@@ -377,3 +377,7 @@
 - 2026-03-17: După feedback de tip "unsatisfied" pe enforcement backend, mapează explicit fiecare modul din sidebar către endpointuri backend reale folosite de UI (inclusiv endpoint dedicat când mapping-ul lipsește), nu te baza doar pe filtrare frontend.
 - 2026-03-17: După feedback de tip "unsatisfied" pe foundation backend membership edit, păstrează strict modelul pe `membership` (nu `user identity`) și validează explicit prin teste separate agency vs subaccount vs inherited înainte de commit.
 - 2026-03-17: După feedback pe taskul UI edit Agency Team, reutilizează form-ul existent pentru edit fără redesign, dar mapează strict payload-ul PATCH la câmpurile suportate de backend și blochează explicit câmpurile identity în UI.
+
+## 2026-03-17 — Recovery after unsatisfactory prior PR
+- When a user signals the previous PR was unsatisfactory, explicitly re-validate scope boundaries first (what must change vs what must stay untouched), then map each requirement to tests before coding.
+- For lifecycle tasks, verify both state transition endpoints and all read/access consumers (login, access-context, grantable modules, list/detail contracts), not just write paths.

@@ -58,6 +58,7 @@ class TeamSubaccountApiTests(unittest.TestCase):
             resp = team_api.list_subaccount_team_members(subaccount_id=8, search="", user_role="", page=1, page_size=10, user=user)
             self.assertEqual(resp.total, 1)
             self.assertEqual(resp.items[0].role_key, "subaccount_user")
+            self.assertEqual(resp.items[0].membership_status, "active")
         finally:
             team_api.team_members_service.list_subaccount_members = original
 
@@ -258,6 +259,7 @@ class TeamSubaccountApiTests(unittest.TestCase):
             )
             resp = team_api.list_subaccount_team_members(subaccount_id=8, search="", user_role="", page=1, page_size=10, user=user)
             self.assertEqual(resp.items[0].module_keys, ["dashboard", "creative"])
+            self.assertEqual(resp.items[0].membership_status, "active")
         finally:
             team_api.team_members_service.list_subaccount_members = original
 

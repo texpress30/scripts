@@ -20,6 +20,7 @@ class TeamMembershipEditApiTests(unittest.TestCase):
                 "module_keys": ["dashboard", "rules"],
                 "source_scope": "subaccount",
                 "is_inherited": False,
+                "membership_status": "active",
                 "first_name": "Ana",
                 "last_name": "Pop",
                 "email": "ana@example.com",
@@ -30,6 +31,7 @@ class TeamMembershipEditApiTests(unittest.TestCase):
             self.assertEqual(resp.item.membership_id, 41)
             self.assertEqual(resp.item.module_keys, ["dashboard", "rules"])
             self.assertFalse(resp.item.is_inherited)
+            self.assertEqual(resp.item.membership_status, "active")
         finally:
             team_api.team_members_service.get_membership_detail = original
 
@@ -59,6 +61,7 @@ class TeamMembershipEditApiTests(unittest.TestCase):
                 "module_keys": [],
                 "source_scope": "agency",
                 "is_inherited": False,
+                "membership_status": "active",
                 "first_name": "Mara",
                 "last_name": "I",
                 "email": "mara@example.com",
@@ -98,6 +101,7 @@ class TeamMembershipEditApiTests(unittest.TestCase):
                 "module_keys": ["dashboard", "campaigns", "rules", "creative", "recommendations"],
                 "source_scope": "subaccount",
                 "is_inherited": False,
+                "membership_status": "active",
                 "first_name": "Ioan",
                 "last_name": "D",
                 "email": "ioan@example.com",
@@ -129,6 +133,7 @@ class TeamMembershipEditApiTests(unittest.TestCase):
                     "module_keys": ["dashboard", "creative"],
                     "source_scope": "subaccount",
                     "is_inherited": False,
+                    "membership_status": "active",
                     "first_name": "Elena",
                     "last_name": "G",
                     "email": "elena@example.com",
@@ -196,6 +201,54 @@ class TeamMembershipEditApiTests(unittest.TestCase):
         payload = team_api.UpdateTeamMembershipRequest(user_role="subaccount_user")
         with self.assertRaises(team_api.HTTPException) as ctx:
             team_api.patch_team_membership(membership_id=63, payload=payload, user=user)
+        self.assertEqual(ctx.exception.status_code, 403)
+
+    def test_deactivate_membership_success(self):
+        user = AuthUser(email="admin@example.com", role="agency_admin")
+        original = team_api.team_members_service.deactivate_membership
+        try:
+            team_api.team_members_service.deactivate_membership = lambda **kwargs: {
+                "membership_id": 99,
+                "status": "inactive",
+                "message": "Membership dezactivat",
+            }
+            resp = team_api.deactivate_team_membership(membership_id=99, user=user)
+            self.assertEqual(resp.membership_id, 99)
+            self.assertEqual(resp.status, "inactive")
+        finally:
+            team_api.team_members_service.deactivate_membership = original
+
+    def test_reactivate_membership_idempotent_success(self):
+        user = AuthUser(email="admin@example.com", role="agency_admin")
+        original = team_api.team_members_service.reactivate_membership
+        try:
+            team_api.team_members_service.reactivate_membership = lambda **kwargs: {
+                "membership_id": 99,
+                "status": "active",
+                "message": "Membership-ul este deja activ",
+            }
+            resp = team_api.reactivate_team_membership(membership_id=99, user=user)
+            self.assertEqual(resp.membership_id, 99)
+            self.assertEqual(resp.status, "active")
+            self.assertIn("deja activ", resp.message)
+        finally:
+            team_api.team_members_service.reactivate_membership = original
+
+    def test_deactivate_inherited_conflict(self):
+        user = AuthUser(email="sub-admin@example.com", role="subaccount_admin", allowed_subaccount_ids=(7,), access_scope="subaccount")
+        original = team_api.team_members_service.deactivate_membership
+        try:
+            team_api.team_members_service.deactivate_membership = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("Access moștenit: acest membership nu poate fi modificat local"))
+            with self.assertRaises(team_api.HTTPException) as ctx:
+                team_api.deactivate_team_membership(membership_id=63, user=user)
+            self.assertEqual(ctx.exception.status_code, 409)
+        finally:
+            team_api.team_members_service.deactivate_membership = original
+
+    def test_subaccount_user_cannot_deactivate_memberships(self):
+        user = AuthUser(email="sub-user@example.com", role="subaccount_user", allowed_subaccount_ids=(7,), access_scope="subaccount")
+        with self.assertRaises(team_api.HTTPException) as ctx:
+            team_api.deactivate_team_membership(membership_id=63, user=user)
         self.assertEqual(ctx.exception.status_code, 403)
 
 

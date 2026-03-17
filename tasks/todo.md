@@ -4872,3 +4872,19 @@ Plan verified: keep Agency Team UI shape largely unchanged, add edit wiring arou
 - Inherited access is blocked with clear messaging and save protection; backend conflict/error mappings (400/403/404/409) surface user-friendly feedback.
 - Existing create/invite flows remain covered by the existing and updated test suite.
 - Intentional follow-up: Sub-account Team edit UI remains out of scope for this task.
+
+## 2026-03-17 Membership lifecycle foundation: deactivate/reactivate (backend)
+- [x] Re-read team/auth/rbac/dependencies and team frontend pages for contract context.
+- [x] Add backend endpoints for membership deactivate/reactivate with idempotent status response.
+- [x] Add service helpers for membership status transitions and inherited-access guard.
+- [x] Expose membership status in team list/detail/subaccount list responses with backward compatibility.
+- [x] Ensure login/access-context/grantable flows ignore inactive memberships.
+- [x] Add backend tests for lifecycle endpoints, status contracts, and inactive filtering behavior.
+- [x] Run targeted backend tests and backend startup check.
+
+### Review
+- Implemented `POST /team/members/{membership_id}/deactivate` and `POST /team/members/{membership_id}/reactivate` on membership records only (no `users.is_active` mutations).
+- Added status serialization (`membership_status`) in team list/detail and subaccount list responses while preserving existing fields.
+- Added inherited-access conflict handling for lifecycle transitions; no implicit local membership creation.
+- Confirmed DB-driven auth/access behaviors continue to only consider active memberships.
+- Intentional follow-up left for next task: UI actions/buttons and lifecycle wiring in Agency/Sub-account Team pages.

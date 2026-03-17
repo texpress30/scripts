@@ -63,9 +63,16 @@ SUBACCOUNT_MODULE_CATALOG: tuple[ModuleCatalogItem, ...] = (
 )
 
 SUBACCOUNT_MODULE_KEY_SET: set[str] = {item.key for item in SUBACCOUNT_MODULE_CATALOG}
+ALLOWED_MEMBERSHIP_STATUSES: set[str] = {"active", "inactive"}
 
 
 class TeamMembersService:
+    def _normalize_membership_status(self, value: object) -> str:
+        candidate = str(value or "").strip().lower()
+        if candidate not in ALLOWED_MEMBERSHIP_STATUSES:
+            return "active"
+        return candidate
+
     @staticmethod
     def _safe_int(value: object) -> int | None:
         try:
@@ -642,7 +649,7 @@ class TeamMembersService:
         page: int,
         page_size: int,
     ) -> tuple[list[dict[str, object]], int]:
-        clauses: list[str] = ["um.status = 'active'"]
+        clauses: list[str] = []
         values: list[object] = []
 
         if search.strip():
@@ -698,7 +705,7 @@ class TeamMembersService:
 
                 cur.execute(
                     f"""
-                    SELECT um.id, um.user_id, u.first_name, u.last_name, u.email, u.phone, u.extension, um.role_key, um.subaccount_name, um.scope_type
+                    SELECT um.id, um.user_id, u.first_name, u.last_name, u.email, u.phone, u.extension, um.role_key, um.subaccount_name, um.scope_type, um.status
                     FROM user_memberships um
                     JOIN users u ON u.id = um.user_id
                     {where_sql}
@@ -738,6 +745,7 @@ class TeamMembersService:
                     "location": "România",
                     "subaccount": str(row[8] or "Toate"),
                     "module_keys": membership_module_map.get(membership_id, []),
+                    "membership_status": self._normalize_membership_status(row[10] if len(row) > 10 else "active"),
                 }
             )
         return items, total
@@ -778,14 +786,12 @@ class TeamMembersService:
     ) -> tuple[list[dict[str, object]], int]:
         subaccount_ref = self._resolve_subaccount_by_id(subaccount_id=subaccount_id)
         clauses_direct: list[str] = [
-            "um.status = 'active'",
             "um.scope_type = 'subaccount'",
             "um.subaccount_id = %s",
         ]
         values_direct: list[object] = [int(subaccount_id)]
 
         clauses_agency: list[str] = [
-            "um.status = 'active'",
             "um.scope_type = 'agency'",
         ]
         values_agency: list[object] = []
@@ -911,6 +917,7 @@ class TeamMembersService:
                     "source_scope": str(row[9]),
                     "source_label": str(row[11] or subaccount_ref.name),
                     "is_active": str(row[8]) == "active",
+                    "membership_status": self._normalize_membership_status(row[8]),
                     "is_inherited": bool(row[10]),
                     "module_keys": membership_module_map.get(membership_id, []),
                 }
@@ -1117,6 +1124,7 @@ class TeamMembersService:
             "source_scope": scope_type,
             "is_inherited": bool(inherited_for_actor),
             "is_active": str(row[6] or "") == "active",
+            "membership_status": self._normalize_membership_status(row[6]),
             "first_name": str(row[7] or ""),
             "last_name": str(row[8] or ""),
             "email": str(row[9] or "").strip().lower(),
@@ -1188,6 +1196,46 @@ class TeamMembersService:
         if updated is None:
             raise LookupError("Membership inexistent")
         return updated
+
+    def _transition_membership_status(self, *, membership_id: int, actor_user: AuthUser, target_status: str) -> dict[str, object]:
+        normalized_target = self._normalize_membership_status(target_status)
+        if normalized_target not in {"active", "inactive"}:
+            raise ValueError("Status invalid")
+
+        current = self.get_membership_detail(membership_id=membership_id, actor_user=actor_user)
+        if current is None:
+            raise LookupError("Membership inexistent")
+        if bool(current.get("is_inherited")):
+            raise RuntimeError("Access moștenit: acest membership nu poate fi modificat local")
+
+        current_status = self._normalize_membership_status(current.get("membership_status"))
+        if current_status == normalized_target:
+            message = "Membership-ul este deja activ" if normalized_target == "active" else "Membership-ul este deja inactiv"
+            return {"membership_id": int(membership_id), "status": normalized_target, "message": message}
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE user_memberships
+                    SET status = %s,
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (normalized_target, int(membership_id)),
+                )
+                if int(cur.rowcount or 0) != 1:
+                    raise LookupError("Membership inexistent")
+            conn.commit()
+
+        message = "Membership dezactivat" if normalized_target == "inactive" else "Membership reactivat"
+        return {"membership_id": int(membership_id), "status": normalized_target, "message": message}
+
+    def deactivate_membership(self, *, membership_id: int, actor_user: AuthUser) -> dict[str, object]:
+        return self._transition_membership_status(membership_id=membership_id, actor_user=actor_user, target_status="inactive")
+
+    def reactivate_membership(self, *, membership_id: int, actor_user: AuthUser) -> dict[str, object]:
+        return self._transition_membership_status(membership_id=membership_id, actor_user=actor_user, target_status="active")
 
     def get_membership_with_user(self, *, membership_id: int) -> dict[str, object] | None:
         with self._connect() as conn:
