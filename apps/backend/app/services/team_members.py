@@ -63,9 +63,16 @@ SUBACCOUNT_MODULE_CATALOG: tuple[ModuleCatalogItem, ...] = (
 )
 
 SUBACCOUNT_MODULE_KEY_SET: set[str] = {item.key for item in SUBACCOUNT_MODULE_CATALOG}
+ALLOWED_MEMBERSHIP_STATUSES: set[str] = {"active", "inactive"}
 
 
 class TeamMembersService:
+    def _normalize_membership_status(self, value: object) -> str:
+        candidate = str(value or "").strip().lower()
+        if candidate not in ALLOWED_MEMBERSHIP_STATUSES:
+            return "active"
+        return candidate
+
     @staticmethod
     def _safe_int(value: object) -> int | None:
         try:
@@ -360,6 +367,68 @@ class TeamMembersService:
         )
         return set(module_keys)
 
+    def get_subaccount_my_access(self, *, actor_user: AuthUser, subaccount_id: int) -> dict[str, object]:
+        actor_role = normalize_role(actor_user.role)
+        access_scope = str(actor_user.access_scope or "").strip().lower() or "agency"
+
+        if not actor_role.startswith("subaccount_"):
+            return {
+                "subaccount_id": int(subaccount_id),
+                "role": actor_role,
+                "module_keys": [item.key for item in SUBACCOUNT_MODULE_CATALOG],
+                "source_scope": "agency",
+                "access_scope": access_scope,
+                "unrestricted_modules": True,
+            }
+
+        if actor_user.user_id is None:
+            return {
+                "subaccount_id": int(subaccount_id),
+                "role": actor_role,
+                "module_keys": [item.key for item in SUBACCOUNT_MODULE_CATALOG],
+                "source_scope": "legacy_fallback",
+                "access_scope": "subaccount",
+                "unrestricted_modules": False,
+            }
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, role_key, scope_type
+                    FROM user_memberships
+                    WHERE user_id = %s
+                      AND scope_type = 'subaccount'
+                      AND subaccount_id = %s
+                      AND status = 'active'
+                    ORDER BY id ASC
+                    LIMIT 1
+                    """,
+                    (int(actor_user.user_id), int(subaccount_id)),
+                )
+                row = cur.fetchone()
+
+        if row is None:
+            raise PermissionError("Nu ai acces la acest sub-account")
+
+        membership_id = int(row[0])
+        membership_role = str(row[1] or actor_role).strip().lower() or actor_role
+        scope_type = str(row[2] or "subaccount")
+        module_keys = self.get_membership_module_keys(
+            membership_id=membership_id,
+            role_key=membership_role,
+            scope_type=scope_type,
+        )
+
+        return {
+            "subaccount_id": int(subaccount_id),
+            "role": membership_role,
+            "module_keys": module_keys,
+            "source_scope": "subaccount",
+            "access_scope": "subaccount",
+            "unrestricted_modules": False,
+        }
+
     def _resolve_subaccount_ref(self, *, subaccount: str) -> SubaccountRef:
         candidate = subaccount.strip()
         if candidate == "" or candidate.lower() == "toate":
@@ -580,7 +649,7 @@ class TeamMembersService:
         page: int,
         page_size: int,
     ) -> tuple[list[dict[str, object]], int]:
-        clauses: list[str] = ["um.status = 'active'"]
+        clauses: list[str] = []
         values: list[object] = []
 
         if search.strip():
@@ -636,7 +705,7 @@ class TeamMembersService:
 
                 cur.execute(
                     f"""
-                    SELECT um.id, um.user_id, u.first_name, u.last_name, u.email, u.phone, u.extension, um.role_key, um.subaccount_name, um.scope_type
+                    SELECT um.id, um.user_id, u.first_name, u.last_name, u.email, u.phone, u.extension, um.role_key, um.subaccount_name, um.scope_type, um.status
                     FROM user_memberships um
                     JOIN users u ON u.id = um.user_id
                     {where_sql}
@@ -676,6 +745,7 @@ class TeamMembersService:
                     "location": "România",
                     "subaccount": str(row[8] or "Toate"),
                     "module_keys": membership_module_map.get(membership_id, []),
+                    "membership_status": self._normalize_membership_status(row[10] if len(row) > 10 else "active"),
                 }
             )
         return items, total
@@ -716,14 +786,12 @@ class TeamMembersService:
     ) -> tuple[list[dict[str, object]], int]:
         subaccount_ref = self._resolve_subaccount_by_id(subaccount_id=subaccount_id)
         clauses_direct: list[str] = [
-            "um.status = 'active'",
             "um.scope_type = 'subaccount'",
             "um.subaccount_id = %s",
         ]
         values_direct: list[object] = [int(subaccount_id)]
 
         clauses_agency: list[str] = [
-            "um.status = 'active'",
             "um.scope_type = 'agency'",
         ]
         values_agency: list[object] = []
@@ -849,6 +917,7 @@ class TeamMembersService:
                     "source_scope": str(row[9]),
                     "source_label": str(row[11] or subaccount_ref.name),
                     "is_active": str(row[8]) == "active",
+                    "membership_status": self._normalize_membership_status(row[8]),
                     "is_inherited": bool(row[10]),
                     "module_keys": membership_module_map.get(membership_id, []),
                 }
@@ -942,6 +1011,231 @@ class TeamMembersService:
             "module_keys": resolved_module_keys,
         }
 
+
+    def _normalize_update_role_for_scope(self, *, scope_type: str, user_role: str) -> str:
+        normalized_scope = str(scope_type or "").strip().lower()
+        candidate = str(user_role or "").strip().lower()
+        if candidate == "":
+            raise ValueError("Rol invalid")
+
+        if normalized_scope == "agency":
+            aliases = {
+                "admin": "agency_admin",
+                "member": "agency_member",
+                "viewer": "agency_viewer",
+            }
+            candidate = aliases.get(candidate, candidate)
+            if candidate not in {"agency_admin", "agency_member", "agency_viewer"}:
+                raise ValueError("Rol invalid pentru membership agency")
+            return candidate
+
+        if normalized_scope == "subaccount":
+            aliases = {
+                "admin": "subaccount_admin",
+                "member": "subaccount_user",
+                "viewer": "subaccount_viewer",
+            }
+            candidate = aliases.get(candidate, candidate)
+            if candidate not in {"subaccount_admin", "subaccount_user", "subaccount_viewer"}:
+                raise ValueError("Rol invalid pentru membership sub-account")
+            return candidate
+
+        raise ValueError("Scope membership invalid")
+
+    def _actor_can_manage_membership(self, *, actor_user: AuthUser, target_scope: str, target_subaccount_id: int | None) -> tuple[bool, bool]:
+        actor_role = normalize_role(actor_user.role)
+        if actor_role in {"super_admin", "agency_owner", "agency_admin"}:
+            return True, False
+
+        if actor_role.startswith("subaccount_"):
+            if actor_role != "subaccount_admin":
+                return False, False
+            if str(target_scope or "").strip().lower() != "subaccount" or target_subaccount_id is None:
+                return False, True
+
+            allowed = {int(value) for value in actor_user.allowed_subaccount_ids}
+            if len(allowed) > 0:
+                return int(target_subaccount_id) in allowed, False
+
+            legacy_subaccount_id = actor_user.subaccount_id if actor_user.subaccount_id is not None else actor_user.primary_subaccount_id
+            if legacy_subaccount_id is None:
+                return False, False
+            return int(legacy_subaccount_id) == int(target_subaccount_id), False
+
+        return False, False
+
+    def get_membership_detail(self, *, membership_id: int, actor_user: AuthUser) -> dict[str, object] | None:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT
+                      um.id,
+                      um.user_id,
+                      um.scope_type,
+                      um.subaccount_id,
+                      um.subaccount_name,
+                      um.role_key,
+                      um.status,
+                      u.first_name,
+                      u.last_name,
+                      u.email,
+                      u.phone,
+                      u.extension
+                    FROM user_memberships um
+                    JOIN users u ON u.id = um.user_id
+                    WHERE um.id = %s
+                    LIMIT 1
+                    """,
+                    (int(membership_id),),
+                )
+                row = cur.fetchone()
+
+        if row is None:
+            return None
+
+        target_scope = str(row[2] or "")
+        target_subaccount_id = int(row[3]) if row[3] is not None else None
+        can_manage, inherited_for_actor = self._actor_can_manage_membership(
+            actor_user=actor_user,
+            target_scope=target_scope,
+            target_subaccount_id=target_subaccount_id,
+        )
+        if not can_manage and not inherited_for_actor:
+            raise PermissionError("Nu ai acces la acest membership")
+
+        role_key = str(row[5] or "")
+        scope_type = str(row[2] or "")
+        module_keys = self.get_membership_module_keys(
+            membership_id=int(row[0]),
+            role_key=role_key,
+            scope_type=scope_type,
+        )
+
+        return {
+            "membership_id": int(row[0]),
+            "user_id": int(row[1]),
+            "scope_type": scope_type,
+            "subaccount_id": target_subaccount_id,
+            "subaccount_name": str(row[4] or ""),
+            "role_key": role_key,
+            "role_label": self._role_label(role_key=role_key),
+            "module_keys": module_keys,
+            "source_scope": scope_type,
+            "is_inherited": bool(inherited_for_actor),
+            "is_active": str(row[6] or "") == "active",
+            "membership_status": self._normalize_membership_status(row[6]),
+            "first_name": str(row[7] or ""),
+            "last_name": str(row[8] or ""),
+            "email": str(row[9] or "").strip().lower(),
+            "phone": str(row[10] or ""),
+            "extension": str(row[11] or ""),
+        }
+
+    def update_membership(self, *, membership_id: int, actor_user: AuthUser, user_role: str | None, module_keys: list[str] | None) -> dict[str, object]:
+        current = self.get_membership_detail(membership_id=membership_id, actor_user=actor_user)
+        if current is None:
+            raise LookupError("Membership inexistent")
+        if bool(current.get("is_inherited")):
+            raise RuntimeError("Access moștenit: acest membership nu poate fi editat local")
+
+        scope_type = str(current.get("scope_type") or "").strip().lower()
+        role_key = str(current.get("role_key") or "").strip().lower()
+        subaccount_id = current.get("subaccount_id")
+        resolved_module_keys = current.get("module_keys") if isinstance(current.get("module_keys"), list) else []
+
+        if user_role is not None:
+            role_key = self._normalize_update_role_for_scope(scope_type=scope_type, user_role=user_role)
+
+        if scope_type == "agency":
+            if module_keys is not None:
+                raise ValueError("module_keys nu este permis pentru membership-uri agency")
+            resolved_module_keys = []
+        elif scope_type == "subaccount":
+            if module_keys is not None:
+                resolved_module_keys = self._normalize_subaccount_module_keys(module_keys)
+                if len(resolved_module_keys) == 0:
+                    raise ValueError("Selectează cel puțin un modul")
+            if normalize_role(actor_user.role).startswith("subaccount_"):
+                grantable = self.get_grantable_module_keys_for_actor(actor_user=actor_user, subaccount_id=int(subaccount_id or 0))
+                forbidden = [key for key in resolved_module_keys if key not in grantable]
+                if forbidden:
+                    joined = ", ".join(forbidden)
+                    raise PermissionError(f"Nu poți acorda module în afara permisiunilor proprii: {joined}")
+        else:
+            raise ValueError("Scope membership invalid")
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE user_memberships
+                    SET role_key = %s,
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (role_key, int(membership_id)),
+                )
+                if int(cur.rowcount or 0) != 1:
+                    raise LookupError("Membership inexistent")
+
+                cur.execute("DELETE FROM membership_module_permissions WHERE membership_id = %s", (int(membership_id),))
+                if scope_type == "subaccount":
+                    for module_key in resolved_module_keys:
+                        cur.execute(
+                            """
+                            INSERT INTO membership_module_permissions (membership_id, module_key)
+                            VALUES (%s, %s)
+                            ON CONFLICT (membership_id, module_key) DO NOTHING
+                            """,
+                            (int(membership_id), module_key),
+                        )
+            conn.commit()
+
+        updated = self.get_membership_detail(membership_id=membership_id, actor_user=actor_user)
+        if updated is None:
+            raise LookupError("Membership inexistent")
+        return updated
+
+    def _transition_membership_status(self, *, membership_id: int, actor_user: AuthUser, target_status: str) -> dict[str, object]:
+        normalized_target = self._normalize_membership_status(target_status)
+        if normalized_target not in {"active", "inactive"}:
+            raise ValueError("Status invalid")
+
+        current = self.get_membership_detail(membership_id=membership_id, actor_user=actor_user)
+        if current is None:
+            raise LookupError("Membership inexistent")
+        if bool(current.get("is_inherited")):
+            raise RuntimeError("Access moștenit: acest membership nu poate fi modificat local")
+
+        current_status = self._normalize_membership_status(current.get("membership_status"))
+        if current_status == normalized_target:
+            message = "Membership-ul este deja activ" if normalized_target == "active" else "Membership-ul este deja inactiv"
+            return {"membership_id": int(membership_id), "status": normalized_target, "message": message}
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE user_memberships
+                    SET status = %s,
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (normalized_target, int(membership_id)),
+                )
+                if int(cur.rowcount or 0) != 1:
+                    raise LookupError("Membership inexistent")
+            conn.commit()
+
+        message = "Membership dezactivat" if normalized_target == "inactive" else "Membership reactivat"
+        return {"membership_id": int(membership_id), "status": normalized_target, "message": message}
+
+    def deactivate_membership(self, *, membership_id: int, actor_user: AuthUser) -> dict[str, object]:
+        return self._transition_membership_status(membership_id=membership_id, actor_user=actor_user, target_status="inactive")
+
+    def reactivate_membership(self, *, membership_id: int, actor_user: AuthUser) -> dict[str, object]:
+        return self._transition_membership_status(membership_id=membership_id, actor_user=actor_user, target_status="active")
 
     def get_membership_with_user(self, *, membership_id: int) -> dict[str, object] | None:
         with self._connect() as conn:
