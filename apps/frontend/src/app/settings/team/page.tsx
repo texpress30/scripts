@@ -1,7 +1,7 @@
 "use client";
 
 import React, { FormEvent, useEffect, useMemo, useState } from "react";
-import { Camera, ChevronLeft, Loader2, Pencil, Search, Trash2, UserCircle2 } from "lucide-react";
+import { Camera, ChevronLeft, Loader2, Pencil, Power, RefreshCw, Search, UserCircle2 } from "lucide-react";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
@@ -10,9 +10,11 @@ import {
   TeamMembershipDetailItem,
   TeamModuleCatalogItem,
   apiRequest,
+  deactivateTeamMember,
   getTeamMembershipDetail,
   getTeamModuleCatalog,
   inviteTeamMember,
+  reactivateTeamMember,
   updateTeamMembership,
 } from "@/lib/api";
 
@@ -30,6 +32,8 @@ type TeamMember = {
   location: string;
   subaccount: string;
   module_keys?: string[];
+  membership_status?: "active" | "inactive" | string;
+  is_inherited?: boolean;
 };
 
 type TeamListResponse = {
@@ -123,6 +127,7 @@ export default function SettingsTeamPage() {
   const [autoInviteAfterCreate, setAutoInviteAfterCreate] = useState(false);
   const [saving, setSaving] = useState(false);
   const [inviteLoadingByMembership, setInviteLoadingByMembership] = useState<Record<number, boolean>>({});
+  const [lifecycleLoadingByMembership, setLifecycleLoadingByMembership] = useState<Record<number, boolean>>({});
   const [editingMembershipId, setEditingMembershipId] = useState<number | null>(null);
   const [loadingEditDetail, setLoadingEditDetail] = useState(false);
   const [editLockedInherited, setEditLockedInherited] = useState(false);
@@ -254,6 +259,56 @@ export default function SettingsTeamPage() {
   function canInviteMember(member: TeamMember): boolean {
     const membershipId = getMembershipId(member);
         return membershipId !== null && String(member.email || "").trim() !== "";
+  }
+
+  function normalizeMembershipStatus(member: TeamMember): "active" | "inactive" {
+    const status = String(member.membership_status || "active").trim().toLowerCase();
+    return status === "inactive" ? "inactive" : "active";
+  }
+
+  function lifecycleErrorMessage(error: unknown): string {
+    if (error instanceof ApiRequestError) {
+      if (error.status === 403) return "Nu ai permisiuni suficiente pentru această acțiune";
+      if (error.status === 404) return "Membership inexistent sau inaccesibil";
+      if (error.status === 409) return "Acest access este moștenit și nu poate fi modificat aici";
+      return error.message || "Nu am putut actualiza statusul membership-ului";
+    }
+    return error instanceof Error ? error.message : "Nu am putut actualiza statusul membership-ului";
+  }
+
+  async function onToggleMembershipLifecycle(member: TeamMember) {
+    const membershipId = getMembershipId(member);
+    if (membershipId === null) {
+      setErrorMessage("Membership invalid pentru acțiunea selectată.");
+      return;
+    }
+
+    const currentStatus = normalizeMembershipStatus(member);
+    if (currentStatus === "active") {
+      const confirmed = window.confirm("Confirmi dezactivarea accesului pentru acest membership?");
+      if (!confirmed) return;
+    }
+
+    setErrorMessage("");
+    setLifecycleLoadingByMembership((prev) => ({ ...prev, [membershipId]: true }));
+    try {
+      if (currentStatus === "active") {
+        const response = await deactivateTeamMember(membershipId);
+        showToast(response.message || "Accesul a fost dezactivat pentru sesiunile noi și pentru verificările bazate pe datele curente.");
+      } else {
+        const response = await reactivateTeamMember(membershipId);
+        showToast(response.message || "Accesul a fost reactivat.");
+      }
+      await loadMembers();
+    } catch (error) {
+      setErrorMessage(lifecycleErrorMessage(error));
+    } finally {
+      setLifecycleLoadingByMembership((prev) => {
+        const next = { ...prev };
+        delete next[membershipId];
+        return next;
+      });
+    }
   }
 
   function inviteErrorMessage(error: unknown): string {
@@ -563,6 +618,7 @@ export default function SettingsTeamPage() {
                         <th className="px-3 py-2">Email</th>
                         <th className="px-3 py-2">Telefon</th>
                         <th className="px-3 py-2">Tip Utilizator</th>
+                        <th className="px-3 py-2">Status</th>
                         <th className="px-3 py-2">Locație</th>
                         <th className="px-3 py-2 text-right">Acțiuni</th>
                       </tr>
@@ -570,11 +626,11 @@ export default function SettingsTeamPage() {
                     <tbody>
                       {loadingMembers ? (
                         <tr>
-                          <td className="px-3 py-6 text-center text-slate-500" colSpan={6}>Se încarcă membri...</td>
+                          <td className="px-3 py-6 text-center text-slate-500" colSpan={7}>Se încarcă membri...</td>
                         </tr>
                       ) : members.length === 0 ? (
                         <tr>
-                          <td className="px-3 py-6 text-center text-slate-500" colSpan={6}>Nu există membri pentru filtrele curente.</td>
+                          <td className="px-3 py-6 text-center text-slate-500" colSpan={7}>Nu există membri pentru filtrele curente.</td>
                         </tr>
                       ) : (
                         members.map((member) => (
@@ -590,11 +646,36 @@ export default function SettingsTeamPage() {
                             <td className="px-3 py-2">{member.email}</td>
                             <td className="px-3 py-2">{member.phone || "-"}</td>
                             <td className="px-3 py-2">{member.user_type}</td>
+                            <td className="px-3 py-2">
+                              {normalizeMembershipStatus(member) === "active" ? (
+                                <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Activ</span>
+                              ) : (
+                                <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Inactiv</span>
+                              )}
+                            </td>
                             <td className="px-3 py-2">{member.location}</td>
                             <td className="px-3 py-2">
                               <div className="flex items-center justify-end gap-2 text-slate-500">
                                 <button type="button" className="rounded p-1 hover:bg-slate-100" title="Editează" onClick={() => void openEditForm(member)}><Pencil className="h-4 w-4" /></button>
-                                <button type="button" className="rounded p-1 hover:bg-slate-100" title="Șterge"><Trash2 className="h-4 w-4" /></button>
+                                {(() => {
+                                  const membershipId = getMembershipId(member);
+                                  const loadingLifecycle = membershipId !== null && Boolean(lifecycleLoadingByMembership[membershipId]);
+                                  const isInherited = Boolean(member.is_inherited);
+                                  const isActive = normalizeMembershipStatus(member) === "active";
+                                  const label = isActive ? "Dezactivează" : "Reactivează";
+                                  return (
+                                    <button
+                                      type="button"
+                                      className="rounded p-1 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                      title={isInherited ? "Access moștenit — indisponibil" : label}
+                                      aria-label={label}
+                                      disabled={membershipId === null || loadingLifecycle || isInherited}
+                                      onClick={() => void onToggleMembershipLifecycle(member)}
+                                    >
+                                      {loadingLifecycle ? <Loader2 className="h-4 w-4 animate-spin" /> : isActive ? <Power className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
+                                    </button>
+                                  );
+                                })()}
                                 {(() => {
                                   const membershipId = getMembershipId(member);
                                   const eligible = canInviteMember(member);
@@ -750,6 +831,12 @@ export default function SettingsTeamPage() {
                       ) : null}
                       {moduleFieldError ? <p className="text-xs text-red-600">{moduleFieldError}</p> : null}
                     </section>
+                  ) : null}
+
+                  {mode === "edit" && editingMembershipId !== null ? (
+                    <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                      Status membership curent: <span className="font-semibold">{members.find((item) => getMembershipId(item) === editingMembershipId)?.membership_status === "inactive" ? "Inactiv" : "Activ"}</span>
+                    </p>
                   ) : null}
 
                   {mode !== "edit" ? (

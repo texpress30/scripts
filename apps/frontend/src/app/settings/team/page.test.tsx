@@ -17,6 +17,8 @@ vi.mock("@/lib/api", async () => {
     inviteTeamMember: (...args: unknown[]) => inviteTeamMemberMock(...args),
     getTeamMembershipDetail: (membershipId: string | number) => apiRequestMock(`/team/members/${encodeURIComponent(String(membershipId))}`),
     updateTeamMembership: (membershipId: string | number, payload: unknown) => apiRequestMock(`/team/members/${encodeURIComponent(String(membershipId))}`, { method: "PATCH", body: JSON.stringify(payload) }),
+    deactivateTeamMember: (membershipId: string | number) => apiRequestMock(`/team/members/${encodeURIComponent(String(membershipId))}/deactivate`, { method: "POST", body: JSON.stringify({}) }),
+    reactivateTeamMember: (membershipId: string | number) => apiRequestMock(`/team/members/${encodeURIComponent(String(membershipId))}/reactivate`, { method: "POST", body: JSON.stringify({}) }),
   };
 });
 
@@ -37,6 +39,7 @@ describe("Settings team page subaccount integration", () => {
   beforeEach(() => {
     apiRequestMock.mockReset();
     inviteTeamMemberMock.mockReset();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
       if (path.startsWith("/team/members?")) {
         return Promise.resolve({
@@ -54,6 +57,7 @@ describe("Settings team page subaccount integration", () => {
               user_role: "admin",
               location: "România",
               subaccount: "Toate",
+              membership_status: "active",
             },
             {
               id: 102,
@@ -68,6 +72,7 @@ describe("Settings team page subaccount integration", () => {
               user_role: "member",
               location: "România",
               subaccount: "Toate",
+              membership_status: "inactive",
             },
           ],
           total: 2,
@@ -157,6 +162,12 @@ describe("Settings team page subaccount integration", () => {
             extension: "",
           },
         });
+      }
+      if (path === "/team/members/101/deactivate" && options?.method === "POST") {
+        return Promise.resolve({ membership_id: 101, status: "inactive", message: "Accesul a fost dezactivat pentru sesiunile noi și pentru verificările bazate pe datele curente." });
+      }
+      if (path === "/team/members/102/reactivate" && options?.method === "POST") {
+        return Promise.resolve({ membership_id: 102, status: "active", message: "Accesul a fost reactivat" });
       }
       if (path === "/team/members" && options?.method === "POST") {
         return Promise.resolve({ item: { id: 1 } });
@@ -778,4 +789,93 @@ describe("Settings team page subaccount integration", () => {
     fireEvent.click(buttons[0]);
     expect(await screen.findByText(/Invitațiile sunt indisponibile temporar/i)).toBeInTheDocument();
   });
+
+  it("renders membership status badges and lifecycle actions for active vs inactive rows", async () => {
+    render(<SettingsTeamPage />);
+
+    expect(await screen.findByText("Activ")).toBeInTheDocument();
+    expect(await screen.findByText("Inactiv")).toBeInTheDocument();
+
+    expect(screen.getByRole("button", { name: "Dezactivează" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reactivează" })).toBeInTheDocument();
+  });
+
+  it("deactivates active membership, shows success message, and refetches list", async () => {
+    render(<SettingsTeamPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Dezactivează" }));
+
+    await waitFor(() => {
+      expect(apiRequestMock.mock.calls.some((call) => call[0] === "/team/members/101/deactivate" && call[1]?.method === "POST")).toBe(true);
+    });
+
+    await waitFor(() => {
+      const memberListCalls = apiRequestMock.mock.calls.filter((call) => String(call[0]).startsWith("/team/members?"));
+      expect(memberListCalls.length).toBeGreaterThan(1);
+    });
+    expect(await screen.findByText(/Accesul a fost dezactivat/i)).toBeInTheDocument();
+  });
+
+  it("reactivates inactive membership and refetches list", async () => {
+    render(<SettingsTeamPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Reactivează" }));
+
+    await waitFor(() => {
+      expect(apiRequestMock.mock.calls.some((call) => call[0] === "/team/members/102/reactivate" && call[1]?.method === "POST")).toBe(true);
+    });
+
+    expect(await screen.findByText(/Accesul a fost reactivat/i)).toBeInTheDocument();
+  });
+
+  it("shows lifecycle loading per-row and handles 403/404/409 errors", async () => {
+    apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
+      if (path.startsWith("/team/members?")) {
+        return Promise.resolve({
+          items: [
+            { id: 201, membership_id: 201, user_id: 301, first_name: "A", last_name: "One", email: "a@example.com", phone: "", extension: "", user_type: "agency", user_role: "admin", location: "RO", subaccount: "Toate", membership_status: "active" },
+            { id: 202, membership_id: 202, user_id: 302, first_name: "B", last_name: "Two", email: "b@example.com", phone: "", extension: "", user_type: "agency", user_role: "member", location: "RO", subaccount: "Toate", membership_status: "active" },
+            { id: 203, membership_id: 203, user_id: 303, first_name: "C", last_name: "Three", email: "c@example.com", phone: "", extension: "", user_type: "agency", user_role: "member", location: "RO", subaccount: "Toate", membership_status: "active" },
+          ], total: 3, page: 1, page_size: 10,
+        });
+      }
+      if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
+      if (path === "/team/members/201/deactivate" && options?.method === "POST") return new Promise(() => {});
+      if (path === "/team/members/202/deactivate" && options?.method === "POST") return Promise.reject(new ApiRequestError("forbidden", 403));
+      if (path === "/team/members/203/deactivate" && options?.method === "POST") return Promise.reject(new ApiRequestError("conflict", 409));
+      return Promise.reject(new Error(`Unexpected path: ${path}`));
+    });
+
+    render(<SettingsTeamPage />);
+
+    const buttons = await screen.findAllByRole("button", { name: "Dezactivează" });
+    fireEvent.click(buttons[0]);
+
+    fireEvent.click(buttons[1]);
+    expect(await screen.findByText(/permisiuni suficiente/i)).toBeInTheDocument();
+
+    fireEvent.click(buttons[2]);
+    expect(await screen.findByText(/moștenit/i)).toBeInTheDocument();
+  });
+
+  it("handles lifecycle 404 with clear message", async () => {
+    apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
+      if (path.startsWith("/team/members?")) {
+        return Promise.resolve({
+          items: [{ id: 301, membership_id: 301, user_id: 401, first_name: "A", last_name: "One", email: "a@example.com", phone: "", extension: "", user_type: "agency", user_role: "admin", location: "RO", subaccount: "Toate", membership_status: "active" }],
+          total: 1, page: 1, page_size: 10,
+        });
+      }
+      if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
+      if (path === "/team/members/301/deactivate" && options?.method === "POST") return Promise.reject(new ApiRequestError("gone", 404));
+      return Promise.reject(new Error(`Unexpected path: ${path}`));
+    });
+
+    render(<SettingsTeamPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Dezactivează" }));
+    expect(await screen.findByText(/Membership inexistent sau inaccesibil/i)).toBeInTheDocument();
+  });
+
 });

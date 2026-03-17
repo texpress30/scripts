@@ -4888,3 +4888,23 @@ Plan verified: keep Agency Team UI shape largely unchanged, add edit wiring arou
 - Added inherited-access conflict handling for lifecycle transitions; no implicit local membership creation.
 - Confirmed DB-driven auth/access behaviors continue to only consider active memberships.
 - Intentional follow-up left for next task: UI actions/buttons and lifecycle wiring in Agency/Sub-account Team pages.
+
+
+## 2026-03-17 Agency Team UI lifecycle actions (deactivate/reactivate)
+- [x] Re-read Agency Team page, frontend API helpers, and backend team contracts for status/lifecycle endpoints.
+- [x] Render `membership_status` in Agency Team list with discrete active/inactive indicator.
+- [x] Add frontend API helpers for deactivate/reactivate membership lifecycle endpoints.
+- [x] Wire row-level deactivate/reactivate actions with per-row loading, success toast, and list refetch.
+- [x] Add explicit lifecycle error mappings for 403/404/409 plus safe fallback.
+- [x] Add focused frontend tests for status rendering, actions, loading, success refetch, and error handling while preserving existing flows.
+- [x] Run frontend tests and frontend build.
+
+### Check-in before execution
+Plan verified: keep change incremental in `apps/frontend/src/app/settings/team/page.tsx` + `apps/frontend/src/lib/api.ts` and tests only; no Sub-account Team lifecycle UI and no create/edit/invite behavior changes.
+
+### Review
+- Agency Team list now surfaces `membership_status` with discrete badges (`Activ` / `Inactiv`) and keeps existing table layout.
+- Added lifecycle helpers in frontend API for `deactivate`/`reactivate` membership endpoints and wired row-level actions in Agency Team.
+- Lifecycle actions use per-row loading, refetch the list on success, and map 403/404/409 to clear user-safe messages.
+- Existing create/edit/invite flows remain covered and passing in updated page tests.
+- Intentional next step: Sub-account Team lifecycle UI actions remain out of scope for this task.

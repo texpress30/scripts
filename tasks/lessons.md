@@ -381,3 +381,5 @@
 ## 2026-03-17 — Recovery after unsatisfactory prior PR
 - When a user signals the previous PR was unsatisfactory, explicitly re-validate scope boundaries first (what must change vs what must stay untouched), then map each requirement to tests before coding.
 - For lifecycle tasks, verify both state transition endpoints and all read/access consumers (login, access-context, grantable modules, list/detail contracts), not just write paths.
+
+- 2026-03-17: Pentru lifecycle actions în tabele existente, mock-uiește explicit helperii noi din `@/lib/api` în teste (nu doar `apiRequest`), altfel funcțiile reale pot folosi `fetch` și dau erori de URL în test runner.

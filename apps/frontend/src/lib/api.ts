@@ -309,6 +309,7 @@ export type SubaccountTeamMemberItem = {
   source_scope: string;
   source_label: string;
   is_active: boolean;
+  membership_status?: "active" | "inactive" | string;
   is_inherited: boolean;
 };
 
@@ -413,6 +414,7 @@ export type TeamMembershipDetailItem = {
   module_keys: string[];
   source_scope: string;
   is_inherited: boolean;
+  membership_status?: "active" | "inactive" | string;
   first_name: string;
   last_name: string;
   email: string;
@@ -440,6 +442,27 @@ export async function updateTeamMembership(
   return apiRequest<TeamMembershipDetailResponse>(`/team/members/${encodeURIComponent(String(membershipId))}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
+  });
+}
+
+
+export type TeamMembershipStatusResponse = {
+  membership_id: number;
+  status: "active" | "inactive" | string;
+  message: string;
+};
+
+export async function deactivateTeamMember(membershipId: string | number): Promise<TeamMembershipStatusResponse> {
+  return apiRequest<TeamMembershipStatusResponse>(`/team/members/${encodeURIComponent(String(membershipId))}/deactivate`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export async function reactivateTeamMember(membershipId: string | number): Promise<TeamMembershipStatusResponse> {
+  return apiRequest<TeamMembershipStatusResponse>(`/team/members/${encodeURIComponent(String(membershipId))}/reactivate`, {
+    method: "POST",
+    body: JSON.stringify({}),
   });
 }
 
