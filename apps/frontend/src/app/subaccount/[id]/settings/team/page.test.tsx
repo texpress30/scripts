@@ -7,6 +7,7 @@ import SubAccountTeamPage from "./page";
 const listSubaccountTeamMembersMock = vi.fn();
 const createSubaccountTeamMemberMock = vi.fn();
 const inviteTeamMemberMock = vi.fn();
+const getSubaccountGrantableModulesMock = vi.fn();
 
 vi.mock("next/navigation", () => ({ useParams: () => ({ id: "96" }) }));
 vi.mock("@/components/ProtectedPage", () => ({ ProtectedPage: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
@@ -25,6 +26,7 @@ vi.mock("@/lib/api", async () => {
     listSubaccountTeamMembers: (...args: unknown[]) => listSubaccountTeamMembersMock(...args),
     createSubaccountTeamMember: (...args: unknown[]) => createSubaccountTeamMemberMock(...args),
     inviteTeamMember: (...args: unknown[]) => inviteTeamMemberMock(...args),
+    getSubaccountGrantableModules: (...args: unknown[]) => getSubaccountGrantableModulesMock(...args),
   };
 });
 
@@ -33,6 +35,7 @@ describe("SubAccount Team management page", () => {
     listSubaccountTeamMembersMock.mockReset();
     createSubaccountTeamMemberMock.mockReset();
     inviteTeamMemberMock.mockReset();
+    getSubaccountGrantableModulesMock.mockReset();
     listSubaccountTeamMembersMock.mockResolvedValue({
       items: [
         {
@@ -72,6 +75,13 @@ describe("SubAccount Team management page", () => {
       page: 1,
       page_size: 5,
       subaccount_id: 96,
+    });
+    getSubaccountGrantableModulesMock.mockResolvedValue({
+      items: [
+        { key: "dashboard", label: "Dashboard", order: 1, grantable: true },
+        { key: "campaigns", label: "Campaigns", order: 2, grantable: true },
+        { key: "creative", label: "Creative", order: 3, grantable: false },
+      ],
     });
   });
 
@@ -128,6 +138,7 @@ describe("SubAccount Team management page", () => {
     await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    await screen.findByRole("checkbox", { name: "Permisiune modul Dashboard" });
     fireEvent.change(screen.getByPlaceholderText("Prenume"), { target: { value: "Elena" } });
     fireEvent.change(screen.getByPlaceholderText("Nume"), { target: { value: "Popa" } });
     fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "elena@example.com" } });
@@ -144,6 +155,7 @@ describe("SubAccount Team management page", () => {
         phone: "+40 700 111 222",
         extension: "12",
         user_role: "subaccount_admin",
+        module_keys: ["dashboard", "campaigns"],
       });
     });
 
@@ -245,6 +257,88 @@ describe("SubAccount Team management page", () => {
     const inviteButton = await screen.findByTitle("Invitația nu este disponibilă pentru acest rând");
     expect(inviteButton).toBeDisabled();
     expect(inviteTeamMemberMock).not.toHaveBeenCalled();
+  });
+
+
+  it("loads and renders module permissions with default grantable selection", async () => {
+    render(<SubAccountTeamPage />);
+    await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+
+    await waitFor(() => expect(getSubaccountGrantableModulesMock).toHaveBeenCalledWith(96));
+
+    const dashboard = await screen.findByRole("checkbox", { name: "Permisiune modul Dashboard" });
+    const campaigns = screen.getByRole("checkbox", { name: "Permisiune modul Campaigns" });
+    const creative = screen.getByRole("checkbox", { name: "Permisiune modul Creative" });
+
+    expect(dashboard).toBeChecked();
+    expect(campaigns).toBeChecked();
+    expect(creative).toBeDisabled();
+    expect(screen.getByText("Nu poate fi acordat din permisiunile tale curente.")).toBeInTheDocument();
+  });
+
+  it("updates module selection and sends only selected grantable module_keys", async () => {
+    createSubaccountTeamMemberMock.mockResolvedValue({ item: {} });
+
+    render(<SubAccountTeamPage />);
+    await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    const campaigns = await screen.findByRole("checkbox", { name: "Permisiune modul Campaigns" });
+    fireEvent.click(campaigns);
+
+    fireEvent.change(screen.getByPlaceholderText("Prenume"), { target: { value: "Elena" } });
+    fireEvent.change(screen.getByPlaceholderText("Nume"), { target: { value: "Popa" } });
+    fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "elena@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Înainte" }));
+
+    await waitFor(() => {
+      expect(createSubaccountTeamMemberMock).toHaveBeenCalledWith(96, expect.objectContaining({ module_keys: ["dashboard"] }));
+    });
+  });
+
+  it("blocks submit when all grantable modules are unchecked", async () => {
+    render(<SubAccountTeamPage />);
+    await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+
+    const dashboard = await screen.findByRole("checkbox", { name: "Permisiune modul Dashboard" });
+    const campaigns = screen.getByRole("checkbox", { name: "Permisiune modul Campaigns" });
+    fireEvent.click(dashboard);
+    fireEvent.click(campaigns);
+
+    fireEvent.change(screen.getByPlaceholderText("Prenume"), { target: { value: "Elena" } });
+    fireEvent.change(screen.getByPlaceholderText("Nume"), { target: { value: "Popa" } });
+    fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "elena@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Înainte" }));
+
+    expect(await screen.findByText("Selectează cel puțin un modul.")).toBeInTheDocument();
+    expect(createSubaccountTeamMemberMock).not.toHaveBeenCalled();
+  });
+
+  it("shows friendly create errors for 403 and grant ceiling violations", async () => {
+    const { ApiRequestError } = await import("@/lib/api");
+
+    createSubaccountTeamMemberMock.mockRejectedValueOnce(new ApiRequestError("forbidden", 403));
+
+    render(<SubAccountTeamPage />);
+    await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    await screen.findByRole("checkbox", { name: "Permisiune modul Dashboard" });
+
+    fireEvent.change(screen.getByPlaceholderText("Prenume"), { target: { value: "Elena" } });
+    fireEvent.change(screen.getByPlaceholderText("Nume"), { target: { value: "Popa" } });
+    fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "elena@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Înainte" }));
+
+    expect(await screen.findByText("Permisiuni insuficiente pentru această acțiune.")).toBeInTheDocument();
+
+    createSubaccountTeamMemberMock.mockRejectedValueOnce(new ApiRequestError("Nu poți acorda module în afara permisiunilor proprii: campaigns", 400));
+    fireEvent.click(screen.getByRole("button", { name: "Înainte" }));
+    expect(await screen.findByText("Nu poți acorda module în afara permisiunilor proprii: campaigns")).toBeInTheDocument();
   });
 
   it("shows clear 403 access message", async () => {

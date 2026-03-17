@@ -10,7 +10,9 @@ import {
   ApiRequestError,
   CreateSubaccountTeamMemberPayload,
   SubaccountTeamMemberItem,
+  TeamGrantableModuleItem,
   createSubaccountTeamMember,
+  getSubaccountGrantableModules,
   inviteTeamMember,
   listSubaccountTeamMembers,
 } from "@/lib/api";
@@ -91,9 +93,14 @@ function getFriendlyListError(error: unknown): string {
 
 function getFriendlyCreateError(error: unknown): string {
   if (error instanceof ApiRequestError) {
-    if (error.status === 403) return "Nu ai acces la acest sub-account.";
+    if (error.status === 403) return "Permisiuni insuficiente pentru această acțiune.";
     if (error.status === 404) return "Sub-account inexistent.";
-    if (error.status === 400) return error.message || "Date invalide.";
+    if (error.status === 400) {
+      const message = error.message || "Date invalide.";
+      if (message.toLowerCase().includes("modul invalid")) return message;
+      if (message.toLowerCase().includes("în afara permisiunilor proprii")) return message;
+      return message;
+    }
   }
   if (error instanceof Error && error.message.trim()) return error.message;
   return "Nu am putut crea utilizatorul.";
@@ -143,6 +150,10 @@ export default function SubAccountTeamPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [invitingMembershipId, setInvitingMembershipId] = useState<number | null>(null);
+  const [moduleOptions, setModuleOptions] = useState<TeamGrantableModuleItem[]>([]);
+  const [selectedModuleKeys, setSelectedModuleKeys] = useState<string[]>([]);
+  const [isLoadingModules, setIsLoadingModules] = useState(false);
+  const [moduleLoadError, setModuleLoadError] = useState<string | null>(null);
 
   const pages = Math.max(1, Math.ceil(total / PER_PAGE));
 
@@ -207,17 +218,40 @@ export default function SubAccountTeamPage() {
     }
   }
 
-  function openCreateForm() {
+  async function openCreateForm() {
     setForm(defaultForm());
     setErrors({});
     setShowAdvanced(false);
     setViewMode("form");
+    if (parsedSubaccountId === null) {
+      setModuleOptions([]);
+      setSelectedModuleKeys([]);
+      setModuleLoadError("ID de sub-account invalid.");
+      return;
+    }
+
+    setIsLoadingModules(true);
+    setModuleLoadError(null);
+    try {
+      const payload = await getSubaccountGrantableModules(parsedSubaccountId);
+      const sorted = [...(payload.items ?? [])].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
+      setModuleOptions(sorted);
+      setSelectedModuleKeys(sorted.filter((item) => item.grantable).map((item) => item.key));
+    } catch (error) {
+      setModuleOptions([]);
+      setSelectedModuleKeys([]);
+      setModuleLoadError(getFriendlyCreateError(error));
+    } finally {
+      setIsLoadingModules(false);
+    }
   }
 
   function closeForm() {
     setViewMode("list");
     setErrors({});
     setShowAdvanced(false);
+    setModuleLoadError(null);
+    setIsLoadingModules(false);
   }
 
   function validate(): Record<string, string> {
@@ -227,6 +261,12 @@ export default function SubAccountTeamPage() {
     if (form.email.trim() === "") next.email = "Email-ul este obligatoriu.";
     else if (!EMAIL_RE.test(form.email.trim())) next.email = "Introdu o adresă de email validă.";
     if (form.extensie.trim() !== "" && !/^\d+$/.test(form.extensie.trim())) next.extensie = "Extensia trebuie să fie numerică.";
+
+    const grantableKeys = moduleOptions.filter((item) => item.grantable).map((item) => item.key);
+    const selectedGrantable = selectedModuleKeys.filter((key) => grantableKeys.includes(key));
+    if (grantableKeys.length === 0) next.module_keys = "Nu poți acorda module pentru acest sub-account.";
+    else if (selectedGrantable.length === 0) next.module_keys = "Selectează cel puțin un modul.";
+
     return next;
   }
 
@@ -242,6 +282,8 @@ export default function SubAccountTeamPage() {
 
     setIsSubmitting(true);
     try {
+      const grantableKeys = moduleOptions.filter((item) => item.grantable).map((item) => item.key);
+      const selectedGrantable = selectedModuleKeys.filter((key) => grantableKeys.includes(key));
       const payload: CreateSubaccountTeamMemberPayload = {
         first_name: form.prenume.trim(),
         last_name: form.nume.trim(),
@@ -249,6 +291,7 @@ export default function SubAccountTeamPage() {
         phone: form.telefon.trim(),
         extension: form.extensie.trim(),
         user_role: form.role,
+        module_keys: selectedGrantable,
       };
       if (form.parola.trim()) payload.password = form.parola;
 
@@ -264,6 +307,11 @@ export default function SubAccountTeamPage() {
   }
 
   const isInvalidSubaccount = parsedSubaccountId === null;
+
+  function toggleModuleKey(moduleKey: string, grantable: boolean) {
+    if (!grantable) return;
+    setSelectedModuleKeys((prev) => (prev.includes(moduleKey) ? prev.filter((key) => key !== moduleKey) : [...prev, moduleKey]));
+  }
 
   return (
     <ProtectedPage>
@@ -285,7 +333,7 @@ export default function SubAccountTeamPage() {
               <>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex flex-wrap items-center gap-2">
-                    <button type="button" className="wm-btn-primary inline-flex items-center gap-2" onClick={openCreateForm} disabled={isInvalidSubaccount}>
+                    <button type="button" className="wm-btn-primary inline-flex items-center gap-2" onClick={() => { void openCreateForm(); }} disabled={isInvalidSubaccount}>
                       <Plus className="h-4 w-4" />
                       Adaugă Utilizator
                     </button>
@@ -459,6 +507,37 @@ export default function SubAccountTeamPage() {
                           <option value="subaccount_viewer">Subaccount Viewer</option>
                         </select>
                       </label>
+                    </div>
+
+                    <div className="rounded-lg border border-slate-200 p-4">
+                      <h2 className="text-base font-semibold text-slate-900">Roluri și Permisiuni</h2>
+                      <p className="mt-1 text-xs text-slate-500">Poți acorda doar modulele pe care le ai deja în acest sub-account.</p>
+                      {isLoadingModules ? <p className="mt-3 text-sm text-slate-500">Se încarcă modulele...</p> : null}
+                      {moduleLoadError ? <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{moduleLoadError}</p> : null}
+                      {!isLoadingModules && !moduleLoadError ? (
+                        <div className="mt-3 space-y-2">
+                          {moduleOptions.map((item) => {
+                            const checked = selectedModuleKeys.includes(item.key);
+                            return (
+                              <label key={item.key} className="flex items-start justify-between gap-3 rounded-md border border-slate-200 px-3 py-2 text-sm">
+                                <div>
+                                  <p className="font-medium text-slate-900">{item.label}</p>
+                                  {!item.grantable ? <p className="text-xs text-slate-500">Nu poate fi acordat din permisiunile tale curente.</p> : null}
+                                </div>
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  disabled={!item.grantable}
+                                  onChange={() => toggleModuleKey(item.key, item.grantable)}
+                                  aria-label={`Permisiune modul ${item.label}`}
+                                />
+                              </label>
+                            );
+                          })}
+                          {moduleOptions.length === 0 ? <p className="text-sm text-slate-500">Nu există module disponibile.</p> : null}
+                        </div>
+                      ) : null}
+                      {errors.module_keys ? <p className="mt-2 text-xs text-red-600">{errors.module_keys}</p> : null}
                     </div>
 
                     <div className="rounded-lg border border-slate-200 p-4">

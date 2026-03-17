@@ -261,5 +261,63 @@ class TeamSubaccountApiTests(unittest.TestCase):
         finally:
             team_api.team_members_service.list_subaccount_members = original
 
+    def test_grantable_modules_endpoint_response_shape(self):
+        user = AuthUser(email="admin@example.com", role="agency_admin", user_id=1)
+        original_catalog = team_api.team_members_service.list_module_catalog
+        original_grantable = team_api.team_members_service.get_grantable_module_keys_for_actor
+        try:
+            team_api.team_members_service.list_module_catalog = lambda **kwargs: [
+                {"key": "dashboard", "label": "Dashboard", "order": 1, "scope": "subaccount"},
+                {"key": "campaigns", "label": "Campaigns", "order": 2, "scope": "subaccount"},
+            ]
+            team_api.team_members_service.get_grantable_module_keys_for_actor = lambda **kwargs: {"dashboard"}
+
+            resp = team_api.get_subaccount_grantable_modules(subaccount_id=8, user=user)
+
+            self.assertEqual(len(resp.items), 2)
+            self.assertEqual(resp.items[0].key, "dashboard")
+            self.assertEqual(resp.items[0].grantable, True)
+            self.assertEqual(resp.items[1].key, "campaigns")
+            self.assertEqual(resp.items[1].grantable, False)
+        finally:
+            team_api.team_members_service.list_module_catalog = original_catalog
+            team_api.team_members_service.get_grantable_module_keys_for_actor = original_grantable
+
+    def test_grantable_modules_endpoint_subaccount_actor_only_own_modules(self):
+        user = AuthUser(email="sub@example.com", role="subaccount_user", user_id=10, subaccount_id=8)
+        original_catalog = team_api.team_members_service.list_module_catalog
+        original_grantable = team_api.team_members_service.get_grantable_module_keys_for_actor
+        try:
+            team_api.team_members_service.list_module_catalog = lambda **kwargs: [
+                {"key": "dashboard", "label": "Dashboard", "order": 1, "scope": "subaccount"},
+                {"key": "creative", "label": "Creative", "order": 3, "scope": "subaccount"},
+            ]
+            team_api.team_members_service.get_grantable_module_keys_for_actor = lambda **kwargs: {"creative"}
+
+            resp = team_api.get_subaccount_grantable_modules(subaccount_id=8, user=user)
+            flags = {item.key: item.grantable for item in resp.items}
+            self.assertEqual(flags, {"dashboard": False, "creative": True})
+        finally:
+            team_api.team_members_service.list_module_catalog = original_catalog
+            team_api.team_members_service.get_grantable_module_keys_for_actor = original_grantable
+
+    def test_grantable_modules_endpoint_agency_actor_can_grant_full_catalog(self):
+        user = AuthUser(email="admin@example.com", role="agency_admin", user_id=1)
+        original_catalog = team_api.team_members_service.list_module_catalog
+        original_grantable = team_api.team_members_service.get_grantable_module_keys_for_actor
+        try:
+            team_api.team_members_service.list_module_catalog = lambda **kwargs: [
+                {"key": "dashboard", "label": "Dashboard", "order": 1, "scope": "subaccount"},
+                {"key": "campaigns", "label": "Campaigns", "order": 2, "scope": "subaccount"},
+            ]
+            team_api.team_members_service.get_grantable_module_keys_for_actor = lambda **kwargs: {"dashboard", "campaigns"}
+
+            resp = team_api.get_subaccount_grantable_modules(subaccount_id=8, user=user)
+            self.assertTrue(all(item.grantable for item in resp.items))
+        finally:
+            team_api.team_members_service.list_module_catalog = original_catalog
+            team_api.team_members_service.get_grantable_module_keys_for_actor = original_grantable
+
+
 if __name__ == "__main__":
     unittest.main()

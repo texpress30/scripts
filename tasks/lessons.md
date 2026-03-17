@@ -368,3 +368,4 @@
 
 - 2026-03-17: După feedback de tip "unsatisfied" pe PR anterior, re-verific strict scope-ul cerut (evită schimbări extra), apoi livrează incremental cu teste țintite exact pe cerințe înainte de commit/PR.
 - 2026-03-17: La UI condițional cu secțiuni similare textual (ex. "Roluri și Permisiuni" în sidebar + content), în teste validează prezența controalelor funcționale (checkbox/toggle) în locul textului comun pentru a evita false-positive.
+- 2026-03-17: După feedback de tip "unsatisfied", livrează strict pe scope-ul nou cerut (fără zone adiacente) și include explicit contractele UI↔API necesare în teste (payload + grant ceiling) înainte de commit/PR.

@@ -4728,3 +4728,26 @@
 - [x] Added endpoint-level normalization for members/module catalog payloads to keep response contract valid under legacy malformed data.
 - [x] Added regression tests covering DB outage fallbacks and row normalization.
 - [x] Verification: `cd apps/backend && python -m pytest tests/test_team_members_foundation.py`.
+
+---
+
+# TODO — Sub-account Team create module permissions with grant ceiling
+
+- [x] Re-read Sub-account Team frontend page and API/session/backend contracts.
+- [x] Add minimal backend contract for actor grantable modules per sub-account (backward-compatible).
+- [x] Wire Sub-account Team create flow to load module catalog/grantable flags and render `Roluri și Permisiuni` module controls.
+- [x] Enforce UI behavior: default select grantable modules, disable non-grantable modules, preserve role picker.
+- [x] Submit only selected+grantable `module_keys`; block submit if no module remains selected.
+- [x] Add focused frontend tests for loading/render/default/toggle/payload/validation/error handling.
+- [x] Add focused backend tests for grantable-modules contract.
+- [x] Run backend tests, frontend tests, and frontend build.
+
+## Review
+- [x] Added a minimal backend endpoint `GET /team/subaccounts/{subaccount_id}/grantable-modules` returning canonical module items with actor-specific `grantable` flags.
+- [x] Kept Sub-account Team role picker intact and added a focused `Roluri și Permisiuni` section in create flow with default-select grantable modules, disabled non-grantable modules, and inline explanation.
+- [x] Create payload now sends only selected grantable `module_keys`; submit is blocked if no grantable module remains selected.
+- [x] Added compact regression tests for backend grantable contract and frontend load/render/default/toggle/payload/validation/error handling paths.
+- [x] Verification commands:
+  - `cd apps/backend && python -m pytest tests/test_team_subaccount_api.py tests/test_team_members_foundation.py`
+  - `cd apps/frontend && pnpm vitest run src/app/subaccount/[id]/settings/team/page.test.tsx`
+  - `cd apps/frontend && pnpm build`

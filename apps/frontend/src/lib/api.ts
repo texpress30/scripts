@@ -372,6 +372,22 @@ export async function getTeamModuleCatalog(scope: "subaccount" = "subaccount"): 
 
 
 
+export type TeamGrantableModuleItem = {
+  key: string;
+  label: string;
+  order: number;
+  grantable: boolean;
+};
+
+export type TeamGrantableModulesResponse = {
+  items: TeamGrantableModuleItem[];
+};
+
+export async function getSubaccountGrantableModules(subaccountId: number): Promise<TeamGrantableModulesResponse> {
+  return apiRequest<TeamGrantableModulesResponse>(`/team/subaccounts/${encodeURIComponent(String(subaccountId))}/grantable-modules`);
+}
+
+
 export type TeamInviteResponse = {
   message: string;
 };

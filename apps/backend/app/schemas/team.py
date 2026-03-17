@@ -106,3 +106,14 @@ class TeamModuleCatalogItem(BaseModel):
 
 class TeamModuleCatalogResponse(BaseModel):
     items: list[TeamModuleCatalogItem]
+
+
+class TeamGrantableModuleItem(BaseModel):
+    key: str
+    label: str
+    order: int
+    grantable: bool
+
+
+class TeamGrantableModulesResponse(BaseModel):
+    items: list[TeamGrantableModuleItem]

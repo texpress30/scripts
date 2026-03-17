@@ -11,6 +11,7 @@ from app.schemas.team import (
     TeamMemberListResponse,
     TeamMemberResponse,
     TeamModuleCatalogResponse,
+    TeamGrantableModulesResponse,
     TeamSubaccountOptionItem,
     TeamSubaccountOptionsResponse,
 )
@@ -287,6 +288,29 @@ def list_subaccount_options(user: AuthUser = Depends(get_current_user)) -> TeamS
             continue
         items.append(TeamSubaccountOptionItem(id=client_id, name=name, label=label))
     return TeamSubaccountOptionsResponse(items=items)
+
+
+@router.get("/subaccounts/{subaccount_id}/grantable-modules", response_model=TeamGrantableModulesResponse)
+def get_subaccount_grantable_modules(
+    subaccount_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> TeamGrantableModulesResponse:
+    enforce_subaccount_action(user=user, action="team:subaccount:list", subaccount_id=subaccount_id)
+
+    raw_items = team_members_service.list_module_catalog(scope="subaccount")
+    catalog = _normalize_module_catalog([item for item in raw_items if isinstance(item, dict)], requested_scope="subaccount")
+    grantable_keys = team_members_service.get_grantable_module_keys_for_actor(actor_user=user, subaccount_id=subaccount_id)
+
+    items = [
+        {
+            "key": str(item.get("key") or ""),
+            "label": str(item.get("label") or ""),
+            "order": int(item.get("order") or 0),
+            "grantable": str(item.get("key") or "") in grantable_keys,
+        }
+        for item in catalog
+    ]
+    return TeamGrantableModulesResponse(items=items)
 
 
 @router.get("/subaccounts/{subaccount_id}/members", response_model=SubaccountTeamMemberListResponse)
