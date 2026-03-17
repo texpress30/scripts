@@ -12,6 +12,7 @@ from app.schemas.team import (
     TeamMemberResponse,
     TeamModuleCatalogResponse,
     TeamGrantableModulesResponse,
+    TeamSubaccountMyAccessResponse,
     TeamSubaccountOptionItem,
     TeamSubaccountOptionsResponse,
 )
@@ -311,6 +312,29 @@ def get_subaccount_grantable_modules(
         for item in catalog
     ]
     return TeamGrantableModulesResponse(items=items)
+
+
+@router.get("/subaccounts/{subaccount_id}/my-access", response_model=TeamSubaccountMyAccessResponse)
+def get_subaccount_my_access(
+    subaccount_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> TeamSubaccountMyAccessResponse:
+    enforce_subaccount_action(user=user, action="team:subaccount:list", subaccount_id=subaccount_id)
+    try:
+        payload = team_members_service.get_subaccount_my_access(actor_user=user, subaccount_id=subaccount_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return TeamSubaccountMyAccessResponse(
+        subaccount_id=int(payload.get("subaccount_id") or subaccount_id),
+        role=str(payload.get("role") or user.role),
+        module_keys=_normalize_module_keys(payload.get("module_keys")),
+        source_scope=str(payload.get("source_scope") or "subaccount"),
+        access_scope=str(payload.get("access_scope") or (user.access_scope or "subaccount")),
+        unrestricted_modules=bool(payload.get("unrestricted_modules")),
+    )
 
 
 @router.get("/subaccounts/{subaccount_id}/members", response_model=SubaccountTeamMemberListResponse)
