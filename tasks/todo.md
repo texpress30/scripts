@@ -4442,12 +4442,15 @@
 
 ---
 
-# TODO — Hotfix Vercel Build Duplicate Identifier
+# TODO — Backend Mailgun foundation (agency-level config + test email)
 
-- [x] Analyze Vercel deployment logs showing `Type error: Duplicate identifier 'TeamUser'`.
-- [x] Checkout the PR branch `codex/setup-new-workspace-and-sync-with-github-d1mc1y` producing the error.
-- [x] Merge duplicate definitions of `TeamUser` in `src/app/subaccount/[id]/settings/team/page.tsx` directly on the branch.
-- [x] Commit and push fix to trigger Vercel rebuild automatically.
+- [x] Re-auditez pattern-urile existente pentru integrations/secrets/RBAC/audit și contractele backend relevante.
+- [x] Implementez serviciu backend Mailgun (validare config, mask api key, test send prin Mailgun API).
+- [x] Adaug endpointuri agency-level pentru Mailgun: status/config/test.
+- [x] Integrez RBAC pentru config/test astfel încât doar admin/global să poată configura/testa.
+- [x] Adaug teste backend pentru validare, status, mask, test send (success/failure) și RBAC.
+- [x] Rulez testele backend relevante + startup check și documentez rezultatele.
+- [x] Actualizez docs minim pentru Mailgun foundation + ce rămâne out-of-scope.
 
 ## Review
-- [x] Frontend type error resolved without changing business logic, preparing PR for successful merge.
+- [x] Implementată fundația Mailgun agency-level (status/config/test), stocare în integration_secrets, masking API key, RBAC admin-only pentru config/test și acoperire de teste backend cu mock HTTP pentru send.

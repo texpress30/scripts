@@ -24,7 +24,6 @@ type TeamUser = {
   roleKey: string;
   sourceLabel: string;
   inherited: boolean;
-  deactivated?: boolean;
 };
 
 type TeamUserForm = {

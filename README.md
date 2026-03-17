@@ -243,3 +243,9 @@ cd apps/frontend && npm run build
   - `POST /team/subaccounts/{subaccount_id}/members`
 - Scope enforcement: rolurile `subaccount_*` sunt limitate la propriul `subaccount_id` din token; rolurile agency/global pot accesa orice sub-account permis de RBAC.
 - În acest pas nu sunt implementate încă: edit/deactivate/delete member, reassignment din UI, invite/reset password.
+- Mailgun backend foundation (agency-level) este disponibilă prin endpointurile:
+  - `GET /agency/integrations/mailgun/status`
+  - `POST /agency/integrations/mailgun/config`
+  - `POST /agency/integrations/mailgun/test`
+- Config-ul Mailgun se salvează în `integration_secrets` (scope `agency_default`), iar `api_key` este returnat doar mascat (`api_key_masked`).
+- Flow-urile `invite/reset password` rămân intenționat în afara acestui pas.

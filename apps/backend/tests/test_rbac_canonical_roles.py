@@ -33,6 +33,9 @@ class RbacCanonicalRolesTests(unittest.TestCase):
             require_action("subaccount_user", action="integrations:sync", scope="subaccount")
         with self.assertRaises(AuthorizationError):
             require_action("subaccount_admin", action="clients:list", scope="agency")
+        require_action("agency_admin", action="integrations:mailgun:config", scope="agency")
+        with self.assertRaises(AuthorizationError):
+            require_action("agency_member", action="integrations:mailgun:config", scope="agency")
 
     def test_legacy_aliases_work_in_permission_and_action_checks(self):
         require_action("account_manager", action="rules:create", scope="subaccount")

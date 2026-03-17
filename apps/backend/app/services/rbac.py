@@ -203,6 +203,8 @@ ACTION_POLICIES: dict[str, ActionPolicy] = {
     "integrations:tiktok:status": ActionPolicy(permission="integrations:tiktok:status", scopes=("agency",)),
     "integrations:pinterest:status": ActionPolicy(permission="integrations:pinterest:status", scopes=("agency",)),
     "integrations:snapchat:status": ActionPolicy(permission="integrations:snapchat:status", scopes=("agency",)),
+    "integrations:mailgun:config": ActionPolicy(permission="clients:create", scopes=("agency",)),
+    "integrations:mailgun:test": ActionPolicy(permission="clients:create", scopes=("agency",)),
     "exports:list": ActionPolicy(permission="exports:read", scopes=("agency",)),
     # sub-account scope
     "dashboard:view": ActionPolicy(permission="clients:read", scopes=("agency", "subaccount")),
