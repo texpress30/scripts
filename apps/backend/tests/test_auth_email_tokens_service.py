@@ -150,17 +150,40 @@ class AuthEmailTokensServiceTests(unittest.TestCase):
         original_connect = service._connect
         try:
             service._connect = lambda: _TokensConn(state)
-            raw, _ = service.create_password_reset_token(user_id=1, email="u@example.com", expires_in_minutes=60)
+            raw, _ = service.create_password_reset_token_for_existing_user(user_id=1, email="u@example.com", expires_in_minutes=60)
             self.assertEqual(len(state["tokens"]), 1)
             stored_hash = state["tokens"][0]["token_hash"]
             self.assertNotEqual(stored_hash, raw)
             self.assertEqual(stored_hash, service.debug_get_token_hash_for_raw(raw_token=raw))
+
+            validated = service.validate_password_reset_token(raw_token=raw)
+            self.assertEqual(validated.user_id, 1)
 
             consumed = service.consume_password_reset_token(raw_token=raw)
             self.assertEqual(consumed.user_id, 1)
 
             with self.assertRaises(AuthEmailTokenError):
                 service.consume_password_reset_token(raw_token=raw)
+        finally:
+            service._connect = original_connect
+
+    def test_expired_and_invalid_tokens_fail_validation(self):
+        state = {"token_id": 0, "tokens": [], "user": {"id": 1, "email": "u@example.com", "password_hash": "", "is_active": True}, "memberships": []}
+        service = token_module.AuthEmailTokensService()
+        service._schema_initialized = True
+        original_connect = service._connect
+        try:
+            service._connect = lambda: _TokensConn(state)
+            raw, _ = service.create_password_reset_token(user_id=1, email="u@example.com", expires_in_minutes=60)
+            state["tokens"][0]["expires_at"] = datetime.now(tz=timezone.utc) - timedelta(minutes=1)
+
+            with self.assertRaises(AuthEmailTokenError) as expired_ctx:
+                service.validate_password_reset_token(raw_token=raw)
+            self.assertEqual(expired_ctx.exception.reason, "token_expired")
+
+            with self.assertRaises(AuthEmailTokenError) as invalid_ctx:
+                service.validate_password_reset_token(raw_token="missing")
+            self.assertEqual(invalid_ctx.exception.reason, "invalid_token")
         finally:
             service._connect = original_connect
 

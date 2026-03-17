@@ -4485,3 +4485,18 @@
 
 ## Review
 - [x] Implementată fundația forgot/reset backend cu tokenuri hash-only one-time + expirare, trimitere Mailgun, endpointuri publice și teste pentru scenariile principale + regresii login.
+
+---
+
+# TODO — Backend reset password foundation only (no forgot-password/Mailgun/UI)
+
+- [x] Re-auditez `auth.py`, `auth.py` service, `team_members.py`, `config.py` și elimin din scope endpointul forgot + Mailgun send.
+- [x] Păstrez/rafinez serviciul `auth_email_tokens` pentru tokenuri reset one-time hash-only + expirare + invalidare tokenuri active.
+- [x] Mențin endpointul public `POST /auth/reset-password/confirm` cu validare token + validare parolă + update hash + consume token.
+- [x] Adaug helper/service method testabil pentru emiterea tokenului reset pentru user existent (fără endpoint forgot).
+- [x] Ajustez testele backend pentru flow reset confirm și securitatea tokenului (invalid/expirat/consumat/parolă invalidă + login old/new).
+- [x] Rulez testele backend relevante + startup check backend.
+- [x] Actualizez documentația minimă pentru scope-ul acestui pas.
+
+## Review
+- [x] Implementare restrânsă la backend reset foundation: fără frontend, fără endpoint forgot-password și fără trimitere Mailgun; login-ul existent rămâne funcțional.

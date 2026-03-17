@@ -22,13 +22,6 @@ class ImpersonateResponse(BaseModel):
     token_type: str = "bearer"
 
 
-class ForgotPasswordRequest(BaseModel):
-    email: str
-
-
-class ForgotPasswordResponse(BaseModel):
-    message: str
-
 
 class ResetPasswordConfirmRequest(BaseModel):
     token: str

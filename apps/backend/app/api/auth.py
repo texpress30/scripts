@@ -1,10 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.dependencies import get_current_user
-from app.core.config import load_settings
 from app.schemas.auth import (
-    ForgotPasswordRequest,
-    ForgotPasswordResponse,
     ImpersonateRequest,
     ImpersonateResponse,
     LoginRequest,
@@ -18,13 +15,11 @@ from app.services.auth import (
     AuthUser,
     authenticate_user_from_db,
     create_access_token,
-    find_active_user_by_email,
     set_user_password,
     validate_login_credentials,
     validate_new_password,
 )
 from app.services.auth_email_tokens import AuthEmailTokenError, auth_email_tokens_service
-from app.services.mailgun_service import MailgunIntegrationError, mailgun_service
 from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
 from app.services.rbac import is_supported_role, normalize_role
 
@@ -111,80 +106,6 @@ def login(payload: LoginRequest) -> LoginResponse:
         raise HTTPException(status_code=db_exc.status_code, detail=db_exc.message) from db_exc
 
 
-@router.post("/forgot-password", response_model=ForgotPasswordResponse)
-def forgot_password(payload: ForgotPasswordRequest) -> ForgotPasswordResponse:
-    normalized_email = payload.email.strip().lower()
-    generic_message = "Dacă există un cont pentru această adresă, am trimis instrucțiunile de resetare"
-
-    try:
-        rate_limiter_service.check(f"auth_forgot:{normalized_email}", limit=20, window_seconds=60)
-    except RateLimitExceeded as exc:
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
-
-    settings = load_settings()
-
-    try:
-        mailgun_service.assert_available()
-    except MailgunIntegrationError as exc:
-        audit_log_service.log(
-            actor_email=normalized_email,
-            actor_role="anonymous",
-            action="auth.forgot_password.failed",
-            resource="auth:forgot_password",
-            details={"reason": "mailgun_unavailable", "status_code": exc.status_code},
-        )
-        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
-
-    user = find_active_user_by_email(normalized_email)
-    audit_log_service.log(
-        actor_email=normalized_email,
-        actor_role="anonymous",
-        action="auth.forgot_password.requested",
-        resource="auth:forgot_password",
-        details={"user_found": bool(user)},
-    )
-
-    if user is None:
-        return ForgotPasswordResponse(message=generic_message)
-
-    raw_token, _expires_at = auth_email_tokens_service.create_password_reset_token(
-        user_id=int(user["id"]),
-        email=str(user["email"]),
-        expires_in_minutes=settings.auth_reset_token_ttl_minutes,
-    )
-
-    reset_link = f"{settings.frontend_base_url.rstrip('/')}/reset-password?token={raw_token}"
-    subject = "Resetare parolă"
-    text = (
-        "Ai solicitat resetarea parolei.\n\n"
-        f"Folosește acest link pentru a seta o parolă nouă (expiră în {settings.auth_reset_token_ttl_minutes} minute):\n"
-        f"{reset_link}\n\n"
-        "Dacă nu ai solicitat această resetare, poți ignora acest email."
-    )
-
-    try:
-        mailgun_service.send_email(to_email=str(user["email"]), subject=subject, text=text)
-    except (MailgunIntegrationError, ValueError) as exc:
-        audit_log_service.log(
-            actor_email=normalized_email,
-            actor_role="anonymous",
-            action="auth.forgot_password.failed",
-            resource="auth:forgot_password",
-            details={"reason": "mail_send_failed", "error": str(exc)[:200]},
-        )
-        status_code = exc.status_code if isinstance(exc, MailgunIntegrationError) else status.HTTP_400_BAD_REQUEST
-        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
-
-    audit_log_service.log(
-        actor_email=normalized_email,
-        actor_role="anonymous",
-        action="auth.forgot_password.email_sent",
-        resource="auth:forgot_password",
-        details={"token_ttl_minutes": settings.auth_reset_token_ttl_minutes},
-    )
-    return ForgotPasswordResponse(message=generic_message)
-
-
 @router.post("/reset-password/confirm", response_model=ResetPasswordConfirmResponse)
 def reset_password_confirm(payload: ResetPasswordConfirmRequest) -> ResetPasswordConfirmResponse:
     try:
@@ -193,7 +114,7 @@ def reset_password_confirm(payload: ResetPasswordConfirmRequest) -> ResetPasswor
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     try:
-        consumed_token = auth_email_tokens_service.consume_password_reset_token(raw_token=payload.token)
+        token_payload = auth_email_tokens_service.validate_password_reset_token(raw_token=payload.token)
     except AuthEmailTokenError as exc:
         audit_log_service.log(
             actor_email="anonymous",
@@ -205,16 +126,28 @@ def reset_password_confirm(payload: ResetPasswordConfirmRequest) -> ResetPasswor
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
     try:
-        set_user_password(user_id=consumed_token.user_id, new_password=payload.new_password)
+        set_user_password(user_id=token_payload.user_id, new_password=payload.new_password)
     except ValueError as exc:
         audit_log_service.log(
-            actor_email=consumed_token.email,
+            actor_email=token_payload.email,
             actor_role="anonymous",
             action="auth.reset_password.failed",
             resource="auth:reset_password",
             details={"reason": "user_not_resettable"},
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    try:
+        consumed_token = auth_email_tokens_service.consume_password_reset_token(raw_token=payload.token)
+    except AuthEmailTokenError as exc:
+        audit_log_service.log(
+            actor_email=token_payload.email,
+            actor_role="anonymous",
+            action="auth.reset_password.failed",
+            resource="auth:reset_password",
+            details={"reason": exc.reason},
+        )
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
     auth_email_tokens_service.invalidate_active_tokens(
         user_id=consumed_token.user_id,

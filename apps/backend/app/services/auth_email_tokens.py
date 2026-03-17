@@ -171,9 +171,25 @@ class AuthEmailTokensService:
 
         return raw_token, expires_at
 
-    def consume_password_reset_token(self, *, raw_token: str) -> PasswordResetTokenRecord:
+    def create_password_reset_token_for_existing_user(
+        self,
+        *,
+        user_id: int,
+        email: str,
+        expires_in_minutes: int = 60,
+    ) -> tuple[str, datetime]:
+        return self.create_password_reset_token(
+            user_id=user_id,
+            email=email,
+            expires_in_minutes=expires_in_minutes,
+        )
+
+    def validate_password_reset_token(self, *, raw_token: str) -> PasswordResetTokenRecord:
         token_hash = self._hash_token(str(raw_token).strip())
-        record = self._assert_token_usable(self._read_token(token_hash=token_hash, token_type=PASSWORD_RESET_TOKEN_TYPE))
+        return self._assert_token_usable(self._read_token(token_hash=token_hash, token_type=PASSWORD_RESET_TOKEN_TYPE))
+
+    def consume_password_reset_token(self, *, raw_token: str) -> PasswordResetTokenRecord:
+        record = self.validate_password_reset_token(raw_token=raw_token)
 
         self.initialize_schema()
         with self._connect() as conn:
