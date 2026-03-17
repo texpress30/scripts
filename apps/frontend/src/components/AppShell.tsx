@@ -25,7 +25,7 @@ import {
 
 import { apiRequest } from "@/lib/api";
 import { isPinterestIntegrationEnabled, isSnapchatIntegrationEnabled, isTikTokIntegrationEnabled } from "@/lib/featureFlags";
-import { AppRole, getSessionInfo } from "@/lib/session";
+import { AppRole, SessionAccessContext, getSessionAccessContext } from "@/lib/session";
 import { cn } from "@/lib/utils";
 
 type ClientItem = { id: number; name: string; owner_email: string; client_logo_url?: string | null };
@@ -72,12 +72,109 @@ function initials(name: string): string {
 function roleForImpersonation(value: string): AppRole {
   const role = value.trim().toLowerCase();
   if (role === "admin") return "agency_admin";
-  if (role === "viewer") return "client_viewer";
-  if (role === "member") return "account_manager";
-  if (["super_admin", "agency_owner", "agency_admin", "account_manager", "client_viewer"].includes(role)) {
+  if (role === "viewer") return "subaccount_viewer";
+  if (role === "member") return "subaccount_user";
+  if (
+    [
+      "super_admin",
+      "agency_owner",
+      "agency_admin",
+      "agency_member",
+      "agency_viewer",
+      "subaccount_admin",
+      "subaccount_user",
+      "subaccount_viewer",
+      "account_manager",
+      "client_viewer",
+    ].includes(role)
+  ) {
     return role as AppRole;
   }
-  return "account_manager";
+  return "subaccount_user";
+}
+
+type ScopedClientResult = {
+  visibleClients: ClientItem[];
+  allowedSubaccountIds: number[];
+};
+
+export function isSubaccountScopedRole(role: AppRole): boolean {
+  return role === "subaccount_admin" || role === "subaccount_user" || role === "subaccount_viewer" || role === "account_manager" || role === "client_viewer";
+}
+
+export function buildScopedClients(clients: ClientItem[], accessContext: SessionAccessContext): ScopedClientResult {
+  if (!isSubaccountScopedRole(accessContext.role)) {
+    return { visibleClients: clients, allowedSubaccountIds: [] };
+  }
+
+  const allowedIds = [...accessContext.allowed_subaccount_ids];
+  if (allowedIds.length === 0) {
+    return { visibleClients: [], allowedSubaccountIds: [] };
+  }
+
+  const byId = new Map<number, ClientItem>();
+  for (const client of clients) {
+    if (allowedIds.includes(client.id)) {
+      byId.set(client.id, client);
+    }
+  }
+
+  for (const entry of accessContext.allowed_subaccounts) {
+    if (!allowedIds.includes(entry.id)) continue;
+    if (byId.has(entry.id)) continue;
+    byId.set(entry.id, {
+      id: entry.id,
+      name: entry.name.trim() || `Sub-account #${entry.id}`,
+      owner_email: "",
+    });
+  }
+
+  const visibleClients = allowedIds
+    .map((id) => byId.get(id))
+    .filter((item): item is ClientItem => Boolean(item));
+
+  return { visibleClients, allowedSubaccountIds: allowedIds };
+}
+
+export function getSafeSubaccountId(accessContext: SessionAccessContext): number | null {
+  const primary = accessContext.primary_subaccount_id;
+  if (typeof primary === "number" && Number.isFinite(primary)) return primary;
+  if (accessContext.allowed_subaccount_ids.length > 0) return accessContext.allowed_subaccount_ids[0];
+  return null;
+}
+
+export function resolveSubaccountRouteGuardDecision(params: {
+  role: AppRole;
+  accessContext: SessionAccessContext;
+  allowedSubaccountIds: number[];
+  currentSubId: number | null;
+  subSettingsId: number | null;
+  pathname: string;
+}): string | null {
+  const { role, accessContext, allowedSubaccountIds, currentSubId, subSettingsId, pathname } = params;
+  if (!isSubaccountScopedRole(role)) return null;
+
+  const safeSubaccountId = getSafeSubaccountId(accessContext);
+  if (safeSubaccountId === null) {
+    return pathname.startsWith("/agency/dashboard") ? null : "/agency/dashboard";
+  }
+
+  const inAllowed = (candidate: number | null) => candidate !== null && allowedSubaccountIds.includes(candidate);
+  if (!inAllowed(currentSubId) && !inAllowed(subSettingsId)) {
+    if (currentSubId !== null || subSettingsId !== null) {
+      return `/sub/${safeSubaccountId}/dashboard`;
+    }
+    if (allowedSubaccountIds.length === 1) {
+      return `/sub/${safeSubaccountId}/dashboard`;
+    }
+    return null;
+  }
+
+  if (allowedSubaccountIds.length === 1 && currentSubId === null && subSettingsId === null) {
+    return `/sub/${safeSubaccountId}/dashboard`;
+  }
+
+  return null;
 }
 
 export function AppShell({
@@ -225,11 +322,16 @@ export function AppShell({
     }
   }, []);
 
+  const sessionAccessContext = useMemo(() => getSessionAccessContext(), [pathname, impersonatingAs]);
+  const scopedClientsResult = useMemo(() => buildScopedClients(clients, sessionAccessContext), [clients, sessionAccessContext]);
+  const scopedClients = scopedClientsResult.visibleClients;
+  const allowedSubaccountIds = scopedClientsResult.allowedSubaccountIds;
+
   const filteredClients = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return clients;
-    return clients.filter((c) => c.name.toLowerCase().includes(query) || String(c.id).includes(query));
-  }, [clients, search]);
+    if (!query) return scopedClients;
+    return scopedClients.filter((c) => c.name.toLowerCase().includes(query) || String(c.id).includes(query));
+  }, [scopedClients, search]);
 
   const filteredTeamUsers = useMemo(() => {
     const q = userSearch.trim().toLowerCase();
@@ -243,10 +345,10 @@ export function AppShell({
   const currentTitle = useMemo(() => {
     if (isSettingsMode) return "Settings";
     if (!currentSubId) return "Agency MCC";
-    return clients.find((c) => c.id === currentSubId)?.name ?? `Sub-account #${currentSubId}`;
-  }, [clients, currentSubId, isSettingsMode]);
+    return scopedClients.find((c) => c.id === currentSubId)?.name ?? `Sub-account #${currentSubId}`;
+  }, [scopedClients, currentSubId, isSettingsMode]);
 
-  const currentClient = useMemo(() => clients.find((c) => c.id === contextClientId) ?? null, [clients, contextClientId]);
+  const currentClient = useMemo(() => scopedClients.find((c) => c.id === contextClientId) ?? null, [scopedClients, contextClientId]);
   const isSubContext = contextClientId !== null || isSubSettingsMode;
   const brandingTitle = isSubContext ? (currentClient?.name ?? "Sub-cont") : (companySettings?.company_name || "Agency MCC");
   const brandingSubtitle = `Locație: ${companySettings?.city || "-"}, ${companySettings?.country || "-"}`;
@@ -255,7 +357,7 @@ export function AppShell({
   const brandingLogoUrl = isSubContext ? subLogoUrl : agencyLogoUrl;
   const brandingInitials = useMemo(() => initials(brandingTitle), [brandingTitle]);
 
-  const sessionInfo = getSessionInfo();
+  const sessionInfo = { email: sessionAccessContext.email, role: sessionAccessContext.role };
   const profileName = useMemo(() => {
     const email = sessionInfo.email || "admin@omarosa.ro";
     const local = email.split("@")[0] || "User";
@@ -264,6 +366,20 @@ export function AppShell({
       .map((part) => (part ? `${part[0].toUpperCase()}${part.slice(1)}` : ""))
       .join(" ") || "Utilizator";
   }, [sessionInfo.email]);
+
+  useEffect(() => {
+    const redirectTo = resolveSubaccountRouteGuardDecision({
+      role: sessionInfo.role,
+      accessContext: sessionAccessContext,
+      allowedSubaccountIds,
+      currentSubId,
+      subSettingsId,
+      pathname,
+    });
+    if (redirectTo) {
+      router.replace(redirectTo);
+    }
+  }, [sessionInfo.role, sessionAccessContext, allowedSubaccountIds, currentSubId, subSettingsId, pathname, router]);
 
   const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
 
