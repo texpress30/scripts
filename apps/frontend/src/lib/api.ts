@@ -355,6 +355,18 @@ export async function createSubaccountTeamMember(subaccountId: number, payload: 
 }
 
 
+
+export type TeamInviteResponse = {
+  message: string;
+};
+
+export async function inviteTeamMember(membershipId: string | number): Promise<TeamInviteResponse> {
+  return apiRequest<TeamInviteResponse>(`/team/members/${encodeURIComponent(String(membershipId))}/invite`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
 export type MailgunStatusResponse = {
   configured: boolean;
   enabled: boolean;

@@ -3,6 +3,8 @@ from pydantic import BaseModel, Field
 
 class TeamMemberItem(BaseModel):
     id: int
+    membership_id: int | None = None
+    user_id: int | None = None
     first_name: str
     last_name: str
     email: str

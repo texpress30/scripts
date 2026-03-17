@@ -4549,3 +4549,19 @@
 
 ## Review
 - [x] Invite flow backend este activ (token `invite_user` + Mailgun + endpoint team admin-only), iar reset confirm rămâne backward-compatible pentru `password_reset`.
+
+
+---
+
+# TODO — Agency Team UI: Trimite invitație
+
+- [x] Re-auditez Agency Team frontend + helperi API + contract backend invite.
+- [x] Adaug helper frontend `inviteTeamMember(membershipId)` către `POST /team/members/{membership_id}/invite`.
+- [x] Adaug acțiune `Trimite invitație` în Agency Team cu loading per-row și eligibilitate minimă.
+- [x] Mapez erorile cheie (403/404/503) în mesaje clare pentru utilizator.
+- [x] Adaug teste frontend pentru randare invite, apel endpoint, loading/succes/erori și rând neeligibil.
+- [x] Ajustez backend minim (backward-compatible) pentru a expune `membership_id` în listarea Agency Team.
+- [x] Rulez testele frontend relevante + build frontend; rulez și test backend relevant pentru ajustarea de contract.
+
+## Review
+- [x] Agency Team are acțiune UI `Trimite invitație` conectată la backend, fără modificări în Sub-account Team și fără redesign major.

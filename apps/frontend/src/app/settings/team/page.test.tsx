@@ -5,10 +5,16 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import SettingsTeamPage from "./page";
 
 const apiRequestMock = vi.fn();
+const inviteTeamMemberMock = vi.fn();
 
-vi.mock("@/lib/api", () => ({
-  apiRequest: (...args: unknown[]) => apiRequestMock(...args),
-}));
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
+  return {
+    ...actual,
+    apiRequest: (...args: unknown[]) => apiRequestMock(...args),
+    inviteTeamMember: (...args: unknown[]) => inviteTeamMemberMock(...args),
+  };
+});
 
 vi.mock("@/components/ProtectedPage", () => ({
   ProtectedPage: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -26,9 +32,44 @@ vi.mock("@/components/AppShell", () => ({
 describe("Settings team page subaccount integration", () => {
   beforeEach(() => {
     apiRequestMock.mockReset();
+    inviteTeamMemberMock.mockReset();
     apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
       if (path.startsWith("/team/members?")) {
-        return Promise.resolve({ items: [], total: 0, page: 1, page_size: 10 });
+        return Promise.resolve({
+          items: [
+            {
+              id: 101,
+              membership_id: 101,
+              user_id: 201,
+              first_name: "Ana",
+              last_name: "Ionescu",
+              email: "ana@example.com",
+              phone: "",
+              extension: "",
+              user_type: "agency",
+              user_role: "admin",
+              location: "România",
+              subaccount: "Toate",
+            },
+            {
+              id: 102,
+              membership_id: null,
+              user_id: 202,
+              first_name: "No",
+              last_name: "Membership",
+              email: "",
+              phone: "",
+              extension: "",
+              user_type: "agency",
+              user_role: "member",
+              location: "România",
+              subaccount: "Toate",
+            },
+          ],
+          total: 2,
+          page: 1,
+          page_size: 10,
+        });
       }
       if (path === "/team/subaccount-options") {
         return Promise.resolve({
@@ -43,6 +84,7 @@ describe("Settings team page subaccount integration", () => {
       }
       return Promise.reject(new Error(`Unexpected path: ${path}`));
     });
+    inviteTeamMemberMock.mockResolvedValue({ message: "Invitația a fost trimisă" });
   });
 
   it("loads real subaccount options for list filter and re-filters on selection", async () => {
@@ -95,5 +137,38 @@ describe("Settings team page subaccount integration", () => {
       expect(body.user_type).toBe("client");
       expect(body.subaccount).toBe("2");
     });
+  });
+
+  it("renders invite action and sends invite with membership id", async () => {
+    render(<SettingsTeamPage />);
+
+    const buttons = await screen.findAllByRole("button", { name: "Trimite invitație" });
+    expect(buttons.length).toBeGreaterThan(0);
+
+    fireEvent.click(buttons[0]);
+
+    await waitFor(() => {
+      expect(inviteTeamMemberMock).toHaveBeenCalledWith(101);
+    });
+
+    expect(await screen.findByText(/Invitația a fost trimisă/i)).toBeInTheDocument();
+  });
+
+  it("shows clear message for 403 and 503 and disables ineligible row action", async () => {
+    const { ApiRequestError } = await import("@/lib/api");
+    inviteTeamMemberMock
+      .mockRejectedValueOnce(new ApiRequestError("forbidden", 403))
+      .mockRejectedValueOnce(new ApiRequestError("temporarily unavailable", 503));
+
+    render(<SettingsTeamPage />);
+
+    const buttons = await screen.findAllByRole("button", { name: "Trimite invitație" });
+    expect(buttons[1]).toBeDisabled();
+
+    fireEvent.click(buttons[0]);
+    expect(await screen.findByText("Nu ai permisiunea să trimiți invitații pentru acest utilizator")).toBeInTheDocument();
+
+    fireEvent.click(buttons[0]);
+    expect(await screen.findByText(/Invitațiile sunt indisponibile temporar/i)).toBeInTheDocument();
   });
 });

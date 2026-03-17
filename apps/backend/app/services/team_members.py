@@ -406,7 +406,7 @@ class TeamMembersService:
 
                 cur.execute(
                     f"""
-                    SELECT um.id, u.first_name, u.last_name, u.email, u.phone, u.extension, um.role_key, um.subaccount_name
+                    SELECT um.id, um.user_id, u.first_name, u.last_name, u.email, u.phone, u.extension, um.role_key, um.subaccount_name
                     FROM user_memberships um
                     JOIN users u ON u.id = um.user_id
                     {where_sql}
@@ -419,20 +419,23 @@ class TeamMembersService:
 
         items: list[dict[str, object]] = []
         for row in rows:
-            role_key = str(row[6])
+            role_key = str(row[7])
             mapped_user_type, mapped_user_role = self.map_canonical_to_payload_role(role_key=role_key)
+            membership_id = int(row[0])
             items.append(
                 {
-                    "id": int(row[0]),
-                    "first_name": str(row[1]),
-                    "last_name": str(row[2]),
-                    "email": str(row[3]),
-                    "phone": str(row[4]),
-                    "extension": str(row[5]),
+                    "id": membership_id,
+                    "membership_id": membership_id,
+                    "user_id": int(row[1]),
+                    "first_name": str(row[2]),
+                    "last_name": str(row[3]),
+                    "email": str(row[4]),
+                    "phone": str(row[5]),
+                    "extension": str(row[6]),
                     "user_type": mapped_user_type,
                     "user_role": mapped_user_role,
                     "location": "România",
-                    "subaccount": str(row[7] or "Toate"),
+                    "subaccount": str(row[8] or "Toate"),
                 }
             )
         return items, total

@@ -5,10 +5,12 @@ import { Camera, ChevronLeft, Loader2, Pencil, Search, Trash2, UserCircle2 } fro
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
-import { apiRequest } from "@/lib/api";
+import { ApiRequestError, apiRequest, inviteTeamMember } from "@/lib/api";
 
 type TeamMember = {
   id: number;
+  membership_id?: number | null;
+  user_id?: number | null;
   first_name: string;
   last_name: string;
   email: string;
@@ -77,6 +79,7 @@ export default function SettingsTeamPage() {
   const [subaccountFieldError, setSubaccountFieldError] = useState("");
   const [password, setPassword] = useState("");
   const [saving, setSaving] = useState(false);
+  const [inviteLoadingByMembership, setInviteLoadingByMembership] = useState<Record<number, boolean>>({});
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / PAGE_SIZE)), [total]);
 
@@ -159,6 +162,50 @@ export default function SettingsTeamPage() {
     setSubaccountFieldError("");
     setPassword("");
     setAdvancedOpen(false);
+  }
+
+  function getMembershipId(member: TeamMember): number | null {
+    const candidate = member.membership_id ?? member.id;
+    if (!Number.isFinite(Number(candidate))) return null;
+    return Number(candidate);
+  }
+
+  function canInviteMember(member: TeamMember): boolean {
+    const membershipId = getMembershipId(member);
+        return membershipId !== null && String(member.email || "").trim() !== "";
+  }
+
+  function inviteErrorMessage(error: unknown): string {
+    if (error instanceof ApiRequestError) {
+      if (error.status === 403) return "Nu ai permisiunea să trimiți invitații pentru acest utilizator";
+      if (error.status === 404) return "Utilizatorul sau membership-ul nu mai există";
+      if (error.status === 503) return "Invitațiile sunt indisponibile temporar. Încearcă din nou mai târziu.";
+      return error.message || "Nu am putut trimite invitația";
+    }
+    return error instanceof Error ? error.message : "Nu am putut trimite invitația";
+  }
+
+  async function onInviteMember(member: TeamMember) {
+    const membershipId = getMembershipId(member);
+    if (membershipId === null) {
+      setErrorMessage("Utilizatorul nu are un membership valid pentru invitație.");
+      return;
+    }
+
+    setErrorMessage("");
+    setInviteLoadingByMembership((prev) => ({ ...prev, [membershipId]: true }));
+    try {
+      const response = await inviteTeamMember(membershipId);
+      showToast(response.message || "Invitația a fost trimisă");
+    } catch (err) {
+      setErrorMessage(inviteErrorMessage(err));
+    } finally {
+      setInviteLoadingByMembership((prev) => {
+        const next = { ...prev };
+        delete next[membershipId];
+        return next;
+      });
+    }
   }
 
   async function submitCreateForm(event: FormEvent<HTMLFormElement>) {
@@ -282,6 +329,22 @@ export default function SettingsTeamPage() {
                               <div className="flex items-center justify-end gap-2 text-slate-500">
                                 <button type="button" className="rounded p-1 hover:bg-slate-100" title="Editează"><Pencil className="h-4 w-4" /></button>
                                 <button type="button" className="rounded p-1 hover:bg-slate-100" title="Șterge"><Trash2 className="h-4 w-4" /></button>
+                                {(() => {
+                                  const membershipId = getMembershipId(member);
+                                  const eligible = canInviteMember(member);
+                                  const loadingInvite = membershipId !== null && Boolean(inviteLoadingByMembership[membershipId]);
+                                  return (
+                                    <button
+                                      type="button"
+                                      className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                      title="Trimite invitație"
+                                      disabled={!eligible || loadingInvite}
+                                      onClick={() => void onInviteMember(member)}
+                                    >
+                                      {loadingInvite ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Trimite invitație"}
+                                    </button>
+                                  );
+                                })()}
                               </div>
                             </td>
                           </tr>

@@ -255,4 +255,5 @@ cd apps/frontend && npm run build
 - UI forgot/reset este conectat în frontend (`/forgot-password`, `/reset-password`, link din `/login`).
 - Invite backend este implementat prin `POST /team/members/{membership_id}/invite` (admin-only, Mailgun agency-level).
 - `POST /auth/reset-password/confirm` acceptă acum tokenuri `password_reset` și `invite_user`.
-- UI pentru trimiterea invitației rămâne pentru taskul următor.
+- UI „Trimite invitație” este disponibil în Agency Team și apelează backend-ul `POST /team/members/{membership_id}/invite`.
+- Invite UI în Sub-account Team rămâne pentru taskul următor.

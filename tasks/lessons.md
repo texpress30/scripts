@@ -355,3 +355,5 @@
 - 2026-03-17: Când taskul următor reactivează explicit forgot-password + Mailgun peste fundația reset, trebuie reintrodus endpointul incremental fără a atinge login/impersonation și cu răspuns generic anti-enumeration.
 - 2026-03-17: Pentru pagini App Router care citesc query params în client components, evită blocajele de build cu `useSearchParams` în rute statice; folosește fallback robust (ex. citire din `window.location.search` în `useEffect`) dacă nu vrei Suspense boundary.
 - 2026-03-17: Pentru invite backend pe memberships existente, aplică autorizare în funcție de `scope_type` al membership-ului (agency vs subaccount) și reutilizează `reset-password/confirm` pentru consumul tokenurilor `invite_user` fără schimbarea contractului public.
+
+- 2026-03-17: Pentru acțiuni UI per-rând (ex. invite), păstrează loading local pe item și mapează explicit codurile backend critice (403/404/503) în mesaje UX clare, fără blocarea întregii pagini.
