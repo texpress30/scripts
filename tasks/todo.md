@@ -4239,3 +4239,297 @@
 - [x] Updated focused team page tests to cover wizard rendering and advanced collapse/validation behavior.
 - [x] Verification: `cd apps/frontend && pnpm vitest run src/app/subaccount/[id]/settings/team/page.test.tsx`.
 - [x] Screenshot: `browser:/tmp/codex_browser_invocations/68482988e210eeba/artifacts/reports/team-user-wizard.png`.
+
+---
+
+# TODO — Reconnect git remote and sync with GitHub origin
+
+- [x] Start fresh workspace context and verify git remote connectivity workflow.
+- [x] Run the exact remote add/set-url command provided by user.
+- [x] Run `git fetch origin`.
+- [x] Run `git pull origin main --allow-unrelated-histories`.
+- [x] Document sync outcome in review section.
+
+## Review
+- [x] Executed the exact remote reconciliation command provided by user (`git remote add ... || git remote set-url ...`) to ensure `origin` is configured.
+- [x] Fetched from `origin` successfully; remote refs were downloaded.
+- [x] Pulled `origin/main --allow-unrelated-histories` successfully; repository reported `Already up to date.`
+- [x] Post-check `git remote -v` confirms `origin` points to `github.com/texpress30/scripts.git` (token masked in logs).
+
+---
+
+# TODO — Implementare completă „Echipa Mea” (listare + formular adăugare directă)
+
+- [x] Re-auditez pagina actuală `subaccount/[id]/settings/team` și definesc fluxul direct fără ecran intermediar.
+- [x] Implementez vizualizarea principală de listare: header, filtru rol, căutare, buton `+ Adaugă Utilizator`, tabel cu coloanele/acțiunile cerute și paginare.
+- [x] Implementez formularul Add/Edit deschis direct din `+ Adaugă Utilizator` și `Editare`, cu tab-uri stânga (`Informații Utilizator`, `Roluri și Permisiuni`), upload avatar, setări avansate colapsate, footer și localizare RO.
+- [x] Adaug validări frontend pentru câmpurile obligatorii (Prenume/Nume/Email), format email și extensie numerică.
+- [x] Adaug feedback toast pentru `Copiere ID` și păstrez designul curat (carduri albe, colțuri rotunjite).
+- [x] Actualizez testele focalizate pentru listare, flux direct add/edit, toast copy ID, toggle setări avansate și validări.
+- [x] Rulez testele relevante, documentez rezultatele în review, capturez screenshot pentru schimbarea vizuală.
+
+## Review
+- [x] Pagina `Echipa Mea` folosește acum listare principală cu filtru rol, căutare, tabel utilizatori, acțiuni pe rând și paginare (`Anterior` / `Următor`).
+- [x] Fluxul direct este activ: click pe `Adaugă Utilizator` sau iconița de editare deschide imediat formularul Add/Edit, fără ecran intermediar.
+- [x] Formularul are localizare română, tab-uri verticale cerute, bloc `Setări Avansate` colapsat implicit, validări pentru Prenume/Nume/Email + email format + extensie numerică.
+- [x] Acțiunea `Copiere ID` afișează toast `ID Copiat`; operațiile adăugare/editare/ștergere/dezactivare afișează feedback toast.
+- [x] Verificare: `cd apps/frontend && pnpm vitest run src/app/subaccount/[id]/settings/team/page.test.tsx`.
+- [x] Încercare screenshot: server Next pornit local (`pnpm dev --port 3100`) + Playwright, dar browser container a eșuat (SIGSEGV la launch Chromium), deci nu s-a putut genera captură în acest mediu.
+
+---
+
+# TODO — Backend foundation users + user_memberships pentru Team Management
+
+- [x] Re-auditez fișierele backend indicate și contractul actual `/team/members` folosit de frontend.
+- [x] Extind idempotent schema `users` cu câmpurile de status/auth viitoare și adaug schema nouă `user_memberships` cu constrângeri/indexuri.
+- [x] Introduc catalogul canonic de roluri + mapping din payload (`user_type`/`user_role`) către `role_key`.
+- [x] Refactorizez `team_members_service` ca noul flow să scrie/citească din `users` + `user_memberships`, păstrând response shape-ul existent.
+- [x] Adaug validări backend clare (required fields, rol valid, subaccount obligatoriu pentru client user, duplicate-safe membership).
+- [x] Adaug endpoint nou `GET /team/subaccount-options` bazat pe `client_registry_service`.
+- [x] Adaug teste backend pentru schema init idempotent, create/list/filter/reject și subaccount-options.
+- [x] Actualizez documentația minimă despre modelul nou și ce rămâne pentru taskul următor.
+
+## Review
+- [x] `team_members_service` folosește acum modelul nou `users` + `user_memberships`; tabelul `team_members` este păstrat explicit doar ca legacy transitional.
+- [x] Schema este idempotentă: `users` primește coloane noi (`is_active`, `must_reset_password`, `last_login_at`, `avatar_url`) și se creează `user_memberships` cu check constraints + indexuri.
+- [x] Rolurile canonice (`agency_*`, `subaccount_*`) au mapping clar din payload-ul actual (`user_type` + `user_role`) și mapping invers pentru response contract legacy.
+- [x] Regula de business pentru client users este aplicată: fără sub-account real (`''`/`Toate`/inexistent) se întoarce 400 cu mesaj explicit.
+- [x] `GET /team/members` păstrează shape-ul vechi și citește din noul model; `POST /team/members` scrie în noul model.
+- [x] Endpoint nou: `GET /team/subaccount-options` returnează `{ id, name, label }` pe baza `client_registry_service.list_clients()`.
+- [x] Teste backend adăugate pentru schema init idempotent, create agency/subaccount, reject invalid client subaccount, list/filter contract și subaccount-options.
+- [x] Verificare rulată: `cd apps/backend && APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q tests/test_team_members_foundation.py` + import check app startup.
+
+---
+
+# TODO — Agency Team frontend conectat la sub-account options reale
+
+- [x] Re-auditez pagina Agency Team + contract `GET /team/subaccount-options`.
+- [x] Înlocuiesc opțiunile hardcodate de sub-account cu loader real din backend în list filter și create form.
+- [x] Aplic reguli UI pentru sub-account în funcție de `userType` (agency disable/reset, client required).
+- [x] Adaug validare frontend pentru client user fără sub-account și submit payload compatibil (`subaccount` id string doar pentru client).
+- [x] Păstrez fluxul existent de creare/listare + toast/reload după succes, fără redesign.
+- [x] Adaug loading/error state pentru subaccount options fără blocarea întregii pagini.
+- [x] Adaug teste frontend pentru integrarea sub-account options + validarea client user.
+- [x] Rulez testele/build frontend și documentez review.
+
+## Review
+- [x] Pagina Agency Team încarcă acum opțiunile reale din `GET /team/subaccount-options` și le folosește atât în filtrul de listă, cât și în formularul de creare (`value=String(id)`, `label || name`).
+- [x] Filtrul de listă păstrează opțiunea `Toate` și trimite `subaccount=<id>` la reload-ul listării când este selectat un sub-account.
+- [x] Formularul de creare nu mai pornește cu `Toate`; folosește placeholder `Selectează Sub-cont`.
+- [x] Reguli UI implementate: pentru `userType=agency` câmpul sub-account este dezactivat/resetat; pentru `userType=client` câmpul este activ și validat explicit.
+- [x] Submit payload: pentru `client` trimite `subaccount` cu id-ul selectat (string), pentru `agency` trimite `subaccount` gol compatibil cu backendul nou.
+- [x] Erorile backend sunt afișate direct prin mesajele venite din `apiRequest`; fallback generic rămâne doar pentru erori non-standard.
+- [x] Loading/error pentru subaccount options este non-blocking (mesaje locale în list/create view).
+- [x] Verificări: `pnpm vitest run src/app/settings/team/page.test.tsx` și `pnpm build` (frontend compile OK).
+
+---
+
+# TODO — Hotfix startup crash în team_members.initialize_schema (DDL bind param)
+
+- [x] Audit fișierul `team_members.py` și confirm query-ul DDL parametrizat care cauzează `IndeterminateDatatype`.
+- [x] Elimin bind-parameter din DDL-ul `CREATE TABLE users` (fără `%s` în DEFAULT).
+- [x] Verific dacă mai există alte DDL-uri parametrizate în același serviciu.
+- [x] Rulez teste backend relevante + startup/import check.
+- [x] Documentez review + lecție și pregătesc commit/PR.
+
+## Review
+- [x] Cauza exactă: `CREATE TABLE IF NOT EXISTS users` folosea `password_hash TEXT NOT NULL DEFAULT %s` cu parametru bind în DDL; psycopg3 nu poate deduce tipul în acest context și ridică `IndeterminateDatatype` la startup.
+- [x] Hotfix: am înlocuit default-ul DDL cu unul static (`DEFAULT ''`) și am eliminat complet `cur.execute(..., params)` pentru acel statement.
+- [x] Verificare suplimentară: în `team_members.py` nu au mai rămas alte DDL-uri parametrizate.
+- [x] Verificări rulate: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q tests/test_team_members_foundation.py` și import/startup check `python -c "from app.main import app; print('ok')"`.
+- [x] Scope păstrat: doar backend, fără schimbări de API contract/frontend/auth flow.
+
+---
+
+# TODO — Migrare roluri/permisii pe model canonic + compat legacy
+
+- [x] Re-auditez RBAC/auth/session helper-ele actuale pentru modelul vechi de roluri.
+- [x] Introduc helper de normalizare roluri (canonic + aliasuri legacy) și îl aplic în RBAC (`require_permission`/`require_action`).
+- [x] Actualizez matricea `ROLE_SCOPES`/`ROLE_PERMISSIONS`/`ACTION_POLICIES` pentru rolurile canonice + roluri speciale.
+- [x] Păstrez backward compatibility pentru `account_manager` și `client_viewer` în validarea auth API.
+- [x] Actualizez frontend session helpers + AppShell impersonation mapping pentru roluri canonice.
+- [x] Adaug teste backend dedicate pentru normalizare + permission/action checks + legacy aliases.
+- [x] Adaug teste frontend mici pentru `session.ts` (parser + read-only).
+- [x] Rulez teste backend relevante + build frontend și documentez review.
+
+## Review
+- [x] `rbac.py` tratează acum rolurile canonice ca sursă de adevăr și normalizează aliasurile legacy prin helper central (`normalize_role`).
+- [x] `require_permission()` și `require_action()` operează pe rol normalizat, nu pe string brut.
+- [x] Matricea de permisiuni/scopes pentru `agency_member/agency_viewer/subaccount_admin/subaccount_user/subaccount_viewer` este explicită și consistentă cu `ACTION_POLICIES`.
+- [x] `auth` API acceptă roluri canonice și aliasuri legacy (`account_manager`, `client_viewer`) prin `is_supported_role` + `normalize_role`, fără schimbarea contractului request/response.
+- [x] `session.ts` și `AppShell` înțeleg rolurile canonice și păstrează compatibilitate pentru aliasurile legacy.
+- [x] Teste backend adăugate pentru normalizare/permisiuni/scope + compat alias-uri și pentru login role normalization.
+- [x] Test frontend adăugat pentru `session.ts` (normalizare + read-only).
+- [x] Verificări rulate: pytest țintit backend, vitest țintit frontend, build frontend (pass).
+
+---
+
+# TODO — Auth DB-first + token cu context membership (contract login neschimbat)
+
+- [x] Re-auditez fișierele auth/rbac/team/session/login indicate.
+- [x] Implementez autentificare DB-first în `users` + `user_memberships` cu validare user activ/parolă/rol normalizat.
+- [x] Păstrez fallback env admin de urgență (`super_admin`) fără schimbare de contract login.
+- [x] Extind token/AuthUser cu context membership și păstrez decode backward-compatible pentru tokenuri vechi.
+- [x] Actualizez `POST /auth/login` audit logging pe scenarii: succes DB, succes env fallback, invalid creds, role_not_owned, ambiguous_membership.
+- [x] Ajustez minim frontend login dropdown cu roluri canonice și verific compatibilitatea `session.ts`.
+- [x] Adaug teste backend pentru toate scenariile de login cerute + decode old/new token.
+- [x] Rulez teste backend/frontend + build frontend + startup check backend și documentez review.
+
+## Review
+- [x] `auth` service are flow DB-first: user lookup în `users`, verificare `is_active`, verificare hash parolă, lookup membership activ pe rol normalizat.
+- [x] Login DB reușit doar când există exact un membership activ pentru rolul cerut; 0 membership => 403, >1 membership => 409 cu mesaj clar de context ambiguu.
+- [x] `/auth/login` păstrează contractul extern, dar folosește flow DB-first și fallback env admin (`super_admin`, `is_env_admin=true`) doar la eșec DB auth când credentials env sunt valide.
+- [x] Token/AuthUser extinse cu: `user_id`, `scope_type`, `membership_id`, `subaccount_id`, `subaccount_name`, `is_env_admin`; decode rămâne compatibil cu tokenuri vechi (`email`, `role`).
+- [x] Login page păstrează același UX, dar dropdown-ul folosește roluri canonice utile (`agency_*`, `subaccount_*`).
+- [x] `session.ts` rămâne compatibil cu tokenuri vechi și parsează sigur payload-uri noi (câmpurile extra nu rup parserul).
+- [x] Teste adăugate/rulate pentru scenariile cerute: DB success agency/subaccount, invalid password, user inactiv, role not owned, alias legacy, ambiguous membership 409, env fallback success, decode old/new token.
+- [x] Verificări rulate: pytest backend relevant, vitest frontend relevant, `pnpm build`, startup check `from app.main import app`.
+
+---
+
+# TODO — Backend real Sub-account Team endpoints + scope enforcement
+
+- [x] Re-auditez fișierele backend relevante și contractul UI sub-account team.
+- [x] Adaug helper `enforce_subaccount_action` pentru RBAC + restricție pe `subaccount_id` pentru rolurile subaccount-scoped.
+- [x] Adaug endpointuri noi `GET/POST /team/subaccounts/{subaccount_id}/members` fără a rupe endpointurile agency existente.
+- [x] Implementez listarea sub-account members (direct + inherited agency access) cu contract orientat UI.
+- [x] Implementez create sub-account member cu validări (required fields, roluri permise doar `subaccount_*`, sub-account existent, duplicate-safe).
+- [x] Adaug teste backend pentru scope enforcement, list/create, rol invalid, sub-account inexistent, duplicate membership.
+- [x] Rulez testele backend relevante + startup check backend.
+- [x] Actualizez docs minim + review.
+
+## Review
+- [x] Implementat endpointurile sub-account team list/create + helper scope enforcement și acoperire de teste unitare țintite (`test_team_subaccount_api` + `test_team_members_foundation`).
+
+---
+
+# TODO — Hotfix startup crash `_hash_password` NameError
+
+- [x] Re-auditez `team_members.py`, `auth.py` și helperii de hash disponibili.
+- [x] Identific cauza exactă: referințe legacy `_hash_password` rămase după standardizarea helperului pe `hash_password`.
+- [x] Aplic hotfix minim: elimin referințele `_hash_password` din backend și folosesc helperul comun `hash_password`.
+- [x] Verific că nu există alte referințe `_hash_password` în backend.
+- [x] Rulez testele backend relevante + comanda de startup cerută cu `APP_AUTH_SECRET`.
+
+## Review
+- [x] Hotfix aplicat fără modificări de contract API/frontend/auth-flow; startup import check confirmat `ok`.
+
+---
+
+# TODO — Verify startup crash report for `_hash_password` in team_members
+
+- [x] Re-verify `team_members.py` and `auth.py` helper usage on latest branch state.
+- [x] Run backend-wide search for `_hash_password(`.
+- [x] Run startup import check with `APP_AUTH_SECRET=test-secret`.
+
+## Review
+- [x] No `_hash_password` references remain in backend; startup import check returns `ok`.
+
+---
+
+# TODO — Conectare pagina Sub-account Team la endpointuri reale backend
+
+- [x] Re-auditez pagina frontend sub-account team + `api.ts` + contractele backend.
+- [x] Elimin complet sursele mock locale (ex. `INITIAL_USERS`) și leg listarea la `GET /team/subaccounts/{subaccount_id}/members`.
+- [x] Conectez create la `POST /team/subaccounts/{subaccount_id}/members` cu validări minime și roluri `subaccount_*`.
+- [x] Tratez stările loading/empty/error + mesaje clare pentru 403/404/400.
+- [x] Marchez vizual membership-urile inherited/agency în listă.
+- [x] Adaug teste frontend compacte pentru list/create/roluri/403 și elimin dependența de mock users locali.
+- [x] Rulez testele frontend relevante și build-ul frontend.
+
+## Review
+- [x] Pagina sub-account team este conectată la endpointurile reale GET/POST, fără mock local, cu filtre/paginare/create/refetch și acoperire de teste + build frontend.
+
+---
+
+# TODO — Backend Mailgun foundation (agency-level config + test email)
+
+- [x] Re-auditez pattern-urile existente pentru integrations/secrets/RBAC/audit și contractele backend relevante.
+- [x] Implementez serviciu backend Mailgun (validare config, mask api key, test send prin Mailgun API).
+- [x] Adaug endpointuri agency-level pentru Mailgun: status/config/test.
+- [x] Integrez RBAC pentru config/test astfel încât doar admin/global să poată configura/testa.
+- [x] Adaug teste backend pentru validare, status, mask, test send (success/failure) și RBAC.
+- [x] Rulez testele backend relevante + startup check și documentez rezultatele.
+- [x] Actualizez docs minim pentru Mailgun foundation + ce rămâne out-of-scope.
+
+## Review
+- [x] Implementată fundația Mailgun agency-level (status/config/test), stocare în integration_secrets, masking API key, RBAC admin-only pentru config/test și acoperire de teste backend cu mock HTTP pentru send.
+
+---
+
+# TODO — UI Mailgun în Agency Integrations conectat la backend
+
+- [x] Re-auditez pagina Agency Integrations, cardurile existente și contractele Mailgun backend.
+- [x] Adaug card Mailgun în Agency Integrations, în stilul existent al paginii.
+- [x] Conectez status la `GET /agency/integrations/mailgun/status` cu loading/error/retry clare.
+- [x] Conectez formularul config la `POST /agency/integrations/mailgun/config` cu validări minime.
+- [x] Conectez test email la `POST /agency/integrations/mailgun/test` cu feedback success/failure.
+- [x] Mă asigur că `api_key` nu este afișată în clar (doar `api_key_masked`).
+- [x] Rulez testele frontend relevante + build frontend + screenshot.
+
+## Review
+- [x] Cardul Mailgun este conectat la endpointurile reale status/config/test, cu validări minime, mesaje clare pentru erori (inclusiv 403), masking API key și acoperire de teste frontend + build + screenshot.
+
+---
+
+# TODO — Backend forgot/reset password via Mailgun (no UI)
+
+- [x] Re-auditez auth/mailgun/config și pattern-urile backend existente.
+- [x] Adaug serviciu dedicat pentru tokenuri email one-time (`password_reset`) cu stocare hash-only și expirare.
+- [x] Adaug endpointurile publice `POST /auth/forgot-password` și `POST /auth/reset-password/confirm`.
+- [x] Integrez trimiterea emailului de reset prin Mailgun config agency-level existent.
+- [x] Adaug validări minime pentru parola nouă + consum/invalidare tokenuri.
+- [x] Adaug teste backend pentru forgot/reset success/failure/security + login old/new password.
+- [x] Rulez testele backend relevante + startup check și documentez rezultatele.
+- [x] Actualizez docs minim pentru forgot/reset backend și out-of-scope.
+
+## Review
+- [x] Implementată fundația forgot/reset backend cu tokenuri hash-only one-time + expirare, trimitere Mailgun, endpointuri publice și teste pentru scenariile principale + regresii login.
+
+---
+
+# TODO — Backend reset password foundation only (no forgot-password/Mailgun/UI)
+
+- [x] Re-auditez `auth.py`, `auth.py` service, `team_members.py`, `config.py` și elimin din scope endpointul forgot + Mailgun send.
+- [x] Păstrez/rafinez serviciul `auth_email_tokens` pentru tokenuri reset one-time hash-only + expirare + invalidare tokenuri active.
+- [x] Mențin endpointul public `POST /auth/reset-password/confirm` cu validare token + validare parolă + update hash + consume token.
+- [x] Adaug helper/service method testabil pentru emiterea tokenului reset pentru user existent (fără endpoint forgot).
+- [x] Ajustez testele backend pentru flow reset confirm și securitatea tokenului (invalid/expirat/consumat/parolă invalidă + login old/new).
+- [x] Rulez testele backend relevante + startup check backend.
+- [x] Actualizez documentația minimă pentru scope-ul acestui pas.
+
+## Review
+- [x] Implementare restrânsă la backend reset foundation: fără frontend, fără endpoint forgot-password și fără trimitere Mailgun; login-ul existent rămâne funcțional.
+
+---
+
+# TODO — Backend forgot-password + Mailgun send over reset foundation
+
+- [x] Re-auditez auth API, token service, Mailgun service, config și testele reset foundation.
+- [x] Adaug endpoint public `POST /auth/forgot-password` cu răspuns generic anti-enumeration.
+- [x] Conectez forgot flow la token service existent + link `${FRONTEND_BASE_URL}/reset-password?token=...`.
+- [x] Trimit email reset prin Mailgun service existent, fără logging token raw/link complet.
+- [x] Adaug tratament clar pentru lipsă `FRONTEND_BASE_URL` și indisponibilitate Mailgun.
+- [x] Extind testele backend pentru forgot success/failure/security și regresie reset confirm.
+- [x] Rulez testele backend relevante + startup check.
+- [x] Actualizez documentația minimă pentru statusul forgot/reset backend.
+
+## Review
+- [x] Implementare incrementală backend-only: forgot-password activ cu Mailgun + tokenuri hash-only one-time, fără schimbări frontend/login/impersonation.
+
+---
+
+# TODO — Frontend forgot/reset password pages connected to backend
+
+- [x] Re-auditez `login/page.tsx`, `lib/api.ts`, `lib/session.ts` și contractele backend forgot/reset.
+- [x] Adaug paginile frontend `/forgot-password` și `/reset-password` cu stări loading/success/error.
+- [x] Adaug link discret „Ai uitat parola?” în `/login` fără redesign major.
+- [x] Conectez API helper-ele frontend la `POST /auth/forgot-password` și `POST /auth/reset-password/confirm`.
+- [x] Implementez tratarea tokenului din query string + validări locale parolă/confirmare.
+- [x] Adaug teste frontend compacte pentru login link, forgot submit/success și reset token/submit/error.
+- [x] Rulez testele frontend relevante + build frontend.
+- [x] Fac screenshot pentru schimbările vizuale din frontend.
+- [x] Actualizez docs minim pentru status forgot/reset UI vs invite.
+
+## Review
+- [x] UI forgot/reset este activ în frontend, conectat la backend existent, fără auto-login și fără schimbări majore pe login/invite.
