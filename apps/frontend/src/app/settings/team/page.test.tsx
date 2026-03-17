@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import SettingsTeamPage from "./page";
+import { ApiRequestError } from "@/lib/api";
 
 const apiRequestMock = vi.fn();
 const inviteTeamMemberMock = vi.fn();
@@ -14,6 +15,8 @@ vi.mock("@/lib/api", async () => {
     apiRequest: (...args: unknown[]) => apiRequestMock(...args),
     getTeamModuleCatalog: (scope = "subaccount") => apiRequestMock(`/team/module-catalog?scope=${encodeURIComponent(scope)}`),
     inviteTeamMember: (...args: unknown[]) => inviteTeamMemberMock(...args),
+    getTeamMembershipDetail: (membershipId: string | number) => apiRequestMock(`/team/members/${encodeURIComponent(String(membershipId))}`),
+    updateTeamMembership: (membershipId: string | number, payload: unknown) => apiRequestMock(`/team/members/${encodeURIComponent(String(membershipId))}`, { method: "PATCH", body: JSON.stringify(payload) }),
   };
 });
 
@@ -91,8 +94,95 @@ describe("Settings team page subaccount integration", () => {
           ],
         });
       }
+
+      if (path === "/team/members/101") {
+        return Promise.resolve({
+          item: {
+            membership_id: 101,
+            user_id: 201,
+            scope_type: "agency",
+            subaccount_id: null,
+            subaccount_name: "Toate",
+            role_key: "agency_admin",
+            role_label: "Agency Admin",
+            module_keys: [],
+            source_scope: "agency",
+            is_inherited: false,
+            first_name: "Ana",
+            last_name: "Ionescu",
+            email: "ana@example.com",
+            phone: "",
+            extension: "",
+          },
+        });
+      }
+      if (path === "/team/members/103") {
+        return Promise.resolve({
+          item: {
+            membership_id: 103,
+            user_id: 203,
+            scope_type: "subaccount",
+            subaccount_id: 2,
+            subaccount_name: "Client Alpha",
+            role_key: "subaccount_user",
+            role_label: "Subaccount User",
+            module_keys: ["dashboard", "creative"],
+            source_scope: "subaccount",
+            is_inherited: false,
+            first_name: "Mihai",
+            last_name: "Pop",
+            email: "mihai@example.com",
+            phone: "0700",
+            extension: "12",
+          },
+        });
+      }
+      if (path === "/team/members/104") {
+        return Promise.resolve({
+          item: {
+            membership_id: 104,
+            user_id: 204,
+            scope_type: "subaccount",
+            subaccount_id: 3,
+            subaccount_name: "Client Beta",
+            role_key: "subaccount_user",
+            role_label: "Subaccount User",
+            module_keys: ["dashboard"],
+            source_scope: "subaccount",
+            is_inherited: true,
+            first_name: "Inh",
+            last_name: "User",
+            email: "inh@example.com",
+            phone: "",
+            extension: "",
+          },
+        });
+      }
       if (path === "/team/members" && options?.method === "POST") {
         return Promise.resolve({ item: { id: 1 } });
+      }
+      if (path.startsWith("/team/members/") && options?.method === "PATCH") {
+        const membershipId = Number(path.split("/").at(-1));
+        const body = JSON.parse(String(options.body ?? "{}"));
+        return Promise.resolve({
+          item: {
+            membership_id: membershipId,
+            user_id: 201,
+            scope_type: membershipId === 101 ? "agency" : "subaccount",
+            subaccount_id: membershipId === 101 ? null : 2,
+            subaccount_name: membershipId === 101 ? "Toate" : "Client Alpha",
+            role_key: body.user_role ?? (membershipId === 101 ? "agency_admin" : "subaccount_user"),
+            role_label: "Updated",
+            module_keys: body.module_keys ?? [],
+            source_scope: membershipId === 101 ? "agency" : "subaccount",
+            is_inherited: false,
+            first_name: "Ana",
+            last_name: "Ionescu",
+            email: "ana@example.com",
+            phone: "",
+            extension: "",
+          },
+        });
       }
       return Promise.reject(new Error(`Unexpected path: ${path}`));
     });
@@ -187,6 +277,70 @@ describe("Settings team page subaccount integration", () => {
       }
       if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
       if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
+
+      if (path === "/team/members/101") {
+        return Promise.resolve({
+          item: {
+            membership_id: 101,
+            user_id: 201,
+            scope_type: "agency",
+            subaccount_id: null,
+            subaccount_name: "Toate",
+            role_key: "agency_admin",
+            role_label: "Agency Admin",
+            module_keys: [],
+            source_scope: "agency",
+            is_inherited: false,
+            first_name: "Ana",
+            last_name: "Ionescu",
+            email: "ana@example.com",
+            phone: "",
+            extension: "",
+          },
+        });
+      }
+      if (path === "/team/members/103") {
+        return Promise.resolve({
+          item: {
+            membership_id: 103,
+            user_id: 203,
+            scope_type: "subaccount",
+            subaccount_id: 2,
+            subaccount_name: "Client Alpha",
+            role_key: "subaccount_user",
+            role_label: "Subaccount User",
+            module_keys: ["dashboard", "creative"],
+            source_scope: "subaccount",
+            is_inherited: false,
+            first_name: "Mihai",
+            last_name: "Pop",
+            email: "mihai@example.com",
+            phone: "0700",
+            extension: "12",
+          },
+        });
+      }
+      if (path === "/team/members/104") {
+        return Promise.resolve({
+          item: {
+            membership_id: 104,
+            user_id: 204,
+            scope_type: "subaccount",
+            subaccount_id: 3,
+            subaccount_name: "Client Beta",
+            role_key: "subaccount_user",
+            role_label: "Subaccount User",
+            module_keys: ["dashboard"],
+            source_scope: "subaccount",
+            is_inherited: true,
+            first_name: "Inh",
+            last_name: "User",
+            email: "inh@example.com",
+            phone: "",
+            extension: "",
+          },
+        });
+      }
       if (path === "/team/members" && options?.method === "POST") {
         return Promise.resolve({ item: { id: 1001, membership_id: 777 } });
       }
@@ -212,7 +366,6 @@ describe("Settings team page subaccount integration", () => {
   });
 
   it("create success + invite 503 shows partial success message", async () => {
-    const { ApiRequestError } = await import("@/lib/api");
     inviteTeamMemberMock.mockRejectedValueOnce(new ApiRequestError("temporarily unavailable", 503));
 
     apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
@@ -221,6 +374,70 @@ describe("Settings team page subaccount integration", () => {
       }
       if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
       if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
+
+      if (path === "/team/members/101") {
+        return Promise.resolve({
+          item: {
+            membership_id: 101,
+            user_id: 201,
+            scope_type: "agency",
+            subaccount_id: null,
+            subaccount_name: "Toate",
+            role_key: "agency_admin",
+            role_label: "Agency Admin",
+            module_keys: [],
+            source_scope: "agency",
+            is_inherited: false,
+            first_name: "Ana",
+            last_name: "Ionescu",
+            email: "ana@example.com",
+            phone: "",
+            extension: "",
+          },
+        });
+      }
+      if (path === "/team/members/103") {
+        return Promise.resolve({
+          item: {
+            membership_id: 103,
+            user_id: 203,
+            scope_type: "subaccount",
+            subaccount_id: 2,
+            subaccount_name: "Client Alpha",
+            role_key: "subaccount_user",
+            role_label: "Subaccount User",
+            module_keys: ["dashboard", "creative"],
+            source_scope: "subaccount",
+            is_inherited: false,
+            first_name: "Mihai",
+            last_name: "Pop",
+            email: "mihai@example.com",
+            phone: "0700",
+            extension: "12",
+          },
+        });
+      }
+      if (path === "/team/members/104") {
+        return Promise.resolve({
+          item: {
+            membership_id: 104,
+            user_id: 204,
+            scope_type: "subaccount",
+            subaccount_id: 3,
+            subaccount_name: "Client Beta",
+            role_key: "subaccount_user",
+            role_label: "Subaccount User",
+            module_keys: ["dashboard"],
+            source_scope: "subaccount",
+            is_inherited: true,
+            first_name: "Inh",
+            last_name: "User",
+            email: "inh@example.com",
+            phone: "",
+            extension: "",
+          },
+        });
+      }
       if (path === "/team/members" && options?.method === "POST") {
         return Promise.resolve({ item: { id: 1002, membership_id: 778 } });
       }
@@ -248,6 +465,70 @@ describe("Settings team page subaccount integration", () => {
       }
       if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
       if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
+
+      if (path === "/team/members/101") {
+        return Promise.resolve({
+          item: {
+            membership_id: 101,
+            user_id: 201,
+            scope_type: "agency",
+            subaccount_id: null,
+            subaccount_name: "Toate",
+            role_key: "agency_admin",
+            role_label: "Agency Admin",
+            module_keys: [],
+            source_scope: "agency",
+            is_inherited: false,
+            first_name: "Ana",
+            last_name: "Ionescu",
+            email: "ana@example.com",
+            phone: "",
+            extension: "",
+          },
+        });
+      }
+      if (path === "/team/members/103") {
+        return Promise.resolve({
+          item: {
+            membership_id: 103,
+            user_id: 203,
+            scope_type: "subaccount",
+            subaccount_id: 2,
+            subaccount_name: "Client Alpha",
+            role_key: "subaccount_user",
+            role_label: "Subaccount User",
+            module_keys: ["dashboard", "creative"],
+            source_scope: "subaccount",
+            is_inherited: false,
+            first_name: "Mihai",
+            last_name: "Pop",
+            email: "mihai@example.com",
+            phone: "0700",
+            extension: "12",
+          },
+        });
+      }
+      if (path === "/team/members/104") {
+        return Promise.resolve({
+          item: {
+            membership_id: 104,
+            user_id: 204,
+            scope_type: "subaccount",
+            subaccount_id: 3,
+            subaccount_name: "Client Beta",
+            role_key: "subaccount_user",
+            role_label: "Subaccount User",
+            module_keys: ["dashboard"],
+            source_scope: "subaccount",
+            is_inherited: true,
+            first_name: "Inh",
+            last_name: "User",
+            email: "inh@example.com",
+            phone: "",
+            extension: "",
+          },
+        });
+      }
       if (path === "/team/members" && options?.method === "POST") {
         return Promise.reject(new Error("Nu am putut adăuga utilizatorul."));
       }
@@ -350,7 +631,6 @@ describe("Settings team page subaccount integration", () => {
   });
 
   it("shows backend module permission errors clearly", async () => {
-    const { ApiRequestError } = await import("@/lib/api");
     apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
       if (path.startsWith("/team/members?")) return Promise.resolve({ items: [], total: 0, page: 1, page_size: 10 });
       if (path === "/team/subaccount-options") return Promise.resolve({ items: [{ id: 2, name: "Client Alpha", label: "#11 — Client Alpha" }] });
@@ -370,6 +650,103 @@ describe("Settings team page subaccount integration", () => {
     expect(await screen.findByText(/Permisiunile pe module sunt disponibile doar/i)).toBeInTheDocument();
   });
 
+
+
+  it("opens edit mode and fetches membership detail by membership_id", async () => {
+    render(<SettingsTeamPage />);
+
+    const editButtons = await screen.findAllByRole("button", { name: "Editează" });
+    fireEvent.click(editButtons[0]);
+
+    await waitFor(() => {
+      expect(apiRequestMock).toHaveBeenCalledWith("/team/members/101");
+    });
+
+    expect(screen.getByRole("button", { name: "Salvează" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Prenume" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: "Nume" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: /Email/i })).toBeDisabled();
+  });
+
+  it("renders subaccount edit with preselected modules and sends PATCH user_role + module_keys", async () => {
+    apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
+      if (path.startsWith("/team/members?")) {
+        return Promise.resolve({
+          items: [{ id: 103, membership_id: 103, user_id: 203, first_name: "Mihai", last_name: "Pop", email: "mihai@example.com", phone: "", extension: "", user_type: "client", user_role: "member", location: "România", subaccount: "Client Alpha" }],
+          total: 1,
+          page: 1,
+          page_size: 10,
+        });
+      }
+      if (path === "/team/subaccount-options") return Promise.resolve({ items: [{ id: 2, name: "Client Alpha", label: "#11 — Client Alpha" }] });
+      if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [
+        { key: "dashboard", label: "Dashboard", order: 1, scope: "subaccount" },
+        { key: "creative", label: "Creative", order: 4, scope: "subaccount" },
+        { key: "rules", label: "Rules", order: 3, scope: "subaccount" },
+      ]});
+      if (path === "/team/members/103") return Promise.resolve({ item: {
+        membership_id: 103, user_id: 203, scope_type: "subaccount", subaccount_id: 2, subaccount_name: "Client Alpha", role_key: "subaccount_user", role_label: "Subaccount User", module_keys: ["dashboard", "creative"], source_scope: "subaccount", is_inherited: false, first_name: "Mihai", last_name: "Pop", email: "mihai@example.com", phone: "", extension: "",
+      }});
+      if (path === "/team/members/103" && options?.method === "PATCH") {
+        return Promise.resolve({ item: {
+          membership_id: 103, user_id: 203, scope_type: "subaccount", subaccount_id: 2, subaccount_name: "Client Alpha", role_key: "subaccount_viewer", role_label: "Subaccount Viewer", module_keys: ["dashboard"], source_scope: "subaccount", is_inherited: false, first_name: "Mihai", last_name: "Pop", email: "mihai@example.com", phone: "", extension: "",
+        }});
+      }
+      return Promise.reject(new Error(`Unexpected path: ${path}`));
+    });
+
+    render(<SettingsTeamPage />);
+    const editButton = await screen.findByRole("button", { name: "Editează" });
+    fireEvent.click(editButton);
+
+    const dashboard = await screen.findByLabelText("Dashboard");
+    const creative = await screen.findByLabelText("Creative");
+    expect(dashboard).toBeChecked();
+    expect(creative).toBeChecked();
+
+    fireEvent.click(creative);
+    fireEvent.change(screen.getByRole("combobox", { name: "Rol Utilizator" }), { target: { value: "viewer" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+
+    await waitFor(() => {
+      const patchCall = apiRequestMock.mock.calls.find((call) => call[0] === "/team/members/103" && call[1]?.method === "PATCH");
+      expect(patchCall).toBeTruthy();
+      const body = JSON.parse(String(patchCall?.[1]?.body ?? "{}"));
+      expect(body.user_role).toBe("subaccount_viewer");
+      expect(body.module_keys).toEqual(["dashboard"]);
+    });
+  });
+
+  it("blocks inherited membership edit and handles 409 clearly", async () => {
+    apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
+      if (path.startsWith("/team/members?")) {
+        return Promise.resolve({
+          items: [{ id: 104, membership_id: 104, user_id: 204, first_name: "Inh", last_name: "User", email: "inh@example.com", phone: "", extension: "", user_type: "client", user_role: "member", location: "România", subaccount: "Client Beta" }],
+          total: 1,
+          page: 1,
+          page_size: 10,
+        });
+      }
+      if (path === "/team/subaccount-options") return Promise.resolve({ items: [{ id: 3, name: "Client Beta", label: "Client Beta" }] });
+      if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [{ key: "dashboard", label: "Dashboard", order: 1, scope: "subaccount" }] });
+      if (path === "/team/members/104") return Promise.resolve({ item: {
+        membership_id: 104, user_id: 204, scope_type: "subaccount", subaccount_id: 3, subaccount_name: "Client Beta", role_key: "subaccount_user", role_label: "Subaccount User", module_keys: ["dashboard"], source_scope: "subaccount", is_inherited: true, first_name: "Inh", last_name: "User", email: "inh@example.com", phone: "", extension: "",
+      }});
+      if (path === "/team/members/104" && options?.method === "PATCH") {
+        return Promise.reject(new ApiRequestError("Access moștenit: acest membership nu poate fi editat local", 409));
+      }
+      return Promise.reject(new Error(`Unexpected path: ${path}`));
+    });
+
+    render(<SettingsTeamPage />);
+    const editButton = await screen.findByRole("button", { name: "Editează" });
+    fireEvent.click(editButton);
+
+    expect(await screen.findByText(/nu poate fi editat aici/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+    expect(apiRequestMock.mock.calls.some((call) => call[0] === "/team/members/104" && call[1]?.method === "PATCH")).toBe(false);
+  });
+
   it("renders invite action and sends invite with membership id", async () => {
     render(<SettingsTeamPage />);
 
@@ -386,7 +763,6 @@ describe("Settings team page subaccount integration", () => {
   });
 
   it("shows clear message for 403 and 503 and disables ineligible row action", async () => {
-    const { ApiRequestError } = await import("@/lib/api");
     inviteTeamMemberMock
       .mockRejectedValueOnce(new ApiRequestError("forbidden", 403))
       .mockRejectedValueOnce(new ApiRequestError("temporarily unavailable", 503));
