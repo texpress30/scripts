@@ -34,10 +34,10 @@ class _TokensCursor:
 
         if "SELECT id, user_id, email, token_type, expires_at, consumed_at, metadata_json" in sql:
             token_hash = str(params[0])
-            token_type = str(params[1])
+            token_types = [str(item) for item in (params[1] or [])]
             match = None
             for row in reversed(self.state["tokens"]):
-                if row["token_hash"] == token_hash and row["token_type"] == token_type:
+                if row["token_hash"] == token_hash and row["token_type"] in token_types:
                     match = row
                     break
             if match is None:
@@ -184,6 +184,26 @@ class AuthEmailTokensServiceTests(unittest.TestCase):
             with self.assertRaises(AuthEmailTokenError) as invalid_ctx:
                 service.validate_password_reset_token(raw_token="missing")
             self.assertEqual(invalid_ctx.exception.reason, "invalid_token")
+        finally:
+            service._connect = original_connect
+
+    def test_invite_user_token_is_hash_only_and_valid_for_reset_confirm(self):
+        state = {"token_id": 0, "tokens": [], "user": {"id": 3, "email": "invitee@example.com", "password_hash": "", "is_active": True}, "memberships": []}
+        service = token_module.AuthEmailTokensService()
+        service._schema_initialized = True
+
+        original_connect = service._connect
+        try:
+            service._connect = lambda: _TokensConn(state)
+            raw, _ = service.create_user_invite_token_for_existing_user(user_id=3, email="invitee@example.com", expires_in_minutes=60)
+            stored_hash = state["tokens"][0]["token_hash"]
+            self.assertNotEqual(stored_hash, raw)
+            self.assertEqual(state["tokens"][0]["token_type"], "invite_user")
+
+            validated = service.validate_reset_or_invite_token(raw_token=raw)
+            self.assertEqual(validated.token_type, "invite_user")
+            consumed = service.consume_reset_or_invite_token(raw_token=raw)
+            self.assertEqual(consumed.token_type, "invite_user")
         finally:
             service._connect = original_connect
 

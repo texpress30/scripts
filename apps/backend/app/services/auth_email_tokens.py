@@ -15,6 +15,7 @@ except Exception:  # noqa: BLE001
 
 
 PASSWORD_RESET_TOKEN_TYPE = "password_reset"
+INVITE_USER_TOKEN_TYPE = "invite_user"
 
 
 @dataclass(frozen=True)
@@ -80,7 +81,7 @@ class AuthEmailTokensService:
     def _hash_token(self, raw_token: str) -> str:
         return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
-    def _read_token(self, *, token_hash: str, token_type: str) -> PasswordResetTokenRecord | None:
+    def _read_token(self, *, token_hash: str, token_types: tuple[str, ...]) -> PasswordResetTokenRecord | None:
         self.initialize_schema()
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -88,11 +89,11 @@ class AuthEmailTokensService:
                     """
                     SELECT id, user_id, email, token_type, expires_at, consumed_at, metadata_json
                     FROM auth_email_tokens
-                    WHERE token_hash = %s AND token_type = %s
+                    WHERE token_hash = %s AND token_type = ANY(%s)
                     ORDER BY id DESC
                     LIMIT 1
                     """,
-                    (token_hash, token_type),
+                    (token_hash, list(token_types)),
                 )
                 row = cur.fetchone()
         if row is None:
@@ -150,9 +151,9 @@ class AuthEmailTokensService:
                     )
             conn.commit()
 
-    def create_password_reset_token(self, *, user_id: int, email: str, expires_in_minutes: int = 60) -> tuple[str, datetime]:
+    def _create_token(self, *, user_id: int, email: str, token_type: str, expires_in_minutes: int = 60) -> tuple[str, datetime]:
         self.initialize_schema()
-        self.invalidate_active_tokens(user_id=user_id, token_type=PASSWORD_RESET_TOKEN_TYPE)
+        self.invalidate_active_tokens(user_id=user_id, token_type=token_type)
 
         raw_token = secrets.token_urlsafe(48)
         token_hash = self._hash_token(raw_token)
@@ -165,11 +166,19 @@ class AuthEmailTokensService:
                     INSERT INTO auth_email_tokens(user_id, token_type, token_hash, email, expires_at, metadata_json)
                     VALUES (%s, %s, %s, %s, %s, '{}')
                     """,
-                    (int(user_id), PASSWORD_RESET_TOKEN_TYPE, token_hash, str(email).strip().lower(), expires_at),
+                    (int(user_id), str(token_type), token_hash, str(email).strip().lower(), expires_at),
                 )
             conn.commit()
 
         return raw_token, expires_at
+
+    def create_password_reset_token(self, *, user_id: int, email: str, expires_in_minutes: int = 60) -> tuple[str, datetime]:
+        return self._create_token(
+            user_id=user_id,
+            email=email,
+            token_type=PASSWORD_RESET_TOKEN_TYPE,
+            expires_in_minutes=expires_in_minutes,
+        )
 
     def create_password_reset_token_for_existing_user(
         self,
@@ -184,13 +193,42 @@ class AuthEmailTokensService:
             expires_in_minutes=expires_in_minutes,
         )
 
+    def create_user_invite_token_for_existing_user(
+        self,
+        *,
+        user_id: int,
+        email: str,
+        expires_in_minutes: int = 60,
+    ) -> tuple[str, datetime]:
+        return self._create_token(
+            user_id=user_id,
+            email=email,
+            token_type=INVITE_USER_TOKEN_TYPE,
+            expires_in_minutes=expires_in_minutes,
+        )
+
     def validate_password_reset_token(self, *, raw_token: str) -> PasswordResetTokenRecord:
         token_hash = self._hash_token(str(raw_token).strip())
-        return self._assert_token_usable(self._read_token(token_hash=token_hash, token_type=PASSWORD_RESET_TOKEN_TYPE))
+        return self._assert_token_usable(self._read_token(token_hash=token_hash, token_types=(PASSWORD_RESET_TOKEN_TYPE,)))
+
+    def validate_reset_or_invite_token(self, *, raw_token: str) -> PasswordResetTokenRecord:
+        token_hash = self._hash_token(str(raw_token).strip())
+        return self._assert_token_usable(
+            self._read_token(
+                token_hash=token_hash,
+                token_types=(PASSWORD_RESET_TOKEN_TYPE, INVITE_USER_TOKEN_TYPE),
+            )
+        )
 
     def consume_password_reset_token(self, *, raw_token: str) -> PasswordResetTokenRecord:
         record = self.validate_password_reset_token(raw_token=raw_token)
+        return self._consume_record(record)
 
+    def consume_reset_or_invite_token(self, *, raw_token: str) -> PasswordResetTokenRecord:
+        record = self.validate_reset_or_invite_token(raw_token=raw_token)
+        return self._consume_record(record)
+
+    def _consume_record(self, record: PasswordResetTokenRecord) -> PasswordResetTokenRecord:
         self.initialize_schema()
         with self._connect() as conn:
             with conn.cursor() as cur:

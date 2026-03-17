@@ -224,6 +224,7 @@ ACTION_POLICIES: dict[str, ActionPolicy] = {
     "creative:write": ActionPolicy(permission="creative:write", scopes=("subaccount",)),
     "team:subaccount:list": ActionPolicy(permission="clients:read", scopes=("subaccount",)),
     "team:subaccount:create": ActionPolicy(permission="rules:write", scopes=("subaccount",)),
+    "team:invite": ActionPolicy(permission="rules:write", scopes=("agency", "subaccount")),
 }
 
 

@@ -4533,3 +4533,19 @@
 
 ## Review
 - [x] UI forgot/reset este activ în frontend, conectat la backend existent, fără auto-login și fără schimbări majore pe login/invite.
+
+---
+
+# TODO — Backend invite user flow via Mailgun + auth email tokens
+
+- [x] Re-auditez team/auth/token/mailgun/rbac/schema și contractele existente forgot/reset.
+- [x] Extind token service pentru `invite_user` păstrând compatibilitatea pentru `password_reset`.
+- [x] Adaug endpoint admin-only `POST /team/members/{membership_id}/invite` cu RBAC pe scope membership.
+- [x] Reutilizez Mailgun + `FRONTEND_BASE_URL` pentru email invitație (fără expunere token raw în response/logs).
+- [x] Fac `POST /auth/reset-password/confirm` compatibil și cu tokenuri `invite_user`.
+- [x] Adaug teste backend pentru invite token, endpoint invite success/failure și regresii reset/login.
+- [x] Rulez testele backend relevante + startup check.
+- [x] Actualizez docs minim pentru status invite backend și ce rămâne pentru următorul task.
+
+## Review
+- [x] Invite flow backend este activ (token `invite_user` + Mailgun + endpoint team admin-only), iar reset confirm rămâne backward-compatible pentru `password_reset`.

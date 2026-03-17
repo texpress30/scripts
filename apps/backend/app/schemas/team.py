@@ -85,3 +85,7 @@ class CreateSubaccountTeamMemberRequest(BaseModel):
 
 class SubaccountTeamMemberResponse(BaseModel):
     item: SubaccountTeamMemberItem
+
+
+class TeamMemberInviteResponse(BaseModel):
+    message: str

@@ -252,4 +252,7 @@ cd apps/frontend && npm run build
 - Backend forgot/reset password este implementat prin endpointurile publice `POST /auth/forgot-password` și `POST /auth/reset-password/confirm`.
 - `POST /auth/forgot-password` folosește Mailgun agency-level existent și răspunde generic (fără user enumeration).
 - Tokenurile de reset rămân one-time, expirabile, stocate doar ca hash în `auth_email_tokens`.
-- UI forgot/reset este conectat în frontend (`/forgot-password`, `/reset-password`, link din `/login`), iar flow-ul invite user rămâne pentru taskurile următoare.
+- UI forgot/reset este conectat în frontend (`/forgot-password`, `/reset-password`, link din `/login`).
+- Invite backend este implementat prin `POST /team/members/{membership_id}/invite` (admin-only, Mailgun agency-level).
+- `POST /auth/reset-password/confirm` acceptă acum tokenuri `password_reset` și `invite_user`.
+- UI pentru trimiterea invitației rămâne pentru taskul următor.

@@ -677,4 +677,34 @@ class TeamMembersService:
         }
 
 
+    def get_membership_with_user(self, *, membership_id: int) -> dict[str, object] | None:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT um.id, um.user_id, um.scope_type, um.subaccount_id, um.status, u.email, u.is_active
+                    FROM user_memberships um
+                    JOIN users u ON u.id = um.user_id
+                    WHERE um.id = %s
+                    LIMIT 1
+                    """,
+                    (int(membership_id),),
+                )
+                row = cur.fetchone()
+
+        if row is None:
+            return None
+
+        return {
+            "membership_id": int(row[0]),
+            "user_id": int(row[1]),
+            "scope_type": str(row[2]),
+            "subaccount_id": int(row[3]) if row[3] is not None else None,
+            "status": str(row[4]),
+            "email": str(row[5] or "").strip().lower(),
+            "is_active": bool(row[6]),
+        }
+
+
+
 team_members_service = TeamMembersService()

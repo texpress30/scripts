@@ -196,7 +196,7 @@ def reset_password_confirm(payload: ResetPasswordConfirmRequest) -> ResetPasswor
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     try:
-        token_payload = auth_email_tokens_service.validate_password_reset_token(raw_token=payload.token)
+        token_payload = auth_email_tokens_service.validate_reset_or_invite_token(raw_token=payload.token)
     except AuthEmailTokenError as exc:
         audit_log_service.log(
             actor_email="anonymous",
@@ -220,7 +220,7 @@ def reset_password_confirm(payload: ResetPasswordConfirmRequest) -> ResetPasswor
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     try:
-        consumed_token = auth_email_tokens_service.consume_password_reset_token(raw_token=payload.token)
+        consumed_token = auth_email_tokens_service.consume_reset_or_invite_token(raw_token=payload.token)
     except AuthEmailTokenError as exc:
         audit_log_service.log(
             actor_email=token_payload.email,
