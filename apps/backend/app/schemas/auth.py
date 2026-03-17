@@ -20,3 +20,13 @@ class ImpersonateRequest(BaseModel):
 class ImpersonateResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+
+class ResetPasswordConfirmRequest(BaseModel):
+    token: str
+    new_password: str
+
+
+class ResetPasswordConfirmResponse(BaseModel):
+    message: str
