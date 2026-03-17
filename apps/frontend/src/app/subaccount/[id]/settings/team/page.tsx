@@ -26,6 +26,18 @@ type TeamUser = {
   inherited: boolean;
 };
 
+type TeamUserType = "ACCOUNT-USER" | "AGENCY-USER" | "ACCOUNT-ADMIN";
+
+type TeamUser = {
+  id: string;
+  prenume: string;
+  nume: string;
+  email: string;
+  telefon: string;
+  tip: TeamUserType;
+  deactivated?: boolean;
+};
+
 type TeamUserForm = {
   prenume: string;
   nume: string;
