@@ -249,6 +249,7 @@ cd apps/frontend && npm run build
   - `POST /agency/integrations/mailgun/test`
 - Config-ul Mailgun se salvează în `integration_secrets` (scope `agency_default`), iar `api_key` este returnat doar mascat (`api_key_masked`).
 - Flow-urile `invite/reset password` rămân intenționat în afara acestui pas.
-- Foundation-ul backend pentru reset password este implementat prin endpointul public `POST /auth/reset-password/confirm`.
-- Tokenurile de reset sunt one-time, expirabile, stocate doar ca hash în `auth_email_tokens` (fără trimitere email în acest pas).
-- Endpointul `forgot-password`, trimiterea Mailgun și UI forgot/reset rămân pentru taskurile următoare.
+- Backend forgot/reset password este implementat prin endpointurile publice `POST /auth/forgot-password` și `POST /auth/reset-password/confirm`.
+- `POST /auth/forgot-password` folosește Mailgun agency-level existent și răspunde generic (fără user enumeration).
+- Tokenurile de reset rămân one-time, expirabile, stocate doar ca hash în `auth_email_tokens`.
+- UI forgot/reset și flow-ul invite user rămân pentru taskurile următoare.

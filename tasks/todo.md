@@ -4500,3 +4500,19 @@
 
 ## Review
 - [x] Implementare restrânsă la backend reset foundation: fără frontend, fără endpoint forgot-password și fără trimitere Mailgun; login-ul existent rămâne funcțional.
+
+---
+
+# TODO — Backend forgot-password + Mailgun send over reset foundation
+
+- [x] Re-auditez auth API, token service, Mailgun service, config și testele reset foundation.
+- [x] Adaug endpoint public `POST /auth/forgot-password` cu răspuns generic anti-enumeration.
+- [x] Conectez forgot flow la token service existent + link `${FRONTEND_BASE_URL}/reset-password?token=...`.
+- [x] Trimit email reset prin Mailgun service existent, fără logging token raw/link complet.
+- [x] Adaug tratament clar pentru lipsă `FRONTEND_BASE_URL` și indisponibilitate Mailgun.
+- [x] Extind testele backend pentru forgot success/failure/security și regresie reset confirm.
+- [x] Rulez testele backend relevante + startup check.
+- [x] Actualizez documentația minimă pentru statusul forgot/reset backend.
+
+## Review
+- [x] Implementare incrementală backend-only: forgot-password activ cu Mailgun + tokenuri hash-only one-time, fără schimbări frontend/login/impersonation.

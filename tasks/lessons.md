@@ -352,3 +352,4 @@
 - 2026-03-17: Pentru carduri de integrare care colectează secrete (ex. API keys), UI-ul trebuie să afișeze exclusiv valori mascate din backend și să ceară reintroducerea secretului la update, fără prefill sensibil.
 - 2026-03-17: La flow-uri forgot/reset, păstrează răspunsul generic pentru email necunoscut (anti-enumeration), stochează doar hash-ul tokenului și marchează tokenurile one-time cu expirare + consumed_at.
 - 2026-03-17: După corecție pe scope auth reset, când taskul cere explicit foundation backend-only trebuie eliminate endpointurile/features out-of-scope (ex. forgot-password și Mailgun send) și livrat strict contractul cerut.
+- 2026-03-17: Când taskul următor reactivează explicit forgot-password + Mailgun peste fundația reset, trebuie reintrodus endpointul incremental fără a atinge login/impersonation și cu răspuns generic anti-enumeration.

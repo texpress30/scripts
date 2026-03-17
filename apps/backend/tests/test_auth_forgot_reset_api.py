@@ -2,11 +2,133 @@ import unittest
 from types import SimpleNamespace
 
 from app.api import auth as auth_api
-from app.schemas.auth import ResetPasswordConfirmRequest
+from app.schemas.auth import ForgotPasswordRequest, ResetPasswordConfirmRequest
 from app.services.auth_email_tokens import AuthEmailTokenError, PasswordResetTokenRecord
+from app.services.mailgun_service import MailgunIntegrationError
 
 
-class AuthResetConfirmApiTests(unittest.TestCase):
+class AuthForgotResetApiTests(unittest.TestCase):
+    def test_forgot_password_existing_user_sends_email_and_generic_response(self):
+        original_rate = auth_api.rate_limiter_service.check
+        original_assert = auth_api.mailgun_service.assert_available
+        original_find = auth_api.find_active_user_by_email
+        original_create = auth_api.auth_email_tokens_service.create_password_reset_token_for_existing_user
+        original_send = auth_api.mailgun_service.send_email
+        original_settings = auth_api.load_settings
+        captured: dict[str, object] = {}
+
+        try:
+            auth_api.rate_limiter_service.check = lambda *args, **kwargs: None
+            auth_api.mailgun_service.assert_available = lambda: None
+            auth_api.find_active_user_by_email = lambda email: {"id": 9, "email": "u@example.com", "is_active": True}
+            auth_api.auth_email_tokens_service.create_password_reset_token_for_existing_user = lambda **kwargs: ("raw-token-1", None)
+            auth_api.load_settings = lambda: SimpleNamespace(frontend_base_url="https://app.example.com", auth_reset_token_ttl_minutes=60)
+
+            def _fake_send_email(**kwargs):
+                captured.update(kwargs)
+                return {"ok": True}
+
+            auth_api.mailgun_service.send_email = _fake_send_email
+
+            resp = auth_api.forgot_password(ForgotPasswordRequest(email="U@example.com "))
+            self.assertIn("Dacă există un cont", resp.message)
+            self.assertEqual(captured["to_email"], "u@example.com")
+            self.assertIn("raw-token-1", str(captured["text"]))
+            self.assertIn("https://app.example.com/reset-password?token=raw-token-1", str(captured["text"]))
+        finally:
+            auth_api.rate_limiter_service.check = original_rate
+            auth_api.mailgun_service.assert_available = original_assert
+            auth_api.find_active_user_by_email = original_find
+            auth_api.auth_email_tokens_service.create_password_reset_token_for_existing_user = original_create
+            auth_api.mailgun_service.send_email = original_send
+            auth_api.load_settings = original_settings
+
+    def test_forgot_password_unknown_email_returns_generic_without_email_send(self):
+        original_rate = auth_api.rate_limiter_service.check
+        original_assert = auth_api.mailgun_service.assert_available
+        original_find = auth_api.find_active_user_by_email
+        original_send = auth_api.mailgun_service.send_email
+        original_settings = auth_api.load_settings
+
+        try:
+            auth_api.rate_limiter_service.check = lambda *args, **kwargs: None
+            auth_api.mailgun_service.assert_available = lambda: None
+            auth_api.find_active_user_by_email = lambda email: None
+            auth_api.mailgun_service.send_email = lambda **kwargs: (_ for _ in ()).throw(AssertionError("should not send"))
+            auth_api.load_settings = lambda: SimpleNamespace(frontend_base_url="https://app.example.com", auth_reset_token_ttl_minutes=60)
+
+            resp = auth_api.forgot_password(ForgotPasswordRequest(email="missing@example.com"))
+            self.assertIn("Dacă există un cont", resp.message)
+        finally:
+            auth_api.rate_limiter_service.check = original_rate
+            auth_api.mailgun_service.assert_available = original_assert
+            auth_api.find_active_user_by_email = original_find
+            auth_api.mailgun_service.send_email = original_send
+            auth_api.load_settings = original_settings
+
+    def test_forgot_password_inactive_user_returns_generic(self):
+        original_rate = auth_api.rate_limiter_service.check
+        original_assert = auth_api.mailgun_service.assert_available
+        original_find = auth_api.find_active_user_by_email
+        original_send = auth_api.mailgun_service.send_email
+        original_settings = auth_api.load_settings
+
+        try:
+            auth_api.rate_limiter_service.check = lambda *args, **kwargs: None
+            auth_api.mailgun_service.assert_available = lambda: None
+            auth_api.find_active_user_by_email = lambda email: None
+            auth_api.mailgun_service.send_email = lambda **kwargs: (_ for _ in ()).throw(AssertionError("should not send"))
+            auth_api.load_settings = lambda: SimpleNamespace(frontend_base_url="https://app.example.com", auth_reset_token_ttl_minutes=60)
+
+            resp = auth_api.forgot_password(ForgotPasswordRequest(email="inactive@example.com"))
+            self.assertIn("Dacă există un cont", resp.message)
+        finally:
+            auth_api.rate_limiter_service.check = original_rate
+            auth_api.mailgun_service.assert_available = original_assert
+            auth_api.find_active_user_by_email = original_find
+            auth_api.mailgun_service.send_email = original_send
+            auth_api.load_settings = original_settings
+
+    def test_forgot_password_mailgun_unavailable_or_disabled_returns_clear_error(self):
+        original_rate = auth_api.rate_limiter_service.check
+        original_assert = auth_api.mailgun_service.assert_available
+        original_settings = auth_api.load_settings
+        try:
+            auth_api.rate_limiter_service.check = lambda *args, **kwargs: None
+            auth_api.load_settings = lambda: SimpleNamespace(frontend_base_url="https://app.example.com", auth_reset_token_ttl_minutes=60)
+
+            auth_api.mailgun_service.assert_available = lambda: (_ for _ in ()).throw(
+                MailgunIntegrationError("Mailgun nu este configurat", status_code=503)
+            )
+            with self.assertRaises(auth_api.HTTPException) as ctx_unconfigured:
+                auth_api.forgot_password(ForgotPasswordRequest(email="u@example.com"))
+            self.assertEqual(ctx_unconfigured.exception.status_code, 503)
+
+            auth_api.mailgun_service.assert_available = lambda: (_ for _ in ()).throw(
+                MailgunIntegrationError("Integrarea Mailgun este dezactivată", status_code=503)
+            )
+            with self.assertRaises(auth_api.HTTPException) as ctx_disabled:
+                auth_api.forgot_password(ForgotPasswordRequest(email="u@example.com"))
+            self.assertEqual(ctx_disabled.exception.status_code, 503)
+        finally:
+            auth_api.rate_limiter_service.check = original_rate
+            auth_api.mailgun_service.assert_available = original_assert
+            auth_api.load_settings = original_settings
+
+    def test_forgot_password_missing_frontend_base_url_returns_clear_error(self):
+        original_rate = auth_api.rate_limiter_service.check
+        original_settings = auth_api.load_settings
+        try:
+            auth_api.rate_limiter_service.check = lambda *args, **kwargs: None
+            auth_api.load_settings = lambda: SimpleNamespace(frontend_base_url="", auth_reset_token_ttl_minutes=60)
+
+            with self.assertRaises(auth_api.HTTPException) as ctx:
+                auth_api.forgot_password(ForgotPasswordRequest(email="u@example.com"))
+            self.assertEqual(ctx.exception.status_code, 503)
+        finally:
+            auth_api.rate_limiter_service.check = original_rate
+            auth_api.load_settings = original_settings
+
     def test_reset_confirm_success_updates_password_and_consumes_token(self):
         original_validate = auth_api.auth_email_tokens_service.validate_password_reset_token
         original_consume = auth_api.auth_email_tokens_service.consume_password_reset_token
