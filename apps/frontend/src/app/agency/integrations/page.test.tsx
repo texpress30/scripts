@@ -13,9 +13,12 @@ vi.mock("./MetaIntegrationCard", () => ({
 vi.mock("./TikTokIntegrationCard", () => ({
   TikTokIntegrationCard: () => <div data-testid="tiktok-card">TikTok Integration Card</div>,
 }));
+vi.mock("./MailgunIntegrationCard", () => ({
+  MailgunIntegrationCard: () => <div data-testid="mailgun-card">Mailgun Integration Card</div>,
+}));
 
 describe("AgencyIntegrationsPage", () => {
-  it("renders integrations page and includes exactly one Meta card and one TikTok card component", async () => {
+  it("renders integrations page and includes exactly one Meta, TikTok, and Mailgun card component", async () => {
     render(<AgencyIntegrationsPage />);
 
     expect(screen.getByText("Google Ads (Production Ready)")).toBeInTheDocument();
@@ -23,5 +26,7 @@ describe("AgencyIntegrationsPage", () => {
     expect(screen.getByText("Meta Integration Card")).toBeInTheDocument();
     expect(screen.getAllByTestId("tiktok-card")).toHaveLength(1);
     expect(screen.getByText("TikTok Integration Card")).toBeInTheDocument();
+    expect(screen.getAllByTestId("mailgun-card")).toHaveLength(1);
+    expect(screen.getByText("Mailgun Integration Card")).toBeInTheDocument();
   });
 });

@@ -15,6 +15,7 @@ from app.api.google_ads import router as google_ads_router
 from app.api.google_accounts import router as google_accounts_router
 from app.api.health import router as health_router
 from app.api.meta_ads import router as meta_ads_router
+from app.api.mailgun import router as mailgun_router
 from app.api.pinterest_ads import router as pinterest_ads_router
 from app.api.snapchat_ads import router as snapchat_ads_router
 from app.api.storage import router as storage_router
@@ -59,6 +60,7 @@ app.include_router(audit_router)
 app.include_router(google_ads_router)
 app.include_router(google_accounts_router)
 app.include_router(meta_ads_router)
+app.include_router(mailgun_router)
 app.include_router(tiktok_ads_router)
 app.include_router(pinterest_ads_router)
 app.include_router(snapchat_ads_router)
