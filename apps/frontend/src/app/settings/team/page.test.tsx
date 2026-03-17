@@ -139,6 +139,120 @@ describe("Settings team page subaccount integration", () => {
     });
   });
 
+
+  it("renders auto-invite checkbox in create form and keeps default unchecked", async () => {
+    render(<SettingsTeamPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+
+    const checkbox = await screen.findByRole("checkbox", { name: "Trimite invitație imediat după creare" });
+    expect(checkbox).not.toBeChecked();
+  });
+
+  it("create without auto-invite does not call invite endpoint", async () => {
+    render(<SettingsTeamPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Prenume" }), { target: { value: "Ana" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Nume" }), { target: { value: "Ionescu" } });
+    fireEvent.change(screen.getByRole("textbox", { name: /Email/i }), { target: { value: "ana@example.com" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
+
+    await waitFor(() => {
+      const postCall = apiRequestMock.mock.calls.find((call) => call[0] === "/team/members" && call[1]?.method === "POST");
+      expect(postCall).toBeTruthy();
+    });
+
+    expect(inviteTeamMemberMock).not.toHaveBeenCalled();
+    expect(await screen.findByText("Utilizator adăugat cu succes.")).toBeInTheDocument();
+  });
+
+  it("create with auto-invite checked calls invite with created membership id", async () => {
+    apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
+      if (path.startsWith("/team/members?")) {
+        return Promise.resolve({ items: [], total: 0, page: 1, page_size: 10 });
+      }
+      if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
+      if (path === "/team/members" && options?.method === "POST") {
+        return Promise.resolve({ item: { id: 1001, membership_id: 777 } });
+      }
+      return Promise.reject(new Error(`Unexpected path: ${path}`));
+    });
+
+    render(<SettingsTeamPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Prenume" }), { target: { value: "Mara" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Nume" }), { target: { value: "Pop" } });
+    fireEvent.change(screen.getByRole("textbox", { name: /Email/i }), { target: { value: "mara@example.com" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Trimite invitație imediat după creare" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
+
+    await waitFor(() => expect(inviteTeamMemberMock).toHaveBeenCalledWith(777));
+    expect(await screen.findByText("Utilizatorul a fost creat și invitația a fost trimisă")).toBeInTheDocument();
+
+    expect(screen.getByRole("button", { name: /Adaugă Utilizator/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    expect(await screen.findByRole("checkbox", { name: "Trimite invitație imediat după creare" })).not.toBeChecked();
+  });
+
+  it("create success + invite 503 shows partial success message", async () => {
+    const { ApiRequestError } = await import("@/lib/api");
+    inviteTeamMemberMock.mockRejectedValueOnce(new ApiRequestError("temporarily unavailable", 503));
+
+    apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
+      if (path.startsWith("/team/members?")) {
+        return Promise.resolve({ items: [], total: 0, page: 1, page_size: 10 });
+      }
+      if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
+      if (path === "/team/members" && options?.method === "POST") {
+        return Promise.resolve({ item: { id: 1002, membership_id: 778 } });
+      }
+      return Promise.reject(new Error(`Unexpected path: ${path}`));
+    });
+
+    render(<SettingsTeamPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Prenume" }), { target: { value: "Dana" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Nume" }), { target: { value: "Iacob" } });
+    fireEvent.change(screen.getByRole("textbox", { name: /Email/i }), { target: { value: "dana@example.com" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Trimite invitație imediat după creare" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
+
+    expect(await screen.findByText(/Utilizatorul a fost creat, dar invitația nu a putut fi trimisă\./i)).toBeInTheDocument();
+    expect(screen.getByText(/Invitațiile sunt indisponibile temporar/i)).toBeInTheDocument();
+  });
+
+  it("create failure does not call invite", async () => {
+    apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
+      if (path.startsWith("/team/members?")) {
+        return Promise.resolve({ items: [], total: 0, page: 1, page_size: 10 });
+      }
+      if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
+      if (path === "/team/members" && options?.method === "POST") {
+        return Promise.reject(new Error("Nu am putut adăuga utilizatorul."));
+      }
+      return Promise.reject(new Error(`Unexpected path: ${path}`));
+    });
+
+    render(<SettingsTeamPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Prenume" }), { target: { value: "Paul" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Nume" }), { target: { value: "Enache" } });
+    fireEvent.change(screen.getByRole("textbox", { name: /Email/i }), { target: { value: "paul@example.com" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Trimite invitație imediat după creare" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
+
+    expect(await screen.findByText("Nu am putut adăuga utilizatorul.")).toBeInTheDocument();
+    expect(inviteTeamMemberMock).not.toHaveBeenCalled();
+  });
+
   it("renders invite action and sends invite with membership id", async () => {
     render(<SettingsTeamPage />);
 

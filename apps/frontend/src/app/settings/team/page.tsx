@@ -78,6 +78,7 @@ export default function SettingsTeamPage() {
   const [subaccount, setSubaccount] = useState("");
   const [subaccountFieldError, setSubaccountFieldError] = useState("");
   const [password, setPassword] = useState("");
+  const [autoInviteAfterCreate, setAutoInviteAfterCreate] = useState(false);
   const [saving, setSaving] = useState(false);
   const [inviteLoadingByMembership, setInviteLoadingByMembership] = useState<Record<number, boolean>>({});
 
@@ -161,6 +162,7 @@ export default function SettingsTeamPage() {
     setSubaccount("");
     setSubaccountFieldError("");
     setPassword("");
+    setAutoInviteAfterCreate(false);
     setAdvancedOpen(false);
   }
 
@@ -221,7 +223,7 @@ export default function SettingsTeamPage() {
     }
 
     try {
-      await apiRequest<{ item: TeamMember }>("/team/members", {
+      const createResponse = await apiRequest<{ item: TeamMember }>("/team/members", {
         method: "POST",
         body: JSON.stringify({
           first_name: firstName,
@@ -236,7 +238,28 @@ export default function SettingsTeamPage() {
           password: advancedOpen ? password : undefined,
         }),
       });
-      showToast("Utilizator adăugat cu succes.");
+
+      if (!autoInviteAfterCreate) {
+        showToast("Utilizator adăugat cu succes.");
+      } else {
+        const createdMembershipId = (() => {
+          const candidate = createResponse.item?.membership_id ?? createResponse.item?.id;
+          if (!Number.isFinite(Number(candidate))) return null;
+          return Number(candidate);
+        })();
+
+        if (createdMembershipId === null) {
+          showToast("Utilizatorul a fost creat, dar invitația nu a putut fi trimisă");
+        } else {
+          try {
+            await inviteTeamMember(createdMembershipId);
+            showToast("Utilizatorul a fost creat și invitația a fost trimisă");
+          } catch (inviteError) {
+            showToast(`Utilizatorul a fost creat, dar invitația nu a putut fi trimisă. ${inviteErrorMessage(inviteError)}`);
+          }
+        }
+      }
+
       resetCreateForm();
       setMode("list");
       setPage(1);
@@ -471,6 +494,17 @@ export default function SettingsTeamPage() {
                       </label>
                     ) : null}
                   </div>
+
+
+                  <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                      checked={autoInviteAfterCreate}
+                      onChange={(e) => setAutoInviteAfterCreate(e.target.checked)}
+                    />
+                    Trimite invitație imediat după creare
+                  </label>
 
                   <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
                     <button type="button" className="wm-btn-secondary" onClick={() => { resetCreateForm(); setMode("list"); }}>

@@ -4597,3 +4597,41 @@
 - [x] Fix: added defensive normalization in `list_members` (safe int parsing + role fallback by scope) and resilient subaccount-options normalization (skip invalid IDs, safe name/label fallbacks), while keeping response contract and invite compatibility.
 - [x] Regression coverage added for both endpoint paths with malformed legacy data.
 - [x] Verification: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q apps/backend/tests/test_team_members_foundation.py apps/backend/tests/test_team_subaccount_api.py apps/backend/tests/test_team_invite_api.py` and `APP_AUTH_SECRET=test-secret PYTHONPATH=apps/backend python -c "from app.main import app; print('ok')"`.
+
+---
+
+# TODO — Sub-account Team UI: Trimite invitație
+
+- [x] Re-auditez pagina `subaccount/[id]/settings/team`, helperii API/session și contractul backend team invite.
+- [x] Refolosesc/conectez helperul `POST /team/members/{membership_id}/invite` în Sub-account Team.
+- [x] Adaug acțiunea UI `Trimite invitație` cu loading per-row, eligibilitate minimă și mesaje clare success/error.
+- [x] Adaug teste frontend compacte pentru render, apel endpoint, loading, success, 403/503 și fallback neeligibil.
+- [x] Rulez testele frontend relevante + build frontend și actualizez review notes.
+
+## Review
+- [x] Sub-account Team afișează acum acțiunea `Trimite invitație` în coloana `Acțiuni`, fără redesign și fără auto-invite la create.
+- [x] UI folosește helperul existent `inviteTeamMember(membershipId)` către `POST /team/members/{membership_id}/invite`.
+- [x] Eligibilitate minimă: buton activ doar când există `membership_id` valid și email valid; fallback neeligibil este disabled cu tooltip clar.
+- [x] Loading este per-row (`Se trimite...`) și nu blochează restul paginii.
+- [x] Erori mapate explicit: 403 permisiuni, 404 membership/user inexistent, 503 indisponibil temporar, fallback generic.
+- [x] Fără modificări backend/auth/forgot/reset pentru acest task; contractul existent include deja `membership_id`.
+- [x] Verificare: `cd apps/frontend && pnpm vitest run src/app/subaccount/[id]/settings/team/page.test.tsx` și `cd apps/frontend && pnpm build`.
+
+---
+
+# TODO — Agency Team: auto-invite opțional după creare user
+
+- [x] Re-auditez Agency Team page + helperi API + contract backend create/invite.
+- [x] Adaug checkbox `Trimite invitație imediat după creare` (default debifat) în formularul Agency Team.
+- [x] Leg create + invite opțional în același submit flow, cu mesaje clare pentru success complet/parțial.
+- [x] Păstrez invite-ul manual existent neschimbat și fără impact pe Sub-account Team.
+- [x] Adaug teste frontend pentru checkbox flow (checked/unchecked, success, partial failure, create failure).
+- [x] Rulez testele frontend relevante + build frontend și actualizez review notes.
+
+## Review
+- [x] Agency Team create form include opțiunea `Trimite invitație imediat după creare` (default debifat), fără redesign major.
+- [x] Create flow rămâne identic când checkbox-ul nu este bifat; când este bifat rulează create + invite în lanț, folosind `membership_id` (fallback `id`) din create response.
+- [x] Success complet: mesaj `Utilizatorul a fost creat și invitația a fost trimisă`.
+- [x] Success parțial: utilizatorul rămâne creat, fără rollback, iar UI afișează mesajul clar `Utilizatorul a fost creat, dar invitația nu a putut fi trimisă ...`.
+- [x] Invite-ul manual din listă a rămas funcțional; Sub-account Team nu a fost modificat.
+- [x] Verificare: `cd apps/frontend && pnpm vitest run src/app/settings/team/page.test.tsx` și `cd apps/frontend && pnpm build`.

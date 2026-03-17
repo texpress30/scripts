@@ -1,7 +1,7 @@
 "use client";
 
 import React, { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Ban, ChevronDown, Copy, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Ban, ChevronDown, Copy, Mail, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useParams } from "next/navigation";
 
 import { AppShell } from "@/components/AppShell";
@@ -11,11 +11,13 @@ import {
   CreateSubaccountTeamMemberPayload,
   SubaccountTeamMemberItem,
   createSubaccountTeamMember,
+  inviteTeamMember,
   listSubaccountTeamMembers,
 } from "@/lib/api";
 
 type TeamUser = {
   id: string;
+  membershipId: number | null;
   prenume: string;
   nume: string;
   email: string;
@@ -65,6 +67,7 @@ function defaultForm(): TeamUserForm {
 function mapMemberToUser(item: SubaccountTeamMemberItem): TeamUser {
   return {
     id: item.display_id,
+    membershipId: Number.isFinite(item.membership_id) ? item.membership_id : null,
     prenume: item.first_name,
     nume: item.last_name,
     email: item.email,
@@ -96,6 +99,25 @@ function getFriendlyCreateError(error: unknown): string {
   return "Nu am putut crea utilizatorul.";
 }
 
+function getFriendlyInviteError(error: unknown): string {
+  if (error instanceof ApiRequestError) {
+    if (error.status === 403) return "Nu ai permisiunea să trimiți invitația pentru acest utilizator.";
+    if (error.status === 404) return "Membership-ul sau utilizatorul nu a fost găsit.";
+    if (error.status === 503) return "Invitațiile sunt indisponibile temporar. Încearcă din nou mai târziu.";
+    if (error.message.trim()) return error.message;
+  }
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return "Nu am putut trimite invitația.";
+}
+
+function hasValidEmail(email: string): boolean {
+  return EMAIL_RE.test(String(email || "").trim());
+}
+
+function canInviteUser(user: TeamUser): boolean {
+  return typeof user.membershipId === "number" && user.membershipId > 0 && hasValidEmail(user.email);
+}
+
 export default function SubAccountTeamPage() {
   const params = useParams<{ id: string }>();
   const parsedSubaccountId = useMemo(() => {
@@ -119,6 +141,8 @@ export default function SubAccountTeamPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [invitingMembershipId, setInvitingMembershipId] = useState<number | null>(null);
 
   const pages = Math.max(1, Math.ceil(total / PER_PAGE));
 
@@ -163,6 +187,24 @@ export default function SubAccountTeamPage() {
   function showToast(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(null), 1800);
+  }
+
+  async function onInvite(user: TeamUser) {
+    if (!canInviteUser(user) || user.membershipId === null) {
+      setInviteError("Invitația nu poate fi trimisă pentru acest utilizator.");
+      return;
+    }
+
+    setInviteError(null);
+    setInvitingMembershipId(user.membershipId);
+    try {
+      const response = await inviteTeamMember(user.membershipId);
+      showToast(response.message || "Invitația a fost trimisă");
+    } catch (error) {
+      setInviteError(getFriendlyInviteError(error));
+    } finally {
+      setInvitingMembershipId((current) => (current === user.membershipId ? null : current));
+    }
   }
 
   function openCreateForm() {
@@ -274,6 +316,7 @@ export default function SubAccountTeamPage() {
                 </div>
 
                 {loadError ? <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{loadError}</p> : null}
+                {inviteError ? <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{inviteError}</p> : null}
                 {isLoading ? <p className="mt-4 text-sm text-slate-500">Se încarcă membrii...</p> : null}
 
                 {!isLoading && !loadError ? (
@@ -312,6 +355,16 @@ export default function SubAccountTeamPage() {
                               </td>
                               <td className="border-b border-slate-100 px-3 py-3">
                                 <div className="flex items-center gap-2 text-slate-500">
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-xs text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    title={canInviteUser(user) ? "Trimite invitație" : "Invitația nu este disponibilă pentru acest rând"}
+                                    disabled={!canInviteUser(user) || invitingMembershipId === user.membershipId}
+                                    onClick={() => { void onInvite(user); }}
+                                  >
+                                    <Mail className="h-3.5 w-3.5" />
+                                    {invitingMembershipId === user.membershipId ? "Se trimite..." : "Trimite invitație"}
+                                  </button>
                                   <button type="button" className="rounded p-1.5 opacity-50" title="Urmează" disabled>
                                     <Pencil className="h-4 w-4" />
                                   </button>

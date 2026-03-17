@@ -6,6 +6,7 @@ import SubAccountTeamPage from "./page";
 
 const listSubaccountTeamMembersMock = vi.fn();
 const createSubaccountTeamMemberMock = vi.fn();
+const inviteTeamMemberMock = vi.fn();
 
 vi.mock("next/navigation", () => ({ useParams: () => ({ id: "96" }) }));
 vi.mock("@/components/ProtectedPage", () => ({ ProtectedPage: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
@@ -23,6 +24,7 @@ vi.mock("@/lib/api", async () => {
     ...actual,
     listSubaccountTeamMembers: (...args: unknown[]) => listSubaccountTeamMembersMock(...args),
     createSubaccountTeamMember: (...args: unknown[]) => createSubaccountTeamMemberMock(...args),
+    inviteTeamMember: (...args: unknown[]) => inviteTeamMemberMock(...args),
   };
 });
 
@@ -30,6 +32,7 @@ describe("SubAccount Team management page", () => {
   beforeEach(() => {
     listSubaccountTeamMembersMock.mockReset();
     createSubaccountTeamMemberMock.mockReset();
+    inviteTeamMemberMock.mockReset();
     listSubaccountTeamMembersMock.mockResolvedValue({
       items: [
         {
@@ -160,6 +163,88 @@ describe("SubAccount Team management page", () => {
     expect(optionTexts).toContain("Subaccount Viewer");
     expect(optionTexts).not.toContain("Agency Admin");
     expect(optionTexts).not.toContain("Agency Member");
+  });
+
+  it("renders invite action and calls endpoint with membership_id", async () => {
+    inviteTeamMemberMock.mockResolvedValue({ message: "Invitația a fost trimisă" });
+
+    render(<SubAccountTeamPage />);
+
+    const inviteButtons = await screen.findAllByRole("button", { name: /Trimite invitație/i });
+    expect(inviteButtons[0]).toBeEnabled();
+
+    fireEvent.click(inviteButtons[0]);
+
+    await waitFor(() => {
+      expect(inviteTeamMemberMock).toHaveBeenCalledWith(1);
+    });
+    expect(await screen.findByText("Invitația a fost trimisă")).toBeInTheDocument();
+  });
+
+  it("shows per-row loading during invite", async () => {
+    let resolveInvite: ((value: { message: string }) => void) | null = null;
+    inviteTeamMemberMock.mockReturnValue(new Promise((resolve) => {
+      resolveInvite = resolve;
+    }));
+
+    render(<SubAccountTeamPage />);
+
+    const inviteButtons = await screen.findAllByRole("button", { name: /Trimite invitație/i });
+    fireEvent.click(inviteButtons[0]);
+
+    expect(await screen.findByRole("button", { name: /Se trimite.../i })).toBeDisabled();
+    expect(inviteButtons[1]).toBeEnabled();
+
+    resolveInvite?.({ message: "Invitația a fost trimisă" });
+    await waitFor(() => expect(screen.getByText("Invitația a fost trimisă")).toBeInTheDocument());
+  });
+
+  it("shows friendly 403 and 503 invite errors", async () => {
+    const { ApiRequestError } = await import("@/lib/api");
+    inviteTeamMemberMock.mockRejectedValueOnce(new ApiRequestError("forbidden", 403));
+
+    render(<SubAccountTeamPage />);
+    const inviteButtons = await screen.findAllByRole("button", { name: /Trimite invitație/i });
+    fireEvent.click(inviteButtons[0]);
+
+    expect(await screen.findByText("Nu ai permisiunea să trimiți invitația pentru acest utilizator.")).toBeInTheDocument();
+
+    inviteTeamMemberMock.mockRejectedValueOnce(new ApiRequestError("down", 503));
+    fireEvent.click(inviteButtons[0]);
+    expect(await screen.findByText("Invitațiile sunt indisponibile temporar. Încearcă din nou mai târziu.")).toBeInTheDocument();
+  });
+
+  it("disables invite when membership_id is missing", async () => {
+    listSubaccountTeamMembersMock.mockResolvedValueOnce({
+      items: [
+        {
+          membership_id: Number.NaN,
+          user_id: 10,
+          display_id: "TM-NA",
+          first_name: "Fara",
+          last_name: "Membership",
+          email: "fara@example.com",
+          phone: "",
+          extension: "",
+          role_key: "subaccount_user",
+          role_label: "Subaccount User",
+          source_scope: "subaccount",
+          source_label: "Client 96",
+          is_active: true,
+          is_inherited: false,
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 5,
+      subaccount_id: 96,
+    });
+
+    render(<SubAccountTeamPage />);
+
+    const inviteButton = await screen.findByTitle("Invitația nu este disponibilă pentru acest rând");
+    expect(inviteButton).toBeDisabled();
+    expect(inviteTeamMemberMock).not.toHaveBeenCalled();
   });
 
   it("shows clear 403 access message", async () => {
