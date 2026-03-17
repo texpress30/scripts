@@ -4653,3 +4653,20 @@
 - [x] `enforce_subaccount_action` validează accesul pe `allowed_subaccount_ids` când există; altfel păstrează fallback-ul legacy bazat pe `subaccount_id`/`primary_subaccount_id`.
 - [x] Agency/special roles și env-admin fallback rămân funcționale (acoperite de testele existente + actualizate).
 - [x] Verificare: `APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q apps/backend/tests/test_auth_db_login.py apps/backend/tests/test_team_subaccount_api.py apps/backend/tests/test_auth_role_normalization.py` și `APP_AUTH_SECRET=test-secret PYTHONPATH=apps/backend python -c "from app.main import app; print('ok')"`.
+
+---
+
+# TODO — Frontend post-login pentru sesiune multi-subaccount
+
+- [x] Re-auditez `session.ts`, `AppShell.tsx`, `login/page.tsx` și contractul backend auth/token.
+- [x] Extind parserul de sesiune pentru context multi-subaccount + helperi comuni (`allowed_subaccount_ids`, `primary_subaccount_id`) cu compatibilitate token vechi.
+- [x] Filtrez AppShell/switcher pe sub-account-uri permise și adaug comportament direct-entry când există unul singur.
+- [x] Adaug guard frontend pentru URL sub-account nepermis cu redirect safe (primary/primul permis/fallback).
+- [x] Adaug teste frontend compacte pentru parser, filtrare, redirect single/multi, URL forbidden și regresie agency/global.
+- [x] Rulez testele frontend relevante + build frontend și documentez rezultatele.
+
+## Review
+- [x] `session.ts` expune acum contextul complet al sesiunii (`allowed_subaccount_ids`, `allowed_subaccounts`, `primary_subaccount_id`) și păstrează fallback pentru token legacy cu `subaccount_id`.
+- [x] `AppShell` filtrează lista de clienți după acces permis, completează lipsurile din metadata token și aplică guard pentru URL-uri `/sub/:id` nepermise cu redirect sigur către sub-account valid.
+- [x] Login-ul redirecționează utilizatorii scoped direct pe dashboard-ul sub-account-ului sigur (unic sau primary), păstrând fallback agency pentru roluri globale.
+- [x] Teste noi/adaptate pentru parser sesiune și helper-ele AppShell (filtrare + decizie guard) rulează cu succes; build frontend validat.

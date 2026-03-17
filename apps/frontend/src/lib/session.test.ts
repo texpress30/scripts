@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { getCurrentRole, getSessionInfo, isReadOnlyRole, normalizeAppRole } from "./session";
+import {
+  getAllowedSubaccountIds,
+  getCurrentRole,
+  getPrimarySubaccountId,
+  getSessionAccessContext,
+  getSessionAccessContextFromToken,
+  getSessionInfo,
+  isReadOnlyRole,
+  normalizeAppRole,
+} from "./session";
 
 function makeToken(payload: Record<string, unknown>) {
   const encoded = Buffer.from(JSON.stringify(payload), "utf-8").toString("base64url");
@@ -26,24 +35,60 @@ describe("session role normalization", () => {
     expect(isReadOnlyRole("subaccount_user")).toBe(false);
   });
 
-  it("parses old and new token payloads without breaking compatibility", () => {
-    localStorage.setItem("mcc_token", makeToken({ email: "old@example.com", role: "agency_admin" }));
-    expect(getCurrentRole()).toBe("agency_admin");
-    expect(getSessionInfo().email).toBe("old@example.com");
+  it("parses legacy single-subaccount token into allowed list", () => {
+    localStorage.setItem(
+      "mcc_token",
+      makeToken({
+        email: "legacy@example.com",
+        role: "subaccount_user",
+        scope_type: "subaccount",
+        subaccount_id: 3,
+        subaccount_name: "Client Legacy",
+      })
+    );
 
+    const context = getSessionAccessContext();
+    expect(getCurrentRole()).toBe("subaccount_user");
+    expect(getSessionInfo().email).toBe("legacy@example.com");
+    expect(context.allowed_subaccount_ids).toEqual([3]);
+    expect(context.primary_subaccount_id).toBe(3);
+    expect(getAllowedSubaccountIds()).toEqual([3]);
+    expect(getPrimarySubaccountId()).toBe(3);
+  });
+
+  it("parses multi-subaccount token payload and keeps listed primary", () => {
     localStorage.setItem(
       "mcc_token",
       makeToken({
         email: "new@example.com",
         role: "subaccount_user",
-        user_id: 7,
-        scope_type: "subaccount",
-        membership_id: 22,
-        subaccount_id: 3,
-        subaccount_name: "Client A",
+        access_scope: "subaccount",
+        allowed_subaccount_ids: [5, 8],
+        allowed_subaccounts: [
+          { id: 5, name: "Client A" },
+          { id: 8, name: "Client B" },
+        ],
+        primary_subaccount_id: 8,
       })
     );
-    expect(getCurrentRole()).toBe("subaccount_user");
-    expect(getSessionInfo().email).toBe("new@example.com");
+
+    const context = getSessionAccessContext();
+    expect(context.allowed_subaccount_ids).toEqual([5, 8]);
+    expect(context.allowed_subaccounts.map((entry) => entry.name)).toEqual(["Client A", "Client B"]);
+    expect(context.primary_subaccount_id).toBe(8);
+  });
+
+  it("provides token parser helper for login routing decisions", () => {
+    const token = makeToken({
+      email: "login@example.com",
+      role: "subaccount_viewer",
+      allowed_subaccount_ids: [42],
+      access_scope: "subaccount",
+    });
+
+    const context = getSessionAccessContextFromToken(token);
+    expect(context.role).toBe("subaccount_viewer");
+    expect(context.allowed_subaccount_ids).toEqual([42]);
+    expect(context.primary_subaccount_id).toBe(42);
   });
 });

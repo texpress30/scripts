@@ -7,6 +7,7 @@ import React, { FormEvent, useEffect, useState } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiRequest } from "@/lib/api";
+import { getSessionAccessContextFromToken } from "@/lib/session";
 
 type LoginResponse = {
   access_token: string;
@@ -41,7 +42,22 @@ export default function LoginPage() {
 
       localStorage.setItem("mcc_token", data.access_token);
       localStorage.setItem("mcc_user", email);
-      router.push("/agency/dashboard");
+
+      const context = getSessionAccessContextFromToken(data.access_token);
+      const shouldUseSubaccountRoute =
+        context.role === "subaccount_admin" ||
+        context.role === "subaccount_user" ||
+        context.role === "subaccount_viewer" ||
+        context.role === "account_manager" ||
+        context.role === "client_viewer";
+
+      if (shouldUseSubaccountRoute && context.allowed_subaccount_ids.length === 1) {
+        router.push(`/sub/${context.allowed_subaccount_ids[0]}/dashboard`);
+      } else if (shouldUseSubaccountRoute && context.primary_subaccount_id !== null) {
+        router.push(`/sub/${context.primary_subaccount_id}/dashboard`);
+      } else {
+        router.push("/agency/dashboard");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
