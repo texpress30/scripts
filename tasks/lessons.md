@@ -338,3 +338,27 @@
 - 2026-03-13: When converting read paths to optional/no-range fetching, harden helper method signatures and guard null date comparisons (`None > None`) before rollout; add regression tests for no-range automated-only/manual-only mixes.
 - 2026-03-13: For frontend currency labels, never display a fabricated hardcoded fallback (e.g., USD) when metadata is missing; prefer real source priority (table -> client context) then neutral placeholder.
 - 2026-03-16: După feedback că schimbarea pentru "Echipa Mea" a deviat spre listă/tabel, la task-uri de UI trebuie revalidat explicit ecranul țintă și fluxul cerut (ex. wizard Add/Edit) înainte de implementare, fără a înlocui produsul cu altă interfață necerută.
+- 2026-03-16: După feedback că soluția precedentă nu a adresat taskul real, la cereri de UI trebuie livrată implementarea efectivă în ruta țintă (component + teste), nu doar actualizare de documentație/task list.
+- 2026-03-16: După feedback că taskul a fost mutat greșit pe frontend, pentru cerințe backend-only livrează fundația de date/API + teste fără redesign UI și fără schimbări de login dacă sunt explicit out-of-scope.
+- 2026-03-16: După feedback pe Agency Team, când backend livrează endpoint dedicat de options, frontendul trebuie legat la acel endpoint (fără opțiuni hardcodate) și validarea dependentă de tip utilizator trebuie acoperită prin teste de submit payload.
+- 2026-03-16: Pentru psycopg3, evită parametrizarea DDL (`CREATE TABLE ... DEFAULT %s`); folosește SQL static sau `sql.Literal`, altfel startup poate crăpa cu `IndeterminateDatatype`.
+- 2026-03-16: La migrarea rolurilor, normalizează central aliasurile legacy înainte de verificări RBAC/Auth și testează explicit mapping-ul (`account_manager`/`client_viewer`) ca să eviți regressii de compatibilitate.
+- 2026-03-16: Când userul cere auth DB-first, prioritizează explicit validarea membership-ului la login (inclusiv caz ambiguu 409) și păstrează fallback-ul env admin strict ca mecanism de urgență.
+- 2026-03-16: Pentru endpointuri sub-account, aplică enforcement în doi pași: întâi RBAC scope `subaccount`, apoi restricție pe `subaccount_id` din token pentru rolurile `subaccount_*`; nu te baza doar pe rol.
+- 2026-03-16: După renumirea/helper unificarea funcțiilor de hash, caută global referințele legacy (ex. `_hash_password`) înainte de livrare și rulează startup import check pentru a preveni NameError la boot.
+- 2026-03-16: Când primești un crash report pe o linie specifică, rulează imediat verificările exacte cerute (`rg '_hash_password\('` + startup import) înainte de a presupune că fixul precedent nu a fost aplicat.
+- 2026-03-17: Când utilizatorul semnalează că o pagină frontend folosește încă mock-uri locale, verifică explicit constantele de tip `INITIAL_*` și acțiunile locale CRUD, apoi înlocuiește-le cu apeluri reale + refetch.
+- 2026-03-17: Pentru integrări noi agency-level, reutilizează `integration_secrets_store` + patternul de router/audit/RBAC existent; evită sisteme paralele și testează explicit masking-ul secretelor în status/read endpoints.
+- 2026-03-17: Pentru carduri de integrare care colectează secrete (ex. API keys), UI-ul trebuie să afișeze exclusiv valori mascate din backend și să ceară reintroducerea secretului la update, fără prefill sensibil.
+- 2026-03-17: La flow-uri forgot/reset, păstrează răspunsul generic pentru email necunoscut (anti-enumeration), stochează doar hash-ul tokenului și marchează tokenurile one-time cu expirare + consumed_at.
+- 2026-03-17: După corecție pe scope auth reset, când taskul cere explicit foundation backend-only trebuie eliminate endpointurile/features out-of-scope (ex. forgot-password și Mailgun send) și livrat strict contractul cerut.
+- 2026-03-17: Când taskul următor reactivează explicit forgot-password + Mailgun peste fundația reset, trebuie reintrodus endpointul incremental fără a atinge login/impersonation și cu răspuns generic anti-enumeration.
+- 2026-03-17: Pentru pagini App Router care citesc query params în client components, evită blocajele de build cu `useSearchParams` în rute statice; folosește fallback robust (ex. citire din `window.location.search` în `useEffect`) dacă nu vrei Suspense boundary.
+- 2026-03-17: Pentru invite backend pe memberships existente, aplică autorizare în funcție de `scope_type` al membership-ului (agency vs subaccount) și reutilizează `reset-password/confirm` pentru consumul tokenurilor `invite_user` fără schimbarea contractului public.
+
+- 2026-03-17: Pentru acțiuni UI per-rând (ex. invite), păstrează loading local pe item și mapează explicit codurile backend critice (403/404/503) în mesaje UX clare, fără blocarea întregii pagini.
+
+## 2026-03-17 — Respect bug-report scope before adjacent hotfixes
+- When user reports a concrete production blocker on specific endpoints, reproduce and fix those endpoints first before touching adjacent auth flows.
+- Add an explicit “scope guard” checklist item in `tasks/todo.md` naming out-of-scope endpoints to avoid drift.
+- For 500 regressions on list endpoints, always test malformed legacy rows (invalid IDs/unknown role keys/null-ish fields) to prevent serialization crashes.
