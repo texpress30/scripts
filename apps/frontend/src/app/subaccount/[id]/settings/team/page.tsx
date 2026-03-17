@@ -313,8 +313,6 @@ export default function SubAccountTeamPage() {
     setSelectedModuleKeys((prev) => (prev.includes(moduleKey) ? prev.filter((key) => key !== moduleKey) : [...prev, moduleKey]));
   }
 
-  const isInvalidSubaccount = parsedSubaccountId === null;
-
   return (
     <ProtectedPage>
       <AppShell title="Setări sub-account">
