@@ -5,7 +5,7 @@ import { Camera, ChevronLeft, Loader2, Pencil, Search, Trash2, UserCircle2 } fro
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
-import { ApiRequestError, apiRequest, inviteTeamMember } from "@/lib/api";
+import { ApiRequestError, TeamModuleCatalogItem, apiRequest, getTeamModuleCatalog, inviteTeamMember } from "@/lib/api";
 
 type TeamMember = {
   id: number;
@@ -20,6 +20,7 @@ type TeamMember = {
   user_role: string;
   location: string;
   subaccount: string;
+  module_keys?: string[];
 };
 
 type TeamListResponse = {
@@ -37,6 +38,12 @@ type SubaccountOption = {
 
 type SubaccountOptionsResponse = {
   items: SubaccountOption[];
+};
+
+type ModuleCatalogItem = {
+  key: string;
+  label: string;
+  order: number;
 };
 
 const PAGE_SIZE = 10;
@@ -65,6 +72,9 @@ export default function SettingsTeamPage() {
   const [subaccountOptions, setSubaccountOptions] = useState<SubaccountOption[]>([]);
   const [subaccountOptionsLoading, setSubaccountOptionsLoading] = useState(false);
   const [subaccountOptionsError, setSubaccountOptionsError] = useState("");
+  const [moduleCatalog, setModuleCatalog] = useState<ModuleCatalogItem[]>([]);
+  const [moduleCatalogLoading, setModuleCatalogLoading] = useState(false);
+  const [moduleCatalogError, setModuleCatalogError] = useState("");
 
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [firstName, setFirstName] = useState("");
@@ -77,6 +87,8 @@ export default function SettingsTeamPage() {
   const [location, setLocation] = useState("România");
   const [subaccount, setSubaccount] = useState("");
   const [subaccountFieldError, setSubaccountFieldError] = useState("");
+  const [moduleFieldError, setModuleFieldError] = useState("");
+  const [selectedModuleKeys, setSelectedModuleKeys] = useState<string[]>([]);
   const [password, setPassword] = useState("");
   const [autoInviteAfterCreate, setAutoInviteAfterCreate] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -108,6 +120,32 @@ export default function SettingsTeamPage() {
     }
   }
 
+  async function loadModuleCatalog() {
+    setModuleCatalogLoading(true);
+    setModuleCatalogError("");
+    try {
+      const data = await getTeamModuleCatalog("subaccount");
+      const normalized = (data.items ?? [])
+        .map((item: TeamModuleCatalogItem) => ({
+          key: String(item.key ?? "").trim().toLowerCase(),
+          label: String(item.label ?? "").trim() || String(item.key ?? "").trim(),
+          order: Number(item.order ?? 0),
+        }))
+        .filter((item) => item.key !== "")
+        .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
+      setModuleCatalog(normalized);
+      setSelectedModuleKeys((prev) => {
+        if (prev.length > 0) return prev;
+        return normalized.map((item) => item.key);
+      });
+    } catch (err) {
+      setModuleCatalog([]);
+      setModuleCatalogError(err instanceof Error ? err.message : "Nu am putut încărca modulele disponibile.");
+    } finally {
+      setModuleCatalogLoading(false);
+    }
+  }
+
   async function loadMembers() {
     setLoadingMembers(true);
     setErrorMessage("");
@@ -135,6 +173,7 @@ export default function SettingsTeamPage() {
 
   useEffect(() => {
     void loadSubaccountOptions();
+    void loadModuleCatalog();
   }, []);
 
   useEffect(() => {
@@ -147,6 +186,7 @@ export default function SettingsTeamPage() {
     if (userType === "agency") {
       setSubaccount("");
       setSubaccountFieldError("");
+      setModuleFieldError("");
     }
   }, [userType]);
 
@@ -161,6 +201,8 @@ export default function SettingsTeamPage() {
     setLocation("România");
     setSubaccount("");
     setSubaccountFieldError("");
+    setModuleFieldError("");
+    setSelectedModuleKeys(moduleCatalog.map((item) => item.key));
     setPassword("");
     setAutoInviteAfterCreate(false);
     setAdvancedOpen(false);
@@ -215,6 +257,7 @@ export default function SettingsTeamPage() {
     setSaving(true);
     setErrorMessage("");
     setSubaccountFieldError("");
+    setModuleFieldError("");
 
     if (userType === "client" && !subaccount.trim()) {
       setSaving(false);
@@ -222,21 +265,33 @@ export default function SettingsTeamPage() {
       return;
     }
 
+    const shouldSendModuleKeys = userType === "client" && subaccount.trim() !== "" && moduleCatalog.length > 0;
+    if (shouldSendModuleKeys && selectedModuleKeys.length === 0) {
+      setSaving(false);
+      setModuleFieldError("Selectează cel puțin un modul pentru utilizatorul de tip client.");
+      return;
+    }
+
     try {
+      const payload: Record<string, unknown> = {
+        first_name: firstName,
+        last_name: lastName,
+        email,
+        phone,
+        extension,
+        user_type: userType,
+        user_role: userRole,
+        location,
+        subaccount: userType === "client" ? subaccount : "",
+        password: advancedOpen ? password : undefined,
+      };
+      if (shouldSendModuleKeys) {
+        payload.module_keys = selectedModuleKeys;
+      }
+
       const createResponse = await apiRequest<{ item: TeamMember }>("/team/members", {
         method: "POST",
-        body: JSON.stringify({
-          first_name: firstName,
-          last_name: lastName,
-          email,
-          phone,
-          extension,
-          user_type: userType,
-          user_role: userRole,
-          location,
-          subaccount: userType === "client" ? subaccount : "",
-          password: advancedOpen ? password : undefined,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!autoInviteAfterCreate) {
@@ -265,10 +320,32 @@ export default function SettingsTeamPage() {
       setPage(1);
       void loadMembers();
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : "Nu am putut adăuga utilizatorul.");
+      if (err instanceof ApiRequestError) {
+        if (err.message.toLowerCase().includes("modul invalid")) {
+          setErrorMessage(`Modulele selectate sunt invalide. ${err.message}`);
+        } else if (err.message.toLowerCase().includes("module_keys este permis doar")) {
+          setErrorMessage("Permisiunile pe module sunt disponibile doar pentru utilizatorii de tip client/sub-account.");
+        } else {
+          setErrorMessage(err.message || "Nu am putut adăuga utilizatorul.");
+        }
+      } else {
+        setErrorMessage(err instanceof Error ? err.message : "Nu am putut adăuga utilizatorul.");
+      }
     } finally {
       setSaving(false);
     }
+  }
+
+  const shouldShowModulePermissions = userType === "client" && subaccount.trim() !== "";
+
+  function toggleModule(moduleKey: string) {
+    setSelectedModuleKeys((prev) => {
+      if (prev.includes(moduleKey)) {
+        return prev.filter((key) => key !== moduleKey);
+      }
+      return [...prev, moduleKey];
+    });
+    setModuleFieldError("");
   }
 
   return (
@@ -482,6 +559,31 @@ export default function SettingsTeamPage() {
                       {subaccountFieldError ? <p className="mt-1 text-xs text-red-600">{subaccountFieldError}</p> : null}
                     </label>
                   </div>
+
+                  {shouldShowModulePermissions ? (
+                    <section className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <h3 className="text-sm font-semibold text-slate-900">Roluri și Permisiuni</h3>
+                      <p className="text-xs text-slate-600">Rolul selectat rămâne baza de acces. Modulele de mai jos restrâng ce vede utilizatorul în sub-account.</p>
+                      {moduleCatalogLoading ? <p className="text-xs text-slate-500">Se încarcă modulele...</p> : null}
+                      {moduleCatalogError ? <p className="text-xs text-red-600">Nu am putut încărca modulele: {moduleCatalogError}</p> : null}
+                      {!moduleCatalogLoading && moduleCatalog.length > 0 ? (
+                        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                          {moduleCatalog.map((moduleItem) => (
+                            <label key={moduleItem.key} className="inline-flex items-center gap-2 rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-700">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                                checked={selectedModuleKeys.includes(moduleItem.key)}
+                                onChange={() => toggleModule(moduleItem.key)}
+                              />
+                              {moduleItem.label}
+                            </label>
+                          ))}
+                        </div>
+                      ) : null}
+                      {moduleFieldError ? <p className="text-xs text-red-600">{moduleFieldError}</p> : null}
+                    </section>
+                  ) : null}
 
                   <div>
                     <button type="button" className="text-sm font-medium text-indigo-600 hover:text-indigo-700" onClick={() => setAdvancedOpen((prev) => !prev)}>

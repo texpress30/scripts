@@ -336,6 +336,18 @@ export type CreateSubaccountTeamMemberPayload = {
   extension?: string;
   user_role?: "subaccount_admin" | "subaccount_user" | "subaccount_viewer";
   password?: string;
+  module_keys?: string[];
+};
+
+export type TeamModuleCatalogItem = {
+  key: string;
+  label: string;
+  order: number;
+  scope: string;
+};
+
+export type TeamModuleCatalogResponse = {
+  items: TeamModuleCatalogItem[];
 };
 
 export async function listSubaccountTeamMembers(params: ListSubaccountTeamMembersParams): Promise<SubaccountTeamMemberListResponse> {
@@ -352,6 +364,10 @@ export async function createSubaccountTeamMember(subaccountId: number, payload: 
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function getTeamModuleCatalog(scope: "subaccount" = "subaccount"): Promise<TeamModuleCatalogResponse> {
+  return apiRequest<TeamModuleCatalogResponse>(`/team/module-catalog?scope=${encodeURIComponent(scope)}`);
 }
 
 

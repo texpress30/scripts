@@ -4691,3 +4691,24 @@
 - [x] Grant ceiling este activ: actorii subaccount pot acorda doar subset din modulele proprii pentru sub-account-ul țintă.
 - [x] API-ul expune catalogul de module (`/team/module-catalog`) și returnează `module_keys` în response-urile de team memberships.
 - [x] Testele backend țintite + startup check backend au fost rulate pentru validare.
+
+---
+
+# TODO — Agency Team UI: Roluri și Permisiuni (module on/off) pentru create user client
+
+- [x] Re-auditez Agency Team page + contract backend (`/team/module-catalog`, `module_keys` create team member).
+- [x] Adaug helper frontend pentru catalog module (`GET /team/module-catalog?scope=subaccount`).
+- [x] Încarc catalogul și afișez secțiunea de module doar pentru create user de tip client cu sub-cont selectat.
+- [x] Setez implicit toate modulele selectate și permit toggle on/off cu state persistent în flow.
+- [x] Trimit `module_keys` doar pentru create user client; nu trimit pentru agency.
+- [x] Adaug validare frontend minim 1 modul selectat pentru secțiunea activă.
+- [x] Adaug handling clar pentru erori backend `module_keys`.
+- [x] Adaug teste frontend țintite pentru catalog/render/toggle/payload/validare/erori.
+- [x] Rulez testele frontend relevante + build frontend și documentez rezultatele.
+
+## Review
+- [x] Agency Team folosește acum catalogul backend de module și permite setarea explicită on/off a modulelor în create flow-ul userilor client/sub-account.
+- [x] Role picker-ul rămâne separat și obligatoriu; modulele sunt trimise doar ca restricții suplimentare (`module_keys`).
+- [x] Pentru agency users, secțiunea de module nu este afișată și payload-ul de create rămâne fără `module_keys`.
+- [x] Frontend blochează submit-ul când toate modulele sunt debifate în contextul client/sub-account.
+- [x] Invite/auto-invite și restul fluxului Agency Team au fost păstrate.
