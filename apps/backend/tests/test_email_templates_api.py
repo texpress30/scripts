@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from app.api import email_templates as email_templates_api
 from app.services.auth import AuthUser
-from app.services.email_templates import EffectiveEmailTemplate, EmailTemplatesService
+from app.services.email_templates import EmailTemplatePreviewResult, EffectiveEmailTemplate, EmailTemplatesService
 
 
 class _FakeCursor:
@@ -176,6 +176,15 @@ class EmailTemplatesApiTests(unittest.TestCase):
                 email_templates_api.reset_agency_email_template(template_key="does_not_exist", user=user)
             self.assertEqual(reset_ctx.exception.status_code, 404)
 
+        with patch.object(email_templates_api.email_templates_service, "render_template_preview", return_value=None):
+            with self.assertRaises(email_templates_api.HTTPException) as preview_ctx:
+                email_templates_api.preview_agency_email_template(
+                    template_key="does_not_exist",
+                    payload=email_templates_api.AgencyEmailTemplatePreviewRequest(),
+                    user=user,
+                )
+            self.assertEqual(preview_ctx.exception.status_code, 404)
+
     def test_save_validation_subject_and_text_required(self):
         user = AuthUser(email="admin@example.com", role="agency_admin")
         with patch.object(email_templates_api.email_templates_service, "save_override", side_effect=ValueError("subject este obligatoriu")):
@@ -233,6 +242,107 @@ class EmailTemplatesApiTests(unittest.TestCase):
         with patch.object(service, "get_effective_template", return_value=None):
             rendered = service.render_effective_template(template_key="missing", variables={"a": "b"})
         self.assertIsNone(rendered)
+
+    def test_preview_default_auth_forgot_password_uses_canonical_samples(self):
+        service = EmailTemplatesService()
+        with patch.object(service, "get_effective_template") as mock_effective:
+            mock_effective.return_value = EffectiveEmailTemplate(
+                key="auth_forgot_password",
+                label="Auth · Forgot Password",
+                description="desc",
+                subject="Resetare pentru {{user_email}}",
+                text_body="Folosește {{reset_link}} în {{expires_minutes}} minute",
+                html_body="<a href='{{reset_link}}'>Reset</a>",
+                available_variables=("reset_link", "expires_minutes", "user_email"),
+                scope="agency",
+                enabled=False,
+                is_overridden=False,
+                updated_at=None,
+            )
+            preview = service.render_template_preview(template_key="auth_forgot_password")
+
+        self.assertIsNotNone(preview)
+        assert preview is not None
+        self.assertEqual(preview.key, "auth_forgot_password")
+        self.assertIn("preview.user@example.com", preview.rendered_subject)
+        self.assertIn("https://app.example.com/reset-password", preview.rendered_text_body)
+        self.assertIn("60", preview.rendered_text_body)
+
+    def test_preview_default_team_invite_user_uses_canonical_samples(self):
+        service = EmailTemplatesService()
+        with patch.object(service, "get_effective_template") as mock_effective:
+            mock_effective.return_value = EffectiveEmailTemplate(
+                key="team_invite_user",
+                label="Team · Invite User",
+                description="desc",
+                subject="Invitație pentru {{user_email}}",
+                text_body="Activează contul: {{invite_link}}",
+                html_body="<a href='{{invite_link}}'>Activează</a>",
+                available_variables=("invite_link", "expires_minutes", "user_email"),
+                scope="agency",
+                enabled=True,
+                is_overridden=False,
+                updated_at=None,
+            )
+            preview = service.render_template_preview(template_key="team_invite_user")
+
+        self.assertIsNotNone(preview)
+        assert preview is not None
+        self.assertIn("https://app.example.com/activate-invite", preview.rendered_text_body)
+        self.assertEqual(preview.sample_variables["user_email"], "preview.user@example.com")
+
+    def test_preview_uses_saved_override_when_no_draft_values_sent(self):
+        service = EmailTemplatesService()
+        with patch.object(service, "get_effective_template") as mock_effective:
+            mock_effective.return_value = EffectiveEmailTemplate(
+                key="team_invite_user",
+                label="Team · Invite User",
+                description="desc",
+                subject="Subiect override {{user_email}}",
+                text_body="Body override {{invite_link}}",
+                html_body="<p>Override {{invite_link}}</p>",
+                available_variables=("invite_link", "expires_minutes", "user_email"),
+                scope="agency",
+                enabled=False,
+                is_overridden=True,
+                updated_at=None,
+            )
+            preview = service.render_template_preview(template_key="team_invite_user")
+
+        self.assertIsNotNone(preview)
+        assert preview is not None
+        self.assertTrue(preview.is_overridden)
+        self.assertIn("Subiect override", preview.rendered_subject)
+        self.assertIn("activate-invite", preview.rendered_text_body)
+
+    def test_preview_uses_draft_values_when_sent_in_request(self):
+        service = EmailTemplatesService()
+        with patch.object(service, "get_effective_template") as mock_effective:
+            mock_effective.return_value = EffectiveEmailTemplate(
+                key="auth_forgot_password",
+                label="Auth · Forgot Password",
+                description="desc",
+                subject="Persisted {{user_email}}",
+                text_body="Persisted text {{reset_link}}",
+                html_body="<p>Persisted html</p>",
+                available_variables=("reset_link", "expires_minutes", "user_email"),
+                scope="agency",
+                enabled=True,
+                is_overridden=True,
+                updated_at=None,
+            )
+            preview = service.render_template_preview(
+                template_key="auth_forgot_password",
+                subject="Draft {{user_email}}",
+                text_body="Draft {{reset_link}}",
+                html_body="<strong>Draft {{expires_minutes}}</strong>",
+            )
+
+        self.assertIsNotNone(preview)
+        assert preview is not None
+        self.assertIn("Draft preview.user@example.com", preview.rendered_subject)
+        self.assertIn("reset-password", preview.rendered_text_body)
+        self.assertIn("60", preview.rendered_html_body)
 
     def test_service_save_override_enforces_required_subject_and_text(self):
         service = EmailTemplatesService()
@@ -293,6 +403,36 @@ class EmailTemplatesApiTests(unittest.TestCase):
                 user=user,
             )
         self.assertEqual(put_ctx.exception.status_code, 403)
+
+        with self.assertRaises(email_templates_api.HTTPException) as preview_ctx:
+            email_templates_api.preview_agency_email_template(
+                template_key="auth_forgot_password",
+                payload=email_templates_api.AgencyEmailTemplatePreviewRequest(),
+                user=user,
+            )
+        self.assertEqual(preview_ctx.exception.status_code, 403)
+
+    def test_preview_endpoint_uses_service_and_returns_rendered_payload(self):
+        user = AuthUser(email="admin@example.com", role="agency_admin")
+        with patch.object(email_templates_api.email_templates_service, "render_template_preview") as mock_preview:
+            mock_preview.return_value = EmailTemplatePreviewResult(
+                key="auth_forgot_password",
+                rendered_subject="Rendered subject",
+                rendered_text_body="Rendered text",
+                rendered_html_body="<p>Rendered html</p>",
+                sample_variables={"reset_link": "https://example/reset"},
+                is_overridden=True,
+            )
+            resp = email_templates_api.preview_agency_email_template(
+                template_key="auth_forgot_password",
+                payload=email_templates_api.AgencyEmailTemplatePreviewRequest(subject="Draft"),
+                user=user,
+            )
+
+        self.assertEqual(resp.key, "auth_forgot_password")
+        self.assertEqual(resp.rendered_subject, "Rendered subject")
+        self.assertEqual(resp.sample_variables["reset_link"], "https://example/reset")
+        mock_preview.assert_called_once()
 
     def test_existing_read_endpoints_still_work_with_new_fields(self):
         user = AuthUser(email="admin@example.com", role="agency_admin")

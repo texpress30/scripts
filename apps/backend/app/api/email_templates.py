@@ -5,6 +5,8 @@ from app.schemas.email_templates import (
     AgencyEmailTemplateDetailResponse,
     AgencyEmailTemplateListItem,
     AgencyEmailTemplateListResponse,
+    AgencyEmailTemplatePreviewRequest,
+    AgencyEmailTemplatePreviewResponse,
     AgencyEmailTemplateUpsertRequest,
 )
 from app.services.auth import AuthUser
@@ -96,3 +98,28 @@ def reset_agency_email_template(
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template inexistent")
     return _serialize_template(item)
+
+
+@router.post("/{template_key}/preview", response_model=AgencyEmailTemplatePreviewResponse)
+def preview_agency_email_template(
+    template_key: str,
+    payload: AgencyEmailTemplatePreviewRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> AgencyEmailTemplatePreviewResponse:
+    _enforce_agency_admin(user)
+    preview = email_templates_service.render_template_preview(
+        template_key=template_key,
+        subject=payload.subject,
+        text_body=payload.text_body,
+        html_body=payload.html_body,
+    )
+    if preview is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template inexistent")
+    return AgencyEmailTemplatePreviewResponse(
+        key=preview.key,
+        rendered_subject=preview.rendered_subject,
+        rendered_text_body=preview.rendered_text_body,
+        rendered_html_body=preview.rendered_html_body,
+        sample_variables=preview.sample_variables,
+        is_overridden=preview.is_overridden,
+    )

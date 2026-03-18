@@ -52,6 +52,16 @@ class RenderedEmailTemplate:
 
 
 @dataclass(frozen=True)
+class EmailTemplatePreviewResult:
+    key: str
+    rendered_subject: str
+    rendered_text_body: str
+    rendered_html_body: str
+    sample_variables: dict[str, str]
+    is_overridden: bool
+
+
+@dataclass(frozen=True)
 class EmailTemplateOverrideInput:
     subject: str
     text_body: str
@@ -99,6 +109,19 @@ _CANONICAL_EMAIL_TEMPLATES: tuple[EmailTemplateCatalogItem, ...] = (
         available_variables=("invite_link", "expires_minutes", "user_email"),
     ),
 )
+
+_CANONICAL_SAMPLE_VARIABLES: dict[str, dict[str, str]] = {
+    "auth_forgot_password": {
+        "reset_link": "https://app.example.com/reset-password?token=preview-token",
+        "expires_minutes": "60",
+        "user_email": "preview.user@example.com",
+    },
+    "team_invite_user": {
+        "invite_link": "https://app.example.com/activate-invite?token=preview-token",
+        "expires_minutes": "60",
+        "user_email": "preview.user@example.com",
+    },
+}
 
 
 class EmailTemplatesService:
@@ -205,6 +228,53 @@ class EmailTemplatesService:
             html_body=html_body,
             enabled=effective.enabled,
             available_variables=effective.available_variables,
+        )
+
+    def get_sample_variables(self, *, template_key: str) -> dict[str, str]:
+        item = self.get_template(template_key)
+        if item is None:
+            return {}
+        base = dict(_CANONICAL_SAMPLE_VARIABLES.get(item.key, {}))
+        for variable in item.available_variables:
+            if variable not in base:
+                base[variable] = f"sample_{variable}"
+        return base
+
+    def render_template_preview(
+        self,
+        *,
+        template_key: str,
+        subject: str | None = None,
+        text_body: str | None = None,
+        html_body: str | None = None,
+    ) -> EmailTemplatePreviewResult | None:
+        effective = self.get_effective_template(template_key)
+        if effective is None:
+            return None
+
+        sample_variables = self.get_sample_variables(template_key=effective.key)
+        rendered_subject = self._render_template_text(
+            template=effective.subject if subject is None else str(subject),
+            variables=sample_variables,
+            available_variables=effective.available_variables,
+        )
+        rendered_text_body = self._render_template_text(
+            template=effective.text_body if text_body is None else str(text_body),
+            variables=sample_variables,
+            available_variables=effective.available_variables,
+        )
+        rendered_html_body = self._render_template_text(
+            template=effective.html_body if html_body is None else str(html_body),
+            variables=sample_variables,
+            available_variables=effective.available_variables,
+        )
+        return EmailTemplatePreviewResult(
+            key=effective.key,
+            rendered_subject=rendered_subject,
+            rendered_text_body=rendered_text_body,
+            rendered_html_body=rendered_html_body,
+            sample_variables=sample_variables,
+            is_overridden=effective.is_overridden,
         )
 
     def _render_template_text(

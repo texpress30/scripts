@@ -552,6 +552,31 @@ export async function resetAgencyEmailTemplate(templateKey: string): Promise<Age
   });
 }
 
+export type PreviewAgencyEmailTemplatePayload = {
+  subject?: string;
+  text_body?: string;
+  html_body?: string;
+};
+
+export type PreviewAgencyEmailTemplateResponse = {
+  key: string;
+  rendered_subject: string;
+  rendered_text_body: string;
+  rendered_html_body: string;
+  sample_variables: Record<string, string>;
+  is_overridden: boolean;
+};
+
+export async function previewAgencyEmailTemplate(
+  templateKey: string,
+  payload?: PreviewAgencyEmailTemplatePayload,
+): Promise<PreviewAgencyEmailTemplateResponse> {
+  return apiRequest<PreviewAgencyEmailTemplateResponse>(`/agency/email-templates/${encodeURIComponent(templateKey)}/preview`, {
+    method: "POST",
+    body: JSON.stringify(payload ?? {}),
+  });
+}
+
 export type MailgunStatusResponse = {
   configured: boolean;
   enabled: boolean;

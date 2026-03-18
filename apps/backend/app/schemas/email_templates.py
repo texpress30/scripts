@@ -36,3 +36,18 @@ class AgencyEmailTemplateUpsertRequest(BaseModel):
     text_body: str
     html_body: str | None = None
     enabled: bool | None = None
+
+
+class AgencyEmailTemplatePreviewRequest(BaseModel):
+    subject: str | None = None
+    text_body: str | None = None
+    html_body: str | None = None
+
+
+class AgencyEmailTemplatePreviewResponse(BaseModel):
+    key: str
+    rendered_subject: str
+    rendered_text_body: str
+    rendered_html_body: str
+    sample_variables: dict[str, str]
+    is_overridden: bool

@@ -1,3 +1,22 @@
+# TODO — Add preview render for agency email templates
+
+- [x] Refresh workspace and re-read email template service/API/schemas plus frontend email templates page + API helper.
+- [x] Add backend preview endpoint `POST /agency/email-templates/{template_key}/preview` with RBAC + 404 handling aligned to existing endpoints.
+- [x] Add canonical sample variables helper per template key and reuse render logic for preview output.
+- [x] Keep preview independent of send flow (disabled templates can still preview; no send logic added).
+- [x] Add frontend API helper for preview and wire `Preview` action in existing detail editor.
+- [x] Add preview panel/modal-style section showing rendered subject/text/html and sample variables used.
+- [x] Add dedicated preview loading + error states (403/404/400 + fallback) without blocking save/reset flows.
+- [x] Add backend/frontend focused tests for preview behavior and regressions.
+- [x] Run backend tests, frontend tests, frontend build, and backend startup check.
+- [x] Update notes/lessons and prepare commit + PR metadata.
+
+## Review
+- [x] Backend now supports deterministic preview rendering for `auth_forgot_password` and `team_invite_user`, including draft payload override behavior.
+- [x] Frontend now includes `Preview` action in Email Templates detail panel and displays rendered subject/text/html + sample variables.
+- [x] Existing save/reset behavior and forgot/invite flows remained unchanged and were re-verified through tests.
+- [x] Intentionally left out: real test-send action, WYSIWYG/rich editor, major redesign, notifications backend split.
+
 # TODO — Refine Agency Email Templates into notification-style admin UI
 
 - [x] Refresh workspace and re-read AppShell, agency email templates page, frontend API helper, and backend email template contract files.

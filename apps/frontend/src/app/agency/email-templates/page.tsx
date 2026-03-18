@@ -8,8 +8,10 @@ import {
   ApiRequestError,
   type AgencyEmailTemplateDetail,
   type AgencyEmailTemplateListItem,
+  type PreviewAgencyEmailTemplateResponse,
   getAgencyEmailTemplate,
   getAgencyEmailTemplates,
+  previewAgencyEmailTemplate,
   resetAgencyEmailTemplate,
   saveAgencyEmailTemplate,
 } from "@/lib/api";
@@ -76,6 +78,9 @@ export default function AgencyEmailTemplatesPage() {
   const [editor, setEditor] = useState<TemplateEditorState | null>(null);
   const [saveLoading, setSaveLoading] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+  const [previewResult, setPreviewResult] = useState<PreviewAgencyEmailTemplateResponse | null>(null);
   const [feedback, setFeedback] = useState("");
 
   async function loadList(preferredKey?: string | null) {
@@ -137,6 +142,8 @@ export default function AgencyEmailTemplatesPage() {
       return;
     }
     setFeedback("");
+    setPreviewError("");
+    setPreviewResult(null);
     void loadDetail(selectedKey);
   }, [selectedKey]);
 
@@ -185,6 +192,25 @@ export default function AgencyEmailTemplatesPage() {
       setFeedback(resolveErrorMessage(error, "Nu am putut reseta template-ul."));
     } finally {
       setResetLoading(false);
+    }
+  }
+
+  async function handlePreview() {
+    if (!selectedKey || !editor) return;
+    setPreviewError("");
+    setPreviewResult(null);
+    setPreviewLoading(true);
+    try {
+      const payload = await previewAgencyEmailTemplate(selectedKey, {
+        subject: editor.subject,
+        text_body: editor.text_body,
+        html_body: editor.html_body,
+      });
+      setPreviewResult(payload);
+    } catch (error) {
+      setPreviewError(resolveErrorMessage(error, "Nu am putut genera preview-ul template-ului."));
+    } finally {
+      setPreviewLoading(false);
     }
   }
 
@@ -341,9 +367,71 @@ export default function AgencyEmailTemplatesPage() {
                     >
                       {resetLoading ? "Resetting..." : "Reset to default"}
                     </button>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={handlePreview}
+                      disabled={previewLoading || !selectedKey}
+                    >
+                      {previewLoading ? "Previewing..." : "Preview"}
+                    </button>
                   </div>
 
                   {feedback ? <p className={`text-sm ${positiveFeedback ? "text-emerald-600" : "text-red-600"}`}>{feedback}</p> : null}
+                  {previewError ? <p className="text-sm text-red-600">{previewError}</p> : null}
+
+                  {previewResult ? (
+                    <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4" aria-label="Template preview panel">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="text-sm font-semibold text-slate-900">Preview render</h3>
+                        <button
+                          type="button"
+                          className="text-xs font-medium text-slate-600 underline"
+                          onClick={() => setPreviewResult(null)}
+                        >
+                          Close preview
+                        </button>
+                      </div>
+
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Rendered subject</p>
+                        <p className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900">{previewResult.rendered_subject || "-"}</p>
+                      </div>
+
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Rendered text body</p>
+                        <pre className="whitespace-pre-wrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800">
+                          {previewResult.rendered_text_body || "-"}
+                        </pre>
+                      </div>
+
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Rendered html body (raw)</p>
+                        <pre className="whitespace-pre-wrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800">
+                          {previewResult.rendered_html_body || "-"}
+                        </pre>
+                      </div>
+
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Rendered html body (visual)</p>
+                        <div
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                          dangerouslySetInnerHTML={{ __html: previewResult.rendered_html_body || "" }}
+                        />
+                      </div>
+
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sample variables used</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {Object.entries(previewResult.sample_variables).map(([key, value]) => (
+                            <code key={key} className="rounded-full bg-white px-2 py-1 text-xs text-slate-700">
+                              {`{{${key}}}=${value}`}
+                            </code>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </section>

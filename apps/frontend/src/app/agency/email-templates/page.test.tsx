@@ -9,6 +9,7 @@ const getAgencyEmailTemplatesMock = vi.fn();
 const getAgencyEmailTemplateMock = vi.fn();
 const saveAgencyEmailTemplateMock = vi.fn();
 const resetAgencyEmailTemplateMock = vi.fn();
+const previewAgencyEmailTemplateMock = vi.fn();
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -18,6 +19,7 @@ vi.mock("@/lib/api", async () => {
     getAgencyEmailTemplate: (...args: unknown[]) => getAgencyEmailTemplateMock(...args),
     saveAgencyEmailTemplate: (...args: unknown[]) => saveAgencyEmailTemplateMock(...args),
     resetAgencyEmailTemplate: (...args: unknown[]) => resetAgencyEmailTemplateMock(...args),
+    previewAgencyEmailTemplate: (...args: unknown[]) => previewAgencyEmailTemplateMock(...args),
   };
 });
 
@@ -40,6 +42,7 @@ describe("AgencyEmailTemplatesPage", () => {
     getAgencyEmailTemplateMock.mockReset();
     saveAgencyEmailTemplateMock.mockReset();
     resetAgencyEmailTemplateMock.mockReset();
+    previewAgencyEmailTemplateMock.mockReset();
     vi.spyOn(window, "confirm").mockReturnValue(true);
 
     getAgencyEmailTemplatesMock.mockResolvedValue({
@@ -81,6 +84,17 @@ describe("AgencyEmailTemplatesPage", () => {
 
     saveAgencyEmailTemplateMock.mockResolvedValue({});
     resetAgencyEmailTemplateMock.mockResolvedValue({});
+    previewAgencyEmailTemplateMock.mockResolvedValue({
+      key: "auth_forgot_password",
+      rendered_subject: "Rendered preview subject",
+      rendered_text_body: "Rendered preview text",
+      rendered_html_body: "<p>Rendered preview html</p>",
+      sample_variables: {
+        reset_link: "https://app.example.com/reset",
+        expires_minutes: "60",
+      },
+      is_overridden: false,
+    });
   });
 
   it("renders notification-style title and list overview badges", async () => {
@@ -132,6 +146,61 @@ describe("AgencyEmailTemplatesPage", () => {
     await waitFor(() => expect(resetAgencyEmailTemplateMock).toHaveBeenCalledWith("auth_forgot_password"));
     expect(await screen.findByText("Template resetat la valorile implicite.")).toBeInTheDocument();
     expect(getAgencyEmailTemplatesMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows preview button and sends draft values to preview endpoint", async () => {
+    render(<AgencyEmailTemplatesPage />);
+    await screen.findByDisplayValue("Reset subject");
+
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Draft subject {{user_email}}" } });
+    fireEvent.change(screen.getByLabelText("Text body"), { target: { value: "Draft text {{reset_link}}" } });
+    fireEvent.change(screen.getByLabelText("HTML body"), { target: { value: "<p>Draft html {{expires_minutes}}</p>" } });
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+
+    await waitFor(() => {
+      expect(previewAgencyEmailTemplateMock).toHaveBeenCalledWith("auth_forgot_password", {
+        subject: "Draft subject {{user_email}}",
+        text_body: "Draft text {{reset_link}}",
+        html_body: "<p>Draft html {{expires_minutes}}</p>",
+      });
+    });
+  });
+
+  it("renders preview panel with rendered subject/text/html", async () => {
+    render(<AgencyEmailTemplatesPage />);
+    await screen.findByDisplayValue("Reset subject");
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+
+    expect(await screen.findByLabelText("Template preview panel")).toBeInTheDocument();
+    expect(screen.getByText("Rendered preview subject")).toBeInTheDocument();
+    expect(screen.getByText("Rendered preview text")).toBeInTheDocument();
+    expect(screen.getByText("<p>Rendered preview html</p>")).toBeInTheDocument();
+    expect(screen.getByText("{{reset_link}}=https://app.example.com/reset")).toBeInTheDocument();
+  });
+
+  it("shows preview loading state", async () => {
+    let resolvePreview: ((value: unknown) => void) | null = null;
+    previewAgencyEmailTemplateMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolvePreview = resolve;
+      }),
+    );
+
+    render(<AgencyEmailTemplatesPage />);
+    await screen.findByDisplayValue("Reset subject");
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(screen.getByRole("button", { name: "Previewing..." })).toBeInTheDocument();
+
+    resolvePreview?.({
+      key: "auth_forgot_password",
+      rendered_subject: "Done",
+      rendered_text_body: "Done",
+      rendered_html_body: "<p>Done</p>",
+      sample_variables: {},
+      is_overridden: false,
+    });
+    expect(await screen.findByLabelText("Template preview panel")).toBeInTheDocument();
   });
 
   it("shows loading state for list", async () => {
@@ -198,5 +267,32 @@ describe("AgencyEmailTemplatesPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     expect(await screen.findByText("subject este obligatoriu")).toBeInTheDocument();
+  });
+
+  it("handles 403 preview error clearly", async () => {
+    previewAgencyEmailTemplateMock.mockRejectedValueOnce(new ApiRequestError("forbidden", 403));
+
+    render(<AgencyEmailTemplatesPage />);
+    await screen.findByDisplayValue("Reset subject");
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(await screen.findByText("Nu ai permisiunea necesară pentru Email Templates.")).toBeInTheDocument();
+  });
+
+  it("handles 404 preview error clearly", async () => {
+    previewAgencyEmailTemplateMock.mockRejectedValueOnce(new ApiRequestError("missing", 404));
+
+    render(<AgencyEmailTemplatesPage />);
+    await screen.findByDisplayValue("Reset subject");
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(await screen.findByText("Template-ul selectat nu a fost găsit.")).toBeInTheDocument();
+  });
+
+  it("handles 400 preview error clearly", async () => {
+    previewAgencyEmailTemplateMock.mockRejectedValueOnce(new ApiRequestError("payload invalid", 400));
+
+    render(<AgencyEmailTemplatesPage />);
+    await screen.findByDisplayValue("Reset subject");
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(await screen.findByText("payload invalid")).toBeInTheDocument();
   });
 });
