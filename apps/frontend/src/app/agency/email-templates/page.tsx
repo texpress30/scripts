@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
@@ -64,6 +64,119 @@ function OverrideBadge({ overridden }: { overridden: boolean }) {
     >
       {overridden ? "Overridden" : "Default"}
     </span>
+  );
+}
+
+type HtmlEditorMode = "visual" | "source";
+
+function RichHtmlEditor({
+  value,
+  availableVariables,
+  onChange,
+}: {
+  value: string;
+  availableVariables: string[];
+  onChange: (nextValue: string) => void;
+}) {
+  const [mode, setMode] = useState<HtmlEditorMode>("visual");
+  const visualRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (mode !== "visual") return;
+    if (!visualRef.current) return;
+    if (visualRef.current.innerHTML !== value) {
+      visualRef.current.innerHTML = value;
+    }
+  }, [mode, value]);
+
+  function runCommand(command: string, commandValue?: string) {
+    if (mode !== "visual") return;
+    const element = visualRef.current;
+    if (!element) return;
+    element.focus();
+    if (typeof document.execCommand === "function") {
+      document.execCommand(command, false, commandValue);
+      onChange(element.innerHTML);
+    }
+  }
+
+  function insertVariable(variable: string) {
+    const token = `{{${variable}}}`;
+    if (mode === "source") {
+      onChange(`${value}${token}`);
+      return;
+    }
+    runCommand("insertText", token);
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" className={`rounded border px-2 py-1 text-xs ${mode === "visual" ? "border-sky-400 bg-sky-50 text-sky-700" : "border-slate-300 text-slate-700"}`} onClick={() => setMode("visual")}>
+          Visual
+        </button>
+        <button type="button" className={`rounded border px-2 py-1 text-xs ${mode === "source" ? "border-sky-400 bg-sky-50 text-sky-700" : "border-slate-300 text-slate-700"}`} onClick={() => setMode("source")}>
+          HTML
+        </button>
+      </div>
+
+      {mode === "visual" ? (
+        <div className="space-y-2" data-testid="html-rich-editor">
+          <div className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-2">
+            <button type="button" className="rounded border border-slate-300 bg-white px-2 py-1 text-xs" onClick={() => runCommand("bold")}>Bold</button>
+            <button type="button" className="rounded border border-slate-300 bg-white px-2 py-1 text-xs" onClick={() => runCommand("italic")}>Italic</button>
+            <button type="button" className="rounded border border-slate-300 bg-white px-2 py-1 text-xs" onClick={() => runCommand("underline")}>Underline</button>
+            <button type="button" className="rounded border border-slate-300 bg-white px-2 py-1 text-xs" onClick={() => runCommand("formatBlock", "p")}>Paragraph</button>
+            <button type="button" className="rounded border border-slate-300 bg-white px-2 py-1 text-xs" onClick={() => runCommand("formatBlock", "h2")}>Heading</button>
+            <button type="button" className="rounded border border-slate-300 bg-white px-2 py-1 text-xs" onClick={() => runCommand("insertUnorderedList")}>Bullets</button>
+            <button type="button" className="rounded border border-slate-300 bg-white px-2 py-1 text-xs" onClick={() => runCommand("insertOrderedList")}>Numbers</button>
+            <button
+              type="button"
+              className="rounded border border-slate-300 bg-white px-2 py-1 text-xs"
+              onClick={() => {
+                const link = window.prompt("URL pentru link", "https://");
+                if (!link) return;
+                runCommand("createLink", link);
+              }}
+            >
+              Link
+            </button>
+          </div>
+
+          <div
+            ref={visualRef}
+            className="min-h-[180px] w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            contentEditable
+            suppressContentEditableWarning
+            onInput={(event) => onChange((event.currentTarget as HTMLDivElement).innerHTML)}
+          />
+        </div>
+      ) : (
+        <textarea
+          data-testid="html-source-editor"
+          className="min-h-[180px] w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      )}
+
+      {availableVariables.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {availableVariables.map((variable) => (
+            <button
+              key={variable}
+              type="button"
+              className="rounded-full border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
+              onClick={() => insertVariable(variable)}
+            >
+              Insert {"{{"}
+              {variable}
+              {"}}"}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -361,10 +474,10 @@ export default function AgencyEmailTemplatesPage() {
 
                     <label className="block">
                       <span className="mb-1 block text-sm font-medium text-slate-700">HTML body</span>
-                      <textarea
-                        className="min-h-[140px] w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      <RichHtmlEditor
                         value={editor.html_body}
-                        onChange={(event) => setEditor((prev) => (prev ? { ...prev, html_body: event.target.value } : prev))}
+                        availableVariables={detail.available_variables}
+                        onChange={(nextValue) => setEditor((prev) => (prev ? { ...prev, html_body: nextValue } : prev))}
                       />
                     </label>
 

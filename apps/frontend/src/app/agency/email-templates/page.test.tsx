@@ -39,6 +39,11 @@ vi.mock("@/components/AppShell", () => ({
 }));
 
 describe("AgencyEmailTemplatesPage", () => {
+  function setHtmlSourceEditor(nextValue: string) {
+    fireEvent.click(screen.getByRole("button", { name: "HTML" }));
+    fireEvent.change(screen.getByTestId("html-source-editor"), { target: { value: nextValue } });
+  }
+
   beforeEach(() => {
     getAgencyEmailTemplatesMock.mockReset();
     getAgencyEmailTemplateMock.mockReset();
@@ -118,6 +123,15 @@ describe("AgencyEmailTemplatesPage", () => {
     expect(screen.getAllByText("Overridden").length).toBeGreaterThan(0);
   });
 
+  it("renders rich html editor and loads current html value", async () => {
+    render(<AgencyEmailTemplatesPage />);
+    await screen.findByDisplayValue("Reset subject");
+
+    expect(screen.getByTestId("html-rich-editor")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "HTML" }));
+    expect((screen.getByTestId("html-source-editor") as HTMLTextAreaElement).value).toBe("<p>Reset html</p>");
+  });
+
   it("selects item and loads detail panel", async () => {
     render(<AgencyEmailTemplatesPage />);
 
@@ -164,7 +178,7 @@ describe("AgencyEmailTemplatesPage", () => {
 
     fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Draft subject {{user_email}}" } });
     fireEvent.change(screen.getByLabelText("Text body"), { target: { value: "Draft text {{reset_link}}" } });
-    fireEvent.change(screen.getByLabelText("HTML body"), { target: { value: "<p>Draft html {{expires_minutes}}</p>" } });
+    setHtmlSourceEditor("<p>Draft html {{expires_minutes}}</p>");
     fireEvent.click(screen.getByRole("button", { name: "Preview" }));
 
     await waitFor(() => {
@@ -227,7 +241,7 @@ describe("AgencyEmailTemplatesPage", () => {
 
     fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Draft subject {{user_email}}" } });
     fireEvent.change(screen.getByLabelText("Text body"), { target: { value: "Draft text {{reset_link}}" } });
-    fireEvent.change(screen.getByLabelText("HTML body"), { target: { value: "<p>Draft html {{expires_minutes}}</p>" } });
+    setHtmlSourceEditor("<p>Draft html {{expires_minutes}}</p>");
     fireEvent.change(screen.getByLabelText("Test email"), { target: { value: "qa@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Send test email" }));
 
@@ -307,6 +321,18 @@ describe("AgencyEmailTemplatesPage", () => {
     });
 
     expect(await screen.findByDisplayValue("Reset subject")).toBeInTheDocument();
+  });
+
+  it("reset reloads html editor with latest detail value", async () => {
+    render(<AgencyEmailTemplatesPage />);
+    await screen.findByDisplayValue("Reset subject");
+    setHtmlSourceEditor("<p>Changed html</p>");
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset to default" }));
+    await screen.findByText("Template resetat la valorile implicite.");
+
+    fireEvent.click(screen.getByRole("button", { name: "HTML" }));
+    expect((screen.getByTestId("html-source-editor") as HTMLTextAreaElement).value).toBe("<p>Reset html</p>");
   });
 
   it("handles 403 list error clearly", async () => {

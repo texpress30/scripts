@@ -1,3 +1,21 @@
+# TODO — Add rich editor for agency email template HTML body
+
+- [x] Refresh workspace and re-read agency email templates page/API contract and verify no backend contract changes required.
+- [x] Check existing dependencies/components for reusable rich editor capability; choose lightweight incremental approach.
+- [x] Implement WYSIWYG editor for `html_body` only, while keeping `subject` input and `text_body` textarea unchanged.
+- [x] Add Visual/HTML source modes and toolbar controls (bold, italic, underline, paragraph/heading, lists, links).
+- [x] Keep `html_body` as source of truth and ensure save/preview/test-send consume current draft from editor.
+- [x] Add lightweight placeholder insertion helper from available variables for html editor.
+- [x] Add/update focused frontend tests for editor render/load, save payload, preview/test-send payload, reset sync, and existing error handling.
+- [x] Run frontend tests and frontend build.
+- [x] Update notes/lessons and prepare commit + PR metadata.
+
+## Review
+- [x] Rich editor is now applied only to `html_body` with Visual + HTML source editing.
+- [x] Existing preview/test-send/save/reset flows remain functional and use the latest html draft.
+- [x] No Notifications backend work added; no forgot/invite flow logic changes.
+- [x] Intentionally left out: drag-and-drop builder, backend notifications model, and broader redesign.
+
 # TODO — Add test send for agency email templates
 
 - [x] Refresh workspace and re-read email templates service/API/schemas, mailgun service, and frontend email templates page/API helper.
@@ -5133,3 +5151,14 @@ Plan verified: frontend-focused incremental change, no notifications UI, no rich
 - [x] Page supports list/detail/save/reset against existing backend API, including success feedback and loading states.
 - [x] Error handling is explicit for 403/404/400 and generic fallback.
 - [x] Notifications UI and rich editor/preview/test-send remain intentionally out of scope.
+
+# TODO — Workflow alignment after AGENTS correction (2026-03-18)
+
+- [x] Review AGENTS.md instructions and confirm required workflow behavior for this cycle.
+- [x] Record a new correction lesson in `tasks/lessons.md` to prevent recurrence.
+- [x] Verify git diff is intentionally scoped to task-tracking docs only.
+- [x] Commit docs update and create PR metadata via `make_pr`.
+
+## Review
+- [x] Captured correction-specific lesson and kept change minimal.
+- [x] Scope remains documentation-only for workflow alignment.

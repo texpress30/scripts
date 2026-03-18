@@ -395,3 +395,6 @@
 - 2026-03-18: După feedback "unsatisfied" pe un PR full-stack, următorul increment trebuie să fie strict pe UX-ul cerut (frontend-only, contract backend existent), cu teste țintite pe stările cerute și fără extinderi backend premature.
 - 2026-03-18: Pentru taskuri de preview render peste template-uri existente, livrează endpoint dedicat + sample variables canonice + wiring UI Preview cu teste pentru draft payload și erori, fără a adăuga test-send în același pas.
 - 2026-03-18: Pentru incrementalul de test-send pe Email Templates, reutilizează render preview + sample variables existente și tratează explicit regula "enabled=false permite test send" ca behavior documentat și testat.
+- 2026-03-18: Pentru WYSIWYG incremental pe câmp HTML existent, preferă implementare lightweight fără dependențe grele când proiectul nu are editor existent; păstrează toggle Visual/HTML și verifică explicit că preview/test-send folosesc draftul curent.
+
+- 2026-03-18: După un mesaj de corecție cu reguli AGENTS, oprește execuția curentă și aliniază imediat workflow-ul (plan în `tasks/todo.md`, verificare scope, commit+PR), fără a presupune că starea precedentă este încă validă.
