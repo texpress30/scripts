@@ -19,6 +19,7 @@ vi.mock("@/lib/api", async () => {
     updateTeamMembership: (membershipId: string | number, payload: unknown) => apiRequestMock(`/team/members/${encodeURIComponent(String(membershipId))}`, { method: "PATCH", body: JSON.stringify(payload) }),
     deactivateTeamMember: (membershipId: string | number) => apiRequestMock(`/team/members/${encodeURIComponent(String(membershipId))}/deactivate`, { method: "POST", body: JSON.stringify({}) }),
     reactivateTeamMember: (membershipId: string | number) => apiRequestMock(`/team/members/${encodeURIComponent(String(membershipId))}/reactivate`, { method: "POST", body: JSON.stringify({}) }),
+    removeTeamMember: (membershipId: string | number) => apiRequestMock(`/team/members/${encodeURIComponent(String(membershipId))}/remove`, { method: "POST", body: JSON.stringify({}) }),
   };
 });
 
@@ -168,6 +169,9 @@ describe("Settings team page subaccount integration", () => {
       }
       if (path === "/team/members/102/reactivate" && options?.method === "POST") {
         return Promise.resolve({ membership_id: 102, status: "active", message: "Accesul a fost reactivat" });
+      }
+      if (path === "/team/members/101/remove" && options?.method === "POST") {
+        return Promise.resolve({ membership_id: 101, removed: true, message: "Accesul a fost eliminat" });
       }
       if (path === "/team/members" && options?.method === "POST") {
         return Promise.resolve({ item: { id: 1 } });
@@ -858,6 +862,107 @@ describe("Settings team page subaccount integration", () => {
     fireEvent.click(buttons[2]);
     expect(await screen.findByText(/moștenit/i)).toBeInTheDocument();
   });
+
+  it("renders remove action and confirms before remove request", async () => {
+    render(<SettingsTeamPage />);
+
+    const removeButtons = await screen.findAllByRole("button", { name: "Elimină accesul" });
+    expect(removeButtons.length).toBeGreaterThan(0);
+
+    fireEvent.click(removeButtons[0]);
+
+    await waitFor(() => {
+      expect(window.confirm).toHaveBeenCalledWith(
+        "Sigur vrei să elimini acest acces? Această acțiune șterge doar access grant-ul curent, nu utilizatorul global.",
+      );
+    });
+  });
+
+  it("does not call remove endpoint when confirmation is cancelled", async () => {
+    vi.spyOn(window, "confirm").mockReturnValueOnce(false);
+    render(<SettingsTeamPage />);
+
+    const removeButtons = await screen.findAllByRole("button", { name: "Elimină accesul" });
+    fireEvent.click(removeButtons[0]);
+
+    await waitFor(() => {
+      expect(apiRequestMock.mock.calls.some((call) => call[0] === "/team/members/101/remove")).toBe(false);
+    });
+  });
+
+  it("removes membership on success and refetches list", async () => {
+    render(<SettingsTeamPage />);
+
+    const removeButtons = await screen.findAllByRole("button", { name: "Elimină accesul" });
+    fireEvent.click(removeButtons[0]);
+
+    await waitFor(() => {
+      expect(apiRequestMock.mock.calls.some((call) => call[0] === "/team/members/101/remove" && call[1]?.method === "POST")).toBe(true);
+    });
+
+    await waitFor(() => {
+      const memberListCalls = apiRequestMock.mock.calls.filter((call) => String(call[0]).startsWith("/team/members?"));
+      expect(memberListCalls.length).toBeGreaterThan(1);
+    });
+
+    expect(await screen.findByText(/Accesul a fost eliminat/i)).toBeInTheDocument();
+  });
+
+  it("handles remove 403 and 404 with clear feedback", async () => {
+    apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
+      if (path.startsWith("/team/members?")) {
+        return Promise.resolve({
+          items: [
+            { id: 401, membership_id: 401, user_id: 501, first_name: "A", last_name: "One", email: "a@example.com", phone: "", extension: "", user_type: "agency", user_role: "admin", location: "RO", subaccount: "Toate", membership_status: "active" },
+            { id: 402, membership_id: 402, user_id: 502, first_name: "B", last_name: "Two", email: "b@example.com", phone: "", extension: "", user_type: "agency", user_role: "member", location: "RO", subaccount: "Toate", membership_status: "active" },
+          ],
+          total: 2,
+          page: 1,
+          page_size: 10,
+        });
+      }
+      if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
+      if (path === "/team/members/401/remove" && options?.method === "POST") return Promise.reject(new ApiRequestError("forbidden", 403));
+      if (path === "/team/members/402/remove" && options?.method === "POST") return Promise.reject(new ApiRequestError("Membership inexistent", 404));
+      return Promise.reject(new Error(`Unexpected path: ${path}`));
+    });
+
+    render(<SettingsTeamPage />);
+
+    const removeButtons = await screen.findAllByRole("button", { name: "Elimină accesul" });
+    fireEvent.click(removeButtons[0]);
+    expect(await screen.findByText(/permisiuni suficiente pentru a elimina acest acces/i)).toBeInTheDocument();
+
+    fireEvent.click(removeButtons[1]);
+    expect(await screen.findByText(/Membership inexistent/i)).toBeInTheDocument();
+  });
+
+  it("handles remove 409 self-removal conflict with clear feedback", async () => {
+    apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
+      if (path.startsWith("/team/members?")) {
+        return Promise.resolve({
+          items: [
+            { id: 403, membership_id: 403, user_id: 503, first_name: "C", last_name: "Three", email: "c@example.com", phone: "", extension: "", user_type: "agency", user_role: "member", location: "RO", subaccount: "Toate", membership_status: "active" },
+          ],
+          total: 1,
+          page: 1,
+          page_size: 10,
+        });
+      }
+      if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
+      if (path === "/team/members/403/remove" && options?.method === "POST") return Promise.reject(new ApiRequestError("Nu îți poți elimina propriul membership din sesiunea curentă", 409));
+      return Promise.reject(new Error(`Unexpected path: ${path}`));
+    });
+
+    render(<SettingsTeamPage />);
+
+    const removeButtons = await screen.findAllByRole("button", { name: "Elimină accesul" });
+    fireEvent.click(removeButtons[0]);
+    expect(await screen.findByText(/Nu îți poți elimina accesul curent din această sesiune/i)).toBeInTheDocument();
+  });
+
 
   it("handles lifecycle 404 with clear message", async () => {
     apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {

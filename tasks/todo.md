@@ -1,3 +1,22 @@
+# TODO — Agency Team UI remove membership + PR metadata hardening
+
+- [x] Refresh workspace and inspect Agency Team page, frontend API helpers, and backend remove contract.
+- [x] Add/refactor frontend API helper `removeTeamMember(membershipId)` wired to `POST /team/members/{membership_id}/remove`.
+- [x] Add Agency Team row action `Elimină accesul` with explicit confirmation dialog and per-row loading.
+- [x] Handle remove success/errors (403/404/409/generic), include 404 graceful refresh, and keep existing actions unaffected.
+- [x] Add compact frontend tests for remove action rendering, confirm flow, endpoint call, success refetch, and 403/404/409 handling.
+- [x] Run relevant frontend tests and frontend build.
+- [x] Commit changes and create PR with exact required title/body; attempted metadata verification/patch flow and documented environment blocker (no remote/token/gh).
+
+## Review
+- [x] Agency Team now exposes row action `Elimină accesul`, with explicit confirm text and per-row loading, while preserving existing invite/edit/deactivate/reactivate actions.
+- [x] Frontend remove flow is wired to `POST /team/members/{membership_id}/remove` via helper `removeTeamMember`, then refreshes list on success and also refreshes gracefully on 404.
+- [x] Error mapping is explicit for 403/404/409 and keeps backend messages when useful; self-removal conflict shows dedicated message.
+- [x] Added focused tests covering remove render/confirm/cancel, endpoint call + success refetch, and 403/404/409 handling.
+- [x] Build verified on frontend app.
+- [x] Intentionally left out: Sub-account Team remove UI (next task), token revocation, identity deletion.
+- [x] PR metadata post-check blocker: no `gh` binary, no git remote configured, and no GitHub token env available for REST `curl` update in this runtime.
+
 # TODO — Backend minimal remove membership (endpoint + service + teste)
 
 - [x] Refresh workspace and inspect team API/service/schemas/dependencies + current membership tests.

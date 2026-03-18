@@ -466,6 +466,20 @@ export async function reactivateTeamMember(membershipId: string | number): Promi
   });
 }
 
+
+export type TeamMembershipRemoveResponse = {
+  membership_id: number;
+  removed: boolean;
+  message: string;
+};
+
+export async function removeTeamMember(membershipId: string | number): Promise<TeamMembershipRemoveResponse> {
+  return apiRequest<TeamMembershipRemoveResponse>(`/team/members/${encodeURIComponent(String(membershipId))}/remove`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
 export type TeamInviteResponse = {
   message: string;
 };
