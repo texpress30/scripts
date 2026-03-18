@@ -72,6 +72,7 @@ export function getNavItems(pathname: string): NavItem[] {
     { href: "/agency/clients", label: "Agency Clients", icon: Users },
     { href: "/agency-accounts", label: "Agency Accounts", icon: Bell },
     { href: "/agency/audit", label: "Agency Audit", icon: Sparkles },
+    { href: "/agency/email-templates", label: "Email Templates", icon: Bell },
     { href: "/notifications", label: "Notificari", icon: Bell },
     { href: "/creative", label: "Creative", icon: Palette },
   ];
