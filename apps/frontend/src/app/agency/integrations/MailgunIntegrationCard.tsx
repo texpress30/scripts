@@ -76,6 +76,7 @@ export function MailgunIntegrationCard() {
   const [testBusy, setTestBusy] = useState(false);
 
   const badge = useMemo(() => statusBadge(status), [status]);
+  const isEnvManaged = status?.config_source === "env";
 
   async function loadStatus() {
     setLoading(true);
@@ -206,7 +207,7 @@ export function MailgunIntegrationCard() {
           <p>API key: {status?.api_key_masked || "-"}</p>
           {!status?.configured ? <p className="pt-1 text-amber-700">Mailgun nu este configurat. Completează formularul de mai jos.</p> : null}
           {status?.configured && status?.config_source === "env" ? (
-            <p className="pt-1 text-amber-700">Configurația este activă din env fallback. Poți importa în DB pentru administrare explicită din UI.</p>
+            <p className="pt-1 text-amber-700">Managed by Railway env. Configurarea manuală din UI este read-only.</p>
           ) : null}
         </div>
       ) : null}
@@ -214,14 +215,15 @@ export function MailgunIntegrationCard() {
       <div className="mt-4 flex flex-wrap gap-2">
         <button
           onClick={() => {
+            if (isEnvManaged) return;
             setConfigOpen((prev) => !prev);
             setConfigErrors({});
             setConfigMessage("");
           }}
           className="wm-btn-primary"
-          disabled={loading || configBusy}
+          disabled={loading || configBusy || isEnvManaged}
         >
-          {configOpen ? "Închide configurare" : status?.configured ? "Editează configurare" : "Configurează Mailgun"}
+          {isEnvManaged ? "Configured in Railway" : configOpen ? "Închide configurare" : status?.configured ? "Editează configurare" : "Configurează Mailgun"}
         </button>
         {status?.configured && status?.config_source === "env" ? (
           <button
@@ -234,7 +236,7 @@ export function MailgunIntegrationCard() {
         ) : null}
       </div>
 
-      {configOpen ? (
+      {configOpen && !isEnvManaged ? (
         <div className="mt-4 space-y-3 rounded-md border border-slate-200 p-3">
           <p className="text-xs text-slate-500">Din motive de securitate, API key trebuie reintrodus la salvare.</p>
           <label className="block text-xs text-slate-700">

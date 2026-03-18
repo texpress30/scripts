@@ -124,13 +124,13 @@ class MailgunService:
         }
 
     def _resolve_config(self) -> tuple[MailgunConfig | None, str]:
-        db_config = self._build_config_from_values(self._db_values())
-        if db_config is not None:
-            return db_config, _CONFIG_SOURCE_DB
-
         env_config = self._build_config_from_values(self._env_values())
         if env_config is not None:
             return env_config, _CONFIG_SOURCE_ENV
+
+        db_config = self._build_config_from_values(self._db_values())
+        if db_config is not None:
+            return db_config, _CONFIG_SOURCE_DB
 
         return None, _CONFIG_SOURCE_NONE
 
@@ -200,15 +200,6 @@ class MailgunService:
         return self.status()
 
     def import_from_env(self) -> dict[str, object]:
-        db_config = self._build_config_from_values(self._db_values())
-        if db_config is not None:
-            payload = self.status()
-            return {
-                "imported": False,
-                "message": "Configurația Mailgun există deja în DB; importul din env a fost omis.",
-                **payload,
-            }
-
         env_values = self._env_values()
         env_config = self._build_config_from_values(env_values)
         if env_config is None:
@@ -225,7 +216,7 @@ class MailgunService:
         payload = self.status()
         return {
             "imported": True,
-            "message": "Configurația Mailgun a fost importată din env în DB.",
+            "message": "Configurația Mailgun din env a fost sincronizată în DB (utilitar legacy).",
             **payload,
         }
 

@@ -158,36 +158,11 @@ describe("MailgunIntegrationCard", () => {
     expect(await screen.findByText("Nu ai acces la această integrare.")).toBeInTheDocument();
   });
 
-  it("shows env source and supports import-from-env action", async () => {
-    apiMock.getMailgunStatus
-      .mockResolvedValueOnce({
-        configured: true,
-        enabled: true,
-        config_source: "env",
-        domain: "mg.env.example.com",
-        base_url: "https://api.mailgun.net",
-        from_email: "env@example.com",
-        from_name: "Env Sender",
-        reply_to: "",
-        api_key_masked: "key***env",
-      })
-      .mockResolvedValueOnce({
-        configured: true,
-        enabled: true,
-        config_source: "db",
-        domain: "mg.env.example.com",
-        base_url: "https://api.mailgun.net",
-        from_email: "env@example.com",
-        from_name: "Env Sender",
-        reply_to: "",
-        api_key_masked: "key***env",
-      });
-    apiMock.importMailgunConfigFromEnv.mockResolvedValue({
-      imported: true,
-      message: "Configurația Mailgun a fost importată din env în DB.",
+  it("shows env-managed read-only state when config source is env", async () => {
+    apiMock.getMailgunStatus.mockResolvedValueOnce({
       configured: true,
       enabled: true,
-      config_source: "db",
+      config_source: "env",
       domain: "mg.env.example.com",
       base_url: "https://api.mailgun.net",
       from_email: "env@example.com",
@@ -195,12 +170,10 @@ describe("MailgunIntegrationCard", () => {
       reply_to: "",
       api_key_masked: "key***env",
     });
-
     render(<MailgunIntegrationCard />);
     expect(await screen.findByText("Config source: env")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Importă din env în DB" }));
-
-    await waitFor(() => expect(apiMock.importMailgunConfigFromEnv).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(apiMock.getMailgunStatus).toHaveBeenCalledTimes(2));
+    expect(screen.getByText(/Managed by Railway env/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Configured in Railway" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /Salvează configurarea/i })).not.toBeInTheDocument();
   });
 });

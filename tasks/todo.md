@@ -5251,3 +5251,26 @@ Plan verified: incremental backend+frontend contract update for diagnostics sema
 - [x] Frontend success copy now clarifies acceptance-only semantics and includes diagnostics (`provider_id`, `provider_message`) plus Mailgun logs hint.
 - [x] Added sandbox-domain hint for authorized-recipient limitation without redesign.
 - [x] Existing save/reset/preview/test-send flow compatibility retained and revalidated by targeted tests.
+
+# TODO — Mailgun env-managed (Railway) with read-only UI when source=env (2026-03-18)
+
+- [x] Re-read Mailgun backend (service/config/api) and frontend status surfaces (Integrations card + Email Templates + API types).
+- [x] Change Mailgun config resolution to env-first, DB-fallback, none when incomplete.
+- [x] Preserve `config_source` semantics (`env`/`db`/`none`) and ensure send/test-send use effective resolved config.
+- [x] Keep DB behavior compatible when env is absent/incomplete.
+- [x] Update Mailgun Integration UI to show “Managed by Railway env” and block manual edit/save when source is env.
+- [x] Update Email Templates Mailgun status copy to show env-managed state while keeping test-send enabled.
+- [x] Add/update backend tests for env-only, env-wins-over-db, db-only, none, and send path using effective config.
+- [x] Add/update frontend tests for read-only env-managed card and Email Templates env-managed messaging + test-send availability.
+- [x] Run backend tests, frontend tests, frontend build, and backend startup check.
+- [x] Update notes/lessons, commit, and create PR via `make_pr`.
+
+## Check-in before execution
+Plan verified: incremental backend+frontend adjustments only for Mailgun config source precedence and env-managed UX; no redesign and no unrelated flow refactors.
+
+## Review
+- [x] Switched Mailgun effective config precedence to env-first with DB fallback and explicit `config_source`.
+- [x] Kept incomplete-env fallback behavior so DB config remains effective when env is missing required fields.
+- [x] Updated Integrations Mailgun card for env-managed read-only UX and removed manual env-import CTA from primary UI flow.
+- [x] Updated Email Templates Mailgun status panel to expose `config_source` and show env-managed hint while retaining test-send availability.
+- [x] Refreshed targeted backend/frontend tests and re-ran frontend build + backend startup check.

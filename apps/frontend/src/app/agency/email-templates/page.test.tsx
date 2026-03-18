@@ -118,6 +118,7 @@ describe("AgencyEmailTemplatesPage", () => {
     getMailgunStatusMock.mockResolvedValue({
       configured: true,
       enabled: true,
+      config_source: "db",
       domain: "mg.example.com",
       base_url: "https://api.mailgun.net",
       from_email: "noreply@example.com",
@@ -259,7 +260,28 @@ describe("AgencyEmailTemplatesPage", () => {
     expect(screen.getByText("mg.example.com")).toBeInTheDocument();
     expect(screen.getByText("noreply@example.com")).toBeInTheDocument();
     expect(screen.getByText("key-***")).toBeInTheDocument();
+    expect(screen.getByText("db")).toBeInTheDocument();
     expect(screen.getByText("Mailgun este configurat și activ. Poți trimite emailuri de test.")).toBeInTheDocument();
+  });
+
+  it("shows env-managed hint while keeping test-send available", async () => {
+    getMailgunStatusMock.mockResolvedValueOnce({
+      configured: true,
+      enabled: true,
+      config_source: "env",
+      domain: "mg.env.example.com",
+      base_url: "https://api.mailgun.net",
+      from_email: "env@example.com",
+      from_name: "Env",
+      reply_to: "",
+      api_key_masked: "key***env",
+    });
+    render(<AgencyEmailTemplatesPage />);
+
+    await screen.findByLabelText("Mailgun status panel");
+    expect(screen.getByText("env")).toBeInTheDocument();
+    expect(screen.getByText(/managed by Railway env/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send test email" })).toBeEnabled();
   });
 
   it("shows sandbox-domain hint when Mailgun domain is sandbox", async () => {

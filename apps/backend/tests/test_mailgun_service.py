@@ -140,7 +140,7 @@ class MailgunServiceTests(unittest.TestCase):
             mailgun_module.integration_secrets_store = original_store
             mailgun_module.load_settings = original_settings
 
-    def test_status_db_wins_over_env(self):
+    def test_status_env_wins_over_db(self):
         service = mailgun_module.MailgunService()
         fake_store = _FakeSecretsStore()
         original_store = mailgun_module.integration_secrets_store
@@ -165,9 +165,9 @@ class MailgunServiceTests(unittest.TestCase):
                 enabled=False,
             )
             payload = service.status()
-            self.assertEqual(payload["config_source"], "db")
-            self.assertEqual(payload["domain"], "mg.db.example.com")
-            self.assertTrue(payload["enabled"])
+            self.assertEqual(payload["config_source"], "env")
+            self.assertEqual(payload["domain"], "mg.env.example.com")
+            self.assertFalse(payload["enabled"])
         finally:
             mailgun_module.integration_secrets_store = original_store
             mailgun_module.load_settings = original_settings
@@ -192,7 +192,7 @@ class MailgunServiceTests(unittest.TestCase):
             mailgun_module.integration_secrets_store = original_store
             mailgun_module.load_settings = original_settings
 
-    def test_import_from_env_bootstraps_db_and_switches_source_to_db(self):
+    def test_import_from_env_bootstraps_db_and_keeps_effective_source_env(self):
         service = mailgun_module.MailgunService()
         fake_store = _FakeSecretsStore()
         original_store = mailgun_module.integration_secrets_store
@@ -213,7 +213,7 @@ class MailgunServiceTests(unittest.TestCase):
 
             imported = service.import_from_env()
             self.assertTrue(imported["imported"])
-            self.assertEqual(imported["config_source"], "db")
+            self.assertEqual(imported["config_source"], "env")
             self.assertEqual(imported["domain"], "mg.env.example.com")
         finally:
             mailgun_module.integration_secrets_store = original_store
@@ -238,7 +238,7 @@ class MailgunServiceTests(unittest.TestCase):
             mailgun_module.integration_secrets_store = original_store
             mailgun_module.load_settings = original_settings
 
-    def test_import_from_env_skips_when_db_already_exists(self):
+    def test_import_from_env_overwrites_db_when_env_present(self):
         service = mailgun_module.MailgunService()
         fake_store = _FakeSecretsStore()
         original_store = mailgun_module.integration_secrets_store
@@ -262,9 +262,9 @@ class MailgunServiceTests(unittest.TestCase):
                 from_name="Env Sender",
             )
             payload = service.import_from_env()
-            self.assertFalse(payload["imported"])
-            self.assertEqual(payload["config_source"], "db")
-            self.assertIn("omis", str(payload["message"]))
+            self.assertTrue(payload["imported"])
+            self.assertEqual(payload["config_source"], "env")
+            self.assertIn("legacy", str(payload["message"]))
         finally:
             mailgun_module.integration_secrets_store = original_store
             mailgun_module.load_settings = original_settings

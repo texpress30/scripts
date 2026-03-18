@@ -456,6 +456,9 @@ export default function AgencyEmailTemplatesPage() {
                   <p>
                     <span className="font-semibold text-slate-800">API key:</span> {mailgunStatus.api_key_masked || "-"}
                   </p>
+                  <p>
+                    <span className="font-semibold text-slate-800">Config source:</span> {mailgunStatus.config_source || "none"}
+                  </p>
                 </div>
 
                 {!isMailgunAvailable ? (
@@ -470,6 +473,9 @@ export default function AgencyEmailTemplatesPage() {
                 ) : (
                   <div className="space-y-1">
                     <p className="text-sm text-emerald-700">Mailgun este configurat și activ. Poți trimite emailuri de test.</p>
+                    {mailgunStatus.config_source === "env" ? (
+                      <p className="text-xs text-amber-700">Configurația activă este managed by Railway env.</p>
+                    ) : null}
                     {isMailgunSandboxDomain ? (
                       <p className="text-xs text-amber-700">
                         Domain Mailgun este de tip sandbox: emailurile pot fi livrate doar către authorized recipients.

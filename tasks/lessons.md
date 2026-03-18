@@ -402,3 +402,4 @@
 - 2026-03-18: Pentru integrare sensibilă la secrete (Mailgun), păstrează precedence DB > env, dar expune explicit `config_source` și oferă endpoint admin de bootstrap din env în DB pentru migrare fără dublă introducere manuală.
 - 2026-03-18: Pentru foundation notifications separat de templates, livrează întâi modelul backend (catalog + override `enabled` + CRUD + RBAC + teste) și păstrează explicit flow-urile runtime neschimbate până la taskul de migrare.
 - 2026-03-18: Pentru test-send prin provider extern (Mailgun), răspunsul/UI trebuie să declare explicit "accepted" (nu "delivered") și să expună diagnostice minime (`provider_id`, `provider_message`, `delivery_status`) + hint pentru sandbox domains.
+- 2026-03-18: După corecții AGENTS, verifică imediat `git status` și livrează final doar după pașii obligatorii complet executați (teste, commit, `make_pr`) + raport final cu citări pe fișiere/linie.
