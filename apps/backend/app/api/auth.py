@@ -25,6 +25,8 @@ from app.services.auth import (
 )
 from app.services.auth_email_tokens import AuthEmailTokenError, auth_email_tokens_service
 from app.services.mailgun_service import MailgunIntegrationError, mailgun_service
+from app.services.email_notifications import email_notifications_service
+from app.services.email_templates import email_templates_service
 from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
 from app.services.rbac import is_supported_role, normalize_role
 
@@ -144,6 +146,26 @@ def forgot_password(payload: ForgotPasswordRequest) -> ForgotPasswordResponse:
         )
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Reset password nu este disponibil momentan") from exc
 
+    runtime_notification = email_notifications_service.resolve_runtime_notification(notification_key="auth_forgot_password")
+    if runtime_notification is None:
+        audit_log_service.log(
+            actor_email=normalized_email,
+            actor_role="anonymous",
+            action="auth.forgot_password.failed",
+            resource="auth:forgot_password",
+            details={"reason": "notification_missing", "notification_key": "auth_forgot_password"},
+        )
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Reset password nu este disponibil momentan")
+    if not runtime_notification.enabled:
+        audit_log_service.log(
+            actor_email=normalized_email,
+            actor_role="anonymous",
+            action="auth.forgot_password.skipped",
+            resource="auth:forgot_password",
+            details={"reason": "notification_disabled", "notification_key": runtime_notification.key},
+        )
+        return ForgotPasswordResponse(message=generic_message)
+
     user = find_active_user_by_email(normalized_email)
     audit_log_service.log(
         actor_email=normalized_email,
@@ -174,16 +196,40 @@ def forgot_password(payload: ForgotPasswordRequest) -> ForgotPasswordResponse:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Reset password nu este disponibil momentan") from exc
 
     reset_link = f"{frontend_base_url.rstrip('/')}/reset-password?token={raw_token}"
-    subject = "Resetează parola"
-    text = (
-        "Ai solicitat resetarea parolei.\n\n"
-        f"Folosește acest link pentru a seta o parolă nouă (expiră în {email_ttl_minutes} minute):\n"
-        f"{reset_link}\n\n"
-        "Dacă nu ai solicitat această resetare, poți ignora acest email."
+    rendered_template = email_templates_service.render_effective_template(
+        template_key="auth_forgot_password",
+        variables={
+            "reset_link": reset_link,
+            "expires_minutes": str(email_ttl_minutes),
+            "user_email": str(user.get("email") or ""),
+        },
     )
+    if rendered_template is None:
+        audit_log_service.log(
+            actor_email=normalized_email,
+            actor_role="anonymous",
+            action="auth.forgot_password.failed",
+            resource="auth:forgot_password",
+            details={"reason": "template_missing", "template_key": "auth_forgot_password"},
+        )
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Reset password nu este disponibil momentan")
+    if not rendered_template.enabled:
+        audit_log_service.log(
+            actor_email=normalized_email,
+            actor_role="anonymous",
+            action="auth.forgot_password.failed",
+            resource="auth:forgot_password",
+            details={"reason": "template_disabled", "template_key": "auth_forgot_password"},
+        )
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Reset password nu este disponibil momentan")
 
     try:
-        mailgun_service.send_email(to_email=str(user["email"]), subject=subject, text=text)
+        mailgun_service.send_email(
+            to_email=str(user["email"]),
+            subject=rendered_template.subject,
+            text=rendered_template.text_body,
+            html=rendered_template.html_body,
+        )
     except (MailgunIntegrationError, ValueError):
         audit_log_service.log(
             actor_email=normalized_email,
