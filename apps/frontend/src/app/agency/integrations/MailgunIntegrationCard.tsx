@@ -5,9 +5,11 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   ApiRequestError,
   MailgunConfigPayload,
+  MailgunImportFromEnvResponse,
   MailgunStatusResponse,
   MailgunTestPayload,
   getMailgunStatus,
+  importMailgunConfigFromEnv,
   saveMailgunConfig,
   sendMailgunTestEmail,
 } from "@/lib/api";
@@ -66,6 +68,7 @@ export function MailgunIntegrationCard() {
   const [configErrors, setConfigErrors] = useState<Record<string, string>>({});
   const [configBusy, setConfigBusy] = useState(false);
   const [configMessage, setConfigMessage] = useState("");
+  const [importBusy, setImportBusy] = useState(false);
 
   const [testForm, setTestForm] = useState<MailgunTestForm>({ to_email: "", subject: "", text: "" });
   const [testError, setTestError] = useState("");
@@ -157,6 +160,21 @@ export function MailgunIntegrationCard() {
     }
   }
 
+  async function onImportFromEnv() {
+    setConfigMessage("");
+    setStatusError("");
+    setImportBusy(true);
+    try {
+      const payload: MailgunImportFromEnvResponse = await importMailgunConfigFromEnv();
+      setConfigMessage(payload.message || "Configurația Mailgun a fost importată.");
+      await loadStatus();
+    } catch (err) {
+      setConfigMessage(normalizeError(err, "Nu am putut importa configurația Mailgun din env."));
+    } finally {
+      setImportBusy(false);
+    }
+  }
+
   return (
     <article className="wm-card p-4" data-testid="mailgun-card">
       <div className="flex items-center justify-between">
@@ -179,6 +197,7 @@ export function MailgunIntegrationCard() {
         <div className="mt-3 space-y-1 text-xs text-slate-600">
           <p>Configured: {String(Boolean(status?.configured))}</p>
           <p>Enabled: {String(Boolean(status?.enabled))}</p>
+          <p>Config source: {status?.config_source || "none"}</p>
           <p>Domain: {status?.domain || "-"}</p>
           <p>Base URL: {status?.base_url || "-"}</p>
           <p>From email: {status?.from_email || "-"}</p>
@@ -186,6 +205,9 @@ export function MailgunIntegrationCard() {
           <p>Reply-To: {status?.reply_to || "-"}</p>
           <p>API key: {status?.api_key_masked || "-"}</p>
           {!status?.configured ? <p className="pt-1 text-amber-700">Mailgun nu este configurat. Completează formularul de mai jos.</p> : null}
+          {status?.configured && status?.config_source === "env" ? (
+            <p className="pt-1 text-amber-700">Configurația este activă din env fallback. Poți importa în DB pentru administrare explicită din UI.</p>
+          ) : null}
         </div>
       ) : null}
 
@@ -201,6 +223,15 @@ export function MailgunIntegrationCard() {
         >
           {configOpen ? "Închide configurare" : status?.configured ? "Editează configurare" : "Configurează Mailgun"}
         </button>
+        {status?.configured && status?.config_source === "env" ? (
+          <button
+            onClick={() => void onImportFromEnv()}
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            disabled={loading || configBusy || importBusy}
+          >
+            {importBusy ? "Se importă..." : "Importă din env în DB"}
+          </button>
+        ) : null}
       </div>
 
       {configOpen ? (
