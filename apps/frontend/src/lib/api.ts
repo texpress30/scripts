@@ -309,6 +309,7 @@ export type SubaccountTeamMemberItem = {
   source_scope: string;
   source_label: string;
   is_active: boolean;
+  membership_status?: "active" | "inactive" | string;
   is_inherited: boolean;
 };
 
@@ -387,6 +388,97 @@ export async function getSubaccountGrantableModules(subaccountId: number): Promi
   return apiRequest<TeamGrantableModulesResponse>(`/team/subaccounts/${encodeURIComponent(String(subaccountId))}/grantable-modules`);
 }
 
+export type TeamSubaccountMyAccessResponse = {
+  subaccount_id: number;
+  role: string;
+  module_keys: string[];
+  source_scope?: string;
+  access_scope?: string;
+  unrestricted_modules?: boolean;
+};
+
+export async function getSubaccountMyAccess(subaccountId: number): Promise<TeamSubaccountMyAccessResponse> {
+  return apiRequest<TeamSubaccountMyAccessResponse>(`/team/subaccounts/${encodeURIComponent(String(subaccountId))}/my-access`);
+}
+
+
+
+export type TeamMembershipDetailItem = {
+  membership_id: number;
+  user_id: number;
+  scope_type: "agency" | "subaccount" | string;
+  subaccount_id: number | null;
+  subaccount_name: string;
+  role_key: string;
+  role_label: string;
+  module_keys: string[];
+  source_scope: string;
+  is_inherited: boolean;
+  membership_status?: "active" | "inactive" | string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  extension: string;
+};
+
+export type TeamMembershipDetailResponse = {
+  item: TeamMembershipDetailItem;
+};
+
+export type UpdateTeamMembershipPayload = {
+  user_role?: string;
+  module_keys?: string[];
+};
+
+export async function getTeamMembershipDetail(membershipId: string | number): Promise<TeamMembershipDetailResponse> {
+  return apiRequest<TeamMembershipDetailResponse>(`/team/members/${encodeURIComponent(String(membershipId))}`);
+}
+
+export async function updateTeamMembership(
+  membershipId: string | number,
+  payload: UpdateTeamMembershipPayload,
+): Promise<TeamMembershipDetailResponse> {
+  return apiRequest<TeamMembershipDetailResponse>(`/team/members/${encodeURIComponent(String(membershipId))}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+
+export type TeamMembershipStatusResponse = {
+  membership_id: number;
+  status: "active" | "inactive" | string;
+  message: string;
+};
+
+export async function deactivateTeamMember(membershipId: string | number): Promise<TeamMembershipStatusResponse> {
+  return apiRequest<TeamMembershipStatusResponse>(`/team/members/${encodeURIComponent(String(membershipId))}/deactivate`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export async function reactivateTeamMember(membershipId: string | number): Promise<TeamMembershipStatusResponse> {
+  return apiRequest<TeamMembershipStatusResponse>(`/team/members/${encodeURIComponent(String(membershipId))}/reactivate`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+
+export type TeamMembershipRemoveResponse = {
+  membership_id: number;
+  removed: boolean;
+  message: string;
+};
+
+export async function removeTeamMember(membershipId: string | number): Promise<TeamMembershipRemoveResponse> {
+  return apiRequest<TeamMembershipRemoveResponse>(`/team/members/${encodeURIComponent(String(membershipId))}/remove`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
 
 export type TeamInviteResponse = {
   message: string;
@@ -399,9 +491,121 @@ export async function inviteTeamMember(membershipId: string | number): Promise<T
   });
 }
 
+
+export type AgencyEmailTemplateListItem = {
+  key: string;
+  label: string;
+  description: string;
+  scope: string;
+  enabled: boolean;
+  is_overridden: boolean;
+  updated_at: string | null;
+};
+
+export type AgencyEmailTemplateListResponse = {
+  items: AgencyEmailTemplateListItem[];
+};
+
+export type AgencyEmailTemplateDetail = {
+  key: string;
+  label: string;
+  description: string;
+  subject: string;
+  text_body: string;
+  html_body: string;
+  available_variables: string[];
+  scope: string;
+  enabled: boolean;
+  is_overridden: boolean;
+  updated_at: string | null;
+};
+
+export type SaveAgencyEmailTemplatePayload = {
+  subject: string;
+  text_body: string;
+  html_body?: string;
+  enabled?: boolean;
+};
+
+export async function getAgencyEmailTemplates(): Promise<AgencyEmailTemplateListResponse> {
+  return apiRequest<AgencyEmailTemplateListResponse>("/agency/email-templates");
+}
+
+export async function getAgencyEmailTemplate(templateKey: string): Promise<AgencyEmailTemplateDetail> {
+  return apiRequest<AgencyEmailTemplateDetail>(`/agency/email-templates/${encodeURIComponent(templateKey)}`);
+}
+
+export async function saveAgencyEmailTemplate(
+  templateKey: string,
+  payload: SaveAgencyEmailTemplatePayload,
+): Promise<AgencyEmailTemplateDetail> {
+  return apiRequest<AgencyEmailTemplateDetail>(`/agency/email-templates/${encodeURIComponent(templateKey)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function resetAgencyEmailTemplate(templateKey: string): Promise<AgencyEmailTemplateDetail> {
+  return apiRequest<AgencyEmailTemplateDetail>(`/agency/email-templates/${encodeURIComponent(templateKey)}/reset`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export type PreviewAgencyEmailTemplatePayload = {
+  subject?: string;
+  text_body?: string;
+  html_body?: string;
+};
+
+export type PreviewAgencyEmailTemplateResponse = {
+  key: string;
+  rendered_subject: string;
+  rendered_text_body: string;
+  rendered_html_body: string;
+  sample_variables: Record<string, string>;
+  is_overridden: boolean;
+};
+
+export async function previewAgencyEmailTemplate(
+  templateKey: string,
+  payload?: PreviewAgencyEmailTemplatePayload,
+): Promise<PreviewAgencyEmailTemplateResponse> {
+  return apiRequest<PreviewAgencyEmailTemplateResponse>(`/agency/email-templates/${encodeURIComponent(templateKey)}/preview`, {
+    method: "POST",
+    body: JSON.stringify(payload ?? {}),
+  });
+}
+
+export type SendAgencyEmailTemplateTestPayload = {
+  to_email: string;
+  subject?: string;
+  text_body?: string;
+  html_body?: string;
+};
+
+export type SendAgencyEmailTemplateTestResponse = {
+  key: string;
+  to_email: string;
+  sent: boolean;
+  rendered_subject: string;
+  message: string;
+};
+
+export async function sendAgencyEmailTemplateTest(
+  templateKey: string,
+  payload: SendAgencyEmailTemplateTestPayload,
+): Promise<SendAgencyEmailTemplateTestResponse> {
+  return apiRequest<SendAgencyEmailTemplateTestResponse>(`/agency/email-templates/${encodeURIComponent(templateKey)}/test-send`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export type MailgunStatusResponse = {
   configured: boolean;
   enabled: boolean;
+  config_source?: "db" | "env" | "none" | string;
   domain: string;
   base_url: string;
   from_email: string;
@@ -434,6 +638,18 @@ export async function saveMailgunConfig(payload: MailgunConfigPayload): Promise<
   return apiRequest<MailgunStatusResponse>("/agency/integrations/mailgun/config", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export type MailgunImportFromEnvResponse = MailgunStatusResponse & {
+  imported: boolean;
+  message: string;
+};
+
+export async function importMailgunConfigFromEnv(): Promise<MailgunImportFromEnvResponse> {
+  return apiRequest<MailgunImportFromEnvResponse>("/agency/integrations/mailgun/import-from-env", {
+    method: "POST",
+    body: JSON.stringify({}),
   });
 }
 
