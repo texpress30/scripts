@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
 
-from app.api.dependencies import enforce_action_scope, get_current_user
+from app.api.dependencies import enforce_action_scope, enforce_subaccount_module_access, get_current_user
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
 from app.services.dashboard import unified_dashboard_service
@@ -230,6 +230,7 @@ def client_dashboard(
     response: Response = None,
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="dashboard:view", scope="subaccount")
+    enforce_subaccount_module_access(user=user, subaccount_id=client_id, module_key="dashboard")
 
     resolved_end = end_date or date.today()
     resolved_start = start_date or (resolved_end - timedelta(days=29))
