@@ -1,3 +1,54 @@
+# TODO — Sub-account Team UI remove membership + explicit PR output
+
+- [x] Refresh workspace and inspect Sub-account Team page, shared API helper, and backend remove contract.
+- [x] Reuse shared `removeTeamMember(membershipId)` helper and wire row-level remove action in Sub-account Team list.
+- [x] Add explicit remove confirmation, per-row remove loading, success feedback, and list refetch (including graceful 404 refresh).
+- [x] Add explicit remove error handling for 403/404/409 with clear messages (including self-removal copy).
+- [x] Add focused frontend tests for remove render/confirm/cancel, endpoint call, success/refetch, and remove error handling, while preserving existing flows.
+- [x] Run relevant frontend tests and frontend build.
+- [x] Commit changes and create PR via `make_pr`; include final PR title/body explicitly in task output.
+
+## Review
+- [x] Sub-account Team now supports remove membership action (`Elimină accesul`) in row actions without redesign and without changing Agency Team behavior.
+- [x] Remove action uses explicit confirmation and clears only access grant through existing backend endpoint; no user identity deletion.
+- [x] Added row-level loading and robust error mapping for remove (403/404/409), with dedicated self-removal message and 404 refresh behavior.
+- [x] Added focused tests for remove flow plus existing lifecycle/invite/create/edit coverage remains intact.
+- [x] Verification executed: targeted Sub-account Team tests + frontend build.
+- [x] Intentionally left for next major block: Email Templates & Notifications.
+
+# TODO — Agency Team UI remove membership + PR metadata hardening
+
+- [x] Refresh workspace and inspect Agency Team page, frontend API helpers, and backend remove contract.
+- [x] Add/refactor frontend API helper `removeTeamMember(membershipId)` wired to `POST /team/members/{membership_id}/remove`.
+- [x] Add Agency Team row action `Elimină accesul` with explicit confirmation dialog and per-row loading.
+- [x] Handle remove success/errors (403/404/409/generic), include 404 graceful refresh, and keep existing actions unaffected.
+- [x] Add compact frontend tests for remove action rendering, confirm flow, endpoint call, success refetch, and 403/404/409 handling.
+- [x] Run relevant frontend tests and frontend build.
+- [x] Commit changes and create PR with exact required title/body; attempted metadata verification/patch flow and documented environment blocker (no remote/token/gh).
+
+## Review
+- [x] Agency Team now exposes row action `Elimină accesul`, with explicit confirm text and per-row loading, while preserving existing invite/edit/deactivate/reactivate actions.
+- [x] Frontend remove flow is wired to `POST /team/members/{membership_id}/remove` via helper `removeTeamMember`, then refreshes list on success and also refreshes gracefully on 404.
+- [x] Error mapping is explicit for 403/404/409 and keeps backend messages when useful; self-removal conflict shows dedicated message.
+- [x] Added focused tests covering remove render/confirm/cancel, endpoint call + success refetch, and 403/404/409 handling.
+- [x] Build verified on frontend app.
+- [x] Intentionally left out: Sub-account Team remove UI (next task), token revocation, identity deletion.
+- [x] PR metadata post-check blocker: no `gh` binary, no git remote configured, and no GitHub token env available for REST `curl` update in this runtime.
+
+# TODO — Backend minimal remove membership (endpoint + service + teste)
+
+- [x] Refresh workspace and inspect team API/service/schemas/dependencies + current membership tests.
+- [x] Add backend-only remove endpoint (`POST /team/members/{membership_id}/remove`) and response schema.
+- [x] Add minimal service helper `remove_membership(...)` with inherited/self RBAC protections and module permission cleanup.
+- [x] Add targeted backend tests for success + required rejection/consistency scenarios.
+- [x] Run relevant backend tests and backend startup check.
+
+## Review
+- [x] Added backend endpoint `POST /team/members/{membership_id}/remove` with response payload `{membership_id, removed, message}` and same error-mapping style as deactivate/reactivate.
+- [x] Added service helper `remove_membership(...)` that blocks inherited memberships, blocks self-removal for current session memberships, deletes membership module permissions, then deletes the direct membership row only.
+- [x] Added backend tests covering remove success, inherited/self conflict handling, API 404 after remove flow, module-permission cleanup, and login behavior when removed memberships are absent from DB query results.
+- [x] Verification: `cd apps/backend && APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q tests/test_team_membership_edit_api.py tests/test_team_membership_lifecycle_service.py tests/test_auth_db_login.py` and `cd apps/backend && APP_ENV=test APP_AUTH_SECRET=test-secret python -c "from app.main import app; print('ok', bool(app))"`.
+
 # TODO — Formular Adăugare/Editare Utilizator (Echipa Mea, Sub-Account)
 
 - [x] Refresh workspace and inspect current sub-account `settings/team` route.
@@ -4751,3 +4802,232 @@
   - `cd apps/backend && python -m pytest tests/test_team_subaccount_api.py tests/test_team_members_foundation.py`
   - `cd apps/frontend && pnpm vitest run src/app/subaccount/[id]/settings/team/page.test.tsx`
   - `cd apps/frontend && pnpm build`
+
+## 2026-03-17 Connector workspace sync task
+- [x] Draft plan with explicit sync steps and verification commands.
+- [x] Start a fresh terminal session (do not reuse previous session) for connector-style commands.
+- [x] Run requested remote/add-or-set, fetch, and pull commands exactly as provided.
+- [x] Verify remote configuration and fetch visibility in the new session.
+- [x] Document review/results for this task.
+
+### Check-in before execution
+Plan reviewed: execute the exact user-provided Git commands in a newly started terminal session, then verify `git remote -v` and fetch state, and record outcome.
+
+### Review
+- Executed the exact three Git commands in a fresh terminal session.
+- `origin` now points to the provided GitHub URL for both fetch and push.
+- `git fetch origin` succeeded and `git pull origin main --allow-unrelated-histories` reported repository already up to date.
+
+## 2026-03-17 AppShell subaccount module filtering + access-context
+- [x] Review existing frontend/backend files for session, AppShell, routing helpers, and team access contracts.
+- [x] Draft implementation plan with compatibility/fallback behavior for subaccount-scoped vs agency/global roles.
+- [ ] Add/adjust backend access-context endpoint contract for current subaccount module access (with legacy fallback + 403).
+- [ ] Add backend tests for access-context response shape, scoped access, denied access, agency/global compatibility, legacy fallback.
+- [ ] Add frontend API helper for current subaccount access-context retrieval.
+- [ ] Update AppShell sidebar filtering by module keys for subaccount routes and keep agency/global behavior unchanged.
+- [ ] Add safe redirect on manual navigation to disallowed module route (first allowed module fallback order).
+- [ ] Add/adjust frontend tests for filtered sidebar, hidden modules, agency/global unchanged, safe redirect, and loading fallback.
+- [ ] Run frontend tests and build; run backend tests + startup check for changed contract.
+- [ ] Document review/results and intentional follow-ups.
+
+### Check-in before execution
+Plan verified: implement minimal access-context foundation, consume it in AppShell for subaccount-scoped users only, preserve agency/global behavior, then validate with focused frontend/backend tests and build.
+- [x] Add/adjust backend access-context endpoint contract for current subaccount module access (with legacy fallback + 403).
+- [x] Add backend tests for access-context response shape, scoped access, denied access, agency/global compatibility, legacy fallback.
+- [x] Add frontend API helper for current subaccount access-context retrieval.
+- [x] Update AppShell sidebar filtering by module keys for subaccount routes and keep agency/global behavior unchanged.
+- [x] Add safe redirect on manual navigation to disallowed module route (first allowed module fallback order).
+- [x] Add/adjust frontend tests for filtered sidebar, hidden modules, agency/global unchanged, safe redirect, and loading fallback.
+- [x] Run frontend tests and build; run backend tests + startup check for changed contract.
+- [x] Document review/results and intentional follow-ups.
+
+### Review
+- Added backend endpoint `GET /team/subaccounts/{subaccount_id}/my-access` with minimal response contract (`subaccount_id`, `role`, `module_keys`, `source_scope`, `access_scope`, `unrestricted_modules`).
+- Subaccount-scoped users now receive effective membership module keys for the current sub-account, with safe legacy fallback to full catalog when explicit context is unavailable; no-access remains 403.
+- Agency/global roles return unrestricted module context for compatibility in this task.
+- Frontend AppShell now loads current subaccount access-context for sub-account routes, filters sidebar module entries (`dashboard`, `campaigns`, `rules`, `creative`, `recommendations`) by `module_keys`, and preserves agency/global behavior.
+- Manual URL access to disallowed sub-account module routes now redirects safely to the first allowed module in fixed order; if none are allowed, fallback route is `/subaccount/{id}/settings/profile`.
+- Follow-up intentionally left: backend enforcement on each business module endpoint remains for the next task.
+
+## 2026-03-17 Backend module enforcement for subaccount-scoped users
+- [x] Re-read dependencies/team_members/rbac/team APIs and module-serving backend routes (dashboard, campaigns, rules, creative, recommendations).
+- [x] Add reusable backend helper for subaccount module-level enforcement with scoped checks, agency/global bypass, and legacy-safe fallback.
+- [x] Define and apply clear module-to-endpoint enforcement on currently used subaccount module routes.
+- [x] Add representative backend tests for allowed/forbidden paths across dashboard/campaigns/rules/creative/recommendations, plus agency/global and legacy compatibility.
+- [x] Run backend tests and backend startup/import check.
+- [x] Document review and intentional follow-up scope.
+
+### Check-in before execution
+Plan verified: implement enforcement helper in dependencies, apply it to current module-serving routes used by UI, add a dedicated campaigns summary endpoint for clear campaigns mapping, and validate via focused backend tests + startup check.
+
+### Review
+- Added `enforce_subaccount_module_access(user, subaccount_id, module_key)` in backend dependencies to enforce scoped sub-account ownership first, then effective `module_keys` for subaccount roles.
+- Added campaigns-specific endpoint `GET /campaigns/{client_id}/summary` and switched campaigns UI metrics load to this route so campaigns module has explicit backend enforcement mapping.
+- Applied backend module enforcement on active module routes: dashboard (`/dashboard/{client_id}`), campaigns (`/campaigns/{client_id}/summary`), rules (`/rules/{client_id}` and evaluate/create paths), creative (library + asset actions), recommendations (`/ai/recommendations/*`).
+- Preserved compatibility: agency/global roles bypass module restrictions; subaccount legacy context without explicit membership module rows falls back safely to full default catalog from existing service logic.
+- Intentional follow-up left: broader mapping for ambiguous/unused legacy endpoints not currently used by UI remains for a future hardening pass.
+
+## 2026-03-17 Membership detail + patch foundation (backend)
+- [x] Re-read team API/service/schemas/dependencies/rbac and frontend team pages for contract context.
+- [x] Design membership-oriented detail + patch contracts (no identity edits) and enforcement matrix.
+- [ ] Implement `GET /team/members/{membership_id}` with edit-oriented detail response and inherited indicator.
+- [ ] Implement `PATCH /team/members/{membership_id}` for `user_role` + `module_keys` only, with scope/family validation.
+- [ ] Implement service helpers for membership detail fetch, role-family validation, and membership update operations.
+- [ ] Enforce grant ceiling for subaccount-scoped actors on module updates.
+- [ ] Reject agency membership `module_keys`, invalid/empty module lists, and inherited/non-editable targets.
+- [ ] Add/adjust backend tests for new endpoints and update rules + regression coverage for list/create/invite.
+- [ ] Run backend tests + backend startup check.
+- [ ] Document review/results and intentional next-step scope.
+
+### Check-in before execution
+Plan verified: add membership detail/patch foundations strictly on membership records (not user identity), keep create/list/invite flows untouched, and validate with focused backend tests including grant ceiling and inherited access rejection.
+- [x] Implement `GET /team/members/{membership_id}` with edit-oriented detail response and inherited indicator.
+- [x] Implement `PATCH /team/members/{membership_id}` for `user_role` + `module_keys` only, with scope/family validation.
+- [x] Implement service helpers for membership detail fetch, role-family validation, and membership update operations.
+- [x] Enforce grant ceiling for subaccount-scoped actors on module updates.
+- [x] Reject agency membership `module_keys`, invalid/empty module lists, and inherited/non-editable targets.
+- [x] Add/adjust backend tests for new endpoints and update rules + regression coverage for list/create/invite.
+- [x] Run backend tests + backend startup check.
+- [x] Document review/results and intentional next-step scope.
+
+### Review
+- Added membership-oriented backend foundation endpoints: `GET /team/members/{membership_id}` and `PATCH /team/members/{membership_id}`.
+- Implemented membership detail serialization for edit use-cases with scope/subaccount/role/module/source/inherited markers and identity display fields.
+- Implemented membership patch limited to `user_role` and `module_keys` only; no global user identity fields are updated in this task.
+- Added strict scope-family rules: agency membership accepts only agency roles and rejects `module_keys`; subaccount membership accepts only subaccount roles and validates module list (valid keys, dedup, minimum one).
+- Added grant-ceiling enforcement for subaccount-scoped actors when updating module permissions.
+- Added inherited/non-editable guard with clear conflict response; no implicit membership creation is performed.
+- Preserved create/list/invite behavior and validated with regression test execution.
+- Intentional follow-up: edit UI wiring and broader lifecycle actions (deactivate/remove membership, identity edits) remain for next tasks.
+
+## 2026-03-17 Agency Team UI edit wiring for membership role/module updates
+- [x] Re-read Agency Team page and team API contracts for membership detail/patch.
+- [x] Add frontend API helpers/types for membership detail and patch endpoints.
+- [x] Wire table edit action to fetch membership detail by `membership_id` and open edit mode.
+- [x] Reuse existing create/edit form structure for edit mode without redesign.
+- [x] Make identity fields read-only in edit mode and ensure PATCH payload excludes identity fields.
+- [x] Render agency vs subaccount-specific behavior for role/module section in edit mode.
+- [x] Handle inherited/non-editable membership states (preload + patch conflict) with blocked save and clear messaging.
+- [x] Wire save action to `PATCH /team/members/{membership_id}` with `user_role` + conditional `module_keys`.
+- [x] Add frontend tests for edit flow, detail fetch, module preselection, patch payload, inherited handling, and regressions.
+- [x] Run frontend tests and frontend build.
+
+### Check-in before execution
+Plan verified: keep Agency Team UI shape largely unchanged, add edit wiring around existing form, enforce read-only identity in edit mode, and validate via focused frontend tests plus build.
+
+### Review
+- Agency Team edit action now loads `GET /team/members/{membership_id}` and enters edit mode with membership-scoped data.
+- Save now calls `PATCH /team/members/{membership_id}` with supported fields only (`user_role`, `module_keys` for subaccount scope).
+- Edit mode enforces read-only identity fields (first_name/last_name/email/phone/extension) and shows a note that identity editing is deferred.
+- Agency membership edit keeps module section non-applicable; subaccount membership edit shows module controls with preselected `module_keys`.
+- Inherited access is blocked with clear messaging and save protection; backend conflict/error mappings (400/403/404/409) surface user-friendly feedback.
+- Existing create/invite flows remain covered by the existing and updated test suite.
+- Intentional follow-up: Sub-account Team edit UI remains out of scope for this task.
+
+## 2026-03-17 Membership lifecycle foundation: deactivate/reactivate (backend)
+- [x] Re-read team/auth/rbac/dependencies and team frontend pages for contract context.
+- [x] Add backend endpoints for membership deactivate/reactivate with idempotent status response.
+- [x] Add service helpers for membership status transitions and inherited-access guard.
+- [x] Expose membership status in team list/detail/subaccount list responses with backward compatibility.
+- [x] Ensure login/access-context/grantable flows ignore inactive memberships.
+- [x] Add backend tests for lifecycle endpoints, status contracts, and inactive filtering behavior.
+- [x] Run targeted backend tests and backend startup check.
+
+### Review
+- Implemented `POST /team/members/{membership_id}/deactivate` and `POST /team/members/{membership_id}/reactivate` on membership records only (no `users.is_active` mutations).
+- Added status serialization (`membership_status`) in team list/detail and subaccount list responses while preserving existing fields.
+- Added inherited-access conflict handling for lifecycle transitions; no implicit local membership creation.
+- Confirmed DB-driven auth/access behaviors continue to only consider active memberships.
+- Intentional follow-up left for next task: UI actions/buttons and lifecycle wiring in Agency/Sub-account Team pages.
+
+
+## 2026-03-17 Agency Team UI lifecycle actions (deactivate/reactivate)
+- [x] Re-read Agency Team page, frontend API helpers, and backend team contracts for status/lifecycle endpoints.
+- [x] Render `membership_status` in Agency Team list with discrete active/inactive indicator.
+- [x] Add frontend API helpers for deactivate/reactivate membership lifecycle endpoints.
+- [x] Wire row-level deactivate/reactivate actions with per-row loading, success toast, and list refetch.
+- [x] Add explicit lifecycle error mappings for 403/404/409 plus safe fallback.
+- [x] Add focused frontend tests for status rendering, actions, loading, success refetch, and error handling while preserving existing flows.
+- [x] Run frontend tests and frontend build.
+
+### Check-in before execution
+Plan verified: keep change incremental in `apps/frontend/src/app/settings/team/page.tsx` + `apps/frontend/src/lib/api.ts` and tests only; no Sub-account Team lifecycle UI and no create/edit/invite behavior changes.
+
+### Review
+- Agency Team list now surfaces `membership_status` with discrete badges (`Activ` / `Inactiv`) and keeps existing table layout.
+- Added lifecycle helpers in frontend API for `deactivate`/`reactivate` membership endpoints and wired row-level actions in Agency Team.
+- Lifecycle actions use per-row loading, refetch the list on success, and map 403/404/409 to clear user-safe messages.
+- Existing create/edit/invite flows remain covered and passing in updated page tests.
+- Intentional next step: Sub-account Team lifecycle UI actions remain out of scope for this task.
+
+
+## 2026-03-17 Sub-account Team UI lifecycle actions (deactivate/reactivate)
+- [x] Re-read sub-account team page, frontend API helpers, and backend team contracts for lifecycle/status.
+- [x] Render `membership_status` in sub-account team list with compact active/inactive indicator.
+- [x] Wire row-level deactivate/reactivate actions in sub-account team actions column.
+- [x] Add per-row loading, success messaging, explicit 403/404/409 mapping, and list refetch after lifecycle actions.
+- [x] Keep create/edit/invite behavior unchanged; no Agency Team changes in this task.
+- [x] Add focused frontend tests for lifecycle UI/actions/loading/errors and regressions for existing flows.
+- [x] Run relevant frontend tests and frontend build.
+- [x] Create PR with required title/body and verify metadata is not placeholder; patch with `gh pr edit` if possible.
+
+### Check-in before execution
+Plan verified: confine code changes to sub-account team page + tests (and shared API helper usage only), with minimal/no backend changes and no redesign.
+
+### Review
+- Sub-account Team list now shows lifecycle status badges (`Activ`/`Inactiv`) using backend `membership_status` with fallback from `is_active`.
+- Added row-level deactivate/reactivate action buttons in the existing Actions column, with per-row loading state and list refetch on success.
+- Added explicit lifecycle error mapping for 403/404/409 and inherited guard in UI; inherited rows keep action disabled with clear tooltip.
+- Existing create/edit/invite behavior remained intact and passing through updated test coverage.
+- Intentional follow-up: remove membership action remains for next task; no token revocation behavior was added in this step.
+
+---
+
+# TODO — Repository workflow housekeeping (task docs refresh)
+
+- [x] Inspect repo instructions and current task-tracking artifacts.
+- [x] Record a minimal task/review entry in `tasks/todo.md` for this execution cycle.
+- [x] Verify git diff remains scoped to task documentation only.
+
+## Review
+- [x] Added a focused housekeeping entry documenting this cycle.
+- [x] Scope intentionally limited to `tasks/todo.md` to keep the change minimal and reviewable.
+
+---
+
+# TODO — Backend foundation read-only Email Templates catalog
+
+- [x] Re-read `apps/backend/app/api/auth.py`, `apps/backend/app/api/team.py`, and `apps/backend/app/main.py` for routing/RBAC patterns.
+- [x] Add minimal canonical read-only email templates catalog service (`auth_forgot_password`, `team_invite_user`).
+- [x] Add backend read-only agency endpoints for list and detail with admin/global-admin enforcement.
+- [x] Add targeted backend tests for list/detail/invalid-key/RBAC.
+- [x] Run targeted backend tests and backend startup check.
+- [x] Commit changes and create PR metadata.
+
+### Check-in before execution
+Plan verified: backend-only minimal foundation, no UI, no DB tables/overrides, no forgot/invite migration in this step.
+
+## Review
+- [x] Added backend-only read-only email templates foundation with canonical in-code catalog and agency endpoints.
+- [x] Kept scope strict: no UI, no DB persistence/overrides, no forgot/invite migration, no mailgun service changes.
+- [x] Verified with targeted backend tests plus startup import check.
+
+---
+
+# TODO — Backend Email Templates DB overrides + save/reset APIs
+
+- [x] Re-read current email templates service/api/schemas/main routing and keep scope backend-only.
+- [x] Add idempotent persistent storage (`agency_email_templates`) for agency-level template overrides.
+- [x] Extend email templates service for effective read model (default vs override), save/upsert, and reset behavior.
+- [x] Extend API contracts: list/detail enriched fields + PUT save + POST reset, admin/global-admin only.
+- [x] Add backend tests for idempotent schema init, default/override read behavior, save/reset, 404, and RBAC.
+- [x] Run targeted backend tests and backend startup check.
+- [x] Commit and open PR with exact requested title/body.
+
+### Check-in before execution
+Plan verified: strict backend increment only (no UI, no forgot/invite migration, no flow changes outside email-template catalog APIs).
+
+## Review
+- [x] Added agency-level DB override persistence for email templates with idempotent schema init.
+- [x] Extended list/detail to expose effective values and override metadata (`enabled`, `is_overridden`, `updated_at`).
+- [x] Added admin-only save/reset endpoints and validated behavior through focused backend tests + startup check.
