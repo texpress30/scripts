@@ -4980,3 +4980,15 @@ Plan verified: confine code changes to sub-account team page + tests (and shared
 - Added explicit lifecycle error mapping for 403/404/409 and inherited guard in UI; inherited rows keep action disabled with clear tooltip.
 - Existing create/edit/invite behavior remained intact and passing through updated test coverage.
 - Intentional follow-up: remove membership action remains for next task; no token revocation behavior was added in this step.
+
+---
+
+# TODO — Repository workflow housekeeping (task docs refresh)
+
+- [x] Inspect repo instructions and current task-tracking artifacts.
+- [x] Record a minimal task/review entry in `tasks/todo.md` for this execution cycle.
+- [x] Verify git diff remains scoped to task documentation only.
+
+## Review
+- [x] Added a focused housekeeping entry documenting this cycle.
+- [x] Scope intentionally limited to `tasks/todo.md` to keep the change minimal and reviewable.
