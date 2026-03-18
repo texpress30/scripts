@@ -491,6 +491,67 @@ export async function inviteTeamMember(membershipId: string | number): Promise<T
   });
 }
 
+
+export type AgencyEmailTemplateListItem = {
+  key: string;
+  label: string;
+  description: string;
+  scope: string;
+  enabled: boolean;
+  is_overridden: boolean;
+  updated_at: string | null;
+};
+
+export type AgencyEmailTemplateListResponse = {
+  items: AgencyEmailTemplateListItem[];
+};
+
+export type AgencyEmailTemplateDetail = {
+  key: string;
+  label: string;
+  description: string;
+  subject: string;
+  text_body: string;
+  html_body: string;
+  available_variables: string[];
+  scope: string;
+  enabled: boolean;
+  is_overridden: boolean;
+  updated_at: string | null;
+};
+
+export type SaveAgencyEmailTemplatePayload = {
+  subject: string;
+  text_body: string;
+  html_body?: string;
+  enabled?: boolean;
+};
+
+export async function getAgencyEmailTemplates(): Promise<AgencyEmailTemplateListResponse> {
+  return apiRequest<AgencyEmailTemplateListResponse>("/agency/email-templates");
+}
+
+export async function getAgencyEmailTemplate(templateKey: string): Promise<AgencyEmailTemplateDetail> {
+  return apiRequest<AgencyEmailTemplateDetail>(`/agency/email-templates/${encodeURIComponent(templateKey)}`);
+}
+
+export async function saveAgencyEmailTemplate(
+  templateKey: string,
+  payload: SaveAgencyEmailTemplatePayload,
+): Promise<AgencyEmailTemplateDetail> {
+  return apiRequest<AgencyEmailTemplateDetail>(`/agency/email-templates/${encodeURIComponent(templateKey)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function resetAgencyEmailTemplate(templateKey: string): Promise<AgencyEmailTemplateDetail> {
+  return apiRequest<AgencyEmailTemplateDetail>(`/agency/email-templates/${encodeURIComponent(templateKey)}/reset`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
 export type MailgunStatusResponse = {
   configured: boolean;
   enabled: boolean;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildScopedClients, filterSubaccountNavItems, resolveSubaccountModuleRedirect, resolveSubaccountRouteGuardDecision } from "./AppShell";
+import { buildScopedClients, filterSubaccountNavItems, getNavItems, resolveSubaccountModuleRedirect, resolveSubaccountRouteGuardDecision } from "./AppShell";
 import type { SessionAccessContext } from "@/lib/session";
 
 function context(overrides: Partial<SessionAccessContext>): SessionAccessContext {
@@ -19,6 +19,12 @@ function context(overrides: Partial<SessionAccessContext>): SessionAccessContext
 }
 
 describe("AppShell sub-account access helpers", () => {
+
+  it("includes Email Templates in agency sidebar navigation", () => {
+    const navItems = getNavItems("/agency/dashboard");
+    expect(navItems.some((item) => item.href === "/agency/email-templates" && item.label === "Email Templates")).toBe(true);
+  });
+
   it("filters visible clients to allowed ids and preserves allowed order", () => {
     const result = buildScopedClients(
       [

@@ -5053,3 +5053,26 @@ Plan verified: backend incremental change only, no UI and no redesign, with exis
 - [x] Forgot-password and invite now resolve/render effective templates (default or override) via shared email template service.
 - [x] Added deterministic placeholder rendering (`{{...}}`) for supported variables and enforced template `enabled` gating with safe availability errors.
 - [x] Extended Mailgun send API with optional HTML in a backward-compatible way and validated via focused backend tests + startup check.
+
+---
+
+# TODO — Agency Email Templates UI page (list/detail/save/reset)
+
+- [x] Re-read AppShell/sidebar + frontend API + backend email template contracts.
+- [x] Add agency sidebar item `Email Templates` and dedicated route page.
+- [x] Add frontend API helpers for list/detail/save/reset email templates.
+- [x] Implement list + detail editor (subject/text/html/enabled) with save/reset actions.
+- [x] Implement loading/empty/error states and explicit 403/404/400 handling.
+- [x] Add compact frontend tests for sidebar nav, list/detail load, save/reset calls, and error handling.
+- [x] Run frontend targeted tests + frontend build.
+- [x] Re-run backend forgot/invite tests as no-regression confirmation.
+- [x] Commit and create PR with required title/body.
+
+### Check-in before execution
+Plan verified: frontend-focused incremental change, no notifications UI, no rich editor/preview/test-send in this task.
+
+## Review
+- [x] Added `Email Templates` sidebar item and new agency page `/agency/email-templates`.
+- [x] Page supports list/detail/save/reset against existing backend API, including success feedback and loading states.
+- [x] Error handling is explicit for 403/404/400 and generic fallback.
+- [x] Notifications UI and rich editor/preview/test-send remain intentionally out of scope.

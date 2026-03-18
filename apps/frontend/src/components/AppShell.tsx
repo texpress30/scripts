@@ -43,7 +43,7 @@ type NavItem = {
   moduleKey?: SubaccountModuleKey;
 };
 
-function getNavItems(pathname: string): NavItem[] {
+export function getNavItems(pathname: string): NavItem[] {
   const subMatch = pathname.match(/^\/sub\/(\d+)/);
   if (subMatch) {
     const id = subMatch[1];
@@ -61,6 +61,7 @@ function getNavItems(pathname: string): NavItem[] {
     { href: "/agency/clients", label: "Agency Clients", icon: Users },
     { href: "/agency-accounts", label: "Agency Accounts", icon: Bell },
     { href: "/agency/audit", label: "Agency Audit", icon: Sparkles },
+    { href: "/agency/email-templates", label: "Email Templates", icon: Bell },
     { href: "/notifications", label: "Notificari", icon: Bell },
     { href: "/creative", label: "Creative", icon: Palette },
   ];
