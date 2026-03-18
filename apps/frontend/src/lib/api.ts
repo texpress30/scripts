@@ -605,6 +605,7 @@ export async function sendAgencyEmailTemplateTest(
 export type MailgunStatusResponse = {
   configured: boolean;
   enabled: boolean;
+  config_source?: "db" | "env" | "none" | string;
   domain: string;
   base_url: string;
   from_email: string;
@@ -637,6 +638,18 @@ export async function saveMailgunConfig(payload: MailgunConfigPayload): Promise<
   return apiRequest<MailgunStatusResponse>("/agency/integrations/mailgun/config", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export type MailgunImportFromEnvResponse = MailgunStatusResponse & {
+  imported: boolean;
+  message: string;
+};
+
+export async function importMailgunConfigFromEnv(): Promise<MailgunImportFromEnvResponse> {
+  return apiRequest<MailgunImportFromEnvResponse>("/agency/integrations/mailgun/import-from-env", {
+    method: "POST",
+    body: JSON.stringify({}),
   });
 }
 

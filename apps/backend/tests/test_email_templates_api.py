@@ -5,6 +5,7 @@ from unittest.mock import patch
 from app.api import email_templates as email_templates_api
 from app.services.auth import AuthUser
 from app.services.email_templates import EmailTemplatePreviewResult, EmailTemplateTestSendResult, EffectiveEmailTemplate, EmailTemplatesService
+from app.services import mailgun_service as mailgun_module
 from app.services.mailgun_service import MailgunIntegrationError
 
 
@@ -458,6 +459,72 @@ class EmailTemplatesApiTests(unittest.TestCase):
             text_body="Draft {{reset_link}}",
             html_body="<p>Draft html {{expires_minutes}}</p>",
         )
+
+    def test_service_test_send_works_with_env_mailgun_fallback(self):
+        service = EmailTemplatesService()
+        fake_store = type(
+            "_FakeStore",
+            (),
+            {
+                "get_secret": staticmethod(lambda **kwargs: None),
+                "upsert_secret": staticmethod(lambda **kwargs: None),
+            },
+        )()
+
+        original_store = mailgun_module.integration_secrets_store
+        original_settings = mailgun_module.load_settings
+        original_post = mailgun_module.requests.post
+        try:
+            mailgun_module.integration_secrets_store = fake_store
+            mailgun_module.load_settings = lambda: type(
+                "_S",
+                (),
+                {
+                    "mailgun_api_key": "key-from-env",
+                    "mailgun_domain": "mg.env.example.com",
+                    "mailgun_base_url": "https://api.mailgun.net",
+                    "mailgun_from_email": "env@example.com",
+                    "mailgun_from_name": "Env Sender",
+                    "mailgun_reply_to": "",
+                    "mailgun_enabled": True,
+                },
+            )()
+
+            def _fake_post(url, auth, data, timeout):
+                class _Resp:
+                    ok = True
+                    status_code = 200
+
+                    @staticmethod
+                    def json():
+                        return {"id": "abc123", "message": "Queued"}
+
+                    text = ""
+
+                return _Resp()
+
+            mailgun_module.requests.post = _fake_post
+
+            with patch.object(
+                service,
+                "render_template_preview",
+                return_value=EmailTemplatePreviewResult(
+                    key="auth_forgot_password",
+                    rendered_subject="Subject auth",
+                    rendered_text_body="Text auth",
+                    rendered_html_body="<p>Html auth</p>",
+                    sample_variables={"reset_link": "https://example"},
+                    is_overridden=False,
+                ),
+            ):
+                result = service.send_template_test_email(template_key="auth_forgot_password", to_email="qa@example.com")
+            self.assertIsNotNone(result)
+            assert result is not None
+            self.assertTrue(result.sent)
+        finally:
+            mailgun_module.integration_secrets_store = original_store
+            mailgun_module.load_settings = original_settings
+            mailgun_module.requests.post = original_post
 
     def test_service_save_override_enforces_required_subject_and_text(self):
         service = EmailTemplatesService()

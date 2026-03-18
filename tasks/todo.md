@@ -5183,3 +5183,26 @@ Plan verified: frontend-focused incremental patch only (AppShell + email templat
 - [x] Added explicit Mailgun status panel with configured/enabled indicators, safe metadata, unavailable CTA to Integrations, and test-send gating.
 - [x] Kept preview/save/reset flows available even when Mailgun is unavailable or status fails.
 - [x] Notifications backend/UI and additional redesign remain intentionally out of scope for this task.
+
+# TODO — Mailgun DB-first + env fallback/bootstrap (2026-03-18)
+
+- [x] Re-read Mailgun service, integration secret store, config, existing Mailgun endpoints, and frontend Mailgun status usage.
+- [x] Add Mailgun env settings in backend config (`MAILGUN_*`, including optional enabled/reply-to).
+- [x] Implement DB-first config resolution with env fallback in `mailgun_service`, including `config_source` in status.
+- [x] Add explicit admin endpoint `POST /agency/integrations/mailgun/import-from-env` to bootstrap env config into DB.
+- [x] Ensure DB precedence over env and preserve existing save/test flows.
+- [x] Add backend tests for DB-only, env-only, DB-wins, none, masked key, status source, import endpoint, and template test-send availability with env fallback.
+- [x] Run targeted backend tests and backend startup check.
+- [x] Apply minimal frontend status adjustments for `config_source` visibility if needed; run relevant frontend tests/build only if touched.
+- [x] Update task notes/lessons and finalize with commit + make_pr.
+
+## Check-in before execution
+Plan verified: backend-first incremental change, no major UI redesign, no new provider support, and DB remains source-of-truth with env as fallback/bootstrap only.
+
+
+## Review
+- [x] Added backend Mailgun env vars and DB-first + env fallback resolution with explicit `config_source`.
+- [x] Added explicit `POST /agency/integrations/mailgun/import-from-env` bootstrap endpoint with admin-only scope checks and no plaintext API key response.
+- [x] Preserved DB precedence over env, while allowing env-only effective availability for Email Templates test-send and integrations status.
+- [x] Added targeted backend/frontend tests and validated backend startup plus frontend build.
+- [x] Intentionally left out: redesign major, new providers, and changes to unrelated auth/team flows.

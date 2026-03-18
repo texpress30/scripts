@@ -399,3 +399,4 @@
 
 - 2026-03-18: După un mesaj de corecție cu reguli AGENTS, oprește execuția curentă și aliniază imediat workflow-ul (plan în `tasks/todo.md`, verificare scope, commit+PR), fără a presupune că starea precedentă este încă validă.
 - 2026-03-18: Când un item Agency trebuie mutat în Settings fără schimbare de rută, tratează ruta respectivă ca settings context în AppShell și mută link-ul în `AGENCY_SETTINGS_ITEMS`, astfel încât navigarea rămâne coerentă și testabilă.
+- 2026-03-18: Pentru integrare sensibilă la secrete (Mailgun), păstrează precedence DB > env, dar expune explicit `config_source` și oferă endpoint admin de bootstrap din env în DB pentru migrare fără dublă introducere manuală.
