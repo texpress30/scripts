@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from app.api.dependencies import enforce_action_scope, get_current_user
+from app.api.dependencies import enforce_action_scope, enforce_subaccount_module_access, get_current_user
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
 from app.services.notifications import notification_service
@@ -23,6 +23,7 @@ class CreateRuleRequest(BaseModel):
 def list_rules(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
         enforce_action_scope(user=user, action="rules:list", scope="subaccount")
+        enforce_subaccount_module_access(user=user, subaccount_id=client_id, module_key="rules")
         rate_limiter_service.check(f"rules_list:{user.email}", limit=60, window_seconds=60)
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
@@ -35,6 +36,7 @@ def list_rules(client_id: int, user: AuthUser = Depends(get_current_user)) -> di
 def create_rule(client_id: int, payload: CreateRuleRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
         enforce_action_scope(user=user, action="rules:create", scope="subaccount")
+        enforce_subaccount_module_access(user=user, subaccount_id=client_id, module_key="rules")
         rate_limiter_service.check(f"rules_write:{user.email}", limit=30, window_seconds=60)
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
@@ -67,6 +69,7 @@ def create_rule(client_id: int, payload: CreateRuleRequest, user: AuthUser = Dep
 def evaluate_rules(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
         enforce_action_scope(user=user, action="rules:evaluate", scope="subaccount")
+        enforce_subaccount_module_access(user=user, subaccount_id=client_id, module_key="rules")
         rate_limiter_service.check(f"rules_eval:{user.email}", limit=30, window_seconds=60)
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc

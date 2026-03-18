@@ -1,7 +1,7 @@
 "use client";
 
 import React, { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Ban, ChevronDown, Copy, Mail, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { ChevronDown, Copy, Mail, Pencil, Plus, Power, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useParams } from "next/navigation";
 
 import { AppShell } from "@/components/AppShell";
@@ -11,10 +11,16 @@ import {
   CreateSubaccountTeamMemberPayload,
   SubaccountTeamMemberItem,
   TeamGrantableModuleItem,
+  TeamMembershipDetailItem,
   createSubaccountTeamMember,
+  deactivateTeamMember,
   getSubaccountGrantableModules,
+  getTeamMembershipDetail,
   inviteTeamMember,
   listSubaccountTeamMembers,
+  reactivateTeamMember,
+  removeTeamMember,
+  updateTeamMembership,
 } from "@/lib/api";
 
 type TeamUser = {
@@ -28,6 +34,7 @@ type TeamUser = {
   roleKey: string;
   sourceLabel: string;
   inherited: boolean;
+  membershipStatus: "active" | "inactive";
 };
 
 type TeamUserForm = {
@@ -78,6 +85,7 @@ function mapMemberToUser(item: SubaccountTeamMemberItem): TeamUser {
     roleKey: item.role_key,
     sourceLabel: item.source_label,
     inherited: item.is_inherited,
+    membershipStatus: String(item.membership_status || "").trim().toLowerCase() === "inactive" || item.is_active === false ? "inactive" : "active",
   };
 }
 
@@ -117,6 +125,58 @@ function getFriendlyInviteError(error: unknown): string {
   return "Nu am putut trimite invitația.";
 }
 
+
+
+function getFriendlyEditError(error: unknown): string {
+  if (error instanceof ApiRequestError) {
+    if (error.status === 400) return error.message || "Date invalide pentru actualizare";
+    if (error.status === 403) return "Permisiuni insuficiente pentru această modificare.";
+    if (error.status === 404) return "Membership inexistent sau inaccesibil.";
+    if (error.status === 409) return "Acest access este moștenit și nu poate fi editat aici";
+    if (error.message.trim()) return error.message;
+  }
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return "Nu am putut actualiza permisiunile.";
+}
+
+function getFriendlyLifecycleError(error: unknown): string {
+  if (error instanceof ApiRequestError) {
+    if (error.status === 403) return "Nu ai permisiuni suficiente pentru această acțiune.";
+    if (error.status === 404) return "Membership inexistent sau inaccesibil.";
+    if (error.status === 409) return "Acest access este moștenit și nu poate fi modificat aici";
+    if (error.message.trim()) return error.message;
+  }
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return "Nu am putut actualiza statusul accesului.";
+}
+
+function getFriendlyRemoveError(error: unknown): string {
+  if (error instanceof ApiRequestError) {
+    if (error.status === 403) return "Nu ai permisiuni suficiente pentru a elimina acest acces.";
+    if (error.status === 404) return "Membership inexistent.";
+    if (error.status === 409) {
+      const normalized = String(error.message || "").toLowerCase();
+      if (normalized.includes("propriul membership") || normalized.includes("sesiunea curentă")) {
+        return "Nu îți poți elimina accesul curent din această sesiune";
+      }
+      if (normalized.includes("moștenit")) {
+        return "Acest access este moștenit și nu poate fi eliminat aici";
+      }
+      return error.message || "Acest acces nu poate fi eliminat în acest moment.";
+    }
+    if (error.message.trim()) return error.message;
+  }
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return "Nu am putut elimina accesul.";
+}
+
+function toSubaccountRole(roleKey: string): TeamUserForm["role"] {
+  const key = String(roleKey || "").trim().toLowerCase();
+  if (key === "subaccount_admin") return "subaccount_admin";
+  if (key === "subaccount_viewer") return "subaccount_viewer";
+  return "subaccount_user";
+}
+
 function hasValidEmail(email: string): boolean {
   return EMAIL_RE.test(String(email || "").trim());
 }
@@ -140,7 +200,7 @@ export default function SubAccountTeamPage() {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [toast, setToast] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"list" | "form">("list");
+  const [viewMode, setViewMode] = useState<"list" | "create" | "edit">("list");
 
   const [form, setForm] = useState<TeamUserForm>(defaultForm());
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -149,11 +209,20 @@ export default function SubAccountTeamPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
   const [invitingMembershipId, setInvitingMembershipId] = useState<number | null>(null);
+  const [lifecycleLoadingByMembership, setLifecycleLoadingByMembership] = useState<Record<number, boolean>>({});
+  const [removeLoadingByMembership, setRemoveLoadingByMembership] = useState<Record<number, boolean>>({});
   const [moduleOptions, setModuleOptions] = useState<TeamGrantableModuleItem[]>([]);
   const [selectedModuleKeys, setSelectedModuleKeys] = useState<string[]>([]);
   const [isLoadingModules, setIsLoadingModules] = useState(false);
   const [moduleLoadError, setModuleLoadError] = useState<string | null>(null);
+  const [editingMembershipId, setEditingMembershipId] = useState<number | null>(null);
+  const [isLoadingEditDetail, setIsLoadingEditDetail] = useState(false);
+  const [editInheritedLocked, setEditInheritedLocked] = useState(false);
+  const [editUnsafeGrantGap, setEditUnsafeGrantGap] = useState(false);
+  const [editOriginal, setEditOriginal] = useState<{ role: TeamUserForm["role"]; moduleKeys: string[] } | null>(null);
 
   const pages = Math.max(1, Math.ceil(total / PER_PAGE));
 
@@ -207,6 +276,8 @@ export default function SubAccountTeamPage() {
     }
 
     setInviteError(null);
+    setLifecycleError(null);
+    setRemoveError(null);
     setInvitingMembershipId(user.membershipId);
     try {
       const response = await inviteTeamMember(user.membershipId);
@@ -218,11 +289,89 @@ export default function SubAccountTeamPage() {
     }
   }
 
+  async function onToggleLifecycle(user: TeamUser) {
+    if (user.membershipId === null) {
+      setLifecycleError("Membership inexistent sau inaccesibil.");
+      return;
+    }
+    if (user.inherited) {
+      setLifecycleError("Acest access este moștenit și nu poate fi modificat aici");
+      return;
+    }
+
+    if (user.membershipStatus === "active") {
+      const confirmed = window.confirm("Confirmi dezactivarea accesului pentru acest membership?");
+      if (!confirmed) return;
+    }
+
+    setInviteError(null);
+    setLifecycleError(null);
+    setRemoveError(null);
+    setLifecycleLoadingByMembership((prev) => ({ ...prev, [user.membershipId as number]: true }));
+    try {
+      if (user.membershipStatus === "active") {
+        const response = await deactivateTeamMember(user.membershipId);
+        showToast(response.message || "Accesul a fost dezactivat pentru sesiunile noi și pentru verificările bazate pe datele curente.");
+      } else {
+        const response = await reactivateTeamMember(user.membershipId);
+        showToast(response.message || "Accesul a fost reactivat");
+      }
+      await loadMembers();
+    } catch (error) {
+      setLifecycleError(getFriendlyLifecycleError(error));
+    } finally {
+      setLifecycleLoadingByMembership((prev) => {
+        const next = { ...prev };
+        delete next[user.membershipId as number];
+        return next;
+      });
+    }
+  }
+
+  async function onRemoveAccess(user: TeamUser) {
+    if (user.membershipId === null) {
+      setRemoveError("Membership inexistent sau inaccesibil.");
+      return;
+    }
+    if (user.inherited) {
+      setRemoveError("Acest access este moștenit și nu poate fi eliminat aici");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Sigur vrei să elimini acest acces? Această acțiune șterge doar access grant-ul curent, nu utilizatorul global.",
+    );
+    if (!confirmed) return;
+
+    setInviteError(null);
+    setLifecycleError(null);
+    setRemoveError(null);
+    setRemoveLoadingByMembership((prev) => ({ ...prev, [user.membershipId as number]: true }));
+    try {
+      const response = await removeTeamMember(user.membershipId);
+      showToast(response.message || "Accesul a fost eliminat");
+      await loadMembers();
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 404) {
+        showToast(error.message || "Membership inexistent");
+        await loadMembers();
+      } else {
+        setRemoveError(getFriendlyRemoveError(error));
+      }
+    } finally {
+      setRemoveLoadingByMembership((prev) => {
+        const next = { ...prev };
+        delete next[user.membershipId as number];
+        return next;
+      });
+    }
+  }
+
   async function openCreateForm() {
     setForm(defaultForm());
     setErrors({});
     setShowAdvanced(false);
-    setViewMode("form");
+    setViewMode("create");
     if (parsedSubaccountId === null) {
       setModuleOptions([]);
       setSelectedModuleKeys([]);
@@ -251,23 +400,84 @@ export default function SubAccountTeamPage() {
     setErrors({});
     setShowAdvanced(false);
     setModuleLoadError(null);
+    setLifecycleError(null);
+    setRemoveError(null);
     setIsLoadingModules(false);
+    setEditingMembershipId(null);
+    setIsLoadingEditDetail(false);
+    setEditInheritedLocked(false);
+    setEditUnsafeGrantGap(false);
+    setEditOriginal(null);
   }
 
   function validate(): Record<string, string> {
     const next: Record<string, string> = {};
-    if (form.prenume.trim() === "") next.prenume = "Prenumele este obligatoriu.";
-    if (form.nume.trim() === "") next.nume = "Numele este obligatoriu.";
-    if (form.email.trim() === "") next.email = "Email-ul este obligatoriu.";
-    else if (!EMAIL_RE.test(form.email.trim())) next.email = "Introdu o adresă de email validă.";
-    if (form.extensie.trim() !== "" && !/^\d+$/.test(form.extensie.trim())) next.extensie = "Extensia trebuie să fie numerică.";
-
+    if (viewMode === "create") {
+      if (form.prenume.trim() === "") next.prenume = "Prenumele este obligatoriu.";
+      if (form.nume.trim() === "") next.nume = "Numele este obligatoriu.";
+      if (form.email.trim() === "") next.email = "Email-ul este obligatoriu.";
+      else if (!EMAIL_RE.test(form.email.trim())) next.email = "Introdu o adresă de email validă.";
+      if (form.extensie.trim() !== "" && !/^\d+$/.test(form.extensie.trim())) next.extensie = "Extensia trebuie să fie numerică.";
+    }
     const grantableKeys = moduleOptions.filter((item) => item.grantable).map((item) => item.key);
     const selectedGrantable = selectedModuleKeys.filter((key) => grantableKeys.includes(key));
     if (grantableKeys.length === 0) next.module_keys = "Nu poți acorda module pentru acest sub-account.";
     else if (selectedGrantable.length === 0) next.module_keys = "Selectează cel puțin un modul.";
+    if (viewMode === "edit" && editUnsafeGrantGap) next.module_keys = "Acest utilizator are permisiuni care depășesc accesul tău curent. Contactează un administrator pentru modificare.";
 
     return next;
+  }
+
+  async function openEditForm(user: TeamUser) {
+    if (parsedSubaccountId === null || user.membershipId === null) {
+      setLoadError("Membership inexistent sau sub-account invalid.");
+      return;
+    }
+
+    setErrors({});
+    setModuleLoadError(null);
+    setViewMode("edit");
+    setEditingMembershipId(user.membershipId);
+    setIsLoadingEditDetail(true);
+    setEditInheritedLocked(false);
+    setEditUnsafeGrantGap(false);
+    try {
+      const [detailPayload, grantablePayload] = await Promise.all([
+        getTeamMembershipDetail(user.membershipId),
+        getSubaccountGrantableModules(parsedSubaccountId),
+      ]);
+      const detail: TeamMembershipDetailItem = detailPayload.item;
+      const options = [...(grantablePayload.items ?? [])].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
+      const detailKeys = (detail.module_keys ?? []).map((key) => String(key).trim().toLowerCase()).filter((key) => key !== "");
+      const grantableSet = new Set(options.filter((item) => item.grantable).map((item) => item.key));
+      const hasGap = detailKeys.some((key) => !grantableSet.has(key));
+
+      setModuleOptions(options);
+      setSelectedModuleKeys(detailKeys);
+      setForm({
+        prenume: detail.first_name,
+        nume: detail.last_name,
+        email: detail.email,
+        telefon: detail.phone,
+        extensie: detail.extension,
+        parola: "",
+        role: toSubaccountRole(detail.role_key),
+      });
+      setEditOriginal({ role: toSubaccountRole(detail.role_key), moduleKeys: [...detailKeys].sort() });
+      setEditInheritedLocked(Boolean(detail.is_inherited));
+      setEditUnsafeGrantGap(hasGap);
+      if (detail.is_inherited) {
+        setModuleLoadError("Acest access este moștenit și nu poate fi editat aici");
+      } else if (hasGap) {
+        setModuleLoadError("Acest utilizator are permisiuni care depășesc accesul tău curent. Contactează un administrator pentru modificare.");
+      }
+      setShowAdvanced(false);
+    } catch (error) {
+      closeForm();
+      setLoadError(getFriendlyEditError(error));
+    } finally {
+      setIsLoadingEditDetail(false);
+    }
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -284,29 +494,59 @@ export default function SubAccountTeamPage() {
     try {
       const grantableKeys = moduleOptions.filter((item) => item.grantable).map((item) => item.key);
       const selectedGrantable = selectedModuleKeys.filter((key) => grantableKeys.includes(key));
-      const payload: CreateSubaccountTeamMemberPayload = {
-        first_name: form.prenume.trim(),
-        last_name: form.nume.trim(),
-        email: form.email.trim(),
-        phone: form.telefon.trim(),
-        extension: form.extensie.trim(),
-        user_role: form.role,
-        module_keys: selectedGrantable,
-      };
-      if (form.parola.trim()) payload.password = form.parola;
+      if (viewMode === "create") {
+        const payload: CreateSubaccountTeamMemberPayload = {
+          first_name: form.prenume.trim(),
+          last_name: form.nume.trim(),
+          email: form.email.trim(),
+          phone: form.telefon.trim(),
+          extension: form.extensie.trim(),
+          user_role: form.role,
+          module_keys: selectedGrantable,
+        };
+        if (form.parola.trim()) payload.password = form.parola;
 
-      await createSubaccountTeamMember(parsedSubaccountId, payload);
-      closeForm();
-      showToast("Utilizator adăugat.");
-      await loadMembers();
+        await createSubaccountTeamMember(parsedSubaccountId, payload);
+        closeForm();
+        showToast("Utilizator adăugat.");
+        await loadMembers();
+      } else if (viewMode === "edit" && editingMembershipId !== null) {
+        const patchPayload: { user_role: TeamUserForm["role"]; module_keys: string[] } = {
+          user_role: form.role,
+          module_keys: selectedGrantable,
+        };
+        await updateTeamMembership(editingMembershipId, patchPayload);
+        closeForm();
+        showToast("Permisiunile au fost actualizate");
+        await loadMembers();
+      }
     } catch (error) {
-      showToast(getFriendlyCreateError(error));
+      if (viewMode === "edit") {
+        const message = getFriendlyEditError(error);
+        setModuleLoadError(message);
+        if (error instanceof ApiRequestError && error.status === 409) setEditInheritedLocked(true);
+        showToast(message);
+      } else {
+        showToast(getFriendlyCreateError(error));
+      }
     } finally {
       setIsSubmitting(false);
     }
   }
 
   const isInvalidSubaccount = parsedSubaccountId === null;
+
+  const isSaveDisabled = useMemo(() => {
+    if (isSubmitting || isInvalidSubaccount) return true;
+    if (viewMode === "create") return false;
+    if (viewMode !== "edit") return true;
+    if (isLoadingEditDetail || editInheritedLocked || editUnsafeGrantGap || editingMembershipId === null || !editOriginal) return true;
+    const currentKeys = [...selectedModuleKeys.filter((key) => moduleOptions.some((item) => item.grantable && item.key === key))].sort();
+    const originalKeys = [...editOriginal.moduleKeys.filter((key) => moduleOptions.some((item) => item.grantable && item.key === key))].sort();
+    const sameModules = JSON.stringify(currentKeys) === JSON.stringify(originalKeys);
+    const sameRole = editOriginal.role === form.role;
+    return sameModules && sameRole;
+  }, [isSubmitting, isInvalidSubaccount, viewMode, isLoadingEditDetail, editInheritedLocked, editUnsafeGrantGap, editingMembershipId, editOriginal, selectedModuleKeys, moduleOptions, form.role]);
 
   function toggleModuleKey(moduleKey: string, grantable: boolean) {
     if (!grantable) return;
@@ -365,6 +605,8 @@ export default function SubAccountTeamPage() {
 
                 {loadError ? <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{loadError}</p> : null}
                 {inviteError ? <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{inviteError}</p> : null}
+                {lifecycleError ? <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{lifecycleError}</p> : null}
+                {removeError ? <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{removeError}</p> : null}
                 {isLoading ? <p className="mt-4 text-sm text-slate-500">Se încarcă membrii...</p> : null}
 
                 {!isLoading && !loadError ? (
@@ -377,6 +619,7 @@ export default function SubAccountTeamPage() {
                             <th className="border-b border-slate-200 px-3 py-2">Email</th>
                             <th className="border-b border-slate-200 px-3 py-2">Telefon</th>
                             <th className="border-b border-slate-200 px-3 py-2">Tip Utilizator</th>
+                            <th className="border-b border-slate-200 px-3 py-2">Status</th>
                             <th className="border-b border-slate-200 px-3 py-2">Acțiuni</th>
                           </tr>
                         </thead>
@@ -402,6 +645,13 @@ export default function SubAccountTeamPage() {
                                 <span className={["inline-flex rounded-full px-2 py-1 text-xs font-semibold", roleBadgeClass(user.roleKey)].join(" ")}>{user.tip}</span>
                               </td>
                               <td className="border-b border-slate-100 px-3 py-3">
+                                {user.membershipStatus === "active" ? (
+                                  <span className="inline-flex rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">Activ</span>
+                                ) : (
+                                  <span className="inline-flex rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">Inactiv</span>
+                                )}
+                              </td>
+                              <td className="border-b border-slate-100 px-3 py-3">
                                 <div className="flex items-center gap-2 text-slate-500">
                                   <button
                                     type="button"
@@ -416,12 +666,42 @@ export default function SubAccountTeamPage() {
                                   <button type="button" className="rounded p-1.5 opacity-50" title="Urmează" disabled>
                                     <Pencil className="h-4 w-4" />
                                   </button>
-                                  <button type="button" className="rounded p-1.5 opacity-50" title="Urmează" disabled>
-                                    <Ban className="h-4 w-4" />
-                                  </button>
-                                  <button type="button" className="rounded p-1.5 opacity-50" title="Urmează" disabled>
-                                    <Trash2 className="h-4 w-4" />
-                                  </button>
+                                  {(() => {
+                                    const lifecycleLoading = user.membershipId !== null && Boolean(lifecycleLoadingByMembership[user.membershipId]);
+                                    return (
+                                      <button
+                                        type="button"
+                                        className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-xs text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                        title={user.inherited ? "Acest access este moștenit și nu poate fi modificat aici" : user.membershipStatus === "active" ? "Dezactivează" : "Reactivează"}
+                                        aria-label={user.membershipStatus === "active" ? "Dezactivează" : "Reactivează"}
+                                        disabled={user.membershipId === null || lifecycleLoading || user.inherited}
+                                        onClick={() => { void onToggleLifecycle(user); }}
+                                      >
+                                        {lifecycleLoading ? (
+                                          "Se procesează..."
+                                        ) : user.membershipStatus === "active" ? (
+                                          <><Power className="h-3.5 w-3.5" /> Dezactivează</>
+                                        ) : (
+                                          <><RefreshCw className="h-3.5 w-3.5" /> Reactivează</>
+                                        )}
+                                      </button>
+                                    );
+                                  })()}
+                                  {(() => {
+                                    const removeLoading = user.membershipId !== null && Boolean(removeLoadingByMembership[user.membershipId]);
+                                    return (
+                                      <button
+                                        type="button"
+                                        className="inline-flex items-center gap-1 rounded border border-rose-200 px-2 py-1 text-xs text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                        title={user.inherited ? "Acest access este moștenit și nu poate fi eliminat aici" : "Elimină accesul"}
+                                        aria-label="Elimină accesul"
+                                        disabled={user.membershipId === null || removeLoading || user.inherited}
+                                        onClick={() => { void onRemoveAccess(user); }}
+                                      >
+                                        {removeLoading ? "Se elimină..." : <><Trash2 className="h-3.5 w-3.5" /> Elimină accesul</>}
+                                      </button>
+                                    );
+                                  })()}
                                 </div>
                               </td>
                             </tr>
@@ -445,7 +725,7 @@ export default function SubAccountTeamPage() {
             ) : (
               <div>
                 <button type="button" className="text-sm font-medium text-slate-700 hover:text-slate-900" onClick={closeForm}>← Înapoi</button>
-                <p className="mt-2 text-sm text-slate-600">Adaugă un utilizator în echipa sub-account-ului.</p>
+                <p className="mt-2 text-sm text-slate-600">{viewMode === "edit" ? "Editează permisiunile și statusul accesului pentru membership-ul selectat." : "Adaugă un utilizator în echipa sub-account-ului."}</p>
 
                 <div className="mt-5 grid grid-cols-1 gap-6 xl:grid-cols-[260px_1fr]">
                   <aside className="space-y-2">
@@ -456,6 +736,11 @@ export default function SubAccountTeamPage() {
                   <form noValidate onSubmit={(event) => { void submit(event); }} className="space-y-5">
                     <div className="rounded-lg border border-slate-200 p-4">
                       <h2 className="text-base font-semibold text-slate-900">Informații Utilizator</h2>
+                      {viewMode === "edit" && editingMembershipId !== null ? (
+                        <p className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                          Status membership curent: <span className="font-semibold">{users.find((item) => item.membershipId === editingMembershipId)?.membershipStatus === "inactive" ? "Inactiv" : "Activ"}</span>
+                        </p>
+                      ) : null}
                       <div className="mt-4 space-y-4">
                         <div>
                           <p className="text-sm font-medium text-slate-700">Imagine Profil</p>
@@ -468,30 +753,30 @@ export default function SubAccountTeamPage() {
                         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                           <label className="text-sm text-slate-700">
                             Prenume <span className="text-red-500">*</span>
-                            <input placeholder="Prenume" className="wm-input mt-1" value={form.prenume} onChange={(e) => setForm((prev) => ({ ...prev, prenume: e.target.value }))} />
+                            <input placeholder="Prenume" className="wm-input mt-1" value={form.prenume} onChange={(e) => setForm((prev) => ({ ...prev, prenume: e.target.value }))} disabled={viewMode === "edit"} />
                             {errors.prenume ? <p className="mt-1 text-xs text-red-600">{errors.prenume}</p> : null}
                           </label>
 
                           <label className="text-sm text-slate-700">
                             Nume <span className="text-red-500">*</span>
-                            <input placeholder="Nume" className="wm-input mt-1" value={form.nume} onChange={(e) => setForm((prev) => ({ ...prev, nume: e.target.value }))} />
+                            <input placeholder="Nume" className="wm-input mt-1" value={form.nume} onChange={(e) => setForm((prev) => ({ ...prev, nume: e.target.value }))} disabled={viewMode === "edit"} />
                             {errors.nume ? <p className="mt-1 text-xs text-red-600">{errors.nume}</p> : null}
                           </label>
 
                           <label className="text-sm text-slate-700 md:col-span-2">
                             Email <span className="text-red-500">*</span>
-                            <input type="email" placeholder="Email" className="wm-input mt-1" value={form.email} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} />
+                            <input type="email" placeholder="Email" className="wm-input mt-1" value={form.email} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} disabled={viewMode === "edit"} />
                             {errors.email ? <p className="mt-1 text-xs text-red-600">{errors.email}</p> : null}
                           </label>
 
                           <label className="text-sm text-slate-700">
                             Telefon
-                            <input type="tel" placeholder="Telefon" className="wm-input mt-1" value={form.telefon} onChange={(e) => setForm((prev) => ({ ...prev, telefon: e.target.value }))} />
+                            <input type="tel" placeholder="Telefon" className="wm-input mt-1" value={form.telefon} onChange={(e) => setForm((prev) => ({ ...prev, telefon: e.target.value }))} disabled={viewMode === "edit"} />
                           </label>
 
                           <label className="text-sm text-slate-700">
                             Extensie
-                            <input inputMode="numeric" placeholder="Extensie" className="wm-input mt-1" value={form.extensie} onChange={(e) => setForm((prev) => ({ ...prev, extensie: e.target.value }))} />
+                            <input inputMode="numeric" placeholder="Extensie" className="wm-input mt-1" value={form.extensie} onChange={(e) => setForm((prev) => ({ ...prev, extensie: e.target.value }))} disabled={viewMode === "edit"} />
                             {errors.extensie ? <p className="mt-1 text-xs text-red-600">{errors.extensie}</p> : null}
                           </label>
                         </div>
@@ -501,7 +786,7 @@ export default function SubAccountTeamPage() {
                     <div className="rounded-lg border border-slate-200 p-4">
                       <label className="text-sm text-slate-700">
                         Rol utilizator
-                        <select className="wm-input mt-1" value={form.role} onChange={(e) => setForm((prev) => ({ ...prev, role: e.target.value as TeamUserForm["role"] }))}>
+                        <select className="wm-input mt-1" value={form.role} onChange={(e) => setForm((prev) => ({ ...prev, role: e.target.value as TeamUserForm["role"] }))} disabled={editInheritedLocked || isLoadingEditDetail}>
                           <option value="subaccount_admin">Subaccount Admin</option>
                           <option value="subaccount_user">Subaccount User</option>
                           <option value="subaccount_viewer">Subaccount Viewer</option>
@@ -523,11 +808,12 @@ export default function SubAccountTeamPage() {
                                 <div>
                                   <p className="font-medium text-slate-900">{item.label}</p>
                                   {!item.grantable ? <p className="text-xs text-slate-500">Nu poate fi acordat din permisiunile tale curente.</p> : null}
+                                  {!item.grantable && selectedModuleKeys.includes(item.key) ? <p className="text-xs text-amber-700">Permisiune existentă ne-editabilă cu accesul tău curent.</p> : null}
                                 </div>
                                 <input
                                   type="checkbox"
                                   checked={checked}
-                                  disabled={!item.grantable}
+                                  disabled={!item.grantable || editInheritedLocked || (editUnsafeGrantGap && selectedModuleKeys.includes(item.key))}
                                   onChange={() => toggleModuleKey(item.key, item.grantable)}
                                   aria-label={`Permisiune modul ${item.label}`}
                                 />
@@ -540,25 +826,27 @@ export default function SubAccountTeamPage() {
                       {errors.module_keys ? <p className="mt-2 text-xs text-red-600">{errors.module_keys}</p> : null}
                     </div>
 
-                    <div className="rounded-lg border border-slate-200 p-4">
-                      <button type="button" className="flex w-full items-center justify-between text-left" onClick={() => setShowAdvanced((prev) => !prev)} aria-expanded={showAdvanced}>
-                        <span className="text-sm font-semibold text-slate-800">Setări Avansate</span>
-                        <ChevronDown className={["h-4 w-4 text-slate-600 transition-transform", showAdvanced ? "rotate-180" : "rotate-0"].join(" ")} />
-                      </button>
+                    {viewMode === "create" ? (
+                      <div className="rounded-lg border border-slate-200 p-4">
+                        <button type="button" className="flex w-full items-center justify-between text-left" onClick={() => setShowAdvanced((prev) => !prev)} aria-expanded={showAdvanced}>
+                          <span className="text-sm font-semibold text-slate-800">Setări Avansate</span>
+                          <ChevronDown className={["h-4 w-4 text-slate-600 transition-transform", showAdvanced ? "rotate-180" : "rotate-0"].join(" ")} />
+                        </button>
 
-                      {showAdvanced ? (
-                        <div className="mt-4 overflow-hidden transition-all duration-300">
-                          <label className="text-sm text-slate-700">
-                            Parolă
-                            <input type="password" placeholder="Parolă" className="wm-input mt-1" value={form.parola} onChange={(e) => setForm((prev) => ({ ...prev, parola: e.target.value }))} />
-                          </label>
-                        </div>
-                      ) : null}
-                    </div>
+                        {showAdvanced ? (
+                          <div className="mt-4 overflow-hidden transition-all duration-300">
+                            <label className="text-sm text-slate-700">
+                              Parolă
+                              <input type="password" placeholder="Parolă" className="wm-input mt-1" value={form.parola} onChange={(e) => setForm((prev) => ({ ...prev, parola: e.target.value }))} />
+                            </label>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
 
                     <footer className="flex justify-end gap-2 border-t border-slate-200 pt-4">
                       <button type="button" className="wm-btn-secondary" onClick={closeForm}>Anulează</button>
-                      <button type="submit" className="wm-btn-primary" disabled={isSubmitting || isInvalidSubaccount}>{isSubmitting ? "Se salvează..." : "Înainte"}</button>
+                      <button type="submit" className="wm-btn-primary" disabled={isSaveDisabled}>{isSubmitting ? "Se salvează..." : viewMode === "edit" ? "Salvează" : "Înainte"}</button>
                     </footer>
                   </form>
                 </div>
