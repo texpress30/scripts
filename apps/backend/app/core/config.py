@@ -61,6 +61,13 @@ class Settings:
     snapchat_sync_backoff_ms: int
     snapchat_sync_force_transient_failures: int
     sync_run_repair_stale_minutes: int
+    mailgun_api_key: str
+    mailgun_domain: str
+    mailgun_base_url: str
+    mailgun_from_email: str
+    mailgun_from_name: str
+    mailgun_reply_to: str
+    mailgun_enabled: bool
 
 
 def _get_env(name: str, default: str | None = None, required: bool = False) -> str:
@@ -180,4 +187,11 @@ def load_settings() -> Settings:
         snapchat_sync_backoff_ms=_parse_int_env("SNAPCHAT_SYNC_BACKOFF_MS", default=75),
         snapchat_sync_force_transient_failures=_parse_int_env("SNAPCHAT_SYNC_FORCE_TRANSIENT_FAILURES", default=0),
         sync_run_repair_stale_minutes=_parse_positive_int_env("SYNC_RUN_REPAIR_STALE_MINUTES", default=30),
+        mailgun_api_key=_get_env("MAILGUN_API_KEY", default=""),
+        mailgun_domain=_get_env("MAILGUN_DOMAIN", default=""),
+        mailgun_base_url=_get_env("MAILGUN_BASE_URL", default="https://api.mailgun.net"),
+        mailgun_from_email=_get_env("MAILGUN_FROM_EMAIL", default=""),
+        mailgun_from_name=_get_env("MAILGUN_FROM_NAME", default=""),
+        mailgun_reply_to=_get_env("MAILGUN_REPLY_TO", default=""),
+        mailgun_enabled=_parse_bool_env("MAILGUN_ENABLED", default=True),
     )

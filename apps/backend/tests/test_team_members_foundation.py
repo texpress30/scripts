@@ -102,6 +102,7 @@ class TeamMembersFoundationTests(unittest.TestCase):
         service = TeamMembersService()
         service._upsert_user = lambda **kwargs: 11
         service._upsert_membership = lambda **kwargs: 101
+        service.set_membership_module_keys = lambda **kwargs: None
 
         item = service.create_member(
             first_name="Ana",
@@ -194,6 +195,7 @@ class TeamMembersFoundationTests(unittest.TestCase):
             resp = team_api.list_team_members(search="ana", user_type="agency", user_role="admin", subaccount="", page=1, page_size=10, user=self.user)
             self.assertEqual(resp.total, 1)
             self.assertEqual(resp.items[0].email, "ana@example.com")
+            self.assertEqual(resp.items[0].membership_status, "active")
         finally:
             team_api.team_members_service.list_members = original
 
@@ -233,6 +235,7 @@ class TeamMembersFoundationTests(unittest.TestCase):
             self.assertEqual(resp.items[0].id, 10)
             self.assertIsNone(resp.items[0].membership_id)
             self.assertEqual(resp.items[0].module_keys, ["dashboard"])
+            self.assertEqual(resp.items[0].membership_status, "active")
         finally:
             team_api.team_members_service.list_members = original
 
@@ -375,14 +378,59 @@ class TeamMembersFoundationTests(unittest.TestCase):
             module_keys=None,
         )
 
-        self.assertEqual(item["module_keys"], ["dashboard", "campaigns", "rules", "creative", "recommendations"])
+        self.assertEqual(item["module_keys"], ["dashboard", "campaigns", "rules", "creative", "recommendations", "settings"])
 
-    def test_create_agency_member_with_module_keys_rejected(self):
+    def test_create_agency_member_with_agency_navigation_keys(self):
+        service = TeamMembersService()
+        service._upsert_user = lambda **kwargs: 11
+        service._upsert_membership = lambda **kwargs: 101
+        service.set_membership_module_keys = lambda **kwargs: None
+
+        item = service.create_member(
+            first_name="Ana",
+            last_name="Ionescu",
+            email="ANA@EXAMPLE.COM",
+            phone="+40 700",
+            extension="12",
+            user_type="agency",
+            user_role="admin",
+            location="România",
+            subaccount="Toate",
+            password=None,
+            module_keys=["agency_dashboard", "settings", "settings_my_team"],
+        )
+        self.assertEqual(item["module_keys"], ["agency_dashboard", "settings", "settings_my_team"])
+
+    def test_create_agency_member_without_module_keys_uses_agency_defaults(self):
+        service = TeamMembersService()
+        service._upsert_user = lambda **kwargs: 11
+        service._upsert_membership = lambda **kwargs: 101
+        service.set_membership_module_keys = lambda **kwargs: None
+
+        item = service.create_member(
+            first_name="Ana",
+            last_name="Ionescu",
+            email="ANA@EXAMPLE.COM",
+            phone="+40 700",
+            extension="12",
+            user_type="agency",
+            user_role="admin",
+            location="România",
+            subaccount="Toate",
+            password=None,
+            module_keys=None,
+        )
+
+        self.assertIn("agency_dashboard", item["module_keys"])
+        self.assertIn("settings_my_team", item["module_keys"])
+        self.assertIn("settings", item["module_keys"])
+
+    def test_create_agency_member_with_subaccount_navigation_keys_rejected(self):
         service = TeamMembersService()
         service._upsert_user = lambda **kwargs: 11
         service._upsert_membership = lambda **kwargs: 101
 
-        with self.assertRaisesRegex(ValueError, "module_keys este permis doar"):
+        with self.assertRaisesRegex(ValueError, "scope-ul agency"):
             service.create_member(
                 first_name="Ana",
                 last_name="Ionescu",
@@ -418,18 +466,129 @@ class TeamMembersFoundationTests(unittest.TestCase):
                 module_keys=["dashboard", "invalid-module"],
             )
 
+    def test_create_subaccount_member_with_agency_navigation_key_rejected(self):
+        service = TeamMembersService()
+        service._upsert_user = lambda **kwargs: 13
+        service._upsert_membership = lambda **kwargs: 103
+        service._resolve_subaccount_ref = lambda **kwargs: type("_S", (), {"id": 9, "name": "Client X"})()
+
+        with self.assertRaisesRegex(ValueError, "scope-ul subaccount"):
+            service.create_member(
+                first_name="Mara",
+                last_name="Dobre",
+                email="mara@example.com",
+                phone="",
+                extension="",
+                user_type="client",
+                user_role="viewer",
+                location="România",
+                subaccount="Client X",
+                password=None,
+                module_keys=["agency_dashboard"],
+            )
+
     def test_module_catalog_endpoint_contract(self):
         original = team_api.team_members_service.list_module_catalog
         try:
             team_api.team_members_service.list_module_catalog = lambda **kwargs: [
-                {"key": "dashboard", "label": "Dashboard", "order": 1, "scope": "subaccount"},
-                {"key": "campaigns", "label": "Campaigns", "order": 2, "scope": "subaccount"},
+                {
+                    "key": "dashboard",
+                    "label": "Dashboard",
+                    "order": 1,
+                    "scope": "subaccount",
+                    "group_key": "main_nav",
+                    "group_label": "Main Navigation",
+                    "is_container": False,
+                },
+                {
+                    "key": "campaigns",
+                    "label": "Campaigns",
+                    "order": 2,
+                    "scope": "subaccount",
+                    "group_key": "main_nav",
+                    "group_label": "Main Navigation",
+                    "is_container": False,
+                },
             ]
             resp = team_api.get_team_module_catalog(scope="subaccount", user=self.user)
             self.assertEqual(len(resp.items), 2)
             self.assertEqual(resp.items[0].key, "dashboard")
+            self.assertEqual(resp.items[0].group_key, "main_nav")
+            self.assertFalse(resp.items[0].is_container)
         finally:
             team_api.team_members_service.list_module_catalog = original
+
+    def test_module_catalog_endpoint_agency_scope_contract(self):
+        original = team_api.team_members_service.list_module_catalog
+        try:
+            team_api.team_members_service.list_module_catalog = lambda **kwargs: [
+                {
+                    "key": "settings",
+                    "label": "Settings",
+                    "order": 100,
+                    "scope": "agency",
+                    "group_key": "settings",
+                    "group_label": "Settings",
+                    "parent_key": None,
+                    "is_container": True,
+                },
+                {
+                    "key": "settings_my_team",
+                    "label": "My Team",
+                    "order": 130,
+                    "scope": "agency",
+                    "group_key": "settings",
+                    "group_label": "Settings",
+                    "parent_key": "settings",
+                    "is_container": False,
+                },
+            ]
+            resp = team_api.get_team_module_catalog(scope="agency", user=self.user)
+            self.assertEqual(len(resp.items), 2)
+            self.assertEqual(resp.items[0].key, "settings")
+            self.assertTrue(resp.items[0].is_container)
+            self.assertEqual(resp.items[1].parent_key, "settings")
+        finally:
+            team_api.team_members_service.list_module_catalog = original
+
+    def test_module_catalog_agency_contains_settings_children_metadata(self):
+        service = TeamMembersService()
+        items = service.list_module_catalog(scope="agency")
+        by_key = {str(item["key"]): item for item in items}
+        self.assertEqual(
+            set(by_key.keys()),
+            {
+                "agency_dashboard",
+                "agency_clients",
+                "agency_accounts",
+                "integrations",
+                "agency_audit",
+                "creative",
+                "email_templates",
+                "notifications",
+                "settings",
+                "settings_profile",
+                "settings_company",
+                "settings_my_team",
+                "settings_tags",
+                "settings_audit_logs",
+                "settings_ai_agents",
+                "settings_media_storage_usage",
+            },
+        )
+        self.assertIn("settings", by_key)
+        self.assertTrue(bool(by_key["settings"]["is_container"]))
+        self.assertEqual(by_key["settings_my_team"]["parent_key"], "settings")
+        self.assertEqual(by_key["settings_my_team"]["group_key"], "settings")
+
+    def test_module_catalog_subaccount_contains_expected_keys(self):
+        service = TeamMembersService()
+        items = service.list_module_catalog(scope="subaccount")
+        keys = [str(item["key"]) for item in items]
+        self.assertEqual(
+            keys,
+            ["dashboard", "campaigns", "rules", "creative", "recommendations", "settings"],
+        )
 
     def test_module_catalog_endpoint_returns_empty_when_db_is_unavailable(self):
         original = team_api.team_members_service.list_module_catalog
@@ -475,11 +634,11 @@ class TeamMembersFoundationTests(unittest.TestCase):
         finally:
             team_api.team_members_service.create_member = original
 
-    def test_create_member_endpoint_rejects_module_keys_for_agency_user(self):
+    def test_create_member_endpoint_rejects_scope_mismatched_module_keys_for_agency_user(self):
         original = team_api.team_members_service.create_member
         try:
             team_api.team_members_service.create_member = lambda **kwargs: (_ for _ in ()).throw(
-                ValueError("module_keys este permis doar pentru membership-uri de sub-account")
+                ValueError("Cheie de navigare invalidă pentru scope-ul agency: dashboard")
             )
             payload = CreateTeamMemberRequest(
                 first_name="Ana",
@@ -494,6 +653,30 @@ class TeamMembersFoundationTests(unittest.TestCase):
             self.assertEqual(ctx.exception.status_code, 400)
         finally:
             team_api.team_members_service.create_member = original
+
+    def test_create_agency_member_grant_ceiling_for_scoped_actor(self):
+        service = TeamMembersService()
+        service._upsert_user = lambda **kwargs: 11
+        service._upsert_membership = lambda **kwargs: 101
+        service.set_membership_module_keys = lambda **kwargs: None
+        service.get_grantable_module_keys_for_actor = lambda **kwargs: {"agency_dashboard"}
+        actor = AuthUser(email="member@example.com", role="agency_member")
+
+        with self.assertRaisesRegex(ValueError, "în afara permisiunilor proprii"):
+            service.create_member(
+                first_name="Ana",
+                last_name="Ionescu",
+                email="ana@example.com",
+                phone="",
+                extension="",
+                user_type="agency",
+                user_role="member",
+                location="RO",
+                subaccount="Toate",
+                password=None,
+                module_keys=["agency_dashboard", "agency_clients"],
+                actor_user=actor,
+            )
 
     def tearDown(self):
         # reset shared singleton monkeypatching safety for other tests
