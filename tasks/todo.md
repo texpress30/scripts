@@ -5011,3 +5011,23 @@ Plan verified: backend-only minimal foundation, no UI, no DB tables/overrides, n
 - [x] Added backend-only read-only email templates foundation with canonical in-code catalog and agency endpoints.
 - [x] Kept scope strict: no UI, no DB persistence/overrides, no forgot/invite migration, no mailgun service changes.
 - [x] Verified with targeted backend tests plus startup import check.
+
+---
+
+# TODO — Backend Email Templates DB overrides + save/reset APIs
+
+- [x] Re-read current email templates service/api/schemas/main routing and keep scope backend-only.
+- [x] Add idempotent persistent storage (`agency_email_templates`) for agency-level template overrides.
+- [x] Extend email templates service for effective read model (default vs override), save/upsert, and reset behavior.
+- [x] Extend API contracts: list/detail enriched fields + PUT save + POST reset, admin/global-admin only.
+- [x] Add backend tests for idempotent schema init, default/override read behavior, save/reset, 404, and RBAC.
+- [x] Run targeted backend tests and backend startup check.
+- [x] Commit and open PR with exact requested title/body.
+
+### Check-in before execution
+Plan verified: strict backend increment only (no UI, no forgot/invite migration, no flow changes outside email-template catalog APIs).
+
+## Review
+- [x] Added agency-level DB override persistence for email templates with idempotent schema init.
+- [x] Extended list/detail to expose effective values and override metadata (`enabled`, `is_overridden`, `updated_at`).
+- [x] Added admin-only save/reset endpoints and validated behavior through focused backend tests + startup check.

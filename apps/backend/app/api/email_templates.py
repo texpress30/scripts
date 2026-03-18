@@ -5,15 +5,32 @@ from app.schemas.email_templates import (
     AgencyEmailTemplateDetailResponse,
     AgencyEmailTemplateListItem,
     AgencyEmailTemplateListResponse,
+    AgencyEmailTemplateUpsertRequest,
 )
 from app.services.auth import AuthUser
-from app.services.email_templates import email_templates_service
+from app.services.email_templates import EffectiveEmailTemplate, email_templates_service
 
 router = APIRouter(prefix="/agency/email-templates", tags=["email_templates"])
 
 
 def _enforce_agency_admin(user: AuthUser) -> None:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
+
+
+def _serialize_template(item: EffectiveEmailTemplate) -> AgencyEmailTemplateDetailResponse:
+    return AgencyEmailTemplateDetailResponse(
+        key=item.key,
+        label=item.label,
+        description=item.description,
+        subject=item.subject,
+        text_body=item.text_body,
+        html_body=item.html_body,
+        available_variables=list(item.available_variables),
+        scope=item.scope,
+        enabled=item.enabled,
+        is_overridden=item.is_overridden,
+        updated_at=item.updated_at,
+    )
 
 
 @router.get("", response_model=AgencyEmailTemplateListResponse)
@@ -25,8 +42,11 @@ def list_agency_email_templates(user: AuthUser = Depends(get_current_user)) -> A
             label=item.label,
             description=item.description,
             scope=item.scope,
+            enabled=item.enabled,
+            is_overridden=item.is_overridden,
+            updated_at=item.updated_at,
         )
-        for item in email_templates_service.list_templates()
+        for item in email_templates_service.list_effective_templates()
     ]
     return AgencyEmailTemplateListResponse(items=items)
 
@@ -37,17 +57,42 @@ def get_agency_email_template_detail(
     user: AuthUser = Depends(get_current_user),
 ) -> AgencyEmailTemplateDetailResponse:
     _enforce_agency_admin(user)
-    item = email_templates_service.get_template(template_key=template_key)
+    item = email_templates_service.get_effective_template(template_key=template_key)
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template inexistent")
+    return _serialize_template(item)
 
-    return AgencyEmailTemplateDetailResponse(
-        key=item.key,
-        label=item.label,
-        description=item.description,
-        default_subject=item.default_subject,
-        default_text_body=item.default_text_body,
-        default_html_body=item.default_html_body,
-        available_variables=list(item.available_variables),
-        scope=item.scope,
-    )
+
+@router.put("/{template_key}", response_model=AgencyEmailTemplateDetailResponse)
+def upsert_agency_email_template(
+    template_key: str,
+    payload: AgencyEmailTemplateUpsertRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> AgencyEmailTemplateDetailResponse:
+    _enforce_agency_admin(user)
+    try:
+        item = email_templates_service.save_override(
+            template_key=template_key,
+            subject=payload.subject,
+            text_body=payload.text_body,
+            html_body=payload.html_body,
+            enabled=payload.enabled,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template inexistent")
+    return _serialize_template(item)
+
+
+@router.post("/{template_key}/reset", response_model=AgencyEmailTemplateDetailResponse)
+def reset_agency_email_template(
+    template_key: str,
+    user: AuthUser = Depends(get_current_user),
+) -> AgencyEmailTemplateDetailResponse:
+    _enforce_agency_admin(user)
+    item = email_templates_service.reset_override(template_key=template_key)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template inexistent")
+    return _serialize_template(item)
