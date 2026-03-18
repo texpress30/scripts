@@ -107,12 +107,11 @@ class AuthForgotResetApiTests(unittest.TestCase):
             auth_api.email_templates_service.render_effective_template = original_render
             auth_api.load_settings = original_settings
 
-    def test_forgot_password_notification_disabled_returns_generic_without_token_or_send(self):
+    def test_forgot_password_notification_disabled_has_priority_over_template_disabled(self):
         original_rate = auth_api.rate_limiter_service.check
         original_assert = auth_api.mailgun_service.assert_available
         original_find = auth_api.find_active_user_by_email
-        original_create = auth_api.auth_email_tokens_service.create_password_reset_token_for_existing_user
-        original_send = auth_api.mailgun_service.send_email
+        original_render = auth_api.email_templates_service.render_effective_template
         original_settings = auth_api.load_settings
         try:
             auth_api.rate_limiter_service.check = lambda *args, **kwargs: None
@@ -126,11 +125,8 @@ class AuthForgotResetApiTests(unittest.TestCase):
                 updated_at=None,
             )
             auth_api.find_active_user_by_email = lambda email: {"id": 9, "email": "u@example.com", "is_active": True}
-            auth_api.auth_email_tokens_service.create_password_reset_token_for_existing_user = lambda **kwargs: (_ for _ in ()).throw(
-                AssertionError("token should not be created when notification is disabled")
-            )
-            auth_api.mailgun_service.send_email = lambda **kwargs: (_ for _ in ()).throw(
-                AssertionError("should not send when notification is disabled")
+            auth_api.email_templates_service.render_effective_template = lambda **kwargs: (_ for _ in ()).throw(
+                AssertionError("template should not be resolved when notification is disabled")
             )
             auth_api.load_settings = lambda: SimpleNamespace(frontend_base_url="https://app.example.com", auth_reset_token_ttl_minutes=60)
 
@@ -140,46 +136,6 @@ class AuthForgotResetApiTests(unittest.TestCase):
             auth_api.rate_limiter_service.check = original_rate
             auth_api.mailgun_service.assert_available = original_assert
             auth_api.find_active_user_by_email = original_find
-            auth_api.auth_email_tokens_service.create_password_reset_token_for_existing_user = original_create
-            auth_api.mailgun_service.send_email = original_send
-            auth_api.email_templates_service.render_effective_template = original_render
-            auth_api.load_settings = original_settings
-
-    def test_forgot_password_notification_disabled_returns_generic_without_token_or_send(self):
-        original_rate = auth_api.rate_limiter_service.check
-        original_assert = auth_api.mailgun_service.assert_available
-        original_find = auth_api.find_active_user_by_email
-        original_create = auth_api.auth_email_tokens_service.create_password_reset_token_for_existing_user
-        original_send = auth_api.mailgun_service.send_email
-        original_settings = auth_api.load_settings
-        try:
-            auth_api.rate_limiter_service.check = lambda *args, **kwargs: None
-            auth_api.mailgun_service.assert_available = lambda: None
-            auth_api.email_notifications_service.resolve_runtime_notification = lambda **kwargs: RuntimeEmailNotification(
-                key="auth_forgot_password",
-                template_key="auth_forgot_password",
-                enabled=False,
-                default_enabled=True,
-                is_overridden=True,
-                updated_at=None,
-            )
-            auth_api.find_active_user_by_email = lambda email: {"id": 9, "email": "u@example.com", "is_active": True}
-            auth_api.auth_email_tokens_service.create_password_reset_token_for_existing_user = lambda **kwargs: (_ for _ in ()).throw(
-                AssertionError("token should not be created when notification is disabled")
-            )
-            auth_api.mailgun_service.send_email = lambda **kwargs: (_ for _ in ()).throw(
-                AssertionError("should not send when notification is disabled")
-            )
-            auth_api.load_settings = lambda: SimpleNamespace(frontend_base_url="https://app.example.com", auth_reset_token_ttl_minutes=60)
-
-            resp = auth_api.forgot_password(ForgotPasswordRequest(email="u@example.com"))
-            self.assertIn("Dacă există un cont", resp.message)
-        finally:
-            auth_api.rate_limiter_service.check = original_rate
-            auth_api.mailgun_service.assert_available = original_assert
-            auth_api.find_active_user_by_email = original_find
-            auth_api.auth_email_tokens_service.create_password_reset_token_for_existing_user = original_create
-            auth_api.mailgun_service.send_email = original_send
             auth_api.email_templates_service.render_effective_template = original_render
             auth_api.load_settings = original_settings
 

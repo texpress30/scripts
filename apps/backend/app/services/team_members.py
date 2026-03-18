@@ -525,6 +525,71 @@ class TeamMembersService:
             "unrestricted_modules": False,
         }
 
+    def get_agency_my_access_fallback(self, *, actor_user: AuthUser) -> dict[str, object]:
+        actor_role = normalize_role(actor_user.role)
+        access_scope = str(actor_user.access_scope or "").strip().lower() or "agency"
+        return {
+            "role": actor_role,
+            "module_keys": self.default_module_keys_for_scope(scope_type="agency"),
+            "source_scope": "legacy_fallback",
+            "access_scope": access_scope,
+            "unrestricted_modules": True,
+        }
+
+    def get_agency_my_access(self, *, actor_user: AuthUser) -> dict[str, object]:
+        actor_role = normalize_role(actor_user.role)
+        access_scope = str(actor_user.access_scope or "").strip().lower() or "agency"
+
+        if actor_role in {"super_admin", "agency_owner", "agency_admin"}:
+            return {
+                "role": actor_role,
+                "module_keys": self.default_module_keys_for_scope(scope_type="agency"),
+                "source_scope": "agency",
+                "access_scope": access_scope,
+                "unrestricted_modules": True,
+            }
+
+        if actor_user.user_id is None or not actor_role.startswith("agency_"):
+            return self.get_agency_my_access_fallback(actor_user=actor_user)
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, role_key, scope_type
+                    FROM user_memberships
+                    WHERE user_id = %s
+                      AND scope_type = 'agency'
+                      AND status = 'active'
+                    ORDER BY id ASC
+                    LIMIT 1
+                    """,
+                    (int(actor_user.user_id),),
+                )
+                row = cur.fetchone()
+
+        if row is None:
+            return self.get_agency_my_access_fallback(actor_user=actor_user)
+
+        membership_id = int(row[0])
+        membership_role = str(row[1] or actor_role).strip().lower() or actor_role
+        scope_type = str(row[2] or "agency")
+        module_keys = self.get_membership_module_keys(
+            membership_id=membership_id,
+            role_key=membership_role,
+            scope_type=scope_type,
+        )
+        if len(module_keys) == 0:
+            module_keys = self.default_module_keys_for_scope(scope_type="agency")
+
+        return {
+            "role": membership_role,
+            "module_keys": module_keys,
+            "source_scope": "agency",
+            "access_scope": "agency",
+            "unrestricted_modules": False,
+        }
+
     def _resolve_subaccount_ref(self, *, subaccount: str) -> SubaccountRef:
         candidate = subaccount.strip()
         if candidate == "" or candidate.lower() == "toate":

@@ -405,6 +405,18 @@ export async function getSubaccountMyAccess(subaccountId: number): Promise<TeamS
   return apiRequest<TeamSubaccountMyAccessResponse>(`/team/subaccounts/${encodeURIComponent(String(subaccountId))}/my-access`);
 }
 
+export type TeamAgencyMyAccessResponse = {
+  role: string;
+  module_keys: string[];
+  source_scope?: string;
+  access_scope?: string;
+  unrestricted_modules?: boolean;
+};
+
+export async function getAgencyMyAccess(): Promise<TeamAgencyMyAccessResponse> {
+  return apiRequest<TeamAgencyMyAccessResponse>("/team/agency/my-access");
+}
+
 
 
 export type TeamMembershipDetailItem = {

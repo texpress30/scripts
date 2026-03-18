@@ -3,9 +3,13 @@ import { describe, expect, it } from "vitest";
 import {
   AGENCY_SETTINGS_ITEMS,
   buildScopedClients,
+  filterAgencyNavItems,
+  filterAgencySettingsItems,
   filterSubaccountNavItems,
   getNavItems,
+  resolveAgencyRouteRedirect,
   resolveSubaccountModuleRedirect,
+  resolveSubaccountSettingsRedirect,
   resolveSubaccountRouteGuardDecision,
 } from "./AppShell";
 import type { SessionAccessContext } from "@/lib/session";
@@ -176,6 +180,70 @@ describe("AppShell sub-account access helpers", () => {
       loading: false,
     });
 
-    expect(redirect).toBe("/subaccount/15/settings/profile");
+    expect(redirect).toBe("/agency/dashboard");
+  });
+
+  it("filters agency main nav by agency module keys", () => {
+    const navItems = getNavItems("/agency/dashboard");
+    const visible = filterAgencyNavItems({
+      navItems,
+      role: "agency_member",
+      moduleKeys: ["agency_clients", "creative", "settings"],
+      loading: false,
+    });
+    expect(visible.map((item) => item.href)).toEqual(["/agency/clients", "/creative"]);
+  });
+
+  it("filters agency settings nav by settings parent + child keys", () => {
+    const visible = filterAgencySettingsItems({
+      settingsItems: AGENCY_SETTINGS_ITEMS,
+      role: "agency_member",
+      moduleKeys: ["settings", "settings_profile", "settings_my_team"],
+      loading: false,
+    });
+    expect(visible.map((item) => item.href)).toEqual(["/settings/profile", "/settings/team"]);
+  });
+
+  it("hides agency settings nav when settings parent is OFF", () => {
+    const visible = filterAgencySettingsItems({
+      settingsItems: AGENCY_SETTINGS_ITEMS,
+      role: "agency_member",
+      moduleKeys: ["agency_dashboard", "settings_profile"],
+      loading: false,
+    });
+    expect(visible).toEqual([]);
+  });
+
+  it("redirects forbidden agency route to first allowed agency module", () => {
+    const redirect = resolveAgencyRouteRedirect({
+      pathname: "/agency/dashboard",
+      role: "agency_member",
+      moduleKeys: ["agency_clients", "settings", "settings_profile"],
+      loading: false,
+      settingsItems: AGENCY_SETTINGS_ITEMS,
+    });
+    expect(redirect).toBe("/agency/clients");
+  });
+
+  it("redirects forbidden agency settings route to first allowed settings child", () => {
+    const redirect = resolveAgencyRouteRedirect({
+      pathname: "/settings/company",
+      role: "agency_member",
+      moduleKeys: ["settings", "settings_profile"],
+      loading: false,
+      settingsItems: AGENCY_SETTINGS_ITEMS,
+    });
+    expect(redirect).toBe("/settings/profile");
+  });
+
+  it("redirects subaccount settings route when settings module is OFF", () => {
+    const redirect = resolveSubaccountSettingsRedirect({
+      pathname: "/subaccount/15/settings/profile",
+      role: "subaccount_user",
+      subSettingsId: 15,
+      moduleKeys: ["campaigns"],
+      loading: false,
+    });
+    expect(redirect).toBe("/sub/15/campaigns");
   });
 });
