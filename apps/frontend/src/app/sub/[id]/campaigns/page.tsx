@@ -69,7 +69,7 @@ export default function SubCampaignsPage() {
   async function loadMetrics() {
     setLoadingMetrics(true);
     try {
-      const data = await apiRequest<DashboardResponse>(`/dashboard/${clientId}`);
+      const data = await apiRequest<DashboardResponse>(`/campaigns/${clientId}/summary`);
       setMetricsData(data);
     } catch {
       setMetricsData(null);
