@@ -104,6 +104,7 @@ class AuthForgotResetApiTests(unittest.TestCase):
             auth_api.find_active_user_by_email = original_find
             auth_api.auth_email_tokens_service.create_password_reset_token_for_existing_user = original_create
             auth_api.mailgun_service.send_email = original_send
+            auth_api.email_templates_service.render_effective_template = original_render
             auth_api.load_settings = original_settings
 
     def test_forgot_password_notification_disabled_has_priority_over_template_disabled(self):
