@@ -16,6 +16,20 @@
 - [x] No Notifications backend work added; no forgot/invite flow logic changes.
 - [x] Intentionally left out: drag-and-drop builder, backend notifications model, and broader redesign.
 
+# TODO — Notifications page uses associated Email Template actions
+
+- [x] Re-read AGENTS instructions and keep scope limited to Agency Notifications + Email Templates linkage.
+- [x] Ensure Notifications deep-link to Email Templates preserves selected template via query param.
+- [x] Wire Notifications actions for associated template preview and test-send using existing API helpers.
+- [x] Add focused frontend tests for deep-link query behavior, preview/test-send success, loading, and error mapping.
+- [x] Run targeted frontend tests for touched pages.
+- [x] Prepare commit + PR metadata.
+
+## Review
+- [x] Notifications now links to `/agency/email-templates?template=<template_key>` and Email Templates page preselects from query param.
+- [x] Notifications page now provides associated template preview and test-send with Mailgun availability gating and diagnostics.
+- [x] Added focused tests in both page suites for the new behavior without backend/API contract changes.
+
 # TODO — Add test send for agency email templates
 
 - [x] Refresh workspace and re-read email templates service/API/schemas, mailgun service, and frontend email templates page/API helper.

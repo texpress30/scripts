@@ -9,10 +9,16 @@ import {
   ApiRequestError,
   type AgencyEmailNotificationDetail,
   type AgencyEmailNotificationListItem,
+  type MailgunStatusResponse,
+  type PreviewAgencyEmailTemplateResponse,
+  type SendAgencyEmailTemplateTestResponse,
   getAgencyEmailNotification,
   getAgencyEmailNotifications,
+  getMailgunStatus,
+  previewAgencyEmailTemplate,
   resetAgencyEmailNotification,
   saveAgencyEmailNotification,
+  sendAgencyEmailTemplateTest,
 } from "@/lib/api";
 
 function formatDate(value: string | null | undefined): string {
@@ -81,6 +87,17 @@ export default function AgencyNotificationsPage() {
   const [saveLoading, setSaveLoading] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const [feedback, setFeedback] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+  const [previewResult, setPreviewResult] = useState<PreviewAgencyEmailTemplateResponse | null>(null);
+  const [testEmail, setTestEmail] = useState("");
+  const [testSendLoading, setTestSendLoading] = useState(false);
+  const [testSendError, setTestSendError] = useState("");
+  const [testSendFeedback, setTestSendFeedback] = useState("");
+  const [testSendDiagnostics, setTestSendDiagnostics] = useState<SendAgencyEmailTemplateTestResponse | null>(null);
+  const [mailgunStatus, setMailgunStatus] = useState<MailgunStatusResponse | null>(null);
+  const [mailgunStatusLoading, setMailgunStatusLoading] = useState(true);
+  const [mailgunStatusError, setMailgunStatusError] = useState("");
 
   async function loadList(preferredKey?: string | null) {
     setListLoading(true);
@@ -128,7 +145,34 @@ export default function AgencyNotificationsPage() {
   }, []);
 
   useEffect(() => {
+    let ignore = false;
+    async function loadMailgunStatus() {
+      setMailgunStatusLoading(true);
+      setMailgunStatusError("");
+      try {
+        const payload = await getMailgunStatus();
+        if (!ignore) setMailgunStatus(payload);
+      } catch (error) {
+        if (ignore) return;
+        setMailgunStatus(null);
+        setMailgunStatusError(resolveErrorMessage(error, "Nu am putut încărca statusul Mailgun."));
+      } finally {
+        if (!ignore) setMailgunStatusLoading(false);
+      }
+    }
+    void loadMailgunStatus();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!selectedKey) return;
+    setPreviewError("");
+    setPreviewResult(null);
+    setTestSendError("");
+    setTestSendFeedback("");
+    setTestSendDiagnostics(null);
     void loadDetail(selectedKey);
   }, [selectedKey]);
 
@@ -170,6 +214,46 @@ export default function AgencyNotificationsPage() {
   }
 
   const selectedHint = detail ? runtimeHintForNotification(detail.key) : null;
+  const mailgunConfigured = Boolean(mailgunStatus?.configured);
+  const mailgunEnabled = Boolean(mailgunStatus?.enabled);
+  const isMailgunAvailable = !mailgunStatusLoading && !mailgunStatusError && mailgunConfigured && mailgunEnabled;
+
+  async function handlePreviewTemplate() {
+    if (!detail) return;
+    setPreviewLoading(true);
+    setPreviewError("");
+    setPreviewResult(null);
+    try {
+      const payload = await previewAgencyEmailTemplate(detail.template_key);
+      setPreviewResult(payload);
+    } catch (error) {
+      setPreviewError(resolveErrorMessage(error, "Nu am putut genera preview-ul pentru template."));
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  async function handleTestSendTemplate() {
+    if (!detail) return;
+    const email = testEmail.trim();
+    if (!email) {
+      setTestSendError("Test email este obligatoriu.");
+      return;
+    }
+    setTestSendLoading(true);
+    setTestSendError("");
+    setTestSendFeedback("");
+    setTestSendDiagnostics(null);
+    try {
+      const payload = await sendAgencyEmailTemplateTest(detail.template_key, { to_email: email });
+      setTestSendDiagnostics(payload);
+      setTestSendFeedback(`Cererea a fost acceptată de Mailgun pentru ${payload.to_email}.`);
+    } catch (error) {
+      setTestSendError(resolveErrorMessage(error, "Nu am putut trimite emailul de test."));
+    } finally {
+      setTestSendLoading(false);
+    }
+  }
 
   return (
     <ProtectedPage>
@@ -274,9 +358,66 @@ export default function AgencyNotificationsPage() {
                       Când este dezactivată, această notificare nu mai trimite email în flow-ul runtime asociat.
                     </p>
                     {selectedHint ? <p className="mt-1 text-xs text-amber-700">{selectedHint}</p> : null}
-                    <Link href="/agency/email-templates" className="mt-2 inline-flex text-xs font-medium text-sky-700 underline">
+                    <Link href={`/agency/email-templates?template=${encodeURIComponent(detail.template_key)}`} className="mt-2 inline-flex text-xs font-medium text-sky-700 underline">
                       Edit associated template
                     </Link>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-200 p-3">
+                    <div className="flex flex-wrap gap-2">
+                      <button className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50" onClick={() => void handlePreviewTemplate()} disabled={previewLoading}>
+                        {previewLoading ? "Previewing..." : "Preview template"}
+                      </button>
+                    </div>
+                    {previewError ? <p className="mt-2 text-sm text-red-600">{previewError}</p> : null}
+                    {previewResult ? (
+                      <div className="mt-3 space-y-2 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700" aria-label="Notification template preview panel">
+                        <p>
+                          <span className="font-semibold text-slate-800">Rendered subject:</span> {previewResult.rendered_subject}
+                        </p>
+                        <p>
+                          <span className="font-semibold text-slate-800">Rendered text body:</span> {previewResult.rendered_text_body}
+                        </p>
+                        <div>
+                          <p className="font-semibold text-slate-800">Rendered html body:</p>
+                          <div className="mt-1 rounded border border-slate-200 bg-white p-2" dangerouslySetInnerHTML={{ __html: previewResult.rendered_html_body || "" }} />
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="rounded-lg border border-slate-200 p-3">
+                    <p className="text-sm font-medium text-slate-800">Send test email</p>
+                    <label className="mt-2 block text-xs text-slate-700">
+                      Test email
+                      <input className="wm-input mt-1" value={testEmail} onChange={(event) => setTestEmail(event.target.value)} />
+                    </label>
+                    <p className="mt-2 text-xs text-slate-500">
+                      {isMailgunAvailable ? "Mailgun este disponibil pentru test-send." : "Mailgun nu este disponibil; test-send este dezactivat."}
+                    </p>
+                    {mailgunStatusError ? <p className="mt-1 text-xs text-red-600">{mailgunStatusError}</p> : null}
+                    <button
+                      className="mt-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      onClick={() => void handleTestSendTemplate()}
+                      disabled={testSendLoading || !isMailgunAvailable}
+                    >
+                      {testSendLoading ? "Se trimite..." : "Send test email"}
+                    </button>
+                    {testSendError ? <p className="mt-2 text-sm text-red-600">{testSendError}</p> : null}
+                    {testSendFeedback ? <p className="mt-2 text-sm text-emerald-700">{testSendFeedback}</p> : null}
+                    {testSendDiagnostics ? (
+                      <div className="mt-2 space-y-1 rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
+                        <p>
+                          <span className="font-semibold text-slate-800">Delivery status:</span> {testSendDiagnostics.delivery_status}
+                        </p>
+                        <p>
+                          <span className="font-semibold text-slate-800">Provider message:</span> {testSendDiagnostics.provider_message}
+                        </p>
+                        <p>
+                          <span className="font-semibold text-slate-800">Provider id:</span> {testSendDiagnostics.provider_id || "-"}
+                        </p>
+                      </div>
+                    ) : null}
                   </div>
 
                   {feedback ? <p className="text-sm text-slate-700">{feedback}</p> : null}
@@ -302,4 +443,3 @@ export default function AgencyNotificationsPage() {
     </ProtectedPage>
   );
 }
-
