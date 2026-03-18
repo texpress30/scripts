@@ -197,6 +197,43 @@ class EmailTemplatesApiTests(unittest.TestCase):
             self.assertEqual(ctx_text.exception.status_code, 400)
 
 
+
+    def test_render_effective_template_replaces_variables_deterministically(self):
+        service = EmailTemplatesService()
+        with patch.object(service, "get_effective_template") as mock_effective:
+            mock_effective.return_value = EffectiveEmailTemplate(
+                key="auth_forgot_password",
+                label="Auth · Forgot Password",
+                description="desc",
+                subject="Reset {{user_email}}",
+                text_body="Folosește {{reset_link}} în {{expires_minutes}} minute",
+                html_body="<a href='{{reset_link}}'>Reset</a>",
+                available_variables=("reset_link", "expires_minutes", "user_email"),
+                scope="agency",
+                enabled=True,
+                is_overridden=False,
+                updated_at=None,
+            )
+            rendered = service.render_effective_template(
+                template_key="auth_forgot_password",
+                variables={
+                    "reset_link": "https://app/reset?t=1",
+                    "expires_minutes": "60",
+                    "user_email": "u@example.com",
+                },
+            )
+
+        self.assertIsNotNone(rendered)
+        self.assertEqual(rendered.subject, "Reset u@example.com")
+        self.assertIn("https://app/reset?t=1", rendered.text_body)
+        self.assertIn("60", rendered.text_body)
+
+    def test_render_effective_template_returns_none_for_missing_key(self):
+        service = EmailTemplatesService()
+        with patch.object(service, "get_effective_template", return_value=None):
+            rendered = service.render_effective_template(template_key="missing", variables={"a": "b"})
+        self.assertIsNone(rendered)
+
     def test_service_save_override_enforces_required_subject_and_text(self):
         service = EmailTemplatesService()
         with patch.object(service, "_fetch_override_row", return_value=None):

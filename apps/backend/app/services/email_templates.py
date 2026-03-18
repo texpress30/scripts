@@ -42,6 +42,16 @@ class EffectiveEmailTemplate:
 
 
 @dataclass(frozen=True)
+class RenderedEmailTemplate:
+    key: str
+    subject: str
+    text_body: str
+    html_body: str
+    enabled: bool
+    available_variables: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class EmailTemplateOverrideInput:
     subject: str
     text_body: str
@@ -59,15 +69,15 @@ _CANONICAL_EMAIL_TEMPLATES: tuple[EmailTemplateCatalogItem, ...] = (
             "Ai solicitat resetarea parolei.\n\n"
             "Folosește link-ul de mai jos pentru a seta o parolă nouă:\n"
             "{{reset_link}}\n\n"
-            "Acest link expiră în {{token_ttl_minutes}} minute."
+            "Acest link expiră în {{expires_minutes}} minute."
         ),
         default_html_body=(
             "<p>Ai solicitat resetarea parolei.</p>"
             "<p>Folosește link-ul de mai jos pentru a seta o parolă nouă:</p>"
             "<p><a href=\"{{reset_link}}\">Resetează parola</a></p>"
-            "<p>Acest link expiră în {{token_ttl_minutes}} minute.</p>"
+            "<p>Acest link expiră în {{expires_minutes}} minute.</p>"
         ),
-        available_variables=("reset_link", "token_ttl_minutes", "user_email"),
+        available_variables=("reset_link", "expires_minutes", "user_email"),
     ),
     EmailTemplateCatalogItem(
         key="team_invite_user",
@@ -78,15 +88,15 @@ _CANONICAL_EMAIL_TEMPLATES: tuple[EmailTemplateCatalogItem, ...] = (
             "Ai fost invitat în platformă.\n\n"
             "Folosește link-ul de activare:\n"
             "{{invite_link}}\n\n"
-            "Invitația expiră în {{token_ttl_minutes}} minute."
+            "Invitația expiră în {{expires_minutes}} minute."
         ),
         default_html_body=(
             "<p>Ai fost invitat în platformă.</p>"
             "<p>Folosește link-ul de activare:</p>"
             "<p><a href=\"{{invite_link}}\">Activează contul</a></p>"
-            "<p>Invitația expiră în {{token_ttl_minutes}} minute.</p>"
+            "<p>Invitația expiră în {{expires_minutes}} minute.</p>"
         ),
-        available_variables=("invite_link", "token_ttl_minutes", "invited_email", "inviter_name"),
+        available_variables=("invite_link", "expires_minutes", "user_email"),
     ),
 )
 
@@ -156,6 +166,60 @@ class EmailTemplatesService:
             return None
         override = self._fetch_override_row(template_key=item.key, scope_key=AGENCY_DEFAULT_SCOPE_KEY)
         return self._build_effective_template(item=item, override_row=override)
+
+    def render_effective_template(
+        self,
+        *,
+        template_key: str,
+        variables: dict[str, object] | None,
+    ) -> RenderedEmailTemplate | None:
+        effective = self.get_effective_template(template_key)
+        if effective is None:
+            return None
+
+        normalized_variables = {
+            str(key).strip().lower(): str(value)
+            for key, value in dict(variables or {}).items()
+        }
+
+        subject = self._render_template_text(
+            template=effective.subject,
+            variables=normalized_variables,
+            available_variables=effective.available_variables,
+        )
+        text_body = self._render_template_text(
+            template=effective.text_body,
+            variables=normalized_variables,
+            available_variables=effective.available_variables,
+        )
+        html_body = self._render_template_text(
+            template=effective.html_body,
+            variables=normalized_variables,
+            available_variables=effective.available_variables,
+        )
+
+        return RenderedEmailTemplate(
+            key=effective.key,
+            subject=subject,
+            text_body=text_body,
+            html_body=html_body,
+            enabled=effective.enabled,
+            available_variables=effective.available_variables,
+        )
+
+    def _render_template_text(
+        self,
+        *,
+        template: str,
+        variables: dict[str, str],
+        available_variables: tuple[str, ...],
+    ) -> str:
+        rendered = str(template or "")
+        for variable in available_variables:
+            placeholder = f"{{{{{variable}}}}}"
+            replacement = variables.get(variable, "")
+            rendered = rendered.replace(placeholder, replacement)
+        return rendered
 
     def save_override(
         self,

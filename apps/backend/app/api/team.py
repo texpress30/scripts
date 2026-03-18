@@ -25,6 +25,7 @@ from app.services.auth import AuthUser
 from app.services.auth_email_tokens import auth_email_tokens_service
 from app.services.client_registry import client_registry_service
 from app.services.mailgun_service import MailgunIntegrationError, mailgun_service
+from app.services.email_templates import email_templates_service
 from app.services.team_members import team_members_service
 
 try:
@@ -344,16 +345,40 @@ def invite_team_member(membership_id: int, user: AuthUser = Depends(get_current_
     )
 
     invite_link = f"{frontend_base_url.rstrip('/')}/reset-password?token={raw_token}"
-    subject = "Invitație în platformă"
-    text = (
-        "Ai fost invitat în platformă.\n\n"
-        f"Setează parola contului tău folosind acest link (expiră în {invite_ttl_minutes} minute):\n"
-        f"{invite_link}\n\n"
-        "Dacă nu te așteptai la acest email, îl poți ignora."
+    rendered_template = email_templates_service.render_effective_template(
+        template_key="team_invite_user",
+        variables={
+            "invite_link": invite_link,
+            "expires_minutes": str(invite_ttl_minutes),
+            "user_email": email,
+        },
     )
+    if rendered_template is None:
+        audit_log_service.log(
+            actor_email=user.email,
+            actor_role=user.role,
+            action="team.invite.failed",
+            resource=f"team:membership:{membership_id}",
+            details={"reason": "template_missing", "template_key": "team_invite_user"},
+        )
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Invitația nu este disponibilă momentan")
+    if not rendered_template.enabled:
+        audit_log_service.log(
+            actor_email=user.email,
+            actor_role=user.role,
+            action="team.invite.failed",
+            resource=f"team:membership:{membership_id}",
+            details={"reason": "template_disabled", "template_key": "team_invite_user"},
+        )
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Invitația nu este disponibilă momentan")
 
     try:
-        mailgun_service.send_email(to_email=email, subject=subject, text=text)
+        mailgun_service.send_email(
+            to_email=email,
+            subject=rendered_template.subject,
+            text=rendered_template.text_body,
+            html=rendered_template.html_body,
+        )
     except (MailgunIntegrationError, ValueError):
         audit_log_service.log(
             actor_email=user.email,

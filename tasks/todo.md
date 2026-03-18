@@ -5031,3 +5031,25 @@ Plan verified: strict backend increment only (no UI, no forgot/invite migration,
 - [x] Added agency-level DB override persistence for email templates with idempotent schema init.
 - [x] Extended list/detail to expose effective values and override metadata (`enabled`, `is_overridden`, `updated_at`).
 - [x] Added admin-only save/reset endpoints and validated behavior through focused backend tests + startup check.
+
+---
+
+# TODO — Wire forgot/invite email flows to effective Email Templates
+
+- [x] Re-read backend files for templates/auth/team/mailgun and keep scope backend-only.
+- [x] Add effective template resolve + deterministic variable-render helper in `email_templates` service.
+- [x] Migrate `/auth/forgot-password` to `auth_forgot_password` effective template (default or override).
+- [x] Migrate `/team/members/{membership_id}/invite` to `team_invite_user` effective template (default or override).
+- [x] Handle `enabled=false` consistently with safe availability error in both flows.
+- [x] Extend Mailgun send helper for optional HTML while keeping backward compatibility.
+- [x] Add backend tests for default/override usage, rendering, enabled=false, html send, and compatibility.
+- [x] Run targeted backend tests and backend startup check.
+- [x] Commit and create PR with exact requested title/body.
+
+### Check-in before execution
+Plan verified: backend incremental change only, no UI and no redesign, with existing endpoint contracts preserved.
+
+## Review
+- [x] Forgot-password and invite now resolve/render effective templates (default or override) via shared email template service.
+- [x] Added deterministic placeholder rendering (`{{...}}`) for supported variables and enforced template `enabled` gating with safe availability errors.
+- [x] Extended Mailgun send API with optional HTML in a backward-compatible way and validated via focused backend tests + startup check.
