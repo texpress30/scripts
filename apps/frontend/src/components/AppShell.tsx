@@ -47,6 +47,7 @@ export const AGENCY_SETTINGS_ITEMS = [
   { href: "/settings/profile", label: "Profile" },
   { href: "/settings/company", label: "Company" },
   { href: "/settings/team", label: "My Team" },
+  { href: "/agency/notifications", label: "Notificări" },
   { href: "/agency/email-templates", label: "Email Templates" },
   { href: "/settings/tags", label: "Tags" },
   { href: "/settings/audit-logs", label: "Audit Logs" },
@@ -72,8 +73,6 @@ export function getNavItems(pathname: string): NavItem[] {
     { href: "/agency/clients", label: "Agency Clients", icon: Users },
     { href: "/agency-accounts", label: "Agency Accounts", icon: Bell },
     { href: "/agency/audit", label: "Agency Audit", icon: Sparkles },
-    { href: "/agency/email-templates", label: "Email Templates", icon: Bell },
-    { href: "/notifications", label: "Notificari", icon: Bell },
     { href: "/creative", label: "Creative", icon: Palette },
   ];
 
@@ -293,7 +292,7 @@ export function AppShell({
   const subSettingsId = subSettingsMatch ? Number(subSettingsMatch[1]) : null;
   const contextClientId = currentSubId ?? subSettingsId;
 
-  const isAgencySettingsMode = pathname.startsWith("/settings/") || pathname.startsWith("/agency/email-templates");
+  const isAgencySettingsMode = pathname.startsWith("/settings/") || pathname.startsWith("/agency/email-templates") || pathname.startsWith("/agency/notifications");
   const isSubSettingsMode = pathname.startsWith("/subaccount/") && pathname.includes("/settings/");
   const isSettingsMode = isAgencySettingsMode || isSubSettingsMode;
 

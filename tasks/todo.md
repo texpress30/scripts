@@ -5318,3 +5318,25 @@ Plan verified: backend-only incremental wiring for runtime gating (forgot/invite
 - [x] Invite flow now checks `team_invite_user` notification state after availability checks; disabled notification returns explicit `409` with clear message and skips token/email work.
 - [x] Notification gating is evaluated before template rendering so notification-disabled state has explicit priority over template-enabled/disabled state.
 - [x] Added focused backend tests for notification-enabled/disabled runtime behavior and no-regression checks for existing mailgun/template paths.
+
+# TODO — Add Agency Notifications settings UI page (2026-03-18)
+
+- [x] Re-read AppShell, frontend API layer, Email Templates page structure, existing Notifications route, and backend notification API/schema contracts.
+- [x] Add/adjust Settings navigation so `Notificări` points to dedicated agency settings page without breaking existing navigation.
+- [x] Add frontend API helpers for agency email notifications list/detail/save/reset.
+- [x] Implement `/agency/notifications` page with left overview list + right detail/edit panel for email notification `enabled`.
+- [x] Implement save/reset flows with refetch + feedback and contextual runtime hints for forgot/invite behavior.
+- [x] Implement explicit loading/empty/error states with 403/404/400/fallback handling.
+- [x] Add compact frontend tests for nav presence/route, list/detail load, save/reset payloads, loading states, and key errors.
+- [x] Run relevant frontend tests and frontend build.
+- [x] Update notes/lessons and finalize with commit + make_pr.
+
+## Check-in before execution
+Plan verified: frontend-focused incremental delivery for Agency Notifications settings page on top of existing backend contracts; no redesign and no runtime/backend behavior changes.
+
+## Review
+- [x] Added dedicated settings page `/agency/notifications` with overview + detail/edit pattern aligned to Email Templates UX.
+- [x] Implemented list/detail/save/reset wiring against existing backend endpoints only; editable field is strictly `enabled`.
+- [x] Added contextual runtime hints for `auth_forgot_password` and `team_invite_user` plus link to associated Email Templates page.
+- [x] Updated AppShell settings navigation to expose `Notificări` as settings item and removed duplicate agency-main-nav notifications link.
+- [x] Added focused tests for navigation contract and notifications page behaviors (loading, selection, save/reset, and 403/404/400 handling).

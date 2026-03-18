@@ -405,3 +405,4 @@
 - 2026-03-18: După corecții AGENTS, verifică imediat `git status` și livrează final doar după pașii obligatorii complet executați (teste, commit, `make_pr`) + raport final cu citări pe fișiere/linie.
 - 2026-03-18: Pentru cleanup UX incremental, elimină controalele duplicate dintre Integrations și Email Templates (ex. test-send) doar din UI-ul redundant, fără să ștergi backend-ul dacă poate fi reutilizat de alte ecrane.
 - 2026-03-18: Pentru activarea runtime a Notification settings, tratează `notification.enabled` ca guard distinct față de `template.enabled` și dă prioritate notification guard-ului înainte de token/render/send.
+- 2026-03-18: Pentru UI Notifications peste backend deja livrat, clonează patternul listă+detail din Email Templates (fără redesign) și limitează editarea strict la `enabled`, cu refresh list+detail după save/reset.

@@ -27,10 +27,12 @@ function context(overrides: Partial<SessionAccessContext>): SessionAccessContext
 
 describe("AppShell sub-account access helpers", () => {
 
-  it("keeps Email Templates out of agency main nav and in settings nav", () => {
+  it("keeps settings pages out of agency main nav and in settings nav", () => {
     const navItems = getNavItems("/agency/dashboard");
     expect(navItems.some((item) => item.href === "/agency/email-templates")).toBe(false);
+    expect(navItems.some((item) => item.href === "/agency/notifications")).toBe(false);
     expect(AGENCY_SETTINGS_ITEMS.some((item) => item.href === "/agency/email-templates" && item.label === "Email Templates")).toBe(true);
+    expect(AGENCY_SETTINGS_ITEMS.some((item) => item.href === "/agency/notifications" && item.label === "Notificări")).toBe(true);
   });
 
   it("filters visible clients to allowed ids and preserves allowed order", () => {

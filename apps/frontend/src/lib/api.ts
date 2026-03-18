@@ -604,6 +604,64 @@ export async function sendAgencyEmailTemplateTest(
   });
 }
 
+export type AgencyEmailNotificationListItem = {
+  key: string;
+  label: string;
+  description: string;
+  channel: string;
+  scope: string;
+  template_key: string;
+  enabled: boolean;
+  is_overridden: boolean;
+  updated_at: string | null;
+};
+
+export type AgencyEmailNotificationListResponse = {
+  items: AgencyEmailNotificationListItem[];
+};
+
+export type AgencyEmailNotificationDetail = {
+  key: string;
+  label: string;
+  description: string;
+  channel: string;
+  scope: string;
+  template_key: string;
+  enabled: boolean;
+  default_enabled: boolean;
+  is_overridden: boolean;
+  updated_at: string | null;
+};
+
+export type SaveAgencyEmailNotificationPayload = {
+  enabled: boolean;
+};
+
+export async function getAgencyEmailNotifications(): Promise<AgencyEmailNotificationListResponse> {
+  return apiRequest<AgencyEmailNotificationListResponse>("/agency/email-notifications");
+}
+
+export async function getAgencyEmailNotification(notificationKey: string): Promise<AgencyEmailNotificationDetail> {
+  return apiRequest<AgencyEmailNotificationDetail>(`/agency/email-notifications/${encodeURIComponent(notificationKey)}`);
+}
+
+export async function saveAgencyEmailNotification(
+  notificationKey: string,
+  payload: SaveAgencyEmailNotificationPayload,
+): Promise<AgencyEmailNotificationDetail> {
+  return apiRequest<AgencyEmailNotificationDetail>(`/agency/email-notifications/${encodeURIComponent(notificationKey)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function resetAgencyEmailNotification(notificationKey: string): Promise<AgencyEmailNotificationDetail> {
+  return apiRequest<AgencyEmailNotificationDetail>(`/agency/email-notifications/${encodeURIComponent(notificationKey)}/reset`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
 export type MailgunStatusResponse = {
   configured: boolean;
   enabled: boolean;
