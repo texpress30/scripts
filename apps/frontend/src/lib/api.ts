@@ -626,37 +626,12 @@ export type MailgunConfigPayload = {
   enabled?: boolean;
 };
 
-export type MailgunTestPayload = {
-  to_email: string;
-  subject?: string;
-  text?: string;
-};
-
 export async function getMailgunStatus(): Promise<MailgunStatusResponse> {
   return apiRequest<MailgunStatusResponse>("/agency/integrations/mailgun/status");
 }
 
 export async function saveMailgunConfig(payload: MailgunConfigPayload): Promise<MailgunStatusResponse> {
   return apiRequest<MailgunStatusResponse>("/agency/integrations/mailgun/config", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
-export type MailgunImportFromEnvResponse = MailgunStatusResponse & {
-  imported: boolean;
-  message: string;
-};
-
-export async function importMailgunConfigFromEnv(): Promise<MailgunImportFromEnvResponse> {
-  return apiRequest<MailgunImportFromEnvResponse>("/agency/integrations/mailgun/import-from-env", {
-    method: "POST",
-    body: JSON.stringify({}),
-  });
-}
-
-export async function sendMailgunTestEmail(payload: MailgunTestPayload): Promise<{ ok: boolean; message?: string; id?: string; to_email?: string; subject?: string }> {
-  return apiRequest<{ ok: boolean; message?: string; id?: string; to_email?: string; subject?: string }>("/agency/integrations/mailgun/test", {
     method: "POST",
     body: JSON.stringify(payload),
   });

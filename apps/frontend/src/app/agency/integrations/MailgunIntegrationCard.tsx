@@ -5,13 +5,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   ApiRequestError,
   MailgunConfigPayload,
-  MailgunImportFromEnvResponse,
   MailgunStatusResponse,
-  MailgunTestPayload,
   getMailgunStatus,
-  importMailgunConfigFromEnv,
   saveMailgunConfig,
-  sendMailgunTestEmail,
 } from "@/lib/api";
 
 type MailgunConfigForm = {
@@ -22,12 +18,6 @@ type MailgunConfigForm = {
   from_name: string;
   reply_to: string;
   enabled: boolean;
-};
-
-type MailgunTestForm = {
-  to_email: string;
-  subject: string;
-  text: string;
 };
 
 function statusBadge(status: MailgunStatusResponse | null): { label: string; toneClass: string } {
@@ -68,12 +58,6 @@ export function MailgunIntegrationCard() {
   const [configErrors, setConfigErrors] = useState<Record<string, string>>({});
   const [configBusy, setConfigBusy] = useState(false);
   const [configMessage, setConfigMessage] = useState("");
-  const [importBusy, setImportBusy] = useState(false);
-
-  const [testForm, setTestForm] = useState<MailgunTestForm>({ to_email: "", subject: "", text: "" });
-  const [testError, setTestError] = useState("");
-  const [testMessage, setTestMessage] = useState("");
-  const [testBusy, setTestBusy] = useState(false);
 
   const badge = useMemo(() => statusBadge(status), [status]);
   const isEnvManaged = status?.config_source === "env";
@@ -114,7 +98,6 @@ export function MailgunIntegrationCard() {
 
     setConfigBusy(true);
     setConfigMessage("");
-    setTestError("");
     try {
       const payload: MailgunConfigPayload = {
         api_key: configForm.api_key.trim(),
@@ -134,45 +117,6 @@ export function MailgunIntegrationCard() {
       setConfigMessage(normalizeError(err, "Nu am putut salva configurația Mailgun."));
     } finally {
       setConfigBusy(false);
-    }
-  }
-
-  async function onTestSend() {
-    if (!testForm.to_email.trim()) {
-      setTestError("Email destinatar este obligatoriu.");
-      return;
-    }
-    setTestBusy(true);
-    setTestError("");
-    setTestMessage("");
-    try {
-      const payload: MailgunTestPayload = {
-        to_email: testForm.to_email.trim(),
-      };
-      if (testForm.subject.trim()) payload.subject = testForm.subject.trim();
-      if (testForm.text.trim()) payload.text = testForm.text.trim();
-
-      await sendMailgunTestEmail(payload);
-      setTestMessage("Emailul de test a fost trimis cu succes.");
-    } catch (err) {
-      setTestError(normalizeError(err, "Nu am putut trimite emailul de test."));
-    } finally {
-      setTestBusy(false);
-    }
-  }
-
-  async function onImportFromEnv() {
-    setConfigMessage("");
-    setStatusError("");
-    setImportBusy(true);
-    try {
-      const payload: MailgunImportFromEnvResponse = await importMailgunConfigFromEnv();
-      setConfigMessage(payload.message || "Configurația Mailgun a fost importată.");
-      await loadStatus();
-    } catch (err) {
-      setConfigMessage(normalizeError(err, "Nu am putut importa configurația Mailgun din env."));
-    } finally {
-      setImportBusy(false);
     }
   }
 
@@ -225,15 +169,6 @@ export function MailgunIntegrationCard() {
         >
           {isEnvManaged ? "Configured in Railway" : configOpen ? "Închide configurare" : status?.configured ? "Editează configurare" : "Configurează Mailgun"}
         </button>
-        {status?.configured && status?.config_source === "env" ? (
-          <button
-            onClick={() => void onImportFromEnv()}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-            disabled={loading || configBusy || importBusy}
-          >
-            {importBusy ? "Se importă..." : "Importă din env în DB"}
-          </button>
-        ) : null}
       </div>
 
       {configOpen && !isEnvManaged ? (
@@ -286,29 +221,7 @@ export function MailgunIntegrationCard() {
           </button>
         </div>
       ) : null}
-
-      <div className="mt-4 space-y-2 rounded-md border border-slate-200 p-3">
-        <p className="text-sm font-medium text-slate-800">Test Email</p>
-        <label className="block text-xs text-slate-700">
-          To email *
-          <input className="wm-input mt-1" value={testForm.to_email} onChange={(e) => setTestForm((prev) => ({ ...prev, to_email: e.target.value }))} />
-        </label>
-        <label className="block text-xs text-slate-700">
-          Subject
-          <input className="wm-input mt-1" value={testForm.subject} onChange={(e) => setTestForm((prev) => ({ ...prev, subject: e.target.value }))} />
-        </label>
-        <label className="block text-xs text-slate-700">
-          Text
-          <textarea className="wm-input mt-1" value={testForm.text} onChange={(e) => setTestForm((prev) => ({ ...prev, text: e.target.value }))} rows={3} />
-        </label>
-
-        {testError ? <p className="text-xs text-red-600">{testError}</p> : null}
-        {testMessage ? <p className="text-xs text-emerald-600">{testMessage}</p> : null}
-
-        <button className="wm-btn-primary" onClick={() => void onTestSend()} disabled={testBusy || loading}>
-          {testBusy ? "Se trimite..." : "Test Email"}
-        </button>
-      </div>
+      <p className="mt-4 text-xs text-slate-500">Test email is available from Email Templates.</p>
     </article>
   );
 }
