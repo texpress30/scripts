@@ -1,3 +1,22 @@
+# TODO — Filter app navigation by full sidebar permissions catalog
+
+- [x] Re-read AppShell/sidebar helpers, session/api access-context utilities, and team backend contracts for navigation permissions.
+- [x] Add backward-compatible agency access-context endpoint for current user module keys.
+- [x] Wire AppShell agency main-nav filtering to agency navigation module keys.
+- [x] Wire Agency Settings nav filtering by `settings` parent + allowed children module keys.
+- [x] Wire subaccount nav/settings visibility to subaccount module keys and keep OFF items hidden.
+- [x] Add safe redirect guards for forbidden agency routes, forbidden settings routes, and forbidden subaccount settings routes.
+- [x] Add/update compact backend + frontend tests for access-context and nav filtering/redirect behavior.
+- [x] Run relevant frontend tests, frontend build, and backend tests/startup check.
+- [x] Prepare commit + PR metadata with required title/body.
+
+## Review
+- [x] AppShell now filters agency, settings, and subaccount nav entries using module-key access context.
+- [x] OFF module keys no longer render in sidebar/settings nav; ON keys remain visible.
+- [x] Safe redirects now move users to first allowed route (or fallback) when current route is not permitted.
+- [x] Agency access context is exposed via new backward-compatible endpoint with fallback behavior for legacy/special users.
+- [x] Intentionally left out: expanded backend route-group enforcement beyond existing endpoints.
+
 # TODO — Wire Sub-account Team roles and permissions to full sidebar catalog
 
 - [x] Re-read Sub-account Team page, frontend API/session helpers, and team backend contracts for module catalog + grant ceiling behavior.

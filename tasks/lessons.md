@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-18: Pentru cerințe de nav filtering pe permissions, livrează în același patch atât filtrarea sidebar/settings cât și redirect guards pure + teste unit pentru fiecare scope (agency main, agency settings, subaccount main/settings), ca să eviți regresii de rute nepermise.
+
 - 2026-03-18: După feedback "unsatisfied" pe un PR mare, livrează următorul increment strict pe pagina/flow cerut (aici Sub-account Team roles & permissions), cu wiring real pe contractele existente și teste compacte de regresie pentru create/edit + grant ceiling.
 
 - 2026-03-14: Pentru ecrane tip wizard cu tab-uri verticale, validează în teste atât starea implicită (tab activ + secțiune avansată colapsată), cât și tranziția de expand + erori câmpuri obligatorii după submit.

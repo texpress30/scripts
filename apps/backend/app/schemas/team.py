@@ -134,6 +134,14 @@ class TeamSubaccountMyAccessResponse(BaseModel):
     unrestricted_modules: bool = False
 
 
+class TeamAgencyMyAccessResponse(BaseModel):
+    role: str
+    module_keys: list[str] = Field(default_factory=list)
+    source_scope: str = "agency"
+    access_scope: str = "agency"
+    unrestricted_modules: bool = False
+
+
 class TeamMembershipDetailItem(BaseModel):
     membership_id: int
     user_id: int

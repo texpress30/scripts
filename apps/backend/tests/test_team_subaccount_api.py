@@ -379,6 +379,54 @@ class TeamSubaccountApiTests(unittest.TestCase):
         self.assertEqual(response["source_scope"], "legacy_fallback")
         self.assertEqual(response["module_keys"], ["dashboard", "campaigns", "rules", "creative", "recommendations", "settings"])
 
+    def test_agency_my_access_endpoint_uses_service_payload(self):
+        user = AuthUser(email="agency@example.com", role="agency_member", user_id=22, access_scope="agency")
+        original = team_api.team_members_service.get_agency_my_access
+        try:
+            team_api.team_members_service.get_agency_my_access = lambda **kwargs: {
+                "role": "agency_member",
+                "module_keys": ["agency_dashboard", "agency_clients", "settings", "settings_profile"],
+                "source_scope": "agency",
+                "access_scope": "agency",
+                "unrestricted_modules": False,
+            }
+            response = team_api.get_agency_my_access(user=user)
+            self.assertEqual(response.role, "agency_member")
+            self.assertIn("agency_dashboard", response.module_keys)
+            self.assertFalse(response.unrestricted_modules)
+        finally:
+            team_api.team_members_service.get_agency_my_access = original
+
+    def test_agency_my_access_endpoint_db_unavailable_uses_fallback(self):
+        user = AuthUser(email="agency@example.com", role="agency_member", user_id=22, access_scope="agency")
+        original_access = team_api.team_members_service.get_agency_my_access
+        original_fallback = team_api.team_members_service.get_agency_my_access_fallback
+        original_unavailable = team_api._is_db_unavailable_error
+        try:
+            team_api.team_members_service.get_agency_my_access = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("db down"))
+            team_api.team_members_service.get_agency_my_access_fallback = lambda **kwargs: {
+                "role": "agency_member",
+                "module_keys": ["agency_dashboard", "agency_clients"],
+                "source_scope": "legacy_fallback",
+                "access_scope": "agency",
+                "unrestricted_modules": True,
+            }
+            team_api._is_db_unavailable_error = lambda exc: True
+            response = team_api.get_agency_my_access(user=user)
+            self.assertEqual(response.source_scope, "legacy_fallback")
+            self.assertTrue(response.unrestricted_modules)
+            self.assertEqual(response.module_keys, ["agency_dashboard", "agency_clients"])
+        finally:
+            team_api.team_members_service.get_agency_my_access = original_access
+            team_api.team_members_service.get_agency_my_access_fallback = original_fallback
+            team_api._is_db_unavailable_error = original_unavailable
+
+    def test_team_members_service_agency_my_access_fallback_for_legacy_user(self):
+        service = team_api.team_members_service
+        response = service.get_agency_my_access_fallback(actor_user=AuthUser(email="legacy@example.com", role="agency_member", user_id=None))
+        self.assertEqual(response["source_scope"], "legacy_fallback")
+        self.assertIn("agency_dashboard", response["module_keys"])
+
 
 if __name__ == "__main__":
     unittest.main()

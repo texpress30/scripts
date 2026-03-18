@@ -15,6 +15,7 @@ from app.schemas.team import (
     TeamModuleCatalogResponse,
     TeamGrantableModulesResponse,
     TeamSubaccountMyAccessResponse,
+    TeamAgencyMyAccessResponse,
     TeamSubaccountOptionItem,
     TeamSubaccountOptionsResponse,
     TeamMembershipDetailResponse,
@@ -526,6 +527,29 @@ def get_subaccount_my_access(
         module_keys=_normalize_module_keys(payload.get("module_keys")),
         source_scope=str(payload.get("source_scope") or "subaccount"),
         access_scope=str(payload.get("access_scope") or (user.access_scope or "subaccount")),
+        unrestricted_modules=bool(payload.get("unrestricted_modules")),
+    )
+
+
+@router.get("/agency/my-access", response_model=TeamAgencyMyAccessResponse)
+def get_agency_my_access(
+    user: AuthUser = Depends(get_current_user),
+) -> TeamAgencyMyAccessResponse:
+    try:
+        payload = team_members_service.get_agency_my_access(actor_user=user)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        if _is_db_unavailable_error(exc):
+            payload = team_members_service.get_agency_my_access_fallback(actor_user=user)
+        else:
+            raise
+
+    return TeamAgencyMyAccessResponse(
+        role=str(payload.get("role") or user.role),
+        module_keys=_normalize_module_keys(payload.get("module_keys")),
+        source_scope=str(payload.get("source_scope") or "agency"),
+        access_scope=str(payload.get("access_scope") or (user.access_scope or "agency")),
         unrestricted_modules=bool(payload.get("unrestricted_modules")),
     )
 
