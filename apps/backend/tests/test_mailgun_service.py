@@ -125,6 +125,74 @@ class MailgunServiceTests(unittest.TestCase):
         finally:
             mailgun_module.integration_secrets_store = original_store
 
+
+    def test_send_email_backward_compatible_without_html(self):
+        service = mailgun_module.MailgunService()
+        fake_store = _FakeSecretsStore()
+        original_store = mailgun_module.integration_secrets_store
+        original_post = mailgun_module.requests.post
+        captured: dict[str, object] = {}
+
+        try:
+            mailgun_module.integration_secrets_store = fake_store
+            service.upsert_config(
+                api_key="key-super-secret",
+                domain="mg.example.com",
+                base_url="https://api.mailgun.net",
+                from_email="noreply@example.com",
+                from_name="Agency Name",
+                reply_to="",
+                enabled=True,
+            )
+
+            def _fake_post(url, auth, data, timeout):
+                captured["data"] = dict(data)
+                return _FakeResponse(ok=True, status_code=200, payload={"id": "abc123", "message": "Queued"})
+
+            mailgun_module.requests.post = _fake_post
+            payload = service.send_email(to_email="test@example.com", subject="Subiect", text="Text simplu")
+            self.assertTrue(payload["ok"])
+            self.assertNotIn("html", captured["data"])
+        finally:
+            mailgun_module.integration_secrets_store = original_store
+            mailgun_module.requests.post = original_post
+
+    def test_send_email_includes_html_when_provided(self):
+        service = mailgun_module.MailgunService()
+        fake_store = _FakeSecretsStore()
+        original_store = mailgun_module.integration_secrets_store
+        original_post = mailgun_module.requests.post
+        captured: dict[str, object] = {}
+
+        try:
+            mailgun_module.integration_secrets_store = fake_store
+            service.upsert_config(
+                api_key="key-super-secret",
+                domain="mg.example.com",
+                base_url="https://api.mailgun.net",
+                from_email="noreply@example.com",
+                from_name="Agency Name",
+                reply_to="",
+                enabled=True,
+            )
+
+            def _fake_post(url, auth, data, timeout):
+                captured["data"] = dict(data)
+                return _FakeResponse(ok=True, status_code=200, payload={"id": "abc123", "message": "Queued"})
+
+            mailgun_module.requests.post = _fake_post
+            payload = service.send_email(
+                to_email="test@example.com",
+                subject="Subiect",
+                text="Text simplu",
+                html="<p>HTML</p>",
+            )
+            self.assertTrue(payload["ok"])
+            self.assertEqual(captured["data"]["html"], "<p>HTML</p>")
+        finally:
+            mailgun_module.integration_secrets_store = original_store
+            mailgun_module.requests.post = original_post
+
     def test_send_test_success_with_mocked_http(self):
         service = mailgun_module.MailgunService()
         fake_store = _FakeSecretsStore()
