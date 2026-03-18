@@ -51,3 +51,18 @@ class AgencyEmailTemplatePreviewResponse(BaseModel):
     rendered_html_body: str
     sample_variables: dict[str, str]
     is_overridden: bool
+
+
+class AgencyEmailTemplateTestSendRequest(BaseModel):
+    to_email: str
+    subject: str | None = None
+    text_body: str | None = None
+    html_body: str | None = None
+
+
+class AgencyEmailTemplateTestSendResponse(BaseModel):
+    key: str
+    to_email: str
+    sent: bool
+    rendered_subject: str
+    message: str

@@ -394,3 +394,4 @@
 - 2026-03-18: Pentru task-uri UI admin peste API deja existent (ex. Email Templates), livrează întâi un editor simplu list/detail/save/reset cu stări clare (loading/error/success) și teste pe contracte API, lăsând preview/test-send/WYSIWYG pentru pași ulteriori.
 - 2026-03-18: După feedback "unsatisfied" pe un PR full-stack, următorul increment trebuie să fie strict pe UX-ul cerut (frontend-only, contract backend existent), cu teste țintite pe stările cerute și fără extinderi backend premature.
 - 2026-03-18: Pentru taskuri de preview render peste template-uri existente, livrează endpoint dedicat + sample variables canonice + wiring UI Preview cu teste pentru draft payload și erori, fără a adăuga test-send în același pas.
+- 2026-03-18: Pentru incrementalul de test-send pe Email Templates, reutilizează render preview + sample variables existente și tratează explicit regula "enabled=false permite test send" ca behavior documentat și testat.

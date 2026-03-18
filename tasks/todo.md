@@ -1,3 +1,21 @@
+# TODO — Add test send for agency email templates
+
+- [x] Refresh workspace and re-read email templates service/API/schemas, mailgun service, and frontend email templates page/API helper.
+- [x] Add backend endpoint `POST /agency/email-templates/{template_key}/test-send` with RBAC + explicit 404/400/503 mapping.
+- [x] Reuse preview render/sample variables logic to support test-send with draft payload and effective fallback.
+- [x] Keep rule explicit: test-send is allowed even when template `enabled=false` (disabled only blocks automated flows).
+- [x] Add frontend API helper for test-send and wire Test email input + `Send test email` action in detail panel.
+- [x] Add dedicated test-send loading/error/success states without blocking save/reset.
+- [x] Add backend/frontend focused tests for success paths and required error scenarios.
+- [x] Run backend tests, frontend tests, frontend build, and backend startup check.
+- [x] Update notes/lessons and prepare commit + PR metadata.
+
+## Review
+- [x] Test send now works for both canonical templates and supports draft subject/text/html from editor.
+- [x] Endpoint and UI handle 403/404/400/503 explicitly, including Mailgun unavailable/disabled errors.
+- [x] Existing preview/save/reset behavior remains available and verified.
+- [x] Intentionally left out: rich editor/WYSIWYG and separate Notifications backend.
+
 # TODO — Add preview render for agency email templates
 
 - [x] Refresh workspace and re-read email template service/API/schemas plus frontend email templates page + API helper.

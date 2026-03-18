@@ -577,6 +577,31 @@ export async function previewAgencyEmailTemplate(
   });
 }
 
+export type SendAgencyEmailTemplateTestPayload = {
+  to_email: string;
+  subject?: string;
+  text_body?: string;
+  html_body?: string;
+};
+
+export type SendAgencyEmailTemplateTestResponse = {
+  key: string;
+  to_email: string;
+  sent: boolean;
+  rendered_subject: string;
+  message: string;
+};
+
+export async function sendAgencyEmailTemplateTest(
+  templateKey: string,
+  payload: SendAgencyEmailTemplateTestPayload,
+): Promise<SendAgencyEmailTemplateTestResponse> {
+  return apiRequest<SendAgencyEmailTemplateTestResponse>(`/agency/email-templates/${encodeURIComponent(templateKey)}/test-send`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export type MailgunStatusResponse = {
   configured: boolean;
   enabled: boolean;

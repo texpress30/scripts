@@ -69,6 +69,15 @@ class EmailTemplateOverrideInput:
     enabled: bool
 
 
+@dataclass(frozen=True)
+class EmailTemplateTestSendResult:
+    key: str
+    to_email: str
+    sent: bool
+    rendered_subject: str
+    message: str
+
+
 _CANONICAL_EMAIL_TEMPLATES: tuple[EmailTemplateCatalogItem, ...] = (
     EmailTemplateCatalogItem(
         key="auth_forgot_password",
@@ -275,6 +284,40 @@ class EmailTemplatesService:
             rendered_html_body=rendered_html_body,
             sample_variables=sample_variables,
             is_overridden=effective.is_overridden,
+        )
+
+    def send_template_test_email(
+        self,
+        *,
+        template_key: str,
+        to_email: str,
+        subject: str | None = None,
+        text_body: str | None = None,
+        html_body: str | None = None,
+    ) -> EmailTemplateTestSendResult | None:
+        preview = self.render_template_preview(
+            template_key=template_key,
+            subject=subject,
+            text_body=text_body,
+            html_body=html_body,
+        )
+        if preview is None:
+            return None
+
+        from app.services.mailgun_service import mailgun_service
+
+        send_result = mailgun_service.send_email(
+            to_email=to_email,
+            subject=preview.rendered_subject,
+            text=preview.rendered_text_body,
+            html=preview.rendered_html_body,
+        )
+        return EmailTemplateTestSendResult(
+            key=preview.key,
+            to_email=str(send_result.get("to_email") or to_email).strip().lower(),
+            sent=bool(send_result.get("ok", True)),
+            rendered_subject=preview.rendered_subject,
+            message=str(send_result.get("message") or "Email sent"),
         )
 
     def _render_template_text(

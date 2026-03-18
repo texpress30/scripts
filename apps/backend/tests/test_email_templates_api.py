@@ -4,7 +4,8 @@ from unittest.mock import patch
 
 from app.api import email_templates as email_templates_api
 from app.services.auth import AuthUser
-from app.services.email_templates import EmailTemplatePreviewResult, EffectiveEmailTemplate, EmailTemplatesService
+from app.services.email_templates import EmailTemplatePreviewResult, EmailTemplateTestSendResult, EffectiveEmailTemplate, EmailTemplatesService
+from app.services.mailgun_service import MailgunIntegrationError
 
 
 class _FakeCursor:
@@ -185,6 +186,15 @@ class EmailTemplatesApiTests(unittest.TestCase):
                 )
             self.assertEqual(preview_ctx.exception.status_code, 404)
 
+        with patch.object(email_templates_api.email_templates_service, "send_template_test_email", return_value=None):
+            with self.assertRaises(email_templates_api.HTTPException) as test_send_ctx:
+                email_templates_api.test_send_agency_email_template(
+                    template_key="does_not_exist",
+                    payload=email_templates_api.AgencyEmailTemplateTestSendRequest(to_email="qa@example.com"),
+                    user=user,
+                )
+            self.assertEqual(test_send_ctx.exception.status_code, 404)
+
     def test_save_validation_subject_and_text_required(self):
         user = AuthUser(email="admin@example.com", role="agency_admin")
         with patch.object(email_templates_api.email_templates_service, "save_override", side_effect=ValueError("subject este obligatoriu")):
@@ -344,6 +354,111 @@ class EmailTemplatesApiTests(unittest.TestCase):
         self.assertIn("reset-password", preview.rendered_text_body)
         self.assertIn("60", preview.rendered_html_body)
 
+    def test_service_test_send_default_auth_forgot_password(self):
+        service = EmailTemplatesService()
+        with (
+            patch.object(
+                service,
+                "render_template_preview",
+                return_value=EmailTemplatePreviewResult(
+                    key="auth_forgot_password",
+                    rendered_subject="Subject auth",
+                    rendered_text_body="Text auth",
+                    rendered_html_body="<p>Html auth</p>",
+                    sample_variables={"reset_link": "https://example"},
+                    is_overridden=False,
+                ),
+            ),
+            patch("app.services.mailgun_service.mailgun_service.send_email") as mock_send,
+        ):
+            mock_send.return_value = {"ok": True, "to_email": "qa@example.com", "message": "Queued"}
+            result = service.send_template_test_email(template_key="auth_forgot_password", to_email="qa@example.com")
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result.key, "auth_forgot_password")
+        self.assertTrue(result.sent)
+
+    def test_service_test_send_default_team_invite_user(self):
+        service = EmailTemplatesService()
+        with (
+            patch.object(
+                service,
+                "render_template_preview",
+                return_value=EmailTemplatePreviewResult(
+                    key="team_invite_user",
+                    rendered_subject="Subject invite",
+                    rendered_text_body="Text invite",
+                    rendered_html_body="<p>Html invite</p>",
+                    sample_variables={"invite_link": "https://example"},
+                    is_overridden=False,
+                ),
+            ),
+            patch("app.services.mailgun_service.mailgun_service.send_email") as mock_send,
+        ):
+            mock_send.return_value = {"ok": True, "to_email": "qa@example.com", "message": "Queued"}
+            result = service.send_template_test_email(template_key="team_invite_user", to_email="qa@example.com")
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result.key, "team_invite_user")
+
+    def test_service_test_send_with_override_and_disabled_template_allowed(self):
+        service = EmailTemplatesService()
+        with (
+            patch.object(
+                service,
+                "render_template_preview",
+                return_value=EmailTemplatePreviewResult(
+                    key="auth_forgot_password",
+                    rendered_subject="Override subject",
+                    rendered_text_body="Override text",
+                    rendered_html_body="<p>Override html</p>",
+                    sample_variables={"reset_link": "https://example"},
+                    is_overridden=True,
+                ),
+            ),
+            patch("app.services.mailgun_service.mailgun_service.send_email") as mock_send,
+        ):
+            mock_send.return_value = {"ok": True, "to_email": "qa@example.com", "message": "Queued"}
+            result = service.send_template_test_email(template_key="auth_forgot_password", to_email="qa@example.com")
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertTrue(result.sent)
+        self.assertIn("Override", result.rendered_subject)
+
+    def test_service_test_send_uses_draft_values(self):
+        service = EmailTemplatesService()
+        with (
+            patch.object(service, "render_template_preview") as mock_preview,
+            patch("app.services.mailgun_service.mailgun_service.send_email") as mock_send,
+        ):
+            mock_preview.return_value = EmailTemplatePreviewResult(
+                key="auth_forgot_password",
+                rendered_subject="Draft subject",
+                rendered_text_body="Draft text",
+                rendered_html_body="<p>Draft html</p>",
+                sample_variables={},
+                is_overridden=False,
+            )
+            mock_send.return_value = {"ok": True, "to_email": "qa@example.com", "message": "Queued"}
+            result = service.send_template_test_email(
+                template_key="auth_forgot_password",
+                to_email="qa@example.com",
+                subject="Draft {{user_email}}",
+                text_body="Draft {{reset_link}}",
+                html_body="<p>Draft html {{expires_minutes}}</p>",
+            )
+
+        self.assertIsNotNone(result)
+        mock_preview.assert_called_once_with(
+            template_key="auth_forgot_password",
+            subject="Draft {{user_email}}",
+            text_body="Draft {{reset_link}}",
+            html_body="<p>Draft html {{expires_minutes}}</p>",
+        )
+
     def test_service_save_override_enforces_required_subject_and_text(self):
         service = EmailTemplatesService()
         with patch.object(service, "_fetch_override_row", return_value=None):
@@ -412,6 +527,14 @@ class EmailTemplatesApiTests(unittest.TestCase):
             )
         self.assertEqual(preview_ctx.exception.status_code, 403)
 
+        with self.assertRaises(email_templates_api.HTTPException) as test_send_ctx:
+            email_templates_api.test_send_agency_email_template(
+                template_key="auth_forgot_password",
+                payload=email_templates_api.AgencyEmailTemplateTestSendRequest(to_email="qa@example.com"),
+                user=user,
+            )
+        self.assertEqual(test_send_ctx.exception.status_code, 403)
+
     def test_preview_endpoint_uses_service_and_returns_rendered_payload(self):
         user = AuthUser(email="admin@example.com", role="agency_admin")
         with patch.object(email_templates_api.email_templates_service, "render_template_preview") as mock_preview:
@@ -433,6 +556,56 @@ class EmailTemplatesApiTests(unittest.TestCase):
         self.assertEqual(resp.rendered_subject, "Rendered subject")
         self.assertEqual(resp.sample_variables["reset_link"], "https://example/reset")
         mock_preview.assert_called_once()
+
+    def test_test_send_endpoint_uses_service_and_returns_payload(self):
+        user = AuthUser(email="admin@example.com", role="agency_admin")
+        with patch.object(email_templates_api.email_templates_service, "send_template_test_email") as mock_send:
+            mock_send.return_value = EmailTemplateTestSendResult(
+                key="auth_forgot_password",
+                to_email="qa@example.com",
+                sent=True,
+                rendered_subject="Rendered subject",
+                message="Queued",
+            )
+            resp = email_templates_api.test_send_agency_email_template(
+                template_key="auth_forgot_password",
+                payload=email_templates_api.AgencyEmailTemplateTestSendRequest(
+                    to_email="qa@example.com",
+                    subject="Draft",
+                ),
+                user=user,
+            )
+
+        self.assertEqual(resp.key, "auth_forgot_password")
+        self.assertTrue(resp.sent)
+        self.assertEqual(resp.to_email, "qa@example.com")
+        mock_send.assert_called_once()
+
+    def test_test_send_endpoint_invalid_to_email_returns_400(self):
+        user = AuthUser(email="admin@example.com", role="agency_admin")
+        with patch.object(email_templates_api.email_templates_service, "send_template_test_email", side_effect=ValueError("to_email invalid")):
+            with self.assertRaises(email_templates_api.HTTPException) as ctx:
+                email_templates_api.test_send_agency_email_template(
+                    template_key="auth_forgot_password",
+                    payload=email_templates_api.AgencyEmailTemplateTestSendRequest(to_email="invalid"),
+                    user=user,
+                )
+            self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_test_send_endpoint_mailgun_unavailable_returns_503(self):
+        user = AuthUser(email="admin@example.com", role="agency_admin")
+        with patch.object(
+            email_templates_api.email_templates_service,
+            "send_template_test_email",
+            side_effect=MailgunIntegrationError("Mailgun nu este configurat", status_code=503),
+        ):
+            with self.assertRaises(email_templates_api.HTTPException) as ctx:
+                email_templates_api.test_send_agency_email_template(
+                    template_key="auth_forgot_password",
+                    payload=email_templates_api.AgencyEmailTemplateTestSendRequest(to_email="qa@example.com"),
+                    user=user,
+                )
+            self.assertEqual(ctx.exception.status_code, 503)
 
     def test_existing_read_endpoints_still_work_with_new_fields(self):
         user = AuthUser(email="admin@example.com", role="agency_admin")

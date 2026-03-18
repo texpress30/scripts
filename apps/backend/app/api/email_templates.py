@@ -7,10 +7,13 @@ from app.schemas.email_templates import (
     AgencyEmailTemplateListResponse,
     AgencyEmailTemplatePreviewRequest,
     AgencyEmailTemplatePreviewResponse,
+    AgencyEmailTemplateTestSendRequest,
+    AgencyEmailTemplateTestSendResponse,
     AgencyEmailTemplateUpsertRequest,
 )
 from app.services.auth import AuthUser
 from app.services.email_templates import EffectiveEmailTemplate, email_templates_service
+from app.services.mailgun_service import MailgunIntegrationError
 
 router = APIRouter(prefix="/agency/email-templates", tags=["email_templates"])
 
@@ -122,4 +125,36 @@ def preview_agency_email_template(
         rendered_html_body=preview.rendered_html_body,
         sample_variables=preview.sample_variables,
         is_overridden=preview.is_overridden,
+    )
+
+
+@router.post("/{template_key}/test-send", response_model=AgencyEmailTemplateTestSendResponse)
+def test_send_agency_email_template(
+    template_key: str,
+    payload: AgencyEmailTemplateTestSendRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> AgencyEmailTemplateTestSendResponse:
+    _enforce_agency_admin(user)
+    try:
+        result = email_templates_service.send_template_test_email(
+            template_key=template_key,
+            to_email=payload.to_email,
+            subject=payload.subject,
+            text_body=payload.text_body,
+            html_body=payload.html_body,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except MailgunIntegrationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template inexistent")
+
+    return AgencyEmailTemplateTestSendResponse(
+        key=result.key,
+        to_email=result.to_email,
+        sent=result.sent,
+        rendered_subject=result.rendered_subject,
+        message=result.message,
     )

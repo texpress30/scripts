@@ -14,6 +14,7 @@ import {
   previewAgencyEmailTemplate,
   resetAgencyEmailTemplate,
   saveAgencyEmailTemplate,
+  sendAgencyEmailTemplateTest,
 } from "@/lib/api";
 
 type TemplateEditorState = {
@@ -35,6 +36,7 @@ function resolveErrorMessage(error: unknown, fallback: string): string {
     if (error.status === 403) return "Nu ai permisiunea necesară pentru Email Templates.";
     if (error.status === 404) return "Template-ul selectat nu a fost găsit.";
     if (error.status === 400) return error.message || "Date invalide pentru salvare.";
+    if (error.status === 503) return error.message || "Mailgun nu este configurat sau este dezactivat.";
     return error.message || fallback;
   }
   if (error instanceof Error) return error.message || fallback;
@@ -81,6 +83,10 @@ export default function AgencyEmailTemplatesPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
   const [previewResult, setPreviewResult] = useState<PreviewAgencyEmailTemplateResponse | null>(null);
+  const [testEmail, setTestEmail] = useState("");
+  const [testSendLoading, setTestSendLoading] = useState(false);
+  const [testSendError, setTestSendError] = useState("");
+  const [testSendFeedback, setTestSendFeedback] = useState("");
   const [feedback, setFeedback] = useState("");
 
   async function loadList(preferredKey?: string | null) {
@@ -144,6 +150,8 @@ export default function AgencyEmailTemplatesPage() {
     setFeedback("");
     setPreviewError("");
     setPreviewResult(null);
+    setTestSendError("");
+    setTestSendFeedback("");
     void loadDetail(selectedKey);
   }, [selectedKey]);
 
@@ -211,6 +219,26 @@ export default function AgencyEmailTemplatesPage() {
       setPreviewError(resolveErrorMessage(error, "Nu am putut genera preview-ul template-ului."));
     } finally {
       setPreviewLoading(false);
+    }
+  }
+
+  async function handleSendTestEmail() {
+    if (!selectedKey || !editor) return;
+    setTestSendError("");
+    setTestSendFeedback("");
+    setTestSendLoading(true);
+    try {
+      const payload = await sendAgencyEmailTemplateTest(selectedKey, {
+        to_email: testEmail,
+        subject: editor.subject,
+        text_body: editor.text_body,
+        html_body: editor.html_body,
+      });
+      setTestSendFeedback(`Emailul de test a fost trimis către ${payload.to_email}.`);
+    } catch (error) {
+      setTestSendError(resolveErrorMessage(error, "Nu am putut trimite emailul de test."));
+    } finally {
+      setTestSendLoading(false);
     }
   }
 
@@ -379,6 +407,31 @@ export default function AgencyEmailTemplatesPage() {
 
                   {feedback ? <p className={`text-sm ${positiveFeedback ? "text-emerald-600" : "text-red-600"}`}>{feedback}</p> : null}
                   {previewError ? <p className="text-sm text-red-600">{previewError}</p> : null}
+
+                  <div className="space-y-2 rounded-lg border border-slate-200 p-3">
+                    <label className="block">
+                      <span className="mb-1 block text-sm font-medium text-slate-700">Test email</span>
+                      <input
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                        placeholder="admin@example.com"
+                        value={testEmail}
+                        onChange={(event) => setTestEmail(event.target.value)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={handleSendTestEmail}
+                      disabled={testSendLoading || !selectedKey}
+                    >
+                      {testSendLoading ? "Sending..." : "Send test email"}
+                    </button>
+                    {testSendFeedback ? <p className="text-sm text-emerald-600">{testSendFeedback}</p> : null}
+                    {testSendError ? <p className="text-sm text-red-600">{testSendError}</p> : null}
+                    <p className="text-xs text-slate-500">
+                      Test send folosește varianta randată cu sample variables și este permis chiar dacă template-ul este disabled.
+                    </p>
+                  </div>
 
                   {previewResult ? (
                     <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4" aria-label="Template preview panel">

@@ -10,6 +10,7 @@ const getAgencyEmailTemplateMock = vi.fn();
 const saveAgencyEmailTemplateMock = vi.fn();
 const resetAgencyEmailTemplateMock = vi.fn();
 const previewAgencyEmailTemplateMock = vi.fn();
+const sendAgencyEmailTemplateTestMock = vi.fn();
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -20,6 +21,7 @@ vi.mock("@/lib/api", async () => {
     saveAgencyEmailTemplate: (...args: unknown[]) => saveAgencyEmailTemplateMock(...args),
     resetAgencyEmailTemplate: (...args: unknown[]) => resetAgencyEmailTemplateMock(...args),
     previewAgencyEmailTemplate: (...args: unknown[]) => previewAgencyEmailTemplateMock(...args),
+    sendAgencyEmailTemplateTest: (...args: unknown[]) => sendAgencyEmailTemplateTestMock(...args),
   };
 });
 
@@ -43,6 +45,7 @@ describe("AgencyEmailTemplatesPage", () => {
     saveAgencyEmailTemplateMock.mockReset();
     resetAgencyEmailTemplateMock.mockReset();
     previewAgencyEmailTemplateMock.mockReset();
+    sendAgencyEmailTemplateTestMock.mockReset();
     vi.spyOn(window, "confirm").mockReturnValue(true);
 
     getAgencyEmailTemplatesMock.mockResolvedValue({
@@ -94,6 +97,13 @@ describe("AgencyEmailTemplatesPage", () => {
         expires_minutes: "60",
       },
       is_overridden: false,
+    });
+    sendAgencyEmailTemplateTestMock.mockResolvedValue({
+      key: "auth_forgot_password",
+      to_email: "qa@example.com",
+      sent: true,
+      rendered_subject: "Rendered preview subject",
+      message: "Queued",
     });
   });
 
@@ -203,6 +213,59 @@ describe("AgencyEmailTemplatesPage", () => {
     expect(await screen.findByLabelText("Template preview panel")).toBeInTheDocument();
   });
 
+  it("shows test email input and send test email button", async () => {
+    render(<AgencyEmailTemplatesPage />);
+    await screen.findByDisplayValue("Reset subject");
+
+    expect(screen.getByLabelText("Test email")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send test email" })).toBeInTheDocument();
+  });
+
+  it("send test email uses current draft values and endpoint", async () => {
+    render(<AgencyEmailTemplatesPage />);
+    await screen.findByDisplayValue("Reset subject");
+
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Draft subject {{user_email}}" } });
+    fireEvent.change(screen.getByLabelText("Text body"), { target: { value: "Draft text {{reset_link}}" } });
+    fireEvent.change(screen.getByLabelText("HTML body"), { target: { value: "<p>Draft html {{expires_minutes}}</p>" } });
+    fireEvent.change(screen.getByLabelText("Test email"), { target: { value: "qa@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send test email" }));
+
+    await waitFor(() => {
+      expect(sendAgencyEmailTemplateTestMock).toHaveBeenCalledWith("auth_forgot_password", {
+        to_email: "qa@example.com",
+        subject: "Draft subject {{user_email}}",
+        text_body: "Draft text {{reset_link}}",
+        html_body: "<p>Draft html {{expires_minutes}}</p>",
+      });
+    });
+    expect(await screen.findByText("Emailul de test a fost trimis către qa@example.com.")).toBeInTheDocument();
+  });
+
+  it("shows send test loading state", async () => {
+    let resolveSend: ((value: unknown) => void) | null = null;
+    sendAgencyEmailTemplateTestMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSend = resolve;
+      }),
+    );
+
+    render(<AgencyEmailTemplatesPage />);
+    await screen.findByDisplayValue("Reset subject");
+    fireEvent.change(screen.getByLabelText("Test email"), { target: { value: "qa@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send test email" }));
+    expect(screen.getByRole("button", { name: "Sending..." })).toBeInTheDocument();
+
+    resolveSend?.({
+      key: "auth_forgot_password",
+      to_email: "qa@example.com",
+      sent: true,
+      rendered_subject: "Done",
+      message: "Queued",
+    });
+    expect(await screen.findByText("Emailul de test a fost trimis către qa@example.com.")).toBeInTheDocument();
+  });
+
   it("shows loading state for list", async () => {
     let resolveList: ((value: unknown) => void) | null = null;
     getAgencyEmailTemplatesMock.mockReturnValue(
@@ -294,5 +357,45 @@ describe("AgencyEmailTemplatesPage", () => {
     await screen.findByDisplayValue("Reset subject");
     fireEvent.click(screen.getByRole("button", { name: "Preview" }));
     expect(await screen.findByText("payload invalid")).toBeInTheDocument();
+  });
+
+  it("handles 403 send test error clearly", async () => {
+    sendAgencyEmailTemplateTestMock.mockRejectedValueOnce(new ApiRequestError("forbidden", 403));
+
+    render(<AgencyEmailTemplatesPage />);
+    await screen.findByDisplayValue("Reset subject");
+    fireEvent.change(screen.getByLabelText("Test email"), { target: { value: "qa@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send test email" }));
+    expect(await screen.findByText("Nu ai permisiunea necesară pentru Email Templates.")).toBeInTheDocument();
+  });
+
+  it("handles 404 send test error clearly", async () => {
+    sendAgencyEmailTemplateTestMock.mockRejectedValueOnce(new ApiRequestError("missing", 404));
+
+    render(<AgencyEmailTemplatesPage />);
+    await screen.findByDisplayValue("Reset subject");
+    fireEvent.change(screen.getByLabelText("Test email"), { target: { value: "qa@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send test email" }));
+    expect(await screen.findByText("Template-ul selectat nu a fost găsit.")).toBeInTheDocument();
+  });
+
+  it("handles 400 send test error clearly", async () => {
+    sendAgencyEmailTemplateTestMock.mockRejectedValueOnce(new ApiRequestError("to_email invalid", 400));
+
+    render(<AgencyEmailTemplatesPage />);
+    await screen.findByDisplayValue("Reset subject");
+    fireEvent.change(screen.getByLabelText("Test email"), { target: { value: "invalid" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send test email" }));
+    expect(await screen.findByText("to_email invalid")).toBeInTheDocument();
+  });
+
+  it("handles 503 send test error clearly", async () => {
+    sendAgencyEmailTemplateTestMock.mockRejectedValueOnce(new ApiRequestError("Mailgun nu este configurat", 503));
+
+    render(<AgencyEmailTemplatesPage />);
+    await screen.findByDisplayValue("Reset subject");
+    fireEvent.change(screen.getByLabelText("Test email"), { target: { value: "qa@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send test email" }));
+    expect(await screen.findByText("Mailgun nu este configurat")).toBeInTheDocument();
   });
 });
