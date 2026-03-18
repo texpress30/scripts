@@ -109,9 +109,11 @@ describe("AgencyEmailTemplatesPage", () => {
     sendAgencyEmailTemplateTestMock.mockResolvedValue({
       key: "auth_forgot_password",
       to_email: "qa@example.com",
-      sent: true,
+      accepted: true,
+      delivery_status: "accepted",
       rendered_subject: "Rendered preview subject",
-      message: "Queued",
+      provider_message: "Queued. Thank you.",
+      provider_id: "<mailgun-message-id>",
     });
     getMailgunStatusMock.mockResolvedValue({
       configured: true,
@@ -260,6 +262,22 @@ describe("AgencyEmailTemplatesPage", () => {
     expect(screen.getByText("Mailgun este configurat și activ. Poți trimite emailuri de test.")).toBeInTheDocument();
   });
 
+  it("shows sandbox-domain hint when Mailgun domain is sandbox", async () => {
+    getMailgunStatusMock.mockResolvedValueOnce({
+      configured: true,
+      enabled: true,
+      domain: "sandbox123.mailgun.org",
+      base_url: "https://api.mailgun.net",
+      from_email: "noreply@example.com",
+      from_name: "Example",
+      reply_to: "",
+      api_key_masked: "key-***",
+    });
+
+    render(<AgencyEmailTemplatesPage />);
+    expect(await screen.findByText(/Domain Mailgun este de tip sandbox/)).toBeInTheDocument();
+  });
+
   it("disables Send test email and shows integrations CTA when Mailgun is not configured", async () => {
     getMailgunStatusMock.mockResolvedValueOnce({
       configured: false,
@@ -311,7 +329,11 @@ describe("AgencyEmailTemplatesPage", () => {
         html_body: "<p>Draft html {{expires_minutes}}</p>",
       });
     });
-    expect(await screen.findByText("Emailul de test a fost trimis către qa@example.com.")).toBeInTheDocument();
+    expect(await screen.findByText(/Cererea a fost acceptată de Mailgun pentru qa@example.com/)).toBeInTheDocument();
+    expect(screen.getByText("Delivery status:")).toBeInTheDocument();
+    expect(screen.getByText("Provider message:")).toBeInTheDocument();
+    expect(screen.getByText("Provider id:")).toBeInTheDocument();
+    expect(screen.getByText("<mailgun-message-id>")).toBeInTheDocument();
   });
 
   it("shows send test loading state", async () => {
@@ -331,11 +353,13 @@ describe("AgencyEmailTemplatesPage", () => {
     resolveSend?.({
       key: "auth_forgot_password",
       to_email: "qa@example.com",
-      sent: true,
+      accepted: true,
+      delivery_status: "accepted",
       rendered_subject: "Done",
-      message: "Queued",
+      provider_message: "Queued. Thank you.",
+      provider_id: "<mailgun-message-id>",
     });
-    expect(await screen.findByText("Emailul de test a fost trimis către qa@example.com.")).toBeInTheDocument();
+    expect(await screen.findByText(/Cererea a fost acceptată de Mailgun pentru qa@example.com/)).toBeInTheDocument();
   });
 
   it("shows loading state for list", async () => {

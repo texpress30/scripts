@@ -5230,3 +5230,24 @@ Plan verified: backend-only incremental foundation (catalog + override storage +
 - [x] Preserved current runtime behavior: forgot-password and invite flows are unchanged in this step.
 - [x] Added focused backend tests + startup validation and explicit no-regression check for existing email templates endpoint contract.
 - [x] Intentionally left out: any Notifications UI and runtime flow migration to notifications settings.
+
+# TODO — Mailgun test-send diagnostics semantics (accepted vs delivered) (2026-03-18)
+
+- [x] Re-read Mailgun service, Email Templates API schemas/router, frontend email templates page, and API client contracts.
+- [x] Update backend test-send response contract to accepted semantics (`accepted`, `delivery_status`, `provider_message`, `provider_id`, etc.) without claiming delivery.
+- [x] Keep send flow unchanged while enriching diagnostics payload for test-send responses.
+- [x] Update frontend API types and Email Templates UI success copy to reflect "accepted by Mailgun" semantics.
+- [x] Add sandbox domain hint and read-only provider diagnostics rendering in Email Templates UI after test-send.
+- [x] Add/update backend and frontend tests for new semantics, UI messaging, sandbox hint, and compatibility.
+- [x] Run targeted backend/frontend tests and frontend build.
+- [x] Update notes/lessons, commit, and create PR via `make_pr`.
+
+## Check-in before execution
+Plan verified: incremental backend+frontend contract update for diagnostics semantics only, without runtime flow migration or major UI redesign.
+
+
+## Review
+- [x] Backend test-send payload now distinguishes Mailgun acceptance from delivery (`accepted` + `delivery_status`).
+- [x] Frontend success copy now clarifies acceptance-only semantics and includes diagnostics (`provider_id`, `provider_message`) plus Mailgun logs hint.
+- [x] Added sandbox-domain hint for authorized-recipient limitation without redesign.
+- [x] Existing save/reset/preview/test-send flow compatibility retained and revalidated by targeted tests.

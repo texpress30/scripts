@@ -73,9 +73,11 @@ class EmailTemplateOverrideInput:
 class EmailTemplateTestSendResult:
     key: str
     to_email: str
-    sent: bool
+    accepted: bool
+    delivery_status: str
     rendered_subject: str
-    message: str
+    provider_message: str
+    provider_id: str
 
 
 _CANONICAL_EMAIL_TEMPLATES: tuple[EmailTemplateCatalogItem, ...] = (
@@ -315,9 +317,11 @@ class EmailTemplatesService:
         return EmailTemplateTestSendResult(
             key=preview.key,
             to_email=str(send_result.get("to_email") or to_email).strip().lower(),
-            sent=bool(send_result.get("ok", True)),
+            accepted=bool(send_result.get("accepted", send_result.get("ok", True))),
+            delivery_status=str(send_result.get("delivery_status") or "accepted"),
             rendered_subject=preview.rendered_subject,
-            message=str(send_result.get("message") or "Email sent"),
+            provider_message=str(send_result.get("provider_message") or send_result.get("message") or "accepted"),
+            provider_id=str(send_result.get("provider_id") or send_result.get("id") or ""),
         )
 
     def _render_template_text(

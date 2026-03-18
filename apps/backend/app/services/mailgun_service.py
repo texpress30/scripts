@@ -286,7 +286,7 @@ class MailgunService:
             raise MailgunIntegrationError(f"Mailgun error ({response.status_code}): {message}", status_code=502)
 
         external_id = ""
-        external_message = "sent"
+        external_message = "accepted"
         try:
             payload = response.json()
             if isinstance(payload, dict):
@@ -299,6 +299,10 @@ class MailgunService:
 
         return {
             "ok": True,
+            "accepted": True,
+            "delivery_status": "accepted",
+            "provider_message": external_message,
+            "provider_id": external_id,
             "message": external_message,
             "id": external_id,
             "to_email": normalized_to,

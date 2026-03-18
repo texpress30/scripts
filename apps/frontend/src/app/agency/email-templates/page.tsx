@@ -27,6 +27,12 @@ type TemplateEditorState = {
   enabled: boolean;
 };
 
+type TestSendDiagnostics = {
+  provider_id: string;
+  provider_message: string;
+  delivery_status: string;
+};
+
 function formatDate(value: string | null | undefined): string {
   if (!value) return "Never updated";
   const parsed = new Date(value);
@@ -203,6 +209,7 @@ export default function AgencyEmailTemplatesPage() {
   const [testSendLoading, setTestSendLoading] = useState(false);
   const [testSendError, setTestSendError] = useState("");
   const [testSendFeedback, setTestSendFeedback] = useState("");
+  const [testSendDiagnostics, setTestSendDiagnostics] = useState<TestSendDiagnostics | null>(null);
   const [feedback, setFeedback] = useState("");
   const [mailgunStatus, setMailgunStatus] = useState<MailgunStatusResponse | null>(null);
   const [mailgunStatusLoading, setMailgunStatusLoading] = useState(true);
@@ -294,6 +301,7 @@ export default function AgencyEmailTemplatesPage() {
     setPreviewResult(null);
     setTestSendError("");
     setTestSendFeedback("");
+    setTestSendDiagnostics(null);
     void loadDetail(selectedKey);
   }, [selectedKey]);
 
@@ -308,6 +316,7 @@ export default function AgencyEmailTemplatesPage() {
   }, [detail, editor]);
   const mailgunConfigured = Boolean(mailgunStatus?.configured);
   const mailgunEnabled = Boolean(mailgunStatus?.enabled);
+  const isMailgunSandboxDomain = (mailgunStatus?.domain || "").toLowerCase().includes("sandbox");
   const isMailgunAvailable = !mailgunStatusLoading && !mailgunStatusError && mailgunConfigured && mailgunEnabled;
   const disableTestSend = testSendLoading || !selectedKey || !isMailgunAvailable;
 
@@ -372,6 +381,7 @@ export default function AgencyEmailTemplatesPage() {
     if (!selectedKey || !editor) return;
     setTestSendError("");
     setTestSendFeedback("");
+    setTestSendDiagnostics(null);
     setTestSendLoading(true);
     try {
       const payload = await sendAgencyEmailTemplateTest(selectedKey, {
@@ -380,7 +390,14 @@ export default function AgencyEmailTemplatesPage() {
         text_body: editor.text_body,
         html_body: editor.html_body,
       });
-      setTestSendFeedback(`Emailul de test a fost trimis către ${payload.to_email}.`);
+      setTestSendFeedback(
+        `Cererea a fost acceptată de Mailgun pentru ${payload.to_email}. Verifică inbox-ul și Mailgun logs pentru livrarea efectivă.`,
+      );
+      setTestSendDiagnostics({
+        provider_id: payload.provider_id,
+        provider_message: payload.provider_message,
+        delivery_status: payload.delivery_status,
+      });
     } catch (error) {
       setTestSendError(resolveErrorMessage(error, "Nu am putut trimite emailul de test."));
     } finally {
@@ -451,7 +468,14 @@ export default function AgencyEmailTemplatesPage() {
                     </div>
                   </div>
                 ) : (
-                  <p className="text-sm text-emerald-700">Mailgun este configurat și activ. Poți trimite emailuri de test.</p>
+                  <div className="space-y-1">
+                    <p className="text-sm text-emerald-700">Mailgun este configurat și activ. Poți trimite emailuri de test.</p>
+                    {isMailgunSandboxDomain ? (
+                      <p className="text-xs text-amber-700">
+                        Domain Mailgun este de tip sandbox: emailurile pot fi livrate doar către authorized recipients.
+                      </p>
+                    ) : null}
+                  </div>
                 )}
               </div>
             ) : null}
@@ -629,6 +653,22 @@ export default function AgencyEmailTemplatesPage() {
                     </button>
                     {testSendFeedback ? <p className="text-sm text-emerald-600">{testSendFeedback}</p> : null}
                     {testSendError ? <p className="text-sm text-red-600">{testSendError}</p> : null}
+                    {testSendDiagnostics ? (
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
+                        <p>
+                          <span className="font-semibold">Delivery status:</span> {testSendDiagnostics.delivery_status}
+                        </p>
+                        <p>
+                          <span className="font-semibold">Provider message:</span> {testSendDiagnostics.provider_message || "-"}
+                        </p>
+                        <p>
+                          <span className="font-semibold">Provider id:</span> {testSendDiagnostics.provider_id || "-"}
+                        </p>
+                        <p className="mt-1 text-slate-500">
+                          Pentru confirmare de livrare efectivă, verifică Mailgun logs/events.
+                        </p>
+                      </div>
+                    ) : null}
                     <p className="text-xs text-slate-500">
                       Test send folosește varianta randată cu sample variables și este permis chiar dacă template-ul este disabled.
                     </p>

@@ -63,6 +63,8 @@ class AgencyEmailTemplateTestSendRequest(BaseModel):
 class AgencyEmailTemplateTestSendResponse(BaseModel):
     key: str
     to_email: str
-    sent: bool
+    accepted: bool
+    delivery_status: str
     rendered_subject: str
-    message: str
+    provider_message: str
+    provider_id: str

@@ -378,7 +378,9 @@ class EmailTemplatesApiTests(unittest.TestCase):
         self.assertIsNotNone(result)
         assert result is not None
         self.assertEqual(result.key, "auth_forgot_password")
-        self.assertTrue(result.sent)
+        self.assertTrue(result.accepted)
+        self.assertEqual(result.delivery_status, "accepted")
+        self.assertEqual(result.provider_message, "Queued")
 
     def test_service_test_send_default_team_invite_user(self):
         service = EmailTemplatesService()
@@ -426,7 +428,9 @@ class EmailTemplatesApiTests(unittest.TestCase):
 
         self.assertIsNotNone(result)
         assert result is not None
-        self.assertTrue(result.sent)
+        self.assertTrue(result.accepted)
+        self.assertEqual(result.delivery_status, "accepted")
+        self.assertEqual(result.provider_message, "Queued")
         self.assertIn("Override", result.rendered_subject)
 
     def test_service_test_send_uses_draft_values(self):
@@ -520,7 +524,8 @@ class EmailTemplatesApiTests(unittest.TestCase):
                 result = service.send_template_test_email(template_key="auth_forgot_password", to_email="qa@example.com")
             self.assertIsNotNone(result)
             assert result is not None
-            self.assertTrue(result.sent)
+            self.assertTrue(result.accepted)
+            self.assertEqual(result.delivery_status, "accepted")
         finally:
             mailgun_module.integration_secrets_store = original_store
             mailgun_module.load_settings = original_settings
@@ -630,9 +635,11 @@ class EmailTemplatesApiTests(unittest.TestCase):
             mock_send.return_value = EmailTemplateTestSendResult(
                 key="auth_forgot_password",
                 to_email="qa@example.com",
-                sent=True,
+                accepted=True,
+                delivery_status="accepted",
                 rendered_subject="Rendered subject",
-                message="Queued",
+                provider_message="Queued",
+                provider_id="<mailgun-id>",
             )
             resp = email_templates_api.test_send_agency_email_template(
                 template_key="auth_forgot_password",
@@ -644,7 +651,10 @@ class EmailTemplatesApiTests(unittest.TestCase):
             )
 
         self.assertEqual(resp.key, "auth_forgot_password")
-        self.assertTrue(resp.sent)
+        self.assertTrue(resp.accepted)
+        self.assertEqual(resp.delivery_status, "accepted")
+        self.assertEqual(resp.provider_message, "Queued")
+        self.assertEqual(resp.provider_id, "<mailgun-id>")
         self.assertEqual(resp.to_email, "qa@example.com")
         mock_send.assert_called_once()
 

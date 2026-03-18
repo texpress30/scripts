@@ -154,7 +154,9 @@ def test_send_agency_email_template(
     return AgencyEmailTemplateTestSendResponse(
         key=result.key,
         to_email=result.to_email,
-        sent=result.sent,
+        accepted=result.accepted,
+        delivery_status=result.delivery_status,
         rendered_subject=result.rendered_subject,
-        message=result.message,
+        provider_message=result.provider_message,
+        provider_id=result.provider_id,
     )

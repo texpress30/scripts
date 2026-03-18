@@ -587,9 +587,11 @@ export type SendAgencyEmailTemplateTestPayload = {
 export type SendAgencyEmailTemplateTestResponse = {
   key: string;
   to_email: string;
-  sent: boolean;
+  accepted: boolean;
+  delivery_status: "accepted" | string;
   rendered_subject: string;
-  message: string;
+  provider_message: string;
+  provider_id: string;
 };
 
 export async function sendAgencyEmailTemplateTest(
