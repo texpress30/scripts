@@ -5,10 +5,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   ApiRequestError,
   MailgunConfigPayload,
-  MailgunImportFromEnvResponse,
   MailgunStatusResponse,
   getMailgunStatus,
-  importMailgunConfigFromEnv,
   saveMailgunConfig,
 } from "@/lib/api";
 
@@ -60,7 +58,6 @@ export function MailgunIntegrationCard() {
   const [configErrors, setConfigErrors] = useState<Record<string, string>>({});
   const [configBusy, setConfigBusy] = useState(false);
   const [configMessage, setConfigMessage] = useState("");
-  const [importBusy, setImportBusy] = useState(false);
 
   const badge = useMemo(() => statusBadge(status), [status]);
   const isEnvManaged = status?.config_source === "env";
@@ -172,15 +169,6 @@ export function MailgunIntegrationCard() {
         >
           {isEnvManaged ? "Configured in Railway" : configOpen ? "Închide configurare" : status?.configured ? "Editează configurare" : "Configurează Mailgun"}
         </button>
-        {status?.configured && status?.config_source === "env" ? (
-          <button
-            onClick={() => void onImportFromEnv()}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-            disabled={loading || configBusy || importBusy}
-          >
-            {importBusy ? "Se importă..." : "Importă din env în DB"}
-          </button>
-        ) : null}
       </div>
 
       {configOpen && !isEnvManaged ? (
