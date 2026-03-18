@@ -9,6 +9,7 @@ const createSubaccountTeamMemberMock = vi.fn();
 const inviteTeamMemberMock = vi.fn();
 const deactivateTeamMemberMock = vi.fn();
 const reactivateTeamMemberMock = vi.fn();
+const removeTeamMemberMock = vi.fn();
 const getSubaccountGrantableModulesMock = vi.fn();
 
 vi.mock("next/navigation", () => ({ useParams: () => ({ id: "96" }) }));
@@ -30,6 +31,7 @@ vi.mock("@/lib/api", async () => {
     inviteTeamMember: (...args: unknown[]) => inviteTeamMemberMock(...args),
     deactivateTeamMember: (...args: unknown[]) => deactivateTeamMemberMock(...args),
     reactivateTeamMember: (...args: unknown[]) => reactivateTeamMemberMock(...args),
+    removeTeamMember: (...args: unknown[]) => removeTeamMemberMock(...args),
     getSubaccountGrantableModules: (...args: unknown[]) => getSubaccountGrantableModulesMock(...args),
   };
 });
@@ -41,6 +43,7 @@ describe("SubAccount Team management page", () => {
     inviteTeamMemberMock.mockReset();
     deactivateTeamMemberMock.mockReset();
     reactivateTeamMemberMock.mockReset();
+    removeTeamMemberMock.mockReset();
     getSubaccountGrantableModulesMock.mockReset();
     vi.spyOn(window, "confirm").mockReturnValue(true);
     listSubaccountTeamMembersMock.mockResolvedValue({
@@ -87,6 +90,7 @@ describe("SubAccount Team management page", () => {
     });
     deactivateTeamMemberMock.mockResolvedValue({ membership_id: 1, status: "inactive", message: "Accesul a fost dezactivat pentru sesiunile noi și pentru verificările bazate pe datele curente." });
     reactivateTeamMemberMock.mockResolvedValue({ membership_id: 2, status: "active", message: "Accesul a fost reactivat" });
+    removeTeamMemberMock.mockResolvedValue({ membership_id: 1, removed: true, message: "Accesul a fost eliminat" });
     getSubaccountGrantableModulesMock.mockResolvedValue({
       items: [
         { key: "dashboard", label: "Dashboard", order: 1, grantable: true },
@@ -425,6 +429,95 @@ describe("SubAccount Team management page", () => {
     render(<SubAccountTeamPage />);
     fireEvent.click(await screen.findByRole("button", { name: "Reactivează" }));
     expect(await screen.findByText("Acest access este moștenit și nu poate fi modificat aici")).toBeInTheDocument();
+  });
+
+  it("renders remove action, confirms, and calls remove endpoint", async () => {
+    render(<SubAccountTeamPage />);
+    await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalledTimes(1));
+
+    const removeButtons = await screen.findAllByRole("button", { name: "Elimină accesul" });
+    expect(removeButtons[0]).toBeEnabled();
+    expect(removeButtons[1]).toBeDisabled();
+
+    fireEvent.click(removeButtons[0]);
+
+    await waitFor(() => {
+      expect(window.confirm).toHaveBeenCalledWith(
+        "Sigur vrei să elimini acest acces? Această acțiune șterge doar access grant-ul curent, nu utilizatorul global.",
+      );
+    });
+    await waitFor(() => expect(removeTeamMemberMock).toHaveBeenCalledWith(1));
+  });
+
+  it("does not call remove endpoint when confirmation is cancelled", async () => {
+    vi.spyOn(window, "confirm").mockReturnValueOnce(false);
+    render(<SubAccountTeamPage />);
+    await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalledTimes(1));
+
+    const removeButtons = await screen.findAllByRole("button", { name: "Elimină accesul" });
+    fireEvent.click(removeButtons[0]);
+
+    await waitFor(() => expect(removeTeamMemberMock).not.toHaveBeenCalled());
+  });
+
+  it("remove success shows feedback and refetches list", async () => {
+    render(<SubAccountTeamPage />);
+    await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalledTimes(1));
+
+    const removeButtons = await screen.findAllByRole("button", { name: "Elimină accesul" });
+    fireEvent.click(removeButtons[0]);
+
+    await waitFor(() => expect(removeTeamMemberMock).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText(/Accesul a fost eliminat/i)).toBeInTheDocument();
+  });
+
+  it("handles remove 403 error clearly", async () => {
+    const { ApiRequestError } = await import("@/lib/api");
+    removeTeamMemberMock.mockRejectedValueOnce(new ApiRequestError("forbidden", 403));
+
+    render(<SubAccountTeamPage />);
+    await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalledTimes(1));
+    fireEvent.click((await screen.findAllByRole("button", { name: "Elimină accesul" }))[0]);
+    expect(await screen.findByText("Nu ai permisiuni suficiente pentru a elimina acest acces.")).toBeInTheDocument();
+  });
+
+  it("handles remove 404 gracefully and refreshes list", async () => {
+    const { ApiRequestError } = await import("@/lib/api");
+    removeTeamMemberMock.mockRejectedValueOnce(new ApiRequestError("Membership inexistent", 404));
+
+    render(<SubAccountTeamPage />);
+    await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalledTimes(1));
+    fireEvent.click((await screen.findAllByRole("button", { name: "Elimină accesul" }))[0]);
+
+    expect(await screen.findByText(/Membership inexistent/i)).toBeInTheDocument();
+    await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalledTimes(2));
+  });
+
+  it("handles remove 409 self-removal conflict clearly", async () => {
+    const { ApiRequestError } = await import("@/lib/api");
+    removeTeamMemberMock.mockRejectedValueOnce(new ApiRequestError("Nu îți poți elimina propriul membership din sesiunea curentă", 409));
+
+    render(<SubAccountTeamPage />);
+    await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalledTimes(1));
+    fireEvent.click((await screen.findAllByRole("button", { name: "Elimină accesul" }))[0]);
+    expect(await screen.findByText("Nu îți poți elimina accesul curent din această sesiune")).toBeInTheDocument();
+  });
+
+  it("shows row-level remove loading state", async () => {
+    let release: (() => void) | null = null;
+    removeTeamMemberMock.mockImplementation(() => new Promise((resolve) => {
+      release = () => resolve({ membership_id: 1, removed: true, message: "ok remove" });
+    }));
+
+    render(<SubAccountTeamPage />);
+    await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalledTimes(1));
+    const removeButtons = await screen.findAllByRole("button", { name: "Elimină accesul" });
+    fireEvent.click(removeButtons[0]);
+
+    expect(await screen.findByText("Se elimină...")).toBeInTheDocument();
+    release?.();
+    await waitFor(() => expect(screen.getByText("ok remove")).toBeInTheDocument());
   });
 
   it("shows row-level lifecycle loading state", async () => {

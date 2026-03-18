@@ -1,3 +1,21 @@
+# TODO — Sub-account Team UI remove membership + explicit PR output
+
+- [x] Refresh workspace and inspect Sub-account Team page, shared API helper, and backend remove contract.
+- [x] Reuse shared `removeTeamMember(membershipId)` helper and wire row-level remove action in Sub-account Team list.
+- [x] Add explicit remove confirmation, per-row remove loading, success feedback, and list refetch (including graceful 404 refresh).
+- [x] Add explicit remove error handling for 403/404/409 with clear messages (including self-removal copy).
+- [x] Add focused frontend tests for remove render/confirm/cancel, endpoint call, success/refetch, and remove error handling, while preserving existing flows.
+- [x] Run relevant frontend tests and frontend build.
+- [x] Commit changes and create PR via `make_pr`; include final PR title/body explicitly in task output.
+
+## Review
+- [x] Sub-account Team now supports remove membership action (`Elimină accesul`) in row actions without redesign and without changing Agency Team behavior.
+- [x] Remove action uses explicit confirmation and clears only access grant through existing backend endpoint; no user identity deletion.
+- [x] Added row-level loading and robust error mapping for remove (403/404/409), with dedicated self-removal message and 404 refresh behavior.
+- [x] Added focused tests for remove flow plus existing lifecycle/invite/create/edit coverage remains intact.
+- [x] Verification executed: targeted Sub-account Team tests + frontend build.
+- [x] Intentionally left for next major block: Email Templates & Notifications.
+
 # TODO — Agency Team UI remove membership + PR metadata hardening
 
 - [x] Refresh workspace and inspect Agency Team page, frontend API helpers, and backend remove contract.

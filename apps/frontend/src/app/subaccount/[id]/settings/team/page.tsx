@@ -19,6 +19,7 @@ import {
   inviteTeamMember,
   listSubaccountTeamMembers,
   reactivateTeamMember,
+  removeTeamMember,
   updateTeamMembership,
 } from "@/lib/api";
 
@@ -149,6 +150,26 @@ function getFriendlyLifecycleError(error: unknown): string {
   return "Nu am putut actualiza statusul accesului.";
 }
 
+function getFriendlyRemoveError(error: unknown): string {
+  if (error instanceof ApiRequestError) {
+    if (error.status === 403) return "Nu ai permisiuni suficiente pentru a elimina acest acces.";
+    if (error.status === 404) return "Membership inexistent.";
+    if (error.status === 409) {
+      const normalized = String(error.message || "").toLowerCase();
+      if (normalized.includes("propriul membership") || normalized.includes("sesiunea curentă")) {
+        return "Nu îți poți elimina accesul curent din această sesiune";
+      }
+      if (normalized.includes("moștenit")) {
+        return "Acest access este moștenit și nu poate fi eliminat aici";
+      }
+      return error.message || "Acest acces nu poate fi eliminat în acest moment.";
+    }
+    if (error.message.trim()) return error.message;
+  }
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return "Nu am putut elimina accesul.";
+}
+
 function toSubaccountRole(roleKey: string): TeamUserForm["role"] {
   const key = String(roleKey || "").trim().toLowerCase();
   if (key === "subaccount_admin") return "subaccount_admin";
@@ -189,8 +210,10 @@ export default function SubAccountTeamPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
   const [invitingMembershipId, setInvitingMembershipId] = useState<number | null>(null);
   const [lifecycleLoadingByMembership, setLifecycleLoadingByMembership] = useState<Record<number, boolean>>({});
+  const [removeLoadingByMembership, setRemoveLoadingByMembership] = useState<Record<number, boolean>>({});
   const [moduleOptions, setModuleOptions] = useState<TeamGrantableModuleItem[]>([]);
   const [selectedModuleKeys, setSelectedModuleKeys] = useState<string[]>([]);
   const [isLoadingModules, setIsLoadingModules] = useState(false);
@@ -254,6 +277,7 @@ export default function SubAccountTeamPage() {
 
     setInviteError(null);
     setLifecycleError(null);
+    setRemoveError(null);
     setInvitingMembershipId(user.membershipId);
     try {
       const response = await inviteTeamMember(user.membershipId);
@@ -282,6 +306,7 @@ export default function SubAccountTeamPage() {
 
     setInviteError(null);
     setLifecycleError(null);
+    setRemoveError(null);
     setLifecycleLoadingByMembership((prev) => ({ ...prev, [user.membershipId as number]: true }));
     try {
       if (user.membershipStatus === "active") {
@@ -296,6 +321,45 @@ export default function SubAccountTeamPage() {
       setLifecycleError(getFriendlyLifecycleError(error));
     } finally {
       setLifecycleLoadingByMembership((prev) => {
+        const next = { ...prev };
+        delete next[user.membershipId as number];
+        return next;
+      });
+    }
+  }
+
+  async function onRemoveAccess(user: TeamUser) {
+    if (user.membershipId === null) {
+      setRemoveError("Membership inexistent sau inaccesibil.");
+      return;
+    }
+    if (user.inherited) {
+      setRemoveError("Acest access este moștenit și nu poate fi eliminat aici");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Sigur vrei să elimini acest acces? Această acțiune șterge doar access grant-ul curent, nu utilizatorul global.",
+    );
+    if (!confirmed) return;
+
+    setInviteError(null);
+    setLifecycleError(null);
+    setRemoveError(null);
+    setRemoveLoadingByMembership((prev) => ({ ...prev, [user.membershipId as number]: true }));
+    try {
+      const response = await removeTeamMember(user.membershipId);
+      showToast(response.message || "Accesul a fost eliminat");
+      await loadMembers();
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 404) {
+        showToast(error.message || "Membership inexistent");
+        await loadMembers();
+      } else {
+        setRemoveError(getFriendlyRemoveError(error));
+      }
+    } finally {
+      setRemoveLoadingByMembership((prev) => {
         const next = { ...prev };
         delete next[user.membershipId as number];
         return next;
@@ -337,6 +401,7 @@ export default function SubAccountTeamPage() {
     setShowAdvanced(false);
     setModuleLoadError(null);
     setLifecycleError(null);
+    setRemoveError(null);
     setIsLoadingModules(false);
     setEditingMembershipId(null);
     setIsLoadingEditDetail(false);
@@ -541,6 +606,7 @@ export default function SubAccountTeamPage() {
                 {loadError ? <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{loadError}</p> : null}
                 {inviteError ? <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{inviteError}</p> : null}
                 {lifecycleError ? <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{lifecycleError}</p> : null}
+                {removeError ? <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{removeError}</p> : null}
                 {isLoading ? <p className="mt-4 text-sm text-slate-500">Se încarcă membrii...</p> : null}
 
                 {!isLoading && !loadError ? (
@@ -621,9 +687,21 @@ export default function SubAccountTeamPage() {
                                       </button>
                                     );
                                   })()}
-                                  <button type="button" className="rounded p-1.5 opacity-50" title="Urmează" disabled>
-                                    <Trash2 className="h-4 w-4" />
-                                  </button>
+                                  {(() => {
+                                    const removeLoading = user.membershipId !== null && Boolean(removeLoadingByMembership[user.membershipId]);
+                                    return (
+                                      <button
+                                        type="button"
+                                        className="inline-flex items-center gap-1 rounded border border-rose-200 px-2 py-1 text-xs text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                        title={user.inherited ? "Acest access este moștenit și nu poate fi eliminat aici" : "Elimină accesul"}
+                                        aria-label="Elimină accesul"
+                                        disabled={user.membershipId === null || removeLoading || user.inherited}
+                                        onClick={() => { void onRemoveAccess(user); }}
+                                      >
+                                        {removeLoading ? "Se elimină..." : <><Trash2 className="h-3.5 w-3.5" /> Elimină accesul</>}
+                                      </button>
+                                    );
+                                  })()}
                                 </div>
                               </td>
                             </tr>
