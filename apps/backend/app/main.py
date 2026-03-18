@@ -7,9 +7,11 @@ from app.api.ai import router as ai_router
 from app.api.agency_clients_google_ads import router as agency_clients_google_ads_router
 from app.api.auth import router as auth_router
 from app.api.clients import router as clients_router
+from app.api.campaigns import router as campaigns_router
 from app.api.creative import router as creative_router
 from app.api.company import router as company_router
 from app.api.dashboard import router as dashboard_router
+from app.api.email_templates import router as email_templates_router
 from app.api.exports import router as exports_router
 from app.api.google_ads import router as google_ads_router
 from app.api.google_accounts import router as google_accounts_router
@@ -66,6 +68,8 @@ app.include_router(tiktok_ads_router)
 app.include_router(pinterest_ads_router)
 app.include_router(snapchat_ads_router)
 app.include_router(dashboard_router)
+app.include_router(campaigns_router)
+app.include_router(email_templates_router)
 
 # Sprint 4
 app.include_router(rules_router)

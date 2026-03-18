@@ -10,10 +10,15 @@ from app.schemas.team import (
     TeamMemberInviteResponse,
     TeamMemberListResponse,
     TeamMemberResponse,
+    TeamMembershipStatusResponse,
+    TeamMembershipRemoveResponse,
     TeamModuleCatalogResponse,
     TeamGrantableModulesResponse,
+    TeamSubaccountMyAccessResponse,
     TeamSubaccountOptionItem,
     TeamSubaccountOptionsResponse,
+    TeamMembershipDetailResponse,
+    UpdateTeamMembershipRequest,
 )
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
@@ -28,6 +33,13 @@ except Exception:  # noqa: BLE001
     psycopg = None
 
 router = APIRouter(prefix="/team", tags=["team"])
+
+
+def _enforce_membership_edit_actor_role(user: AuthUser) -> None:
+    role = str(user.role or "").strip().lower()
+    if role in {"super_admin", "agency_owner", "agency_admin", "subaccount_admin"}:
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Nu ai permisiunea să editezi acest membership")
 
 
 def _is_db_unavailable_error(error: Exception) -> bool:
@@ -83,6 +95,7 @@ def _normalize_member_item(raw: dict[str, object]) -> dict[str, object] | None:
         "location": str(raw.get("location") or "România"),
         "subaccount": str(raw.get("subaccount") or "Toate"),
         "module_keys": _normalize_module_keys(raw.get("module_keys")),
+        "membership_status": str(raw.get("membership_status") or "active").strip().lower() or "active",
     }
 
 
@@ -161,6 +174,125 @@ def create_team_member(payload: CreateTeamMemberRequest, user: AuthUser = Depend
 
     return TeamMemberResponse(item=item)
 
+
+
+
+@router.get("/members/{membership_id}", response_model=TeamMembershipDetailResponse)
+def get_team_membership_detail(
+    membership_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> TeamMembershipDetailResponse:
+    _enforce_membership_edit_actor_role(user)
+    try:
+        item = team_members_service.get_membership_detail(membership_id=membership_id, actor_user=user)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Membership inexistent")
+
+    return TeamMembershipDetailResponse(item=item)
+
+
+@router.patch("/members/{membership_id}", response_model=TeamMembershipDetailResponse)
+def patch_team_membership(
+    membership_id: int,
+    payload: UpdateTeamMembershipRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> TeamMembershipDetailResponse:
+    _enforce_membership_edit_actor_role(user)
+    if payload.user_role is None and payload.module_keys is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nu există câmpuri de actualizat")
+
+    try:
+        item = team_members_service.update_membership(
+            membership_id=membership_id,
+            actor_user=user,
+            user_role=payload.user_role,
+            module_keys=payload.module_keys,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return TeamMembershipDetailResponse(item=item)
+
+
+@router.post("/members/{membership_id}/deactivate", response_model=TeamMembershipStatusResponse)
+def deactivate_team_membership(
+    membership_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> TeamMembershipStatusResponse:
+    _enforce_membership_edit_actor_role(user)
+    try:
+        payload = team_members_service.deactivate_membership(membership_id=membership_id, actor_user=user)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return TeamMembershipStatusResponse(
+        membership_id=int(payload.get("membership_id") or membership_id),
+        status=str(payload.get("status") or "inactive"),
+        message=str(payload.get("message") or "Membership dezactivat"),
+    )
+
+
+@router.post("/members/{membership_id}/reactivate", response_model=TeamMembershipStatusResponse)
+def reactivate_team_membership(
+    membership_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> TeamMembershipStatusResponse:
+    _enforce_membership_edit_actor_role(user)
+    try:
+        payload = team_members_service.reactivate_membership(membership_id=membership_id, actor_user=user)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return TeamMembershipStatusResponse(
+        membership_id=int(payload.get("membership_id") or membership_id),
+        status=str(payload.get("status") or "active"),
+        message=str(payload.get("message") or "Membership reactivat"),
+    )
+
+
+@router.post("/members/{membership_id}/remove", response_model=TeamMembershipRemoveResponse)
+def remove_team_membership(
+    membership_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> TeamMembershipRemoveResponse:
+    _enforce_membership_edit_actor_role(user)
+    try:
+        payload = team_members_service.remove_membership(membership_id=membership_id, actor_user=user)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return TeamMembershipRemoveResponse(
+        membership_id=int(payload.get("membership_id") or membership_id),
+        removed=bool(payload.get("removed", True)),
+        message=str(payload.get("message") or "Membership eliminat"),
+    )
 
 @router.post("/members/{membership_id}/invite", response_model=TeamMemberInviteResponse)
 def invite_team_member(membership_id: int, user: AuthUser = Depends(get_current_user)) -> TeamMemberInviteResponse:
@@ -311,6 +443,29 @@ def get_subaccount_grantable_modules(
         for item in catalog
     ]
     return TeamGrantableModulesResponse(items=items)
+
+
+@router.get("/subaccounts/{subaccount_id}/my-access", response_model=TeamSubaccountMyAccessResponse)
+def get_subaccount_my_access(
+    subaccount_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> TeamSubaccountMyAccessResponse:
+    enforce_subaccount_action(user=user, action="team:subaccount:list", subaccount_id=subaccount_id)
+    try:
+        payload = team_members_service.get_subaccount_my_access(actor_user=user, subaccount_id=subaccount_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return TeamSubaccountMyAccessResponse(
+        subaccount_id=int(payload.get("subaccount_id") or subaccount_id),
+        role=str(payload.get("role") or user.role),
+        module_keys=_normalize_module_keys(payload.get("module_keys")),
+        source_scope=str(payload.get("source_scope") or "subaccount"),
+        access_scope=str(payload.get("access_scope") or (user.access_scope or "subaccount")),
+        unrestricted_modules=bool(payload.get("unrestricted_modules")),
+    )
 
 
 @router.get("/subaccounts/{subaccount_id}/members", response_model=SubaccountTeamMemberListResponse)
