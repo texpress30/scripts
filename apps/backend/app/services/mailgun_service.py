@@ -152,7 +152,7 @@ class MailgunService:
             raise MailgunIntegrationError("Integrarea Mailgun este dezactivată", status_code=503)
         return config
 
-    def send_email(self, *, to_email: str, subject: str, text: str) -> dict[str, object]:
+    def send_email(self, *, to_email: str, subject: str, text: str, html: str | None = None) -> dict[str, object]:
         config = self.assert_available()
 
         normalized_to = _normalize_email(to_email, field_name="to_email")
@@ -164,12 +164,15 @@ class MailgunService:
             raise ValueError("text este obligatoriu")
 
         request_url = f"{config.base_url}/v3/{config.domain}/messages"
+        normalized_html = "" if html is None else str(html)
         form_data: dict[str, str] = {
             "from": f"{config.from_name} <{config.from_email}>",
             "to": normalized_to,
             "subject": normalized_subject,
             "text": normalized_text,
         }
+        if normalized_html.strip() != "":
+            form_data["html"] = normalized_html
         if config.reply_to:
             form_data["h:Reply-To"] = config.reply_to
 
