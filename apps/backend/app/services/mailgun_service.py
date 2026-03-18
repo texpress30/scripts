@@ -6,12 +6,16 @@ from urllib.parse import urlparse
 
 import requests
 
+from app.core.config import load_settings
 from app.services.integration_secrets_store import IntegrationSecretValue, integration_secrets_store
 
 _PROVIDER = "mailgun"
 _SCOPE = "agency_default"
 _REQUIRED_KEYS: tuple[str, ...] = ("api_key", "domain", "base_url", "from_email", "from_name")
 _OPTIONAL_KEYS: tuple[str, ...] = ("reply_to", "enabled")
+_CONFIG_SOURCE_DB = "db"
+_CONFIG_SOURCE_ENV = "env"
+_CONFIG_SOURCE_NONE = "none"
 
 
 class MailgunIntegrationError(RuntimeError):
@@ -69,28 +73,78 @@ class MailgunService:
     def _read_secret(self, key: str) -> str:
         return _safe_secret_value(integration_secrets_store.get_secret(provider=_PROVIDER, secret_key=key, scope=_SCOPE))
 
-    def get_config(self) -> MailgunConfig | None:
-        values = {key: self._read_secret(key) for key in _REQUIRED_KEYS + _OPTIONAL_KEYS}
-        if any(values[key] == "" for key in _REQUIRED_KEYS):
+    def _build_config_from_values(self, values: dict[str, str]) -> MailgunConfig | None:
+        normalized_api_key = _normalize_text(values.get("api_key", ""))
+        normalized_domain = _normalize_text(values.get("domain", ""))
+        normalized_base_url_raw = _normalize_text(values.get("base_url", ""))
+        normalized_from_email_raw = _normalize_text(values.get("from_email", ""))
+        normalized_from_name = _normalize_text(values.get("from_name", ""))
+        normalized_reply_to_raw = _normalize_text(values.get("reply_to", ""))
+        if (
+            normalized_api_key == ""
+            or normalized_domain == ""
+            or normalized_base_url_raw == ""
+            or normalized_from_email_raw == ""
+            or normalized_from_name == ""
+        ):
             return None
-        enabled_raw = values.get("enabled", "1").strip().lower()
+
+        try:
+            normalized_base_url = _normalize_base_url(normalized_base_url_raw)
+            normalized_from_email = _normalize_email(normalized_from_email_raw, field_name="from_email")
+            normalized_reply_to = _normalize_email(normalized_reply_to_raw, field_name="reply_to") if normalized_reply_to_raw else ""
+        except ValueError:
+            return None
+
+        enabled_raw = _normalize_text(values.get("enabled", "1")).lower()
         enabled = enabled_raw not in {"0", "false", "no", "off"}
         return MailgunConfig(
-            api_key=values["api_key"],
-            domain=values["domain"],
-            base_url=values["base_url"],
-            from_email=values["from_email"],
-            from_name=values["from_name"],
-            reply_to=values.get("reply_to", ""),
+            api_key=normalized_api_key,
+            domain=normalized_domain,
+            base_url=normalized_base_url,
+            from_email=normalized_from_email,
+            from_name=normalized_from_name,
+            reply_to=normalized_reply_to,
             enabled=enabled,
         )
 
+    def _db_values(self) -> dict[str, str]:
+        return {key: self._read_secret(key) for key in _REQUIRED_KEYS + _OPTIONAL_KEYS}
+
+    def _env_values(self) -> dict[str, str]:
+        settings = load_settings()
+        return {
+            "api_key": settings.mailgun_api_key,
+            "domain": settings.mailgun_domain,
+            "base_url": settings.mailgun_base_url,
+            "from_email": settings.mailgun_from_email,
+            "from_name": settings.mailgun_from_name,
+            "reply_to": settings.mailgun_reply_to,
+            "enabled": "1" if settings.mailgun_enabled else "0",
+        }
+
+    def _resolve_config(self) -> tuple[MailgunConfig | None, str]:
+        db_config = self._build_config_from_values(self._db_values())
+        if db_config is not None:
+            return db_config, _CONFIG_SOURCE_DB
+
+        env_config = self._build_config_from_values(self._env_values())
+        if env_config is not None:
+            return env_config, _CONFIG_SOURCE_ENV
+
+        return None, _CONFIG_SOURCE_NONE
+
+    def get_config(self) -> MailgunConfig | None:
+        config, _source = self._resolve_config()
+        return config
+
     def status(self) -> dict[str, object]:
-        config = self.get_config()
+        config, source = self._resolve_config()
         if config is None:
             return {
                 "configured": False,
                 "enabled": False,
+                "config_source": _CONFIG_SOURCE_NONE,
                 "domain": "",
                 "base_url": "",
                 "from_email": "",
@@ -101,6 +155,7 @@ class MailgunService:
         return {
             "configured": True,
             "enabled": config.enabled,
+            "config_source": source,
             "domain": config.domain,
             "base_url": config.base_url,
             "from_email": config.from_email,
@@ -144,6 +199,36 @@ class MailgunService:
 
         return self.status()
 
+    def import_from_env(self) -> dict[str, object]:
+        db_config = self._build_config_from_values(self._db_values())
+        if db_config is not None:
+            payload = self.status()
+            return {
+                "imported": False,
+                "message": "Configurația Mailgun există deja în DB; importul din env a fost omis.",
+                **payload,
+            }
+
+        env_values = self._env_values()
+        env_config = self._build_config_from_values(env_values)
+        if env_config is None:
+            raise ValueError("Config Mailgun incomplet în env (MAILGUN_API_KEY/DOMAIN/BASE_URL/FROM_EMAIL/FROM_NAME).")
+
+        integration_secrets_store.upsert_secret(provider=_PROVIDER, secret_key="api_key", value=env_config.api_key, scope=_SCOPE)
+        integration_secrets_store.upsert_secret(provider=_PROVIDER, secret_key="domain", value=env_config.domain, scope=_SCOPE)
+        integration_secrets_store.upsert_secret(provider=_PROVIDER, secret_key="base_url", value=env_config.base_url, scope=_SCOPE)
+        integration_secrets_store.upsert_secret(provider=_PROVIDER, secret_key="from_email", value=env_config.from_email, scope=_SCOPE)
+        integration_secrets_store.upsert_secret(provider=_PROVIDER, secret_key="from_name", value=env_config.from_name, scope=_SCOPE)
+        integration_secrets_store.upsert_secret(provider=_PROVIDER, secret_key="reply_to", value=env_config.reply_to, scope=_SCOPE)
+        integration_secrets_store.upsert_secret(provider=_PROVIDER, secret_key="enabled", value="1" if env_config.enabled else "0", scope=_SCOPE)
+
+        payload = self.status()
+        return {
+            "imported": True,
+            "message": "Configurația Mailgun a fost importată din env în DB.",
+            **payload,
+        }
+
     def assert_available(self) -> MailgunConfig:
         config = self.get_config()
         if config is None:
@@ -152,7 +237,7 @@ class MailgunService:
             raise MailgunIntegrationError("Integrarea Mailgun este dezactivată", status_code=503)
         return config
 
-    def send_email(self, *, to_email: str, subject: str, text: str) -> dict[str, object]:
+    def send_email(self, *, to_email: str, subject: str, text: str, html: str | None = None) -> dict[str, object]:
         config = self.assert_available()
 
         normalized_to = _normalize_email(to_email, field_name="to_email")
@@ -164,12 +249,15 @@ class MailgunService:
             raise ValueError("text este obligatoriu")
 
         request_url = f"{config.base_url}/v3/{config.domain}/messages"
+        normalized_html = "" if html is None else str(html)
         form_data: dict[str, str] = {
             "from": f"{config.from_name} <{config.from_email}>",
             "to": normalized_to,
             "subject": normalized_subject,
             "text": normalized_text,
         }
+        if normalized_html.strip() != "":
+            form_data["html"] = normalized_html
         if config.reply_to:
             form_data["h:Reply-To"] = config.reply_to
 

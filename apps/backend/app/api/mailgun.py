@@ -70,6 +70,30 @@ def save_mailgun_config(payload: MailgunConfigRequest, user: AuthUser = Depends(
     return response_payload
 
 
+@router.post("/import-from-env")
+def import_mailgun_config_from_env(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:mailgun:config", scope="agency")
+    try:
+        response_payload = mailgun_service.import_from_env()
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="mailgun.config.import_from_env",
+        resource="integration:mailgun",
+        details={
+            "imported": bool(response_payload.get("imported")),
+            "config_source": response_payload.get("config_source"),
+            "enabled": bool(response_payload.get("enabled")),
+            "domain": response_payload.get("domain"),
+            "from_email": response_payload.get("from_email"),
+        },
+    )
+    return response_payload
+
+
 @router.post("/test")
 def send_mailgun_test(payload: MailgunTestRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="integrations:mailgun:test", scope="agency")

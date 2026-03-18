@@ -8,6 +8,7 @@ const apiMock = vi.hoisted(() => ({
   getMailgunStatus: vi.fn(),
   saveMailgunConfig: vi.fn(),
   sendMailgunTestEmail: vi.fn(),
+  importMailgunConfigFromEnv: vi.fn(),
 }));
 
 vi.mock("@/lib/api", async () => {
@@ -17,6 +18,7 @@ vi.mock("@/lib/api", async () => {
     getMailgunStatus: (...args: unknown[]) => apiMock.getMailgunStatus(...args),
     saveMailgunConfig: (...args: unknown[]) => apiMock.saveMailgunConfig(...args),
     sendMailgunTestEmail: (...args: unknown[]) => apiMock.sendMailgunTestEmail(...args),
+    importMailgunConfigFromEnv: (...args: unknown[]) => apiMock.importMailgunConfigFromEnv(...args),
   };
 });
 
@@ -25,12 +27,14 @@ describe("MailgunIntegrationCard", () => {
     apiMock.getMailgunStatus.mockReset();
     apiMock.saveMailgunConfig.mockReset();
     apiMock.sendMailgunTestEmail.mockReset();
+    apiMock.importMailgunConfigFromEnv.mockReset();
   });
 
   it("loads status and renders configured data with masked api key only", async () => {
     apiMock.getMailgunStatus.mockResolvedValueOnce({
       configured: true,
       enabled: true,
+      config_source: "db",
       domain: "mg.example.com",
       base_url: "https://api.mailgun.net",
       from_email: "noreply@example.com",
@@ -50,6 +54,7 @@ describe("MailgunIntegrationCard", () => {
     apiMock.getMailgunStatus.mockResolvedValueOnce({
       configured: false,
       enabled: false,
+      config_source: "none",
       domain: "",
       base_url: "",
       from_email: "",
@@ -68,6 +73,7 @@ describe("MailgunIntegrationCard", () => {
       .mockResolvedValueOnce({
         configured: false,
         enabled: false,
+        config_source: "none",
         domain: "",
         base_url: "",
         from_email: "",
@@ -78,6 +84,7 @@ describe("MailgunIntegrationCard", () => {
       .mockResolvedValueOnce({
         configured: true,
         enabled: true,
+        config_source: "db",
         domain: "mg.example.com",
         base_url: "https://api.mailgun.net",
         from_email: "noreply@example.com",
@@ -117,6 +124,7 @@ describe("MailgunIntegrationCard", () => {
     apiMock.getMailgunStatus.mockResolvedValueOnce({
       configured: true,
       enabled: true,
+      config_source: "db",
       domain: "mg.example.com",
       base_url: "https://api.mailgun.net",
       from_email: "noreply@example.com",
@@ -148,5 +156,51 @@ describe("MailgunIntegrationCard", () => {
     render(<MailgunIntegrationCard />);
 
     expect(await screen.findByText("Nu ai acces la această integrare.")).toBeInTheDocument();
+  });
+
+  it("shows env source and supports import-from-env action", async () => {
+    apiMock.getMailgunStatus
+      .mockResolvedValueOnce({
+        configured: true,
+        enabled: true,
+        config_source: "env",
+        domain: "mg.env.example.com",
+        base_url: "https://api.mailgun.net",
+        from_email: "env@example.com",
+        from_name: "Env Sender",
+        reply_to: "",
+        api_key_masked: "key***env",
+      })
+      .mockResolvedValueOnce({
+        configured: true,
+        enabled: true,
+        config_source: "db",
+        domain: "mg.env.example.com",
+        base_url: "https://api.mailgun.net",
+        from_email: "env@example.com",
+        from_name: "Env Sender",
+        reply_to: "",
+        api_key_masked: "key***env",
+      });
+    apiMock.importMailgunConfigFromEnv.mockResolvedValue({
+      imported: true,
+      message: "Configurația Mailgun a fost importată din env în DB.",
+      configured: true,
+      enabled: true,
+      config_source: "db",
+      domain: "mg.env.example.com",
+      base_url: "https://api.mailgun.net",
+      from_email: "env@example.com",
+      from_name: "Env Sender",
+      reply_to: "",
+      api_key_masked: "key***env",
+    });
+
+    render(<MailgunIntegrationCard />);
+    expect(await screen.findByText("Config source: env")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Importă din env în DB" }));
+
+    await waitFor(() => expect(apiMock.importMailgunConfigFromEnv).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(apiMock.getMailgunStatus).toHaveBeenCalledTimes(2));
   });
 });
