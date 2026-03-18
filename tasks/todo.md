@@ -1,3 +1,21 @@
+# TODO — Wire Sub-account Team roles and permissions to full sidebar catalog
+
+- [x] Re-read Sub-account Team page, frontend API/session helpers, and team backend contracts for module catalog + grant ceiling behavior.
+- [x] Wire Sub-account Team create/edit Roles & Permissions to full `scope=subaccount` module catalog metadata.
+- [x] Merge catalog + grantable modules in UI, showing non-grantable items as disabled with clear explanation.
+- [x] Implement coherent `settings` parent/children synchronization for Sub-account permissions payload safety.
+- [x] Keep create/edit role flow and identity fields behavior unchanged while hardening module validation/payload serialization.
+- [x] Add/update focused frontend tests for catalog loading, grant ceiling behavior, settings sync, create/edit payloads, and regression coverage.
+- [x] Run targeted frontend tests + frontend build.
+- [x] Prepare commit + PR metadata with required title/body.
+
+## Review
+- [x] Sub-account Team create/edit now uses full subaccount sidebar permissions catalog and renders metadata-based groups.
+- [x] Grant ceiling is reflected explicitly in UI via disabled non-grantable keys and safe payload serialization.
+- [x] `settings` parent/children state remains coherent to avoid inconsistent module payloads.
+- [x] Existing invite/lifecycle/remove/list flows remain intact and covered by regression tests.
+- [x] Intentionally left out: Agency Team updates, AppShell/sidebar filtering by keys, backend route-enforcement expansion.
+
 # TODO — Add rich editor for agency email template HTML body
 
 - [x] Refresh workspace and re-read agency email templates page/API contract and verify no backend contract changes required.

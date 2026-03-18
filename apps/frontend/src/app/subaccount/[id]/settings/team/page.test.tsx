@@ -11,6 +11,9 @@ const deactivateTeamMemberMock = vi.fn();
 const reactivateTeamMemberMock = vi.fn();
 const removeTeamMemberMock = vi.fn();
 const getSubaccountGrantableModulesMock = vi.fn();
+const getTeamModuleCatalogMock = vi.fn();
+const getTeamMembershipDetailMock = vi.fn();
+const updateTeamMembershipMock = vi.fn();
 
 vi.mock("next/navigation", () => ({ useParams: () => ({ id: "96" }) }));
 vi.mock("@/components/ProtectedPage", () => ({ ProtectedPage: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
@@ -33,6 +36,9 @@ vi.mock("@/lib/api", async () => {
     reactivateTeamMember: (...args: unknown[]) => reactivateTeamMemberMock(...args),
     removeTeamMember: (...args: unknown[]) => removeTeamMemberMock(...args),
     getSubaccountGrantableModules: (...args: unknown[]) => getSubaccountGrantableModulesMock(...args),
+    getTeamModuleCatalog: (...args: unknown[]) => getTeamModuleCatalogMock(...args),
+    getTeamMembershipDetail: (...args: unknown[]) => getTeamMembershipDetailMock(...args),
+    updateTeamMembership: (...args: unknown[]) => updateTeamMembershipMock(...args),
   };
 });
 
@@ -45,6 +51,9 @@ describe("SubAccount Team management page", () => {
     reactivateTeamMemberMock.mockReset();
     removeTeamMemberMock.mockReset();
     getSubaccountGrantableModulesMock.mockReset();
+    getTeamModuleCatalogMock.mockReset();
+    getTeamMembershipDetailMock.mockReset();
+    updateTeamMembershipMock.mockReset();
     vi.spyOn(window, "confirm").mockReturnValue(true);
     listSubaccountTeamMembersMock.mockResolvedValue({
       items: [
@@ -95,9 +104,40 @@ describe("SubAccount Team management page", () => {
       items: [
         { key: "dashboard", label: "Dashboard", order: 1, grantable: true },
         { key: "campaigns", label: "Campaigns", order: 2, grantable: true },
+        { key: "settings", label: "Settings", order: 100, grantable: true },
+        { key: "settings_team", label: "My Team", order: 110, grantable: true },
         { key: "creative", label: "Creative", order: 3, grantable: false },
       ],
     });
+    getTeamModuleCatalogMock.mockResolvedValue({
+      items: [
+        { key: "dashboard", label: "Dashboard", order: 1, scope: "subaccount", group_key: "main_nav", group_label: "Main Navigation" },
+        { key: "campaigns", label: "Campaigns", order: 2, scope: "subaccount", group_key: "main_nav", group_label: "Main Navigation" },
+        { key: "creative", label: "Creative", order: 3, scope: "subaccount", group_key: "main_nav", group_label: "Main Navigation" },
+        { key: "settings", label: "Settings", order: 100, scope: "subaccount", group_key: "settings", group_label: "Settings", is_container: true },
+        { key: "settings_team", label: "My Team", order: 110, scope: "subaccount", group_key: "settings", group_label: "Settings", parent_key: "settings" },
+      ],
+    });
+    getTeamMembershipDetailMock.mockResolvedValue({
+      item: {
+        membership_id: 1,
+        user_id: 10,
+        scope_type: "subaccount",
+        subaccount_id: 96,
+        subaccount_name: "Client 96",
+        role_key: "subaccount_user",
+        role_label: "Subaccount User",
+        module_keys: ["dashboard", "campaigns", "settings", "settings_team"],
+        source_scope: "subaccount",
+        is_inherited: false,
+        first_name: "Irina",
+        last_name: "Stoica",
+        email: "irina@example.com",
+        phone: "+40 721 000 111",
+        extension: "",
+      },
+    });
+    updateTeamMembershipMock.mockResolvedValue({ item: {} });
   });
 
   it("loads members from real endpoint helper and renders inherited indicator", async () => {
@@ -170,7 +210,7 @@ describe("SubAccount Team management page", () => {
         phone: "+40 700 111 222",
         extension: "12",
         user_role: "subaccount_admin",
-        module_keys: ["dashboard", "campaigns"],
+        module_keys: ["dashboard", "campaigns", "settings", "settings_team"],
       });
     });
 
@@ -276,22 +316,27 @@ describe("SubAccount Team management page", () => {
   });
 
 
-  it("loads and renders module permissions with default grantable selection", async () => {
+  it("loads full subaccount catalog + grantable set and keeps non-grantable keys disabled", async () => {
     render(<SubAccountTeamPage />);
     await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalled());
 
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
 
     await waitFor(() => expect(getSubaccountGrantableModulesMock).toHaveBeenCalledWith(96));
+    await waitFor(() => expect(getTeamModuleCatalogMock).toHaveBeenCalledWith("subaccount"));
 
     const dashboard = await screen.findByRole("checkbox", { name: "Permisiune modul Dashboard" });
     const campaigns = screen.getByRole("checkbox", { name: "Permisiune modul Campaigns" });
     const creative = screen.getByRole("checkbox", { name: "Permisiune modul Creative" });
+    const settings = screen.getByRole("checkbox", { name: "Permisiune modul Settings" });
+    const settingsTeam = screen.getByRole("checkbox", { name: "Permisiune modul My Team" });
 
     expect(dashboard).toBeChecked();
     expect(campaigns).toBeChecked();
+    expect(settings).toBeChecked();
+    expect(settingsTeam).toBeChecked();
     expect(creative).toBeDisabled();
-    expect(screen.getByText("Nu poate fi acordat din permisiunile tale curente.")).toBeInTheDocument();
+    expect(screen.getByText("Nu poate fi acordat din grant ceiling-ul tău curent.")).toBeInTheDocument();
   });
 
   it("updates module selection and sends only selected grantable module_keys", async () => {
@@ -310,7 +355,91 @@ describe("SubAccount Team management page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Înainte" }));
 
     await waitFor(() => {
-      expect(createSubaccountTeamMemberMock).toHaveBeenCalledWith(96, expect.objectContaining({ module_keys: ["dashboard"] }));
+      expect(createSubaccountTeamMemberMock).toHaveBeenCalledWith(
+        96,
+        expect.objectContaining({ module_keys: ["dashboard", "settings", "settings_team"] }),
+      );
+    });
+  });
+
+  it("syncs settings parent and child toggles coherently", async () => {
+    render(<SubAccountTeamPage />);
+    await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+
+    const settings = await screen.findByRole("checkbox", { name: "Permisiune modul Settings" });
+    const settingsTeam = screen.getByRole("checkbox", { name: "Permisiune modul My Team" });
+
+    expect(settings).toBeChecked();
+    expect(settingsTeam).toBeChecked();
+
+    fireEvent.click(settings);
+    expect(settings).not.toBeChecked();
+    expect(settingsTeam).not.toBeChecked();
+
+    fireEvent.click(settingsTeam);
+    expect(settings).toBeChecked();
+    expect(settingsTeam).toBeChecked();
+
+    fireEvent.click(settingsTeam);
+    expect(settings).not.toBeChecked();
+    expect(settingsTeam).not.toBeChecked();
+  });
+
+  it("edit mode preloads module keys and blocks save when selected key is outside grant ceiling", async () => {
+    getSubaccountGrantableModulesMock.mockResolvedValueOnce({
+      items: [
+        { key: "dashboard", label: "Dashboard", order: 1, grantable: true },
+        { key: "campaigns", label: "Campaigns", order: 2, grantable: false },
+        { key: "settings", label: "Settings", order: 100, grantable: true },
+        { key: "settings_team", label: "My Team", order: 110, grantable: true },
+      ],
+    });
+    getTeamMembershipDetailMock.mockResolvedValueOnce({
+      item: {
+        membership_id: 1,
+        user_id: 10,
+        scope_type: "subaccount",
+        subaccount_id: 96,
+        subaccount_name: "Client 96",
+        role_key: "subaccount_user",
+        role_label: "Subaccount User",
+        module_keys: ["dashboard", "campaigns", "settings", "settings_team"],
+        source_scope: "subaccount",
+        is_inherited: false,
+        first_name: "Irina",
+        last_name: "Stoica",
+        email: "irina@example.com",
+        phone: "",
+        extension: "",
+      },
+    });
+
+    render(<SubAccountTeamPage />);
+    const editButtons = await screen.findAllByRole("button", { name: "Editează" });
+    fireEvent.click(editButtons[0]);
+
+    expect(await screen.findByText(/depășesc accesul tău curent/i)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Permisiune modul Campaigns" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "Salvează" })).toBeDisabled();
+    expect(updateTeamMembershipMock).not.toHaveBeenCalled();
+  });
+
+  it("edit mode sends only subaccount + grantable module keys", async () => {
+    render(<SubAccountTeamPage />);
+    const editButtons = await screen.findAllByRole("button", { name: "Editează" });
+    fireEvent.click(editButtons[0]);
+
+    const campaigns = await screen.findByRole("checkbox", { name: "Permisiune modul Campaigns" });
+    fireEvent.click(campaigns);
+    fireEvent.change(screen.getByDisplayValue("Subaccount User"), { target: { value: "subaccount_viewer" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+
+    await waitFor(() => {
+      expect(updateTeamMembershipMock).toHaveBeenCalledWith(1, {
+        user_role: "subaccount_viewer",
+        module_keys: ["dashboard", "settings", "settings_team"],
+      });
     });
   });
 
@@ -322,15 +451,17 @@ describe("SubAccount Team management page", () => {
 
     const dashboard = await screen.findByRole("checkbox", { name: "Permisiune modul Dashboard" });
     const campaigns = screen.getByRole("checkbox", { name: "Permisiune modul Campaigns" });
+    const settings = screen.getByRole("checkbox", { name: "Permisiune modul Settings" });
     fireEvent.click(dashboard);
     fireEvent.click(campaigns);
+    fireEvent.click(settings);
 
     fireEvent.change(screen.getByPlaceholderText("Prenume"), { target: { value: "Elena" } });
     fireEvent.change(screen.getByPlaceholderText("Nume"), { target: { value: "Popa" } });
     fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "elena@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Înainte" }));
 
-    expect(await screen.findByText("Selectează cel puțin un modul.")).toBeInTheDocument();
+    expect(await screen.findByText("Selectează cel puțin o permisiune de navigare.")).toBeInTheDocument();
     expect(createSubaccountTeamMemberMock).not.toHaveBeenCalled();
   });
 
