@@ -43,6 +43,17 @@ type NavItem = {
   moduleKey?: SubaccountModuleKey;
 };
 
+export const AGENCY_SETTINGS_ITEMS = [
+  { href: "/settings/profile", label: "Profile" },
+  { href: "/settings/company", label: "Company" },
+  { href: "/settings/team", label: "My Team" },
+  { href: "/agency/email-templates", label: "Email Templates" },
+  { href: "/settings/tags", label: "Tags" },
+  { href: "/settings/audit-logs", label: "Audit Logs" },
+  { href: "/settings/ai-agents", label: "Ai Agents" },
+  { href: "/settings/storage", label: "Media Storage Usage" },
+] as const;
+
 export function getNavItems(pathname: string): NavItem[] {
   const subMatch = pathname.match(/^\/sub\/(\d+)/);
   if (subMatch) {
@@ -282,22 +293,12 @@ export function AppShell({
   const subSettingsId = subSettingsMatch ? Number(subSettingsMatch[1]) : null;
   const contextClientId = currentSubId ?? subSettingsId;
 
-  const isAgencySettingsMode = pathname.startsWith("/settings/");
+  const isAgencySettingsMode = pathname.startsWith("/settings/") || pathname.startsWith("/agency/email-templates");
   const isSubSettingsMode = pathname.startsWith("/subaccount/") && pathname.includes("/settings/");
   const isSettingsMode = isAgencySettingsMode || isSubSettingsMode;
 
   const settingsHeaderLabel = isSubSettingsMode ? "SUB-ACCOUNT SETTINGS" : "AGENCY SETTINGS";
   const goBackHref = isSubSettingsMode && subSettingsId ? `/sub/${subSettingsId}/dashboard` : "/agency/dashboard";
-
-  const agencySettingsItems = [
-    { href: "/settings/profile", label: "Profile" },
-    { href: "/settings/company", label: "Company" },
-    { href: "/settings/team", label: "My Team" },
-    { href: "/settings/tags", label: "Tags" },
-    { href: "/settings/audit-logs", label: "Audit Logs" },
-    { href: "/settings/ai-agents", label: "Ai Agents" },
-    { href: "/settings/storage", label: "Media Storage Usage" },
-  ] as const;
 
   const subSettingsItems = useMemo(
     () =>
@@ -315,7 +316,7 @@ export function AppShell({
     [subSettingsId]
   );
 
-  const settingsItems = isSubSettingsMode ? subSettingsItems : agencySettingsItems;
+  const settingsItems = isSubSettingsMode ? subSettingsItems : AGENCY_SETTINGS_ITEMS;
 
   useEffect(() => {
     setMounted(true);

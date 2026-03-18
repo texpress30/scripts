@@ -5162,3 +5162,24 @@ Plan verified: frontend-focused incremental change, no notifications UI, no rich
 ## Review
 - [x] Captured correction-specific lesson and kept change minimal.
 - [x] Scope remains documentation-only for workflow alignment.
+
+# TODO — Move Email Templates to Settings + surface Mailgun status (2026-03-18)
+
+- [x] Re-read AppShell, Email Templates page, frontend API helpers, and existing Mailgun status contract.
+- [x] Move `Email Templates` from agency main nav into agency Settings nav group while preserving route `/agency/email-templates`.
+- [x] Add Mailgun status loading block in Email Templates page (configured/enabled + safe metadata) using existing status endpoint.
+- [x] Gate `Send test email` button by Mailgun availability and show clear CTA link to Agency Integrations when unavailable.
+- [x] Add/update focused frontend tests for nav placement, Mailgun loading/error/unavailable/available states, and preserve save/reset/preview flows.
+- [x] Run targeted frontend tests + frontend build.
+- [x] Update review notes and lessons for this correction cycle.
+- [x] Commit changes and create PR via `make_pr` with required title/body.
+
+## Check-in before execution
+Plan verified: frontend-focused incremental patch only (AppShell + email templates page + tests), using existing Mailgun status API; no Notifications backend/UI and no major redesign.
+
+
+## Review
+- [x] Moved Email Templates under Settings navigation while preserving `/agency/email-templates`.
+- [x] Added explicit Mailgun status panel with configured/enabled indicators, safe metadata, unavailable CTA to Integrations, and test-send gating.
+- [x] Kept preview/save/reset flows available even when Mailgun is unavailable or status fails.
+- [x] Notifications backend/UI and additional redesign remain intentionally out of scope for this task.

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
@@ -8,7 +9,9 @@ import {
   ApiRequestError,
   type AgencyEmailTemplateDetail,
   type AgencyEmailTemplateListItem,
+  type MailgunStatusResponse,
   type PreviewAgencyEmailTemplateResponse,
+  getMailgunStatus,
   getAgencyEmailTemplate,
   getAgencyEmailTemplates,
   previewAgencyEmailTemplate,
@@ -201,6 +204,9 @@ export default function AgencyEmailTemplatesPage() {
   const [testSendError, setTestSendError] = useState("");
   const [testSendFeedback, setTestSendFeedback] = useState("");
   const [feedback, setFeedback] = useState("");
+  const [mailgunStatus, setMailgunStatus] = useState<MailgunStatusResponse | null>(null);
+  const [mailgunStatusLoading, setMailgunStatusLoading] = useState(true);
+  const [mailgunStatusError, setMailgunStatusError] = useState("");
 
   async function loadList(preferredKey?: string | null) {
     setListLoading(true);
@@ -254,6 +260,29 @@ export default function AgencyEmailTemplatesPage() {
   }, []);
 
   useEffect(() => {
+    let ignore = false;
+    async function loadMailgunStatus() {
+      setMailgunStatusLoading(true);
+      setMailgunStatusError("");
+      try {
+        const payload = await getMailgunStatus();
+        if (ignore) return;
+        setMailgunStatus(payload);
+      } catch (error) {
+        if (ignore) return;
+        setMailgunStatus(null);
+        setMailgunStatusError(resolveErrorMessage(error, "Nu am putut încărca statusul Mailgun."));
+      } finally {
+        if (!ignore) setMailgunStatusLoading(false);
+      }
+    }
+    void loadMailgunStatus();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!selectedKey) {
       setDetail(null);
       setEditor(null);
@@ -277,6 +306,10 @@ export default function AgencyEmailTemplatesPage() {
       editor.enabled !== Boolean(detail.enabled)
     );
   }, [detail, editor]);
+  const mailgunConfigured = Boolean(mailgunStatus?.configured);
+  const mailgunEnabled = Boolean(mailgunStatus?.enabled);
+  const isMailgunAvailable = !mailgunStatusLoading && !mailgunStatusError && mailgunConfigured && mailgunEnabled;
+  const disableTestSend = testSendLoading || !selectedKey || !isMailgunAvailable;
 
   async function handleSave() {
     if (!selectedKey || !editor) return;
@@ -367,6 +400,61 @@ export default function AgencyEmailTemplatesPage() {
               Configurează template-urile email active pentru fluxurile existente (forgot password, invite user)
               folosind contractul actual din backend.
             </p>
+          </section>
+          <section className="wm-card p-4" aria-label="Mailgun status panel">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">Mailgun status</h2>
+                <p className="mt-1 text-sm text-slate-600">Statusul integrării pentru trimiterea emailurilor de test din această pagină.</p>
+              </div>
+              {!mailgunStatusLoading ? <StatusBadge enabled={isMailgunAvailable} /> : null}
+            </div>
+
+            {mailgunStatusLoading ? <p className="mt-3 text-sm text-slate-500">Se încarcă statusul Mailgun...</p> : null}
+            {!mailgunStatusLoading && mailgunStatusError ? (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                <p>Nu am putut verifica statusul Mailgun acum. Pentru siguranță, trimiterea de test este temporar dezactivată.</p>
+                <p className="mt-1 text-xs">{mailgunStatusError}</p>
+                <Link href="/agency/integrations" className="mt-2 inline-flex text-sm font-medium text-amber-900 underline">
+                  Deschide Agency Integrations
+                </Link>
+              </div>
+            ) : null}
+
+            {!mailgunStatusLoading && !mailgunStatusError && mailgunStatus ? (
+              <div className="mt-3 space-y-3">
+                <div className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 md:grid-cols-2">
+                  <p>
+                    <span className="font-semibold text-slate-800">Configurat:</span> {mailgunConfigured ? "Da" : "Nu"}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-slate-800">Activ:</span> {mailgunEnabled ? "Da" : "Nu"}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-slate-800">Domain:</span> {mailgunStatus.domain || "-"}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-slate-800">From email:</span> {mailgunStatus.from_email || "-"}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-slate-800">API key:</span> {mailgunStatus.api_key_masked || "-"}
+                  </p>
+                </div>
+
+                {!isMailgunAvailable ? (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                    Mailgun nu este disponibil pentru test-send (neconfigurat sau dezactivat). Configurează integrarea pentru a activa trimiterea de emailuri test.
+                    <div>
+                      <Link href="/agency/integrations" className="mt-2 inline-flex font-medium underline">
+                        Configurează Mailgun în Agency Integrations
+                      </Link>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-emerald-700">Mailgun este configurat și activ. Poți trimite emailuri de test.</p>
+                )}
+              </div>
+            ) : null}
           </section>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -535,7 +623,7 @@ export default function AgencyEmailTemplatesPage() {
                       type="button"
                       className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
                       onClick={handleSendTestEmail}
-                      disabled={testSendLoading || !selectedKey}
+                      disabled={disableTestSend}
                     >
                       {testSendLoading ? "Sending..." : "Send test email"}
                     </button>
@@ -544,6 +632,15 @@ export default function AgencyEmailTemplatesPage() {
                     <p className="text-xs text-slate-500">
                       Test send folosește varianta randată cu sample variables și este permis chiar dacă template-ul este disabled.
                     </p>
+                    {!isMailgunAvailable ? (
+                      <p className="text-xs text-amber-700">
+                        Trimiterea de test este dezactivată până când Mailgun este configurat și activ în{" "}
+                        <Link href="/agency/integrations" className="underline">
+                          Agency Integrations
+                        </Link>
+                        .
+                      </p>
+                    ) : null}
                   </div>
 
                   {previewResult ? (

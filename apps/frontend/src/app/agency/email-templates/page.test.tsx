@@ -11,6 +11,7 @@ const saveAgencyEmailTemplateMock = vi.fn();
 const resetAgencyEmailTemplateMock = vi.fn();
 const previewAgencyEmailTemplateMock = vi.fn();
 const sendAgencyEmailTemplateTestMock = vi.fn();
+const getMailgunStatusMock = vi.fn();
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -22,6 +23,7 @@ vi.mock("@/lib/api", async () => {
     resetAgencyEmailTemplate: (...args: unknown[]) => resetAgencyEmailTemplateMock(...args),
     previewAgencyEmailTemplate: (...args: unknown[]) => previewAgencyEmailTemplateMock(...args),
     sendAgencyEmailTemplateTest: (...args: unknown[]) => sendAgencyEmailTemplateTestMock(...args),
+    getMailgunStatus: (...args: unknown[]) => getMailgunStatusMock(...args),
   };
 });
 
@@ -51,6 +53,7 @@ describe("AgencyEmailTemplatesPage", () => {
     resetAgencyEmailTemplateMock.mockReset();
     previewAgencyEmailTemplateMock.mockReset();
     sendAgencyEmailTemplateTestMock.mockReset();
+    getMailgunStatusMock.mockReset();
     vi.spyOn(window, "confirm").mockReturnValue(true);
 
     getAgencyEmailTemplatesMock.mockResolvedValue({
@@ -109,6 +112,16 @@ describe("AgencyEmailTemplatesPage", () => {
       sent: true,
       rendered_subject: "Rendered preview subject",
       message: "Queued",
+    });
+    getMailgunStatusMock.mockResolvedValue({
+      configured: true,
+      enabled: true,
+      domain: "mg.example.com",
+      base_url: "https://api.mailgun.net",
+      from_email: "noreply@example.com",
+      from_name: "Example",
+      reply_to: "",
+      api_key_masked: "key-***",
     });
   });
 
@@ -233,6 +246,51 @@ describe("AgencyEmailTemplatesPage", () => {
 
     expect(screen.getByLabelText("Test email")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send test email" })).toBeInTheDocument();
+  });
+
+  it("loads and shows Mailgun configured/active status metadata", async () => {
+    render(<AgencyEmailTemplatesPage />);
+
+    expect(await screen.findByLabelText("Mailgun status panel")).toBeInTheDocument();
+    expect(screen.getByText("Configurat:")).toBeInTheDocument();
+    expect(screen.getByText("Activ:")).toBeInTheDocument();
+    expect(screen.getByText("mg.example.com")).toBeInTheDocument();
+    expect(screen.getByText("noreply@example.com")).toBeInTheDocument();
+    expect(screen.getByText("key-***")).toBeInTheDocument();
+    expect(screen.getByText("Mailgun este configurat și activ. Poți trimite emailuri de test.")).toBeInTheDocument();
+  });
+
+  it("disables Send test email and shows integrations CTA when Mailgun is not configured", async () => {
+    getMailgunStatusMock.mockResolvedValueOnce({
+      configured: false,
+      enabled: false,
+      domain: "",
+      base_url: "",
+      from_email: "",
+      from_name: "",
+      reply_to: "",
+      api_key_masked: "",
+    });
+
+    render(<AgencyEmailTemplatesPage />);
+    await screen.findByDisplayValue("Reset subject");
+
+    const sendButton = screen.getByRole("button", { name: "Send test email" });
+    expect(sendButton).toBeDisabled();
+    expect(screen.getByText(/Mailgun nu este disponibil pentru test-send/)).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /Agency Integrations|Configurează Mailgun în Agency Integrations/i }).length).toBeGreaterThan(0);
+  });
+
+  it("shows safe fallback when Mailgun status fails and keeps other actions available", async () => {
+    getMailgunStatusMock.mockRejectedValueOnce(new ApiRequestError("status unavailable", 503));
+
+    render(<AgencyEmailTemplatesPage />);
+    await screen.findByDisplayValue("Reset subject");
+
+    expect(screen.getByText(/Nu am putut verifica statusul Mailgun acum/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send test email" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Preview" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Reset to default" })).toBeEnabled();
   });
 
   it("send test email uses current draft values and endpoint", async () => {
