@@ -1,3 +1,17 @@
+# TODO — Backend minimal remove membership (endpoint + service + teste)
+
+- [x] Refresh workspace and inspect team API/service/schemas/dependencies + current membership tests.
+- [x] Add backend-only remove endpoint (`POST /team/members/{membership_id}/remove`) and response schema.
+- [x] Add minimal service helper `remove_membership(...)` with inherited/self RBAC protections and module permission cleanup.
+- [x] Add targeted backend tests for success + required rejection/consistency scenarios.
+- [x] Run relevant backend tests and backend startup check.
+
+## Review
+- [x] Added backend endpoint `POST /team/members/{membership_id}/remove` with response payload `{membership_id, removed, message}` and same error-mapping style as deactivate/reactivate.
+- [x] Added service helper `remove_membership(...)` that blocks inherited memberships, blocks self-removal for current session memberships, deletes membership module permissions, then deletes the direct membership row only.
+- [x] Added backend tests covering remove success, inherited/self conflict handling, API 404 after remove flow, module-permission cleanup, and login behavior when removed memberships are absent from DB query results.
+- [x] Verification: `cd apps/backend && APP_ENV=test APP_AUTH_SECRET=test-secret pytest -q tests/test_team_membership_edit_api.py tests/test_team_membership_lifecycle_service.py tests/test_auth_db_login.py` and `cd apps/backend && APP_ENV=test APP_AUTH_SECRET=test-secret python -c "from app.main import app; print('ok', bool(app))"`.
+
 # TODO — Formular Adăugare/Editare Utilizator (Echipa Mea, Sub-Account)
 
 - [x] Refresh workspace and inspect current sub-account `settings/team` route.
@@ -4929,14 +4943,3 @@ Plan verified: confine code changes to sub-account team page + tests (and shared
 - Added explicit lifecycle error mapping for 403/404/409 and inherited guard in UI; inherited rows keep action disabled with clear tooltip.
 - Existing create/edit/invite behavior remained intact and passing through updated test coverage.
 - Intentional follow-up: remove membership action remains for next task; no token revocation behavior was added in this step.
-
-## 2026-03-18 Fix backend SyntaxError in list_members
-- [x] Analyze backend error in `team_members.py` resulting in `psycopg.errors.SyntaxError`.
-- [x] Identify root cause: empty `clauses` appending `WHERE ` without content when filters are omitted.
-- [x] Fix empty clauses logic: conditionally append `WHERE` using `if clauses else ""`.
-- [x] Verify fix with tests.
-- [x] Create PR against main branch.
-
-### Review
-- Fixed the unclosed `WHERE` clause in `list_members` query. When filters like `search`, `subaccount` or `user_type/role` are empty, `where_sql` is now set to an empty string instead of `WHERE `.
-- Created PR with fix.

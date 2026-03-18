@@ -235,6 +235,23 @@ class AuthDbLoginTests(unittest.TestCase):
         finally:
             auth_service._connect = original_connect
 
+
+    def test_login_ignores_deleted_membership_row(self):
+        user_row = (20, "removed@example.com", hash_password("good"), True)
+        memberships = [
+            # Membership 901 was removed from DB, so only 902 is returned by query.
+            (902, "subaccount", 42, "Client Active", 20, "subaccount_user", "active"),
+        ]
+        cursor = _FakeCursor(user_row=user_row, memberships=memberships)
+        original_connect = auth_service._connect
+        try:
+            auth_service._connect = lambda: _FakeConn(cursor)
+            user = auth_service.authenticate_user_from_db(email="removed@example.com", password="good", requested_role="subaccount_user")
+            self.assertEqual(user.membership_ids, (902,))
+            self.assertEqual(user.allowed_subaccount_ids, (42,))
+        finally:
+            auth_service._connect = original_connect
+
     def test_decode_old_and_new_token_payloads(self):
         old_token = create_access_token(email="old@example.com", role="agency_admin")
         old_user = decode_access_token(old_token)

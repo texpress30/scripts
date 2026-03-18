@@ -159,6 +159,12 @@ class TeamMembershipStatusResponse(BaseModel):
     message: str
 
 
+class TeamMembershipRemoveResponse(BaseModel):
+    membership_id: int
+    removed: bool
+    message: str
+
+
 class UpdateTeamMembershipRequest(BaseModel):
     user_role: str | None = None
     module_keys: list[str] | None = None

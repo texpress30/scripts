@@ -11,6 +11,7 @@ from app.schemas.team import (
     TeamMemberListResponse,
     TeamMemberResponse,
     TeamMembershipStatusResponse,
+    TeamMembershipRemoveResponse,
     TeamModuleCatalogResponse,
     TeamGrantableModulesResponse,
     TeamSubaccountMyAccessResponse,
@@ -267,6 +268,30 @@ def reactivate_team_membership(
         membership_id=int(payload.get("membership_id") or membership_id),
         status=str(payload.get("status") or "active"),
         message=str(payload.get("message") or "Membership reactivat"),
+    )
+
+
+@router.post("/members/{membership_id}/remove", response_model=TeamMembershipRemoveResponse)
+def remove_team_membership(
+    membership_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> TeamMembershipRemoveResponse:
+    _enforce_membership_edit_actor_role(user)
+    try:
+        payload = team_members_service.remove_membership(membership_id=membership_id, actor_user=user)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return TeamMembershipRemoveResponse(
+        membership_id=int(payload.get("membership_id") or membership_id),
+        removed=bool(payload.get("removed", True)),
+        message=str(payload.get("message") or "Membership eliminat"),
     )
 
 @router.post("/members/{membership_id}/invite", response_model=TeamMemberInviteResponse)

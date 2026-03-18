@@ -1231,6 +1231,34 @@ class TeamMembersService:
         message = "Membership dezactivat" if normalized_target == "inactive" else "Membership reactivat"
         return {"membership_id": int(membership_id), "status": normalized_target, "message": message}
 
+    def remove_membership(self, *, membership_id: int, actor_user: AuthUser) -> dict[str, object]:
+        current = self.get_membership_detail(membership_id=membership_id, actor_user=actor_user)
+        if current is None:
+            raise LookupError("Membership inexistent")
+        if bool(current.get("is_inherited")):
+            raise RuntimeError("Access moștenit: acest membership nu poate fi eliminat local")
+
+        target_membership_id = int(current.get("membership_id") or membership_id)
+        actor_membership_ids = {int(item) for item in actor_user.membership_ids}
+        if actor_user.membership_id is not None:
+            actor_membership_ids.add(int(actor_user.membership_id))
+        if target_membership_id in actor_membership_ids:
+            raise RuntimeError("Nu îți poți elimina propriul membership din sesiunea curentă")
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM membership_module_permissions WHERE membership_id = %s", (target_membership_id,))
+                cur.execute("DELETE FROM user_memberships WHERE id = %s", (target_membership_id,))
+                if int(cur.rowcount or 0) != 1:
+                    raise LookupError("Membership inexistent")
+            conn.commit()
+
+        return {
+            "membership_id": target_membership_id,
+            "removed": True,
+            "message": "Membership eliminat",
+        }
+
     def deactivate_membership(self, *, membership_id: int, actor_user: AuthUser) -> dict[str, object]:
         return self._transition_membership_status(membership_id=membership_id, actor_user=actor_user, target_status="inactive")
 

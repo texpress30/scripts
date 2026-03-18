@@ -76,6 +76,35 @@ class _CursorMembershipSelect:
         return False
 
 
+
+
+class _CursorRemoveMembership:
+    def __init__(self):
+        self.rowcount = 0
+        self.deleted_permissions_for = None
+        self.deleted_membership_id = None
+
+    def execute(self, query, params=None):
+        sql = str(query)
+        if "DELETE FROM membership_module_permissions" in sql:
+            self.deleted_permissions_for = int(params[0])
+            self.rowcount = 3
+            return
+        if "DELETE FROM user_memberships" in sql:
+            self.deleted_membership_id = int(params[0])
+            self.rowcount = 1
+            return
+        raise AssertionError(f"Unexpected SQL: {sql}")
+
+    def fetchone(self):
+        return None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
 class _Conn:
     def __init__(self, cursor):
         self._cursor = cursor
@@ -140,6 +169,55 @@ class TeamMembershipLifecycleServiceTests(unittest.TestCase):
             actor = AuthUser(email="subadmin@example.com", role="subaccount_admin", allowed_subaccount_ids=(4,), access_scope="subaccount")
             with self.assertRaisesRegex(RuntimeError, "moștenit"):
                 team_members_service.deactivate_membership(membership_id=9, actor_user=actor)
+        finally:
+            team_members_service.get_membership_detail = original_get
+
+
+    def test_remove_membership_success_deletes_membership_and_permissions(self):
+        original_get = team_members_service.get_membership_detail
+        original_connect = team_members_service._connect
+        cursor = _CursorRemoveMembership()
+        conn = _Conn(cursor)
+        try:
+            team_members_service.get_membership_detail = lambda **kwargs: {
+                "membership_id": 75,
+                "is_inherited": False,
+            }
+            team_members_service._connect = lambda: conn
+            actor = AuthUser(email="admin@example.com", role="agency_admin", membership_id=1, membership_ids=(1,))
+            result = team_members_service.remove_membership(membership_id=75, actor_user=actor)
+            self.assertTrue(result["removed"])
+            self.assertEqual(result["membership_id"], 75)
+            self.assertEqual(cursor.deleted_permissions_for, 75)
+            self.assertEqual(cursor.deleted_membership_id, 75)
+            self.assertTrue(conn.committed)
+        finally:
+            team_members_service.get_membership_detail = original_get
+            team_members_service._connect = original_connect
+
+    def test_remove_membership_rejects_inherited_access(self):
+        original_get = team_members_service.get_membership_detail
+        try:
+            team_members_service.get_membership_detail = lambda **kwargs: {
+                "membership_id": 10,
+                "is_inherited": True,
+            }
+            actor = AuthUser(email="subadmin@example.com", role="subaccount_admin", membership_id=2, membership_ids=(2,))
+            with self.assertRaisesRegex(RuntimeError, "moștenit"):
+                team_members_service.remove_membership(membership_id=10, actor_user=actor)
+        finally:
+            team_members_service.get_membership_detail = original_get
+
+    def test_remove_membership_rejects_current_session_membership(self):
+        original_get = team_members_service.get_membership_detail
+        try:
+            team_members_service.get_membership_detail = lambda **kwargs: {
+                "membership_id": 33,
+                "is_inherited": False,
+            }
+            actor = AuthUser(email="admin@example.com", role="agency_admin", membership_id=33, membership_ids=(33, 34))
+            with self.assertRaisesRegex(RuntimeError, "propriul membership"):
+                team_members_service.remove_membership(membership_id=33, actor_user=actor)
         finally:
             team_members_service.get_membership_detail = original_get
 

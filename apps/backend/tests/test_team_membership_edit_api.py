@@ -245,6 +245,88 @@ class TeamMembershipEditApiTests(unittest.TestCase):
         finally:
             team_api.team_members_service.deactivate_membership = original
 
+
+    def test_remove_membership_success(self):
+        user = AuthUser(email="admin@example.com", role="agency_admin")
+        original = team_api.team_members_service.remove_membership
+        try:
+            team_api.team_members_service.remove_membership = lambda **kwargs: {
+                "membership_id": 144,
+                "removed": True,
+                "message": "Membership eliminat",
+            }
+            resp = team_api.remove_team_membership(membership_id=144, user=user)
+            self.assertEqual(resp.membership_id, 144)
+            self.assertTrue(resp.removed)
+            self.assertEqual(resp.message, "Membership eliminat")
+        finally:
+            team_api.team_members_service.remove_membership = original
+
+    def test_remove_membership_inherited_conflict(self):
+        user = AuthUser(email="sub-admin@example.com", role="subaccount_admin", allowed_subaccount_ids=(7,), access_scope="subaccount")
+        original = team_api.team_members_service.remove_membership
+        try:
+            team_api.team_members_service.remove_membership = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("Access moștenit: acest membership nu poate fi eliminat local"))
+            with self.assertRaises(team_api.HTTPException) as ctx:
+                team_api.remove_team_membership(membership_id=63, user=user)
+            self.assertEqual(ctx.exception.status_code, 409)
+        finally:
+            team_api.team_members_service.remove_membership = original
+
+    def test_remove_membership_self_conflict(self):
+        user = AuthUser(email="admin@example.com", role="agency_admin")
+        original = team_api.team_members_service.remove_membership
+        try:
+            team_api.team_members_service.remove_membership = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("Nu îți poți elimina propriul membership din sesiunea curentă"))
+            with self.assertRaises(team_api.HTTPException) as ctx:
+                team_api.remove_team_membership(membership_id=101, user=user)
+            self.assertEqual(ctx.exception.status_code, 409)
+        finally:
+            team_api.team_members_service.remove_membership = original
+
+
+    def test_get_membership_detail_returns_404_after_remove(self):
+        user = AuthUser(email="admin@example.com", role="agency_admin")
+        original_get = team_api.team_members_service.get_membership_detail
+        original_remove = team_api.team_members_service.remove_membership
+        state = {"exists": True}
+        try:
+            def _get(**kwargs):
+                if not state["exists"]:
+                    return None
+                return {
+                    "membership_id": 77,
+                    "user_id": 8,
+                    "scope_type": "subaccount",
+                    "subaccount_id": 12,
+                    "subaccount_name": "Client 12",
+                    "role_key": "subaccount_user",
+                    "role_label": "Subaccount User",
+                    "module_keys": ["dashboard"],
+                    "source_scope": "subaccount",
+                    "is_inherited": False,
+                    "membership_status": "active",
+                    "first_name": "Ana",
+                    "last_name": "Pop",
+                    "email": "ana@example.com",
+                    "phone": "",
+                    "extension": "",
+                }
+
+            def _remove(**kwargs):
+                state["exists"] = False
+                return {"membership_id": 77, "removed": True, "message": "Membership eliminat"}
+
+            team_api.team_members_service.get_membership_detail = _get
+            team_api.team_members_service.remove_membership = _remove
+            team_api.remove_team_membership(membership_id=77, user=user)
+            with self.assertRaises(team_api.HTTPException) as ctx:
+                team_api.get_team_membership_detail(membership_id=77, user=user)
+            self.assertEqual(ctx.exception.status_code, 404)
+        finally:
+            team_api.team_members_service.get_membership_detail = original_get
+            team_api.team_members_service.remove_membership = original_remove
+
     def test_subaccount_user_cannot_deactivate_memberships(self):
         user = AuthUser(email="sub-user@example.com", role="subaccount_user", allowed_subaccount_ids=(7,), access_scope="subaccount")
         with self.assertRaises(team_api.HTTPException) as ctx:
