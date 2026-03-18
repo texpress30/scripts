@@ -25,6 +25,7 @@ from app.services.auth import AuthUser
 from app.services.auth_email_tokens import auth_email_tokens_service
 from app.services.client_registry import client_registry_service
 from app.services.mailgun_service import MailgunIntegrationError, mailgun_service
+from app.services.email_notifications import email_notifications_service
 from app.services.email_templates import email_templates_service
 from app.services.team_members import team_members_service
 
@@ -331,6 +332,26 @@ def invite_team_member(membership_id: int, user: AuthUser = Depends(get_current_
             details={"reason": "mailgun_unavailable", "status_code": exc.status_code},
         )
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Invitația nu este disponibilă momentan") from exc
+
+    runtime_notification = email_notifications_service.resolve_runtime_notification(notification_key="team_invite_user")
+    if runtime_notification is None:
+        audit_log_service.log(
+            actor_email=user.email,
+            actor_role=user.role,
+            action="team.invite.failed",
+            resource=f"team:membership:{membership_id}",
+            details={"reason": "notification_missing", "notification_key": "team_invite_user"},
+        )
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Invitația nu este disponibilă momentan")
+    if not runtime_notification.enabled:
+        audit_log_service.log(
+            actor_email=user.email,
+            actor_role=user.role,
+            action="team.invite.blocked",
+            resource=f"team:membership:{membership_id}",
+            details={"reason": "notification_disabled", "notification_key": runtime_notification.key},
+        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Notificarea de invitație este dezactivată")
 
     settings = load_settings()
     frontend_base_url = str(settings.frontend_base_url or "").strip()
