@@ -4951,7 +4951,7 @@ Plan verified: implement enforcement helper in dependencies, apply it to current
 - [ ] Enforce grant ceiling for subaccount-scoped actors on module updates.
 - [ ] Reject agency membership `module_keys`, invalid/empty module lists, and inherited/non-editable targets.
 - [ ] Add/adjust backend tests for new endpoints and update rules + regression coverage for list/create/invite.
-- [ ] Run backend tests + backend startup check.
+- [x] Run backend tests + backend startup check.
 - [ ] Document review/results and intentional next-step scope.
 
 ### Check-in before execution
@@ -5206,3 +5206,27 @@ Plan verified: backend-first incremental change, no major UI redesign, no new pr
 - [x] Preserved DB precedence over env, while allowing env-only effective availability for Email Templates test-send and integrations status.
 - [x] Added targeted backend/frontend tests and validated backend startup plus frontend build.
 - [x] Intentionally left out: redesign major, new providers, and changes to unrelated auth/team flows.
+
+# TODO — Backend foundation Agency Email Notifications settings (2026-03-18)
+
+- [x] Re-read existing email templates backend files (service/api/schemas/main) for architecture and contract alignment.
+- [x] Add new backend service `email_notifications.py` with canonical catalog (`auth_forgot_password`, `team_invite_user`) and agency-level defaults.
+- [x] Add idempotent persistence table `agency_email_notifications` with unique `(notification_key, scope_key)` override semantics.
+- [x] Implement effective read model (default vs override) exposing `enabled`, `is_overridden`, `updated_at`.
+- [x] Add backend schemas and API endpoints: list/detail/save/reset under `/agency/email-notifications`.
+- [x] Enforce admin/global-admin RBAC parity with Email Templates and explicit 404/400 behavior.
+- [x] Keep runtime forgot/invite flows unchanged (no migration to notifications in this task).
+- [x] Add targeted backend tests for schema, list/detail/save/reset, invalid key, RBAC, and no-regression for existing email templates endpoints.
+- [x] Run backend tests + backend startup check.
+- [x] Update task notes/lessons, commit, and create PR via `make_pr`.
+
+## Check-in before execution
+Plan verified: backend-only incremental foundation (catalog + override storage + CRUD endpoints), no frontend and no runtime flow migration in this step.
+
+
+## Review
+- [x] Added backend-only notifications foundation with canonical catalog and agency override storage (`agency_email_notifications`).
+- [x] Added CRUD-style agency endpoints (list/detail/save/reset) with RBAC aligned to Email Templates.
+- [x] Preserved current runtime behavior: forgot-password and invite flows are unchanged in this step.
+- [x] Added focused backend tests + startup validation and explicit no-regression check for existing email templates endpoint contract.
+- [x] Intentionally left out: any Notifications UI and runtime flow migration to notifications settings.
