@@ -388,3 +388,4 @@
 - 2026-03-18: Când userul cere explicit scope minim backend-only, livrează strict endpoint+service+teste cerute și evită extinderi UI/workflow; validează criteriile de protecție (inherited/self/RBAC) înainte de commit.
 - 2026-03-18: Pentru task-uri cu cerință explicită de PR non-placeholder, după `make_pr` validează imediat title/body și pregătește fallback GitHub REST API (`curl`) când `gh` nu este disponibil.
 - 2026-03-18: Când taskul cere explicit implementare pe o pagină target (ex. Sub-account Team), evită extinderea în alte pagini și reutilizează helperii comuni existenți fără duplicare de API helpers.
+- 2026-03-18: Când utilizatorul cere explicit "backend minimal foundation" (read-only catalog + list/detail), păstrează patch-ul strict la service/router/scheme/teste backend și evită orice UI, DB overrides sau migrare a fluxurilor existente în același task.

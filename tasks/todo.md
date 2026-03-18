@@ -4992,3 +4992,22 @@ Plan verified: confine code changes to sub-account team page + tests (and shared
 ## Review
 - [x] Added a focused housekeeping entry documenting this cycle.
 - [x] Scope intentionally limited to `tasks/todo.md` to keep the change minimal and reviewable.
+
+---
+
+# TODO — Backend foundation read-only Email Templates catalog
+
+- [x] Re-read `apps/backend/app/api/auth.py`, `apps/backend/app/api/team.py`, and `apps/backend/app/main.py` for routing/RBAC patterns.
+- [x] Add minimal canonical read-only email templates catalog service (`auth_forgot_password`, `team_invite_user`).
+- [x] Add backend read-only agency endpoints for list and detail with admin/global-admin enforcement.
+- [x] Add targeted backend tests for list/detail/invalid-key/RBAC.
+- [x] Run targeted backend tests and backend startup check.
+- [x] Commit changes and create PR metadata.
+
+### Check-in before execution
+Plan verified: backend-only minimal foundation, no UI, no DB tables/overrides, no forgot/invite migration in this step.
+
+## Review
+- [x] Added backend-only read-only email templates foundation with canonical in-code catalog and agency endpoints.
+- [x] Kept scope strict: no UI, no DB persistence/overrides, no forgot/invite migration, no mailgun service changes.
+- [x] Verified with targeted backend tests plus startup import check.
