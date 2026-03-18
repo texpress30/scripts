@@ -687,7 +687,7 @@ class TeamMembersService:
             clauses.append("(LOWER(um.subaccount_name) = LOWER(%s) OR CAST(COALESCE(um.subaccount_id, -1) AS TEXT) = %s)")
             values.extend([subaccount.strip(), subaccount.strip()])
 
-        where_sql = f"WHERE {' AND '.join(clauses)}"
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         offset = (page - 1) * page_size
 
         with self._connect() as conn:
