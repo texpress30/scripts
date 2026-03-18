@@ -809,6 +809,103 @@ describe("Settings team page subaccount integration", () => {
     expect(apiRequestMock.mock.calls.some((call) => call[0] === "/team/members/104" && call[1]?.method === "PATCH")).toBe(false);
   });
 
+
+
+  it("opens edit mode and fetches membership detail by membership_id", async () => {
+    render(<SettingsTeamPage />);
+
+    const editButtons = await screen.findAllByRole("button", { name: "Editează" });
+    fireEvent.click(editButtons[0]);
+
+    await waitFor(() => {
+      expect(apiRequestMock).toHaveBeenCalledWith("/team/members/101");
+    });
+
+    expect(screen.getByRole("button", { name: "Salvează" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Prenume" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: "Nume" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: /Email/i })).toBeDisabled();
+  });
+
+  it("renders subaccount edit with preselected modules and sends PATCH user_role + module_keys", async () => {
+    apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
+      if (path.startsWith("/team/members?")) {
+        return Promise.resolve({
+          items: [{ id: 103, membership_id: 103, user_id: 203, first_name: "Mihai", last_name: "Pop", email: "mihai@example.com", phone: "", extension: "", user_type: "client", user_role: "member", location: "România", subaccount: "Client Alpha" }],
+          total: 1,
+          page: 1,
+          page_size: 10,
+        });
+      }
+      if (path === "/team/subaccount-options") return Promise.resolve({ items: [{ id: 2, name: "Client Alpha", label: "#11 — Client Alpha" }] });
+      if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [
+        { key: "dashboard", label: "Dashboard", order: 1, scope: "subaccount" },
+        { key: "creative", label: "Creative", order: 4, scope: "subaccount" },
+        { key: "rules", label: "Rules", order: 3, scope: "subaccount" },
+      ]});
+      if (path === "/team/members/103") return Promise.resolve({ item: {
+        membership_id: 103, user_id: 203, scope_type: "subaccount", subaccount_id: 2, subaccount_name: "Client Alpha", role_key: "subaccount_user", role_label: "Subaccount User", module_keys: ["dashboard", "creative"], source_scope: "subaccount", is_inherited: false, first_name: "Mihai", last_name: "Pop", email: "mihai@example.com", phone: "", extension: "",
+      }});
+      if (path === "/team/members/103" && options?.method === "PATCH") {
+        return Promise.resolve({ item: {
+          membership_id: 103, user_id: 203, scope_type: "subaccount", subaccount_id: 2, subaccount_name: "Client Alpha", role_key: "subaccount_viewer", role_label: "Subaccount Viewer", module_keys: ["dashboard"], source_scope: "subaccount", is_inherited: false, first_name: "Mihai", last_name: "Pop", email: "mihai@example.com", phone: "", extension: "",
+        }});
+      }
+      return Promise.reject(new Error(`Unexpected path: ${path}`));
+    });
+
+    render(<SettingsTeamPage />);
+    const editButton = await screen.findByRole("button", { name: "Editează" });
+    fireEvent.click(editButton);
+
+    const dashboard = await screen.findByLabelText("Dashboard");
+    const creative = await screen.findByLabelText("Creative");
+    expect(dashboard).toBeChecked();
+    expect(creative).toBeChecked();
+
+    fireEvent.click(creative);
+    fireEvent.change(screen.getByRole("combobox", { name: "Rol Utilizator" }), { target: { value: "viewer" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+
+    await waitFor(() => {
+      const patchCall = apiRequestMock.mock.calls.find((call) => call[0] === "/team/members/103" && call[1]?.method === "PATCH");
+      expect(patchCall).toBeTruthy();
+      const body = JSON.parse(String(patchCall?.[1]?.body ?? "{}"));
+      expect(body.user_role).toBe("subaccount_viewer");
+      expect(body.module_keys).toEqual(["dashboard"]);
+    });
+  });
+
+  it("blocks inherited membership edit and handles 409 clearly", async () => {
+    apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
+      if (path.startsWith("/team/members?")) {
+        return Promise.resolve({
+          items: [{ id: 104, membership_id: 104, user_id: 204, first_name: "Inh", last_name: "User", email: "inh@example.com", phone: "", extension: "", user_type: "client", user_role: "member", location: "România", subaccount: "Client Beta" }],
+          total: 1,
+          page: 1,
+          page_size: 10,
+        });
+      }
+      if (path === "/team/subaccount-options") return Promise.resolve({ items: [{ id: 3, name: "Client Beta", label: "Client Beta" }] });
+      if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [{ key: "dashboard", label: "Dashboard", order: 1, scope: "subaccount" }] });
+      if (path === "/team/members/104") return Promise.resolve({ item: {
+        membership_id: 104, user_id: 204, scope_type: "subaccount", subaccount_id: 3, subaccount_name: "Client Beta", role_key: "subaccount_user", role_label: "Subaccount User", module_keys: ["dashboard"], source_scope: "subaccount", is_inherited: true, first_name: "Inh", last_name: "User", email: "inh@example.com", phone: "", extension: "",
+      }});
+      if (path === "/team/members/104" && options?.method === "PATCH") {
+        return Promise.reject(new ApiRequestError("Access moștenit: acest membership nu poate fi editat local", 409));
+      }
+      return Promise.reject(new Error(`Unexpected path: ${path}`));
+    });
+
+    render(<SettingsTeamPage />);
+    const editButton = await screen.findByRole("button", { name: "Editează" });
+    fireEvent.click(editButton);
+
+    expect(await screen.findByText(/nu poate fi editat aici/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+    expect(apiRequestMock.mock.calls.some((call) => call[0] === "/team/members/104" && call[1]?.method === "PATCH")).toBe(false);
+  });
+
   it("renders invite action and sends invite with membership id", async () => {
     render(<SettingsTeamPage />);
 
