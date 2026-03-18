@@ -1,3 +1,23 @@
+# TODO — Refine Agency Email Templates into notification-style admin UI
+
+- [x] Refresh workspace and re-read AppShell, agency email templates page, frontend API helper, and backend email template contract files.
+- [x] Refactor `/agency/email-templates` UI into clearer notification-style layout: overview list + selectable detail/edit panel.
+- [x] Keep existing backend contract/routing and existing forgot/reset/invite flows unchanged.
+- [x] Improve overview cards with label, description, enabled status, default/overridden indicator, and updated timestamp.
+- [x] Improve detail panel grouping and keep editable fields (`subject`, `text_body`, `html_body`, `enabled`) plus read-only metadata.
+- [x] Add/refresh focused frontend tests for sidebar nav presence, overview render, select/detail load, save/reset flows, loading states, and 403/404/400 handling.
+- [x] Run relevant frontend tests and frontend build.
+- [x] Update task notes/review and capture lessons for this correction cycle.
+- [x] Commit changes and create PR via `make_pr` with exact required title/body.
+
+## Review
+- [x] Agency page now presents an explicit `Email Templates & Notifications` admin UX while preserving existing route and API contract.
+- [x] Overview behaves like configurable notification/template list with clear status and override badges.
+- [x] Detail panel keeps current editing capabilities and introduces clearer metadata/variables presentation.
+- [x] Added focused tests for selection, status/override badges, save/reset behavior, loading states, and explicit API error mapping.
+- [x] Verification executed with targeted frontend Vitest suite + frontend build.
+- [x] Intentionally left out for next tasks: rich editor/WYSIWYG, template preview rendering, test-send actions, dedicated notification-settings backend.
+
 # TODO — Sub-account Team UI remove membership + explicit PR output
 
 - [x] Refresh workspace and inspect Sub-account Team page, shared API helper, and backend remove contract.

@@ -1,5 +1,5 @@
 import React from "react";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import AgencyEmailTemplatesPage from "./page";
@@ -58,7 +58,7 @@ describe("AgencyEmailTemplatesPage", () => {
           label: "Team · Invite User",
           description: "Invite template",
           scope: "agency",
-          enabled: true,
+          enabled: false,
           is_overridden: true,
           updated_at: "2026-03-18T10:00:00+00:00",
         },
@@ -79,46 +79,31 @@ describe("AgencyEmailTemplatesPage", () => {
       updated_at: null,
     }));
 
-    saveAgencyEmailTemplateMock.mockImplementation(async (key: string, payload: unknown) => ({
-      key,
-      label: "Saved",
-      description: "Saved",
-      ...(payload as object),
-      available_variables: ["reset_link", "expires_minutes", "user_email"],
-      scope: "agency",
-      is_overridden: true,
-      updated_at: "2026-03-18T12:00:00+00:00",
-    }));
-
-    resetAgencyEmailTemplateMock.mockResolvedValue({
-      key: "auth_forgot_password",
-      label: "Auth · Forgot Password",
-      description: "Forgot template",
-      subject: "Resetează parola",
-      text_body: "Default text",
-      html_body: "<p>Default html</p>",
-      available_variables: ["reset_link", "expires_minutes", "user_email"],
-      scope: "agency",
-      enabled: true,
-      is_overridden: false,
-      updated_at: null,
-    });
+    saveAgencyEmailTemplateMock.mockResolvedValue({});
+    resetAgencyEmailTemplateMock.mockResolvedValue({});
   });
 
-  it("loads list via GET and loads detail for selected template", async () => {
+  it("renders notification-style title and list overview badges", async () => {
     render(<AgencyEmailTemplatesPage />);
 
-    expect(screen.getByTestId("app-shell-title")).toHaveTextContent("Email Templates");
-    expect(getAgencyEmailTemplatesMock).toHaveBeenCalledTimes(1);
-
+    expect(screen.getByTestId("app-shell-title")).toHaveTextContent("Email Templates & Notifications");
     expect(await screen.findByText("Auth · Forgot Password")).toBeInTheDocument();
-    await waitFor(() => expect(getAgencyEmailTemplateMock).toHaveBeenCalledWith("auth_forgot_password"));
-
-    fireEvent.click(screen.getByRole("button", { name: /Team · Invite User/i }));
-    await waitFor(() => expect(getAgencyEmailTemplateMock).toHaveBeenCalledWith("team_invite_user"));
+    expect(screen.getAllByText("Enabled").length).toBeGreaterThan(0);
+    expect(screen.getByText("Disabled")).toBeInTheDocument();
+    expect(screen.getAllByText("Default").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Overridden").length).toBeGreaterThan(0);
   });
 
-  it("save sends PUT payload and shows success feedback", async () => {
+  it("selects item and loads detail panel", async () => {
+    render(<AgencyEmailTemplatesPage />);
+
+    await waitFor(() => expect(getAgencyEmailTemplateMock).toHaveBeenCalledWith("auth_forgot_password"));
+    fireEvent.click(screen.getByRole("button", { name: /Team · Invite User/i }));
+    await waitFor(() => expect(getAgencyEmailTemplateMock).toHaveBeenCalledWith("team_invite_user"));
+    expect(await screen.findByDisplayValue("Invite subject")).toBeInTheDocument();
+  });
+
+  it("saves changes and refetches list/detail", async () => {
     render(<AgencyEmailTemplatesPage />);
 
     await screen.findByDisplayValue("Reset subject");
@@ -133,11 +118,12 @@ describe("AgencyEmailTemplatesPage", () => {
         enabled: true,
       });
     });
-
     expect(await screen.findByText("Template salvat cu succes.")).toBeInTheDocument();
+    expect(getAgencyEmailTemplatesMock).toHaveBeenCalledTimes(2);
+    expect(getAgencyEmailTemplateMock).toHaveBeenCalledTimes(2);
   });
 
-  it("reset sends POST reset and shows success feedback", async () => {
+  it("resets to default and refetches list/detail", async () => {
     render(<AgencyEmailTemplatesPage />);
 
     await screen.findByDisplayValue("Reset subject");
@@ -145,9 +131,10 @@ describe("AgencyEmailTemplatesPage", () => {
 
     await waitFor(() => expect(resetAgencyEmailTemplateMock).toHaveBeenCalledWith("auth_forgot_password"));
     expect(await screen.findByText("Template resetat la valorile implicite.")).toBeInTheDocument();
+    expect(getAgencyEmailTemplatesMock).toHaveBeenCalledTimes(2);
   });
 
-  it("shows loading states for list and detail", async () => {
+  it("shows loading state for list", async () => {
     let resolveList: ((value: unknown) => void) | null = null;
     getAgencyEmailTemplatesMock.mockReturnValue(
       new Promise((resolve) => {
@@ -162,6 +149,34 @@ describe("AgencyEmailTemplatesPage", () => {
     expect(await screen.findByText("Nu există template-uri disponibile.")).toBeInTheDocument();
   });
 
+  it("shows loading state for detail", async () => {
+    let resolveDetail: ((value: unknown) => void) | null = null;
+    getAgencyEmailTemplateMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveDetail = resolve;
+      }),
+    );
+
+    render(<AgencyEmailTemplatesPage />);
+    expect(await screen.findByText("Se încarcă detaliile...")).toBeInTheDocument();
+
+    resolveDetail?.({
+      key: "auth_forgot_password",
+      label: "Auth · Forgot Password",
+      description: "Forgot template",
+      subject: "Reset subject",
+      text_body: "Reset text",
+      html_body: "<p>Reset html</p>",
+      available_variables: ["reset_link"],
+      scope: "agency",
+      enabled: true,
+      is_overridden: false,
+      updated_at: null,
+    });
+
+    expect(await screen.findByDisplayValue("Reset subject")).toBeInTheDocument();
+  });
+
   it("handles 403 list error clearly", async () => {
     getAgencyEmailTemplatesMock.mockRejectedValueOnce(new ApiRequestError("forbidden", 403));
     render(<AgencyEmailTemplatesPage />);
@@ -169,21 +184,7 @@ describe("AgencyEmailTemplatesPage", () => {
   });
 
   it("handles 404 detail error clearly", async () => {
-    getAgencyEmailTemplatesMock.mockResolvedValueOnce({
-      items: [
-        {
-          key: "auth_forgot_password",
-          label: "Auth · Forgot Password",
-          description: "Forgot template",
-          scope: "agency",
-          enabled: true,
-          is_overridden: false,
-          updated_at: null,
-        },
-      ],
-    });
     getAgencyEmailTemplateMock.mockRejectedValueOnce(new ApiRequestError("missing", 404));
-
     render(<AgencyEmailTemplatesPage />);
     expect(await screen.findByText("Template-ul selectat nu a fost găsit.")).toBeInTheDocument();
   });
