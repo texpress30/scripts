@@ -369,3 +369,38 @@
 - 2026-03-17: După feedback de tip "unsatisfied" pe PR anterior, re-verific strict scope-ul cerut (evită schimbări extra), apoi livrează incremental cu teste țintite exact pe cerințe înainte de commit/PR.
 - 2026-03-17: La UI condițional cu secțiuni similare textual (ex. "Roluri și Permisiuni" în sidebar + content), în teste validează prezența controalelor funcționale (checkbox/toggle) în locul textului comun pentru a evita false-positive.
 - 2026-03-17: După feedback de tip "unsatisfied", livrează strict pe scope-ul nou cerut (fără zone adiacente) și include explicit contractele UI↔API necesare în teste (payload + grant ceiling) înainte de commit/PR.
+
+## 2026-03-17 — After user correction: avoid placeholder-only PR state
+- Pattern: User was unsatisfied with prior output where progress was not reflected as substantive feature implementation.
+- Rule: For feature requests, always implement code + tests end-to-end before finalizing; never leave a docs-only/placeholder-style change when concrete scope was requested.
+- Rule: Validate requested behavioral outcomes explicitly (not only command execution), and summarize any remaining scope as intentional next-task items.
+- 2026-03-17: După feedback de tip "unsatisfied" pe enforcement backend, mapează explicit fiecare modul din sidebar către endpointuri backend reale folosite de UI (inclusiv endpoint dedicat când mapping-ul lipsește), nu te baza doar pe filtrare frontend.
+- 2026-03-17: După feedback de tip "unsatisfied" pe foundation backend membership edit, păstrează strict modelul pe `membership` (nu `user identity`) și validează explicit prin teste separate agency vs subaccount vs inherited înainte de commit.
+- 2026-03-17: După feedback pe taskul UI edit Agency Team, reutilizează form-ul existent pentru edit fără redesign, dar mapează strict payload-ul PATCH la câmpurile suportate de backend și blochează explicit câmpurile identity în UI.
+
+## 2026-03-17 — Recovery after unsatisfactory prior PR
+- When a user signals the previous PR was unsatisfactory, explicitly re-validate scope boundaries first (what must change vs what must stay untouched), then map each requirement to tests before coding.
+- For lifecycle tasks, verify both state transition endpoints and all read/access consumers (login, access-context, grantable modules, list/detail contracts), not just write paths.
+
+- 2026-03-17: Pentru lifecycle actions în tabele existente, mock-uiește explicit helperii noi din `@/lib/api` în teste (nu doar `apiRequest`), altfel funcțiile reale pot folosi `fetch` și dau erori de URL în test runner.
+
+- 2026-03-17: Pentru teste lifecycle pe rânduri de tabel, evită scenarii multi-eroare într-un singur test când list-refetch schimbă datele; split în teste mici (403/404/409 separat) pentru stabilitate și diagnoză rapidă.
+- 2026-03-18: Când userul cere explicit scope minim backend-only, livrează strict endpoint+service+teste cerute și evită extinderi UI/workflow; validează criteriile de protecție (inherited/self/RBAC) înainte de commit.
+- 2026-03-18: Pentru task-uri cu cerință explicită de PR non-placeholder, după `make_pr` validează imediat title/body și pregătește fallback GitHub REST API (`curl`) când `gh` nu este disponibil.
+- 2026-03-18: Când taskul cere explicit implementare pe o pagină target (ex. Sub-account Team), evită extinderea în alte pagini și reutilizează helperii comuni existenți fără duplicare de API helpers.
+- 2026-03-18: Când utilizatorul cere explicit "backend minimal foundation" (read-only catalog + list/detail), păstrează patch-ul strict la service/router/scheme/teste backend și evită orice UI, DB overrides sau migrare a fluxurilor existente în același task.
+- 2026-03-18: După feedback "unsatisfied" pe Email Templates, livrează incremental backend în doi pași separați (read-only catalog, apoi DB overrides + save/reset), cu teste explicite pentru fallback default vs override și fără migrarea fluxurilor forgot/invite în același task.
+- 2026-03-18: Pentru migrarea emailurilor operaționale la template-uri DB-backed, introduce mai întâi un renderer deterministic simplu (`{{var}}`) în service, apoi conectează incremental fiecare flow (forgot/invite) cu fallback default, gating pe `enabled`, și teste explicite pe text+html.
+- 2026-03-18: Pentru task-uri UI admin peste API deja existent (ex. Email Templates), livrează întâi un editor simplu list/detail/save/reset cu stări clare (loading/error/success) și teste pe contracte API, lăsând preview/test-send/WYSIWYG pentru pași ulteriori.
+- 2026-03-18: După feedback "unsatisfied" pe un PR full-stack, următorul increment trebuie să fie strict pe UX-ul cerut (frontend-only, contract backend existent), cu teste țintite pe stările cerute și fără extinderi backend premature.
+- 2026-03-18: Pentru taskuri de preview render peste template-uri existente, livrează endpoint dedicat + sample variables canonice + wiring UI Preview cu teste pentru draft payload și erori, fără a adăuga test-send în același pas.
+- 2026-03-18: Pentru incrementalul de test-send pe Email Templates, reutilizează render preview + sample variables existente și tratează explicit regula "enabled=false permite test send" ca behavior documentat și testat.
+- 2026-03-18: Pentru WYSIWYG incremental pe câmp HTML existent, preferă implementare lightweight fără dependențe grele când proiectul nu are editor existent; păstrează toggle Visual/HTML și verifică explicit că preview/test-send folosesc draftul curent.
+
+- 2026-03-18: După un mesaj de corecție cu reguli AGENTS, oprește execuția curentă și aliniază imediat workflow-ul (plan în `tasks/todo.md`, verificare scope, commit+PR), fără a presupune că starea precedentă este încă validă.
+- 2026-03-18: Când un item Agency trebuie mutat în Settings fără schimbare de rută, tratează ruta respectivă ca settings context în AppShell și mută link-ul în `AGENCY_SETTINGS_ITEMS`, astfel încât navigarea rămâne coerentă și testabilă.
+- 2026-03-18: Pentru integrare sensibilă la secrete (Mailgun), păstrează precedence DB > env, dar expune explicit `config_source` și oferă endpoint admin de bootstrap din env în DB pentru migrare fără dublă introducere manuală.
+- 2026-03-18: Pentru foundation notifications separat de templates, livrează întâi modelul backend (catalog + override `enabled` + CRUD + RBAC + teste) și păstrează explicit flow-urile runtime neschimbate până la taskul de migrare.
+- 2026-03-18: Pentru test-send prin provider extern (Mailgun), răspunsul/UI trebuie să declare explicit "accepted" (nu "delivered") și să expună diagnostice minime (`provider_id`, `provider_message`, `delivery_status`) + hint pentru sandbox domains.
+- 2026-03-18: După corecții AGENTS, verifică imediat `git status` și livrează final doar după pașii obligatorii complet executați (teste, commit, `make_pr`) + raport final cu citări pe fișiere/linie.
+- 2026-03-18: Pentru cleanup UX incremental, elimină controalele duplicate dintre Integrations și Email Templates (ex. test-send) doar din UI-ul redundant, fără să ștergi backend-ul dacă poate fi reutilizat de alte ecrane.

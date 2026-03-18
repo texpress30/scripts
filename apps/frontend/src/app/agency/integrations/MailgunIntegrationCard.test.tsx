@@ -7,7 +7,6 @@ import { MailgunIntegrationCard } from "./MailgunIntegrationCard";
 const apiMock = vi.hoisted(() => ({
   getMailgunStatus: vi.fn(),
   saveMailgunConfig: vi.fn(),
-  sendMailgunTestEmail: vi.fn(),
 }));
 
 vi.mock("@/lib/api", async () => {
@@ -16,7 +15,6 @@ vi.mock("@/lib/api", async () => {
     ...actual,
     getMailgunStatus: (...args: unknown[]) => apiMock.getMailgunStatus(...args),
     saveMailgunConfig: (...args: unknown[]) => apiMock.saveMailgunConfig(...args),
-    sendMailgunTestEmail: (...args: unknown[]) => apiMock.sendMailgunTestEmail(...args),
   };
 });
 
@@ -24,13 +22,13 @@ describe("MailgunIntegrationCard", () => {
   beforeEach(() => {
     apiMock.getMailgunStatus.mockReset();
     apiMock.saveMailgunConfig.mockReset();
-    apiMock.sendMailgunTestEmail.mockReset();
   });
 
   it("loads status and renders configured data with masked api key only", async () => {
     apiMock.getMailgunStatus.mockResolvedValueOnce({
       configured: true,
       enabled: true,
+      config_source: "db",
       domain: "mg.example.com",
       base_url: "https://api.mailgun.net",
       from_email: "noreply@example.com",
@@ -50,6 +48,7 @@ describe("MailgunIntegrationCard", () => {
     apiMock.getMailgunStatus.mockResolvedValueOnce({
       configured: false,
       enabled: false,
+      config_source: "none",
       domain: "",
       base_url: "",
       from_email: "",
@@ -68,6 +67,7 @@ describe("MailgunIntegrationCard", () => {
       .mockResolvedValueOnce({
         configured: false,
         enabled: false,
+        config_source: "none",
         domain: "",
         base_url: "",
         from_email: "",
@@ -78,6 +78,7 @@ describe("MailgunIntegrationCard", () => {
       .mockResolvedValueOnce({
         configured: true,
         enabled: true,
+        config_source: "db",
         domain: "mg.example.com",
         base_url: "https://api.mailgun.net",
         from_email: "noreply@example.com",
@@ -113,10 +114,11 @@ describe("MailgunIntegrationCard", () => {
     await waitFor(() => expect(apiMock.getMailgunStatus).toHaveBeenCalledTimes(2));
   });
 
-  it("sends test email request", async () => {
+  it("does not render test-email controls in integrations card", async () => {
     apiMock.getMailgunStatus.mockResolvedValueOnce({
       configured: true,
       enabled: true,
+      config_source: "db",
       domain: "mg.example.com",
       base_url: "https://api.mailgun.net",
       from_email: "noreply@example.com",
@@ -124,21 +126,12 @@ describe("MailgunIntegrationCard", () => {
       reply_to: "",
       api_key_masked: "key***ret",
     });
-    apiMock.sendMailgunTestEmail.mockResolvedValue({ ok: true });
 
     render(<MailgunIntegrationCard />);
     await screen.findByText("Domain: mg.example.com");
-
-    fireEvent.change(screen.getByLabelText(/To email/i), { target: { value: "test@example.com" } });
-    fireEvent.change(screen.getByLabelText(/Subject/i), { target: { value: "hello" } });
-    fireEvent.click(screen.getByRole("button", { name: "Test Email" }));
-
-    await waitFor(() => {
-      expect(apiMock.sendMailgunTestEmail).toHaveBeenCalledWith({
-        to_email: "test@example.com",
-        subject: "hello",
-      });
-    });
+    expect(screen.queryByText("Test Email")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Test Email" })).not.toBeInTheDocument();
+    expect(screen.getByText(/Test email is available from Email Templates/i)).toBeInTheDocument();
   });
 
   it("shows clear 403 status error", async () => {
@@ -148,5 +141,24 @@ describe("MailgunIntegrationCard", () => {
     render(<MailgunIntegrationCard />);
 
     expect(await screen.findByText("Nu ai acces la această integrare.")).toBeInTheDocument();
+  });
+
+  it("shows env-managed read-only state when config source is env", async () => {
+    apiMock.getMailgunStatus.mockResolvedValueOnce({
+      configured: true,
+      enabled: true,
+      config_source: "env",
+      domain: "mg.env.example.com",
+      base_url: "https://api.mailgun.net",
+      from_email: "env@example.com",
+      from_name: "Env Sender",
+      reply_to: "",
+      api_key_masked: "key***env",
+    });
+    render(<MailgunIntegrationCard />);
+    expect(await screen.findByText("Config source: env")).toBeInTheDocument();
+    expect(screen.getByText(/Managed by Railway env/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Configured in Railway" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /Salvează configurarea/i })).not.toBeInTheDocument();
   });
 });
