@@ -58,6 +58,19 @@ type ModuleCatalogItem = {
   key: string;
   label: string;
   order: number;
+  scope: "agency" | "subaccount";
+  group_key: string;
+  group_label: string;
+  parent_key?: string | null;
+  is_container: boolean;
+};
+
+type CatalogScope = "agency" | "subaccount";
+type ModuleGroup = {
+  key: string;
+  label: string;
+  order: number;
+  items: ModuleCatalogItem[];
 };
 
 const PAGE_SIZE = 10;
@@ -89,6 +102,35 @@ function roleKeyFromMode(userType: string, userRole: string): string {
   return "subaccount_user";
 }
 
+function activeScopeFromUserType(userType: string): CatalogScope {
+  return userType === "agency" ? "agency" : "subaccount";
+}
+
+function normalizeCatalogItems(items: TeamModuleCatalogItem[] | undefined, scope: CatalogScope): ModuleCatalogItem[] {
+  return (items ?? [])
+    .map((item) => ({
+      key: String(item.key ?? "").trim().toLowerCase(),
+      label: String(item.label ?? "").trim() || String(item.key ?? "").trim(),
+      order: Number(item.order ?? 0),
+      scope: scope,
+      group_key: String(item.group_key ?? "").trim().toLowerCase() || "main_nav",
+      group_label: String(item.group_label ?? "").trim() || "Main Navigation",
+      parent_key: String(item.parent_key ?? "").trim().toLowerCase() || null,
+      is_container: Boolean(item.is_container),
+    }))
+    .filter((item) => item.key !== "")
+    .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
+}
+
+function normalizeSelectedKeys(keys: string[]): string[] {
+  const out: string[] = [];
+  for (const key of keys) {
+    const normalized = String(key || "").trim().toLowerCase();
+    if (normalized && !out.includes(normalized)) out.push(normalized);
+  }
+  return out;
+}
+
 export default function SettingsTeamPage() {
   const [mode, setMode] = useState<"list" | "create" | "edit">("list");
 
@@ -107,7 +149,10 @@ export default function SettingsTeamPage() {
   const [subaccountOptions, setSubaccountOptions] = useState<SubaccountOption[]>([]);
   const [subaccountOptionsLoading, setSubaccountOptionsLoading] = useState(false);
   const [subaccountOptionsError, setSubaccountOptionsError] = useState("");
-  const [moduleCatalog, setModuleCatalog] = useState<ModuleCatalogItem[]>([]);
+  const [moduleCatalogByScope, setModuleCatalogByScope] = useState<Record<CatalogScope, ModuleCatalogItem[]>>({
+    agency: [],
+    subaccount: [],
+  });
   const [moduleCatalogLoading, setModuleCatalogLoading] = useState(false);
   const [moduleCatalogError, setModuleCatalogError] = useState("");
 
@@ -134,6 +179,8 @@ export default function SettingsTeamPage() {
   const [loadingEditDetail, setLoadingEditDetail] = useState(false);
   const [editLockedInherited, setEditLockedInherited] = useState(false);
   const [editOriginal, setEditOriginal] = useState<{ userRole: string; moduleKeys: string[] } | null>(null);
+  const activeScope = activeScopeFromUserType(userType);
+  const activeCatalog = moduleCatalogByScope[activeScope];
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / PAGE_SIZE)), [total]);
 
@@ -161,26 +208,15 @@ export default function SettingsTeamPage() {
     }
   }
 
-  async function loadModuleCatalog() {
+  async function loadModuleCatalog(scope: CatalogScope) {
     setModuleCatalogLoading(true);
     setModuleCatalogError("");
     try {
-      const data = await getTeamModuleCatalog("subaccount");
-      const normalized = (data.items ?? [])
-        .map((item: TeamModuleCatalogItem) => ({
-          key: String(item.key ?? "").trim().toLowerCase(),
-          label: String(item.label ?? "").trim() || String(item.key ?? "").trim(),
-          order: Number(item.order ?? 0),
-        }))
-        .filter((item) => item.key !== "")
-        .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
-      setModuleCatalog(normalized);
-      setSelectedModuleKeys((prev) => {
-        if (prev.length > 0) return prev;
-        return normalized.map((item) => item.key);
-      });
+      const data = await getTeamModuleCatalog(scope);
+      const normalized = normalizeCatalogItems(data.items, scope);
+      setModuleCatalogByScope((prev) => ({ ...prev, [scope]: normalized }));
     } catch (err) {
-      setModuleCatalog([]);
+      setModuleCatalogByScope((prev) => ({ ...prev, [scope]: [] }));
       setModuleCatalogError(err instanceof Error ? err.message : "Nu am putut încărca modulele disponibile.");
     } finally {
       setModuleCatalogLoading(false);
@@ -214,7 +250,8 @@ export default function SettingsTeamPage() {
 
   useEffect(() => {
     void loadSubaccountOptions();
-    void loadModuleCatalog();
+    void loadModuleCatalog("agency");
+    void loadModuleCatalog("subaccount");
   }, []);
 
   useEffect(() => {
@@ -227,9 +264,12 @@ export default function SettingsTeamPage() {
     if (userType === "agency") {
       setSubaccount("");
       setSubaccountFieldError("");
-      setModuleFieldError("");
     }
-  }, [userType]);
+    setModuleFieldError("");
+    if (mode === "create") {
+      setSelectedModuleKeys(activeCatalog.map((item) => item.key));
+    }
+  }, [userType, mode, activeCatalog]);
 
   function resetCreateForm() {
     setFirstName("");
@@ -243,7 +283,7 @@ export default function SettingsTeamPage() {
     setSubaccount("");
     setSubaccountFieldError("");
     setModuleFieldError("");
-    setSelectedModuleKeys(moduleCatalog.map((item) => item.key));
+    setSelectedModuleKeys(moduleCatalogByScope.agency.map((item) => item.key));
     setPassword("");
     setAutoInviteAfterCreate(false);
     setAdvancedOpen(false);
@@ -434,11 +474,20 @@ export default function SettingsTeamPage() {
       setExtension(detail.extension || "");
       setLocation("România");
       setSubaccount(detail.subaccount_id ? String(detail.subaccount_id) : "");
-      setUserType(detail.scope_type === "subaccount" ? "client" : "agency");
+      const scopeFromDetail: CatalogScope = detail.scope_type === "subaccount" ? "subaccount" : "agency";
+      setUserType(scopeFromDetail === "subaccount" ? "client" : "agency");
       setUserRole(roleValueFromKey(detail.role_key));
-      const normalizedKeys = (detail.module_keys ?? []).map((key) => String(key).trim().toLowerCase()).filter((key) => key !== "");
-      setSelectedModuleKeys(normalizedKeys);
-      setEditOriginal({ userRole: roleValueFromKey(detail.role_key), moduleKeys: normalizedKeys });
+      const catalogForScope = moduleCatalogByScope[scopeFromDetail];
+      if (catalogForScope.length === 0) {
+        void loadModuleCatalog(scopeFromDetail);
+      }
+      const normalizedKeys = normalizeSelectedKeys((detail.module_keys ?? []).map((key) => String(key)));
+      const filteredKeys = normalizeSelectedKeys(
+        normalizedKeys.filter((key) => catalogForScope.length === 0 || catalogForScope.some((item) => item.key === key)),
+      );
+      const coherentKeys = scopeFromDetail === "agency" ? applyAgencySettingsConsistency(filteredKeys) : filteredKeys;
+      setSelectedModuleKeys(coherentKeys);
+      setEditOriginal({ userRole: roleValueFromKey(detail.role_key), moduleKeys: [...coherentKeys].sort() });
       setEditLockedInherited(Boolean(detail.is_inherited));
       if (detail.is_inherited) {
         setErrorMessage("Acest access este moștenit și nu poate fi editat aici");
@@ -469,24 +518,21 @@ export default function SettingsTeamPage() {
     setErrorMessage("");
     setModuleFieldError("");
 
-    const isSubaccountMembership = userType === "client";
-    if (isSubaccountMembership && selectedModuleKeys.length === 0) {
+    const nextModules = normalizeSelectedKeys(selectedModuleKeys).filter((key) => activeCatalog.some((item) => item.key === key));
+    if (activeCatalog.length > 0 && nextModules.length === 0) {
       setSaving(false);
-      setModuleFieldError("Selectează cel puțin un modul pentru utilizatorul de tip client.");
+      setModuleFieldError("Selectează cel puțin o permisiune de navigare.");
       return;
     }
 
     const nextRole = userRole;
-    const nextModules = isSubaccountMembership
-      ? selectedModuleKeys.map((key) => key.trim().toLowerCase()).filter((key) => key !== "")
-      : [];
 
     const noRoleChange = editOriginal ? editOriginal.userRole === nextRole : false;
     const noModuleChange = editOriginal
       ? JSON.stringify([...editOriginal.moduleKeys].sort()) === JSON.stringify([...nextModules].sort())
       : false;
 
-    if (editOriginal && noRoleChange && (isSubaccountMembership ? noModuleChange : true)) {
+    if (editOriginal && noRoleChange && noModuleChange) {
       setSaving(false);
       return;
     }
@@ -494,9 +540,7 @@ export default function SettingsTeamPage() {
     const payload: { user_role?: string; module_keys?: string[] } = {
       user_role: roleKeyFromMode(userType, userRole),
     };
-    if (isSubaccountMembership) {
-      payload.module_keys = nextModules;
-    }
+    payload.module_keys = nextModules;
 
     try {
       await updateTeamMembership(editingMembershipId, payload);
@@ -506,7 +550,18 @@ export default function SettingsTeamPage() {
       setPage(1);
       void loadMembers();
     } catch (error) {
-      setErrorMessage(editErrorMessage(error));
+      if (error instanceof ApiRequestError && error.status === 400) {
+        const normalized = String(error.message || "").toLowerCase();
+        if (normalized.includes("cheie de navigare invalid") || normalized.includes("modul invalid")) {
+          setErrorMessage("Permisiunile selectate nu sunt valide pentru scope-ul acestui membership.");
+        } else if (normalized.includes("în afara permisiunilor proprii")) {
+          setErrorMessage("Nu poți acorda permisiuni peste grant-ceiling-ul tău curent.");
+        } else {
+          setErrorMessage(editErrorMessage(error));
+        }
+      } else {
+        setErrorMessage(editErrorMessage(error));
+      }
       if (error instanceof ApiRequestError && error.status === 409) {
         setEditLockedInherited(true);
       }
@@ -528,10 +583,10 @@ export default function SettingsTeamPage() {
       return;
     }
 
-    const shouldSendModuleKeys = userType === "client" && subaccount.trim() !== "" && moduleCatalog.length > 0;
-    if (shouldSendModuleKeys && selectedModuleKeys.length === 0) {
+    const nextModules = normalizeSelectedKeys(selectedModuleKeys).filter((key) => activeCatalog.some((item) => item.key === key));
+    if (activeCatalog.length > 0 && nextModules.length === 0) {
       setSaving(false);
-      setModuleFieldError("Selectează cel puțin un modul pentru utilizatorul de tip client.");
+      setModuleFieldError("Selectează cel puțin o permisiune de navigare.");
       return;
     }
 
@@ -548,9 +603,7 @@ export default function SettingsTeamPage() {
         subaccount: userType === "client" ? subaccount : "",
         password: advancedOpen ? password : undefined,
       };
-      if (shouldSendModuleKeys) {
-        payload.module_keys = selectedModuleKeys;
-      }
+      payload.module_keys = nextModules;
 
       const createResponse = await apiRequest<{ item: TeamMember }>("/team/members", {
         method: "POST",
@@ -584,10 +637,11 @@ export default function SettingsTeamPage() {
       void loadMembers();
     } catch (err) {
       if (err instanceof ApiRequestError) {
-        if (err.message.toLowerCase().includes("modul invalid")) {
-          setErrorMessage(`Modulele selectate sunt invalide. ${err.message}`);
-        } else if (err.message.toLowerCase().includes("module_keys este permis doar")) {
-          setErrorMessage("Permisiunile pe module sunt disponibile doar pentru utilizatorii de tip client/sub-account.");
+        const normalized = err.message.toLowerCase();
+        if (normalized.includes("modul invalid") || normalized.includes("cheie de navigare invalid")) {
+          setErrorMessage(`Permisiunile selectate sunt invalide pentru scope-ul curent. ${err.message}`);
+        } else if (normalized.includes("în afara permisiunilor proprii")) {
+          setErrorMessage("Nu poți acorda permisiuni peste grant-ceiling-ul tău curent.");
         } else {
           setErrorMessage(err.message || "Nu am putut adăuga utilizatorul.");
         }
@@ -599,27 +653,85 @@ export default function SettingsTeamPage() {
     }
   }
 
-  const shouldShowModulePermissions = userType === "client" && (subaccount.trim() !== "" || mode === "edit");
+  const shouldShowModulePermissions = activeCatalog.length > 0;
+  const moduleGroups = useMemo<ModuleGroup[]>(() => {
+    const grouped = new Map<string, ModuleGroup>();
+    for (const item of activeCatalog) {
+      const key = item.group_key || "main_nav";
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          key,
+          label: item.group_label || "Main Navigation",
+          order: item.order,
+          items: [],
+        });
+      }
+      grouped.get(key)?.items.push(item);
+    }
+    return Array.from(grouped.values())
+      .map((group) => ({ ...group, items: [...group.items].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label)) }))
+      .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
+  }, [activeCatalog]);
   const isEditSaveDisabled = useMemo(() => {
     if (mode !== "edit") return false;
     if (saving || loadingEditDetail || editLockedInherited || editingMembershipId === null || editOriginal === null) return true;
-    if (userType === "client" && selectedModuleKeys.length === 0) return true;
+    if (selectedModuleKeys.length === 0) return true;
 
     const sameRole = editOriginal.userRole === userRole;
-    if (userType !== "client") return sameRole;
-
     const normalizedNow = [...selectedModuleKeys.map((key) => key.trim().toLowerCase()).filter((key) => key !== "")].sort();
     const normalizedOriginal = [...editOriginal.moduleKeys].sort();
     const sameModules = JSON.stringify(normalizedNow) === JSON.stringify(normalizedOriginal);
     return sameRole && sameModules;
-  }, [mode, saving, loadingEditDetail, editLockedInherited, editingMembershipId, editOriginal, userType, selectedModuleKeys, userRole]);
+  }, [mode, saving, loadingEditDetail, editLockedInherited, editingMembershipId, editOriginal, selectedModuleKeys, userRole]);
+
+  function applyAgencySettingsConsistency(keys: string[]): string[] {
+    if (activeScope !== "agency") return normalizeSelectedKeys(keys);
+    const normalized = new Set(normalizeSelectedKeys(keys));
+    const settingsParent = activeCatalog.find((item) => item.key === "settings");
+    const settingsChildren = activeCatalog.filter((item) => item.parent_key === "settings").map((item) => item.key);
+    if (!settingsParent || settingsChildren.length === 0) return Array.from(normalized);
+    if (!normalized.has("settings")) {
+      settingsChildren.forEach((child) => normalized.delete(child));
+      return Array.from(normalized);
+    }
+    const hasAnyChild = settingsChildren.some((child) => normalized.has(child));
+    if (!hasAnyChild) {
+      normalized.delete("settings");
+    }
+    if (hasAnyChild) {
+      normalized.add("settings");
+    }
+    return Array.from(normalized);
+  }
 
   function toggleModule(moduleKey: string) {
     setSelectedModuleKeys((prev) => {
-      if (prev.includes(moduleKey)) {
-        return prev.filter((key) => key !== moduleKey);
+      const nextSet = new Set(normalizeSelectedKeys(prev));
+      const isEnabled = nextSet.has(moduleKey);
+      const isSettingsParent = activeScope === "agency" && moduleKey === "settings";
+      const isSettingsChild = activeScope === "agency" && activeCatalog.some((item) => item.parent_key === "settings" && item.key === moduleKey);
+      const settingsChildren = activeCatalog.filter((item) => item.parent_key === "settings").map((item) => item.key);
+
+      if (isSettingsParent) {
+        if (isEnabled) {
+          nextSet.delete("settings");
+          settingsChildren.forEach((child) => nextSet.delete(child));
+        } else {
+          nextSet.add("settings");
+          settingsChildren.forEach((child) => nextSet.add(child));
+        }
+      } else if (isSettingsChild) {
+        if (isEnabled) nextSet.delete(moduleKey);
+        else {
+          nextSet.add(moduleKey);
+          nextSet.add("settings");
+        }
+      } else if (isEnabled) {
+        nextSet.delete(moduleKey);
+      } else {
+        nextSet.add(moduleKey);
       }
-      return [...prev, moduleKey];
+      return applyAgencySettingsConsistency(Array.from(nextSet));
     });
     setModuleFieldError("");
   }
@@ -635,7 +747,16 @@ export default function SettingsTeamPage() {
             <section className="space-y-4">
               <header className="flex flex-wrap items-center justify-between gap-3">
                 <h1 className="text-2xl font-semibold text-slate-900">Echipă</h1>
-                <button className="wm-btn-primary" type="button" onClick={() => setMode("create")}>+ Adaugă Utilizator</button>
+                <button
+                  className="wm-btn-primary"
+                  type="button"
+                  onClick={() => {
+                    resetCreateForm();
+                    setMode("create");
+                  }}
+                >
+                  + Adaugă Utilizator
+                </button>
               </header>
 
               <div className="wm-card space-y-4 p-4">
@@ -885,22 +1006,55 @@ export default function SettingsTeamPage() {
                   {shouldShowModulePermissions ? (
                     <section className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
                       <h3 className="text-sm font-semibold text-slate-900">Roluri și Permisiuni</h3>
-                      <p className="text-xs text-slate-600">Rolul selectat rămâne baza de acces. Modulele de mai jos restrâng ce vede utilizatorul în sub-account.</p>
+                      <p className="text-xs text-slate-600">Rolul selectat rămâne baza de acces. Toggle-urile de mai jos restrâng ce vede utilizatorul în navigație.</p>
                       {moduleCatalogLoading ? <p className="text-xs text-slate-500">Se încarcă modulele...</p> : null}
                       {moduleCatalogError ? <p className="text-xs text-red-600">Nu am putut încărca modulele: {moduleCatalogError}</p> : null}
-                      {!moduleCatalogLoading && moduleCatalog.length > 0 ? (
-                        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                          {moduleCatalog.map((moduleItem) => (
-                            <label key={moduleItem.key} className="inline-flex items-center gap-2 rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-700">
-                              <input
-                                type="checkbox"
-                                className="h-4 w-4 rounded border-slate-300 text-indigo-600"
-                                checked={selectedModuleKeys.includes(moduleItem.key)}
-                                onChange={() => toggleModule(moduleItem.key)}
-                                disabled={editLockedInherited}
-                              />
-                              {moduleItem.label}
-                            </label>
+                      {!moduleCatalogLoading && activeCatalog.length > 0 ? (
+                        <div className="space-y-3">
+                          {moduleGroups.map((group) => (
+                            <div key={group.key} className="space-y-2">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{group.label}</p>
+                              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                                {group.items
+                                  .filter((item) => !item.parent_key)
+                                  .map((moduleItem) => {
+                                    const children = group.items.filter((item) => item.parent_key === moduleItem.key);
+                                    const childSelectedCount = children.filter((child) => selectedModuleKeys.includes(child.key)).length;
+                                    const isChecked = selectedModuleKeys.includes(moduleItem.key);
+                                    return (
+                                      <div key={moduleItem.key} className="rounded border border-slate-200 bg-white px-2 py-1.5">
+                                        <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                                          <input
+                                            type="checkbox"
+                                            className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                                            checked={isChecked}
+                                            onChange={() => toggleModule(moduleItem.key)}
+                                            disabled={editLockedInherited}
+                                          />
+                                          <span>{moduleItem.label}</span>
+                                          {children.length > 0 ? <span className="text-xs text-slate-500">({childSelectedCount}/{children.length})</span> : null}
+                                        </label>
+                                        {children.length > 0 ? (
+                                          <div className="mt-2 space-y-1 border-l border-slate-200 pl-3">
+                                            {children.map((child) => (
+                                              <label key={child.key} className="inline-flex items-center gap-2 text-sm text-slate-700">
+                                                <input
+                                                  type="checkbox"
+                                                  className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                                                  checked={selectedModuleKeys.includes(child.key)}
+                                                  onChange={() => toggleModule(child.key)}
+                                                  disabled={editLockedInherited || !selectedModuleKeys.includes(moduleItem.key)}
+                                                />
+                                                {child.label}
+                                              </label>
+                                            ))}
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    );
+                                  })}
+                              </div>
+                            </div>
                           ))}
                         </div>
                       ) : null}

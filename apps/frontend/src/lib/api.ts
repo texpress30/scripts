@@ -345,6 +345,10 @@ export type TeamModuleCatalogItem = {
   label: string;
   order: number;
   scope: string;
+  group_key?: string;
+  group_label?: string;
+  parent_key?: string | null;
+  is_container?: boolean;
 };
 
 export type TeamModuleCatalogResponse = {
@@ -367,7 +371,7 @@ export async function createSubaccountTeamMember(subaccountId: number, payload: 
   });
 }
 
-export async function getTeamModuleCatalog(scope: "subaccount" = "subaccount"): Promise<TeamModuleCatalogResponse> {
+export async function getTeamModuleCatalog(scope: "agency" | "subaccount" = "subaccount"): Promise<TeamModuleCatalogResponse> {
   return apiRequest<TeamModuleCatalogResponse>(`/team/module-catalog?scope=${encodeURIComponent(scope)}`);
 }
 

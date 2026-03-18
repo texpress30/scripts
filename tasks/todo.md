@@ -16,6 +16,23 @@
 - [x] No Notifications backend work added; no forgot/invite flow logic changes.
 - [x] Intentionally left out: drag-and-drop builder, backend notifications model, and broader redesign.
 
+# TODO — Wire Agency Team roles & permissions to full sidebar catalog
+
+- [x] Re-read Agency Team page + API contracts and backend catalog/service files for scope/metadata expectations.
+- [x] Wire Agency Team create/edit Roles & Permissions to dynamic catalog by scope (`agency` vs `subaccount`).
+- [x] Add grouping support using backend metadata (`group_key`, `group_label`, `order`, `parent_key`, `is_container`).
+- [x] Implement `settings` parent/children synchronization rules for agency permissions.
+- [x] Ensure create/edit payloads always serialize scope-correct `module_keys` and keep role picker behavior.
+- [x] Add/update focused frontend tests for scope switching, defaults, parent/child syncing, payload correctness, and error handling.
+- [x] Run focused frontend tests + frontend build.
+- [x] Prepare commit + PR metadata with exact required title/body.
+
+## Review
+- [x] Agency Team create/edit now consumes full sidebar permission catalogs for both scopes and keeps `module_keys` scope-safe.
+- [x] Agency `settings` parent + children toggles are synchronized coherently to avoid inconsistent payload states.
+- [x] Existing Agency Team lifecycle/invite/remove/edit flows remain intact and covered by the updated test suite.
+- [x] Intentionally left out: Sub-account Team wiring on full catalog and AppShell filtering.
+
 # TODO — Backend foundation Roles & Permissions full sidebar navigation catalog
 
 - [x] Re-read team permissions files (`team_members.py`, `rbac.py`, `team.py`, `team` schemas, dependencies) and sidebar context files.
