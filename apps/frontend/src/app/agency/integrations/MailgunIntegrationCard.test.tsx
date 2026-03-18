@@ -8,6 +8,7 @@ const apiMock = vi.hoisted(() => ({
   getMailgunStatus: vi.fn(),
   saveMailgunConfig: vi.fn(),
   sendMailgunTestEmail: vi.fn(),
+  importMailgunConfigFromEnv: vi.fn(),
 }));
 
 vi.mock("@/lib/api", async () => {
@@ -17,6 +18,7 @@ vi.mock("@/lib/api", async () => {
     getMailgunStatus: (...args: unknown[]) => apiMock.getMailgunStatus(...args),
     saveMailgunConfig: (...args: unknown[]) => apiMock.saveMailgunConfig(...args),
     sendMailgunTestEmail: (...args: unknown[]) => apiMock.sendMailgunTestEmail(...args),
+    importMailgunConfigFromEnv: (...args: unknown[]) => apiMock.importMailgunConfigFromEnv(...args),
   };
 });
 
@@ -25,6 +27,7 @@ describe("MailgunIntegrationCard", () => {
     apiMock.getMailgunStatus.mockReset();
     apiMock.saveMailgunConfig.mockReset();
     apiMock.sendMailgunTestEmail.mockReset();
+    apiMock.importMailgunConfigFromEnv.mockReset();
   });
 
   it("loads status and renders configured data with masked api key only", async () => {
