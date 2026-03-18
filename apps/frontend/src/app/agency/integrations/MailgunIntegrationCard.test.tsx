@@ -31,6 +31,7 @@ describe("MailgunIntegrationCard", () => {
     apiMock.getMailgunStatus.mockResolvedValueOnce({
       configured: true,
       enabled: true,
+      config_source: "db",
       domain: "mg.example.com",
       base_url: "https://api.mailgun.net",
       from_email: "noreply@example.com",
@@ -50,6 +51,7 @@ describe("MailgunIntegrationCard", () => {
     apiMock.getMailgunStatus.mockResolvedValueOnce({
       configured: false,
       enabled: false,
+      config_source: "none",
       domain: "",
       base_url: "",
       from_email: "",
@@ -68,6 +70,7 @@ describe("MailgunIntegrationCard", () => {
       .mockResolvedValueOnce({
         configured: false,
         enabled: false,
+        config_source: "none",
         domain: "",
         base_url: "",
         from_email: "",
@@ -78,6 +81,7 @@ describe("MailgunIntegrationCard", () => {
       .mockResolvedValueOnce({
         configured: true,
         enabled: true,
+        config_source: "db",
         domain: "mg.example.com",
         base_url: "https://api.mailgun.net",
         from_email: "noreply@example.com",
@@ -117,6 +121,7 @@ describe("MailgunIntegrationCard", () => {
     apiMock.getMailgunStatus.mockResolvedValueOnce({
       configured: true,
       enabled: true,
+      config_source: "db",
       domain: "mg.example.com",
       base_url: "https://api.mailgun.net",
       from_email: "noreply@example.com",
@@ -148,5 +153,24 @@ describe("MailgunIntegrationCard", () => {
     render(<MailgunIntegrationCard />);
 
     expect(await screen.findByText("Nu ai acces la această integrare.")).toBeInTheDocument();
+  });
+
+  it("shows env-managed read-only state when config source is env", async () => {
+    apiMock.getMailgunStatus.mockResolvedValueOnce({
+      configured: true,
+      enabled: true,
+      config_source: "env",
+      domain: "mg.env.example.com",
+      base_url: "https://api.mailgun.net",
+      from_email: "env@example.com",
+      from_name: "Env Sender",
+      reply_to: "",
+      api_key_masked: "key***env",
+    });
+    render(<MailgunIntegrationCard />);
+    expect(await screen.findByText("Config source: env")).toBeInTheDocument();
+    expect(screen.getByText(/Managed by Railway env/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Configured in Railway" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /Salvează configurarea/i })).not.toBeInTheDocument();
   });
 });

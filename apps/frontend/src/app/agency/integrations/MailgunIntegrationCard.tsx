@@ -73,6 +73,7 @@ export function MailgunIntegrationCard() {
   const [testBusy, setTestBusy] = useState(false);
 
   const badge = useMemo(() => statusBadge(status), [status]);
+  const isEnvManaged = status?.config_source === "env";
 
   async function loadStatus() {
     setLoading(true);
@@ -179,6 +180,7 @@ export function MailgunIntegrationCard() {
         <div className="mt-3 space-y-1 text-xs text-slate-600">
           <p>Configured: {String(Boolean(status?.configured))}</p>
           <p>Enabled: {String(Boolean(status?.enabled))}</p>
+          <p>Config source: {status?.config_source || "none"}</p>
           <p>Domain: {status?.domain || "-"}</p>
           <p>Base URL: {status?.base_url || "-"}</p>
           <p>From email: {status?.from_email || "-"}</p>
@@ -186,24 +188,28 @@ export function MailgunIntegrationCard() {
           <p>Reply-To: {status?.reply_to || "-"}</p>
           <p>API key: {status?.api_key_masked || "-"}</p>
           {!status?.configured ? <p className="pt-1 text-amber-700">Mailgun nu este configurat. Completează formularul de mai jos.</p> : null}
+          {status?.configured && status?.config_source === "env" ? (
+            <p className="pt-1 text-amber-700">Managed by Railway env. Configurarea manuală din UI este read-only.</p>
+          ) : null}
         </div>
       ) : null}
 
       <div className="mt-4 flex flex-wrap gap-2">
         <button
           onClick={() => {
+            if (isEnvManaged) return;
             setConfigOpen((prev) => !prev);
             setConfigErrors({});
             setConfigMessage("");
           }}
           className="wm-btn-primary"
-          disabled={loading || configBusy}
+          disabled={loading || configBusy || isEnvManaged}
         >
-          {configOpen ? "Închide configurare" : status?.configured ? "Editează configurare" : "Configurează Mailgun"}
+          {isEnvManaged ? "Configured in Railway" : configOpen ? "Închide configurare" : status?.configured ? "Editează configurare" : "Configurează Mailgun"}
         </button>
       </div>
 
-      {configOpen ? (
+      {configOpen && !isEnvManaged ? (
         <div className="mt-4 space-y-3 rounded-md border border-slate-200 p-3">
           <p className="text-xs text-slate-500">Din motive de securitate, API key trebuie reintrodus la salvare.</p>
           <label className="block text-xs text-slate-700">
