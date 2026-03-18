@@ -4929,3 +4929,14 @@ Plan verified: confine code changes to sub-account team page + tests (and shared
 - Added explicit lifecycle error mapping for 403/404/409 and inherited guard in UI; inherited rows keep action disabled with clear tooltip.
 - Existing create/edit/invite behavior remained intact and passing through updated test coverage.
 - Intentional follow-up: remove membership action remains for next task; no token revocation behavior was added in this step.
+
+## 2026-03-18 Fix backend SyntaxError in list_members
+- [x] Analyze backend error in `team_members.py` resulting in `psycopg.errors.SyntaxError`.
+- [x] Identify root cause: empty `clauses` appending `WHERE ` without content when filters are omitted.
+- [x] Fix empty clauses logic: conditionally append `WHERE` using `if clauses else ""`.
+- [x] Verify fix with tests.
+- [x] Create PR against main branch.
+
+### Review
+- Fixed the unclosed `WHERE` clause in `list_members` query. When filters like `search`, `subaccount` or `user_type/role` are empty, `where_sql` is now set to an empty string instead of `WHERE `.
+- Created PR with fix.
