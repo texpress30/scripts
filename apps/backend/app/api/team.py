@@ -115,8 +115,24 @@ def _normalize_module_catalog(items: list[dict[str, object]], *, requested_scope
         except Exception:  # noqa: BLE001
             order = idx
         scope = str(item.get("scope") or requested_scope).strip().lower() or requested_scope
-        normalized.append({"key": key, "label": label, "order": order, "scope": scope})
-    normalized.sort(key=lambda row: (int(row["order"]), str(row["label"]).lower()))
+        group_key = str(item.get("group_key") or "").strip().lower()
+        group_label = str(item.get("group_label") or "").strip() or group_key.replace("_", " ").title()
+        parent_key_raw = str(item.get("parent_key") or "").strip().lower()
+        parent_key = parent_key_raw or None
+        is_container = bool(item.get("is_container", False))
+        normalized.append(
+            {
+                "key": key,
+                "label": label,
+                "order": order,
+                "scope": scope,
+                "group_key": group_key,
+                "group_label": group_label,
+                "parent_key": parent_key,
+                "is_container": is_container,
+            }
+        )
+    normalized.sort(key=lambda row: (int(row["order"]), str(row["label"]).lower(), str(row["key"])))
     return normalized
 
 

@@ -356,7 +356,7 @@ class TeamSubaccountApiTests(unittest.TestCase):
             team_api.team_members_service.get_subaccount_my_access = lambda **kwargs: {
                 "subaccount_id": 12,
                 "role": "agency_admin",
-                "module_keys": ["dashboard", "campaigns", "rules", "creative", "recommendations"],
+                "module_keys": ["dashboard", "campaigns", "rules", "creative", "recommendations", "settings"],
                 "source_scope": "agency",
                 "access_scope": "agency",
                 "unrestricted_modules": True,
@@ -365,7 +365,7 @@ class TeamSubaccountApiTests(unittest.TestCase):
             response = team_api.get_subaccount_my_access(subaccount_id=12, user=user)
             self.assertTrue(response.unrestricted_modules)
             self.assertEqual(response.access_scope, "agency")
-            self.assertEqual(len(response.module_keys), 5)
+            self.assertEqual(len(response.module_keys), 6)
         finally:
             team_api.team_members_service.get_subaccount_my_access = original
 
@@ -377,7 +377,7 @@ class TeamSubaccountApiTests(unittest.TestCase):
         )
         self.assertEqual(response["subaccount_id"], 7)
         self.assertEqual(response["source_scope"], "legacy_fallback")
-        self.assertEqual(response["module_keys"], ["dashboard", "campaigns", "rules", "creative", "recommendations"])
+        self.assertEqual(response["module_keys"], ["dashboard", "campaigns", "rules", "creative", "recommendations", "settings"])
 
 
 if __name__ == "__main__":

@@ -16,6 +16,24 @@
 - [x] No Notifications backend work added; no forgot/invite flow logic changes.
 - [x] Intentionally left out: drag-and-drop builder, backend notifications model, and broader redesign.
 
+# TODO — Backend foundation Roles & Permissions full sidebar navigation catalog
+
+- [x] Re-read team permissions files (`team_members.py`, `rbac.py`, `team.py`, `team` schemas, dependencies) and sidebar context files.
+- [x] Expand membership `module_keys` semantics into a canonical navigation catalog for both scopes (`agency`, `subaccount`) with metadata.
+- [x] Keep backward compatibility on payload naming (`module_keys`) while adding scope-aware validation/defaults for create/update.
+- [x] Model Settings container + explicit Settings children for agency catalog.
+- [x] Extend grant ceiling logic so scoped actors can only grant subsets of their own navigation keys; agency/global admins retain full grant rights.
+- [x] Extend module catalog endpoint contract to return metadata-rich entries for both `scope=agency` and `scope=subaccount`.
+- [x] Add backend tests for catalog coverage/metadata, scope validation, defaults, grant ceiling, and update-contract behavior.
+- [x] Run relevant backend tests + backend startup check.
+- [x] Prepare commit + PR metadata with exact required title/body.
+
+## Review
+- [x] Backend now exposes a complete navigation permission catalog for agency and subaccount sidebars, including Settings modeling.
+- [x] Create/update membership contracts now accept `module_keys` for both scopes with strict scope validation and safe defaults.
+- [x] Grant ceiling remains enforced for scoped actors, while agency/global admins can grant full catalog keys.
+- [x] Intentionally left out: UI toggles wiring, AppShell filtering, and expanded route-group enforcement.
+
 # TODO — Notifications page uses associated Email Template actions
 
 - [x] Re-read AGENTS instructions and keep scope limited to Agency Notifications + Email Templates linkage.

@@ -104,6 +104,10 @@ class TeamModuleCatalogItem(BaseModel):
     label: str
     order: int
     scope: str
+    group_key: str = ""
+    group_label: str = ""
+    parent_key: str | None = None
+    is_container: bool = False
 
 
 class TeamModuleCatalogResponse(BaseModel):

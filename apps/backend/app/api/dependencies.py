@@ -6,7 +6,7 @@ from app.services.auth import AuthError, AuthUser, decode_access_token
 from app.services.rbac import AuthorizationError, Scope, normalize_role, require_action
 from app.services.team_members import team_members_service
 
-SUBACCOUNT_MODULE_KEYS: set[str] = {"dashboard", "campaigns", "rules", "creative", "recommendations"}
+SUBACCOUNT_MODULE_KEYS: set[str] = {"dashboard", "campaigns", "rules", "creative", "recommendations", "settings"}
 
 
 def get_current_user(authorization: str | None = Header(default=None)) -> AuthUser:

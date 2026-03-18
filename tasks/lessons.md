@@ -407,3 +407,4 @@
 - 2026-03-18: Pentru activarea runtime a Notification settings, tratează `notification.enabled` ca guard distinct față de `template.enabled` și dă prioritate notification guard-ului înainte de token/render/send.
 - 2026-03-18: Pentru UI Notifications peste backend deja livrat, clonează patternul listă+detail din Email Templates (fără redesign) și limitează editarea strict la `enabled`, cu refresh list+detail după save/reset.
 - 2026-03-18: După o corecție de proces din partea userului (AGENTS/workflow), verifică imediat instrucțiunile de repo, actualizează `tasks/todo.md` cu planul curent și rulează verificările înainte de commit/PR.
+- 2026-03-18: Pentru taskuri "backend foundation only" pe permissions/nav, extinde modelul existent (`module_keys`) incremental cu catalog + validări + default/grant ceiling și evită orice wiring UI/AppShell în același pas.

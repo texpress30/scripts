@@ -74,15 +74,31 @@ class TeamMembershipEditApiTests(unittest.TestCase):
         finally:
             team_api.team_members_service.update_membership = original
 
-    def test_patch_agency_with_module_keys_rejected(self):
+    def test_patch_agency_with_module_keys_valid(self):
         user = AuthUser(email="admin@example.com", role="agency_admin")
         original = team_api.team_members_service.update_membership
         try:
-            team_api.team_members_service.update_membership = lambda **kwargs: (_ for _ in ()).throw(ValueError("module_keys nu este permis pentru membership-uri agency"))
-            payload = team_api.UpdateTeamMembershipRequest(user_role="agency_member", module_keys=["dashboard"])
-            with self.assertRaises(team_api.HTTPException) as ctx:
-                team_api.patch_team_membership(membership_id=51, payload=payload, user=user)
-            self.assertEqual(ctx.exception.status_code, 400)
+            team_api.team_members_service.update_membership = lambda **kwargs: {
+                "membership_id": 51,
+                "user_id": 9,
+                "scope_type": "agency",
+                "subaccount_id": None,
+                "subaccount_name": "Toate",
+                "role_key": "agency_member",
+                "role_label": "Agency Member",
+                "module_keys": ["agency_dashboard", "settings", "settings_my_team"],
+                "source_scope": "agency",
+                "is_inherited": False,
+                "membership_status": "active",
+                "first_name": "Mara",
+                "last_name": "I",
+                "email": "mara@example.com",
+                "phone": "",
+                "extension": "",
+            }
+            payload = team_api.UpdateTeamMembershipRequest(user_role="agency_member", module_keys=["agency_dashboard", "settings", "settings_my_team"])
+            resp = team_api.patch_team_membership(membership_id=51, payload=payload, user=user)
+            self.assertEqual(resp.item.module_keys, ["agency_dashboard", "settings", "settings_my_team"])
         finally:
             team_api.team_members_service.update_membership = original
 
@@ -164,7 +180,7 @@ class TeamMembershipEditApiTests(unittest.TestCase):
         user = AuthUser(email="admin@example.com", role="agency_admin")
         original = team_api.team_members_service.update_membership
         try:
-            team_api.team_members_service.update_membership = lambda **kwargs: (_ for _ in ()).throw(ValueError("Selectează cel puțin un modul"))
+            team_api.team_members_service.update_membership = lambda **kwargs: (_ for _ in ()).throw(ValueError("Selectează cel puțin o cheie de navigare"))
             payload = team_api.UpdateTeamMembershipRequest(module_keys=[])
             with self.assertRaises(team_api.HTTPException) as ctx:
                 team_api.patch_team_membership(membership_id=61, payload=payload, user=user)
