@@ -1,6 +1,5 @@
 # TODO
-- [x] Identify cause of `Application failed to respond` (DDL lock contention in startup_event)
-- [x] Update `app/main.py` to bypass `initialize_schema()` in `production`
-- [ ] Verify backend compilation
-- [ ] Update `tasks/lessons.md`
+- [x] Investigate why Tiktok sync warning appears when disabled by feature flag
+- [x] Update `accountSyncStatus.ts` to map 'disabled by feature flag' errors to 'unknown' uiStatus
+- [ ] Run typescript tests / verification
 - [ ] Push to Github
