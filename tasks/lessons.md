@@ -1,5 +1,9 @@
 # Lessons
 
+- 2026-03-19: Pentru wizard create în doi pași, evită `<form>` global peste etape; separă structural step1 non-form și step2 form cu footere distincte, altfel apar click-through/submit-through greu de eliminat doar cu guard-uri.
+
+- 2026-03-19: După corecție de proces, nu raporta niciodată implementări/teste ca finalizate fără execuție reală în workspace; verifică explicit `git status` + comenzile rulate înainte de mesajul final.
+
 - 2026-03-18: Pentru cerințe de nav filtering pe permissions, livrează în același patch atât filtrarea sidebar/settings cât și redirect guards pure + teste unit pentru fiecare scope (agency main, agency settings, subaccount main/settings), ca să eviți regresii de rute nepermise.
 
 - 2026-03-18: După feedback "unsatisfied" pe un PR mare, livrează următorul increment strict pe pagina/flow cerut (aici Sub-account Team roles & permissions), cu wiring real pe contractele existente și teste compacte de regresie pentru create/edit + grant ceiling.
@@ -412,3 +416,13 @@
 - 2026-03-19: Pentru erori de tip `ConnectionTimeout` la startup în mediul de producție/serverless, adaugă un mecanism de retry cu sleep fix in blocul de `startup` (ex: `main.py`) înainte ca modulele dependente să încerce să inițializeze conexiuni.
 - 2026-03-19: Evită executarea de DDL (`CREATE TABLE`, `ALTER TABLE`) în cadrul evenimentelor de startup (`@app.on_event("startup")`) ale aplicației web. Într-un deploy blue-green (ex. Railway), noul container va încerca să obțină `ACCESS EXCLUSIVE` lock pe tabele active, blocând procesul de startup și declanșând un crash loop prin timeout-uri repetate pe rutele de sănătate. Bazează-te pe migration runner în producție.
 - 2026-03-19: Pentru integrări dezactivate prin feature flag, asigură-te că erorile de tip "disabled by feature flag" salvate în backend sunt interpretate corect în frontend ca status "unknown" / "Disabled". Nu le trata ca erori sau warning-uri obișnuite, altfel UI-ul va afișa bannere de degradare a sincronizării în mod fals.
+
+- 2026-03-19: Când adaugi un nou parametru într-un INSERT SQL (`must_reset_password`), aliniază explicit numărul placeholderelor din VALUES cu tuple-ul de parametri și adaugă test țintit pe query/params pentru a preveni regressii de tip "X placeholders but Y parameters".
+
+- 2026-03-19: Pentru wizard-uri pe un singur `<form>`, nu e suficient ca butonul de step să fie `type="button"`; trebuie și guard în `onSubmit` pentru pasul curent, altfel Enter key poate declanșa submit/create prematur din pasul 1.
+
+- 2026-03-19: Pentru cron-uri one-shot DB-backed, tratează explicit erorile de conexiune la nivel de entrypoint (nu doar în store) și returnează un summary controlat + warning scurt, altfel deploy-ul vede crash opac pe timeout tranzitoriu.
+
+- 2026-03-19: Când un câmp legacy (ex. `location`) nu mai are semnificație de business, nu îl cosmetiza cu valori hardcodate; elimină-l din UI-ul editabil și afișează explicit un summary derivat din datele reale de acces (`subaccount`/`agency`).
+
+- 2026-03-19: Când un wizard folosește un singur `<form>`, aplică guarduri în două straturi (event-level + submit-level) și adaugă test separat pentru `fireEvent.keyDown(..., Enter)`; doar `fireEvent.submit` nu acoperă toate căile reale din browser.
