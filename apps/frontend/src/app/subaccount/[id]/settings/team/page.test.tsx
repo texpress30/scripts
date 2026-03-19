@@ -223,7 +223,7 @@ describe("SubAccount Team management page", () => {
     expect(screen.getByText("Utilizator adăugat.")).toBeInTheDocument();
   });
 
-  it("create step 1 uses `Înainte` without calling create API", async () => {
+  it("create wizard calls create API only on final `Creează utilizator` submit", async () => {
     render(<SubAccountTeamPage />);
     await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalledTimes(1));
 
@@ -237,6 +237,9 @@ describe("SubAccount Team management page", () => {
     expect(await screen.findByRole("button", { name: "Creează utilizator" })).toBeInTheDocument();
     expect(createSubaccountTeamMemberMock).not.toHaveBeenCalled();
     expect(screen.getByPlaceholderText("Caută după label, key sau grup")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Creează utilizator" }));
+    await waitFor(() => expect(createSubaccountTeamMemberMock).toHaveBeenCalledTimes(1));
   });
 
   it("enter in create step 1 does not call create API and preserves input state", async () => {

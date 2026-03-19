@@ -1,3 +1,14 @@
+# TODO — Sub-account Team wizard parity follow-up (2026-03-19)
+
+- [x] Revalidare cerințe user + verificare implementare actuală în `subaccount/[id]/settings/team`.
+- [x] Harden submit create flow: submit-ul în create mode rulează exclusiv în tab-ul `permissions`.
+- [x] Consolidare teste wizard Sub-account pentru regula "0 apeluri înainte de final" + "exact 1 apel la `Creează utilizator`".
+- [x] Rulare verificări cerute pentru frontend test command și frontend build.
+
+## Review
+- [x] Sub-account Team are step 1 non-form + step 2 form real, fără create API înainte de submit final.
+- [x] Create API este chemat o singură dată doar pe butonul final `Creează utilizator`.
+
 # TODO — Sub-account Team: wizard real în 2 pași (2026-03-19)
 
 - [x] Re-sync + recitire AGENTS/tasks/lessons + fișierele Sub-account Team page/test/api helper înainte de modificări.

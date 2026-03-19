@@ -638,6 +638,7 @@ export default function SubAccountTeamPage() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (viewMode === "create" && activeFormTab !== "permissions") return;
     const nextErrors = validateForSubmit();
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
