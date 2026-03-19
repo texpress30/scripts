@@ -115,6 +115,10 @@ def root() -> dict[str, str]:
 
 @app.on_event("startup")
 def startup_event() -> None:
+    if settings.app_env == "production":
+        logger.info("Skipping runtime DB schema initialization in production environment.")
+        return
+
     if psycopg is not None:
         max_retries = 5
         for attempt in range(max_retries):
