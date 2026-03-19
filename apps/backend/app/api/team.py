@@ -383,21 +383,30 @@ def invite_team_member(membership_id: int, user: AuthUser = Depends(get_current_
     if frontend_base_url == "":
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Invitația nu este disponibilă momentan")
 
-    invite_ttl_minutes = max(1, int(getattr(settings, "auth_reset_token_ttl_minutes", 60)))
-    raw_token, _ = auth_email_tokens_service.create_user_invite_token_for_existing_user(
-        user_id=int(membership["user_id"]),
-        email=email,
-        expires_in_minutes=invite_ttl_minutes,
-    )
-
-    invite_link = f"{frontend_base_url.rstrip('/')}/reset-password?token={raw_token}"
-    rendered_template = email_templates_service.render_effective_template(
-        template_key="team_invite_user",
-        variables={
-            "invite_link": invite_link,
+    should_send_reset_link = bool(membership.get("must_reset_password", True))
+    if should_send_reset_link:
+        invite_ttl_minutes = max(1, int(getattr(settings, "auth_reset_token_ttl_minutes", 60)))
+        raw_token, _ = auth_email_tokens_service.create_user_invite_token_for_existing_user(
+            user_id=int(membership["user_id"]),
+            email=email,
+            expires_in_minutes=invite_ttl_minutes,
+        )
+        template_key = "team_invite_user"
+        template_variables = {
+            "invite_link": f"{frontend_base_url.rstrip('/')}/reset-password?token={raw_token}",
             "expires_minutes": str(invite_ttl_minutes),
             "user_email": email,
-        },
+        }
+    else:
+        template_key = "team_account_ready"
+        template_variables = {
+            "login_link": f"{frontend_base_url.rstrip('/')}/login",
+            "user_email": email,
+        }
+
+    rendered_template = email_templates_service.render_effective_template(
+        template_key=template_key,
+        variables=template_variables,
     )
     if rendered_template is None:
         audit_log_service.log(
@@ -405,7 +414,7 @@ def invite_team_member(membership_id: int, user: AuthUser = Depends(get_current_
             actor_role=user.role,
             action="team.invite.failed",
             resource=f"team:membership:{membership_id}",
-            details={"reason": "template_missing", "template_key": "team_invite_user"},
+            details={"reason": "template_missing", "template_key": template_key},
         )
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Invitația nu este disponibilă momentan")
     if not rendered_template.enabled:
@@ -414,7 +423,7 @@ def invite_team_member(membership_id: int, user: AuthUser = Depends(get_current_
             actor_role=user.role,
             action="team.invite.failed",
             resource=f"team:membership:{membership_id}",
-            details={"reason": "template_disabled", "template_key": "team_invite_user"},
+            details={"reason": "template_disabled", "template_key": template_key},
         )
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Invitația nu este disponibilă momentan")
 

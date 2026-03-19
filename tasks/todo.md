@@ -1,3 +1,62 @@
+# TODO — Hotfix backend cron-sync-run-repair: DB timeout hardening one-shot sweeper (2026-03-19)
+
+- [x] Re-citire AGENTS/tasks + fișierele `historical_repair_sweeper.py` și `sync_runs_store.py`.
+- [x] Confirmare cauză: timeout/operational DB errors scapă necontrolat din store până la entrypoint-ul one-shot worker.
+- [x] Hardening minim în entrypoint: handling explicit pentru erori de conexiune DB + logging operațional sigur.
+- [x] Menținere logică de sweep/repair neschimbată pe happy path (DB disponibil).
+- [x] Teste backend focalizate pentru DB timeout handling + no-regression.
+- [x] Rulare teste backend țintite + import/startup check util.
+
+## Review
+- [x] Cron one-shot nu mai cade cu traceback brut la `ConnectionTimeout`/`OperationalError`; produce rezultat controlat `status=db_unavailable`.
+- [x] Logging-ul nou nu expune secrete (`DATABASE_URL` etc.), doar context operațional minimal.
+- [x] Semantica de stale detection/repair rămâne neschimbată când DB este disponibil.
+
+# TODO — Hotfix frontend Agency Team wizard: Pasul următor fără submit/create (2026-03-19)
+
+- [x] Re-citire `apps/frontend/src/app/settings/team/page.tsx` și confirmare că submit-ul global poate crea din pasul 1 (Enter).
+- [x] Păstrare `Pasul Următor` ca `type="button"` și hardening pe `submitCreateForm(...)` cu guard pentru pasul 1.
+- [x] Guard pas 1: validează identity local, comută pe `Roluri și Permisiuni`, iese fără create request.
+- [x] Verificare că create API rămâne doar pe submit final din pasul 2.
+- [x] Adăugare test pentru Enter key în pasul 1 (fără create API, cu tranziție la pasul 2).
+- [x] Rulare teste frontend relevante + build frontend.
+
+## Review
+- [x] Cauza bugului: submit global al formularului (inclusiv Enter) nu avea guard clar pentru `activeFormTab === "identity"`, astfel putea intra în create flow prea devreme.
+- [x] `Pasul următor` și submit-ul din pasul 1 nu mai declanșează create API.
+- [x] Edit mode rămâne funcțional, fără schimbări de contract/backend.
+
+# TODO — Hotfix backend create user: SQL placeholder mismatch must_reset_password (2026-03-19)
+
+- [x] Re-citire `apps/backend/app/services/team_members.py` și confirmare mismatch placeholders/params în `_upsert_user`.
+- [x] Fix minim: înlocuire hardcodare `FALSE` din VALUES cu placeholder `%s` pentru `must_reset_password`.
+- [x] Păstrare `ON CONFLICT ... must_reset_password = EXCLUDED.must_reset_password` coerent.
+- [x] Adăugare teste backend focalizate pentru `_upsert_user` (cu/ fără parolă explicită).
+- [x] Rulare teste backend relevante + startup check backend.
+
+## Review
+- [x] Cauza: query SQL avea 7 placeholders pentru VALUES, dar param tuple trimitea 8 argumente.
+- [x] Create user nu mai crapă pe eroarea `the query has 7 placeholders but 8 parameters were passed`.
+- [x] `must_reset_password` este persistat corect pe insert și update.
+
+# TODO — Agency Team create wizard real în 2 pași + invite split by password (2026-03-19)
+
+- [x] Re-sync workspace și recitire fișierele cheie frontend/backend pentru flow-ul Team create/invite.
+- [x] Transformare create mode Agency Team în wizard real: Pasul Următor doar schimbă tab-ul, fără create API.
+- [x] Creare user doar la pasul final (Roluri și Permisiuni), cu payload complet și auto-invite păstrat.
+- [x] Păstrare edit mode existent fără transformare în wizard complex.
+- [x] Split invite flow backend: reset link când nu există parolă explicită, login link când parola e setată.
+- [x] Adăugare template email nou `team_account_ready` + variabile minime (`login_link`, `user_email`).
+- [x] Adăugare/actualizare teste backend și frontend pentru noile comportamente.
+- [x] Rulare teste relevante (backend/frontend), build frontend și startup check backend.
+- [x] Commit pe branch curent + make_pr cu titlul/body cerut.
+
+## Review
+- [x] Wizard create nu mai creează utilizatorul la Pasul Următor; submit real doar la final.
+- [x] Invite cu parolă setată folosește login link, fără token reset.
+- [x] Invite fără parolă păstrează flow-ul actual cu reset/invite token.
+- [x] Scope exclus: Sub-account Team, coloană Locație, forgot-password flow.
+
 # TODO — Reorganizare UI sub-account: mutare "Roluri și Permisiuni" în tab dedicat (2026-03-19)
 
 - [x] Re-citire pagină `subaccount/[id]/settings/team` și test suite pentru flux create/edit.
