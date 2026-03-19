@@ -1,3 +1,19 @@
+# TODO — Sub-account Team: wizard real în 2 pași (2026-03-19)
+
+- [x] Re-sync + recitire AGENTS/tasks/lessons + fișierele Sub-account Team page/test/api helper înainte de modificări.
+- [x] Confirmare cauză: create folosea un `<form>` global pe ambele tab-uri, iar butonul submit era etichetat `Înainte` în create mode.
+- [x] Fix structural: create + tab user randat non-form; create + tab permissions randat în `<form>` real cu submit final.
+- [x] Pas 1: `Înainte` rulează doar validare locală + trecere la tab-ul de permissions, fără create API.
+- [x] Pas 2: buton final explicit `Creează utilizator`; request create exclusiv aici.
+- [x] Persistență local state între pași și la revenire pe tab-ul user.
+- [x] Teste frontend actualizate pentru next-step no-create, Enter no-create, persistență date, label final și create-only-on-final-submit.
+- [x] Rulare teste pagină Sub-account Team + build frontend.
+
+## Review
+- [x] Create API nu mai pornește din pasul 1 în Sub-account Team.
+- [x] Pasul 2 are submit explicit `Creează utilizator`.
+- [x] Agency Team și flow-urile invite/delete nu au fost atinse în acest task.
+
 # TODO — Agency Team hard delete user complet (2026-03-19)
 
 - [x] Re-sync + recitire AGENTS/tasks + fișiere backend/frontend cerute înainte de modificări.

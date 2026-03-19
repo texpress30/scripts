@@ -205,7 +205,7 @@ describe("SubAccount Team management page", () => {
     await openPermissionsTab();
     await screen.findByRole("checkbox", { name: "Permisiune modul Dashboard" });
     fireEvent.change(screen.getByDisplayValue("Subaccount User"), { target: { value: "subaccount_admin" } });
-    fireEvent.click(screen.getByRole("button", { name: "Înainte" }));
+    fireEvent.click(screen.getByRole("button", { name: "Creează utilizator" }));
 
     await waitFor(() => {
       expect(createSubaccountTeamMemberMock).toHaveBeenCalledWith(96, {
@@ -221,6 +221,59 @@ describe("SubAccount Team management page", () => {
 
     await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalledTimes(2));
     expect(screen.getByText("Utilizator adăugat.")).toBeInTheDocument();
+  });
+
+  it("create step 1 uses `Înainte` without calling create API", async () => {
+    render(<SubAccountTeamPage />);
+    await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    fireEvent.change(screen.getByPlaceholderText("Prenume"), { target: { value: "Elena" } });
+    fireEvent.change(screen.getByPlaceholderText("Nume"), { target: { value: "Popa" } });
+    fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "elena@example.com" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Înainte" }));
+
+    expect(await screen.findByRole("button", { name: "Creează utilizator" })).toBeInTheDocument();
+    expect(createSubaccountTeamMemberMock).not.toHaveBeenCalled();
+    expect(screen.getByPlaceholderText("Caută după label, key sau grup")).toBeInTheDocument();
+  });
+
+  it("enter in create step 1 does not call create API and preserves input state", async () => {
+    render(<SubAccountTeamPage />);
+    await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    const firstNameInput = screen.getByPlaceholderText("Prenume");
+    const emailInput = screen.getByPlaceholderText("Email");
+    fireEvent.change(firstNameInput, { target: { value: "Elena" } });
+    fireEvent.change(screen.getByPlaceholderText("Nume"), { target: { value: "Popa" } });
+    fireEvent.change(emailInput, { target: { value: "elena@example.com" } });
+
+    fireEvent.keyDown(emailInput, { key: "Enter", code: "Enter", charCode: 13 });
+
+    expect(screen.getByRole("button", { name: "Înainte" })).toBeInTheDocument();
+    expect(createSubaccountTeamMemberMock).not.toHaveBeenCalled();
+    expect(screen.getByPlaceholderText("Prenume")).toHaveValue("Elena");
+    expect(screen.getByPlaceholderText("Email")).toHaveValue("elena@example.com");
+  });
+
+  it("keeps step 1 values when navigating forward and back in create wizard", async () => {
+    render(<SubAccountTeamPage />);
+    await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    fireEvent.change(screen.getByPlaceholderText("Prenume"), { target: { value: "Daria" } });
+    fireEvent.change(screen.getByPlaceholderText("Nume"), { target: { value: "Ionescu" } });
+    fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "daria@example.com" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Înainte" }));
+    expect(await screen.findByRole("button", { name: "Creează utilizator" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Informații Utilizator" }));
+
+    expect(screen.getByPlaceholderText("Prenume")).toHaveValue("Daria");
+    expect(screen.getByPlaceholderText("Nume")).toHaveValue("Ionescu");
+    expect(screen.getByPlaceholderText("Email")).toHaveValue("daria@example.com");
   });
 
   it("create role options are only subaccount roles", async () => {
@@ -361,7 +414,7 @@ describe("SubAccount Team management page", () => {
     const campaigns = await screen.findByRole("checkbox", { name: "Permisiune modul Campaigns" });
     fireEvent.click(campaigns);
     fireEvent.click(await screen.findByRole("button", { name: /^Settings/i }));
-    fireEvent.click(screen.getByRole("button", { name: "Înainte" }));
+    fireEvent.click(screen.getByRole("button", { name: "Creează utilizator" }));
 
     await waitFor(() => {
       expect(createSubaccountTeamMemberMock).toHaveBeenCalledWith(
@@ -483,7 +536,6 @@ describe("SubAccount Team management page", () => {
 
     const dashboard = await screen.findByRole("checkbox", { name: "Permisiune modul Dashboard" });
     const campaigns = screen.getByRole("checkbox", { name: "Permisiune modul Campaigns" });
-    const settings = screen.getByRole("checkbox", { name: "Permisiune modul Settings" });
     fireEvent.click(dashboard);
     fireEvent.click(campaigns);
     expect(dashboard).not.toBeChecked();
@@ -493,7 +545,7 @@ describe("SubAccount Team management page", () => {
     fireEvent.click(settings);
     expect(settings).not.toBeChecked();
 
-    fireEvent.click(screen.getByRole("button", { name: "Înainte" }));
+    fireEvent.click(screen.getByRole("button", { name: "Creează utilizator" }));
 
     expect(await screen.findByText("Selectează cel puțin o permisiune de navigare.")).toBeInTheDocument();
     expect(createSubaccountTeamMemberMock).not.toHaveBeenCalled();
@@ -513,12 +565,12 @@ describe("SubAccount Team management page", () => {
     fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "elena@example.com" } });
     await openPermissionsTab();
     await screen.findByRole("checkbox", { name: "Permisiune modul Dashboard" });
-    fireEvent.click(screen.getByRole("button", { name: "Înainte" }));
+    fireEvent.click(screen.getByRole("button", { name: "Creează utilizator" }));
 
     expect(await screen.findByText("Permisiuni insuficiente pentru această acțiune.")).toBeInTheDocument();
 
     createSubaccountTeamMemberMock.mockRejectedValueOnce(new ApiRequestError("Nu poți acorda module în afara permisiunilor proprii: campaigns", 400));
-    fireEvent.click(screen.getByRole("button", { name: "Înainte" }));
+    fireEvent.click(screen.getByRole("button", { name: "Creează utilizator" }));
     expect(await screen.findByText("Nu poți acorda module în afara permisiunilor proprii: campaigns")).toBeInTheDocument();
   });
 

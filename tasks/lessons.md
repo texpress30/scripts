@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-19: Pentru Sub-account Team wizard create, nu păstra submit button cu label ambiguu (`Înainte`) în același `<form>` cross-tab; separă structural pasul 1 non-form și pasul 2 form cu CTA final explicit `Creează utilizator`.
+
 - 2026-03-19: Pentru cerințe “delete user de peste tot”, nu reutiliza endpointul de remove membership; adaugă endpoint dedicat pe `user_id` + guard DB-backed în auth pentru a invalida tokenurile vechi după hard delete.
 
 - 2026-03-19: Pentru wizard create în doi pași, evită `<form>` global peste etape; separă structural step1 non-form și step2 form cu footere distincte, altfel apar click-through/submit-through greu de eliminat doar cu guard-uri.
