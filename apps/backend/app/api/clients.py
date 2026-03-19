@@ -1,7 +1,7 @@
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.api.dependencies import enforce_action_scope, get_current_user
+from app.api.dependencies import enforce_action_scope, enforce_agency_navigation_access, get_current_user
 from app.core.config import load_settings
 from app.schemas.client import (
     AttachGoogleAccountRequest,
@@ -162,6 +162,7 @@ def _attach_platform_account(*, client_id: int, platform: str, account_id: str) 
 @router.get("")
 def list_clients(user: AuthUser = Depends(get_current_user)) -> dict[str, list[dict[str, str | int | None]]]:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
 
     records = client_registry_service.list_clients()
     audit_log_service.log(
@@ -177,6 +178,7 @@ def list_clients(user: AuthUser = Depends(get_current_user)) -> dict[str, list[d
 @router.post("")
 def create_client(payload: CreateClientRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, str | int | None]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
 
     created = client_registry_service.create_client(name=payload.name, owner_email=user.email)
     audit_log_service.log(
@@ -192,6 +194,7 @@ def create_client(payload: CreateClientRequest, user: AuthUser = Depends(get_cur
 @router.get("/accounts/summary")
 def platform_account_summary(user: AuthUser = Depends(get_current_user)) -> dict[str, list[dict[str, str | int | None]]]:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_accounts")
     items = client_registry_service.platform_account_summary()
     for item in items:
         if isinstance(item, dict):
@@ -202,6 +205,7 @@ def platform_account_summary(user: AuthUser = Depends(get_current_user)) -> dict
 @router.get("/accounts/google")
 def list_google_accounts(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_accounts")
     items = client_registry_service.list_platform_accounts(platform=PLATFORM_GOOGLE_ADS)
     return {
         "items": items,
@@ -213,6 +217,7 @@ def list_google_accounts(user: AuthUser = Depends(get_current_user)) -> dict[str
 @router.get("/accounts/{platform}")
 def list_platform_accounts(platform: str, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_accounts")
     normalized_platform = _normalize_platform_or_422(platform)
     sync_enabled = _is_platform_sync_enabled(normalized_platform)
     items = client_registry_service.list_platform_accounts_for_mapping(platform=normalized_platform)
@@ -236,6 +241,7 @@ def attach_platform_account(
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_accounts")
     updated = _attach_platform_account(
         client_id=client_id,
         platform=payload.platform,
@@ -266,6 +272,7 @@ def detach_platform_account(
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_accounts")
     normalized_platform = _normalize_platform_or_422(payload.platform)
     deleted = client_registry_service.detach_platform_account_from_client(
         platform=normalized_platform,
@@ -288,6 +295,7 @@ def detach_platform_account(
 @router.post("/{client_id}/attach-google-account")
 def attach_google_account(client_id: int, payload: AttachGoogleAccountRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, str | int | None]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_accounts")
     updated = _attach_platform_account(
         client_id=client_id,
         platform=PLATFORM_GOOGLE_ADS,
@@ -307,6 +315,7 @@ def attach_google_account(client_id: int, payload: AttachGoogleAccountRequest, u
 @router.delete("/{client_id}/detach-google-account")
 def detach_google_account(client_id: int, payload: DetachGoogleAccountRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_accounts")
     deleted = client_registry_service.detach_platform_account_from_client(
         platform=PLATFORM_GOOGLE_ADS,
         client_id=client_id,
@@ -328,6 +337,7 @@ def detach_google_account(client_id: int, payload: DetachGoogleAccountRequest, u
 @router.get("/display/{display_id}")
 def get_client_details(display_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     payload = client_registry_service.get_client_details_by_display_id(display_id=display_id)
     if payload is None:
         raise HTTPException(status_code=404, detail="Client not found")
@@ -341,6 +351,7 @@ def update_client_profile(
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     updated = client_registry_service.update_client_profile_by_display_id(
         display_id=display_id,
         name=payload.name,
@@ -363,6 +374,7 @@ def import_client_business_inputs(
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
 
     sanitized_rows: list[dict[str, object]] = []
     for raw in payload.rows:
@@ -402,6 +414,7 @@ def _ensure_client_exists_or_404(*, client_id: int) -> None:
 @router.get("/{client_id}/media-buying/config")
 def get_media_buying_config(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     return media_buying_store.get_config(client_id=client_id)
 
@@ -413,6 +426,7 @@ def upsert_media_buying_config(
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     try:
         return media_buying_store.upsert_config(
@@ -443,6 +457,7 @@ def list_media_buying_lead_daily_values(
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     try:
         items = media_buying_store.list_lead_daily_manual_values(client_id=client_id, date_from=date_from, date_to=date_to)
@@ -458,6 +473,7 @@ def upsert_media_buying_lead_daily_value(
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     try:
         return media_buying_store.upsert_lead_daily_manual_value(
@@ -486,6 +502,7 @@ def get_media_buying_lead_table(
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     try:
         return media_buying_store.get_lead_table(client_id=client_id, date_from=date_from, date_to=date_to, include_days=bool(include_days))
@@ -501,6 +518,7 @@ def get_media_buying_lead_month_days(
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     try:
         return media_buying_store.get_lead_month_days(client_id=client_id, month_start=month_start)
@@ -516,6 +534,7 @@ def get_media_tracker_weekly_worksheet_foundation(
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     try:
         return media_tracker_worksheet_service.build_weekly_worksheet_foundation(
@@ -534,6 +553,7 @@ def upsert_media_tracker_weekly_manual_values(
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     try:
         return media_tracker_worksheet_service.upsert_weekly_manual_values(
@@ -553,6 +573,7 @@ def upsert_media_tracker_scope_eur_ron_rate(
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     try:
         return media_tracker_worksheet_service.upsert_scope_eur_ron_rate(
@@ -572,6 +593,7 @@ def list_client_accounts(
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_accounts")
     normalized_platform = _normalize_platform_or_422(platform) if platform is not None else None
     items = client_registry_service.list_client_accounts(client_id=client_id, platform=normalized_platform)
     return {"items": items, "count": len(items), "platform": normalized_platform}

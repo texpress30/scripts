@@ -6,10 +6,8 @@ import {
   ApiRequestError,
   MailgunConfigPayload,
   MailgunStatusResponse,
-  MailgunTestPayload,
   getMailgunStatus,
   saveMailgunConfig,
-  sendMailgunTestEmail,
 } from "@/lib/api";
 
 type MailgunConfigForm = {
@@ -20,12 +18,6 @@ type MailgunConfigForm = {
   from_name: string;
   reply_to: string;
   enabled: boolean;
-};
-
-type MailgunTestForm = {
-  to_email: string;
-  subject: string;
-  text: string;
 };
 
 function statusBadge(status: MailgunStatusResponse | null): { label: string; toneClass: string } {
@@ -67,12 +59,8 @@ export function MailgunIntegrationCard() {
   const [configBusy, setConfigBusy] = useState(false);
   const [configMessage, setConfigMessage] = useState("");
 
-  const [testForm, setTestForm] = useState<MailgunTestForm>({ to_email: "", subject: "", text: "" });
-  const [testError, setTestError] = useState("");
-  const [testMessage, setTestMessage] = useState("");
-  const [testBusy, setTestBusy] = useState(false);
-
   const badge = useMemo(() => statusBadge(status), [status]);
+  const isEnvManaged = status?.config_source === "env";
 
   async function loadStatus() {
     setLoading(true);
@@ -110,7 +98,6 @@ export function MailgunIntegrationCard() {
 
     setConfigBusy(true);
     setConfigMessage("");
-    setTestError("");
     try {
       const payload: MailgunConfigPayload = {
         api_key: configForm.api_key.trim(),
@@ -130,30 +117,6 @@ export function MailgunIntegrationCard() {
       setConfigMessage(normalizeError(err, "Nu am putut salva configurația Mailgun."));
     } finally {
       setConfigBusy(false);
-    }
-  }
-
-  async function onTestSend() {
-    if (!testForm.to_email.trim()) {
-      setTestError("Email destinatar este obligatoriu.");
-      return;
-    }
-    setTestBusy(true);
-    setTestError("");
-    setTestMessage("");
-    try {
-      const payload: MailgunTestPayload = {
-        to_email: testForm.to_email.trim(),
-      };
-      if (testForm.subject.trim()) payload.subject = testForm.subject.trim();
-      if (testForm.text.trim()) payload.text = testForm.text.trim();
-
-      await sendMailgunTestEmail(payload);
-      setTestMessage("Emailul de test a fost trimis cu succes.");
-    } catch (err) {
-      setTestError(normalizeError(err, "Nu am putut trimite emailul de test."));
-    } finally {
-      setTestBusy(false);
     }
   }
 
@@ -179,6 +142,7 @@ export function MailgunIntegrationCard() {
         <div className="mt-3 space-y-1 text-xs text-slate-600">
           <p>Configured: {String(Boolean(status?.configured))}</p>
           <p>Enabled: {String(Boolean(status?.enabled))}</p>
+          <p>Config source: {status?.config_source || "none"}</p>
           <p>Domain: {status?.domain || "-"}</p>
           <p>Base URL: {status?.base_url || "-"}</p>
           <p>From email: {status?.from_email || "-"}</p>
@@ -186,24 +150,28 @@ export function MailgunIntegrationCard() {
           <p>Reply-To: {status?.reply_to || "-"}</p>
           <p>API key: {status?.api_key_masked || "-"}</p>
           {!status?.configured ? <p className="pt-1 text-amber-700">Mailgun nu este configurat. Completează formularul de mai jos.</p> : null}
+          {status?.configured && status?.config_source === "env" ? (
+            <p className="pt-1 text-amber-700">Managed by Railway env. Configurarea manuală din UI este read-only.</p>
+          ) : null}
         </div>
       ) : null}
 
       <div className="mt-4 flex flex-wrap gap-2">
         <button
           onClick={() => {
+            if (isEnvManaged) return;
             setConfigOpen((prev) => !prev);
             setConfigErrors({});
             setConfigMessage("");
           }}
           className="wm-btn-primary"
-          disabled={loading || configBusy}
+          disabled={loading || configBusy || isEnvManaged}
         >
-          {configOpen ? "Închide configurare" : status?.configured ? "Editează configurare" : "Configurează Mailgun"}
+          {isEnvManaged ? "Configured in Railway" : configOpen ? "Închide configurare" : status?.configured ? "Editează configurare" : "Configurează Mailgun"}
         </button>
       </div>
 
-      {configOpen ? (
+      {configOpen && !isEnvManaged ? (
         <div className="mt-4 space-y-3 rounded-md border border-slate-200 p-3">
           <p className="text-xs text-slate-500">Din motive de securitate, API key trebuie reintrodus la salvare.</p>
           <label className="block text-xs text-slate-700">
@@ -253,29 +221,7 @@ export function MailgunIntegrationCard() {
           </button>
         </div>
       ) : null}
-
-      <div className="mt-4 space-y-2 rounded-md border border-slate-200 p-3">
-        <p className="text-sm font-medium text-slate-800">Test Email</p>
-        <label className="block text-xs text-slate-700">
-          To email *
-          <input className="wm-input mt-1" value={testForm.to_email} onChange={(e) => setTestForm((prev) => ({ ...prev, to_email: e.target.value }))} />
-        </label>
-        <label className="block text-xs text-slate-700">
-          Subject
-          <input className="wm-input mt-1" value={testForm.subject} onChange={(e) => setTestForm((prev) => ({ ...prev, subject: e.target.value }))} />
-        </label>
-        <label className="block text-xs text-slate-700">
-          Text
-          <textarea className="wm-input mt-1" value={testForm.text} onChange={(e) => setTestForm((prev) => ({ ...prev, text: e.target.value }))} rows={3} />
-        </label>
-
-        {testError ? <p className="text-xs text-red-600">{testError}</p> : null}
-        {testMessage ? <p className="text-xs text-emerald-600">{testMessage}</p> : null}
-
-        <button className="wm-btn-primary" onClick={() => void onTestSend()} disabled={testBusy || loading}>
-          {testBusy ? "Se trimite..." : "Test Email"}
-        </button>
-      </div>
+      <p className="mt-4 text-xs text-slate-500">Test email is available from Email Templates.</p>
     </article>
   );
 }
