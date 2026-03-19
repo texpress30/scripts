@@ -48,6 +48,7 @@ type TeamUserForm = {
   parola: string;
   role: "subaccount_admin" | "subaccount_user" | "subaccount_viewer";
 };
+type FormTab = "user" | "permissions";
 
 type ModulePermissionOption = {
   key: string;
@@ -60,6 +61,7 @@ type ModulePermissionOption = {
   isContainer: boolean;
   grantable: boolean;
 };
+
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PER_PAGE = 5;
@@ -315,6 +317,7 @@ export default function SubAccountTeamPage() {
   const [editInheritedLocked, setEditInheritedLocked] = useState(false);
   const [editUnsafeGrantGap, setEditUnsafeGrantGap] = useState(false);
   const [editOriginal, setEditOriginal] = useState<{ role: TeamUserForm["role"]; moduleKeys: string[] } | null>(null);
+  const [activeFormTab, setActiveFormTab] = useState<FormTab>("user");
 
   const moduleOptionByKey = useMemo(() => {
     const out = new Map<string, ModulePermissionOption>();
@@ -505,6 +508,7 @@ export default function SubAccountTeamPage() {
     setErrors({});
     setShowAdvanced(false);
     setViewMode("create");
+    setActiveFormTab("user");
     if (parsedSubaccountId === null) {
       setModuleOptions([]);
       setSelectedModuleKeys([]);
@@ -547,6 +551,7 @@ export default function SubAccountTeamPage() {
     setEditInheritedLocked(false);
     setEditUnsafeGrantGap(false);
     setEditOriginal(null);
+    setActiveFormTab("user");
   }
 
   function validate(): Record<string, string> {
@@ -576,6 +581,7 @@ export default function SubAccountTeamPage() {
     setModuleLoadError(null);
     setModuleNotice(null);
     setViewMode("edit");
+    setActiveFormTab("user");
     setEditingMembershipId(user.membershipId);
     setIsLoadingEditDetail(true);
     setEditInheritedLocked(false);
@@ -917,110 +923,134 @@ export default function SubAccountTeamPage() {
 
                 <div className="mt-5 grid grid-cols-1 gap-6 xl:grid-cols-[260px_1fr]">
                   <aside className="space-y-2">
-                    <button type="button" className="w-full rounded-md bg-indigo-50 px-3 py-2 text-left text-sm font-semibold text-indigo-700">Informații Utilizator</button>
-                    <button type="button" className="w-full rounded-md px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">Roluri și Permisiuni</button>
+                    <button
+                      type="button"
+                      className={[
+                        "w-full rounded-md px-3 py-2 text-left text-sm",
+                        activeFormTab === "user" ? "bg-indigo-50 font-semibold text-indigo-700" : "text-slate-700 hover:bg-slate-50",
+                      ].join(" ")}
+                      onClick={() => setActiveFormTab("user")}
+                    >
+                      Informații Utilizator
+                    </button>
+                    <button
+                      type="button"
+                      className={[
+                        "w-full rounded-md px-3 py-2 text-left text-sm",
+                        activeFormTab === "permissions" ? "bg-indigo-50 font-semibold text-indigo-700" : "text-slate-700 hover:bg-slate-50",
+                      ].join(" ")}
+                      onClick={() => setActiveFormTab("permissions")}
+                    >
+                      Roluri și Permisiuni
+                    </button>
                   </aside>
 
                   <form noValidate onSubmit={(event) => { void submit(event); }} className="space-y-5">
-                    <div className="rounded-lg border border-slate-200 p-4">
-                      <h2 className="text-base font-semibold text-slate-900">Informații Utilizator</h2>
-                      {viewMode === "edit" && editingMembershipId !== null ? (
-                        <p className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                          Status membership curent: <span className="font-semibold">{users.find((item) => item.membershipId === editingMembershipId)?.membershipStatus === "inactive" ? "Inactiv" : "Activ"}</span>
-                        </p>
-                      ) : null}
-                      <div className="mt-4 space-y-4">
-                        <div>
-                          <p className="text-sm font-medium text-slate-700">Imagine Profil</p>
-                          <div className="mt-2 flex items-center gap-4">
-                            <div className="h-24 w-24 rounded-full border border-slate-300 bg-slate-50" />
-                            <p className="text-xs text-slate-500">Mărimea propusă este 512x512 px, nu mai mare de 2.5 MB.</p>
+                    {activeFormTab === "user" ? (
+                      <>
+                        <div className="rounded-lg border border-slate-200 p-4">
+                          <h2 className="text-base font-semibold text-slate-900">Informații Utilizator</h2>
+                          {viewMode === "edit" && editingMembershipId !== null ? (
+                            <p className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                              Status membership curent: <span className="font-semibold">{users.find((item) => item.membershipId === editingMembershipId)?.membershipStatus === "inactive" ? "Inactiv" : "Activ"}</span>
+                            </p>
+                          ) : null}
+                          <div className="mt-4 space-y-4">
+                            <div>
+                              <p className="text-sm font-medium text-slate-700">Imagine Profil</p>
+                              <div className="mt-2 flex items-center gap-4">
+                                <div className="h-24 w-24 rounded-full border border-slate-300 bg-slate-50" />
+                                <p className="text-xs text-slate-500">Mărimea propusă este 512x512 px, nu mai mare de 2.5 MB.</p>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                              <label className="text-sm text-slate-700">
+                                Prenume <span className="text-red-500">*</span>
+                                <input placeholder="Prenume" className="wm-input mt-1" value={form.prenume} onChange={(e) => setForm((prev) => ({ ...prev, prenume: e.target.value }))} disabled={viewMode === "edit"} />
+                                {errors.prenume ? <p className="mt-1 text-xs text-red-600">{errors.prenume}</p> : null}
+                              </label>
+
+                              <label className="text-sm text-slate-700">
+                                Nume <span className="text-red-500">*</span>
+                                <input placeholder="Nume" className="wm-input mt-1" value={form.nume} onChange={(e) => setForm((prev) => ({ ...prev, nume: e.target.value }))} disabled={viewMode === "edit"} />
+                                {errors.nume ? <p className="mt-1 text-xs text-red-600">{errors.nume}</p> : null}
+                              </label>
+
+                              <label className="text-sm text-slate-700 md:col-span-2">
+                                Email <span className="text-red-500">*</span>
+                                <input type="email" placeholder="Email" className="wm-input mt-1" value={form.email} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} disabled={viewMode === "edit"} />
+                                {errors.email ? <p className="mt-1 text-xs text-red-600">{errors.email}</p> : null}
+                              </label>
+
+                              <label className="text-sm text-slate-700">
+                                Telefon
+                                <input type="tel" placeholder="Telefon" className="wm-input mt-1" value={form.telefon} onChange={(e) => setForm((prev) => ({ ...prev, telefon: e.target.value }))} disabled={viewMode === "edit"} />
+                              </label>
+
+                              <label className="text-sm text-slate-700">
+                                Extensie
+                                <input inputMode="numeric" placeholder="Extensie" className="wm-input mt-1" value={form.extensie} onChange={(e) => setForm((prev) => ({ ...prev, extensie: e.target.value }))} disabled={viewMode === "edit"} />
+                                {errors.extensie ? <p className="mt-1 text-xs text-red-600">{errors.extensie}</p> : null}
+                              </label>
+                            </div>
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                          <label className="text-sm text-slate-700">
-                            Prenume <span className="text-red-500">*</span>
-                            <input placeholder="Prenume" className="wm-input mt-1" value={form.prenume} onChange={(e) => setForm((prev) => ({ ...prev, prenume: e.target.value }))} disabled={viewMode === "edit"} />
-                            {errors.prenume ? <p className="mt-1 text-xs text-red-600">{errors.prenume}</p> : null}
-                          </label>
+                        {viewMode === "create" ? (
+                          <div className="rounded-lg border border-slate-200 p-4">
+                            <button type="button" className="flex w-full items-center justify-between text-left" onClick={() => setShowAdvanced((prev) => !prev)} aria-expanded={showAdvanced}>
+                              <span className="text-sm font-semibold text-slate-800">Setări Avansate</span>
+                              <ChevronDown className={["h-4 w-4 text-slate-600 transition-transform", showAdvanced ? "rotate-180" : "rotate-0"].join(" ")} />
+                            </button>
 
-                          <label className="text-sm text-slate-700">
-                            Nume <span className="text-red-500">*</span>
-                            <input placeholder="Nume" className="wm-input mt-1" value={form.nume} onChange={(e) => setForm((prev) => ({ ...prev, nume: e.target.value }))} disabled={viewMode === "edit"} />
-                            {errors.nume ? <p className="mt-1 text-xs text-red-600">{errors.nume}</p> : null}
-                          </label>
-
-                          <label className="text-sm text-slate-700 md:col-span-2">
-                            Email <span className="text-red-500">*</span>
-                            <input type="email" placeholder="Email" className="wm-input mt-1" value={form.email} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} disabled={viewMode === "edit"} />
-                            {errors.email ? <p className="mt-1 text-xs text-red-600">{errors.email}</p> : null}
-                          </label>
-
-                          <label className="text-sm text-slate-700">
-                            Telefon
-                            <input type="tel" placeholder="Telefon" className="wm-input mt-1" value={form.telefon} onChange={(e) => setForm((prev) => ({ ...prev, telefon: e.target.value }))} disabled={viewMode === "edit"} />
-                          </label>
-
-                          <label className="text-sm text-slate-700">
-                            Extensie
-                            <input inputMode="numeric" placeholder="Extensie" className="wm-input mt-1" value={form.extensie} onChange={(e) => setForm((prev) => ({ ...prev, extensie: e.target.value }))} disabled={viewMode === "edit"} />
-                            {errors.extensie ? <p className="mt-1 text-xs text-red-600">{errors.extensie}</p> : null}
-                          </label>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="rounded-lg border border-slate-200 p-4">
-                      <label className="text-sm text-slate-700">
-                        Rol utilizator
-                        <select className="wm-input mt-1" value={form.role} onChange={(e) => setForm((prev) => ({ ...prev, role: e.target.value as TeamUserForm["role"] }))} disabled={editInheritedLocked || isLoadingEditDetail}>
-                          <option value="subaccount_admin">Subaccount Admin</option>
-                          <option value="subaccount_user">Subaccount User</option>
-                          <option value="subaccount_viewer">Subaccount Viewer</option>
-                        </select>
-                      </label>
-                    </div>
-
-                    <PermissionsEditor
-                      scope="subaccount"
-                      items={permissionEditorItems}
-                      selectedKeys={selectedModuleKeys}
-                      onToggle={(key) => {
-                        const item = moduleOptionByKey.get(normalizeModuleKey(key));
-                        toggleModuleKey(key, Boolean(item?.grantable));
-                      }}
-                      loading={isLoadingModules}
-                      loadError={moduleLoadError}
-                      fieldError={errors.module_keys}
-                      readOnly={editInheritedLocked}
-                      summaryHint="Poți acorda doar cheile de navigare pe care le ai deja în acest sub-account (grant ceiling)."
-                      getItemAriaLabel={(item) => `Permisiune modul ${item.label}`}
-                      getItemDisabled={(item) => {
-                        const source = moduleOptionByKey.get(item.key);
-                        const isReadOnlyGapKey = editUnsafeGrantGap && selectedModuleKeys.includes(item.key) && !source?.grantable;
-                        return !source?.grantable || isReadOnlyGapKey || editInheritedLocked;
-                      }}
-                    />
-                    {moduleNotice ? <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">{moduleNotice}</p> : null}
-
-                    {viewMode === "create" ? (
-                      <div className="rounded-lg border border-slate-200 p-4">
-                        <button type="button" className="flex w-full items-center justify-between text-left" onClick={() => setShowAdvanced((prev) => !prev)} aria-expanded={showAdvanced}>
-                          <span className="text-sm font-semibold text-slate-800">Setări Avansate</span>
-                          <ChevronDown className={["h-4 w-4 text-slate-600 transition-transform", showAdvanced ? "rotate-180" : "rotate-0"].join(" ")} />
-                        </button>
-
-                        {showAdvanced ? (
-                          <div className="mt-4 overflow-hidden transition-all duration-300">
-                            <label className="text-sm text-slate-700">
-                              Parolă
-                              <input type="password" placeholder="Parolă" className="wm-input mt-1" value={form.parola} onChange={(e) => setForm((prev) => ({ ...prev, parola: e.target.value }))} />
-                            </label>
+                            {showAdvanced ? (
+                              <div className="mt-4 overflow-hidden transition-all duration-300">
+                                <label className="text-sm text-slate-700">
+                                  Parolă
+                                  <input type="password" placeholder="Parolă" className="wm-input mt-1" value={form.parola} onChange={(e) => setForm((prev) => ({ ...prev, parola: e.target.value }))} />
+                                </label>
+                              </div>
+                            ) : null}
                           </div>
                         ) : null}
-                      </div>
-                    ) : null}
+                      </>
+                    ) : (
+                      <>
+                        <div className="rounded-lg border border-slate-200 p-4">
+                          <label className="text-sm text-slate-700">
+                            Rol utilizator
+                            <select className="wm-input mt-1" value={form.role} onChange={(e) => setForm((prev) => ({ ...prev, role: e.target.value as TeamUserForm["role"] }))} disabled={editInheritedLocked || isLoadingEditDetail}>
+                              <option value="subaccount_admin">Subaccount Admin</option>
+                              <option value="subaccount_user">Subaccount User</option>
+                              <option value="subaccount_viewer">Subaccount Viewer</option>
+                            </select>
+                          </label>
+                        </div>
+
+                        <PermissionsEditor
+                          scope="subaccount"
+                          items={permissionEditorItems}
+                          selectedKeys={selectedModuleKeys}
+                          onToggle={(key) => {
+                            const item = moduleOptionByKey.get(normalizeModuleKey(key));
+                            toggleModuleKey(key, Boolean(item?.grantable));
+                          }}
+                          loading={isLoadingModules}
+                          loadError={moduleLoadError}
+                          fieldError={errors.module_keys}
+                          readOnly={editInheritedLocked}
+                          summaryHint="Poți acorda doar cheile de navigare pe care le ai deja în acest sub-account (grant ceiling)."
+                          getItemAriaLabel={(item) => `Permisiune modul ${item.label}`}
+                          getItemDisabled={(item) => {
+                            const source = moduleOptionByKey.get(item.key);
+                            const isReadOnlyGapKey = editUnsafeGrantGap && selectedModuleKeys.includes(item.key) && !source?.grantable;
+                            return !source?.grantable || isReadOnlyGapKey || editInheritedLocked;
+                          }}
+                        />
+                        {moduleNotice ? <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">{moduleNotice}</p> : null}
+                      </>
+                    )}
 
                     <footer className="flex justify-end gap-2 border-t border-slate-200 pt-4">
                       <button type="button" className="wm-btn-secondary" onClick={closeForm}>Anulează</button>

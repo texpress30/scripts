@@ -43,6 +43,10 @@ vi.mock("@/lib/api", async () => {
 });
 
 describe("SubAccount Team management page", () => {
+  async function openPermissionsTab() {
+    fireEvent.click(await screen.findByRole("button", { name: "Roluri și Permisiuni" }));
+  }
+
   beforeEach(() => {
     listSubaccountTeamMembersMock.mockReset();
     createSubaccountTeamMemberMock.mockReset();
@@ -193,12 +197,13 @@ describe("SubAccount Team management page", () => {
     await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
-    await screen.findByRole("checkbox", { name: "Permisiune modul Dashboard" });
     fireEvent.change(screen.getByPlaceholderText("Prenume"), { target: { value: "Elena" } });
     fireEvent.change(screen.getByPlaceholderText("Nume"), { target: { value: "Popa" } });
     fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "elena@example.com" } });
     fireEvent.change(screen.getByPlaceholderText("Telefon"), { target: { value: "+40 700 111 222" } });
     fireEvent.change(screen.getByPlaceholderText("Extensie"), { target: { value: "12" } });
+    await openPermissionsTab();
+    await screen.findByRole("checkbox", { name: "Permisiune modul Dashboard" });
     fireEvent.change(screen.getByDisplayValue("Subaccount User"), { target: { value: "subaccount_admin" } });
     fireEvent.click(screen.getByRole("button", { name: "Înainte" }));
 
@@ -223,6 +228,7 @@ describe("SubAccount Team management page", () => {
     await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalled());
 
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    await openPermissionsTab();
 
     const optionTexts = screen.getAllByRole("option").map((node) => node.textContent ?? "");
     expect(optionTexts).toContain("Subaccount Admin");
@@ -321,6 +327,7 @@ describe("SubAccount Team management page", () => {
     await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalled());
 
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    await openPermissionsTab();
 
     await waitFor(() => expect(getSubaccountGrantableModulesMock).toHaveBeenCalledWith(96));
     await waitFor(() => expect(getTeamModuleCatalogMock).toHaveBeenCalledWith("subaccount"));
@@ -347,13 +354,13 @@ describe("SubAccount Team management page", () => {
     await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalled());
 
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
-    const campaigns = await screen.findByRole("checkbox", { name: "Permisiune modul Campaigns" });
-    fireEvent.click(campaigns);
-    fireEvent.click(await screen.findByRole("button", { name: /^Settings/i }));
-
     fireEvent.change(screen.getByPlaceholderText("Prenume"), { target: { value: "Elena" } });
     fireEvent.change(screen.getByPlaceholderText("Nume"), { target: { value: "Popa" } });
     fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "elena@example.com" } });
+    await openPermissionsTab();
+    const campaigns = await screen.findByRole("checkbox", { name: "Permisiune modul Campaigns" });
+    fireEvent.click(campaigns);
+    fireEvent.click(await screen.findByRole("button", { name: /^Settings/i }));
     fireEvent.click(screen.getByRole("button", { name: "Înainte" }));
 
     await waitFor(() => {
@@ -368,6 +375,10 @@ describe("SubAccount Team management page", () => {
     render(<SubAccountTeamPage />);
     await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    fireEvent.change(screen.getByPlaceholderText("Prenume"), { target: { value: "Elena" } });
+    fireEvent.change(screen.getByPlaceholderText("Nume"), { target: { value: "Popa" } });
+    fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "elena@example.com" } });
+    await openPermissionsTab();
     fireEvent.click(await screen.findByRole("button", { name: /^Settings/i }));
 
     const settings = await screen.findByRole("checkbox", { name: "Permisiune modul Settings" });
@@ -393,6 +404,7 @@ describe("SubAccount Team management page", () => {
     render(<SubAccountTeamPage />);
     await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    await openPermissionsTab();
 
     fireEvent.change(screen.getByPlaceholderText("Caută după label, key sau grup"), { target: { value: "team" } });
     fireEvent.click(await screen.findByRole("button", { name: /^Settings/i }));
@@ -433,6 +445,7 @@ describe("SubAccount Team management page", () => {
     render(<SubAccountTeamPage />);
     const editButtons = await screen.findAllByRole("button", { name: "Editează" });
     fireEvent.click(editButtons[0]);
+    await openPermissionsTab();
 
     expect(await screen.findByText(/depășesc accesul tău curent/i)).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: /^Main Navigation/i }));
@@ -445,6 +458,7 @@ describe("SubAccount Team management page", () => {
     render(<SubAccountTeamPage />);
     const editButtons = await screen.findAllByRole("button", { name: "Editează" });
     fireEvent.click(editButtons[0]);
+    await openPermissionsTab();
 
     const campaigns = await screen.findByRole("checkbox", { name: "Permisiune modul Campaigns" });
     fireEvent.click(campaigns);
@@ -465,6 +479,7 @@ describe("SubAccount Team management page", () => {
     await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalled());
 
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    await openPermissionsTab();
 
     const dashboard = await screen.findByRole("checkbox", { name: "Permisiune modul Dashboard" });
     const campaigns = screen.getByRole("checkbox", { name: "Permisiune modul Campaigns" });
@@ -478,9 +493,6 @@ describe("SubAccount Team management page", () => {
     fireEvent.click(settings);
     expect(settings).not.toBeChecked();
 
-    fireEvent.change(screen.getByPlaceholderText("Prenume"), { target: { value: "Elena" } });
-    fireEvent.change(screen.getByPlaceholderText("Nume"), { target: { value: "Popa" } });
-    fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "elena@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Înainte" }));
 
     expect(await screen.findByText("Selectează cel puțin o permisiune de navigare.")).toBeInTheDocument();
@@ -496,11 +508,11 @@ describe("SubAccount Team management page", () => {
     await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalled());
 
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
-    await screen.findByRole("checkbox", { name: "Permisiune modul Dashboard" });
-
     fireEvent.change(screen.getByPlaceholderText("Prenume"), { target: { value: "Elena" } });
     fireEvent.change(screen.getByPlaceholderText("Nume"), { target: { value: "Popa" } });
     fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "elena@example.com" } });
+    await openPermissionsTab();
+    await screen.findByRole("checkbox", { name: "Permisiune modul Dashboard" });
     fireEvent.click(screen.getByRole("button", { name: "Înainte" }));
 
     expect(await screen.findByText("Permisiuni insuficiente pentru această acțiune.")).toBeInTheDocument();
@@ -508,6 +520,23 @@ describe("SubAccount Team management page", () => {
     createSubaccountTeamMemberMock.mockRejectedValueOnce(new ApiRequestError("Nu poți acorda module în afara permisiunilor proprii: campaigns", 400));
     fireEvent.click(screen.getByRole("button", { name: "Înainte" }));
     expect(await screen.findByText("Nu poți acorda module în afara permisiunilor proprii: campaigns")).toBeInTheDocument();
+  });
+
+  it("keeps permissions state when switching between user and permissions tabs", async () => {
+    render(<SubAccountTeamPage />);
+    await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+
+    await openPermissionsTab();
+    const campaigns = await screen.findByRole("checkbox", { name: "Permisiune modul Campaigns" });
+    fireEvent.click(campaigns);
+    expect(campaigns).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole("button", { name: "Informații Utilizator" }));
+    expect(screen.getByPlaceholderText("Prenume")).toBeInTheDocument();
+
+    await openPermissionsTab();
+    expect(screen.getByRole("checkbox", { name: "Permisiune modul Campaigns" })).not.toBeChecked();
   });
 
   it("renders membership status badges and lifecycle actions for active/inactive rows", async () => {
