@@ -1,3 +1,14 @@
+# TODO — AGENTS correction follow-up: enforce executed-work reporting (2026-03-19)
+
+- [x] Re-read repository AGENTS instructions and confirm mandatory workflow gates (plan, verify, commit, PR).
+- [x] Verify current git state before claiming implementation/test outcomes.
+- [x] Record correction-driven safeguards in `tasks/lessons.md` to prevent reporting unexecuted work.
+- [x] Document review notes for this corrective housekeeping task.
+
+## Review
+- [x] Workflow now explicitly includes git-state validation before final reporting.
+- [x] Correction pattern has been captured as a durable lesson for future turns.
+
 # TODO — Hotfix real Agency Team wizard: `Pasul următor` nu trebuie să creeze userul (2026-03-19)
 
 - [x] Re-citire AGENTS/tasks/lessons + `page.tsx` și `page.test.tsx` pentru flow-ul Agency Team create.
