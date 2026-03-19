@@ -153,14 +153,27 @@ def run_migrations(*, database_url: str | None = None, migrations_dir: Path | No
 
     target_dir = resolve_migrations_dir(cli_migrations_dir=migrations_dir)
 
-    with psycopg.connect(db_url) as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT pg_advisory_lock(%s)", (_ADVISORY_LOCK_KEY,))
+    max_retries = 15
+    for attempt in range(max_retries):
         try:
-            return apply_migrations(conn=conn, migrations_dir=target_dir, baseline_before=baseline_before)
-        finally:
-            with conn.cursor() as cur:
-                cur.execute("SELECT pg_advisory_unlock(%s)", (_ADVISORY_LOCK_KEY,))
+            with psycopg.connect(db_url) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT pg_advisory_lock(%s)", (_ADVISORY_LOCK_KEY,))
+                try:
+                    return apply_migrations(conn=conn, migrations_dir=target_dir, baseline_before=baseline_before)
+                finally:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT pg_advisory_unlock(%s)", (_ADVISORY_LOCK_KEY,))
+            break
+        except Exception as e:
+            if "timeout" in str(e).lower() or attempt < max_retries - 1:
+                import time
+                print(f"DB Connection failed: {e}. Retrying {attempt+1}/{max_retries} in 5s...", file=sys.stderr)
+                time.sleep(5)
+                if attempt == max_retries - 1:
+                    raise
+            else:
+                raise
 
 
 def main(argv: list[str] | None = None) -> int:
