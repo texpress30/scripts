@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.api.dependencies import enforce_action_scope, get_current_user
+from app.api.dependencies import enforce_action_scope, enforce_agency_navigation_access, get_current_user
 from app.schemas.company import CompanySettingsResponse, UpdateCompanySettingsRequest
 from app.services.auth import AuthUser
 from app.services.company_settings import company_settings_service
@@ -11,6 +11,7 @@ router = APIRouter(prefix="/company", tags=["company"])
 @router.get("/settings", response_model=CompanySettingsResponse)
 def get_company_settings(user: AuthUser = Depends(get_current_user)) -> CompanySettingsResponse:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="settings_company")
     payload = company_settings_service.get_settings(owner_email=user.email.strip().lower())
     return CompanySettingsResponse(**payload)
 
@@ -18,6 +19,7 @@ def get_company_settings(user: AuthUser = Depends(get_current_user)) -> CompanyS
 @router.patch("/settings", response_model=CompanySettingsResponse)
 def update_company_settings(payload: UpdateCompanySettingsRequest, user: AuthUser = Depends(get_current_user)) -> CompanySettingsResponse:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="settings_company")
 
     if payload.company_name.strip() == "":
         raise HTTPException(status_code=400, detail="Numele companiei este obligatoriu")
