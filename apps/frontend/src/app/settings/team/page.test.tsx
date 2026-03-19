@@ -269,6 +269,7 @@ describe("Settings team page subaccount integration", () => {
 
     fireEvent.change(subaccountSelect, { target: { value: "2" } });
     fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
+    fireEvent.click(screen.getByRole("button", { name: "Creează utilizator" }));
 
     await waitFor(() => {
       const postCall = apiRequestMock.mock.calls.find((call) => call[0] === "/team/members" && call[1]?.method === "POST");
@@ -298,6 +299,7 @@ describe("Settings team page subaccount integration", () => {
     fireEvent.change(screen.getByRole("textbox", { name: /Email/i }), { target: { value: "ana@example.com" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
+    fireEvent.click(screen.getByRole("button", { name: "Creează utilizator" }));
 
     await waitFor(() => {
       const postCall = apiRequestMock.mock.calls.find((call) => call[0] === "/team/members" && call[1]?.method === "POST");
@@ -306,6 +308,21 @@ describe("Settings team page subaccount integration", () => {
 
     expect(inviteTeamMemberMock).not.toHaveBeenCalled();
     expect(await screen.findByText("Utilizator adăugat cu succes.")).toBeInTheDocument();
+  });
+
+  it("in create mode, next step only switches tab and does not call create API", async () => {
+    render(<SettingsTeamPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Prenume" }), { target: { value: "Lia" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Nume" }), { target: { value: "Matei" } });
+    fireEvent.change(screen.getByRole("textbox", { name: /Email/i }), { target: { value: "lia@example.com" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
+
+    expect(screen.getByRole("heading", { name: "Roluri și Permisiuni" })).toBeInTheDocument();
+    const createCall = apiRequestMock.mock.calls.find((call) => call[0] === "/team/members" && call[1]?.method === "POST");
+    expect(createCall).toBeUndefined();
   });
 
   it("create with auto-invite checked calls invite with created membership id", async () => {
@@ -395,6 +412,7 @@ describe("Settings team page subaccount integration", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Trimite invitație imediat după creare" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
+    fireEvent.click(screen.getByRole("button", { name: "Creează utilizator" }));
 
     await waitFor(() => expect(inviteTeamMemberMock).toHaveBeenCalledWith(777));
     expect(await screen.findByText("Utilizatorul a fost creat și invitația a fost trimisă")).toBeInTheDocument();
@@ -493,6 +511,7 @@ describe("Settings team page subaccount integration", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Trimite invitație imediat după creare" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
+    fireEvent.click(screen.getByRole("button", { name: "Creează utilizator" }));
 
     expect(await screen.findByText(/Utilizatorul a fost creat, dar invitația nu a putut fi trimisă\./i)).toBeInTheDocument();
     expect(screen.getByText(/Invitațiile sunt indisponibile temporar/i)).toBeInTheDocument();
@@ -585,6 +604,7 @@ describe("Settings team page subaccount integration", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Trimite invitație imediat după creare" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
+    fireEvent.click(screen.getByRole("button", { name: "Creează utilizator" }));
 
     expect(await screen.findByText("Nu am putut adăuga utilizatorul.")).toBeInTheDocument();
     expect(inviteTeamMemberMock).not.toHaveBeenCalled();
@@ -705,11 +725,11 @@ describe("Settings team page subaccount integration", () => {
       if ((checkbox as HTMLInputElement).checked) fireEvent.click(checkbox);
     }
 
-    fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
+    fireEvent.click(screen.getByRole("button", { name: "Creează utilizator" }));
     expect(await screen.findByText(/Selectează cel puțin o permisiune de navigare/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("Dashboard"));
-    fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
+    fireEvent.click(screen.getByRole("button", { name: "Creează utilizator" }));
 
     await waitFor(() => {
       const postCall = apiRequestMock.mock.calls.find((call) => call[0] === "/team/members" && call[1]?.method === "POST");
@@ -723,13 +743,12 @@ describe("Settings team page subaccount integration", () => {
     render(<SettingsTeamPage />);
 
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
-    await screen.findByLabelText("Dashboard");
     fireEvent.change(screen.getByRole("textbox", { name: "Prenume" }), { target: { value: "Ana" } });
     fireEvent.change(screen.getByRole("textbox", { name: "Nume" }), { target: { value: "Ionescu" } });
     fireEvent.change(screen.getByRole("textbox", { name: /Email/i }), { target: { value: "ana@example.com" } });
     await openPermissionsTab();
     await screen.findByLabelText("Dashboard");
-    fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
+    fireEvent.click(screen.getByRole("button", { name: "Creează utilizator" }));
 
     await waitFor(() => {
       const postCall = apiRequestMock.mock.calls.find((call) => call[0] === "/team/members" && call[1]?.method === "POST");
@@ -757,6 +776,7 @@ describe("Settings team page subaccount integration", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Nume" }), { target: { value: "Ionescu" } });
     fireEvent.change(screen.getByRole("textbox", { name: /Email/i }), { target: { value: "ana@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
+    fireEvent.click(screen.getByRole("button", { name: "Creează utilizator" }));
 
     expect(await screen.findByText(/module_keys este permis doar/i)).toBeInTheDocument();
   });

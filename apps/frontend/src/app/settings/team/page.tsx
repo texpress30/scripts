@@ -651,6 +651,31 @@ export default function SettingsTeamPage() {
     }
   }
 
+  function validateCreateIdentityStep(): boolean {
+    const normalizedFirstName = firstName.trim();
+    const normalizedLastName = lastName.trim();
+    const normalizedEmail = email.trim();
+    setErrorMessage("");
+    setSubaccountFieldError("");
+    if (!normalizedFirstName) {
+      setErrorMessage("Prenumele este obligatoriu.");
+      return false;
+    }
+    if (!normalizedLastName) {
+      setErrorMessage("Numele este obligatoriu.");
+      return false;
+    }
+    if (!normalizedEmail || !normalizedEmail.includes("@")) {
+      setErrorMessage("Email-ul este obligatoriu.");
+      return false;
+    }
+    if (userType === "client" && !subaccount.trim()) {
+      setSubaccountFieldError("Selectarea unui sub-cont este obligatorie pentru utilizatorii de tip client.");
+      return false;
+    }
+    return true;
+  }
+
   const shouldShowModulePermissions = activeCatalog.length > 0;
   const permissionEditorItems = useMemo<PermissionEditorItem[]>(
     () =>
@@ -1077,9 +1102,23 @@ export default function SettingsTeamPage() {
                     <button type="button" className="wm-btn-secondary" onClick={() => { resetCreateForm(); setMode("list"); }}>
                       Anulează
                     </button>
-                    <button type="submit" className="wm-btn-primary" disabled={mode === "edit" ? isEditSaveDisabled : saving}>
-                      {saving ? <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Se salvează...</span> : mode === "edit" ? "Salvează" : "Pasul Următor"}
-                    </button>
+                    {mode === "create" && activeFormTab === "identity" ? (
+                      <button
+                        type="button"
+                        className="wm-btn-primary"
+                        disabled={saving}
+                        onClick={() => {
+                          if (!validateCreateIdentityStep()) return;
+                          setActiveFormTab("permissions");
+                        }}
+                      >
+                        Pasul Următor
+                      </button>
+                    ) : (
+                      <button type="submit" className="wm-btn-primary" disabled={mode === "edit" ? isEditSaveDisabled : saving}>
+                        {saving ? <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Se salvează...</span> : mode === "edit" ? "Salvează" : "Creează utilizator"}
+                      </button>
+                    )}
                   </div>
                 </form>
               </div>
