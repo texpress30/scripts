@@ -570,6 +570,14 @@ export default function SettingsTeamPage() {
 
   async function submitCreateForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (mode === "create" && activeFormTab === "identity") {
+      if (validateCreateIdentityStep()) {
+        setActiveFormTab("permissions");
+      }
+      return;
+    }
+
     setSaving(true);
     setErrorMessage("");
     setSubaccountFieldError("");
