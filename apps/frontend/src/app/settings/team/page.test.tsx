@@ -7,6 +7,7 @@ import { ApiRequestError } from "@/lib/api";
 
 const apiRequestMock = vi.fn();
 const inviteTeamMemberMock = vi.fn();
+const deleteTeamUserMock = vi.fn();
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -20,6 +21,7 @@ vi.mock("@/lib/api", async () => {
     deactivateTeamMember: (membershipId: string | number) => apiRequestMock(`/team/members/${encodeURIComponent(String(membershipId))}/deactivate`, { method: "POST", body: JSON.stringify({}) }),
     reactivateTeamMember: (membershipId: string | number) => apiRequestMock(`/team/members/${encodeURIComponent(String(membershipId))}/reactivate`, { method: "POST", body: JSON.stringify({}) }),
     removeTeamMember: (membershipId: string | number) => apiRequestMock(`/team/members/${encodeURIComponent(String(membershipId))}/remove`, { method: "POST", body: JSON.stringify({}) }),
+    deleteTeamUser: (...args: unknown[]) => deleteTeamUserMock(...args),
   };
 });
 
@@ -58,6 +60,7 @@ describe("Settings team page subaccount integration", () => {
   beforeEach(() => {
     apiRequestMock.mockReset();
     inviteTeamMemberMock.mockReset();
+    deleteTeamUserMock.mockReset();
     vi.spyOn(window, "confirm").mockReturnValue(true);
     apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
       if (path.startsWith("/team/members?")) {
@@ -197,9 +200,6 @@ describe("Settings team page subaccount integration", () => {
       if (path === "/team/members/102/reactivate" && options?.method === "POST") {
         return Promise.resolve({ membership_id: 102, status: "active", message: "Accesul a fost reactivat" });
       }
-      if (path === "/team/members/101/remove" && options?.method === "POST") {
-        return Promise.resolve({ membership_id: 101, removed: true, message: "Accesul a fost eliminat" });
-      }
       if (path === "/team/members" && options?.method === "POST") {
         return Promise.resolve({ item: { id: 1 } });
       }
@@ -229,6 +229,12 @@ describe("Settings team page subaccount integration", () => {
       return Promise.reject(new Error(`Unexpected path: ${path}`));
     });
     inviteTeamMemberMock.mockResolvedValue({ message: "Invitația a fost trimisă" });
+    deleteTeamUserMock.mockResolvedValue({
+      user_id: 201,
+      deleted: true,
+      deleted_memberships_count: 1,
+      message: "Utilizator șters complet din sistem",
+    });
   });
 
   it("loads real subaccount options for list filter and re-filters on selection", async () => {
@@ -1106,41 +1112,41 @@ describe("Settings team page subaccount integration", () => {
     expect(await screen.findByText(/moștenit/i)).toBeInTheDocument();
   });
 
-  it("renders remove action and confirms before remove request", async () => {
+  it("renders delete user action and confirms hard delete message", async () => {
     render(<SettingsTeamPage />);
 
-    const removeButtons = await screen.findAllByRole("button", { name: "Elimină accesul" });
-    expect(removeButtons.length).toBeGreaterThan(0);
+    const deleteButtons = await screen.findAllByRole("button", { name: "Șterge utilizator" });
+    expect(deleteButtons.length).toBeGreaterThan(0);
 
-    fireEvent.click(removeButtons[0]);
+    fireEvent.click(deleteButtons[0]);
 
     await waitFor(() => {
       expect(window.confirm).toHaveBeenCalledWith(
-        "Sigur vrei să elimini acest acces? Această acțiune șterge doar access grant-ul curent, nu utilizatorul global.",
+        "Sigur vrei să ștergi complet acest utilizator din sistem? Acțiunea elimină utilizatorul din users, toate memberships, permisiunile și tokenurile asociate.",
       );
     });
   });
 
-  it("does not call remove endpoint when confirmation is cancelled", async () => {
+  it("does not call hard delete endpoint when confirmation is cancelled", async () => {
     vi.spyOn(window, "confirm").mockReturnValueOnce(false);
     render(<SettingsTeamPage />);
 
-    const removeButtons = await screen.findAllByRole("button", { name: "Elimină accesul" });
-    fireEvent.click(removeButtons[0]);
+    const deleteButtons = await screen.findAllByRole("button", { name: "Șterge utilizator" });
+    fireEvent.click(deleteButtons[0]);
 
     await waitFor(() => {
-      expect(apiRequestMock.mock.calls.some((call) => call[0] === "/team/members/101/remove")).toBe(false);
+      expect(deleteTeamUserMock).not.toHaveBeenCalled();
     });
   });
 
-  it("removes membership on success and refetches list", async () => {
+  it("hard deletes user on success and refetches list", async () => {
     render(<SettingsTeamPage />);
 
-    const removeButtons = await screen.findAllByRole("button", { name: "Elimină accesul" });
-    fireEvent.click(removeButtons[0]);
+    const deleteButtons = await screen.findAllByRole("button", { name: "Șterge utilizator" });
+    fireEvent.click(deleteButtons[0]);
 
     await waitFor(() => {
-      expect(apiRequestMock.mock.calls.some((call) => call[0] === "/team/members/101/remove" && call[1]?.method === "POST")).toBe(true);
+      expect(deleteTeamUserMock).toHaveBeenCalledWith(201);
     });
 
     await waitFor(() => {
@@ -1148,10 +1154,10 @@ describe("Settings team page subaccount integration", () => {
       expect(memberListCalls.length).toBeGreaterThan(1);
     });
 
-    expect(await screen.findByText(/Accesul a fost eliminat/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Utilizator șters complet din sistem/i)).toBeInTheDocument();
   });
 
-  it("handles remove 403 and 404 with clear feedback", async () => {
+  it("handles hard delete 403 and 404 with clear feedback", async () => {
     apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
       if (path.startsWith("/team/members?")) {
         return Promise.resolve({
@@ -1167,22 +1173,23 @@ describe("Settings team page subaccount integration", () => {
       if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
       if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
       if (path === "/team/module-catalog?scope=agency") return Promise.resolve({ items: [] });
-      if (path === "/team/members/401/remove" && options?.method === "POST") return Promise.reject(new ApiRequestError("forbidden", 403));
-      if (path === "/team/members/402/remove" && options?.method === "POST") return Promise.reject(new ApiRequestError("Membership inexistent", 404));
       return Promise.reject(new Error(`Unexpected path: ${path}`));
     });
+    deleteTeamUserMock
+      .mockRejectedValueOnce(new ApiRequestError("forbidden", 403))
+      .mockRejectedValueOnce(new ApiRequestError("Utilizator inexistent", 404));
 
     render(<SettingsTeamPage />);
 
-    const removeButtons = await screen.findAllByRole("button", { name: "Elimină accesul" });
-    fireEvent.click(removeButtons[0]);
-    expect(await screen.findByText(/permisiuni suficiente pentru a elimina acest acces/i)).toBeInTheDocument();
+    const deleteButtons = await screen.findAllByRole("button", { name: "Șterge utilizator" });
+    fireEvent.click(deleteButtons[0]);
+    expect(await screen.findByText(/permisiuni suficiente pentru a șterge acest utilizator/i)).toBeInTheDocument();
 
-    fireEvent.click(removeButtons[1]);
-    expect(await screen.findByText(/Membership inexistent/i)).toBeInTheDocument();
+    fireEvent.click(deleteButtons[1]);
+    expect(await screen.findByText(/Utilizator inexistent/i)).toBeInTheDocument();
   });
 
-  it("handles remove 409 self-removal conflict with clear feedback", async () => {
+  it("handles hard delete 409 self-delete conflict with clear feedback", async () => {
     apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
       if (path.startsWith("/team/members?")) {
         return Promise.resolve({
@@ -1197,15 +1204,15 @@ describe("Settings team page subaccount integration", () => {
       if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
       if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
       if (path === "/team/module-catalog?scope=agency") return Promise.resolve({ items: [] });
-      if (path === "/team/members/403/remove" && options?.method === "POST") return Promise.reject(new ApiRequestError("Nu îți poți elimina propriul membership din sesiunea curentă", 409));
       return Promise.reject(new Error(`Unexpected path: ${path}`));
     });
+    deleteTeamUserMock.mockRejectedValueOnce(new ApiRequestError("Nu îți poți șterge propriul utilizator din sesiunea curentă", 409));
 
     render(<SettingsTeamPage />);
 
-    const removeButtons = await screen.findAllByRole("button", { name: "Elimină accesul" });
-    fireEvent.click(removeButtons[0]);
-    expect(await screen.findByText(/Nu îți poți elimina accesul curent din această sesiune/i)).toBeInTheDocument();
+    const deleteButtons = await screen.findAllByRole("button", { name: "Șterge utilizator" });
+    fireEvent.click(deleteButtons[0]);
+    expect(await screen.findByText(/Nu îți poți șterge propriul utilizator din această sesiune/i)).toBeInTheDocument();
   });
 
 

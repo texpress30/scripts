@@ -18,6 +18,7 @@ from app.schemas.team import (
     TeamMemberResponse,
     TeamMembershipStatusResponse,
     TeamMembershipRemoveResponse,
+    TeamUserDeleteResponse,
     TeamModuleCatalogResponse,
     TeamGrantableModulesResponse,
     TeamSubaccountMyAccessResponse,
@@ -319,6 +320,33 @@ def remove_team_membership(
         membership_id=int(payload.get("membership_id") or membership_id),
         removed=bool(payload.get("removed", True)),
         message=str(payload.get("message") or "Membership eliminat"),
+    )
+
+
+@router.post("/users/{user_id}/delete", response_model=TeamUserDeleteResponse)
+def delete_team_user_hard(
+    user_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> TeamUserDeleteResponse:
+    _enforce_membership_edit_actor_role(user)
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="settings_my_team")
+    try:
+        payload = team_members_service.delete_user_hard(user_id=user_id, actor_user=user)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return TeamUserDeleteResponse(
+        user_id=int(payload.get("user_id") or user_id),
+        deleted=bool(payload.get("deleted", True)),
+        deleted_memberships_count=int(payload.get("deleted_memberships_count") or 0),
+        message=str(payload.get("message") or "Utilizator șters complet din sistem"),
     )
 
 @router.post("/members/{membership_id}/invite", response_model=TeamMemberInviteResponse)

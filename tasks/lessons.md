@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-19: Pentru cerințe “delete user de peste tot”, nu reutiliza endpointul de remove membership; adaugă endpoint dedicat pe `user_id` + guard DB-backed în auth pentru a invalida tokenurile vechi după hard delete.
+
 - 2026-03-19: Pentru wizard create în doi pași, evită `<form>` global peste etape; separă structural step1 non-form și step2 form cu footere distincte, altfel apar click-through/submit-through greu de eliminat doar cu guard-uri.
 
 - 2026-03-19: După corecție de proces, nu raporta niciodată implementări/teste ca finalizate fără execuție reală în workspace; verifică explicit `git status` + comenzile rulate înainte de mesajul final.

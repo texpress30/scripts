@@ -1,3 +1,20 @@
+# TODO — Agency Team hard delete user complet (2026-03-19)
+
+- [x] Re-sync + recitire AGENTS/tasks + fișiere backend/frontend cerute înainte de modificări.
+- [x] Confirmare cauză: acțiunea existentă folosea `POST /team/members/{membership_id}/remove` (remove membership), nu delete user global.
+- [x] Backend: endpoint nou `POST /team/users/{user_id}/delete` (agency/admin scoped), separat de remove membership.
+- [x] Service: helper `delete_user_hard(...)` care șterge `users` (cascade memberships/permissions/auth_email_tokens) + cleanup legacy `team_members` după email.
+- [x] Protecții: self-delete blocat (409), user missing (404), payload clar (`user_id`, `deleted`, `deleted_memberships_count`, `message`).
+- [x] Auth/dependencies: check DB-backed minim pentru tokenuri non-env-admin (`user_id` activ în `users`), altfel 401.
+- [x] Frontend Agency Team: buton/acțiune schimbate pe hard delete user (`Șterge utilizator`), confirm explicit, refetch list, mapare erori 403/404/409.
+- [x] Teste backend + frontend actualizate pentru noua semantică și no-regression de bază.
+- [x] Rulare verificări relevante (backend tests țintite, import check backend, frontend tests, frontend build).
+
+## Review
+- [x] Agency Team șterge acum utilizatorul complet, nu doar grant-ul curent.
+- [x] Remove membership endpoint rămâne separat (compatibil pentru alte zone, inclusiv Sub-account semantics).
+- [x] Tokenurile vechi pentru user șters sunt respinse prin verificare DB-backed în `get_current_user`.
+
 # TODO — REDO Agency Team wizard: separare structurală pas 1 non-form vs pas 2 form (2026-03-19)
 
 - [x] Re-sync workspace + re-citire AGENTS/tasks/page.tsx/page.test.tsx înainte de modificări.
