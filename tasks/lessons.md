@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-19: Când același endpoint confirmă tokenuri de invite și forgot-reset, expune un endpoint mic de context (validate-only, non-consuming) pentru frontend, ca să poți diferenția copy-ul UX fără să fragmentezi contractul de confirm.
+
 - 2026-03-19: Pentru create user fără parolă explicită, nu folosi niciodată hash fallback reutilizabil; persistă hash gol + `must_reset_password=true` și blochează login-ul DB până la confirmarea tokenului de setare inițială.
 
 - 2026-03-19: Pentru Sub-account Team wizard create, nu păstra submit button cu label ambiguu (`Înainte`) în același `<form>` cross-tab; separă structural pasul 1 non-form și pasul 2 form cu CTA final explicit `Creează utilizator`.

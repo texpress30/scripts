@@ -1,3 +1,17 @@
+# TODO — Reset-password UX context: invite vs forgot token semantics (2026-03-19)
+
+- [x] Re-sync + recitire AGENTS/tasks/lessons + fișiere backend/frontend relevante pentru reset-password.
+- [x] Adăugare endpoint backend additive de context token (validare fără consum) pentru `invite_user` vs `password_reset`.
+- [x] UI `/reset-password` actualizat cu copy/CTA diferențiat pe tip token și succes diferențiat.
+- [x] Stare invalid/expirat/consumat și fallback safe dacă fetch context eșuează.
+- [x] Teste backend pentru endpoint context (invite/reset/invalid + non-consume token).
+- [x] Teste frontend pentru copy invite/reset, success diferențiat, invalid token, fallback safe.
+- [x] Rulare verificări backend + frontend țintite și build frontend.
+
+## Review
+- [x] Diferența semantică invite vs forgot-password este vizibilă în UX fără schimbare de contracte existente.
+- [x] Team wizard-urile și flow-ul de delete/remove nu au fost atinse.
+
 # TODO — Create/Invite auth semantics hardening (2026-03-19)
 
 - [x] Re-sync + recitire AGENTS/tasks/lessons și fișierele backend relevante pentru create/invite/login/reset.
