@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import React, { useEffect, useState } from "react";
 
 import { format, startOfMonth, subDays } from "date-fns";
@@ -11,7 +11,7 @@ import "react-day-picker/dist/style.css";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { apiRequest } from "@/lib/api";
+import { apiRequest, getSubaccountMyAccess } from "@/lib/api";
 import { derivePlatformSyncStatus } from "@/lib/accountSyncStatus";
 
 type DashboardResponse = {
@@ -67,6 +67,7 @@ const PRESET_ITEMS: Array<{ key: DatePresetKey; label: string }> = [
   { key: "month", label: "This month" },
   { key: "custom", label: "Custom" },
 ];
+const SUBACCOUNT_MODULE_ORDER = ["dashboard", "campaigns", "rules", "creative", "recommendations"] as const;
 
 function toIso(value: Date): string {
   return format(value, "yyyy-MM-dd");
@@ -129,10 +130,12 @@ const STATUS_STYLES: Record<string, string> = {
 
 export default function SubDashboardPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const clientId = Number(params.id);
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [accessGuardReady, setAccessGuardReady] = useState(false);
 
   const initialRange = rangeForPreset("last30");
   const [openPicker, setOpenPicker] = useState(false);
@@ -144,6 +147,39 @@ export default function SubDashboardPage() {
 
   const appliedFrom = appliedRange.from ?? subDays(new Date(), 29);
   const appliedTo = appliedRange.to ?? appliedFrom;
+
+  useEffect(() => {
+    if (!Number.isFinite(clientId)) {
+      setAccessGuardReady(true);
+      return;
+    }
+
+    let ignore = false;
+    let redirected = false;
+    setAccessGuardReady(false);
+    async function validateDashboardAccess() {
+      try {
+        const access = await getSubaccountMyAccess(clientId);
+        const allowedModules = new Set((access.module_keys ?? []).map((item) => String(item || "").trim().toLowerCase()));
+        if (!allowedModules.has("dashboard")) {
+          const firstAllowed = SUBACCOUNT_MODULE_ORDER.find((moduleKey) => allowedModules.has(moduleKey));
+          const target = firstAllowed ? `/sub/${clientId}/${firstAllowed}` : "/agency/dashboard";
+          redirected = true;
+          router.replace(target);
+          return;
+        }
+      } catch {
+        // AppShell guard still handles API failures.
+      } finally {
+        if (!ignore && !redirected) setAccessGuardReady(true);
+      }
+    }
+    void validateDashboardAccess();
+
+    return () => {
+      ignore = true;
+    };
+  }, [clientId, router]);
 
   async function load() {
     setLoading(true);
@@ -162,9 +198,9 @@ export default function SubDashboardPage() {
   }
 
   useEffect(() => {
-    if (Number.isFinite(clientId)) void load();
+    if (accessGuardReady && Number.isFinite(clientId)) void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clientId, appliedFrom, appliedTo]);
+  }, [clientId, appliedFrom, appliedTo, accessGuardReady]);
 
   function handlePresetClick(nextPreset: DatePresetKey) {
     setDraftPreset(nextPreset);

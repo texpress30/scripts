@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import SettingsTeamPage from "./page";
+import { ApiRequestError } from "@/lib/api";
 
 const apiRequestMock = vi.fn();
 const inviteTeamMemberMock = vi.fn();
@@ -14,6 +15,11 @@ vi.mock("@/lib/api", async () => {
     apiRequest: (...args: unknown[]) => apiRequestMock(...args),
     getTeamModuleCatalog: (scope = "subaccount") => apiRequestMock(`/team/module-catalog?scope=${encodeURIComponent(scope)}`),
     inviteTeamMember: (...args: unknown[]) => inviteTeamMemberMock(...args),
+    getTeamMembershipDetail: (membershipId: string | number) => apiRequestMock(`/team/members/${encodeURIComponent(String(membershipId))}`),
+    updateTeamMembership: (membershipId: string | number, payload: unknown) => apiRequestMock(`/team/members/${encodeURIComponent(String(membershipId))}`, { method: "PATCH", body: JSON.stringify(payload) }),
+    deactivateTeamMember: (membershipId: string | number) => apiRequestMock(`/team/members/${encodeURIComponent(String(membershipId))}/deactivate`, { method: "POST", body: JSON.stringify({}) }),
+    reactivateTeamMember: (membershipId: string | number) => apiRequestMock(`/team/members/${encodeURIComponent(String(membershipId))}/reactivate`, { method: "POST", body: JSON.stringify({}) }),
+    removeTeamMember: (membershipId: string | number) => apiRequestMock(`/team/members/${encodeURIComponent(String(membershipId))}/remove`, { method: "POST", body: JSON.stringify({}) }),
   };
 });
 
@@ -31,9 +37,24 @@ vi.mock("@/components/AppShell", () => ({
 }));
 
 describe("Settings team page subaccount integration", () => {
+  function getCheckboxByLabelText(label: string): HTMLInputElement {
+    const candidates = screen.getAllByText(label);
+    for (const node of candidates) {
+      const checkbox = node.closest("label")?.querySelector("input[type='checkbox']") as HTMLInputElement | null;
+      if (checkbox) return checkbox;
+    }
+    throw new Error(`Checkbox not found for label: ${label}`);
+  }
+
+  async function openPermissionsTab() {
+    fireEvent.click(screen.getByRole("button", { name: "Roluri și Permisiuni" }));
+    await screen.findByPlaceholderText("Caută după label, key sau grup");
+  }
+
   beforeEach(() => {
     apiRequestMock.mockReset();
     inviteTeamMemberMock.mockReset();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
       if (path.startsWith("/team/members?")) {
         return Promise.resolve({
@@ -51,6 +72,7 @@ describe("Settings team page subaccount integration", () => {
               user_role: "admin",
               location: "România",
               subaccount: "Toate",
+              membership_status: "active",
             },
             {
               id: 102,
@@ -65,6 +87,7 @@ describe("Settings team page subaccount integration", () => {
               user_role: "member",
               location: "România",
               subaccount: "Toate",
+              membership_status: "inactive",
             },
           ],
           total: 2,
@@ -91,8 +114,113 @@ describe("Settings team page subaccount integration", () => {
           ],
         });
       }
+      if (path === "/team/module-catalog?scope=agency") {
+        return Promise.resolve({
+          items: [
+            { key: "agency_dashboard", label: "Dashboard", order: 1, scope: "agency", group_key: "main_nav", group_label: "Main Navigation" },
+            { key: "settings", label: "Settings", order: 100, scope: "agency", group_key: "settings", group_label: "Settings", is_container: true },
+            { key: "settings_my_team", label: "My Team", order: 130, scope: "agency", group_key: "settings", group_label: "Settings", parent_key: "settings" },
+          ],
+        });
+      }
+
+      if (path === "/team/members/101") {
+        return Promise.resolve({
+          item: {
+            membership_id: 101,
+            user_id: 201,
+            scope_type: "agency",
+            subaccount_id: null,
+            subaccount_name: "Toate",
+            role_key: "agency_admin",
+            role_label: "Agency Admin",
+            module_keys: [],
+            source_scope: "agency",
+            is_inherited: false,
+            first_name: "Ana",
+            last_name: "Ionescu",
+            email: "ana@example.com",
+            phone: "",
+            extension: "",
+          },
+        });
+      }
+      if (path === "/team/members/103") {
+        return Promise.resolve({
+          item: {
+            membership_id: 103,
+            user_id: 203,
+            scope_type: "subaccount",
+            subaccount_id: 2,
+            subaccount_name: "Client Alpha",
+            role_key: "subaccount_user",
+            role_label: "Subaccount User",
+            module_keys: ["dashboard", "creative"],
+            source_scope: "subaccount",
+            is_inherited: false,
+            first_name: "Mihai",
+            last_name: "Pop",
+            email: "mihai@example.com",
+            phone: "0700",
+            extension: "12",
+          },
+        });
+      }
+      if (path === "/team/members/104") {
+        return Promise.resolve({
+          item: {
+            membership_id: 104,
+            user_id: 204,
+            scope_type: "subaccount",
+            subaccount_id: 3,
+            subaccount_name: "Client Beta",
+            role_key: "subaccount_user",
+            role_label: "Subaccount User",
+            module_keys: ["dashboard"],
+            source_scope: "subaccount",
+            is_inherited: true,
+            first_name: "Inh",
+            last_name: "User",
+            email: "inh@example.com",
+            phone: "",
+            extension: "",
+          },
+        });
+      }
+      if (path === "/team/members/101/deactivate" && options?.method === "POST") {
+        return Promise.resolve({ membership_id: 101, status: "inactive", message: "Accesul a fost dezactivat pentru sesiunile noi și pentru verificările bazate pe datele curente." });
+      }
+      if (path === "/team/members/102/reactivate" && options?.method === "POST") {
+        return Promise.resolve({ membership_id: 102, status: "active", message: "Accesul a fost reactivat" });
+      }
+      if (path === "/team/members/101/remove" && options?.method === "POST") {
+        return Promise.resolve({ membership_id: 101, removed: true, message: "Accesul a fost eliminat" });
+      }
       if (path === "/team/members" && options?.method === "POST") {
         return Promise.resolve({ item: { id: 1 } });
+      }
+      if (path.startsWith("/team/members/") && options?.method === "PATCH") {
+        const membershipId = Number(path.split("/").at(-1));
+        const body = JSON.parse(String(options.body ?? "{}"));
+        return Promise.resolve({
+          item: {
+            membership_id: membershipId,
+            user_id: 201,
+            scope_type: membershipId === 101 ? "agency" : "subaccount",
+            subaccount_id: membershipId === 101 ? null : 2,
+            subaccount_name: membershipId === 101 ? "Toate" : "Client Alpha",
+            role_key: body.user_role ?? (membershipId === 101 ? "agency_admin" : "subaccount_user"),
+            role_label: "Updated",
+            module_keys: body.module_keys ?? [],
+            source_scope: membershipId === 101 ? "agency" : "subaccount",
+            is_inherited: false,
+            first_name: "Ana",
+            last_name: "Ionescu",
+            email: "ana@example.com",
+            phone: "",
+            extension: "",
+          },
+        });
       }
       return Promise.reject(new Error(`Unexpected path: ${path}`));
     });
@@ -187,6 +315,71 @@ describe("Settings team page subaccount integration", () => {
       }
       if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
       if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=agency") return Promise.resolve({ items: [] });
+
+      if (path === "/team/members/101") {
+        return Promise.resolve({
+          item: {
+            membership_id: 101,
+            user_id: 201,
+            scope_type: "agency",
+            subaccount_id: null,
+            subaccount_name: "Toate",
+            role_key: "agency_admin",
+            role_label: "Agency Admin",
+            module_keys: [],
+            source_scope: "agency",
+            is_inherited: false,
+            first_name: "Ana",
+            last_name: "Ionescu",
+            email: "ana@example.com",
+            phone: "",
+            extension: "",
+          },
+        });
+      }
+      if (path === "/team/members/103") {
+        return Promise.resolve({
+          item: {
+            membership_id: 103,
+            user_id: 203,
+            scope_type: "subaccount",
+            subaccount_id: 2,
+            subaccount_name: "Client Alpha",
+            role_key: "subaccount_user",
+            role_label: "Subaccount User",
+            module_keys: ["dashboard", "creative"],
+            source_scope: "subaccount",
+            is_inherited: false,
+            first_name: "Mihai",
+            last_name: "Pop",
+            email: "mihai@example.com",
+            phone: "0700",
+            extension: "12",
+          },
+        });
+      }
+      if (path === "/team/members/104") {
+        return Promise.resolve({
+          item: {
+            membership_id: 104,
+            user_id: 204,
+            scope_type: "subaccount",
+            subaccount_id: 3,
+            subaccount_name: "Client Beta",
+            role_key: "subaccount_user",
+            role_label: "Subaccount User",
+            module_keys: ["dashboard"],
+            source_scope: "subaccount",
+            is_inherited: true,
+            first_name: "Inh",
+            last_name: "User",
+            email: "inh@example.com",
+            phone: "",
+            extension: "",
+          },
+        });
+      }
       if (path === "/team/members" && options?.method === "POST") {
         return Promise.resolve({ item: { id: 1001, membership_id: 777 } });
       }
@@ -212,7 +405,6 @@ describe("Settings team page subaccount integration", () => {
   });
 
   it("create success + invite 503 shows partial success message", async () => {
-    const { ApiRequestError } = await import("@/lib/api");
     inviteTeamMemberMock.mockRejectedValueOnce(new ApiRequestError("temporarily unavailable", 503));
 
     apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
@@ -221,6 +413,71 @@ describe("Settings team page subaccount integration", () => {
       }
       if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
       if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=agency") return Promise.resolve({ items: [] });
+
+      if (path === "/team/members/101") {
+        return Promise.resolve({
+          item: {
+            membership_id: 101,
+            user_id: 201,
+            scope_type: "agency",
+            subaccount_id: null,
+            subaccount_name: "Toate",
+            role_key: "agency_admin",
+            role_label: "Agency Admin",
+            module_keys: [],
+            source_scope: "agency",
+            is_inherited: false,
+            first_name: "Ana",
+            last_name: "Ionescu",
+            email: "ana@example.com",
+            phone: "",
+            extension: "",
+          },
+        });
+      }
+      if (path === "/team/members/103") {
+        return Promise.resolve({
+          item: {
+            membership_id: 103,
+            user_id: 203,
+            scope_type: "subaccount",
+            subaccount_id: 2,
+            subaccount_name: "Client Alpha",
+            role_key: "subaccount_user",
+            role_label: "Subaccount User",
+            module_keys: ["dashboard", "creative"],
+            source_scope: "subaccount",
+            is_inherited: false,
+            first_name: "Mihai",
+            last_name: "Pop",
+            email: "mihai@example.com",
+            phone: "0700",
+            extension: "12",
+          },
+        });
+      }
+      if (path === "/team/members/104") {
+        return Promise.resolve({
+          item: {
+            membership_id: 104,
+            user_id: 204,
+            scope_type: "subaccount",
+            subaccount_id: 3,
+            subaccount_name: "Client Beta",
+            role_key: "subaccount_user",
+            role_label: "Subaccount User",
+            module_keys: ["dashboard"],
+            source_scope: "subaccount",
+            is_inherited: true,
+            first_name: "Inh",
+            last_name: "User",
+            email: "inh@example.com",
+            phone: "",
+            extension: "",
+          },
+        });
+      }
       if (path === "/team/members" && options?.method === "POST") {
         return Promise.resolve({ item: { id: 1002, membership_id: 778 } });
       }
@@ -248,6 +505,71 @@ describe("Settings team page subaccount integration", () => {
       }
       if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
       if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=agency") return Promise.resolve({ items: [] });
+
+      if (path === "/team/members/101") {
+        return Promise.resolve({
+          item: {
+            membership_id: 101,
+            user_id: 201,
+            scope_type: "agency",
+            subaccount_id: null,
+            subaccount_name: "Toate",
+            role_key: "agency_admin",
+            role_label: "Agency Admin",
+            module_keys: [],
+            source_scope: "agency",
+            is_inherited: false,
+            first_name: "Ana",
+            last_name: "Ionescu",
+            email: "ana@example.com",
+            phone: "",
+            extension: "",
+          },
+        });
+      }
+      if (path === "/team/members/103") {
+        return Promise.resolve({
+          item: {
+            membership_id: 103,
+            user_id: 203,
+            scope_type: "subaccount",
+            subaccount_id: 2,
+            subaccount_name: "Client Alpha",
+            role_key: "subaccount_user",
+            role_label: "Subaccount User",
+            module_keys: ["dashboard", "creative"],
+            source_scope: "subaccount",
+            is_inherited: false,
+            first_name: "Mihai",
+            last_name: "Pop",
+            email: "mihai@example.com",
+            phone: "0700",
+            extension: "12",
+          },
+        });
+      }
+      if (path === "/team/members/104") {
+        return Promise.resolve({
+          item: {
+            membership_id: 104,
+            user_id: 204,
+            scope_type: "subaccount",
+            subaccount_id: 3,
+            subaccount_name: "Client Beta",
+            role_key: "subaccount_user",
+            role_label: "Subaccount User",
+            module_keys: ["dashboard"],
+            source_scope: "subaccount",
+            is_inherited: true,
+            first_name: "Inh",
+            last_name: "User",
+            email: "inh@example.com",
+            phone: "",
+            extension: "",
+          },
+        });
+      }
       if (path === "/team/members" && options?.method === "POST") {
         return Promise.reject(new Error("Nu am putut adăuga utilizatorul."));
       }
@@ -269,19 +591,23 @@ describe("Settings team page subaccount integration", () => {
   });
 
 
-  it("loads module catalog and shows permissions section only for client with selected subaccount", async () => {
+  it("loads agency + subaccount catalogs and switches permissions by user type", async () => {
     render(<SettingsTeamPage />);
 
     await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/team/module-catalog?scope=subaccount"));
+    await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/team/module-catalog?scope=agency"));
 
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    await openPermissionsTab();
 
-    expect(screen.queryByLabelText("Dashboard")).not.toBeInTheDocument();
+    expect(await screen.findByLabelText("Dashboard")).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: /^Settings/i }));
+    const settingsParent = getCheckboxByLabelText("Settings");
+    expect(settingsParent).toBeChecked();
 
+    fireEvent.click(screen.getByRole("button", { name: "Informații Utilizator" }));
     fireEvent.change(screen.getByLabelText("Tip Utilizator"), { target: { value: "client" } });
-    expect(screen.queryByLabelText("Dashboard")).not.toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText("Sub-cont"), { target: { value: "2" } });
+    await openPermissionsTab();
     expect(screen.getByLabelText("Dashboard")).toBeChecked();
     expect(screen.getByLabelText("Recommendations")).toBeChecked();
   });
@@ -294,12 +620,72 @@ describe("Settings team page subaccount integration", () => {
     const subaccountSelect = screen.getByLabelText("Sub-cont") as HTMLSelectElement;
     await waitFor(() => expect(subaccountSelect.disabled).toBe(false));
     fireEvent.change(subaccountSelect, { target: { value: "2" } });
+    await openPermissionsTab();
 
-    const creative = await screen.findByLabelText("Creative");
-    expect(creative).toBeChecked();
-    fireEvent.click(creative);
-    expect(creative).not.toBeChecked();
+    const dashboard = await screen.findByLabelText("Dashboard");
+    expect(dashboard).toBeChecked();
+    fireEvent.click(dashboard);
+    expect(dashboard).not.toBeChecked();
   });
+
+  it("syncs settings parent and children coherently for agency catalog", async () => {
+    render(<SettingsTeamPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    await openPermissionsTab();
+    fireEvent.click(await screen.findByRole("button", { name: /^Settings/i }));
+    await screen.findByLabelText("My Team");
+
+    const settingsParent = getCheckboxByLabelText("Settings");
+    const settingsChild = getCheckboxByLabelText("My Team");
+    expect(settingsParent).toBeChecked();
+    expect(settingsChild).toBeChecked();
+
+    fireEvent.click(settingsParent);
+    expect(settingsParent).not.toBeChecked();
+    expect(settingsChild).not.toBeChecked();
+
+    fireEvent.click(settingsChild);
+    expect(settingsParent).toBeChecked();
+    expect(settingsChild).toBeChecked();
+
+    fireEvent.click(settingsChild);
+    expect(settingsParent).not.toBeChecked();
+    expect(settingsChild).not.toBeChecked();
+  });
+
+  it("supports permissions search in shared editor", async () => {
+    render(<SettingsTeamPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    await openPermissionsTab();
+    await screen.findByLabelText("Dashboard");
+    fireEvent.change(screen.getByPlaceholderText("Caută după label, key sau grup"), { target: { value: "my team" } });
+    fireEvent.click(await screen.findByRole("button", { name: /^Settings/i }));
+
+    expect(await screen.findByLabelText("My Team")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Dashboard")).not.toBeInTheDocument();
+  });
+
+  it("renders permissions only in dedicated tab and preserves checkbox state across tab switches", async () => {
+    render(<SettingsTeamPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    expect(screen.queryByPlaceholderText("Caută după label, key sau grup")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Setări Avansate" })).toBeInTheDocument();
+
+    await openPermissionsTab();
+    const dashboard = await screen.findByLabelText("Dashboard");
+    expect(dashboard).toBeChecked();
+    fireEvent.click(dashboard);
+    expect(dashboard).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole("button", { name: "Informații Utilizator" }));
+    expect(screen.queryByPlaceholderText("Caută după label, key sau grup")).not.toBeInTheDocument();
+
+    await openPermissionsTab();
+    expect(screen.getByLabelText("Dashboard")).not.toBeChecked();
+  }, 10000);
 
   it("subaccount create sends module_keys and blocks submit when none selected", async () => {
     render(<SettingsTeamPage />);
@@ -312,6 +698,7 @@ describe("Settings team page subaccount integration", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Prenume" }), { target: { value: "Ana" } });
     fireEvent.change(screen.getByRole("textbox", { name: "Nume" }), { target: { value: "Ionescu" } });
     fireEvent.change(screen.getByRole("textbox", { name: /Email/i }), { target: { value: "ana@example.com" } });
+    await openPermissionsTab();
 
     for (const label of ["Dashboard", "Campaigns", "Rules", "Creative", "Recommendations"]) {
       const checkbox = await screen.findByLabelText(label);
@@ -319,7 +706,7 @@ describe("Settings team page subaccount integration", () => {
     }
 
     fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
-    expect(await screen.findByText(/Selectează cel puțin un modul/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Selectează cel puțin o permisiune de navigare/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("Dashboard"));
     fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
@@ -332,29 +719,32 @@ describe("Settings team page subaccount integration", () => {
     });
   });
 
-  it("agency create does not send module_keys", async () => {
+  it("agency create sends agency module_keys", async () => {
     render(<SettingsTeamPage />);
 
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
     fireEvent.change(screen.getByRole("textbox", { name: "Prenume" }), { target: { value: "Ana" } });
     fireEvent.change(screen.getByRole("textbox", { name: "Nume" }), { target: { value: "Ionescu" } });
     fireEvent.change(screen.getByRole("textbox", { name: /Email/i }), { target: { value: "ana@example.com" } });
+    await openPermissionsTab();
+    await screen.findByLabelText("Dashboard");
     fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
 
     await waitFor(() => {
       const postCall = apiRequestMock.mock.calls.find((call) => call[0] === "/team/members" && call[1]?.method === "POST");
       expect(postCall).toBeTruthy();
       const body = JSON.parse(String(postCall?.[1]?.body ?? "{}"));
-      expect(body.module_keys).toBeUndefined();
+      expect(Array.isArray(body.module_keys)).toBe(true);
+      expect(body.module_keys).toContain("agency_dashboard");
     });
   });
 
   it("shows backend module permission errors clearly", async () => {
-    const { ApiRequestError } = await import("@/lib/api");
     apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
       if (path.startsWith("/team/members?")) return Promise.resolve({ items: [], total: 0, page: 1, page_size: 10 });
       if (path === "/team/subaccount-options") return Promise.resolve({ items: [{ id: 2, name: "Client Alpha", label: "#11 — Client Alpha" }] });
-      if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [{ key: "dashboard", label: "Dashboard", order: 1, scope: "subaccount" }] });
+      if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [{ key: "dashboard", label: "Dashboard", order: 1, scope: "subaccount", group_key: "main_nav", group_label: "Main Navigation" }] });
+      if (path === "/team/module-catalog?scope=agency") return Promise.resolve({ items: [{ key: "agency_dashboard", label: "Dashboard", order: 1, scope: "agency", group_key: "main_nav", group_label: "Main Navigation" }] });
       if (path === "/team/members" && options?.method === "POST") return Promise.reject(new ApiRequestError("module_keys este permis doar pentru membership-uri de sub-account", 400));
       return Promise.reject(new Error(`Unexpected path: ${path}`));
     });
@@ -367,7 +757,105 @@ describe("Settings team page subaccount integration", () => {
     fireEvent.change(screen.getByRole("textbox", { name: /Email/i }), { target: { value: "ana@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
 
-    expect(await screen.findByText(/Permisiunile pe module sunt disponibile doar/i)).toBeInTheDocument();
+    expect(await screen.findByText(/module_keys este permis doar/i)).toBeInTheDocument();
+  });
+
+
+
+  it("opens edit mode and fetches membership detail by membership_id", async () => {
+    render(<SettingsTeamPage />);
+
+    const editButtons = await screen.findAllByRole("button", { name: "Editează" });
+    fireEvent.click(editButtons[0]);
+
+    await waitFor(() => {
+      expect(apiRequestMock).toHaveBeenCalledWith("/team/members/101");
+    });
+
+    expect(screen.getByRole("button", { name: "Salvează" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Prenume" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: "Nume" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: /Email/i })).toBeDisabled();
+  });
+
+  it("renders subaccount edit with preselected modules and sends PATCH user_role + module_keys", async () => {
+    apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
+      if (path.startsWith("/team/members?")) {
+        return Promise.resolve({
+          items: [{ id: 103, membership_id: 103, user_id: 203, first_name: "Mihai", last_name: "Pop", email: "mihai@example.com", phone: "", extension: "", user_type: "client", user_role: "member", location: "România", subaccount: "Client Alpha" }],
+          total: 1,
+          page: 1,
+          page_size: 10,
+        });
+      }
+      if (path === "/team/subaccount-options") return Promise.resolve({ items: [{ id: 2, name: "Client Alpha", label: "#11 — Client Alpha" }] });
+      if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [
+        { key: "dashboard", label: "Dashboard", order: 1, scope: "subaccount", group_key: "main_nav", group_label: "Main Navigation" },
+        { key: "creative", label: "Creative", order: 4, scope: "subaccount", group_key: "main_nav", group_label: "Main Navigation" },
+        { key: "rules", label: "Rules", order: 3, scope: "subaccount", group_key: "main_nav", group_label: "Main Navigation" },
+      ]});
+      if (path === "/team/module-catalog?scope=agency") return Promise.resolve({ items: [{ key: "agency_dashboard", label: "Dashboard", order: 1, scope: "agency", group_key: "main_nav", group_label: "Main Navigation" }] });
+      if (path === "/team/members/103") return Promise.resolve({ item: {
+        membership_id: 103, user_id: 203, scope_type: "subaccount", subaccount_id: 2, subaccount_name: "Client Alpha", role_key: "subaccount_user", role_label: "Subaccount User", module_keys: ["dashboard", "creative"], source_scope: "subaccount", is_inherited: false, first_name: "Mihai", last_name: "Pop", email: "mihai@example.com", phone: "", extension: "",
+      }});
+      if (path === "/team/members/103" && options?.method === "PATCH") {
+        return Promise.resolve({ item: {
+          membership_id: 103, user_id: 203, scope_type: "subaccount", subaccount_id: 2, subaccount_name: "Client Alpha", role_key: "subaccount_viewer", role_label: "Subaccount Viewer", module_keys: ["dashboard"], source_scope: "subaccount", is_inherited: false, first_name: "Mihai", last_name: "Pop", email: "mihai@example.com", phone: "", extension: "",
+        }});
+      }
+      return Promise.reject(new Error(`Unexpected path: ${path}`));
+    });
+
+    render(<SettingsTeamPage />);
+    const editButton = await screen.findByRole("button", { name: "Editează" });
+    fireEvent.click(editButton);
+    await openPermissionsTab();
+
+    const creative = await screen.findByLabelText("Creative");
+
+    fireEvent.click(creative);
+    fireEvent.click(screen.getByRole("button", { name: "Informații Utilizator" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Rol Utilizator" }), { target: { value: "viewer" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+
+    await waitFor(() => {
+      const patchCall = apiRequestMock.mock.calls.find((call) => call[0] === "/team/members/103" && call[1]?.method === "PATCH");
+      expect(patchCall).toBeTruthy();
+      const body = JSON.parse(String(patchCall?.[1]?.body ?? "{}"));
+      expect(body.user_role).toBe("subaccount_viewer");
+      expect(body.module_keys).toEqual(["dashboard"]);
+    });
+  });
+
+  it("blocks inherited membership edit and handles 409 clearly", async () => {
+    apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
+      if (path.startsWith("/team/members?")) {
+        return Promise.resolve({
+          items: [{ id: 104, membership_id: 104, user_id: 204, first_name: "Inh", last_name: "User", email: "inh@example.com", phone: "", extension: "", user_type: "client", user_role: "member", location: "România", subaccount: "Client Beta" }],
+          total: 1,
+          page: 1,
+          page_size: 10,
+        });
+      }
+      if (path === "/team/subaccount-options") return Promise.resolve({ items: [{ id: 3, name: "Client Beta", label: "Client Beta" }] });
+      if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [{ key: "dashboard", label: "Dashboard", order: 1, scope: "subaccount", group_key: "main_nav", group_label: "Main Navigation" }] });
+      if (path === "/team/module-catalog?scope=agency") return Promise.resolve({ items: [{ key: "agency_dashboard", label: "Dashboard", order: 1, scope: "agency", group_key: "main_nav", group_label: "Main Navigation" }] });
+      if (path === "/team/members/104") return Promise.resolve({ item: {
+        membership_id: 104, user_id: 204, scope_type: "subaccount", subaccount_id: 3, subaccount_name: "Client Beta", role_key: "subaccount_user", role_label: "Subaccount User", module_keys: ["dashboard"], source_scope: "subaccount", is_inherited: true, first_name: "Inh", last_name: "User", email: "inh@example.com", phone: "", extension: "",
+      }});
+      if (path === "/team/members/104" && options?.method === "PATCH") {
+        return Promise.reject(new ApiRequestError("Access moștenit: acest membership nu poate fi editat local", 409));
+      }
+      return Promise.reject(new Error(`Unexpected path: ${path}`));
+    });
+
+    render(<SettingsTeamPage />);
+    const editButton = await screen.findByRole("button", { name: "Editează" });
+    fireEvent.click(editButton);
+
+    expect(await screen.findByText(/nu poate fi editat aici/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
+    expect(apiRequestMock.mock.calls.some((call) => call[0] === "/team/members/104" && call[1]?.method === "PATCH")).toBe(false);
   });
 
   it("renders invite action and sends invite with membership id", async () => {
@@ -386,7 +874,6 @@ describe("Settings team page subaccount integration", () => {
   });
 
   it("shows clear message for 403 and 503 and disables ineligible row action", async () => {
-    const { ApiRequestError } = await import("@/lib/api");
     inviteTeamMemberMock
       .mockRejectedValueOnce(new ApiRequestError("forbidden", 403))
       .mockRejectedValueOnce(new ApiRequestError("temporarily unavailable", 503));
@@ -402,4 +889,198 @@ describe("Settings team page subaccount integration", () => {
     fireEvent.click(buttons[0]);
     expect(await screen.findByText(/Invitațiile sunt indisponibile temporar/i)).toBeInTheDocument();
   });
+
+  it("renders membership status badges and lifecycle actions for active vs inactive rows", async () => {
+    render(<SettingsTeamPage />);
+
+    expect(await screen.findByText("Activ")).toBeInTheDocument();
+    expect(await screen.findByText("Inactiv")).toBeInTheDocument();
+
+    expect(screen.getByRole("button", { name: "Dezactivează" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reactivează" })).toBeInTheDocument();
+  });
+
+  it("deactivates active membership, shows success message, and refetches list", async () => {
+    render(<SettingsTeamPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Dezactivează" }));
+
+    await waitFor(() => {
+      expect(apiRequestMock.mock.calls.some((call) => call[0] === "/team/members/101/deactivate" && call[1]?.method === "POST")).toBe(true);
+    });
+
+    await waitFor(() => {
+      const memberListCalls = apiRequestMock.mock.calls.filter((call) => String(call[0]).startsWith("/team/members?"));
+      expect(memberListCalls.length).toBeGreaterThan(1);
+    });
+    expect(await screen.findByText(/Accesul a fost dezactivat/i)).toBeInTheDocument();
+  });
+
+  it("reactivates inactive membership and refetches list", async () => {
+    render(<SettingsTeamPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Reactivează" }));
+
+    await waitFor(() => {
+      expect(apiRequestMock.mock.calls.some((call) => call[0] === "/team/members/102/reactivate" && call[1]?.method === "POST")).toBe(true);
+    });
+
+    expect(await screen.findByText(/Accesul a fost reactivat/i)).toBeInTheDocument();
+  });
+
+  it("shows lifecycle loading per-row and handles 403/404/409 errors", async () => {
+    apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
+      if (path.startsWith("/team/members?")) {
+        return Promise.resolve({
+          items: [
+            { id: 201, membership_id: 201, user_id: 301, first_name: "A", last_name: "One", email: "a@example.com", phone: "", extension: "", user_type: "agency", user_role: "admin", location: "RO", subaccount: "Toate", membership_status: "active" },
+            { id: 202, membership_id: 202, user_id: 302, first_name: "B", last_name: "Two", email: "b@example.com", phone: "", extension: "", user_type: "agency", user_role: "member", location: "RO", subaccount: "Toate", membership_status: "active" },
+            { id: 203, membership_id: 203, user_id: 303, first_name: "C", last_name: "Three", email: "c@example.com", phone: "", extension: "", user_type: "agency", user_role: "member", location: "RO", subaccount: "Toate", membership_status: "active" },
+          ], total: 3, page: 1, page_size: 10,
+        });
+      }
+      if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=agency") return Promise.resolve({ items: [] });
+      if (path === "/team/members/201/deactivate" && options?.method === "POST") return new Promise(() => {});
+      if (path === "/team/members/202/deactivate" && options?.method === "POST") return Promise.reject(new ApiRequestError("forbidden", 403));
+      if (path === "/team/members/203/deactivate" && options?.method === "POST") return Promise.reject(new ApiRequestError("conflict", 409));
+      return Promise.reject(new Error(`Unexpected path: ${path}`));
+    });
+
+    render(<SettingsTeamPage />);
+
+    const buttons = await screen.findAllByRole("button", { name: "Dezactivează" });
+    fireEvent.click(buttons[0]);
+
+    fireEvent.click(buttons[1]);
+    expect(await screen.findByText(/permisiuni suficiente/i)).toBeInTheDocument();
+
+    fireEvent.click(buttons[2]);
+    expect(await screen.findByText(/moștenit/i)).toBeInTheDocument();
+  });
+
+  it("renders remove action and confirms before remove request", async () => {
+    render(<SettingsTeamPage />);
+
+    const removeButtons = await screen.findAllByRole("button", { name: "Elimină accesul" });
+    expect(removeButtons.length).toBeGreaterThan(0);
+
+    fireEvent.click(removeButtons[0]);
+
+    await waitFor(() => {
+      expect(window.confirm).toHaveBeenCalledWith(
+        "Sigur vrei să elimini acest acces? Această acțiune șterge doar access grant-ul curent, nu utilizatorul global.",
+      );
+    });
+  });
+
+  it("does not call remove endpoint when confirmation is cancelled", async () => {
+    vi.spyOn(window, "confirm").mockReturnValueOnce(false);
+    render(<SettingsTeamPage />);
+
+    const removeButtons = await screen.findAllByRole("button", { name: "Elimină accesul" });
+    fireEvent.click(removeButtons[0]);
+
+    await waitFor(() => {
+      expect(apiRequestMock.mock.calls.some((call) => call[0] === "/team/members/101/remove")).toBe(false);
+    });
+  });
+
+  it("removes membership on success and refetches list", async () => {
+    render(<SettingsTeamPage />);
+
+    const removeButtons = await screen.findAllByRole("button", { name: "Elimină accesul" });
+    fireEvent.click(removeButtons[0]);
+
+    await waitFor(() => {
+      expect(apiRequestMock.mock.calls.some((call) => call[0] === "/team/members/101/remove" && call[1]?.method === "POST")).toBe(true);
+    });
+
+    await waitFor(() => {
+      const memberListCalls = apiRequestMock.mock.calls.filter((call) => String(call[0]).startsWith("/team/members?"));
+      expect(memberListCalls.length).toBeGreaterThan(1);
+    });
+
+    expect(await screen.findByText(/Accesul a fost eliminat/i)).toBeInTheDocument();
+  });
+
+  it("handles remove 403 and 404 with clear feedback", async () => {
+    apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
+      if (path.startsWith("/team/members?")) {
+        return Promise.resolve({
+          items: [
+            { id: 401, membership_id: 401, user_id: 501, first_name: "A", last_name: "One", email: "a@example.com", phone: "", extension: "", user_type: "agency", user_role: "admin", location: "RO", subaccount: "Toate", membership_status: "active" },
+            { id: 402, membership_id: 402, user_id: 502, first_name: "B", last_name: "Two", email: "b@example.com", phone: "", extension: "", user_type: "agency", user_role: "member", location: "RO", subaccount: "Toate", membership_status: "active" },
+          ],
+          total: 2,
+          page: 1,
+          page_size: 10,
+        });
+      }
+      if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=agency") return Promise.resolve({ items: [] });
+      if (path === "/team/members/401/remove" && options?.method === "POST") return Promise.reject(new ApiRequestError("forbidden", 403));
+      if (path === "/team/members/402/remove" && options?.method === "POST") return Promise.reject(new ApiRequestError("Membership inexistent", 404));
+      return Promise.reject(new Error(`Unexpected path: ${path}`));
+    });
+
+    render(<SettingsTeamPage />);
+
+    const removeButtons = await screen.findAllByRole("button", { name: "Elimină accesul" });
+    fireEvent.click(removeButtons[0]);
+    expect(await screen.findByText(/permisiuni suficiente pentru a elimina acest acces/i)).toBeInTheDocument();
+
+    fireEvent.click(removeButtons[1]);
+    expect(await screen.findByText(/Membership inexistent/i)).toBeInTheDocument();
+  });
+
+  it("handles remove 409 self-removal conflict with clear feedback", async () => {
+    apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
+      if (path.startsWith("/team/members?")) {
+        return Promise.resolve({
+          items: [
+            { id: 403, membership_id: 403, user_id: 503, first_name: "C", last_name: "Three", email: "c@example.com", phone: "", extension: "", user_type: "agency", user_role: "member", location: "RO", subaccount: "Toate", membership_status: "active" },
+          ],
+          total: 1,
+          page: 1,
+          page_size: 10,
+        });
+      }
+      if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=agency") return Promise.resolve({ items: [] });
+      if (path === "/team/members/403/remove" && options?.method === "POST") return Promise.reject(new ApiRequestError("Nu îți poți elimina propriul membership din sesiunea curentă", 409));
+      return Promise.reject(new Error(`Unexpected path: ${path}`));
+    });
+
+    render(<SettingsTeamPage />);
+
+    const removeButtons = await screen.findAllByRole("button", { name: "Elimină accesul" });
+    fireEvent.click(removeButtons[0]);
+    expect(await screen.findByText(/Nu îți poți elimina accesul curent din această sesiune/i)).toBeInTheDocument();
+  });
+
+
+  it("handles lifecycle 404 with clear message", async () => {
+    apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
+      if (path.startsWith("/team/members?")) {
+        return Promise.resolve({
+          items: [{ id: 301, membership_id: 301, user_id: 401, first_name: "A", last_name: "One", email: "a@example.com", phone: "", extension: "", user_type: "agency", user_role: "admin", location: "RO", subaccount: "Toate", membership_status: "active" }],
+          total: 1, page: 1, page_size: 10,
+        });
+      }
+      if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=agency") return Promise.resolve({ items: [] });
+      if (path === "/team/members/301/deactivate" && options?.method === "POST") return Promise.reject(new ApiRequestError("gone", 404));
+      return Promise.reject(new Error(`Unexpected path: ${path}`));
+    });
+
+    render(<SettingsTeamPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Dezactivează" }));
+    expect(await screen.findByText(/Membership inexistent sau inaccesibil/i)).toBeInTheDocument();
+  });
+
 });

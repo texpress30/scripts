@@ -58,6 +58,7 @@ class TeamSubaccountApiTests(unittest.TestCase):
             resp = team_api.list_subaccount_team_members(subaccount_id=8, search="", user_role="", page=1, page_size=10, user=user)
             self.assertEqual(resp.total, 1)
             self.assertEqual(resp.items[0].role_key, "subaccount_user")
+            self.assertEqual(resp.items[0].membership_status, "active")
         finally:
             team_api.team_members_service.list_subaccount_members = original
 
@@ -258,6 +259,7 @@ class TeamSubaccountApiTests(unittest.TestCase):
             )
             resp = team_api.list_subaccount_team_members(subaccount_id=8, search="", user_role="", page=1, page_size=10, user=user)
             self.assertEqual(resp.items[0].module_keys, ["dashboard", "creative"])
+            self.assertEqual(resp.items[0].membership_status, "active")
         finally:
             team_api.team_members_service.list_subaccount_members = original
 
@@ -287,12 +289,14 @@ class TeamSubaccountApiTests(unittest.TestCase):
         user = AuthUser(email="sub@example.com", role="subaccount_user", user_id=10, subaccount_id=8)
         original_catalog = team_api.team_members_service.list_module_catalog
         original_grantable = team_api.team_members_service.get_grantable_module_keys_for_actor
+        original_access = deps.team_members_service.get_subaccount_my_access
         try:
             team_api.team_members_service.list_module_catalog = lambda **kwargs: [
                 {"key": "dashboard", "label": "Dashboard", "order": 1, "scope": "subaccount"},
                 {"key": "creative", "label": "Creative", "order": 3, "scope": "subaccount"},
             ]
             team_api.team_members_service.get_grantable_module_keys_for_actor = lambda **kwargs: {"creative"}
+            deps.team_members_service.get_subaccount_my_access = lambda **kwargs: {"module_keys": ["settings", "creative"]}
 
             resp = team_api.get_subaccount_grantable_modules(subaccount_id=8, user=user)
             flags = {item.key: item.grantable for item in resp.items}
@@ -300,6 +304,7 @@ class TeamSubaccountApiTests(unittest.TestCase):
         finally:
             team_api.team_members_service.list_module_catalog = original_catalog
             team_api.team_members_service.get_grantable_module_keys_for_actor = original_grantable
+            deps.team_members_service.get_subaccount_my_access = original_access
 
     def test_grantable_modules_endpoint_agency_actor_can_grant_full_catalog(self):
         user = AuthUser(email="admin@example.com", role="agency_admin", user_id=1)
@@ -317,6 +322,113 @@ class TeamSubaccountApiTests(unittest.TestCase):
         finally:
             team_api.team_members_service.list_module_catalog = original_catalog
             team_api.team_members_service.get_grantable_module_keys_for_actor = original_grantable
+
+    def test_my_access_endpoint_subaccount_scoped_user_returns_membership_modules(self):
+        user = AuthUser(email="sub@example.com", role="subaccount_user", user_id=10, subaccount_id=8)
+        original = team_api.team_members_service.get_subaccount_my_access
+        try:
+            team_api.team_members_service.get_subaccount_my_access = lambda **kwargs: {
+                "subaccount_id": 8,
+                "role": "subaccount_user",
+                "module_keys": ["dashboard", "creative"],
+                "source_scope": "subaccount",
+                "access_scope": "subaccount",
+                "unrestricted_modules": False,
+            }
+
+            response = team_api.get_subaccount_my_access(subaccount_id=8, user=user)
+            self.assertEqual(response.subaccount_id, 8)
+            self.assertEqual(response.role, "subaccount_user")
+            self.assertEqual(response.module_keys, ["dashboard", "creative"])
+            self.assertEqual(response.source_scope, "subaccount")
+            self.assertEqual(response.access_scope, "subaccount")
+            self.assertFalse(response.unrestricted_modules)
+        finally:
+            team_api.team_members_service.get_subaccount_my_access = original
+
+    def test_my_access_endpoint_denies_user_without_subaccount_access(self):
+        user = AuthUser(email="sub@example.com", role="subaccount_user", allowed_subaccount_ids=(8,), access_scope="subaccount")
+        with self.assertRaises(team_api.HTTPException) as ctx:
+            team_api.get_subaccount_my_access(subaccount_id=99, user=user)
+        self.assertEqual(ctx.exception.status_code, 403)
+
+    def test_my_access_endpoint_agency_role_is_backward_compatible(self):
+        user = AuthUser(email="admin@example.com", role="agency_admin", user_id=3)
+        original = team_api.team_members_service.get_subaccount_my_access
+        try:
+            team_api.team_members_service.get_subaccount_my_access = lambda **kwargs: {
+                "subaccount_id": 12,
+                "role": "agency_admin",
+                "module_keys": ["dashboard", "campaigns", "rules", "creative", "recommendations", "settings"],
+                "source_scope": "agency",
+                "access_scope": "agency",
+                "unrestricted_modules": True,
+            }
+
+            response = team_api.get_subaccount_my_access(subaccount_id=12, user=user)
+            self.assertTrue(response.unrestricted_modules)
+            self.assertEqual(response.access_scope, "agency")
+            self.assertEqual(len(response.module_keys), 6)
+        finally:
+            team_api.team_members_service.get_subaccount_my_access = original
+
+    def test_team_members_service_my_access_legacy_fallback_for_subaccount_user_without_user_id(self):
+        service = team_api.team_members_service
+        response = service.get_subaccount_my_access(
+            actor_user=AuthUser(email="legacy@example.com", role="subaccount_user", user_id=None),
+            subaccount_id=7,
+        )
+        self.assertEqual(response["subaccount_id"], 7)
+        self.assertEqual(response["source_scope"], "legacy_fallback")
+        self.assertEqual(response["module_keys"], ["dashboard", "campaigns", "rules", "creative", "recommendations", "settings"])
+
+    def test_agency_my_access_endpoint_uses_service_payload(self):
+        user = AuthUser(email="agency@example.com", role="agency_member", user_id=22, access_scope="agency")
+        original = team_api.team_members_service.get_agency_my_access
+        try:
+            team_api.team_members_service.get_agency_my_access = lambda **kwargs: {
+                "role": "agency_member",
+                "module_keys": ["agency_dashboard", "agency_clients", "settings", "settings_profile"],
+                "source_scope": "agency",
+                "access_scope": "agency",
+                "unrestricted_modules": False,
+            }
+            response = team_api.get_agency_my_access(user=user)
+            self.assertEqual(response.role, "agency_member")
+            self.assertIn("agency_dashboard", response.module_keys)
+            self.assertFalse(response.unrestricted_modules)
+        finally:
+            team_api.team_members_service.get_agency_my_access = original
+
+    def test_agency_my_access_endpoint_db_unavailable_uses_fallback(self):
+        user = AuthUser(email="agency@example.com", role="agency_member", user_id=22, access_scope="agency")
+        original_access = team_api.team_members_service.get_agency_my_access
+        original_fallback = team_api.team_members_service.get_agency_my_access_fallback
+        original_unavailable = team_api._is_db_unavailable_error
+        try:
+            team_api.team_members_service.get_agency_my_access = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("db down"))
+            team_api.team_members_service.get_agency_my_access_fallback = lambda **kwargs: {
+                "role": "agency_member",
+                "module_keys": ["agency_dashboard", "agency_clients"],
+                "source_scope": "legacy_fallback",
+                "access_scope": "agency",
+                "unrestricted_modules": True,
+            }
+            team_api._is_db_unavailable_error = lambda exc: True
+            response = team_api.get_agency_my_access(user=user)
+            self.assertEqual(response.source_scope, "legacy_fallback")
+            self.assertTrue(response.unrestricted_modules)
+            self.assertEqual(response.module_keys, ["agency_dashboard", "agency_clients"])
+        finally:
+            team_api.team_members_service.get_agency_my_access = original_access
+            team_api.team_members_service.get_agency_my_access_fallback = original_fallback
+            team_api._is_db_unavailable_error = original_unavailable
+
+    def test_team_members_service_agency_my_access_fallback_for_legacy_user(self):
+        service = team_api.team_members_service
+        response = service.get_agency_my_access_fallback(actor_user=AuthUser(email="legacy@example.com", role="agency_member", user_id=None))
+        self.assertEqual(response["source_scope"], "legacy_fallback")
+        self.assertIn("agency_dashboard", response["module_keys"])
 
 
 if __name__ == "__main__":
