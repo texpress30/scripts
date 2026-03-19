@@ -412,3 +412,7 @@
 - 2026-03-19: Pentru erori de tip `ConnectionTimeout` la startup în mediul de producție/serverless, adaugă un mecanism de retry cu sleep fix in blocul de `startup` (ex: `main.py`) înainte ca modulele dependente să încerce să inițializeze conexiuni.
 - 2026-03-19: Evită executarea de DDL (`CREATE TABLE`, `ALTER TABLE`) în cadrul evenimentelor de startup (`@app.on_event("startup")`) ale aplicației web. Într-un deploy blue-green (ex. Railway), noul container va încerca să obțină `ACCESS EXCLUSIVE` lock pe tabele active, blocând procesul de startup și declanșând un crash loop prin timeout-uri repetate pe rutele de sănătate. Bazează-te pe migration runner în producție.
 - 2026-03-19: Pentru integrări dezactivate prin feature flag, asigură-te că erorile de tip "disabled by feature flag" salvate în backend sunt interpretate corect în frontend ca status "unknown" / "Disabled". Nu le trata ca erori sau warning-uri obișnuite, altfel UI-ul va afișa bannere de degradare a sincronizării în mod fals.
+
+- 2026-03-19: Când adaugi un nou parametru într-un INSERT SQL (`must_reset_password`), aliniază explicit numărul placeholderelor din VALUES cu tuple-ul de parametri și adaugă test țintit pe query/params pentru a preveni regressii de tip "X placeholders but Y parameters".
+
+- 2026-03-19: Pentru wizard-uri pe un singur `<form>`, nu e suficient ca butonul de step să fie `type="button"`; trebuie și guard în `onSubmit` pentru pasul curent, altfel Enter key poate declanșa submit/create prematur din pasul 1.
