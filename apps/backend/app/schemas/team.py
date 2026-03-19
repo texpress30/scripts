@@ -177,6 +177,13 @@ class TeamMembershipRemoveResponse(BaseModel):
     message: str
 
 
+class TeamUserDeleteResponse(BaseModel):
+    user_id: int
+    deleted: bool
+    deleted_memberships_count: int = 0
+    message: str
+
+
 class UpdateTeamMembershipRequest(BaseModel):
     user_role: str | None = None
     module_keys: list[str] | None = None

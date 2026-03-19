@@ -496,6 +496,20 @@ export async function removeTeamMember(membershipId: string | number): Promise<T
   });
 }
 
+export type TeamUserDeleteResponse = {
+  user_id: number;
+  deleted: boolean;
+  deleted_memberships_count: number;
+  message: string;
+};
+
+export async function deleteTeamUser(userId: string | number): Promise<TeamUserDeleteResponse> {
+  return apiRequest<TeamUserDeleteResponse>(`/team/users/${encodeURIComponent(String(userId))}/delete`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
 export type TeamInviteResponse = {
   message: string;
 };
