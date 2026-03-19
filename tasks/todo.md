@@ -1,3 +1,17 @@
+# TODO — Hotfix frontend Agency Team wizard: Pasul următor fără submit/create (2026-03-19)
+
+- [x] Re-citire `apps/frontend/src/app/settings/team/page.tsx` și confirmare că submit-ul global poate crea din pasul 1 (Enter).
+- [x] Păstrare `Pasul Următor` ca `type="button"` și hardening pe `submitCreateForm(...)` cu guard pentru pasul 1.
+- [x] Guard pas 1: validează identity local, comută pe `Roluri și Permisiuni`, iese fără create request.
+- [x] Verificare că create API rămâne doar pe submit final din pasul 2.
+- [x] Adăugare test pentru Enter key în pasul 1 (fără create API, cu tranziție la pasul 2).
+- [x] Rulare teste frontend relevante + build frontend.
+
+## Review
+- [x] Cauza bugului: submit global al formularului (inclusiv Enter) nu avea guard clar pentru `activeFormTab === "identity"`, astfel putea intra în create flow prea devreme.
+- [x] `Pasul următor` și submit-ul din pasul 1 nu mai declanșează create API.
+- [x] Edit mode rămâne funcțional, fără schimbări de contract/backend.
+
 # TODO — Hotfix backend create user: SQL placeholder mismatch must_reset_password (2026-03-19)
 
 - [x] Re-citire `apps/backend/app/services/team_members.py` și confirmare mismatch placeholders/params în `_upsert_user`.
