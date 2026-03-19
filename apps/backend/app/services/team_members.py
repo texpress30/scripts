@@ -621,7 +621,9 @@ class TeamMembersService:
         password: str | None,
     ) -> int:
         settings = load_settings()
-        password_hash = hash_password(password.strip()) if password and password.strip() else hash_password(settings.app_login_password)
+        has_explicit_password = bool(password and password.strip())
+        password_hash = hash_password(password.strip()) if has_explicit_password else hash_password(settings.app_login_password)
+        must_reset_password = not has_explicit_password
 
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -631,7 +633,7 @@ class TeamMembersService:
                         email, first_name, last_name, phone, extension, avatar_url, platform_language,
                         password_hash, is_active, must_reset_password
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, 'ro', %s, TRUE, FALSE)
+                    VALUES (%s, %s, %s, %s, %s, %s, 'ro', %s, TRUE, %s)
                     ON CONFLICT(email) DO UPDATE
                     SET first_name = EXCLUDED.first_name,
                         last_name = EXCLUDED.last_name,
@@ -639,6 +641,7 @@ class TeamMembersService:
                         extension = EXCLUDED.extension,
                         avatar_url = EXCLUDED.avatar_url,
                         password_hash = COALESCE(EXCLUDED.password_hash, users.password_hash),
+                        must_reset_password = EXCLUDED.must_reset_password,
                         updated_at = NOW()
                     RETURNING id
                     """,
@@ -650,6 +653,7 @@ class TeamMembersService:
                         extension,
                         avatar_url,
                         password_hash,
+                        must_reset_password,
                     ),
                 )
                 row = cur.fetchone()
@@ -1418,6 +1422,54 @@ class TeamMembersService:
             "message": "Membership eliminat",
         }
 
+    def delete_user_hard(self, *, user_id: int, actor_user: AuthUser) -> dict[str, object]:
+        target_user_id = int(user_id)
+        actor_user_id = int(actor_user.user_id) if actor_user.user_id is not None else None
+        if actor_user_id is not None and target_user_id == actor_user_id:
+            raise RuntimeError("Nu îți poți șterge propriul utilizator din sesiunea curentă")
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT email
+                    FROM users
+                    WHERE id = %s
+                    LIMIT 1
+                    """,
+                    (target_user_id,),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    raise LookupError("Utilizator inexistent")
+                email = str(row[0] or "").strip().lower()
+
+                cur.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM user_memberships
+                    WHERE user_id = %s
+                    """,
+                    (target_user_id,),
+                )
+                count_row = cur.fetchone()
+                deleted_memberships_count = int(count_row[0] or 0) if count_row is not None else 0
+
+                if email != "":
+                    cur.execute("DELETE FROM team_members WHERE LOWER(email) = %s", (email,))
+
+                cur.execute("DELETE FROM users WHERE id = %s", (target_user_id,))
+                if int(cur.rowcount or 0) != 1:
+                    raise LookupError("Utilizator inexistent")
+            conn.commit()
+
+        return {
+            "user_id": target_user_id,
+            "deleted": True,
+            "deleted_memberships_count": deleted_memberships_count,
+            "message": "Utilizator șters complet din sistem",
+        }
+
     def deactivate_membership(self, *, membership_id: int, actor_user: AuthUser) -> dict[str, object]:
         return self._transition_membership_status(membership_id=membership_id, actor_user=actor_user, target_status="inactive")
 
@@ -1429,7 +1481,7 @@ class TeamMembersService:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT um.id, um.user_id, um.scope_type, um.subaccount_id, um.status, u.email, u.is_active
+                    SELECT um.id, um.user_id, um.scope_type, um.subaccount_id, um.status, u.email, u.is_active, u.must_reset_password
                     FROM user_memberships um
                     JOIN users u ON u.id = um.user_id
                     WHERE um.id = %s
@@ -1450,6 +1502,7 @@ class TeamMembersService:
             "status": str(row[4]),
             "email": str(row[5] or "").strip().lower(),
             "is_active": bool(row[6]),
+            "must_reset_password": bool(row[7]),
         }
 
 
