@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-19: Când semantica auth se schimbă (forgot vs invite vs account-ready), aliniază simultan catalogul backend (descrieri + sample vars) și UI admin (Email Templates + Notifications hints), altfel runtime corect rămâne opac pentru operatori.
+
 - 2026-03-19: Când același endpoint confirmă tokenuri de invite și forgot-reset, expune un endpoint mic de context (validate-only, non-consuming) pentru frontend, ca să poți diferenția copy-ul UX fără să fragmentezi contractul de confirm.
 
 - 2026-03-19: Pentru create user fără parolă explicită, nu folosi niciodată hash fallback reutilizabil; persistă hash gol + `must_reset_password=true` și blochează login-ul DB până la confirmarea tokenului de setare inițială.

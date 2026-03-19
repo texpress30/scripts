@@ -67,7 +67,7 @@ _CANONICAL_EMAIL_NOTIFICATIONS: tuple[EmailNotificationCatalogItem, ...] = (
     EmailNotificationCatalogItem(
         key="team_invite_user",
         label="Team · Invite User",
-        description="Control pentru trimiterea notificării email la invitarea utilizatorilor.",
+        description="Control pentru invitațiile Team: fără parolă => set-password, cu parolă => account-ready/login.",
         channel="email",
         scope="agency",
         template_key="team_invite_user",

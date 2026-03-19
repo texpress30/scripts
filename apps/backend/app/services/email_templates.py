@@ -84,7 +84,7 @@ _CANONICAL_EMAIL_TEMPLATES: tuple[EmailTemplateCatalogItem, ...] = (
     EmailTemplateCatalogItem(
         key="auth_forgot_password",
         label="Auth · Forgot Password",
-        description="Email trimis când utilizatorul solicită resetarea parolei.",
+        description="Email pentru fluxul «Ai uitat parola?» cu link de resetare parolă.",
         default_subject="Resetează parola",
         default_text_body=(
             "Ai solicitat resetarea parolei.\n\n"
@@ -103,18 +103,18 @@ _CANONICAL_EMAIL_TEMPLATES: tuple[EmailTemplateCatalogItem, ...] = (
     EmailTemplateCatalogItem(
         key="team_invite_user",
         label="Team · Invite User",
-        description="Email trimis când un utilizator este invitat în echipă.",
-        default_subject="Invitație în platformă",
+        description="Email pentru utilizator nou fără parolă setată; folosește link de setare parolă la prima autentificare.",
+        default_subject="Setează parola contului",
         default_text_body=(
             "Ai fost invitat în platformă.\n\n"
-            "Folosește link-ul de activare:\n"
+            "Setează parola contului pentru primul login:\n"
             "{{invite_link}}\n\n"
             "Invitația expiră în {{expires_minutes}} minute."
         ),
         default_html_body=(
             "<p>Ai fost invitat în platformă.</p>"
-            "<p>Folosește link-ul de activare:</p>"
-            "<p><a href=\"{{invite_link}}\">Activează contul</a></p>"
+            "<p>Setează parola contului pentru primul login:</p>"
+            "<p><a href=\"{{invite_link}}\">Setează parola contului</a></p>"
             "<p>Invitația expiră în {{expires_minutes}} minute.</p>"
         ),
         available_variables=("invite_link", "expires_minutes", "user_email"),
@@ -122,7 +122,7 @@ _CANONICAL_EMAIL_TEMPLATES: tuple[EmailTemplateCatalogItem, ...] = (
     EmailTemplateCatalogItem(
         key="team_account_ready",
         label="Team · Account Ready",
-        description="Email trimis când utilizatorul are deja parolă setată și poate intra direct în login.",
+        description="Email pentru utilizator nou cu parolă deja setată; trimite direct către login.",
         default_subject="Contul tău este pregătit",
         default_text_body=(
             "Contul tău este pregătit.\n\n"
@@ -145,7 +145,7 @@ _CANONICAL_SAMPLE_VARIABLES: dict[str, dict[str, str]] = {
         "user_email": "preview.user@example.com",
     },
     "team_invite_user": {
-        "invite_link": "https://app.example.com/activate-invite?token=preview-token",
+        "invite_link": "https://app.example.com/reset-password?token=preview-token",
         "expires_minutes": "60",
         "user_email": "preview.user@example.com",
     },

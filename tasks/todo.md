@@ -1,3 +1,17 @@
+# TODO — Email Templates/Notifications semantic alignment for forgot vs invite vs account-ready (2026-03-19)
+
+- [x] Re-sync + recitire AGENTS/tasks/lessons și fișiere backend/frontend relevante.
+- [x] Audit catalog backend + UI pentru template keys și descrieri semantice.
+- [x] Aliniere metadata backend pentru `auth_forgot_password`, `team_invite_user`, `team_account_ready` (descrieri + sample vars coerente).
+- [x] Update UI Email Templates cu hint-uri semantice explicite pentru cele trei flow-uri.
+- [x] Update UI Notifications cu hint clar că `team_invite_user` acoperă set-password vs account-ready/login.
+- [x] Teste backend + frontend țintite și build frontend.
+
+## Review
+- [x] `team_account_ready` este tratat și afișat clar ca template canonic de primă clasă.
+- [x] Preview/test-send context rămâne coerent pentru forgot vs invite set-password vs account-ready login.
+- [x] Nu au fost atinse Team wizard-urile, delete/remove flow sau runtime auth semantics.
+
 # TODO — Reset-password UX context: invite vs forgot token semantics (2026-03-19)
 
 - [x] Re-sync + recitire AGENTS/tasks/lessons + fișiere backend/frontend relevante pentru reset-password.
