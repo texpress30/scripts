@@ -570,9 +570,11 @@ export default function SettingsTeamPage() {
 
   async function submitCreateForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
     if (mode === "create" && activeFormTab === "identity") {
-      if (!validateCreateIdentityStep()) return;
-      setActiveFormTab("permissions");
+      if (validateCreateIdentityStep()) {
+        setActiveFormTab("permissions");
+      }
       return;
     }
 

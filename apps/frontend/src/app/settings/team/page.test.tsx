@@ -325,23 +325,24 @@ describe("Settings team page subaccount integration", () => {
     expect(createCall).toBeUndefined();
   });
 
-  it("enter key submit in identity step does not create user and moves to permissions", async () => {
+  it("in create mode step 1, pressing Enter on an input only switches tab and does not call create API", async () => {
     render(<SettingsTeamPage />);
 
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Prenume" }), { target: { value: "Lia" } });
-    fireEvent.change(screen.getByRole("textbox", { name: "Nume" }), { target: { value: "Matei" } });
-    fireEvent.change(screen.getByRole("textbox", { name: /Email/i }), { target: { value: "lia@example.com" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Prenume" }), { target: { value: "Ion" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Nume" }), { target: { value: "Pop" } });
+    const emailInput = screen.getByRole("textbox", { name: /Email/i });
+    fireEvent.change(emailInput, { target: { value: "ion@example.com" } });
 
-    const form = screen.getByRole("heading", { name: "Informații Utilizator" }).closest("form");
-    expect(form).toBeTruthy();
-    fireEvent.submit(form as HTMLFormElement);
+    // Note: React Testing Library relies on closest form submission when firing submit explicitly
+    const form = emailInput.closest("form");
+    if (!form) throw new Error("Form not found");
+    fireEvent.submit(form);
 
     expect(screen.getByRole("heading", { name: "Roluri și Permisiuni" })).toBeInTheDocument();
     const createCall = apiRequestMock.mock.calls.find((call) => call[0] === "/team/members" && call[1]?.method === "POST");
     expect(createCall).toBeUndefined();
   });
-
   it("create with auto-invite checked calls invite with created membership id", async () => {
     apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
       if (path.startsWith("/team/members?")) {
