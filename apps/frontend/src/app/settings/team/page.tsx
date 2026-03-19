@@ -67,6 +67,7 @@ type ModuleCatalogItem = {
 };
 
 type CatalogScope = "agency" | "subaccount";
+type FormTab = "identity" | "permissions";
 const PAGE_SIZE = 10;
 
 function initials(firstName: string, lastName: string) {
@@ -151,6 +152,7 @@ export default function SettingsTeamPage() {
   const [moduleCatalogError, setModuleCatalogError] = useState("");
 
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [activeFormTab, setActiveFormTab] = useState<FormTab>("identity");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
@@ -284,6 +286,7 @@ export default function SettingsTeamPage() {
     setEditingMembershipId(null);
     setEditOriginal(null);
     setEditLockedInherited(false);
+    setActiveFormTab("identity");
   }
 
   function getMembershipId(member: TeamMember): number | null {
@@ -455,6 +458,7 @@ export default function SettingsTeamPage() {
     setSaving(false);
     setLoadingEditDetail(true);
     setMode("edit");
+    setActiveFormTab("identity");
     setEditingMembershipId(membershipId);
     setModuleFieldError("");
     setSubaccountFieldError("");
@@ -742,6 +746,7 @@ export default function SettingsTeamPage() {
                   onClick={() => {
                     resetCreateForm();
                     setMode("create");
+                    setActiveFormTab("identity");
                   }}
                 >
                   + Adaugă Utilizator
@@ -910,89 +915,109 @@ export default function SettingsTeamPage() {
 
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
                 <aside className="wm-card p-4">
-                  <p className="text-sm font-semibold text-slate-900">Informații Utilizator</p>
-                  <p className="mt-2 text-sm text-slate-500">Roluri și Permisiuni</p>
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      className={`block w-full rounded-md px-3 py-2 text-left text-sm font-medium ${
+                        activeFormTab === "identity" ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-50"
+                      }`}
+                      onClick={() => setActiveFormTab("identity")}
+                    >
+                      Informații Utilizator
+                    </button>
+                    <button
+                      type="button"
+                      className={`block w-full rounded-md px-3 py-2 text-left text-sm font-medium ${
+                        activeFormTab === "permissions" ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-50"
+                      }`}
+                      onClick={() => setActiveFormTab("permissions")}
+                    >
+                      Roluri și Permisiuni
+                    </button>
+                  </div>
                 </aside>
 
                 <form className="wm-card space-y-4 p-4" onSubmit={mode === "edit" ? submitEditForm : submitCreateForm}>
-                  <h2 className="text-lg font-semibold text-slate-900">Informații Utilizator</h2>
+                  <h2 className="text-lg font-semibold text-slate-900">{activeFormTab === "identity" ? "Informații Utilizator" : "Roluri și Permisiuni"}</h2>
 
-                  {subaccountOptionsError ? <p className="text-xs text-amber-700">Sub-conturile nu au putut fi încărcate: {subaccountOptionsError}</p> : null}
-                  {subaccountOptionsLoading ? <p className="text-xs text-slate-500">Se încarcă sub-conturile...</p> : null}
+                  {activeFormTab === "identity" ? (
+                    <>
+                      {subaccountOptionsError ? <p className="text-xs text-amber-700">Sub-conturile nu au putut fi încărcate: {subaccountOptionsError}</p> : null}
+                      {subaccountOptionsLoading ? <p className="text-xs text-slate-500">Se încarcă sub-conturile...</p> : null}
 
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center">
-                    <div className="relative h-24 w-24 rounded-full border border-slate-200 bg-slate-50">
-                      <div className="flex h-full w-full items-center justify-center text-slate-400">
-                        <UserCircle2 className="h-14 w-14" />
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                        <div className="relative h-24 w-24 rounded-full border border-slate-200 bg-slate-50">
+                          <div className="flex h-full w-full items-center justify-center text-slate-400">
+                            <UserCircle2 className="h-14 w-14" />
+                          </div>
+                          <button type="button" className="absolute -bottom-1 -right-1 rounded-full border border-slate-200 bg-white p-1 text-slate-500 hover:bg-slate-50" title="Adaugă imagine">
+                            <Camera className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <p className="text-sm text-slate-500">Mărimea propusă este 512x512 px, nu mai mare de 2.5 MB</p>
                       </div>
-                      <button type="button" className="absolute -bottom-1 -right-1 rounded-full border border-slate-200 bg-white p-1 text-slate-500 hover:bg-slate-50" title="Adaugă imagine">
-                        <Camera className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                    <p className="text-sm text-slate-500">Mărimea propusă este 512x512 px, nu mai mare de 2.5 MB</p>
-                  </div>
 
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <label className="text-sm text-slate-700">
-                      Prenume
-                      <input className="wm-input mt-1" value={firstName} onChange={(e) => setFirstName(e.target.value)} required disabled={mode === "edit"} />
-                    </label>
-                    <label className="text-sm text-slate-700">
-                      Nume
-                      <input className="wm-input mt-1" value={lastName} onChange={(e) => setLastName(e.target.value)} required disabled={mode === "edit"} />
-                    </label>
-                    <label className="text-sm text-slate-700 md:col-span-2">
-                      Email <span className="text-red-500">*</span>
-                      <input className="wm-input mt-1" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={mode === "edit"} />
-                    </label>
-                    <label className="text-sm text-slate-700">
-                      Telefon
-                      <input className="wm-input mt-1" value={phone} onChange={(e) => setPhone(e.target.value)} disabled={mode === "edit"} />
-                    </label>
-                    <label className="text-sm text-slate-700">
-                      Extensie
-                      <input className="wm-input mt-1" value={extension} onChange={(e) => setExtension(e.target.value)} disabled={mode === "edit"} />
-                    </label>
-                    <label className="text-sm text-slate-700">
-                      Tip Utilizator
-                      <select className="wm-input mt-1" value={userType} onChange={(e) => setUserType(e.target.value)} disabled={mode === "edit"}>
-                        <option value="agency">Agency</option>
-                        <option value="client">Client</option>
-                      </select>
-                    </label>
-                    <label className="text-sm text-slate-700">
-                      Rol Utilizator
-                      <select className="wm-input mt-1" value={userRole} onChange={(e) => setUserRole(e.target.value)} disabled={editLockedInherited}>
-                        <option value="admin">Admin</option>
-                        <option value="member">Membru</option>
-                        <option value="viewer">Viewer</option>
-                      </select>
-                    </label>
-                    <label className="text-sm text-slate-700">
-                      Locație
-                      <input className="wm-input mt-1" value={location} onChange={(e) => setLocation(e.target.value)} disabled={mode === "edit"} />
-                    </label>
-                    <label className="text-sm text-slate-700">
-                      Sub-cont
-                      <select
-                        className="wm-input mt-1"
-                        value={subaccount}
-                        onChange={(e) => {
-                          setSubaccount(e.target.value);
-                          setSubaccountFieldError("");
-                        }}
-                        disabled={userType === "agency" || mode === "edit"}
-                      >
-                        <option value="">Selectează Sub-cont</option>
-                        {subaccountOptions.map((item) => (
-                          <option key={item.id} value={String(item.id)}>{item.label || item.name}</option>
-                        ))}
-                      </select>
-                      {subaccountFieldError ? <p className="mt-1 text-xs text-red-600">{subaccountFieldError}</p> : null}
-                    </label>
-                  </div>
-
-                  {shouldShowModulePermissions ? (
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <label className="text-sm text-slate-700">
+                          Prenume
+                          <input className="wm-input mt-1" value={firstName} onChange={(e) => setFirstName(e.target.value)} required disabled={mode === "edit"} />
+                        </label>
+                        <label className="text-sm text-slate-700">
+                          Nume
+                          <input className="wm-input mt-1" value={lastName} onChange={(e) => setLastName(e.target.value)} required disabled={mode === "edit"} />
+                        </label>
+                        <label className="text-sm text-slate-700 md:col-span-2">
+                          Email <span className="text-red-500">*</span>
+                          <input className="wm-input mt-1" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={mode === "edit"} />
+                        </label>
+                        <label className="text-sm text-slate-700">
+                          Telefon
+                          <input className="wm-input mt-1" value={phone} onChange={(e) => setPhone(e.target.value)} disabled={mode === "edit"} />
+                        </label>
+                        <label className="text-sm text-slate-700">
+                          Extensie
+                          <input className="wm-input mt-1" value={extension} onChange={(e) => setExtension(e.target.value)} disabled={mode === "edit"} />
+                        </label>
+                        <label className="text-sm text-slate-700">
+                          Tip Utilizator
+                          <select className="wm-input mt-1" value={userType} onChange={(e) => setUserType(e.target.value)} disabled={mode === "edit"}>
+                            <option value="agency">Agency</option>
+                            <option value="client">Client</option>
+                          </select>
+                        </label>
+                        <label className="text-sm text-slate-700">
+                          Rol Utilizator
+                          <select className="wm-input mt-1" value={userRole} onChange={(e) => setUserRole(e.target.value)} disabled={editLockedInherited}>
+                            <option value="admin">Admin</option>
+                            <option value="member">Membru</option>
+                            <option value="viewer">Viewer</option>
+                          </select>
+                        </label>
+                        <label className="text-sm text-slate-700">
+                          Locație
+                          <input className="wm-input mt-1" value={location} onChange={(e) => setLocation(e.target.value)} disabled={mode === "edit"} />
+                        </label>
+                        <label className="text-sm text-slate-700">
+                          Sub-cont
+                          <select
+                            className="wm-input mt-1"
+                            value={subaccount}
+                            onChange={(e) => {
+                              setSubaccount(e.target.value);
+                              setSubaccountFieldError("");
+                            }}
+                            disabled={userType === "agency" || mode === "edit"}
+                          >
+                            <option value="">Selectează Sub-cont</option>
+                            {subaccountOptions.map((item) => (
+                              <option key={item.id} value={String(item.id)}>{item.label || item.name}</option>
+                            ))}
+                          </select>
+                          {subaccountFieldError ? <p className="mt-1 text-xs text-red-600">{subaccountFieldError}</p> : null}
+                        </label>
+                      </div>
+                    </>
+                  ) : shouldShowModulePermissions ? (
                     <PermissionsEditor
                       scope={activeScope}
                       items={permissionEditorItems}
@@ -1016,35 +1041,37 @@ export default function SettingsTeamPage() {
                     </p>
                   ) : null}
 
-                  {mode !== "edit" ? (
-                    <>
-                      <div>
-                        <button type="button" className="text-sm font-medium text-indigo-600 hover:text-indigo-700" onClick={() => setAdvancedOpen((prev) => !prev)}>
-                          Setări Avansate
-                        </button>
-                        {advancedOpen ? (
-                          <label className="mt-2 block text-sm text-slate-700">
-                            Parolă
-                            <input className="wm-input mt-1" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-                          </label>
-                        ) : null}
-                      </div>
+                  {activeFormTab === "identity"
+                    ? mode !== "edit" ? (
+                        <>
+                          <div>
+                            <button type="button" className="text-sm font-medium text-indigo-600 hover:text-indigo-700" onClick={() => setAdvancedOpen((prev) => !prev)}>
+                              Setări Avansate
+                            </button>
+                            {advancedOpen ? (
+                              <label className="mt-2 block text-sm text-slate-700">
+                                Parolă
+                                <input className="wm-input mt-1" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                              </label>
+                            ) : null}
+                          </div>
 
-                      <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 rounded border-slate-300 text-indigo-600"
-                          checked={autoInviteAfterCreate}
-                          onChange={(e) => setAutoInviteAfterCreate(e.target.checked)}
-                        />
-                        Trimite invitație imediat după creare
-                      </label>
-                    </>
-                  ) : (
-                    <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                      Editarea identității globale (nume/email/telefon) va fi disponibilă într-un task ulterior.
-                    </p>
-                  )}
+                          <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                              checked={autoInviteAfterCreate}
+                              onChange={(e) => setAutoInviteAfterCreate(e.target.checked)}
+                            />
+                            Trimite invitație imediat după creare
+                          </label>
+                        </>
+                      ) : (
+                        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                          Editarea identității globale (nume/email/telefon) va fi disponibilă într-un task ulterior.
+                        </p>
+                      )
+                    : null}
 
                   <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
                     <button type="button" className="wm-btn-secondary" onClick={() => { resetCreateForm(); setMode("list"); }}>
