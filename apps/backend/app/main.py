@@ -120,13 +120,18 @@ def startup_event() -> None:
         acquired_lock = False
         global_conn = None
 
+        is_sqlite = settings.database_url.startswith("sqlite")
+
         for attempt in range(max_retries):
             try:
                 global_conn = psycopg.connect(settings.database_url)
-                with global_conn.cursor() as cur:
-                    cur.execute("SELECT pg_try_advisory_lock(1, hashtext('global_schema_init'))")
-                    acquired_lock = bool(cur.fetchone()[0])
-                global_conn.commit()
+                if not is_sqlite:
+                    with global_conn.cursor() as cur:
+                        cur.execute("SELECT pg_try_advisory_lock(1, hashtext('global_schema_init'))")
+                        acquired_lock = bool(cur.fetchone()[0])
+                    global_conn.commit()
+                else:
+                    acquired_lock = True
                 logger.info("Successfully connected to the database on startup.")
                 break
             except Exception as e:
@@ -154,9 +159,10 @@ def startup_event() -> None:
         finally:
             if global_conn is not None:
                 try:
-                    with global_conn.cursor() as cur:
-                        cur.execute("SELECT pg_advisory_unlock(1, hashtext('global_schema_init'))")
-                    global_conn.commit()
+                    if not is_sqlite:
+                        with global_conn.cursor() as cur:
+                            cur.execute("SELECT pg_advisory_unlock(1, hashtext('global_schema_init'))")
+                        global_conn.commit()
                 except Exception as unlock_err:
                     logger.error(f"Failed to release global schema lock: {unlock_err}")
                 finally:
