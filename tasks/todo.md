@@ -1,3 +1,18 @@
+# TODO — Hotfix real Agency Team wizard: `Pasul următor` nu trebuie să creeze userul (2026-03-19)
+
+- [x] Re-citire AGENTS/tasks/lessons + `page.tsx` și `page.test.tsx` pentru flow-ul Agency Team create.
+- [x] Confirmare cauză: submit global pe `<form>` putea fi declanșat din pasul 1 (ex. Enter), iar fixul anterior nu avea hardening suficient pe toate trigger-ele UI.
+- [x] Guard strat 1 (UI event): handler dedicat pentru `Pasul Următor` + intercept Enter în pasul 1.
+- [x] Guard strat 2 (submit): blocare explicită create când `activeFormTab !== "permissions"` în create mode.
+- [x] Menținere create final doar în pasul 2; fără schimbări pe edit/invite/delete/sub-account team.
+- [x] Teste frontend focalizate pentru click + submit/Enter în pasul 1 și no-regression.
+- [x] Rulare teste Agency Team + build frontend.
+
+## Review
+- [x] `Pasul următor` validează și mută pe `Roluri și Permisiuni`, fără create request.
+- [x] Enter în pasul 1 nu mai poate crea userul (nici submit, nici keydown).
+- [x] Create API pornește doar din pasul 2 (`permissions`).
+
 # TODO — Agency Team: înlocuire `Locație` cu `Acces / Conturi` și eliminare semnificație geografică falsă (2026-03-19)
 
 - [x] Re-citire AGENTS/tasks/lessons + `apps/frontend/src/app/settings/team/page.tsx` și testele aferente.

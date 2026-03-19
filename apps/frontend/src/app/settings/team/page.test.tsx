@@ -403,6 +403,22 @@ describe("Settings team page subaccount integration", () => {
     expect(createCall).toBeUndefined();
   });
 
+  it("enter keydown in identity step does not create user and advances to permissions", async () => {
+    render(<SettingsTeamPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Prenume" }), { target: { value: "Lia" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Nume" }), { target: { value: "Matei" } });
+    const emailInput = screen.getByRole("textbox", { name: /Email/i });
+    fireEvent.change(emailInput, { target: { value: "lia@example.com" } });
+
+    fireEvent.keyDown(emailInput, { key: "Enter", code: "Enter", charCode: 13 });
+
+    expect(screen.getByRole("heading", { name: "Roluri și Permisiuni" })).toBeInTheDocument();
+    const createCall = apiRequestMock.mock.calls.find((call) => call[0] === "/team/members" && call[1]?.method === "POST");
+    expect(createCall).toBeUndefined();
+  });
+
   it("create with auto-invite checked calls invite with created membership id", async () => {
     apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
       if (path.startsWith("/team/members?")) {

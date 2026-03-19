@@ -420,3 +420,5 @@
 - 2026-03-19: Pentru cron-uri one-shot DB-backed, tratează explicit erorile de conexiune la nivel de entrypoint (nu doar în store) și returnează un summary controlat + warning scurt, altfel deploy-ul vede crash opac pe timeout tranzitoriu.
 
 - 2026-03-19: Când un câmp legacy (ex. `location`) nu mai are semnificație de business, nu îl cosmetiza cu valori hardcodate; elimină-l din UI-ul editabil și afișează explicit un summary derivat din datele reale de acces (`subaccount`/`agency`).
+
+- 2026-03-19: Când un wizard folosește un singur `<form>`, aplică guarduri în două straturi (event-level + submit-level) și adaugă test separat pentru `fireEvent.keyDown(..., Enter)`; doar `fireEvent.submit` nu acoperă toate căile reale din browser.

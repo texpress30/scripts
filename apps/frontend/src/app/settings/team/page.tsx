@@ -568,10 +568,10 @@ export default function SettingsTeamPage() {
   async function submitCreateForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (mode === "create" && activeFormTab === "identity") {
-      if (!validateCreateIdentityStep()) return;
-      setActiveFormTab("permissions");
+      handleCreateIdentityNextStep();
       return;
     }
+    if (mode === "create" && activeFormTab !== "permissions") return;
 
     setSaving(true);
     setErrorMessage("");
@@ -676,6 +676,11 @@ export default function SettingsTeamPage() {
       return false;
     }
     return true;
+  }
+
+  function handleCreateIdentityNextStep() {
+    if (!validateCreateIdentityStep()) return;
+    setActiveFormTab("permissions");
   }
 
   function accessAccountsSummary(member: TeamMember): string {
@@ -973,7 +978,16 @@ export default function SettingsTeamPage() {
                   </div>
                 </aside>
 
-                <form className="wm-card space-y-4 p-4" onSubmit={mode === "edit" ? submitEditForm : submitCreateForm}>
+                <form
+                  className="wm-card space-y-4 p-4"
+                  onSubmit={mode === "edit" ? submitEditForm : submitCreateForm}
+                  onKeyDown={(event) => {
+                    if (mode === "create" && activeFormTab === "identity" && event.key === "Enter") {
+                      event.preventDefault();
+                      handleCreateIdentityNextStep();
+                    }
+                  }}
+                >
                   <h2 className="text-lg font-semibold text-slate-900">{activeFormTab === "identity" ? "Informații Utilizator" : "Roluri și Permisiuni"}</h2>
 
                   {activeFormTab === "identity" ? (
@@ -1115,8 +1129,7 @@ export default function SettingsTeamPage() {
                         className="wm-btn-primary"
                         disabled={saving}
                         onClick={() => {
-                          if (!validateCreateIdentityStep()) return;
-                          setActiveFormTab("permissions");
+                          handleCreateIdentityNextStep();
                         }}
                       >
                         Pasul Următor
