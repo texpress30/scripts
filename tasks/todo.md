@@ -1,3 +1,15 @@
+# TODO — AGENTS workflow alignment checkpoint (2026-03-19)
+
+- [x] Re-read repository AGENTS instructions before making any edits.
+- [x] Confirm current git state and identify whether pending changes exist.
+- [x] Apply minimal documentation updates for this checkpoint only.
+- [x] Record review notes for traceability.
+
+## Review
+- [x] Repository instructions were re-validated before any code changes.
+- [x] This checkpoint intentionally limits scope to workflow/documentation hygiene.
+- [x] No product/runtime behavior was changed in this update.
+
 # TODO — Filter app navigation by full sidebar permissions catalog
 
 - [x] Re-read AppShell/sidebar helpers, session/api access-context utilities, and team backend contracts for navigation permissions.
