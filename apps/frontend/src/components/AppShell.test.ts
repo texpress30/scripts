@@ -116,7 +116,6 @@ describe("AppShell sub-account access helpers", () => {
 
     const visible = filterSubaccountNavItems({
       navItems,
-      role: "subaccount_user",
       currentSubId: 15,
       moduleKeys: ["dashboard", "rules"],
       loading: false,
@@ -125,7 +124,7 @@ describe("AppShell sub-account access helpers", () => {
     expect(visible.map((item) => item.label)).toEqual(["Dashboard", "Rules"]);
   });
 
-  it("does not filter nav items for agency roles", () => {
+  it("filters sub-account nav items by module_keys regardless of role label", () => {
     const navItems = [
       { href: "/sub/15/dashboard", label: "Dashboard", icon: {} as never, moduleKey: "dashboard" as const },
       { href: "/sub/15/campaigns", label: "Campaigns", icon: {} as never, moduleKey: "campaigns" as const },
@@ -133,13 +132,12 @@ describe("AppShell sub-account access helpers", () => {
 
     const visible = filterSubaccountNavItems({
       navItems,
-      role: "agency_admin",
       currentSubId: 15,
       moduleKeys: ["dashboard"],
       loading: false,
     });
 
-    expect(visible).toEqual(navItems);
+    expect(visible.map((item) => item.label)).toEqual(["Dashboard"]);
   });
 
   it("keeps sidebar stable while access context is loading", () => {
@@ -150,7 +148,6 @@ describe("AppShell sub-account access helpers", () => {
 
     const visible = filterSubaccountNavItems({
       navItems,
-      role: "subaccount_user",
       currentSubId: 15,
       moduleKeys: null,
       loading: true,
@@ -162,7 +159,6 @@ describe("AppShell sub-account access helpers", () => {
   it("redirects manual access to first allowed module", () => {
     const redirect = resolveSubaccountModuleRedirect({
       pathname: "/sub/15/campaigns",
-      role: "subaccount_user",
       currentSubId: 15,
       moduleKeys: ["dashboard", "rules"],
       loading: false,
@@ -174,7 +170,6 @@ describe("AppShell sub-account access helpers", () => {
   it("redirects to safe settings route when no module is allowed", () => {
     const redirect = resolveSubaccountModuleRedirect({
       pathname: "/sub/15/rules",
-      role: "subaccount_user",
       currentSubId: 15,
       moduleKeys: [],
       loading: false,
@@ -239,11 +234,21 @@ describe("AppShell sub-account access helpers", () => {
   it("redirects subaccount settings route when settings module is OFF", () => {
     const redirect = resolveSubaccountSettingsRedirect({
       pathname: "/subaccount/15/settings/profile",
-      role: "subaccount_user",
       subSettingsId: 15,
       moduleKeys: ["campaigns"],
       loading: false,
     });
     expect(redirect).toBe("/sub/15/campaigns");
+  });
+
+  it("does not apply agency module filtering over sub-account navigation items", () => {
+    const navItems = getNavItems("/sub/15/dashboard");
+    const visible = filterAgencyNavItems({
+      navItems,
+      role: "agency_member",
+      moduleKeys: ["creative"],
+      loading: false,
+    });
+    expect(visible.map((item) => item.href)).toEqual(navItems.map((item) => item.href));
   });
 });

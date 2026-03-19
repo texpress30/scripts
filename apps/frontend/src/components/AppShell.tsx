@@ -228,13 +228,12 @@ export function resolveSubaccountRouteGuardDecision(params: {
 
 export function filterSubaccountNavItems(params: {
   navItems: NavItem[];
-  role: AppRole;
   currentSubId: number | null;
   moduleKeys: string[] | null;
   loading: boolean;
 }): NavItem[] {
-  const { navItems, role, currentSubId, moduleKeys, loading } = params;
-  if (!isSubaccountScopedRole(role) || currentSubId === null) {
+  const { navItems, currentSubId, moduleKeys, loading } = params;
+  if (currentSubId === null) {
     return navItems;
   }
   if (loading || moduleKeys === null) {
@@ -249,13 +248,12 @@ export function filterSubaccountNavItems(params: {
 
 export function resolveSubaccountModuleRedirect(params: {
   pathname: string;
-  role: AppRole;
   currentSubId: number | null;
   moduleKeys: string[] | null;
   loading: boolean;
 }): string | null {
-  const { pathname, role, currentSubId, moduleKeys, loading } = params;
-  if (!isSubaccountScopedRole(role) || currentSubId === null || loading || moduleKeys === null) {
+  const { pathname, currentSubId, moduleKeys, loading } = params;
+  if (currentSubId === null || loading || moduleKeys === null) {
     return null;
   }
 
@@ -284,13 +282,12 @@ export function resolveSubaccountModuleRedirect(params: {
 
 export function resolveSubaccountSettingsRedirect(params: {
   pathname: string;
-  role: AppRole;
   subSettingsId: number | null;
   moduleKeys: string[] | null;
   loading: boolean;
 }): string | null {
-  const { pathname, role, subSettingsId, moduleKeys, loading } = params;
-  if (!isSubaccountScopedRole(role) || subSettingsId === null || loading || moduleKeys === null) return null;
+  const { pathname, subSettingsId, moduleKeys, loading } = params;
+  if (subSettingsId === null || loading || moduleKeys === null) return null;
   if (!pathname.startsWith(`/subaccount/${subSettingsId}/settings/`)) return null;
 
   const allowed = normalizeModuleKeys(moduleKeys);
@@ -315,6 +312,7 @@ export function filterAgencyNavItems(params: {
   loading: boolean;
 }): NavItem[] {
   const { navItems, role, moduleKeys, loading } = params;
+  if (navItems.some((item) => item.href.startsWith("/sub/"))) return navItems;
   if (!isAgencyScopedRole(role) || loading || moduleKeys === null) return navItems;
   const allowed = normalizeModuleKeys(moduleKeys);
   return navItems.filter((item) => {
@@ -633,23 +631,23 @@ export function AppShell({
   }, [isAgencyRole, sessionInfo.role]);
 
   useEffect(() => {
-    if (currentSubId === null || !isSubaccountScopedRole(sessionInfo.role)) {
+    if (contextClientId === null) {
       setSubaccountMyAccess(null);
       setSubaccountMyAccessLoading(false);
       return;
     }
+    const targetSubaccountId = contextClientId;
 
-    const subaccountId = currentSubId;
     let ignore = false;
     setSubaccountMyAccessLoading(true);
     async function loadSubaccountAccessContext() {
       try {
-        const payload = await getSubaccountMyAccess(subaccountId);
+        const payload = await getSubaccountMyAccess(targetSubaccountId);
         if (!ignore) setSubaccountMyAccess(payload);
       } catch {
         if (!ignore) {
           setSubaccountMyAccess({
-            subaccount_id: subaccountId,
+            subaccount_id: targetSubaccountId,
             role: sessionInfo.role,
             module_keys: [...SUBACCOUNT_MODULE_ORDER],
             source_scope: "fallback",
@@ -665,12 +663,11 @@ export function AppShell({
     return () => {
       ignore = true;
     };
-  }, [currentSubId, sessionInfo.role]);
+  }, [contextClientId, sessionInfo.role]);
 
   useEffect(() => {
     const redirectTo = resolveSubaccountModuleRedirect({
       pathname,
-      role: sessionInfo.role,
       currentSubId,
       moduleKeys: subaccountMyAccess?.module_keys ?? null,
       loading: subaccountMyAccessLoading,
@@ -709,7 +706,6 @@ export function AppShell({
   useEffect(() => {
     const redirectTo = resolveSubaccountSettingsRedirect({
       pathname,
-      role: sessionInfo.role,
       subSettingsId,
       moduleKeys: subaccountMyAccess?.module_keys ?? null,
       loading: subaccountMyAccessLoading,
@@ -722,7 +718,6 @@ export function AppShell({
   const visibleNavItems = useMemo(() => {
     const subFiltered = filterSubaccountNavItems({
       navItems,
-      role: sessionInfo.role,
       currentSubId,
       moduleKeys: subaccountMyAccess?.module_keys ?? null,
       loading: subaccountMyAccessLoading,

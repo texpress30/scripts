@@ -415,3 +415,4 @@
 - 2026-03-18: După feedback "unsatisfied" pe nav permissions, aliniază mereu frontend filtering cu enforcement backend pe route groups (agency main + settings parent/children + subaccount settings) și adaugă teste explicite de 403 pentru acces direct.
 - 2026-03-19: Pentru polish UX pe permissions după feedback "unsatisfied", extrage component shared între Agency/Sub-account și păstrează testele de contract pentru payload + parent/child sync ca guard de no-regression.
 - 2026-03-19: Când primești un reminder explicit cu instrucțiuni AGENTS, tratează-l ca o corecție de proces și începe imediat cu un checkpoint minim în `tasks/todo.md` înainte de orice altă acțiune.
+- 2026-03-19: După feedback „taskul nu a fost executat”, prioritizează imediat fixul real în cod (nu task notes), reproduce explicit simptomul prin teste și validează `my-access` + route guards înainte de commit/PR.

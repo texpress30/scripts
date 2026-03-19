@@ -1,3 +1,19 @@
+# TODO — Debug/fix sub-account permissions sidebar+dashboard mismatch (2026-03-19)
+
+- [x] Re-read frontend AppShell/session/api + sub-account dashboard guard logic and backend `team.py`/`team_members.py`.
+- [x] Reproduce and diagnose mismatch (`my-access`, sidebar visible modules, current route behavior on `/sub/{id}/dashboard`).
+- [x] Implement minimal real fix (frontend guard and/or backend normalization) without touching out-of-scope flows.
+- [x] Add/update focused tests for creative-only redirect, dashboard-allowed behavior, and route/sidebar alignment.
+- [x] Run frontend tests + frontend build; run backend tests/startup only if backend code changes.
+- [x] Document review findings in this section after verification.
+
+## Review
+- [x] Root cause: agency module filtering was being applied over sub-account nav items when session role was agency-scoped while browsing `/sub/{id}`; due key overlap this could collapse sidebar to `Creative` only.
+- [x] `GET /team/subaccounts/{id}/my-access` still returned subaccount keys, but AppShell ignored that path context for filtering/redirect in agency-role sessions.
+- [x] AppShell now always loads sub-account `my-access` for sub-context routes (`/sub/{id}` and `/subaccount/{id}/settings/*`) and applies sub-account guards independent of role label.
+- [x] Added explicit dashboard page access guard: if `dashboard` is missing from `module_keys`, redirect early to first allowed module (e.g. `creative`) before dashboard API load.
+- [x] Verified with focused Vitest suites and frontend production build.
+
 # TODO — AGENTS workflow alignment checkpoint (2026-03-19)
 
 - [x] Re-read repository AGENTS instructions before making any edits.
