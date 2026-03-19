@@ -1,3 +1,16 @@
+# TODO — Hotfix backend create user: SQL placeholder mismatch must_reset_password (2026-03-19)
+
+- [x] Re-citire `apps/backend/app/services/team_members.py` și confirmare mismatch placeholders/params în `_upsert_user`.
+- [x] Fix minim: înlocuire hardcodare `FALSE` din VALUES cu placeholder `%s` pentru `must_reset_password`.
+- [x] Păstrare `ON CONFLICT ... must_reset_password = EXCLUDED.must_reset_password` coerent.
+- [x] Adăugare teste backend focalizate pentru `_upsert_user` (cu/ fără parolă explicită).
+- [x] Rulare teste backend relevante + startup check backend.
+
+## Review
+- [x] Cauza: query SQL avea 7 placeholders pentru VALUES, dar param tuple trimitea 8 argumente.
+- [x] Create user nu mai crapă pe eroarea `the query has 7 placeholders but 8 parameters were passed`.
+- [x] `must_reset_password` este persistat corect pe insert și update.
+
 # TODO — Agency Team create wizard real în 2 pași + invite split by password (2026-03-19)
 
 - [x] Re-sync workspace și recitire fișierele cheie frontend/backend pentru flow-ul Team create/invite.
