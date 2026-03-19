@@ -4,6 +4,7 @@ import React, { FormEvent, useEffect, useMemo, useState } from "react";
 import { Camera, ChevronLeft, Loader2, Pencil, Power, RefreshCw, Search, Trash2, UserCircle2 } from "lucide-react";
 
 import { AppShell } from "@/components/AppShell";
+import { PermissionEditorItem, PermissionsEditor } from "@/components/team/PermissionsEditor";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import {
   ApiRequestError,
@@ -66,13 +67,6 @@ type ModuleCatalogItem = {
 };
 
 type CatalogScope = "agency" | "subaccount";
-type ModuleGroup = {
-  key: string;
-  label: string;
-  order: number;
-  items: ModuleCatalogItem[];
-};
-
 const PAGE_SIZE = 10;
 
 function initials(firstName: string, lastName: string) {
@@ -654,24 +648,19 @@ export default function SettingsTeamPage() {
   }
 
   const shouldShowModulePermissions = activeCatalog.length > 0;
-  const moduleGroups = useMemo<ModuleGroup[]>(() => {
-    const grouped = new Map<string, ModuleGroup>();
-    for (const item of activeCatalog) {
-      const key = item.group_key || "main_nav";
-      if (!grouped.has(key)) {
-        grouped.set(key, {
-          key,
-          label: item.group_label || "Main Navigation",
-          order: item.order,
-          items: [],
-        });
-      }
-      grouped.get(key)?.items.push(item);
-    }
-    return Array.from(grouped.values())
-      .map((group) => ({ ...group, items: [...group.items].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label)) }))
-      .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
-  }, [activeCatalog]);
+  const permissionEditorItems = useMemo<PermissionEditorItem[]>(
+    () =>
+      activeCatalog.map((item) => ({
+        key: item.key,
+        label: item.label,
+        order: item.order,
+        groupKey: item.group_key,
+        groupLabel: item.group_label,
+        parentKey: item.parent_key ?? null,
+        isContainer: item.is_container,
+      })),
+    [activeCatalog],
+  );
   const isEditSaveDisabled = useMemo(() => {
     if (mode !== "edit") return false;
     if (saving || loadingEditDetail || editLockedInherited || editingMembershipId === null || editOriginal === null) return true;
@@ -1004,62 +993,21 @@ export default function SettingsTeamPage() {
                   </div>
 
                   {shouldShowModulePermissions ? (
-                    <section className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                      <h3 className="text-sm font-semibold text-slate-900">Roluri și Permisiuni</h3>
-                      <p className="text-xs text-slate-600">Rolul selectat rămâne baza de acces. Toggle-urile de mai jos restrâng ce vede utilizatorul în navigație.</p>
-                      {moduleCatalogLoading ? <p className="text-xs text-slate-500">Se încarcă modulele...</p> : null}
-                      {moduleCatalogError ? <p className="text-xs text-red-600">Nu am putut încărca modulele: {moduleCatalogError}</p> : null}
-                      {!moduleCatalogLoading && activeCatalog.length > 0 ? (
-                        <div className="space-y-3">
-                          {moduleGroups.map((group) => (
-                            <div key={group.key} className="space-y-2">
-                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{group.label}</p>
-                              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                                {group.items
-                                  .filter((item) => !item.parent_key)
-                                  .map((moduleItem) => {
-                                    const children = group.items.filter((item) => item.parent_key === moduleItem.key);
-                                    const childSelectedCount = children.filter((child) => selectedModuleKeys.includes(child.key)).length;
-                                    const isChecked = selectedModuleKeys.includes(moduleItem.key);
-                                    return (
-                                      <div key={moduleItem.key} className="rounded border border-slate-200 bg-white px-2 py-1.5">
-                                        <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                                          <input
-                                            type="checkbox"
-                                            className="h-4 w-4 rounded border-slate-300 text-indigo-600"
-                                            checked={isChecked}
-                                            onChange={() => toggleModule(moduleItem.key)}
-                                            disabled={editLockedInherited}
-                                          />
-                                          <span>{moduleItem.label}</span>
-                                          {children.length > 0 ? <span className="text-xs text-slate-500">({childSelectedCount}/{children.length})</span> : null}
-                                        </label>
-                                        {children.length > 0 ? (
-                                          <div className="mt-2 space-y-1 border-l border-slate-200 pl-3">
-                                            {children.map((child) => (
-                                              <label key={child.key} className="inline-flex items-center gap-2 text-sm text-slate-700">
-                                                <input
-                                                  type="checkbox"
-                                                  className="h-4 w-4 rounded border-slate-300 text-indigo-600"
-                                                  checked={selectedModuleKeys.includes(child.key)}
-                                                  onChange={() => toggleModule(child.key)}
-                                                  disabled={editLockedInherited || !selectedModuleKeys.includes(moduleItem.key)}
-                                                />
-                                                {child.label}
-                                              </label>
-                                            ))}
-                                          </div>
-                                        ) : null}
-                                      </div>
-                                    );
-                                  })}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                      {moduleFieldError ? <p className="text-xs text-red-600">{moduleFieldError}</p> : null}
-                    </section>
+                    <PermissionsEditor
+                      scope={activeScope}
+                      items={permissionEditorItems}
+                      selectedKeys={selectedModuleKeys}
+                      onToggle={toggleModule}
+                      loading={moduleCatalogLoading}
+                      loadError={moduleCatalogError ? `Nu am putut încărca modulele: ${moduleCatalogError}` : null}
+                      fieldError={moduleFieldError}
+                      readOnly={editLockedInherited}
+                      summaryHint="Rolul selectat rămâne baza de acces. Toggle-urile restrâng ce vede utilizatorul în navigație."
+                      getItemDisabled={(item) =>
+                        editLockedInherited ||
+                        (activeScope === "agency" && Boolean(item.parentKey) && item.parentKey === "settings" && !selectedModuleKeys.includes("settings"))
+                      }
+                    />
                   ) : null}
 
                   {mode === "edit" && editingMembershipId !== null ? (

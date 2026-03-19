@@ -328,6 +328,8 @@ describe("SubAccount Team management page", () => {
     const dashboard = await screen.findByRole("checkbox", { name: "Permisiune modul Dashboard" });
     const campaigns = screen.getByRole("checkbox", { name: "Permisiune modul Campaigns" });
     const creative = screen.getByRole("checkbox", { name: "Permisiune modul Creative" });
+    expect(screen.getByText("Nu poate fi acordat din grant ceiling-ul tău curent.")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: /^Settings/i }));
     const settings = screen.getByRole("checkbox", { name: "Permisiune modul Settings" });
     const settingsTeam = screen.getByRole("checkbox", { name: "Permisiune modul My Team" });
 
@@ -336,7 +338,6 @@ describe("SubAccount Team management page", () => {
     expect(settings).toBeChecked();
     expect(settingsTeam).toBeChecked();
     expect(creative).toBeDisabled();
-    expect(screen.getByText("Nu poate fi acordat din grant ceiling-ul tău curent.")).toBeInTheDocument();
   });
 
   it("updates module selection and sends only selected grantable module_keys", async () => {
@@ -348,6 +349,7 @@ describe("SubAccount Team management page", () => {
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
     const campaigns = await screen.findByRole("checkbox", { name: "Permisiune modul Campaigns" });
     fireEvent.click(campaigns);
+    fireEvent.click(await screen.findByRole("button", { name: /^Settings/i }));
 
     fireEvent.change(screen.getByPlaceholderText("Prenume"), { target: { value: "Elena" } });
     fireEvent.change(screen.getByPlaceholderText("Nume"), { target: { value: "Popa" } });
@@ -366,6 +368,7 @@ describe("SubAccount Team management page", () => {
     render(<SubAccountTeamPage />);
     await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Settings/i }));
 
     const settings = await screen.findByRole("checkbox", { name: "Permisiune modul Settings" });
     const settingsTeam = screen.getByRole("checkbox", { name: "Permisiune modul My Team" });
@@ -384,6 +387,18 @@ describe("SubAccount Team management page", () => {
     fireEvent.click(settingsTeam);
     expect(settings).not.toBeChecked();
     expect(settingsTeam).not.toBeChecked();
+  });
+
+  it("supports permissions search and group switching in shared editor", async () => {
+    render(<SubAccountTeamPage />);
+    await waitFor(() => expect(listSubaccountTeamMembersMock).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+
+    fireEvent.change(screen.getByPlaceholderText("Caută după label, key sau grup"), { target: { value: "team" } });
+    fireEvent.click(await screen.findByRole("button", { name: /^Settings/i }));
+
+    expect(await screen.findByRole("checkbox", { name: "Permisiune modul My Team" })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "Permisiune modul Dashboard" })).not.toBeInTheDocument();
   });
 
   it("edit mode preloads module keys and blocks save when selected key is outside grant ceiling", async () => {
@@ -420,6 +435,7 @@ describe("SubAccount Team management page", () => {
     fireEvent.click(editButtons[0]);
 
     expect(await screen.findByText(/depășesc accesul tău curent/i)).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: /^Main Navigation/i }));
     expect(screen.getByRole("checkbox", { name: "Permisiune modul Campaigns" })).toBeChecked();
     expect(screen.getByRole("button", { name: "Salvează" })).toBeDisabled();
     expect(updateTeamMembershipMock).not.toHaveBeenCalled();
@@ -432,6 +448,7 @@ describe("SubAccount Team management page", () => {
 
     const campaigns = await screen.findByRole("checkbox", { name: "Permisiune modul Campaigns" });
     fireEvent.click(campaigns);
+    fireEvent.click(await screen.findByRole("button", { name: /^Settings/i }));
     fireEvent.change(screen.getByDisplayValue("Subaccount User"), { target: { value: "subaccount_viewer" } });
     fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
 
@@ -454,7 +471,12 @@ describe("SubAccount Team management page", () => {
     const settings = screen.getByRole("checkbox", { name: "Permisiune modul Settings" });
     fireEvent.click(dashboard);
     fireEvent.click(campaigns);
+    expect(dashboard).not.toBeChecked();
+    expect(campaigns).not.toBeChecked();
+    fireEvent.click(await screen.findByRole("button", { name: /^Settings/i }));
+    const settings = screen.getByRole("checkbox", { name: "Permisiune modul Settings" });
     fireEvent.click(settings);
+    expect(settings).not.toBeChecked();
 
     fireEvent.change(screen.getByPlaceholderText("Prenume"), { target: { value: "Elena" } });
     fireEvent.change(screen.getByPlaceholderText("Nume"), { target: { value: "Popa" } });

@@ -5,6 +5,7 @@ import { ChevronDown, Copy, Mail, Pencil, Plus, Power, RefreshCw, Search, Trash2
 import { useParams } from "next/navigation";
 
 import { AppShell } from "@/components/AppShell";
+import { PermissionEditorItem, PermissionsEditor } from "@/components/team/PermissionsEditor";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import {
   ApiRequestError,
@@ -58,13 +59,6 @@ type ModulePermissionOption = {
   parentKey: string | null;
   isContainer: boolean;
   grantable: boolean;
-};
-
-type ModulePermissionGroup = {
-  key: string;
-  label: string;
-  order: number;
-  items: ModulePermissionOption[];
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -331,26 +325,28 @@ export default function SubAccountTeamPage() {
     () => moduleOptions.filter((item) => item.grantable).map((item) => item.key),
     [moduleOptions],
   );
-  const moduleGroups = useMemo<ModulePermissionGroup[]>(() => {
-    const grouped = new Map<string, ModulePermissionGroup>();
-    for (const item of moduleOptions) {
-      if (!grouped.has(item.groupKey)) {
-        grouped.set(item.groupKey, {
-          key: item.groupKey,
-          label: item.groupLabel || "Main Navigation",
+  const permissionEditorItems = useMemo<PermissionEditorItem[]>(
+    () =>
+      moduleOptions.map((item) => {
+        const isReadOnlyGapKey = editUnsafeGrantGap && selectedModuleKeys.includes(item.key) && !item.grantable;
+        const disabledReason = !item.grantable
+          ? isReadOnlyGapKey
+            ? "Permisiune existentă, dar ne-editabilă pentru actorul curent."
+            : "Nu poate fi acordat din grant ceiling-ul tău curent."
+          : null;
+        return {
+          key: item.key,
+          label: item.label,
           order: item.order,
-          items: [],
-        });
-      }
-      grouped.get(item.groupKey)?.items.push(item);
-    }
-    return Array.from(grouped.values())
-      .map((group) => ({
-        ...group,
-        items: [...group.items].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label)),
-      }))
-      .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
-  }, [moduleOptions]);
+          groupKey: item.groupKey,
+          groupLabel: item.groupLabel,
+          parentKey: item.parentKey,
+          isContainer: item.isContainer,
+          disabledReason,
+        };
+      }),
+    [moduleOptions, editUnsafeGrantGap, selectedModuleKeys],
+  );
 
   const pages = Math.max(1, Math.ceil(total / PER_PAGE));
 
@@ -986,71 +982,27 @@ export default function SubAccountTeamPage() {
                       </label>
                     </div>
 
-                    <div className="rounded-lg border border-slate-200 p-4">
-                      <h2 className="text-base font-semibold text-slate-900">Roluri și Permisiuni</h2>
-                      <p className="mt-1 text-xs text-slate-500">Poți acorda doar cheile de navigare pe care le ai deja în acest sub-account (grant ceiling).</p>
-                      {isLoadingModules ? <p className="mt-3 text-sm text-slate-500">Se încarcă modulele...</p> : null}
-                      {moduleLoadError ? <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{moduleLoadError}</p> : null}
-                      {moduleNotice ? <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">{moduleNotice}</p> : null}
-                      {!isLoadingModules ? (
-                        <div className="mt-3 space-y-2">
-                          {moduleGroups.map((group) => {
-                            const renderItem = (item: ModulePermissionOption, depth: number) => {
-                              const checked = selectedModuleKeys.includes(item.key);
-                              const isReadOnlyGapKey = editUnsafeGrantGap && selectedModuleKeys.includes(item.key) && !item.grantable;
-                              const isDisabled = !item.grantable || editInheritedLocked || isReadOnlyGapKey;
-                              return (
-                                <label
-                                  key={item.key}
-                                  className={[
-                                    "flex items-start justify-between gap-3 rounded-md border border-slate-200 px-3 py-2 text-sm",
-                                    depth > 0 ? "ml-4 border-dashed" : "",
-                                  ].join(" ")}
-                                >
-                                  <div>
-                                    <p className="font-medium text-slate-900">{item.label}</p>
-                                    {!item.grantable ? <p className="text-xs text-slate-500">Nu poate fi acordat din grant ceiling-ul tău curent.</p> : null}
-                                    {!item.grantable && checked ? <p className="text-xs text-amber-700">Permisiune existentă, dar ne-editabilă pentru actorul curent.</p> : null}
-                                    {item.isContainer ? <p className="text-[11px] text-slate-500">Container de navigare</p> : null}
-                                  </div>
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    disabled={isDisabled}
-                                    onChange={() => toggleModuleKey(item.key, item.grantable)}
-                                    aria-label={`Permisiune modul ${item.label}`}
-                                  />
-                                </label>
-                              );
-                            };
-                            const renderedKeys = new Set<string>();
-                            const nodes: React.ReactNode[] = [];
-                            const topLevel = group.items.filter((item) => !item.parentKey || !group.items.some((candidate) => candidate.key === item.parentKey));
-                            for (const item of topLevel) {
-                              renderedKeys.add(item.key);
-                              nodes.push(renderItem(item, 0));
-                              const children = group.items.filter((child) => child.parentKey === item.key);
-                              for (const child of children) {
-                                renderedKeys.add(child.key);
-                                nodes.push(renderItem(child, 1));
-                              }
-                            }
-                            for (const leftover of group.items) {
-                              if (renderedKeys.has(leftover.key)) continue;
-                              nodes.push(renderItem(leftover, 0));
-                            }
-                            return (
-                              <section key={group.key} className="space-y-2 rounded-md border border-slate-100 bg-slate-50/50 p-2">
-                                <p className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{group.label}</p>
-                                {nodes}
-                              </section>
-                            );
-                          })}
-                          {moduleOptions.length === 0 ? <p className="text-sm text-slate-500">Nu există module disponibile.</p> : null}
-                        </div>
-                      ) : null}
-                      {errors.module_keys ? <p className="mt-2 text-xs text-red-600">{errors.module_keys}</p> : null}
-                    </div>
+                    <PermissionsEditor
+                      scope="subaccount"
+                      items={permissionEditorItems}
+                      selectedKeys={selectedModuleKeys}
+                      onToggle={(key) => {
+                        const item = moduleOptionByKey.get(normalizeModuleKey(key));
+                        toggleModuleKey(key, Boolean(item?.grantable));
+                      }}
+                      loading={isLoadingModules}
+                      loadError={moduleLoadError}
+                      fieldError={errors.module_keys}
+                      readOnly={editInheritedLocked}
+                      summaryHint="Poți acorda doar cheile de navigare pe care le ai deja în acest sub-account (grant ceiling)."
+                      getItemAriaLabel={(item) => `Permisiune modul ${item.label}`}
+                      getItemDisabled={(item) => {
+                        const source = moduleOptionByKey.get(item.key);
+                        const isReadOnlyGapKey = editUnsafeGrantGap && selectedModuleKeys.includes(item.key) && !source?.grantable;
+                        return !source?.grantable || isReadOnlyGapKey || editInheritedLocked;
+                      }}
+                    />
+                    {moduleNotice ? <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">{moduleNotice}</p> : null}
 
                     {viewMode === "create" ? (
                       <div className="rounded-lg border border-slate-200 p-4">

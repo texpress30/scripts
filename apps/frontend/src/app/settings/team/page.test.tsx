@@ -595,6 +595,7 @@ describe("Settings team page subaccount integration", () => {
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
 
     expect(await screen.findByLabelText("Dashboard")).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: /^Settings/i }));
     const settingsParent = getCheckboxByLabelText("Settings");
     expect(settingsParent).toBeChecked();
 
@@ -622,7 +623,8 @@ describe("Settings team page subaccount integration", () => {
     render(<SettingsTeamPage />);
 
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
-    await screen.findByText("My Team");
+    fireEvent.click(await screen.findByRole("button", { name: /^Settings/i }));
+    await screen.findByLabelText("My Team");
 
     const settingsParent = getCheckboxByLabelText("Settings");
     const settingsChild = getCheckboxByLabelText("My Team");
@@ -640,6 +642,18 @@ describe("Settings team page subaccount integration", () => {
     fireEvent.click(settingsChild);
     expect(settingsParent).not.toBeChecked();
     expect(settingsChild).not.toBeChecked();
+  });
+
+  it("supports permissions search in shared editor", async () => {
+    render(<SettingsTeamPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    await screen.findByLabelText("Dashboard");
+    fireEvent.change(screen.getByPlaceholderText("Caută după label, key sau grup"), { target: { value: "my team" } });
+    fireEvent.click(await screen.findByRole("button", { name: /^Settings/i }));
+
+    expect(await screen.findByLabelText("My Team")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Dashboard")).not.toBeInTheDocument();
   });
 
   it("subaccount create sends module_keys and blocks submit when none selected", async () => {

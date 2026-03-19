@@ -5444,3 +5444,21 @@ Plan verified: frontend-focused incremental delivery for Agency Notifications se
 - [x] Agency settings now enforce parent `settings` plus child keys for profile/company/my-team/media-storage/email-templates/notifications.
 - [x] Subaccount settings enforcement was extended to relevant team settings endpoints (`grantable-modules`, `subaccount members list/create`) without changing create/edit membership logic.
 - [x] Intentionally left out: settings children without backend endpoints in this codebase (`settings_tags`, `settings_audit_logs` child-specific route split, `settings_ai_agents`) and any new API surface invention.
+
+# TODO — Polish roles and permissions UX with shared editor layout
+
+- [x] Re-read Agency Team + Sub-account Team pages, API helpers, and AppShell context for permissions UX constraints.
+- [x] Introduce shared frontend `PermissionsEditor` component used by both Agency Team and Sub-account Team forms.
+- [x] Implement grouped left-nav + right-panel layout, local search, active counts, and scope/summary hints.
+- [x] Keep existing parent/children permission sync semantics and payload contract (`module_keys`) unchanged.
+- [x] Preserve and clarify disabled/negrantable states in subaccount grant-ceiling context.
+- [x] Update both pages to consume shared component without changing create/edit/invite/lifecycle semantics.
+- [x] Add/update focused frontend tests for shared component behavior, page integration, search, group switching, and no-regression payload behavior.
+- [x] Run relevant frontend tests and frontend build.
+
+## Review
+- [x] Shared `PermissionsEditor` now powers Roles & Permissions in both Agency Team and Sub-account Team.
+- [x] UX now includes grouped navigation sidebar, searchable permission list, group active-count badges, and clearer ON/OFF readability.
+- [x] Sub-account grant-ceiling restrictions remain visible and explicitly explained for disabled keys.
+- [x] Existing permission semantics and create/edit payload contracts remain intact (`module_keys` source of truth).
+- [x] Intentionally left out: new permissions, backend contract changes, bulk actions, and full-page redesign.
