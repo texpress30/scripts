@@ -48,11 +48,6 @@ class PerformanceReportsStore:
                     """
 
     def _ensure_schema(self) -> None:
-        settings = load_settings()
-        if settings.app_env == "production":
-            if hasattr(self, "_schema_initialized"):
-                self._schema_initialized = True
-            return
         if self._is_test_mode() or self._schema_initialized:
             return
 
@@ -62,6 +57,7 @@ class PerformanceReportsStore:
 
             with self._connect() as conn:
                 with conn.cursor() as cur:
+                    cur.execute("SELECT pg_advisory_xact_lock(1, hashtext(%s))", ("ensure_schema_" + self.__class__.__name__,))
                     cur.execute("SELECT to_regclass('public.ad_performance_reports')")
                     row = cur.fetchone() or (None,)
                     if row[0] is None:

@@ -55,6 +55,7 @@ class IntegrationSecretsStore:
 
             with self._connect() as conn:
                 with conn.cursor() as cur:
+                    cur.execute("SELECT pg_advisory_xact_lock(1, hashtext(%s))", ("ensure_schema_" + self.__class__.__name__,))
                     cur.execute(
                         """
                         CREATE TABLE IF NOT EXISTS integration_secrets (
