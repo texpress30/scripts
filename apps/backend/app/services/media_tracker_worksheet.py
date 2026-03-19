@@ -47,6 +47,11 @@ class MediaTrackerWorksheetService:
         return psycopg.connect(settings.database_url)
 
     def _ensure_schema(self) -> None:
+        settings = load_settings()
+        if settings.app_env == "production":
+            if hasattr(self, "_schema_initialized"):
+                self._schema_initialized = True
+            return
         if self._is_test_mode() or self._schema_initialized:
             return
         with self._schema_lock:
