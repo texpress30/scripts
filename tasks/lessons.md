@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-19: Pentru create user fără parolă explicită, nu folosi niciodată hash fallback reutilizabil; persistă hash gol + `must_reset_password=true` și blochează login-ul DB până la confirmarea tokenului de setare inițială.
+
 - 2026-03-19: Pentru Sub-account Team wizard create, nu păstra submit button cu label ambiguu (`Înainte`) în același `<form>` cross-tab; separă structural pasul 1 non-form și pasul 2 form cu CTA final explicit `Creează utilizator`.
 
 - 2026-03-19: Pentru cerințe “delete user de peste tot”, nu reutiliza endpointul de remove membership; adaugă endpoint dedicat pe `user_id` + guard DB-backed în auth pentru a invalida tokenurile vechi după hard delete.

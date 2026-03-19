@@ -107,58 +107,43 @@ class TeamMembersFoundationTests(unittest.TestCase):
         conn = _FakeConnection()
         service._connect = lambda: conn
 
-        try:
-            from app.services import team_members as team_members_module
-
-            original_load_settings = team_members_module.load_settings
-            team_members_module.load_settings = lambda: type("_Settings", (), {"app_login_password": "fallback-pass"})()
-            user_id = service._upsert_user(
-                first_name="Ana",
-                last_name="Pop",
-                email="ana@example.com",
-                phone="",
-                extension="",
-                avatar_url="",
-                password=None,
-            )
-        finally:
-            from app.services import team_members as team_members_module
-
-            team_members_module.load_settings = original_load_settings
+        user_id = service._upsert_user(
+            first_name="Ana",
+            last_name="Pop",
+            email="ana@example.com",
+            phone="",
+            extension="",
+            avatar_url="",
+            password=None,
+        )
 
         self.assertEqual(user_id, 11)
         insert_query = conn.cursor_obj.queries[-1]
         insert_params = conn.cursor_obj.params[-1]
-        self.assertIn("VALUES (%s, %s, %s, %s, %s, %s, 'ro', %s, TRUE, %s)", insert_query)
-        self.assertEqual(len(insert_params or ()), 8)
-        self.assertEqual(bool((insert_params or (None,))[-1]), True)
+        self.assertIn("VALUES (%s, %s, %s, %s, %s, %s, 'ro', COALESCE(%s, ''), TRUE, %s)", insert_query)
+        self.assertEqual(len(insert_params or ()), 9)
+        self.assertIsNone((insert_params or (None,))[6])
+        self.assertEqual(bool((insert_params or (None,))[7]), True)
 
     def test_upsert_user_persists_false_must_reset_when_password_is_explicit(self):
         service = TeamMembersService()
         conn = _FakeConnection()
         service._connect = lambda: conn
 
-        from app.services import team_members as team_members_module
-
-        original_load_settings = team_members_module.load_settings
-        try:
-            team_members_module.load_settings = lambda: type("_Settings", (), {"app_login_password": "fallback-pass"})()
-            user_id = service._upsert_user(
-                first_name="Ana",
-                last_name="Pop",
-                email="ana@example.com",
-                phone="",
-                extension="",
-                avatar_url="",
-                password="StrongPassword123!",
-            )
-        finally:
-            team_members_module.load_settings = original_load_settings
+        user_id = service._upsert_user(
+            first_name="Ana",
+            last_name="Pop",
+            email="ana@example.com",
+            phone="",
+            extension="",
+            avatar_url="",
+            password="StrongPassword123!",
+        )
 
         self.assertEqual(user_id, 11)
         insert_params = conn.cursor_obj.params[-1]
-        self.assertEqual(len(insert_params or ()), 8)
-        self.assertEqual(bool((insert_params or (True,))[-1]), False)
+        self.assertEqual(len(insert_params or ()), 9)
+        self.assertEqual(bool((insert_params or (True,))[7]), False)
 
     def test_create_agency_member_uses_canonical_role_mapping(self):
         service = TeamMembersService()

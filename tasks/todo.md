@@ -1,3 +1,17 @@
+# TODO — Create/Invite auth semantics hardening (2026-03-19)
+
+- [x] Re-sync + recitire AGENTS/tasks/lessons și fișierele backend relevante pentru create/invite/login/reset.
+- [x] Audit flow actual pentru create cu/fără parolă + invite template branch + reset-confirm compat.
+- [x] Eliminare fallback password utilizabil la create fără parolă și păstrare `must_reset_password` ca stare reală.
+- [x] Blocare login DB când `must_reset_password=true` până la `reset-password/confirm`.
+- [x] Păstrare branch invite: `team_account_ready` + `/login` fără token pentru conturi cu parolă, respectiv token+`/reset-password` pentru conturi fără parolă.
+- [x] Adăugare/actualizare teste backend pentru noile garanții.
+- [x] Rulare teste backend țintite + startup/import check backend.
+
+## Review
+- [x] User creat fără parolă nu mai primește hash fallback utilizabil și nu poate face login înainte de setarea inițială.
+- [x] `reset-password/confirm` rămâne compatibil pentru tokenuri invite și scoate userul din `must_reset_password`.
+
 # TODO — Sub-account Team wizard parity follow-up (2026-03-19)
 
 - [x] Revalidare cerințe user + verificare implementare actuală în `subaccount/[id]/settings/team`.

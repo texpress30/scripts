@@ -620,9 +620,8 @@ class TeamMembersService:
         avatar_url: str,
         password: str | None,
     ) -> int:
-        settings = load_settings()
         has_explicit_password = bool(password and password.strip())
-        password_hash = hash_password(password.strip()) if has_explicit_password else hash_password(settings.app_login_password)
+        password_hash = hash_password(password.strip()) if has_explicit_password else None
         must_reset_password = not has_explicit_password
 
         with self._connect() as conn:
@@ -633,14 +632,14 @@ class TeamMembersService:
                         email, first_name, last_name, phone, extension, avatar_url, platform_language,
                         password_hash, is_active, must_reset_password
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, 'ro', %s, TRUE, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, 'ro', COALESCE(%s, ''), TRUE, %s)
                     ON CONFLICT(email) DO UPDATE
                     SET first_name = EXCLUDED.first_name,
                         last_name = EXCLUDED.last_name,
                         phone = EXCLUDED.phone,
                         extension = EXCLUDED.extension,
                         avatar_url = EXCLUDED.avatar_url,
-                        password_hash = COALESCE(EXCLUDED.password_hash, users.password_hash),
+                        password_hash = CASE WHEN %s THEN EXCLUDED.password_hash ELSE users.password_hash END,
                         must_reset_password = EXCLUDED.must_reset_password,
                         updated_at = NOW()
                     RETURNING id
@@ -654,6 +653,7 @@ class TeamMembersService:
                         avatar_url,
                         password_hash,
                         must_reset_password,
+                        has_explicit_password,
                     ),
                 )
                 row = cur.fetchone()
