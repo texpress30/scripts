@@ -62,17 +62,6 @@ type ModulePermissionOption = {
   grantable: boolean;
 };
 
-type ModulePermissionOption = {
-  key: string;
-  label: string;
-  order: number;
-  scope: "subaccount";
-  groupKey: string;
-  groupLabel: string;
-  parentKey: string | null;
-  isContainer: boolean;
-  grantable: boolean;
-};
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PER_PAGE = 5;
