@@ -3,7 +3,12 @@ from datetime import date, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
 
-from app.api.dependencies import enforce_action_scope, get_current_user
+from app.api.dependencies import (
+    enforce_action_scope,
+    enforce_agency_navigation_access,
+    enforce_subaccount_module_access,
+    get_current_user,
+)
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
 from app.services.dashboard import unified_dashboard_service
@@ -32,6 +37,7 @@ def agency_dashboard_summary(
     response: Response = None,
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="dashboard:view", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_dashboard")
 
     resolved_end = end_date or date.today()
     resolved_start = start_date or (resolved_end - timedelta(days=6))
@@ -68,6 +74,7 @@ def client_platform_sync_audit_debug(
     response: Response = None,
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="dashboard:view", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_dashboard")
 
     resolved_end = end_date or date.today()
     resolved_start = start_date or (resolved_end - timedelta(days=29))
@@ -113,6 +120,7 @@ def client_tiktok_account_daily_repair_debug(
     response: Response = None,
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="dashboard:view", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_dashboard")
 
     if payload.start_date > payload.end_date:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="start_date must be <= end_date")
@@ -156,6 +164,7 @@ def currency_drift_repair_debug(
     response: Response = None,
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="dashboard:view", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_dashboard")
 
     result = unified_dashboard_service.audit_and_repair_client_display_currency_drift(
         client_id=payload.client_id,
@@ -194,6 +203,7 @@ def client_dashboard_reconciliation_debug(
     response: Response = None,
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="dashboard:view", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_dashboard")
 
     resolved_end = end_date or date.today()
     resolved_start = start_date or (resolved_end - timedelta(days=29))
@@ -230,6 +240,7 @@ def client_dashboard(
     response: Response = None,
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="dashboard:view", scope="subaccount")
+    enforce_subaccount_module_access(user=user, subaccount_id=client_id, module_key="dashboard")
 
     resolved_end = end_date or date.today()
     resolved_start = start_date or (resolved_end - timedelta(days=29))

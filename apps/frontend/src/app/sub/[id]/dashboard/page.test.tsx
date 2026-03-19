@@ -4,10 +4,11 @@ import { fireEvent, render, screen } from "@testing-library/react";
 
 import SubDashboardPage from "./page";
 
-const apiMock = vi.hoisted(() => ({ apiRequest: vi.fn() }));
+const apiMock = vi.hoisted(() => ({ apiRequest: vi.fn(), getSubaccountMyAccess: vi.fn() }));
+const routerMock = vi.hoisted(() => ({ replace: vi.fn() }));
 
-vi.mock("@/lib/api", () => ({ apiRequest: apiMock.apiRequest }));
-vi.mock("next/navigation", () => ({ useParams: () => ({ id: "96" }) }));
+vi.mock("@/lib/api", () => ({ apiRequest: apiMock.apiRequest, getSubaccountMyAccess: apiMock.getSubaccountMyAccess }));
+vi.mock("next/navigation", () => ({ useParams: () => ({ id: "96" }), useRouter: () => routerMock }));
 vi.mock("@/components/ProtectedPage", () => ({ ProtectedPage: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
 vi.mock("@/components/AppShell", () => ({
   AppShell: ({ children, title }: { children: React.ReactNode; title: React.ReactNode }) => (
@@ -28,6 +29,16 @@ vi.mock("@/components/ui/card", () => ({
 describe("SubDashboardPage header and platform links", () => {
   beforeEach(() => {
     apiMock.apiRequest.mockReset();
+    apiMock.getSubaccountMyAccess.mockReset();
+    routerMock.replace.mockReset();
+    apiMock.getSubaccountMyAccess.mockResolvedValue({
+      subaccount_id: 96,
+      role: "subaccount_user",
+      module_keys: ["dashboard", "creative"],
+      source_scope: "subaccount",
+      access_scope: "subaccount",
+      unrestricted_modules: false,
+    });
     apiMock.apiRequest.mockResolvedValue({
       client_id: 96,
       currency: "RON",
@@ -117,5 +128,22 @@ describe("SubDashboardPage header and platform links", () => {
 
     await screen.findByRole("link", { name: "Meta Ads" });
     expect(screen.queryByText("Some platform totals may be incomplete due to sync issues.")).toBeNull();
+  });
+
+  it("redirects to first allowed module when dashboard permission is missing", async () => {
+    apiMock.getSubaccountMyAccess.mockResolvedValueOnce({
+      subaccount_id: 96,
+      role: "subaccount_user",
+      module_keys: ["creative"],
+      source_scope: "subaccount",
+      access_scope: "subaccount",
+      unrestricted_modules: false,
+    });
+
+    render(<SubDashboardPage />);
+
+    await screen.findByRole("link", { name: "Media Buying" });
+    expect(routerMock.replace).toHaveBeenCalledWith("/sub/96/creative");
+    expect(apiMock.apiRequest).not.toHaveBeenCalled();
   });
 });
