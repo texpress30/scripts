@@ -33,7 +33,7 @@ class SubaccountModuleEnforcementTests(unittest.TestCase):
                     module_key="rules",
                 )
             self.assertEqual(ctx.exception.status_code, 403)
-            self.assertIn("Nu ai acces la acest modul", str(ctx.exception.detail))
+            self.assertEqual(str(ctx.exception.detail), deps.NAVIGATION_ACCESS_DENIED_MESSAGE)
         finally:
             deps.team_members_service.get_subaccount_my_access = original
 

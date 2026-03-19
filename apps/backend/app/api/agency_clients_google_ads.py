@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from app.api.dependencies import enforce_action_scope, get_current_user
+from app.api.dependencies import enforce_action_scope, enforce_agency_navigation_access, get_current_user
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
 from app.services.client_registry import client_registry_service
@@ -28,6 +28,7 @@ def map_google_ads_customer(
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_accounts")
 
     normalized_customer_id = google_ads_service._normalize_customer_id(payload.customer_id)
     if not google_ads_service._is_valid_customer_id(normalized_customer_id):
@@ -84,6 +85,7 @@ def get_google_ads_mapping(
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_accounts")
 
     mapping = client_registry_service.get_google_mapping_details_for_client(client_id=client_id)
     if mapping is None:

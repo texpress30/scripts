@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.dependencies import enforce_action_scope, get_current_user
+from app.api.dependencies import enforce_action_scope, enforce_agency_navigation_access, get_current_user
 from app.schemas.email_notifications import (
     AgencyEmailNotificationDetailResponse,
     AgencyEmailNotificationListItem,
@@ -15,6 +15,7 @@ router = APIRouter(prefix="/agency/email-notifications", tags=["email_notificati
 
 def _enforce_agency_admin(user: AuthUser) -> None:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="notifications")
 
 
 def _serialize_notification(item: EffectiveEmailNotification) -> AgencyEmailNotificationDetailResponse:

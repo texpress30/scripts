@@ -1,6 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.api.dependencies import enforce_action_scope, enforce_subaccount_action, get_current_user
+from app.api.dependencies import (
+    enforce_action_scope,
+    enforce_agency_navigation_access,
+    enforce_subaccount_action,
+    enforce_subaccount_navigation_access,
+    get_current_user,
+)
 from app.core.config import load_settings
 from app.schemas.team import (
     CreateSubaccountTeamMemberRequest,
@@ -148,6 +154,7 @@ def list_team_members(
     user: AuthUser = Depends(get_current_user),
 ) -> TeamMemberListResponse:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="settings_my_team")
     try:
         raw_items, total = team_members_service.list_members(
             search=search,
@@ -170,6 +177,7 @@ def list_team_members(
 @router.post("/members", response_model=TeamMemberResponse)
 def create_team_member(payload: CreateTeamMemberRequest, user: AuthUser = Depends(get_current_user)) -> TeamMemberResponse:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="settings_my_team")
 
     try:
         item = team_members_service.create_member(
@@ -491,6 +499,7 @@ def get_subaccount_grantable_modules(
     user: AuthUser = Depends(get_current_user),
 ) -> TeamGrantableModulesResponse:
     enforce_subaccount_action(user=user, action="team:subaccount:list", subaccount_id=subaccount_id)
+    enforce_subaccount_navigation_access(user=user, subaccount_id=subaccount_id, permission_key="settings")
 
     raw_items = team_members_service.list_module_catalog(scope="subaccount")
     catalog = _normalize_module_catalog([item for item in raw_items if isinstance(item, dict)], requested_scope="subaccount")
@@ -564,6 +573,7 @@ def list_subaccount_team_members(
     user: AuthUser = Depends(get_current_user),
 ) -> SubaccountTeamMemberListResponse:
     enforce_subaccount_action(user=user, action="team:subaccount:list", subaccount_id=subaccount_id)
+    enforce_subaccount_navigation_access(user=user, subaccount_id=subaccount_id, permission_key="settings")
     try:
         items, total = team_members_service.list_subaccount_members(
             subaccount_id=subaccount_id,
@@ -587,6 +597,7 @@ def create_subaccount_team_member(
     user: AuthUser = Depends(get_current_user),
 ) -> SubaccountTeamMemberResponse:
     enforce_subaccount_action(user=user, action="team:subaccount:create", subaccount_id=subaccount_id)
+    enforce_subaccount_navigation_access(user=user, subaccount_id=subaccount_id, permission_key="settings")
     try:
         item = team_members_service.create_subaccount_member(
             subaccount_id=subaccount_id,

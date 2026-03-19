@@ -289,12 +289,14 @@ class TeamSubaccountApiTests(unittest.TestCase):
         user = AuthUser(email="sub@example.com", role="subaccount_user", user_id=10, subaccount_id=8)
         original_catalog = team_api.team_members_service.list_module_catalog
         original_grantable = team_api.team_members_service.get_grantable_module_keys_for_actor
+        original_access = deps.team_members_service.get_subaccount_my_access
         try:
             team_api.team_members_service.list_module_catalog = lambda **kwargs: [
                 {"key": "dashboard", "label": "Dashboard", "order": 1, "scope": "subaccount"},
                 {"key": "creative", "label": "Creative", "order": 3, "scope": "subaccount"},
             ]
             team_api.team_members_service.get_grantable_module_keys_for_actor = lambda **kwargs: {"creative"}
+            deps.team_members_service.get_subaccount_my_access = lambda **kwargs: {"module_keys": ["settings", "creative"]}
 
             resp = team_api.get_subaccount_grantable_modules(subaccount_id=8, user=user)
             flags = {item.key: item.grantable for item in resp.items}
@@ -302,6 +304,7 @@ class TeamSubaccountApiTests(unittest.TestCase):
         finally:
             team_api.team_members_service.list_module_catalog = original_catalog
             team_api.team_members_service.get_grantable_module_keys_for_actor = original_grantable
+            deps.team_members_service.get_subaccount_my_access = original_access
 
     def test_grantable_modules_endpoint_agency_actor_can_grant_full_catalog(self):
         user = AuthUser(email="admin@example.com", role="agency_admin", user_id=1)

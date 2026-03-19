@@ -5426,3 +5426,21 @@ Plan verified: frontend-focused incremental delivery for Agency Notifications se
 - [x] Added contextual runtime hints for `auth_forgot_password` and `team_invite_user` plus link to associated Email Templates page.
 - [x] Updated AppShell settings navigation to expose `Notificări` as settings item and removed duplicate agency-main-nav notifications link.
 - [x] Added focused tests for navigation contract and notifications page behaviors (loading, selection, save/reset, and 403/404/400 handling).
+
+# TODO — Extend backend route enforcement for full sidebar permissions
+
+- [x] Re-read backend dependencies/team-members/rbac and relevant API route groups for agency navigation, settings, and subaccount settings contexts.
+- [x] Add centralized backend navigation enforcement helpers for agency + subaccount module keys with explicit 403 deny message.
+- [x] Wire agency main navigation route groups (`agency_dashboard`, `agency_clients`, `agency_accounts`, `integrations`, `agency_audit`, `creative`) to backend checks.
+- [x] Wire agency settings route groups with parent `settings` + child key enforcement for profile/company/team/storage/email templates/notifications endpoints.
+- [x] Extend subaccount settings route-group enforcement on relevant team/settings endpoints while preserving existing main-subaccount module checks.
+- [x] Add backend tests for allow/deny behavior (agency main routes, settings parent/child, email templates/notifications gating, admin bypass, subaccount settings checks).
+- [x] Run relevant backend tests and backend startup check.
+- [x] Document remaining intentionally-unmapped settings areas without active backend endpoints.
+
+## Review
+- [x] Added reusable `enforce_agency_navigation_access(...)` and `enforce_subaccount_navigation_access(...)` in dependencies, with canonical deny message `Nu ai acces la această secțiune` and existing safe bypass/fallback behavior.
+- [x] Agency main route enforcement now guards dashboard, clients, accounts, integrations, audit, and creative API groups.
+- [x] Agency settings now enforce parent `settings` plus child keys for profile/company/my-team/media-storage/email-templates/notifications.
+- [x] Subaccount settings enforcement was extended to relevant team settings endpoints (`grantable-modules`, `subaccount members list/create`) without changing create/edit membership logic.
+- [x] Intentionally left out: settings children without backend endpoints in this codebase (`settings_tags`, `settings_audit_logs` child-specific route split, `settings_ai_agents`) and any new API surface invention.

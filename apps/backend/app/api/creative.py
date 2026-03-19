@@ -1,7 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from app.api.dependencies import enforce_action_scope, enforce_subaccount_module_access, get_current_user
+from app.api.dependencies import (
+    enforce_action_scope,
+    enforce_agency_navigation_access,
+    enforce_subaccount_module_access,
+    get_current_user,
+)
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
 from app.services.creative_workflow import creative_workflow_service
@@ -68,6 +73,7 @@ def _resolve_asset_client_id(asset_id: int) -> int:
 @router.get("/library/assets")
 def list_assets(client_id: int | None = None, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
+        enforce_agency_navigation_access(user=user, permission_key="creative")
         enforce_action_scope(user=user, action="creative:list", scope="subaccount")
         if client_id is not None:
             enforce_subaccount_module_access(user=user, subaccount_id=int(client_id), module_key="creative")
@@ -81,6 +87,7 @@ def list_assets(client_id: int | None = None, user: AuthUser = Depends(get_curre
 @router.post("/library/assets")
 def create_asset(payload: CreateAssetRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:
+        enforce_agency_navigation_access(user=user, permission_key="creative")
         enforce_action_scope(user=user, action="creative:write", scope="subaccount")
         enforce_subaccount_module_access(user=user, subaccount_id=payload.client_id, module_key="creative")
         rate_limiter_service.check(f"creative_create:{user.email}", limit=45, window_seconds=60)
@@ -113,6 +120,7 @@ def create_asset(payload: CreateAssetRequest, user: AuthUser = Depends(get_curre
 def add_variant(asset_id: int, payload: AddVariantRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     client_id = _resolve_asset_client_id(asset_id)
     try:
+        enforce_agency_navigation_access(user=user, permission_key="creative")
         enforce_action_scope(user=user, action="creative:write", scope="subaccount")
         enforce_subaccount_module_access(user=user, subaccount_id=client_id, module_key="creative")
         rate_limiter_service.check(f"creative_variant_add:{user.email}", limit=45, window_seconds=60)
@@ -129,6 +137,7 @@ def add_variant(asset_id: int, payload: AddVariantRequest, user: AuthUser = Depe
 def generate_variants(asset_id: int, payload: GenerateVariantsRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     client_id = _resolve_asset_client_id(asset_id)
     try:
+        enforce_agency_navigation_access(user=user, permission_key="creative")
         enforce_action_scope(user=user, action="creative:write", scope="subaccount")
         enforce_subaccount_module_access(user=user, subaccount_id=client_id, module_key="creative")
         rate_limiter_service.check(f"creative_ai_generate:{user.email}", limit=30, window_seconds=60)
@@ -145,6 +154,7 @@ def generate_variants(asset_id: int, payload: GenerateVariantsRequest, user: Aut
 def update_approval(asset_id: int, payload: UpdateApprovalRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     client_id = _resolve_asset_client_id(asset_id)
     try:
+        enforce_agency_navigation_access(user=user, permission_key="creative")
         enforce_action_scope(user=user, action="creative:write", scope="subaccount")
         enforce_subaccount_module_access(user=user, subaccount_id=client_id, module_key="creative")
         rate_limiter_service.check(f"creative_approve:{user.email}", limit=45, window_seconds=60)
@@ -165,6 +175,7 @@ def update_approval(asset_id: int, payload: UpdateApprovalRequest, user: AuthUse
 def link_campaign(asset_id: int, payload: LinkCampaignRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, int]:
     client_id = _resolve_asset_client_id(asset_id)
     try:
+        enforce_agency_navigation_access(user=user, permission_key="creative")
         enforce_action_scope(user=user, action="creative:write", scope="subaccount")
         enforce_subaccount_module_access(user=user, subaccount_id=client_id, module_key="creative")
         rate_limiter_service.check(f"creative_link:{user.email}", limit=45, window_seconds=60)
@@ -185,6 +196,7 @@ def link_campaign(asset_id: int, payload: LinkCampaignRequest, user: AuthUser = 
 def update_performance(asset_id: int, payload: PerformanceScoresRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     client_id = _resolve_asset_client_id(asset_id)
     try:
+        enforce_agency_navigation_access(user=user, permission_key="creative")
         enforce_action_scope(user=user, action="creative:write", scope="subaccount")
         enforce_subaccount_module_access(user=user, subaccount_id=client_id, module_key="creative")
         rate_limiter_service.check(f"creative_perf:{user.email}", limit=45, window_seconds=60)
@@ -201,6 +213,7 @@ def update_performance(asset_id: int, payload: PerformanceScoresRequest, user: A
 def publish_to_channel(asset_id: int, payload: PublishRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     client_id = _resolve_asset_client_id(asset_id)
     try:
+        enforce_agency_navigation_access(user=user, permission_key="creative")
         enforce_action_scope(user=user, action="creative:write", scope="subaccount")
         enforce_subaccount_module_access(user=user, subaccount_id=client_id, module_key="creative")
         rate_limiter_service.check(f"creative_publish:{user.email}", limit=20, window_seconds=60)
