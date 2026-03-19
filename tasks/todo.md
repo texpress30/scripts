@@ -1,3 +1,30 @@
+# TODO — Hotfix frontend Agency Team wizard: Pasul următor fără submit/create (2026-03-19)
+
+- [x] Re-citire `apps/frontend/src/app/settings/team/page.tsx` și confirmare că submit-ul global poate crea din pasul 1 (Enter).
+- [x] Păstrare `Pasul Următor` ca `type="button"` și hardening pe `submitCreateForm(...)` cu guard pentru pasul 1.
+- [x] Guard pas 1: validează identity local, comută pe `Roluri și Permisiuni`, iese fără create request.
+- [x] Verificare că create API rămâne doar pe submit final din pasul 2.
+- [x] Adăugare test pentru Enter key în pasul 1 (fără create API, cu tranziție la pasul 2).
+- [x] Rulare teste frontend relevante + build frontend.
+
+## Review
+- [x] Cauza bugului: submit global al formularului (inclusiv Enter) nu avea guard clar pentru `activeFormTab === "identity"`, astfel putea intra în create flow prea devreme.
+- [x] `Pasul următor` și submit-ul din pasul 1 nu mai declanșează create API.
+- [x] Edit mode rămâne funcțional, fără schimbări de contract/backend.
+
+# TODO — Hotfix backend create user: SQL placeholder mismatch must_reset_password (2026-03-19)
+
+- [x] Re-citire `apps/backend/app/services/team_members.py` și confirmare mismatch placeholders/params în `_upsert_user`.
+- [x] Fix minim: înlocuire hardcodare `FALSE` din VALUES cu placeholder `%s` pentru `must_reset_password`.
+- [x] Păstrare `ON CONFLICT ... must_reset_password = EXCLUDED.must_reset_password` coerent.
+- [x] Adăugare teste backend focalizate pentru `_upsert_user` (cu/ fără parolă explicită).
+- [x] Rulare teste backend relevante + startup check backend.
+
+## Review
+- [x] Cauza: query SQL avea 7 placeholders pentru VALUES, dar param tuple trimitea 8 argumente.
+- [x] Create user nu mai crapă pe eroarea `the query has 7 placeholders but 8 parameters were passed`.
+- [x] `must_reset_password` este persistat corect pe insert și update.
+
 # TODO — Agency Team create wizard real în 2 pași + invite split by password (2026-03-19)
 
 - [x] Re-sync workspace și recitire fișierele cheie frontend/backend pentru flow-ul Team create/invite.

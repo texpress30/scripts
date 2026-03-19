@@ -633,7 +633,7 @@ class TeamMembersService:
                         email, first_name, last_name, phone, extension, avatar_url, platform_language,
                         password_hash, is_active, must_reset_password
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, 'ro', %s, TRUE, FALSE)
+                    VALUES (%s, %s, %s, %s, %s, %s, 'ro', %s, TRUE, %s)
                     ON CONFLICT(email) DO UPDATE
                     SET first_name = EXCLUDED.first_name,
                         last_name = EXCLUDED.last_name,
