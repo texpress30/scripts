@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.dependencies import get_current_user
 from app.core.config import load_settings
@@ -11,6 +11,7 @@ from app.schemas.auth import (
     LoginResponse,
     ResetPasswordConfirmRequest,
     ResetPasswordConfirmResponse,
+    ResetPasswordTokenContextResponse,
 )
 from app.services.audit import audit_log_service
 from app.services.auth import (
@@ -31,6 +32,22 @@ from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
 from app.services.rbac import is_supported_role, normalize_role
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _mask_email(email: str) -> str:
+    raw = str(email or "").strip().lower()
+    if "@" not in raw:
+        return ""
+    local, domain = raw.split("@", 1)
+    if local == "":
+        return f"***@{domain}"
+    if len(local) == 1:
+        masked_local = f"{local}***"
+    elif len(local) == 2:
+        masked_local = f"{local[0]}***"
+    else:
+        masked_local = f"{local[0]}***{local[-1]}"
+    return f"{masked_local}@{domain}"
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -307,6 +324,25 @@ def reset_password_confirm(payload: ResetPasswordConfirmRequest) -> ResetPasswor
         details={"user_id": consumed_token.user_id},
     )
     return ResetPasswordConfirmResponse(message="Parola a fost resetată cu succes")
+
+
+@router.get("/reset-password/context", response_model=ResetPasswordTokenContextResponse)
+def reset_password_token_context(token: str = Query(default="")) -> ResetPasswordTokenContextResponse:
+    normalized_token = str(token or "").strip()
+    if normalized_token == "":
+        return ResetPasswordTokenContextResponse(valid=False, reason="missing_token")
+
+    try:
+        payload = auth_email_tokens_service.validate_reset_or_invite_token(raw_token=normalized_token)
+    except AuthEmailTokenError as exc:
+        return ResetPasswordTokenContextResponse(valid=False, reason=exc.reason)
+
+    return ResetPasswordTokenContextResponse(
+        valid=True,
+        token_type=str(payload.token_type),
+        email_hint=_mask_email(str(payload.email)),
+        reason=None,
+    )
 
 
 @router.post("/impersonate", response_model=ImpersonateResponse)

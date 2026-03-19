@@ -82,9 +82,15 @@ class _TokensCursor:
                 self.rowcount += 1
             return
 
-        if "SELECT id, email, password_hash, is_active" in sql:
+        if "SELECT id, email, password_hash, is_active, must_reset_password" in sql:
             user = self.state["user"]
-            self._fetchone = (user["id"], user["email"], user["password_hash"], user["is_active"])
+            self._fetchone = (
+                user["id"],
+                user["email"],
+                user["password_hash"],
+                user["is_active"],
+                bool(user.get("must_reset_password", False)),
+            )
             return
 
         if "FROM user_memberships" in sql:
@@ -225,6 +231,27 @@ class AuthEmailTokensServiceTests(unittest.TestCase):
 
             user = auth_service.authenticate_user_from_db(email="u@example.com", password="new-password-123", requested_role="agency_admin")
             self.assertEqual(user.role, "agency_admin")
+        finally:
+            auth_service._connect = original_connect
+
+    def test_user_with_must_reset_password_cannot_login_until_confirm_flow_sets_password(self):
+        state = {
+            "token_id": 0,
+            "tokens": [],
+            "user": {"id": 33, "email": "new@example.com", "password_hash": "", "is_active": True, "must_reset_password": True},
+            "memberships": [(201, "agency", None, "", 33, "agency_member")],
+            "membership_rows": [],
+        }
+        original_connect = auth_service._connect
+        try:
+            auth_service._connect = lambda: _TokensConn(state)
+            with self.assertRaises(auth_service.AuthLoginError) as ctx:
+                auth_service.authenticate_user_from_db(email="new@example.com", password="anything", requested_role="agency_member")
+            self.assertEqual(ctx.exception.reason, "password_setup_required")
+
+            auth_service.set_user_password(user_id=33, new_password="new-pass-123")
+            user = auth_service.authenticate_user_from_db(email="new@example.com", password="new-pass-123", requested_role="agency_member")
+            self.assertEqual(user.role, "agency_member")
         finally:
             auth_service._connect = original_connect
 

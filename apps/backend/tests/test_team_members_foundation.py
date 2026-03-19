@@ -9,12 +9,16 @@ from app.services.team_members import TeamMembersService, team_members_service
 class _FakeCursor:
     def __init__(self):
         self.queries: list[str] = []
+        self.params: list[tuple | None] = []
         self._next_fetchone = None
 
     def execute(self, query, params=None):
         self.queries.append(str(query).strip())
+        self.params.append(tuple(params) if params is not None else None)
         if "SELECT COUNT(*)" in str(query):
             self._next_fetchone = (0,)
+        if "RETURNING id" in str(query):
+            self._next_fetchone = (11,)
 
     def fetchone(self):
         return self._next_fetchone
@@ -97,6 +101,49 @@ class TeamMembersFoundationTests(unittest.TestCase):
         self.assertIn("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active", joined)
         self.assertIn("CREATE TABLE IF NOT EXISTS user_memberships", joined)
         self.assertGreaterEqual(conn.commit_count, 2)
+
+    def test_upsert_user_uses_placeholder_for_must_reset_password_and_persists_true_without_password(self):
+        service = TeamMembersService()
+        conn = _FakeConnection()
+        service._connect = lambda: conn
+
+        user_id = service._upsert_user(
+            first_name="Ana",
+            last_name="Pop",
+            email="ana@example.com",
+            phone="",
+            extension="",
+            avatar_url="",
+            password=None,
+        )
+
+        self.assertEqual(user_id, 11)
+        insert_query = conn.cursor_obj.queries[-1]
+        insert_params = conn.cursor_obj.params[-1]
+        self.assertIn("VALUES (%s, %s, %s, %s, %s, %s, 'ro', COALESCE(%s, ''), TRUE, %s)", insert_query)
+        self.assertEqual(len(insert_params or ()), 9)
+        self.assertIsNone((insert_params or (None,))[6])
+        self.assertEqual(bool((insert_params or (None,))[7]), True)
+
+    def test_upsert_user_persists_false_must_reset_when_password_is_explicit(self):
+        service = TeamMembersService()
+        conn = _FakeConnection()
+        service._connect = lambda: conn
+
+        user_id = service._upsert_user(
+            first_name="Ana",
+            last_name="Pop",
+            email="ana@example.com",
+            phone="",
+            extension="",
+            avatar_url="",
+            password="StrongPassword123!",
+        )
+
+        self.assertEqual(user_id, 11)
+        insert_params = conn.cursor_obj.params[-1]
+        self.assertEqual(len(insert_params or ()), 9)
+        self.assertEqual(bool((insert_params or (True,))[7]), False)
 
     def test_create_agency_member_uses_canonical_role_mapping(self):
         service = TeamMembersService()
