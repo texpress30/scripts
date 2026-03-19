@@ -28,6 +28,12 @@ describe("deriveAccountSyncStatus", () => {
     expect(["warning", "error"]).toContain(result.uiStatus);
   });
 
+  it("maps disabled by feature flag to Unknown", () => {
+    const result = deriveAccountSyncStatus("tiktok_ads", { last_error_summary: "Integration is disabled by feature flag." });
+    expect(result.uiStatus).toBe("unknown");
+    expect(result.uiLabel).toBe("Disabled");
+  });
+
   it("maps no metadata to Unknown", () => {
     const result = deriveAccountSyncStatus("meta_ads", {});
     expect(result.uiStatus).toBe("unknown");

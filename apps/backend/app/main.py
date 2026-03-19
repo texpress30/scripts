@@ -1,3 +1,13 @@
+import logging
+import time
+
+try:
+    import psycopg
+except ImportError:
+    psycopg = None
+
+logger = logging.getLogger(__name__)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -104,7 +114,27 @@ def root() -> dict[str, str]:
 
 
 @app.on_event("startup")
-def initialize_client_registry_schema() -> None:
+def startup_event() -> None:
+    if settings.app_env == "production":
+        logger.info("Skipping runtime DB schema initialization in production environment.")
+        return
+
+    if psycopg is not None:
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                with psycopg.connect(settings.database_url) as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT 1")
+                logger.info("Successfully connected to the database on startup.")
+                break
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    logger.error("Failed to connect to the database after %d attempts.", max_retries)
+                    raise
+                logger.warning("Database connection failed (attempt %d/%d): %s. Retrying in 3 seconds...", attempt + 1, max_retries, e)
+                time.sleep(3)
+
     client_registry_service.initialize_schema()
     user_profile_service.initialize_schema()
     team_members_service.initialize_schema()
