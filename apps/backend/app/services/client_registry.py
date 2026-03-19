@@ -244,16 +244,12 @@ class ClientRegistryService:
             self._sync_state_schema_initialized = True
 
     def _ensure_schema(self) -> None:
-        settings = load_settings()
-        if settings.app_env == "production":
-            if hasattr(self, "_schema_initialized"):
-                self._schema_initialized = True
-            return
         if self._is_test_mode():
             return
 
         with self._connect_or_raise() as conn:
             with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_xact_lock(1, hashtext(%s))", ("ensure_schema_" + self.__class__.__name__,))
                 cur.execute(
                     """
                     CREATE TABLE IF NOT EXISTS agency_clients (
