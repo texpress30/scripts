@@ -110,6 +110,24 @@ def find_active_user_by_email(email: str) -> dict[str, object] | None:
     }
 
 
+def is_active_user_id(user_id: int) -> bool:
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT is_active
+                FROM users
+                WHERE id = %s
+                LIMIT 1
+                """,
+                (int(user_id),),
+            )
+            row = cur.fetchone()
+    if row is None:
+        return False
+    return bool(row[0])
+
+
 def _coerce_int(value: object) -> int | None:
     try:
         return int(value)
