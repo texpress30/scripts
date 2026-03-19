@@ -468,6 +468,7 @@ describe("SubAccount Team management page", () => {
 
     const dashboard = await screen.findByRole("checkbox", { name: "Permisiune modul Dashboard" });
     const campaigns = screen.getByRole("checkbox", { name: "Permisiune modul Campaigns" });
+    const settings = screen.getByRole("checkbox", { name: "Permisiune modul Settings" });
     fireEvent.click(dashboard);
     fireEvent.click(campaigns);
     expect(dashboard).not.toBeChecked();
