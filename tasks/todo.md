@@ -1,3 +1,17 @@
+# TODO — Hotfix backend cron-sync-run-repair: DB timeout hardening one-shot sweeper (2026-03-19)
+
+- [x] Re-citire AGENTS/tasks + fișierele `historical_repair_sweeper.py` și `sync_runs_store.py`.
+- [x] Confirmare cauză: timeout/operational DB errors scapă necontrolat din store până la entrypoint-ul one-shot worker.
+- [x] Hardening minim în entrypoint: handling explicit pentru erori de conexiune DB + logging operațional sigur.
+- [x] Menținere logică de sweep/repair neschimbată pe happy path (DB disponibil).
+- [x] Teste backend focalizate pentru DB timeout handling + no-regression.
+- [x] Rulare teste backend țintite + import/startup check util.
+
+## Review
+- [x] Cron one-shot nu mai cade cu traceback brut la `ConnectionTimeout`/`OperationalError`; produce rezultat controlat `status=db_unavailable`.
+- [x] Logging-ul nou nu expune secrete (`DATABASE_URL` etc.), doar context operațional minimal.
+- [x] Semantica de stale detection/repair rămâne neschimbată când DB este disponibil.
+
 # TODO — Hotfix frontend Agency Team wizard: Pasul următor fără submit/create (2026-03-19)
 
 - [x] Re-citire `apps/frontend/src/app/settings/team/page.tsx` și confirmare că submit-ul global poate crea din pasul 1 (Enter).

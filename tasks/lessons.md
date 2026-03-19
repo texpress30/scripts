@@ -416,3 +416,5 @@
 - 2026-03-19: Când adaugi un nou parametru într-un INSERT SQL (`must_reset_password`), aliniază explicit numărul placeholderelor din VALUES cu tuple-ul de parametri și adaugă test țintit pe query/params pentru a preveni regressii de tip "X placeholders but Y parameters".
 
 - 2026-03-19: Pentru wizard-uri pe un singur `<form>`, nu e suficient ca butonul de step să fie `type="button"`; trebuie și guard în `onSubmit` pentru pasul curent, altfel Enter key poate declanșa submit/create prematur din pasul 1.
+
+- 2026-03-19: Pentru cron-uri one-shot DB-backed, tratează explicit erorile de conexiune la nivel de entrypoint (nu doar în store) și returnează un summary controlat + warning scurt, altfel deploy-ul vede crash opac pe timeout tranzitoriu.
