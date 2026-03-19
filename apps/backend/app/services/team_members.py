@@ -621,7 +621,9 @@ class TeamMembersService:
         password: str | None,
     ) -> int:
         settings = load_settings()
-        password_hash = hash_password(password.strip()) if password and password.strip() else hash_password(settings.app_login_password)
+        has_explicit_password = bool(password and password.strip())
+        password_hash = hash_password(password.strip()) if has_explicit_password else hash_password(settings.app_login_password)
+        must_reset_password = not has_explicit_password
 
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -631,7 +633,7 @@ class TeamMembersService:
                         email, first_name, last_name, phone, extension, avatar_url, platform_language,
                         password_hash, is_active, must_reset_password
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, 'ro', %s, TRUE, FALSE)
+                    VALUES (%s, %s, %s, %s, %s, %s, 'ro', %s, TRUE, %s)
                     ON CONFLICT(email) DO UPDATE
                     SET first_name = EXCLUDED.first_name,
                         last_name = EXCLUDED.last_name,
@@ -639,6 +641,7 @@ class TeamMembersService:
                         extension = EXCLUDED.extension,
                         avatar_url = EXCLUDED.avatar_url,
                         password_hash = COALESCE(EXCLUDED.password_hash, users.password_hash),
+                        must_reset_password = EXCLUDED.must_reset_password,
                         updated_at = NOW()
                     RETURNING id
                     """,
@@ -650,6 +653,7 @@ class TeamMembersService:
                         extension,
                         avatar_url,
                         password_hash,
+                        must_reset_password,
                     ),
                 )
                 row = cur.fetchone()
@@ -1429,7 +1433,7 @@ class TeamMembersService:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT um.id, um.user_id, um.scope_type, um.subaccount_id, um.status, u.email, u.is_active
+                    SELECT um.id, um.user_id, um.scope_type, um.subaccount_id, um.status, u.email, u.is_active, u.must_reset_password
                     FROM user_memberships um
                     JOIN users u ON u.id = um.user_id
                     WHERE um.id = %s
@@ -1450,6 +1454,7 @@ class TeamMembersService:
             "status": str(row[4]),
             "email": str(row[5] or "").strip().lower(),
             "is_active": bool(row[6]),
+            "must_reset_password": bool(row[7]),
         }
 
 
