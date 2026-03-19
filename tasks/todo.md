@@ -1,3 +1,18 @@
+# TODO — Agency Team: înlocuire `Locație` cu `Acces / Conturi` și eliminare semnificație geografică falsă (2026-03-19)
+
+- [x] Re-citire AGENTS/tasks/lessons + `apps/frontend/src/app/settings/team/page.tsx` și testele aferente.
+- [x] Confirmare cauză: `location` era state/field UI defaultat la „România”, folosit în listă și payload create, deși nu exprimă acces real.
+- [x] Listare Agency Team: înlocuire coloană `Locație` cu `Acces / Conturi` și render semantic corect (`subaccount` pentru client, `Niciun cont` pentru agency).
+- [x] Form create/edit: eliminare câmp editabil `Locație` din flow, fără modificări de wizard/roluri/permisiuni.
+- [x] Păstrare flow create/edit/list/invite/lifecycle fără regresii funcționale.
+- [x] Adăugare teste frontend focalizate (`Acces / Conturi`, no `Locație`, behavior client/agency).
+- [x] Rulare teste frontend relevante + build frontend.
+
+## Review
+- [x] UI Agency Team nu mai afișează „România” ca pseudo-locație în listare/form.
+- [x] Coloana nouă exprimă corect accesul la conturi, fără termeni geografici falși.
+- [x] Wizard-ul în 2 pași și invite flow nu au fost atinse.
+
 # TODO — Hotfix backend cron-sync-run-repair: DB timeout hardening one-shot sweeper (2026-03-19)
 
 - [x] Re-citire AGENTS/tasks + fișierele `historical_repair_sweeper.py` și `sync_runs_store.py`.

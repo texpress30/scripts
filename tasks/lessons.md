@@ -418,3 +418,5 @@
 - 2026-03-19: Pentru wizard-uri pe un singur `<form>`, nu e suficient ca butonul de step să fie `type="button"`; trebuie și guard în `onSubmit` pentru pasul curent, altfel Enter key poate declanșa submit/create prematur din pasul 1.
 
 - 2026-03-19: Pentru cron-uri one-shot DB-backed, tratează explicit erorile de conexiune la nivel de entrypoint (nu doar în store) și returnează un summary controlat + warning scurt, altfel deploy-ul vede crash opac pe timeout tranzitoriu.
+
+- 2026-03-19: Când un câmp legacy (ex. `location`) nu mai are semnificație de business, nu îl cosmetiza cu valori hardcodate; elimină-l din UI-ul editabil și afișează explicit un summary derivat din datele reale de acces (`subaccount`/`agency`).

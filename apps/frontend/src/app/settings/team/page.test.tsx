@@ -249,6 +249,54 @@ describe("Settings team page subaccount integration", () => {
     });
   });
 
+  it("shows `Acces / Conturi` instead of `Locație` and renders correct access summary", async () => {
+    render(<SettingsTeamPage />);
+
+    expect(await screen.findByText("Acces / Conturi")).toBeInTheDocument();
+    expect(screen.queryByText("Locație")).not.toBeInTheDocument();
+
+    // agency users should not display geographic placeholders
+    expect(screen.getAllByText("Niciun cont").length).toBeGreaterThan(0);
+  });
+
+  it("renders subaccount name in `Acces / Conturi` for client memberships", async () => {
+    apiRequestMock.mockImplementation((path: string) => {
+      if (path.startsWith("/team/members?")) {
+        return Promise.resolve({
+          items: [
+            {
+              id: 103,
+              membership_id: 103,
+              user_id: 203,
+              first_name: "Mihai",
+              last_name: "Pop",
+              email: "mihai@example.com",
+              phone: "",
+              extension: "",
+              user_type: "client",
+              user_role: "member",
+              location: "România",
+              subaccount: "Client Alpha",
+              membership_status: "active",
+            },
+          ],
+          total: 1,
+          page: 1,
+          page_size: 10,
+        });
+      }
+      if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=agency") return Promise.resolve({ items: [] });
+      return Promise.reject(new Error(`Unexpected path: ${path}`));
+    });
+
+    render(<SettingsTeamPage />);
+
+    expect(await screen.findByText("Client Alpha")).toBeInTheDocument();
+    expect(screen.queryByText("România")).not.toBeInTheDocument();
+  });
+
   it("requires a real subaccount only for client users and submits selected id as string", async () => {
     render(<SettingsTeamPage />);
 
@@ -288,6 +336,19 @@ describe("Settings team page subaccount integration", () => {
 
     const checkbox = await screen.findByRole("checkbox", { name: "Trimite invitație imediat după creare" });
     expect(checkbox).not.toBeChecked();
+  });
+
+  it("does not render `Locație` input in create or edit flows", async () => {
+    render(<SettingsTeamPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    expect(screen.queryByLabelText("Locație")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Înapoi" }));
+    const editButtons = await screen.findAllByRole("button", { name: "Editează" });
+    fireEvent.click(editButtons[0]);
+    expect(await screen.findByRole("button", { name: "Salvează" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Locație")).not.toBeInTheDocument();
   });
 
   it("create without auto-invite does not call invite endpoint", async () => {
