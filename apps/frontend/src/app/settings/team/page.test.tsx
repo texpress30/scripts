@@ -37,6 +37,10 @@ vi.mock("@/components/AppShell", () => ({
 }));
 
 describe("Settings team page subaccount integration", () => {
+  function getCreateMemberCalls() {
+    return apiRequestMock.mock.calls.filter((call) => call[0] === "/team/members" && call[1]?.method === "POST");
+  }
+
   function getCheckboxByLabelText(label: string): HTMLInputElement {
     const candidates = screen.getAllByText(label);
     for (const node of candidates) {
@@ -382,11 +386,10 @@ describe("Settings team page subaccount integration", () => {
     fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
 
     expect(screen.getByRole("heading", { name: "Roluri și Permisiuni" })).toBeInTheDocument();
-    const createCall = apiRequestMock.mock.calls.find((call) => call[0] === "/team/members" && call[1]?.method === "POST");
-    expect(createCall).toBeUndefined();
+    expect(getCreateMemberCalls()).toHaveLength(0);
   });
 
-  it("enter key submit in identity step does not create user and moves to permissions", async () => {
+  it("create identity step is rendered outside form; permissions step owns the real submit form", async () => {
     render(<SettingsTeamPage />);
 
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
@@ -394,16 +397,17 @@ describe("Settings team page subaccount integration", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Nume" }), { target: { value: "Matei" } });
     fireEvent.change(screen.getByRole("textbox", { name: /Email/i }), { target: { value: "lia@example.com" } });
 
-    const form = screen.getByRole("heading", { name: "Informații Utilizator" }).closest("form");
-    expect(form).toBeTruthy();
-    fireEvent.submit(form as HTMLFormElement);
+    const identityForm = screen.getByRole("heading", { name: "Informații Utilizator" }).closest("form");
+    expect(identityForm).toBeNull();
 
-    expect(screen.getByRole("heading", { name: "Roluri și Permisiuni" })).toBeInTheDocument();
-    const createCall = apiRequestMock.mock.calls.find((call) => call[0] === "/team/members" && call[1]?.method === "POST");
-    expect(createCall).toBeUndefined();
+    fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
+
+    const permissionsForm = screen.getByRole("heading", { name: "Roluri și Permisiuni" }).closest("form");
+    expect(permissionsForm).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Creează utilizator" })).toBeInTheDocument();
   });
 
-  it("enter keydown in identity step does not create user and advances to permissions", async () => {
+  it("enter in identity step does not create user and keeps data until explicit next step", async () => {
     render(<SettingsTeamPage />);
 
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
@@ -414,9 +418,36 @@ describe("Settings team page subaccount integration", () => {
 
     fireEvent.keyDown(emailInput, { key: "Enter", code: "Enter", charCode: 13 });
 
+    expect(screen.getByRole("heading", { name: "Informații Utilizator" })).toBeInTheDocument();
+    expect(getCreateMemberCalls()).toHaveLength(0);
+    expect(screen.getByRole("textbox", { name: "Prenume" })).toHaveValue("Lia");
+    expect(screen.getByRole("textbox", { name: "Nume" })).toHaveValue("Matei");
+    expect(screen.getByRole("textbox", { name: /Email/i })).toHaveValue("lia@example.com");
+  });
+
+  it("step values persist forward/backward and create API is called only on final submit", async () => {
+    render(<SettingsTeamPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Prenume" }), { target: { value: "Lia" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Nume" }), { target: { value: "Matei" } });
+    fireEvent.change(screen.getByRole("textbox", { name: /Email/i }), { target: { value: "lia@example.com" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Telefon" }), { target: { value: "0712345" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
     expect(screen.getByRole("heading", { name: "Roluri și Permisiuni" })).toBeInTheDocument();
-    const createCall = apiRequestMock.mock.calls.find((call) => call[0] === "/team/members" && call[1]?.method === "POST");
-    expect(createCall).toBeUndefined();
+    expect(getCreateMemberCalls()).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Informații Utilizator" }));
+    expect(screen.getByRole("textbox", { name: "Prenume" })).toHaveValue("Lia");
+    expect(screen.getByRole("textbox", { name: "Nume" })).toHaveValue("Matei");
+    expect(screen.getByRole("textbox", { name: /Email/i })).toHaveValue("lia@example.com");
+    expect(screen.getByRole("textbox", { name: "Telefon" })).toHaveValue("0712345");
+
+    fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
+    fireEvent.click(screen.getByRole("button", { name: "Creează utilizator" }));
+
+    await waitFor(() => expect(getCreateMemberCalls()).toHaveLength(1));
   });
 
   it("create with auto-invite checked calls invite with created membership id", async () => {

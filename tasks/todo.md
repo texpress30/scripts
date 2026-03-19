@@ -1,3 +1,19 @@
+# TODO — REDO Agency Team wizard: separare structurală pas 1 non-form vs pas 2 form (2026-03-19)
+
+- [x] Re-sync workspace + re-citire AGENTS/tasks/page.tsx/page.test.tsx înainte de modificări.
+- [x] Confirmare cauză runtime: create mode folosea un `<form>` global pentru ambele etape + footer mutabil, ceea ce păstra căi de submit/click-through în pasul 1.
+- [x] Refactor `settings/team/page.tsx`: create + identity randat în container non-form, create + permissions randat în `<form>` real de submit.
+- [x] Separare structurală footer step1 vs footer submit final pentru a elimina click-through spre `Creează utilizator`.
+- [x] Păstrare state local între pași (înainte/înapoi) fără request create înainte de submit final.
+- [x] Actualizare teste explicite în `page.test.tsx` pentru non-form step1, Enter fără create, persistență state și create-only-on-final-submit.
+- [x] Rulare comenzi cerute (`pnpm --prefix apps/frontend test -- --run ...`, `pnpm --prefix apps/frontend run build`) + verificare țintită suplimentară pe testul paginii.
+
+## Review
+- [x] Root cause confirmat: `<form>` global cross-step în create mode (nu separare structurală pe etapă).
+- [x] Pasul 1 nu mai are submit form și nu poate porni create API.
+- [x] Pasul 2 este singurul loc cu submit real (`Creează utilizator`).
+- [x] Invite/delete/remove/Sub-account Team nu au fost modificate.
+
 # TODO — AGENTS correction follow-up: enforce executed-work reporting (2026-03-19)
 
 - [x] Re-read repository AGENTS instructions and confirm mandatory workflow gates (plan, verify, commit, PR).

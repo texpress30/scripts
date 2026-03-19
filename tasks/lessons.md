@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-19: Pentru wizard create în doi pași, evită `<form>` global peste etape; separă structural step1 non-form și step2 form cu footere distincte, altfel apar click-through/submit-through greu de eliminat doar cu guard-uri.
+
 - 2026-03-19: După corecție de proces, nu raporta niciodată implementări/teste ca finalizate fără execuție reală în workspace; verifică explicit `git status` + comenzile rulate înainte de mesajul final.
 
 - 2026-03-18: Pentru cerințe de nav filtering pe permissions, livrează în același patch atât filtrarea sidebar/settings cât și redirect guards pure + teste unit pentru fiecare scope (agency main, agency settings, subaccount main/settings), ca să eviți regresii de rute nepermise.
