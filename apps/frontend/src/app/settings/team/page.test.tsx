@@ -46,6 +46,11 @@ describe("Settings team page subaccount integration", () => {
     throw new Error(`Checkbox not found for label: ${label}`);
   }
 
+  async function openPermissionsTab() {
+    fireEvent.click(screen.getByRole("button", { name: "Roluri și Permisiuni" }));
+    await screen.findByPlaceholderText("Caută după label, key sau grup");
+  }
+
   beforeEach(() => {
     apiRequestMock.mockReset();
     inviteTeamMemberMock.mockReset();
@@ -593,13 +598,16 @@ describe("Settings team page subaccount integration", () => {
     await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/team/module-catalog?scope=agency"));
 
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    await openPermissionsTab();
 
     expect(await screen.findByLabelText("Dashboard")).toBeChecked();
     fireEvent.click(screen.getByRole("button", { name: /^Settings/i }));
     const settingsParent = getCheckboxByLabelText("Settings");
     expect(settingsParent).toBeChecked();
 
+    fireEvent.click(screen.getByRole("button", { name: "Informații Utilizator" }));
     fireEvent.change(screen.getByLabelText("Tip Utilizator"), { target: { value: "client" } });
+    await openPermissionsTab();
     expect(screen.getByLabelText("Dashboard")).toBeChecked();
     expect(screen.getByLabelText("Recommendations")).toBeChecked();
   });
@@ -612,17 +620,19 @@ describe("Settings team page subaccount integration", () => {
     const subaccountSelect = screen.getByLabelText("Sub-cont") as HTMLSelectElement;
     await waitFor(() => expect(subaccountSelect.disabled).toBe(false));
     fireEvent.change(subaccountSelect, { target: { value: "2" } });
+    await openPermissionsTab();
 
-    const creative = await screen.findByLabelText("Creative");
-    expect(creative).toBeChecked();
-    fireEvent.click(creative);
-    expect(creative).not.toBeChecked();
+    const dashboard = await screen.findByLabelText("Dashboard");
+    expect(dashboard).toBeChecked();
+    fireEvent.click(dashboard);
+    expect(dashboard).not.toBeChecked();
   });
 
   it("syncs settings parent and children coherently for agency catalog", async () => {
     render(<SettingsTeamPage />);
 
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    await openPermissionsTab();
     fireEvent.click(await screen.findByRole("button", { name: /^Settings/i }));
     await screen.findByLabelText("My Team");
 
@@ -648,6 +658,7 @@ describe("Settings team page subaccount integration", () => {
     render(<SettingsTeamPage />);
 
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    await openPermissionsTab();
     await screen.findByLabelText("Dashboard");
     fireEvent.change(screen.getByPlaceholderText("Caută după label, key sau grup"), { target: { value: "my team" } });
     fireEvent.click(await screen.findByRole("button", { name: /^Settings/i }));
@@ -655,6 +666,26 @@ describe("Settings team page subaccount integration", () => {
     expect(await screen.findByLabelText("My Team")).toBeInTheDocument();
     expect(screen.queryByLabelText("Dashboard")).not.toBeInTheDocument();
   });
+
+  it("renders permissions only in dedicated tab and preserves checkbox state across tab switches", async () => {
+    render(<SettingsTeamPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    expect(screen.queryByPlaceholderText("Caută după label, key sau grup")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Setări Avansate" })).toBeInTheDocument();
+
+    await openPermissionsTab();
+    const dashboard = await screen.findByLabelText("Dashboard");
+    expect(dashboard).toBeChecked();
+    fireEvent.click(dashboard);
+    expect(dashboard).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole("button", { name: "Informații Utilizator" }));
+    expect(screen.queryByPlaceholderText("Caută după label, key sau grup")).not.toBeInTheDocument();
+
+    await openPermissionsTab();
+    expect(screen.getByLabelText("Dashboard")).not.toBeChecked();
+  }, 10000);
 
   it("subaccount create sends module_keys and blocks submit when none selected", async () => {
     render(<SettingsTeamPage />);
@@ -667,6 +698,7 @@ describe("Settings team page subaccount integration", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Prenume" }), { target: { value: "Ana" } });
     fireEvent.change(screen.getByRole("textbox", { name: "Nume" }), { target: { value: "Ionescu" } });
     fireEvent.change(screen.getByRole("textbox", { name: /Email/i }), { target: { value: "ana@example.com" } });
+    await openPermissionsTab();
 
     for (const label of ["Dashboard", "Campaigns", "Rules", "Creative", "Recommendations"]) {
       const checkbox = await screen.findByLabelText(label);
@@ -695,6 +727,8 @@ describe("Settings team page subaccount integration", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Prenume" }), { target: { value: "Ana" } });
     fireEvent.change(screen.getByRole("textbox", { name: "Nume" }), { target: { value: "Ionescu" } });
     fireEvent.change(screen.getByRole("textbox", { name: /Email/i }), { target: { value: "ana@example.com" } });
+    await openPermissionsTab();
+    await screen.findByLabelText("Dashboard");
     fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
 
     await waitFor(() => {
@@ -776,10 +810,12 @@ describe("Settings team page subaccount integration", () => {
     render(<SettingsTeamPage />);
     const editButton = await screen.findByRole("button", { name: "Editează" });
     fireEvent.click(editButton);
+    await openPermissionsTab();
 
     const creative = await screen.findByLabelText("Creative");
 
     fireEvent.click(creative);
+    fireEvent.click(screen.getByRole("button", { name: "Informații Utilizator" }));
     fireEvent.change(screen.getByRole("combobox", { name: "Rol Utilizator" }), { target: { value: "viewer" } });
     fireEvent.click(screen.getByRole("button", { name: "Salvează" }));
 
