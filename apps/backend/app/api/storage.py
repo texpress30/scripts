@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
-from app.api.dependencies import enforce_action_scope, get_current_user
+from app.api.dependencies import enforce_action_scope, enforce_agency_navigation_access, get_current_user
 from app.services.auth import AuthUser
 from app.services.client_registry import client_registry_service
 
@@ -30,5 +30,6 @@ def list_media_usage(
     user: AuthUser = Depends(get_current_user),
 ) -> StorageUsageResponse:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="settings_media_storage_usage")
     items, total = client_registry_service.list_media_storage_usage(search=search, page=page, page_size=page_size)
     return StorageUsageResponse(items=[StorageUsageItem(**item) for item in items], total=total, page=page, page_size=page_size)
