@@ -160,7 +160,6 @@ export default function SettingsTeamPage() {
   const [extension, setExtension] = useState("");
   const [userType, setUserType] = useState("agency");
   const [userRole, setUserRole] = useState("member");
-  const [location, setLocation] = useState("România");
   const [subaccount, setSubaccount] = useState("");
   const [subaccountFieldError, setSubaccountFieldError] = useState("");
   const [moduleFieldError, setModuleFieldError] = useState("");
@@ -275,7 +274,6 @@ export default function SettingsTeamPage() {
     setExtension("");
     setUserType("agency");
     setUserRole("member");
-    setLocation("România");
     setSubaccount("");
     setSubaccountFieldError("");
     setModuleFieldError("");
@@ -470,7 +468,6 @@ export default function SettingsTeamPage() {
       setEmail(detail.email || "");
       setPhone(detail.phone || "");
       setExtension(detail.extension || "");
-      setLocation("România");
       setSubaccount(detail.subaccount_id ? String(detail.subaccount_id) : "");
       const scopeFromDetail: CatalogScope = detail.scope_type === "subaccount" ? "subaccount" : "agency";
       setUserType(scopeFromDetail === "subaccount" ? "client" : "agency");
@@ -570,6 +567,12 @@ export default function SettingsTeamPage() {
 
   async function submitCreateForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (mode === "create" && activeFormTab === "identity") {
+      if (!validateCreateIdentityStep()) return;
+      setActiveFormTab("permissions");
+      return;
+    }
+
     setSaving(true);
     setErrorMessage("");
     setSubaccountFieldError("");
@@ -597,7 +600,6 @@ export default function SettingsTeamPage() {
         extension,
         user_type: userType,
         user_role: userRole,
-        location,
         subaccount: userType === "client" ? subaccount : "",
         password: advancedOpen ? password : undefined,
       };
@@ -649,6 +651,40 @@ export default function SettingsTeamPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function validateCreateIdentityStep(): boolean {
+    const normalizedFirstName = firstName.trim();
+    const normalizedLastName = lastName.trim();
+    const normalizedEmail = email.trim();
+    setErrorMessage("");
+    setSubaccountFieldError("");
+    if (!normalizedFirstName) {
+      setErrorMessage("Prenumele este obligatoriu.");
+      return false;
+    }
+    if (!normalizedLastName) {
+      setErrorMessage("Numele este obligatoriu.");
+      return false;
+    }
+    if (!normalizedEmail || !normalizedEmail.includes("@")) {
+      setErrorMessage("Email-ul este obligatoriu.");
+      return false;
+    }
+    if (userType === "client" && !subaccount.trim()) {
+      setSubaccountFieldError("Selectarea unui sub-cont este obligatorie pentru utilizatorii de tip client.");
+      return false;
+    }
+    return true;
+  }
+
+  function accessAccountsSummary(member: TeamMember): string {
+    const normalizedUserType = String(member.user_type || "").trim().toLowerCase();
+    const normalizedSubaccount = String(member.subaccount || "").trim();
+    if (normalizedUserType === "client" && normalizedSubaccount && normalizedSubaccount.toLowerCase() !== "toate") {
+      return normalizedSubaccount;
+    }
+    return "Niciun cont";
   }
 
   const shouldShowModulePermissions = activeCatalog.length > 0;
@@ -789,7 +825,7 @@ export default function SettingsTeamPage() {
                         <th className="px-3 py-2">Telefon</th>
                         <th className="px-3 py-2">Tip Utilizator</th>
                         <th className="px-3 py-2">Status</th>
-                        <th className="px-3 py-2">Locație</th>
+                        <th className="px-3 py-2">Acces / Conturi</th>
                         <th className="px-3 py-2 text-right">Acțiuni</th>
                       </tr>
                     </thead>
@@ -823,7 +859,7 @@ export default function SettingsTeamPage() {
                                 <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Inactiv</span>
                               )}
                             </td>
-                            <td className="px-3 py-2">{member.location}</td>
+                            <td className="px-3 py-2">{accessAccountsSummary(member)}</td>
                             <td className="px-3 py-2">
                               <div className="flex items-center justify-end gap-2 text-slate-500">
                                 <button type="button" className="rounded p-1 hover:bg-slate-100" title="Editează" onClick={() => void openEditForm(member)}><Pencil className="h-4 w-4" /></button>
@@ -994,10 +1030,6 @@ export default function SettingsTeamPage() {
                           </select>
                         </label>
                         <label className="text-sm text-slate-700">
-                          Locație
-                          <input className="wm-input mt-1" value={location} onChange={(e) => setLocation(e.target.value)} disabled={mode === "edit"} />
-                        </label>
-                        <label className="text-sm text-slate-700">
                           Sub-cont
                           <select
                             className="wm-input mt-1"
@@ -1077,9 +1109,23 @@ export default function SettingsTeamPage() {
                     <button type="button" className="wm-btn-secondary" onClick={() => { resetCreateForm(); setMode("list"); }}>
                       Anulează
                     </button>
-                    <button type="submit" className="wm-btn-primary" disabled={mode === "edit" ? isEditSaveDisabled : saving}>
-                      {saving ? <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Se salvează...</span> : mode === "edit" ? "Salvează" : "Pasul Următor"}
-                    </button>
+                    {mode === "create" && activeFormTab === "identity" ? (
+                      <button
+                        type="button"
+                        className="wm-btn-primary"
+                        disabled={saving}
+                        onClick={() => {
+                          if (!validateCreateIdentityStep()) return;
+                          setActiveFormTab("permissions");
+                        }}
+                      >
+                        Pasul Următor
+                      </button>
+                    ) : (
+                      <button type="submit" className="wm-btn-primary" disabled={mode === "edit" ? isEditSaveDisabled : saving}>
+                        {saving ? <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Se salvează...</span> : mode === "edit" ? "Salvează" : "Creează utilizator"}
+                      </button>
+                    )}
                   </div>
                 </form>
               </div>
