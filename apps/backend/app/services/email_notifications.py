@@ -40,6 +40,16 @@ class EffectiveEmailNotification:
 
 
 @dataclass(frozen=True)
+class RuntimeEmailNotification:
+    key: str
+    template_key: str
+    enabled: bool
+    default_enabled: bool
+    is_overridden: bool
+    updated_at: datetime | None
+
+
+@dataclass(frozen=True)
 class EmailNotificationOverrideInput:
     enabled: bool
 
@@ -128,6 +138,19 @@ class EmailNotificationsService:
             return None
         override = self._fetch_override_row(notification_key=item.key, scope_key=AGENCY_DEFAULT_SCOPE_KEY)
         return self._build_effective_notification(item=item, override_row=override)
+
+    def resolve_runtime_notification(self, *, notification_key: str) -> RuntimeEmailNotification | None:
+        effective = self.get_effective_notification(notification_key=notification_key)
+        if effective is None:
+            return None
+        return RuntimeEmailNotification(
+            key=effective.key,
+            template_key=effective.template_key,
+            enabled=effective.enabled,
+            default_enabled=effective.default_enabled,
+            is_overridden=effective.is_overridden,
+            updated_at=effective.updated_at,
+        )
 
     def save_override(self, *, notification_key: str, enabled: bool | None) -> EffectiveEmailNotification | None:
         item = self.get_notification(notification_key)

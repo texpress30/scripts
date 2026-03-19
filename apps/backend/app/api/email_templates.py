@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.dependencies import enforce_action_scope, get_current_user
+from app.api.dependencies import enforce_action_scope, enforce_agency_navigation_access, get_current_user
 from app.schemas.email_templates import (
     AgencyEmailTemplateDetailResponse,
     AgencyEmailTemplateListItem,
@@ -20,6 +20,7 @@ router = APIRouter(prefix="/agency/email-templates", tags=["email_templates"])
 
 def _enforce_agency_admin(user: AuthUser) -> None:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="email_templates")
 
 
 def _serialize_template(item: EffectiveEmailTemplate) -> AgencyEmailTemplateDetailResponse:

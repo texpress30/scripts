@@ -55,6 +55,7 @@ describe("AgencyEmailTemplatesPage", () => {
     sendAgencyEmailTemplateTestMock.mockReset();
     getMailgunStatusMock.mockReset();
     vi.spyOn(window, "confirm").mockReturnValue(true);
+    window.history.pushState({}, "", "/agency/email-templates");
 
     getAgencyEmailTemplatesMock.mockResolvedValue({
       items: [
@@ -153,6 +154,14 @@ describe("AgencyEmailTemplatesPage", () => {
 
     await waitFor(() => expect(getAgencyEmailTemplateMock).toHaveBeenCalledWith("auth_forgot_password"));
     fireEvent.click(screen.getByRole("button", { name: /Team · Invite User/i }));
+    await waitFor(() => expect(getAgencyEmailTemplateMock).toHaveBeenCalledWith("team_invite_user"));
+    expect(await screen.findByDisplayValue("Invite subject")).toBeInTheDocument();
+  });
+
+  it("preselects template from query param when provided", async () => {
+    window.history.pushState({}, "", "/agency/email-templates?template=team_invite_user");
+    render(<AgencyEmailTemplatesPage />);
+
     await waitFor(() => expect(getAgencyEmailTemplateMock).toHaveBeenCalledWith("team_invite_user"));
     expect(await screen.findByDisplayValue("Invite subject")).toBeInTheDocument();
   });

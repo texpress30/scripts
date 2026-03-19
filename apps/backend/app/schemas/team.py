@@ -104,6 +104,10 @@ class TeamModuleCatalogItem(BaseModel):
     label: str
     order: int
     scope: str
+    group_key: str = ""
+    group_label: str = ""
+    parent_key: str | None = None
+    is_container: bool = False
 
 
 class TeamModuleCatalogResponse(BaseModel):
@@ -127,6 +131,14 @@ class TeamSubaccountMyAccessResponse(BaseModel):
     module_keys: list[str] = Field(default_factory=list)
     source_scope: str = "subaccount"
     access_scope: str = "subaccount"
+    unrestricted_modules: bool = False
+
+
+class TeamAgencyMyAccessResponse(BaseModel):
+    role: str
+    module_keys: list[str] = Field(default_factory=list)
+    source_scope: str = "agency"
+    access_scope: str = "agency"
     unrestricted_modules: bool = False
 
 

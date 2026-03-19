@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from app.api.dependencies import enforce_action_scope, get_current_user
+from app.api.dependencies import enforce_action_scope, enforce_agency_navigation_access, get_current_user
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
 from app.services.mailgun_service import MailgunIntegrationError, mailgun_service
@@ -28,6 +28,7 @@ class MailgunTestRequest(BaseModel):
 @router.get("/status")
 def mailgun_status(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="integrations:status", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="integrations")
     status_payload = mailgun_service.status()
     audit_log_service.log(
         actor_email=user.email,
@@ -42,6 +43,7 @@ def mailgun_status(user: AuthUser = Depends(get_current_user)) -> dict[str, obje
 @router.post("/config")
 def save_mailgun_config(payload: MailgunConfigRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="integrations:mailgun:config", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="integrations")
     try:
         response_payload = mailgun_service.upsert_config(
             api_key=payload.api_key,
@@ -73,6 +75,7 @@ def save_mailgun_config(payload: MailgunConfigRequest, user: AuthUser = Depends(
 @router.post("/import-from-env")
 def import_mailgun_config_from_env(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="integrations:mailgun:config", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="integrations")
     try:
         response_payload = mailgun_service.import_from_env()
     except ValueError as exc:
@@ -97,6 +100,7 @@ def import_mailgun_config_from_env(user: AuthUser = Depends(get_current_user)) -
 @router.post("/test")
 def send_mailgun_test(payload: MailgunTestRequest, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     enforce_action_scope(user=user, action="integrations:mailgun:test", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="integrations")
     try:
         response_payload = mailgun_service.send_test_email(
             to_email=payload.to_email,

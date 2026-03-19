@@ -104,6 +104,32 @@ class EmailNotificationsApiTests(unittest.TestCase):
         self.assertFalse(item.enabled)
         self.assertTrue(item.is_overridden)
 
+    def test_resolve_runtime_notification_returns_compact_effective_payload(self):
+        service = EmailNotificationsService()
+        with patch.object(
+            service,
+            "get_effective_notification",
+            return_value=EffectiveEmailNotification(
+                key="auth_forgot_password",
+                label="Auth · Forgot Password",
+                description="desc",
+                channel="email",
+                scope="agency",
+                template_key="auth_forgot_password",
+                enabled=False,
+                default_enabled=True,
+                is_overridden=True,
+                updated_at=datetime.now(timezone.utc),
+            ),
+        ):
+            runtime = service.resolve_runtime_notification(notification_key="auth_forgot_password")
+        self.assertIsNotNone(runtime)
+        assert runtime is not None
+        self.assertEqual(runtime.key, "auth_forgot_password")
+        self.assertEqual(runtime.template_key, "auth_forgot_password")
+        self.assertFalse(runtime.enabled)
+        self.assertTrue(runtime.is_overridden)
+
     def test_list_endpoint_returns_effective_items(self):
         user = AuthUser(email="admin@example.com", role="agency_admin")
         with patch.object(email_notifications_api.email_notifications_service, "list_effective_notifications") as mock_list:

@@ -345,6 +345,10 @@ export type TeamModuleCatalogItem = {
   label: string;
   order: number;
   scope: string;
+  group_key?: string;
+  group_label?: string;
+  parent_key?: string | null;
+  is_container?: boolean;
 };
 
 export type TeamModuleCatalogResponse = {
@@ -367,7 +371,7 @@ export async function createSubaccountTeamMember(subaccountId: number, payload: 
   });
 }
 
-export async function getTeamModuleCatalog(scope: "subaccount" = "subaccount"): Promise<TeamModuleCatalogResponse> {
+export async function getTeamModuleCatalog(scope: "agency" | "subaccount" = "subaccount"): Promise<TeamModuleCatalogResponse> {
   return apiRequest<TeamModuleCatalogResponse>(`/team/module-catalog?scope=${encodeURIComponent(scope)}`);
 }
 
@@ -399,6 +403,18 @@ export type TeamSubaccountMyAccessResponse = {
 
 export async function getSubaccountMyAccess(subaccountId: number): Promise<TeamSubaccountMyAccessResponse> {
   return apiRequest<TeamSubaccountMyAccessResponse>(`/team/subaccounts/${encodeURIComponent(String(subaccountId))}/my-access`);
+}
+
+export type TeamAgencyMyAccessResponse = {
+  role: string;
+  module_keys: string[];
+  source_scope?: string;
+  access_scope?: string;
+  unrestricted_modules?: boolean;
+};
+
+export async function getAgencyMyAccess(): Promise<TeamAgencyMyAccessResponse> {
+  return apiRequest<TeamAgencyMyAccessResponse>("/team/agency/my-access");
 }
 
 
@@ -601,6 +617,64 @@ export async function sendAgencyEmailTemplateTest(
   return apiRequest<SendAgencyEmailTemplateTestResponse>(`/agency/email-templates/${encodeURIComponent(templateKey)}/test-send`, {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export type AgencyEmailNotificationListItem = {
+  key: string;
+  label: string;
+  description: string;
+  channel: string;
+  scope: string;
+  template_key: string;
+  enabled: boolean;
+  is_overridden: boolean;
+  updated_at: string | null;
+};
+
+export type AgencyEmailNotificationListResponse = {
+  items: AgencyEmailNotificationListItem[];
+};
+
+export type AgencyEmailNotificationDetail = {
+  key: string;
+  label: string;
+  description: string;
+  channel: string;
+  scope: string;
+  template_key: string;
+  enabled: boolean;
+  default_enabled: boolean;
+  is_overridden: boolean;
+  updated_at: string | null;
+};
+
+export type SaveAgencyEmailNotificationPayload = {
+  enabled: boolean;
+};
+
+export async function getAgencyEmailNotifications(): Promise<AgencyEmailNotificationListResponse> {
+  return apiRequest<AgencyEmailNotificationListResponse>("/agency/email-notifications");
+}
+
+export async function getAgencyEmailNotification(notificationKey: string): Promise<AgencyEmailNotificationDetail> {
+  return apiRequest<AgencyEmailNotificationDetail>(`/agency/email-notifications/${encodeURIComponent(notificationKey)}`);
+}
+
+export async function saveAgencyEmailNotification(
+  notificationKey: string,
+  payload: SaveAgencyEmailNotificationPayload,
+): Promise<AgencyEmailNotificationDetail> {
+  return apiRequest<AgencyEmailNotificationDetail>(`/agency/email-notifications/${encodeURIComponent(notificationKey)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function resetAgencyEmailNotification(notificationKey: string): Promise<AgencyEmailNotificationDetail> {
+  return apiRequest<AgencyEmailNotificationDetail>(`/agency/email-notifications/${encodeURIComponent(notificationKey)}/reset`, {
+    method: "POST",
+    body: JSON.stringify({}),
   });
 }
 

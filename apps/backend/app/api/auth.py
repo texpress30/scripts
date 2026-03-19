@@ -25,6 +25,7 @@ from app.services.auth import (
 )
 from app.services.auth_email_tokens import AuthEmailTokenError, auth_email_tokens_service
 from app.services.mailgun_service import MailgunIntegrationError, mailgun_service
+from app.services.email_notifications import email_notifications_service
 from app.services.email_templates import email_templates_service
 from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
 from app.services.rbac import is_supported_role, normalize_role
@@ -144,6 +145,26 @@ def forgot_password(payload: ForgotPasswordRequest) -> ForgotPasswordResponse:
             details={"reason": "mailgun_unavailable", "status_code": exc.status_code},
         )
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Reset password nu este disponibil momentan") from exc
+
+    runtime_notification = email_notifications_service.resolve_runtime_notification(notification_key="auth_forgot_password")
+    if runtime_notification is None:
+        audit_log_service.log(
+            actor_email=normalized_email,
+            actor_role="anonymous",
+            action="auth.forgot_password.failed",
+            resource="auth:forgot_password",
+            details={"reason": "notification_missing", "notification_key": "auth_forgot_password"},
+        )
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Reset password nu este disponibil momentan")
+    if not runtime_notification.enabled:
+        audit_log_service.log(
+            actor_email=normalized_email,
+            actor_role="anonymous",
+            action="auth.forgot_password.skipped",
+            resource="auth:forgot_password",
+            details={"reason": "notification_disabled", "notification_key": runtime_notification.key},
+        )
+        return ForgotPasswordResponse(message=generic_message)
 
     user = find_active_user_by_email(normalized_email)
     audit_log_service.log(

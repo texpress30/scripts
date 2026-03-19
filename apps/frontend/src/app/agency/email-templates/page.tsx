@@ -40,6 +40,13 @@ function formatDate(value: string | null | undefined): string {
   return parsed.toLocaleString();
 }
 
+function preferredTemplateFromQuery(): string | null {
+  if (typeof window === "undefined") return null;
+  const raw = new URLSearchParams(window.location.search).get("template");
+  const normalized = String(raw || "").trim();
+  return normalized || null;
+}
+
 function resolveErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiRequestError) {
     if (error.status === 403) return "Nu ai permisiunea necesară pentru Email Templates.";
@@ -263,7 +270,8 @@ export default function AgencyEmailTemplatesPage() {
   }
 
   useEffect(() => {
-    void loadList();
+    const preferred = preferredTemplateFromQuery();
+    void loadList(preferred);
   }, []);
 
   useEffect(() => {

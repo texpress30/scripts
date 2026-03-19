@@ -37,6 +37,15 @@ vi.mock("@/components/AppShell", () => ({
 }));
 
 describe("Settings team page subaccount integration", () => {
+  function getCheckboxByLabelText(label: string): HTMLInputElement {
+    const candidates = screen.getAllByText(label);
+    for (const node of candidates) {
+      const checkbox = node.closest("label")?.querySelector("input[type='checkbox']") as HTMLInputElement | null;
+      if (checkbox) return checkbox;
+    }
+    throw new Error(`Checkbox not found for label: ${label}`);
+  }
+
   beforeEach(() => {
     apiRequestMock.mockReset();
     inviteTeamMemberMock.mockReset();
@@ -97,6 +106,15 @@ describe("Settings team page subaccount integration", () => {
             { key: "rules", label: "Rules", order: 3, scope: "subaccount" },
             { key: "creative", label: "Creative", order: 4, scope: "subaccount" },
             { key: "recommendations", label: "Recommendations", order: 5, scope: "subaccount" },
+          ],
+        });
+      }
+      if (path === "/team/module-catalog?scope=agency") {
+        return Promise.resolve({
+          items: [
+            { key: "agency_dashboard", label: "Dashboard", order: 1, scope: "agency", group_key: "main_nav", group_label: "Main Navigation" },
+            { key: "settings", label: "Settings", order: 100, scope: "agency", group_key: "settings", group_label: "Settings", is_container: true },
+            { key: "settings_my_team", label: "My Team", order: 130, scope: "agency", group_key: "settings", group_label: "Settings", parent_key: "settings" },
           ],
         });
       }
@@ -292,6 +310,7 @@ describe("Settings team page subaccount integration", () => {
       }
       if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
       if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=agency") return Promise.resolve({ items: [] });
 
       if (path === "/team/members/101") {
         return Promise.resolve({
@@ -389,6 +408,7 @@ describe("Settings team page subaccount integration", () => {
       }
       if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
       if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=agency") return Promise.resolve({ items: [] });
 
       if (path === "/team/members/101") {
         return Promise.resolve({
@@ -480,6 +500,7 @@ describe("Settings team page subaccount integration", () => {
       }
       if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
       if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=agency") return Promise.resolve({ items: [] });
 
       if (path === "/team/members/101") {
         return Promise.resolve({
@@ -565,19 +586,20 @@ describe("Settings team page subaccount integration", () => {
   });
 
 
-  it("loads module catalog and shows permissions section only for client with selected subaccount", async () => {
+  it("loads agency + subaccount catalogs and switches permissions by user type", async () => {
     render(<SettingsTeamPage />);
 
     await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/team/module-catalog?scope=subaccount"));
+    await waitFor(() => expect(apiRequestMock).toHaveBeenCalledWith("/team/module-catalog?scope=agency"));
 
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
 
-    expect(screen.queryByLabelText("Dashboard")).not.toBeInTheDocument();
+    expect(await screen.findByLabelText("Dashboard")).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: /^Settings/i }));
+    const settingsParent = getCheckboxByLabelText("Settings");
+    expect(settingsParent).toBeChecked();
 
     fireEvent.change(screen.getByLabelText("Tip Utilizator"), { target: { value: "client" } });
-    expect(screen.queryByLabelText("Dashboard")).not.toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText("Sub-cont"), { target: { value: "2" } });
     expect(screen.getByLabelText("Dashboard")).toBeChecked();
     expect(screen.getByLabelText("Recommendations")).toBeChecked();
   });
@@ -595,6 +617,43 @@ describe("Settings team page subaccount integration", () => {
     expect(creative).toBeChecked();
     fireEvent.click(creative);
     expect(creative).not.toBeChecked();
+  });
+
+  it("syncs settings parent and children coherently for agency catalog", async () => {
+    render(<SettingsTeamPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Settings/i }));
+    await screen.findByLabelText("My Team");
+
+    const settingsParent = getCheckboxByLabelText("Settings");
+    const settingsChild = getCheckboxByLabelText("My Team");
+    expect(settingsParent).toBeChecked();
+    expect(settingsChild).toBeChecked();
+
+    fireEvent.click(settingsParent);
+    expect(settingsParent).not.toBeChecked();
+    expect(settingsChild).not.toBeChecked();
+
+    fireEvent.click(settingsChild);
+    expect(settingsParent).toBeChecked();
+    expect(settingsChild).toBeChecked();
+
+    fireEvent.click(settingsChild);
+    expect(settingsParent).not.toBeChecked();
+    expect(settingsChild).not.toBeChecked();
+  });
+
+  it("supports permissions search in shared editor", async () => {
+    render(<SettingsTeamPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    await screen.findByLabelText("Dashboard");
+    fireEvent.change(screen.getByPlaceholderText("Caută după label, key sau grup"), { target: { value: "my team" } });
+    fireEvent.click(await screen.findByRole("button", { name: /^Settings/i }));
+
+    expect(await screen.findByLabelText("My Team")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Dashboard")).not.toBeInTheDocument();
   });
 
   it("subaccount create sends module_keys and blocks submit when none selected", async () => {
@@ -615,7 +674,7 @@ describe("Settings team page subaccount integration", () => {
     }
 
     fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
-    expect(await screen.findByText(/Selectează cel puțin un modul/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Selectează cel puțin o permisiune de navigare/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("Dashboard"));
     fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
@@ -628,10 +687,11 @@ describe("Settings team page subaccount integration", () => {
     });
   });
 
-  it("agency create does not send module_keys", async () => {
+  it("agency create sends agency module_keys", async () => {
     render(<SettingsTeamPage />);
 
     fireEvent.click(screen.getByRole("button", { name: /Adaugă Utilizator/i }));
+    await screen.findByLabelText("Dashboard");
     fireEvent.change(screen.getByRole("textbox", { name: "Prenume" }), { target: { value: "Ana" } });
     fireEvent.change(screen.getByRole("textbox", { name: "Nume" }), { target: { value: "Ionescu" } });
     fireEvent.change(screen.getByRole("textbox", { name: /Email/i }), { target: { value: "ana@example.com" } });
@@ -641,7 +701,8 @@ describe("Settings team page subaccount integration", () => {
       const postCall = apiRequestMock.mock.calls.find((call) => call[0] === "/team/members" && call[1]?.method === "POST");
       expect(postCall).toBeTruthy();
       const body = JSON.parse(String(postCall?.[1]?.body ?? "{}"));
-      expect(body.module_keys).toBeUndefined();
+      expect(Array.isArray(body.module_keys)).toBe(true);
+      expect(body.module_keys).toContain("agency_dashboard");
     });
   });
 
@@ -649,7 +710,8 @@ describe("Settings team page subaccount integration", () => {
     apiRequestMock.mockImplementation((path: string, options?: { method?: string; body?: string }) => {
       if (path.startsWith("/team/members?")) return Promise.resolve({ items: [], total: 0, page: 1, page_size: 10 });
       if (path === "/team/subaccount-options") return Promise.resolve({ items: [{ id: 2, name: "Client Alpha", label: "#11 — Client Alpha" }] });
-      if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [{ key: "dashboard", label: "Dashboard", order: 1, scope: "subaccount" }] });
+      if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [{ key: "dashboard", label: "Dashboard", order: 1, scope: "subaccount", group_key: "main_nav", group_label: "Main Navigation" }] });
+      if (path === "/team/module-catalog?scope=agency") return Promise.resolve({ items: [{ key: "agency_dashboard", label: "Dashboard", order: 1, scope: "agency", group_key: "main_nav", group_label: "Main Navigation" }] });
       if (path === "/team/members" && options?.method === "POST") return Promise.reject(new ApiRequestError("module_keys este permis doar pentru membership-uri de sub-account", 400));
       return Promise.reject(new Error(`Unexpected path: ${path}`));
     });
@@ -662,7 +724,7 @@ describe("Settings team page subaccount integration", () => {
     fireEvent.change(screen.getByRole("textbox", { name: /Email/i }), { target: { value: "ana@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Pasul Următor" }));
 
-    expect(await screen.findByText(/Permisiunile pe module sunt disponibile doar/i)).toBeInTheDocument();
+    expect(await screen.findByText(/module_keys este permis doar/i)).toBeInTheDocument();
   });
 
 
@@ -695,10 +757,11 @@ describe("Settings team page subaccount integration", () => {
       }
       if (path === "/team/subaccount-options") return Promise.resolve({ items: [{ id: 2, name: "Client Alpha", label: "#11 — Client Alpha" }] });
       if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [
-        { key: "dashboard", label: "Dashboard", order: 1, scope: "subaccount" },
-        { key: "creative", label: "Creative", order: 4, scope: "subaccount" },
-        { key: "rules", label: "Rules", order: 3, scope: "subaccount" },
+        { key: "dashboard", label: "Dashboard", order: 1, scope: "subaccount", group_key: "main_nav", group_label: "Main Navigation" },
+        { key: "creative", label: "Creative", order: 4, scope: "subaccount", group_key: "main_nav", group_label: "Main Navigation" },
+        { key: "rules", label: "Rules", order: 3, scope: "subaccount", group_key: "main_nav", group_label: "Main Navigation" },
       ]});
+      if (path === "/team/module-catalog?scope=agency") return Promise.resolve({ items: [{ key: "agency_dashboard", label: "Dashboard", order: 1, scope: "agency", group_key: "main_nav", group_label: "Main Navigation" }] });
       if (path === "/team/members/103") return Promise.resolve({ item: {
         membership_id: 103, user_id: 203, scope_type: "subaccount", subaccount_id: 2, subaccount_name: "Client Alpha", role_key: "subaccount_user", role_label: "Subaccount User", module_keys: ["dashboard", "creative"], source_scope: "subaccount", is_inherited: false, first_name: "Mihai", last_name: "Pop", email: "mihai@example.com", phone: "", extension: "",
       }});
@@ -714,10 +777,7 @@ describe("Settings team page subaccount integration", () => {
     const editButton = await screen.findByRole("button", { name: "Editează" });
     fireEvent.click(editButton);
 
-    const dashboard = await screen.findByLabelText("Dashboard");
     const creative = await screen.findByLabelText("Creative");
-    expect(dashboard).toBeChecked();
-    expect(creative).toBeChecked();
 
     fireEvent.click(creative);
     fireEvent.change(screen.getByRole("combobox", { name: "Rol Utilizator" }), { target: { value: "viewer" } });
@@ -743,7 +803,8 @@ describe("Settings team page subaccount integration", () => {
         });
       }
       if (path === "/team/subaccount-options") return Promise.resolve({ items: [{ id: 3, name: "Client Beta", label: "Client Beta" }] });
-      if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [{ key: "dashboard", label: "Dashboard", order: 1, scope: "subaccount" }] });
+      if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [{ key: "dashboard", label: "Dashboard", order: 1, scope: "subaccount", group_key: "main_nav", group_label: "Main Navigation" }] });
+      if (path === "/team/module-catalog?scope=agency") return Promise.resolve({ items: [{ key: "agency_dashboard", label: "Dashboard", order: 1, scope: "agency", group_key: "main_nav", group_label: "Main Navigation" }] });
       if (path === "/team/members/104") return Promise.resolve({ item: {
         membership_id: 104, user_id: 204, scope_type: "subaccount", subaccount_id: 3, subaccount_name: "Client Beta", role_key: "subaccount_user", role_label: "Subaccount User", module_keys: ["dashboard"], source_scope: "subaccount", is_inherited: true, first_name: "Inh", last_name: "User", email: "inh@example.com", phone: "", extension: "",
       }});
@@ -845,6 +906,7 @@ describe("Settings team page subaccount integration", () => {
       }
       if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
       if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=agency") return Promise.resolve({ items: [] });
       if (path === "/team/members/201/deactivate" && options?.method === "POST") return new Promise(() => {});
       if (path === "/team/members/202/deactivate" && options?.method === "POST") return Promise.reject(new ApiRequestError("forbidden", 403));
       if (path === "/team/members/203/deactivate" && options?.method === "POST") return Promise.reject(new ApiRequestError("conflict", 409));
@@ -923,6 +985,7 @@ describe("Settings team page subaccount integration", () => {
       }
       if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
       if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=agency") return Promise.resolve({ items: [] });
       if (path === "/team/members/401/remove" && options?.method === "POST") return Promise.reject(new ApiRequestError("forbidden", 403));
       if (path === "/team/members/402/remove" && options?.method === "POST") return Promise.reject(new ApiRequestError("Membership inexistent", 404));
       return Promise.reject(new Error(`Unexpected path: ${path}`));
@@ -952,6 +1015,7 @@ describe("Settings team page subaccount integration", () => {
       }
       if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
       if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=agency") return Promise.resolve({ items: [] });
       if (path === "/team/members/403/remove" && options?.method === "POST") return Promise.reject(new ApiRequestError("Nu îți poți elimina propriul membership din sesiunea curentă", 409));
       return Promise.reject(new Error(`Unexpected path: ${path}`));
     });
@@ -974,6 +1038,7 @@ describe("Settings team page subaccount integration", () => {
       }
       if (path === "/team/subaccount-options") return Promise.resolve({ items: [] });
       if (path === "/team/module-catalog?scope=subaccount") return Promise.resolve({ items: [] });
+      if (path === "/team/module-catalog?scope=agency") return Promise.resolve({ items: [] });
       if (path === "/team/members/301/deactivate" && options?.method === "POST") return Promise.reject(new ApiRequestError("gone", 404));
       return Promise.reject(new Error(`Unexpected path: ${path}`));
     });

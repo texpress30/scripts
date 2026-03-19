@@ -51,18 +51,58 @@ class ModuleCatalogItem:
     key: str
     label: str
     order: int
-    scope: str = "subaccount"
+    scope: str
+    group_key: str
+    group_label: str
+    parent_key: str | None = None
+    is_container: bool = False
 
 
-SUBACCOUNT_MODULE_CATALOG: tuple[ModuleCatalogItem, ...] = (
-    ModuleCatalogItem(key="dashboard", label="Dashboard", order=1),
-    ModuleCatalogItem(key="campaigns", label="Campaigns", order=2),
-    ModuleCatalogItem(key="rules", label="Rules", order=3),
-    ModuleCatalogItem(key="creative", label="Creative", order=4),
-    ModuleCatalogItem(key="recommendations", label="Recommendations", order=5),
+AGENCY_NAVIGATION_CATALOG: tuple[ModuleCatalogItem, ...] = (
+    ModuleCatalogItem(key="agency_dashboard", label="Dashboard", order=1, scope="agency", group_key="main_nav", group_label="Main Navigation"),
+    ModuleCatalogItem(key="agency_clients", label="Clients", order=2, scope="agency", group_key="main_nav", group_label="Main Navigation"),
+    ModuleCatalogItem(key="agency_accounts", label="Accounts", order=3, scope="agency", group_key="main_nav", group_label="Main Navigation"),
+    ModuleCatalogItem(key="integrations", label="Integrations", order=4, scope="agency", group_key="main_nav", group_label="Main Navigation"),
+    ModuleCatalogItem(key="agency_audit", label="Audit", order=5, scope="agency", group_key="main_nav", group_label="Main Navigation"),
+    ModuleCatalogItem(key="creative", label="Creative", order=6, scope="agency", group_key="main_nav", group_label="Main Navigation"),
+    ModuleCatalogItem(key="email_templates", label="Email Templates", order=7, scope="agency", group_key="main_nav", group_label="Main Navigation"),
+    ModuleCatalogItem(key="notifications", label="Notifications", order=8, scope="agency", group_key="main_nav", group_label="Main Navigation"),
+    ModuleCatalogItem(key="settings", label="Settings", order=100, scope="agency", group_key="settings", group_label="Settings", is_container=True),
+    ModuleCatalogItem(key="settings_profile", label="Profile", order=110, scope="agency", group_key="settings", group_label="Settings", parent_key="settings"),
+    ModuleCatalogItem(key="settings_company", label="Company", order=120, scope="agency", group_key="settings", group_label="Settings", parent_key="settings"),
+    ModuleCatalogItem(key="settings_my_team", label="My Team", order=130, scope="agency", group_key="settings", group_label="Settings", parent_key="settings"),
+    ModuleCatalogItem(key="settings_tags", label="Tags", order=140, scope="agency", group_key="settings", group_label="Settings", parent_key="settings"),
+    ModuleCatalogItem(key="settings_audit_logs", label="Audit Logs", order=150, scope="agency", group_key="settings", group_label="Settings", parent_key="settings"),
+    ModuleCatalogItem(key="settings_ai_agents", label="AI Agents", order=160, scope="agency", group_key="settings", group_label="Settings", parent_key="settings"),
+    ModuleCatalogItem(
+        key="settings_media_storage_usage",
+        label="Media Storage Usage",
+        order=170,
+        scope="agency",
+        group_key="settings",
+        group_label="Settings",
+        parent_key="settings",
+    ),
 )
 
-SUBACCOUNT_MODULE_KEY_SET: set[str] = {item.key for item in SUBACCOUNT_MODULE_CATALOG}
+SUBACCOUNT_NAVIGATION_CATALOG: tuple[ModuleCatalogItem, ...] = (
+    ModuleCatalogItem(key="dashboard", label="Dashboard", order=1, scope="subaccount", group_key="main_nav", group_label="Main Navigation"),
+    ModuleCatalogItem(key="campaigns", label="Campaigns", order=2, scope="subaccount", group_key="main_nav", group_label="Main Navigation"),
+    ModuleCatalogItem(key="rules", label="Rules", order=3, scope="subaccount", group_key="main_nav", group_label="Main Navigation"),
+    ModuleCatalogItem(key="creative", label="Creative", order=4, scope="subaccount", group_key="main_nav", group_label="Main Navigation"),
+    ModuleCatalogItem(key="recommendations", label="Recommendations", order=5, scope="subaccount", group_key="main_nav", group_label="Main Navigation"),
+    ModuleCatalogItem(key="settings", label="Settings", order=100, scope="subaccount", group_key="settings", group_label="Settings", is_container=True),
+)
+
+NAVIGATION_CATALOG_BY_SCOPE: dict[str, tuple[ModuleCatalogItem, ...]] = {
+    "agency": AGENCY_NAVIGATION_CATALOG,
+    "subaccount": SUBACCOUNT_NAVIGATION_CATALOG,
+}
+NAVIGATION_KEY_SET_BY_SCOPE: dict[str, set[str]] = {
+    scope: {item.key for item in items}
+    for scope, items in NAVIGATION_CATALOG_BY_SCOPE.items()
+}
+ALL_NAVIGATION_KEYS: set[str] = {key for values in NAVIGATION_KEY_SET_BY_SCOPE.values() for key in values}
 ALLOWED_MEMBERSHIP_STATUSES: set[str] = {"active", "inactive"}
 
 
@@ -214,25 +254,46 @@ class TeamMembersService:
             raise ValueError(f"Rol canonic necunoscut: {role_key}")
         return mapped
 
-    def list_module_catalog(self, *, scope: str = "subaccount") -> list[dict[str, object]]:
+    def _normalize_catalog_scope(self, scope: str) -> str:
         normalized_scope = str(scope or "").strip().lower()
-        if normalized_scope != "subaccount":
+        if normalized_scope not in NAVIGATION_CATALOG_BY_SCOPE:
             raise ValueError("Scope invalid pentru catalogul de module")
+        return normalized_scope
+
+    def list_module_catalog(self, *, scope: str = "subaccount") -> list[dict[str, object]]:
+        normalized_scope = self._normalize_catalog_scope(scope)
         return [
-            {"key": item.key, "label": item.label, "order": item.order, "scope": item.scope}
-            for item in SUBACCOUNT_MODULE_CATALOG
+            {
+                "key": item.key,
+                "label": item.label,
+                "order": item.order,
+                "scope": item.scope,
+                "group_key": item.group_key,
+                "group_label": item.group_label,
+                "parent_key": item.parent_key,
+                "is_container": item.is_container,
+            }
+            for item in NAVIGATION_CATALOG_BY_SCOPE[normalized_scope]
         ]
 
     def default_module_keys_for_role(self, *, role_key: str) -> list[str]:
         normalized_role = normalize_role(role_key)
+        if normalized_role.startswith("agency_"):
+            return self.default_module_keys_for_scope(scope_type="agency")
         if normalized_role.startswith("subaccount_"):
-            return [item.key for item in SUBACCOUNT_MODULE_CATALOG]
-        return []
+            return self.default_module_keys_for_scope(scope_type="subaccount")
+        return self.default_module_keys_for_scope(scope_type="subaccount")
 
-    def _normalize_subaccount_module_keys(self, module_keys: list[str] | tuple[str, ...] | None) -> list[str]:
+    def default_module_keys_for_scope(self, *, scope_type: str) -> list[str]:
+        normalized_scope = self._normalize_catalog_scope(scope_type)
+        return [item.key for item in NAVIGATION_CATALOG_BY_SCOPE[normalized_scope]]
+
+    def _normalize_module_keys_for_scope(self, *, scope_type: str, module_keys: list[str] | tuple[str, ...] | None) -> list[str]:
         if module_keys is None:
             return []
 
+        normalized_scope = self._normalize_catalog_scope(scope_type)
+        allowed_keys = NAVIGATION_KEY_SET_BY_SCOPE[normalized_scope]
         normalized: list[str] = []
         seen: set[str] = set()
         for module_key in module_keys:
@@ -241,8 +302,10 @@ class TeamMembersService:
                 continue
             if key in seen:
                 continue
-            if key not in SUBACCOUNT_MODULE_KEY_SET:
+            if key not in ALL_NAVIGATION_KEYS:
                 raise ValueError(f"Modul invalid: {key}")
+            if key not in allowed_keys:
+                raise ValueError(f"Cheie de navigare invalidă pentru scope-ul {normalized_scope}: {key}")
             seen.add(key)
             normalized.append(key)
         return normalized
@@ -256,17 +319,21 @@ class TeamMembersService:
         subaccount_id: int | None,
         actor_user: AuthUser | None,
     ) -> list[str]:
-        if scope_type != "subaccount":
-            if requested_module_keys:
-                raise ValueError("module_keys este permis doar pentru membership-uri de sub-account")
-            return []
-
-        normalized = self._normalize_subaccount_module_keys(requested_module_keys)
+        normalized_scope = self._normalize_catalog_scope(scope_type)
+        normalized = self._normalize_module_keys_for_scope(scope_type=normalized_scope, module_keys=requested_module_keys)
+        if requested_module_keys is not None and len(normalized) == 0:
+            raise ValueError("Selectează cel puțin o cheie de navigare")
+        if requested_module_keys is None:
+            normalized = self.default_module_keys_for_scope(scope_type=normalized_scope)
         if len(normalized) == 0:
-            normalized = self.default_module_keys_for_role(role_key=role_key)
+            raise ValueError("Catalogul de permisiuni este gol pentru scope-ul selectat")
 
         if actor_user is not None:
-            grantable = self.get_grantable_module_keys_for_actor(actor_user=actor_user, subaccount_id=int(subaccount_id or 0))
+            grantable = self.get_grantable_module_keys_for_actor(
+                actor_user=actor_user,
+                scope_type=normalized_scope,
+                subaccount_id=int(subaccount_id or 0) if normalized_scope == "subaccount" else None,
+            )
             if len(grantable) > 0:
                 forbidden = [key for key in normalized if key not in grantable]
                 if forbidden:
@@ -276,7 +343,9 @@ class TeamMembersService:
 
     def get_membership_module_keys(self, *, membership_id: int, role_key: str, scope_type: str) -> list[str]:
         normalized_scope = str(scope_type or "").strip().lower()
-        if normalized_scope != "subaccount":
+        try:
+            normalized_scope = self._normalize_catalog_scope(normalized_scope)
+        except ValueError:
             return []
 
         with self._connect() as conn:
@@ -293,20 +362,19 @@ class TeamMembersService:
                 rows = cur.fetchall()
 
         try:
-            stored = self._normalize_subaccount_module_keys([str(row[0]) for row in rows])
+            stored = self._normalize_module_keys_for_scope(
+                scope_type=normalized_scope,
+                module_keys=[str(row[0]) for row in rows],
+            )
         except ValueError:
-            return self.default_module_keys_for_role(role_key=role_key)
+            return self.default_module_keys_for_scope(scope_type=normalized_scope)
         if len(stored) == 0:
-            return self.default_module_keys_for_role(role_key=role_key)
+            return self.default_module_keys_for_scope(scope_type=normalized_scope)
         return stored
 
     def set_membership_module_keys(self, *, membership_id: int, scope_type: str, module_keys: list[str]) -> None:
-        if scope_type != "subaccount":
-            if module_keys:
-                raise ValueError("module_keys este permis doar pentru membership-uri de sub-account")
-            return
-
-        normalized = self._normalize_subaccount_module_keys(module_keys)
+        normalized_scope = self._normalize_catalog_scope(scope_type)
+        normalized = self._normalize_module_keys_for_scope(scope_type=normalized_scope, module_keys=module_keys)
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM membership_module_permissions WHERE membership_id = %s", (int(membership_id),))
@@ -331,30 +399,58 @@ class TeamMembersService:
             )
         return out
 
-    def get_grantable_module_keys_for_actor(self, *, actor_user: AuthUser, subaccount_id: int) -> set[str]:
+    def get_grantable_module_keys_for_actor(
+        self,
+        *,
+        actor_user: AuthUser,
+        scope_type: str = "subaccount",
+        subaccount_id: int | None = None,
+    ) -> set[str]:
+        normalized_scope = self._normalize_catalog_scope(scope_type)
         actor_role = normalize_role(actor_user.role)
-        if not actor_role.startswith("subaccount_"):
-            return set(SUBACCOUNT_MODULE_KEY_SET)
+        if actor_role in {"super_admin", "agency_owner", "agency_admin"}:
+            return set(NAVIGATION_KEY_SET_BY_SCOPE[normalized_scope])
+        if normalized_scope == "agency" and not actor_role.startswith("agency_"):
+            return set()
+        if normalized_scope == "subaccount" and not actor_role.startswith("subaccount_"):
+            return set(NAVIGATION_KEY_SET_BY_SCOPE[normalized_scope])
 
         if actor_user.user_id is None:
             return set()
 
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id, role_key, scope_type
-                    FROM user_memberships
-                    WHERE user_id = %s
-                      AND role_key = %s
-                      AND scope_type = 'subaccount'
-                      AND subaccount_id = %s
-                      AND status = 'active'
-                    ORDER BY id ASC
-                    LIMIT 1
-                    """,
-                    (int(actor_user.user_id), actor_role, int(subaccount_id)),
-                )
+                if normalized_scope == "agency":
+                    cur.execute(
+                        """
+                        SELECT id, role_key, scope_type
+                        FROM user_memberships
+                        WHERE user_id = %s
+                          AND role_key = %s
+                          AND scope_type = 'agency'
+                          AND status = 'active'
+                        ORDER BY id ASC
+                        LIMIT 1
+                        """,
+                        (int(actor_user.user_id), actor_role),
+                    )
+                else:
+                    if subaccount_id is None:
+                        return set()
+                    cur.execute(
+                        """
+                        SELECT id, role_key, scope_type
+                        FROM user_memberships
+                        WHERE user_id = %s
+                          AND role_key = %s
+                          AND scope_type = 'subaccount'
+                          AND subaccount_id = %s
+                          AND status = 'active'
+                        ORDER BY id ASC
+                        LIMIT 1
+                        """,
+                        (int(actor_user.user_id), actor_role, int(subaccount_id)),
+                    )
                 row = cur.fetchone()
 
         if row is None:
@@ -375,7 +471,7 @@ class TeamMembersService:
             return {
                 "subaccount_id": int(subaccount_id),
                 "role": actor_role,
-                "module_keys": [item.key for item in SUBACCOUNT_MODULE_CATALOG],
+                "module_keys": self.default_module_keys_for_scope(scope_type="subaccount"),
                 "source_scope": "agency",
                 "access_scope": access_scope,
                 "unrestricted_modules": True,
@@ -385,7 +481,7 @@ class TeamMembersService:
             return {
                 "subaccount_id": int(subaccount_id),
                 "role": actor_role,
-                "module_keys": [item.key for item in SUBACCOUNT_MODULE_CATALOG],
+                "module_keys": self.default_module_keys_for_scope(scope_type="subaccount"),
                 "source_scope": "legacy_fallback",
                 "access_scope": "subaccount",
                 "unrestricted_modules": False,
@@ -426,6 +522,71 @@ class TeamMembersService:
             "module_keys": module_keys,
             "source_scope": "subaccount",
             "access_scope": "subaccount",
+            "unrestricted_modules": False,
+        }
+
+    def get_agency_my_access_fallback(self, *, actor_user: AuthUser) -> dict[str, object]:
+        actor_role = normalize_role(actor_user.role)
+        access_scope = str(actor_user.access_scope or "").strip().lower() or "agency"
+        return {
+            "role": actor_role,
+            "module_keys": self.default_module_keys_for_scope(scope_type="agency"),
+            "source_scope": "legacy_fallback",
+            "access_scope": access_scope,
+            "unrestricted_modules": True,
+        }
+
+    def get_agency_my_access(self, *, actor_user: AuthUser) -> dict[str, object]:
+        actor_role = normalize_role(actor_user.role)
+        access_scope = str(actor_user.access_scope or "").strip().lower() or "agency"
+
+        if actor_role in {"super_admin", "agency_owner", "agency_admin"}:
+            return {
+                "role": actor_role,
+                "module_keys": self.default_module_keys_for_scope(scope_type="agency"),
+                "source_scope": "agency",
+                "access_scope": access_scope,
+                "unrestricted_modules": True,
+            }
+
+        if actor_user.user_id is None or not actor_role.startswith("agency_"):
+            return self.get_agency_my_access_fallback(actor_user=actor_user)
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, role_key, scope_type
+                    FROM user_memberships
+                    WHERE user_id = %s
+                      AND scope_type = 'agency'
+                      AND status = 'active'
+                    ORDER BY id ASC
+                    LIMIT 1
+                    """,
+                    (int(actor_user.user_id),),
+                )
+                row = cur.fetchone()
+
+        if row is None:
+            return self.get_agency_my_access_fallback(actor_user=actor_user)
+
+        membership_id = int(row[0])
+        membership_role = str(row[1] or actor_role).strip().lower() or actor_role
+        scope_type = str(row[2] or "agency")
+        module_keys = self.get_membership_module_keys(
+            membership_id=membership_id,
+            role_key=membership_role,
+            scope_type=scope_type,
+        )
+        if len(module_keys) == 0:
+            module_keys = self.default_module_keys_for_scope(scope_type="agency")
+
+        return {
+            "role": membership_role,
+            "module_keys": module_keys,
+            "source_scope": "agency",
+            "access_scope": "agency",
             "unrestricted_modules": False,
         }
 
@@ -1147,23 +1308,22 @@ class TeamMembersService:
         if user_role is not None:
             role_key = self._normalize_update_role_for_scope(scope_type=scope_type, user_role=user_role)
 
-        if scope_type == "agency":
-            if module_keys is not None:
-                raise ValueError("module_keys nu este permis pentru membership-uri agency")
-            resolved_module_keys = []
-        elif scope_type == "subaccount":
-            if module_keys is not None:
-                resolved_module_keys = self._normalize_subaccount_module_keys(module_keys)
-                if len(resolved_module_keys) == 0:
-                    raise ValueError("Selectează cel puțin un modul")
-            if normalize_role(actor_user.role).startswith("subaccount_"):
-                grantable = self.get_grantable_module_keys_for_actor(actor_user=actor_user, subaccount_id=int(subaccount_id or 0))
-                forbidden = [key for key in resolved_module_keys if key not in grantable]
-                if forbidden:
-                    joined = ", ".join(forbidden)
-                    raise PermissionError(f"Nu poți acorda module în afara permisiunilor proprii: {joined}")
-        else:
-            raise ValueError("Scope membership invalid")
+        normalized_scope = self._normalize_catalog_scope(scope_type)
+        if module_keys is not None:
+            resolved_module_keys = self._normalize_module_keys_for_scope(scope_type=normalized_scope, module_keys=module_keys)
+            if len(resolved_module_keys) == 0:
+                raise ValueError("Selectează cel puțin o cheie de navigare")
+
+        grantable = self.get_grantable_module_keys_for_actor(
+            actor_user=actor_user,
+            scope_type=normalized_scope,
+            subaccount_id=int(subaccount_id or 0) if normalized_scope == "subaccount" else None,
+        )
+        if len(grantable) > 0:
+            forbidden = [key for key in resolved_module_keys if key not in grantable]
+            if forbidden:
+                joined = ", ".join(forbidden)
+                raise PermissionError(f"Nu poți acorda module în afara permisiunilor proprii: {joined}")
 
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -1180,16 +1340,15 @@ class TeamMembersService:
                     raise LookupError("Membership inexistent")
 
                 cur.execute("DELETE FROM membership_module_permissions WHERE membership_id = %s", (int(membership_id),))
-                if scope_type == "subaccount":
-                    for module_key in resolved_module_keys:
-                        cur.execute(
-                            """
-                            INSERT INTO membership_module_permissions (membership_id, module_key)
-                            VALUES (%s, %s)
-                            ON CONFLICT (membership_id, module_key) DO NOTHING
-                            """,
-                            (int(membership_id), module_key),
-                        )
+                for module_key in resolved_module_keys:
+                    cur.execute(
+                        """
+                        INSERT INTO membership_module_permissions (membership_id, module_key)
+                        VALUES (%s, %s)
+                        ON CONFLICT (membership_id, module_key) DO NOTHING
+                        """,
+                        (int(membership_id), module_key),
+                    )
             conn.commit()
 
         updated = self.get_membership_detail(membership_id=membership_id, actor_user=actor_user)

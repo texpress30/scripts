@@ -5,16 +5,18 @@ import { ChevronDown, Copy, Mail, Pencil, Plus, Power, RefreshCw, Search, Trash2
 import { useParams } from "next/navigation";
 
 import { AppShell } from "@/components/AppShell";
+import { PermissionEditorItem, PermissionsEditor } from "@/components/team/PermissionsEditor";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import {
   ApiRequestError,
   CreateSubaccountTeamMemberPayload,
   SubaccountTeamMemberItem,
-  TeamGrantableModuleItem,
+  TeamModuleCatalogItem,
   TeamMembershipDetailItem,
   createSubaccountTeamMember,
   deactivateTeamMember,
   getSubaccountGrantableModules,
+  getTeamModuleCatalog,
   getTeamMembershipDetail,
   inviteTeamMember,
   listSubaccountTeamMembers,
@@ -45,6 +47,18 @@ type TeamUserForm = {
   extensie: string;
   parola: string;
   role: "subaccount_admin" | "subaccount_user" | "subaccount_viewer";
+};
+
+type ModulePermissionOption = {
+  key: string;
+  label: string;
+  order: number;
+  scope: "subaccount";
+  groupKey: string;
+  groupLabel: string;
+  parentKey: string | null;
+  isContainer: boolean;
+  grantable: boolean;
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -185,6 +199,83 @@ function canInviteUser(user: TeamUser): boolean {
   return typeof user.membershipId === "number" && user.membershipId > 0 && hasValidEmail(user.email);
 }
 
+function normalizeModuleKey(value: string): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+function normalizeUniqueModuleKeys(keys: string[]): string[] {
+  const out: string[] = [];
+  for (const raw of keys) {
+    const normalized = normalizeModuleKey(raw);
+    if (!normalized) continue;
+    if (!out.includes(normalized)) out.push(normalized);
+  }
+  return out;
+}
+
+function normalizeCatalogItems(items: TeamModuleCatalogItem[] | undefined): ModulePermissionOption[] {
+  const normalized: ModulePermissionOption[] = [];
+  for (const [idx, item] of (items ?? []).entries()) {
+    const key = normalizeModuleKey(String(item.key ?? ""));
+    if (!key) continue;
+    const scopeRaw = String(item.scope ?? "subaccount").trim().toLowerCase();
+    if (scopeRaw !== "subaccount") continue;
+    if (normalized.some((candidate) => candidate.key === key)) continue;
+    const groupKey = normalizeModuleKey(String(item.group_key ?? "")) || "main_nav";
+    const groupLabel = String(item.group_label ?? "").trim() || "Main Navigation";
+    normalized.push({
+      key,
+      label: String(item.label ?? "").trim() || key.replaceAll("_", " "),
+      order: Number.isFinite(Number(item.order)) ? Number(item.order) : idx + 1,
+      scope: "subaccount",
+      groupKey,
+      groupLabel,
+      parentKey: normalizeModuleKey(String(item.parent_key ?? "")) || null,
+      isContainer: Boolean(item.is_container),
+      grantable: false,
+    });
+  }
+  return normalized.sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
+}
+
+function mergeCatalogWithGrantable(
+  catalog: ModulePermissionOption[],
+  grantableItems: { key: string; label: string; order: number; grantable: boolean }[] | undefined,
+): ModulePermissionOption[] {
+  const byKey = new Map<string, ModulePermissionOption>();
+  for (const item of catalog) byKey.set(item.key, item);
+
+  for (const grantableItem of grantableItems ?? []) {
+    const key = normalizeModuleKey(String(grantableItem.key ?? ""));
+    if (!key) continue;
+    const current = byKey.get(key);
+    if (!current) continue;
+    byKey.set(key, { ...current, grantable: Boolean(grantableItem.grantable) });
+  }
+
+  return Array.from(byKey.values()).sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
+}
+
+function applySettingsConsistency(keys: string[], options: ModulePermissionOption[]): string[] {
+  const selected = new Set(normalizeUniqueModuleKeys(keys));
+  const settingsItem = options.find((item) => item.key === "settings");
+  if (!settingsItem) return Array.from(selected);
+
+  const settingsChildren = options
+    .filter((item) => item.parentKey === "settings")
+    .map((item) => item.key);
+  if (settingsChildren.length === 0) return Array.from(selected);
+
+  if (!selected.has("settings")) {
+    settingsChildren.forEach((child) => selected.delete(child));
+    return Array.from(selected);
+  }
+
+  const hasAnyChildEnabled = settingsChildren.some((child) => selected.has(child));
+  if (!hasAnyChildEnabled) selected.delete("settings");
+  return Array.from(selected);
+}
+
 export default function SubAccountTeamPage() {
   const params = useParams<{ id: string }>();
   const parsedSubaccountId = useMemo(() => {
@@ -214,15 +305,48 @@ export default function SubAccountTeamPage() {
   const [invitingMembershipId, setInvitingMembershipId] = useState<number | null>(null);
   const [lifecycleLoadingByMembership, setLifecycleLoadingByMembership] = useState<Record<number, boolean>>({});
   const [removeLoadingByMembership, setRemoveLoadingByMembership] = useState<Record<number, boolean>>({});
-  const [moduleOptions, setModuleOptions] = useState<TeamGrantableModuleItem[]>([]);
+  const [moduleOptions, setModuleOptions] = useState<ModulePermissionOption[]>([]);
   const [selectedModuleKeys, setSelectedModuleKeys] = useState<string[]>([]);
   const [isLoadingModules, setIsLoadingModules] = useState(false);
   const [moduleLoadError, setModuleLoadError] = useState<string | null>(null);
+  const [moduleNotice, setModuleNotice] = useState<string | null>(null);
   const [editingMembershipId, setEditingMembershipId] = useState<number | null>(null);
   const [isLoadingEditDetail, setIsLoadingEditDetail] = useState(false);
   const [editInheritedLocked, setEditInheritedLocked] = useState(false);
   const [editUnsafeGrantGap, setEditUnsafeGrantGap] = useState(false);
   const [editOriginal, setEditOriginal] = useState<{ role: TeamUserForm["role"]; moduleKeys: string[] } | null>(null);
+
+  const moduleOptionByKey = useMemo(() => {
+    const out = new Map<string, ModulePermissionOption>();
+    for (const item of moduleOptions) out.set(item.key, item);
+    return out;
+  }, [moduleOptions]);
+  const grantableModuleKeys = useMemo(
+    () => moduleOptions.filter((item) => item.grantable).map((item) => item.key),
+    [moduleOptions],
+  );
+  const permissionEditorItems = useMemo<PermissionEditorItem[]>(
+    () =>
+      moduleOptions.map((item) => {
+        const isReadOnlyGapKey = editUnsafeGrantGap && selectedModuleKeys.includes(item.key) && !item.grantable;
+        const disabledReason = !item.grantable
+          ? isReadOnlyGapKey
+            ? "Permisiune existentă, dar ne-editabilă pentru actorul curent."
+            : "Nu poate fi acordat din grant ceiling-ul tău curent."
+          : null;
+        return {
+          key: item.key,
+          label: item.label,
+          order: item.order,
+          groupKey: item.groupKey,
+          groupLabel: item.groupLabel,
+          parentKey: item.parentKey,
+          isContainer: item.isContainer,
+          disabledReason,
+        };
+      }),
+    [moduleOptions, editUnsafeGrantGap, selectedModuleKeys],
+  );
 
   const pages = Math.max(1, Math.ceil(total / PER_PAGE));
 
@@ -367,6 +491,15 @@ export default function SubAccountTeamPage() {
     }
   }
 
+  async function loadScopedModuleOptions(subaccountId: number): Promise<ModulePermissionOption[]> {
+    const [catalogPayload, grantablePayload] = await Promise.all([
+      getTeamModuleCatalog("subaccount"),
+      getSubaccountGrantableModules(subaccountId),
+    ]);
+    const catalog = normalizeCatalogItems(catalogPayload.items);
+    return mergeCatalogWithGrantable(catalog, grantablePayload.items);
+  }
+
   async function openCreateForm() {
     setForm(defaultForm());
     setErrors({});
@@ -381,11 +514,15 @@ export default function SubAccountTeamPage() {
 
     setIsLoadingModules(true);
     setModuleLoadError(null);
+    setModuleNotice(null);
     try {
-      const payload = await getSubaccountGrantableModules(parsedSubaccountId);
-      const sorted = [...(payload.items ?? [])].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
-      setModuleOptions(sorted);
-      setSelectedModuleKeys(sorted.filter((item) => item.grantable).map((item) => item.key));
+      const options = await loadScopedModuleOptions(parsedSubaccountId);
+      const defaultSelection = applySettingsConsistency(
+        options.filter((item) => item.grantable).map((item) => item.key),
+        options,
+      );
+      setModuleOptions(options);
+      setSelectedModuleKeys(defaultSelection);
     } catch (error) {
       setModuleOptions([]);
       setSelectedModuleKeys([]);
@@ -400,9 +537,11 @@ export default function SubAccountTeamPage() {
     setErrors({});
     setShowAdvanced(false);
     setModuleLoadError(null);
+    setModuleNotice(null);
     setLifecycleError(null);
     setRemoveError(null);
     setIsLoadingModules(false);
+    setModuleNotice(null);
     setEditingMembershipId(null);
     setIsLoadingEditDetail(false);
     setEditInheritedLocked(false);
@@ -419,10 +558,9 @@ export default function SubAccountTeamPage() {
       else if (!EMAIL_RE.test(form.email.trim())) next.email = "Introdu o adresă de email validă.";
       if (form.extensie.trim() !== "" && !/^\d+$/.test(form.extensie.trim())) next.extensie = "Extensia trebuie să fie numerică.";
     }
-    const grantableKeys = moduleOptions.filter((item) => item.grantable).map((item) => item.key);
-    const selectedGrantable = selectedModuleKeys.filter((key) => grantableKeys.includes(key));
-    if (grantableKeys.length === 0) next.module_keys = "Nu poți acorda module pentru acest sub-account.";
-    else if (selectedGrantable.length === 0) next.module_keys = "Selectează cel puțin un modul.";
+    const selectedGrantable = normalizeUniqueModuleKeys(selectedModuleKeys).filter((key) => grantableModuleKeys.includes(key));
+    if (grantableModuleKeys.length === 0) next.module_keys = "Nu poți acorda permisiuni de navigare pentru acest sub-account.";
+    else if (selectedGrantable.length === 0) next.module_keys = "Selectează cel puțin o permisiune de navigare.";
     if (viewMode === "edit" && editUnsafeGrantGap) next.module_keys = "Acest utilizator are permisiuni care depășesc accesul tău curent. Contactează un administrator pentru modificare.";
 
     return next;
@@ -436,24 +574,25 @@ export default function SubAccountTeamPage() {
 
     setErrors({});
     setModuleLoadError(null);
+    setModuleNotice(null);
     setViewMode("edit");
     setEditingMembershipId(user.membershipId);
     setIsLoadingEditDetail(true);
     setEditInheritedLocked(false);
     setEditUnsafeGrantGap(false);
     try {
-      const [detailPayload, grantablePayload] = await Promise.all([
+      const [detailPayload, options] = await Promise.all([
         getTeamMembershipDetail(user.membershipId),
-        getSubaccountGrantableModules(parsedSubaccountId),
+        loadScopedModuleOptions(parsedSubaccountId),
       ]);
       const detail: TeamMembershipDetailItem = detailPayload.item;
-      const options = [...(grantablePayload.items ?? [])].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
-      const detailKeys = (detail.module_keys ?? []).map((key) => String(key).trim().toLowerCase()).filter((key) => key !== "");
+      const detailKeys = normalizeUniqueModuleKeys((detail.module_keys ?? []).map((key) => String(key)));
       const grantableSet = new Set(options.filter((item) => item.grantable).map((item) => item.key));
       const hasGap = detailKeys.some((key) => !grantableSet.has(key));
+      const coherentDetailKeys = applySettingsConsistency(detailKeys, options);
 
       setModuleOptions(options);
-      setSelectedModuleKeys(detailKeys);
+      setSelectedModuleKeys(coherentDetailKeys);
       setForm({
         prenume: detail.first_name,
         nume: detail.last_name,
@@ -463,13 +602,13 @@ export default function SubAccountTeamPage() {
         parola: "",
         role: toSubaccountRole(detail.role_key),
       });
-      setEditOriginal({ role: toSubaccountRole(detail.role_key), moduleKeys: [...detailKeys].sort() });
+      setEditOriginal({ role: toSubaccountRole(detail.role_key), moduleKeys: [...coherentDetailKeys].sort() });
       setEditInheritedLocked(Boolean(detail.is_inherited));
       setEditUnsafeGrantGap(hasGap);
       if (detail.is_inherited) {
-        setModuleLoadError("Acest access este moștenit și nu poate fi editat aici");
+        setModuleNotice("Acest access este moștenit și nu poate fi editat aici");
       } else if (hasGap) {
-        setModuleLoadError("Acest utilizator are permisiuni care depășesc accesul tău curent. Contactează un administrator pentru modificare.");
+        setModuleNotice("Acest utilizator are permisiuni care depășesc accesul tău curent. Contactează un administrator pentru modificare.");
       }
       setShowAdvanced(false);
     } catch (error) {
@@ -492,8 +631,9 @@ export default function SubAccountTeamPage() {
 
     setIsSubmitting(true);
     try {
-      const grantableKeys = moduleOptions.filter((item) => item.grantable).map((item) => item.key);
-      const selectedGrantable = selectedModuleKeys.filter((key) => grantableKeys.includes(key));
+      const selectedGrantable = normalizeUniqueModuleKeys(selectedModuleKeys)
+        .filter((key) => moduleOptionByKey.has(key))
+        .filter((key) => grantableModuleKeys.includes(key));
       if (viewMode === "create") {
         const payload: CreateSubaccountTeamMemberPayload = {
           first_name: form.prenume.trim(),
@@ -522,7 +662,15 @@ export default function SubAccountTeamPage() {
       }
     } catch (error) {
       if (viewMode === "edit") {
-        const message = getFriendlyEditError(error);
+        let message = getFriendlyEditError(error);
+        if (error instanceof ApiRequestError && error.status === 400) {
+          const normalized = String(error.message || "").toLowerCase();
+          if (normalized.includes("cheie de navigare invalid") || normalized.includes("modul invalid")) {
+            message = "Permisiunile selectate nu sunt valide pentru scope-ul sub-account.";
+          } else if (normalized.includes("în afara permisiunilor proprii")) {
+            message = "Nu poți acorda permisiuni peste grant-ceiling-ul tău curent.";
+          }
+        }
         setModuleLoadError(message);
         if (error instanceof ApiRequestError && error.status === 409) setEditInheritedLocked(true);
         showToast(message);
@@ -541,16 +689,49 @@ export default function SubAccountTeamPage() {
     if (viewMode === "create") return false;
     if (viewMode !== "edit") return true;
     if (isLoadingEditDetail || editInheritedLocked || editUnsafeGrantGap || editingMembershipId === null || !editOriginal) return true;
-    const currentKeys = [...selectedModuleKeys.filter((key) => moduleOptions.some((item) => item.grantable && item.key === key))].sort();
-    const originalKeys = [...editOriginal.moduleKeys.filter((key) => moduleOptions.some((item) => item.grantable && item.key === key))].sort();
+    const currentKeys = [...normalizeUniqueModuleKeys(selectedModuleKeys).filter((key) => grantableModuleKeys.includes(key))].sort();
+    const originalKeys = [...normalizeUniqueModuleKeys(editOriginal.moduleKeys).filter((key) => grantableModuleKeys.includes(key))].sort();
     const sameModules = JSON.stringify(currentKeys) === JSON.stringify(originalKeys);
     const sameRole = editOriginal.role === form.role;
     return sameModules && sameRole;
-  }, [isSubmitting, isInvalidSubaccount, viewMode, isLoadingEditDetail, editInheritedLocked, editUnsafeGrantGap, editingMembershipId, editOriginal, selectedModuleKeys, moduleOptions, form.role]);
+  }, [isSubmitting, isInvalidSubaccount, viewMode, isLoadingEditDetail, editInheritedLocked, editUnsafeGrantGap, editingMembershipId, editOriginal, selectedModuleKeys, grantableModuleKeys, form.role]);
 
   function toggleModuleKey(moduleKey: string, grantable: boolean) {
     if (!grantable) return;
-    setSelectedModuleKeys((prev) => (prev.includes(moduleKey) ? prev.filter((key) => key !== moduleKey) : [...prev, moduleKey]));
+    setSelectedModuleKeys((prev) => {
+      const key = normalizeModuleKey(moduleKey);
+      const selected = new Set(normalizeUniqueModuleKeys(prev));
+      const settingsChildren = moduleOptions
+        .filter((item) => item.parentKey === "settings")
+        .map((item) => item.key);
+      const isSettingsParent = key === "settings";
+      const isSettingsChild = moduleOptions.some((item) => item.parentKey === "settings" && item.key === key);
+      const enabled = selected.has(key);
+
+      if (isSettingsParent) {
+        if (enabled) {
+          selected.delete("settings");
+          settingsChildren.forEach((child) => selected.delete(child));
+        } else {
+          selected.add("settings");
+          settingsChildren
+            .filter((child) => moduleOptionByKey.get(child)?.grantable)
+            .forEach((child) => selected.add(child));
+        }
+      } else if (isSettingsChild) {
+        if (enabled) {
+          selected.delete(key);
+        } else {
+          selected.add(key);
+          selected.add("settings");
+        }
+      } else if (enabled) {
+        selected.delete(key);
+      } else {
+        selected.add(key);
+      }
+      return applySettingsConsistency(Array.from(selected), moduleOptions);
+    });
   }
 
   return (
@@ -663,7 +844,14 @@ export default function SubAccountTeamPage() {
                                     <Mail className="h-3.5 w-3.5" />
                                     {invitingMembershipId === user.membershipId ? "Se trimite..." : "Trimite invitație"}
                                   </button>
-                                  <button type="button" className="rounded p-1.5 opacity-50" title="Urmează" disabled>
+                                  <button
+                                    type="button"
+                                    className="rounded p-1.5 text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                    title={user.membershipId === null ? "Membership inexistent sau inaccesibil" : "Editează"}
+                                    aria-label="Editează"
+                                    disabled={user.membershipId === null}
+                                    onClick={() => { void openEditForm(user); }}
+                                  >
                                     <Pencil className="h-4 w-4" />
                                   </button>
                                   {(() => {
@@ -794,37 +982,27 @@ export default function SubAccountTeamPage() {
                       </label>
                     </div>
 
-                    <div className="rounded-lg border border-slate-200 p-4">
-                      <h2 className="text-base font-semibold text-slate-900">Roluri și Permisiuni</h2>
-                      <p className="mt-1 text-xs text-slate-500">Poți acorda doar modulele pe care le ai deja în acest sub-account.</p>
-                      {isLoadingModules ? <p className="mt-3 text-sm text-slate-500">Se încarcă modulele...</p> : null}
-                      {moduleLoadError ? <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{moduleLoadError}</p> : null}
-                      {!isLoadingModules && !moduleLoadError ? (
-                        <div className="mt-3 space-y-2">
-                          {moduleOptions.map((item) => {
-                            const checked = selectedModuleKeys.includes(item.key);
-                            return (
-                              <label key={item.key} className="flex items-start justify-between gap-3 rounded-md border border-slate-200 px-3 py-2 text-sm">
-                                <div>
-                                  <p className="font-medium text-slate-900">{item.label}</p>
-                                  {!item.grantable ? <p className="text-xs text-slate-500">Nu poate fi acordat din permisiunile tale curente.</p> : null}
-                                  {!item.grantable && selectedModuleKeys.includes(item.key) ? <p className="text-xs text-amber-700">Permisiune existentă ne-editabilă cu accesul tău curent.</p> : null}
-                                </div>
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  disabled={!item.grantable || editInheritedLocked || (editUnsafeGrantGap && selectedModuleKeys.includes(item.key))}
-                                  onChange={() => toggleModuleKey(item.key, item.grantable)}
-                                  aria-label={`Permisiune modul ${item.label}`}
-                                />
-                              </label>
-                            );
-                          })}
-                          {moduleOptions.length === 0 ? <p className="text-sm text-slate-500">Nu există module disponibile.</p> : null}
-                        </div>
-                      ) : null}
-                      {errors.module_keys ? <p className="mt-2 text-xs text-red-600">{errors.module_keys}</p> : null}
-                    </div>
+                    <PermissionsEditor
+                      scope="subaccount"
+                      items={permissionEditorItems}
+                      selectedKeys={selectedModuleKeys}
+                      onToggle={(key) => {
+                        const item = moduleOptionByKey.get(normalizeModuleKey(key));
+                        toggleModuleKey(key, Boolean(item?.grantable));
+                      }}
+                      loading={isLoadingModules}
+                      loadError={moduleLoadError}
+                      fieldError={errors.module_keys}
+                      readOnly={editInheritedLocked}
+                      summaryHint="Poți acorda doar cheile de navigare pe care le ai deja în acest sub-account (grant ceiling)."
+                      getItemAriaLabel={(item) => `Permisiune modul ${item.label}`}
+                      getItemDisabled={(item) => {
+                        const source = moduleOptionByKey.get(item.key);
+                        const isReadOnlyGapKey = editUnsafeGrantGap && selectedModuleKeys.includes(item.key) && !source?.grantable;
+                        return !source?.grantable || isReadOnlyGapKey || editInheritedLocked;
+                      }}
+                    />
+                    {moduleNotice ? <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">{moduleNotice}</p> : null}
 
                     {viewMode === "create" ? (
                       <div className="rounded-lg border border-slate-200 p-4">

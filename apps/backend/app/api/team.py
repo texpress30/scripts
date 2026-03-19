@@ -1,6 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.api.dependencies import enforce_action_scope, enforce_subaccount_action, get_current_user
+from app.api.dependencies import (
+    enforce_action_scope,
+    enforce_agency_navigation_access,
+    enforce_subaccount_action,
+    enforce_subaccount_navigation_access,
+    get_current_user,
+)
 from app.core.config import load_settings
 from app.schemas.team import (
     CreateSubaccountTeamMemberRequest,
@@ -15,6 +21,7 @@ from app.schemas.team import (
     TeamModuleCatalogResponse,
     TeamGrantableModulesResponse,
     TeamSubaccountMyAccessResponse,
+    TeamAgencyMyAccessResponse,
     TeamSubaccountOptionItem,
     TeamSubaccountOptionsResponse,
     TeamMembershipDetailResponse,
@@ -25,6 +32,7 @@ from app.services.auth import AuthUser
 from app.services.auth_email_tokens import auth_email_tokens_service
 from app.services.client_registry import client_registry_service
 from app.services.mailgun_service import MailgunIntegrationError, mailgun_service
+from app.services.email_notifications import email_notifications_service
 from app.services.email_templates import email_templates_service
 from app.services.team_members import team_members_service
 
@@ -114,8 +122,24 @@ def _normalize_module_catalog(items: list[dict[str, object]], *, requested_scope
         except Exception:  # noqa: BLE001
             order = idx
         scope = str(item.get("scope") or requested_scope).strip().lower() or requested_scope
-        normalized.append({"key": key, "label": label, "order": order, "scope": scope})
-    normalized.sort(key=lambda row: (int(row["order"]), str(row["label"]).lower()))
+        group_key = str(item.get("group_key") or "").strip().lower()
+        group_label = str(item.get("group_label") or "").strip() or group_key.replace("_", " ").title()
+        parent_key_raw = str(item.get("parent_key") or "").strip().lower()
+        parent_key = parent_key_raw or None
+        is_container = bool(item.get("is_container", False))
+        normalized.append(
+            {
+                "key": key,
+                "label": label,
+                "order": order,
+                "scope": scope,
+                "group_key": group_key,
+                "group_label": group_label,
+                "parent_key": parent_key,
+                "is_container": is_container,
+            }
+        )
+    normalized.sort(key=lambda row: (int(row["order"]), str(row["label"]).lower(), str(row["key"])))
     return normalized
 
 
@@ -130,6 +154,7 @@ def list_team_members(
     user: AuthUser = Depends(get_current_user),
 ) -> TeamMemberListResponse:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="settings_my_team")
     try:
         raw_items, total = team_members_service.list_members(
             search=search,
@@ -152,6 +177,7 @@ def list_team_members(
 @router.post("/members", response_model=TeamMemberResponse)
 def create_team_member(payload: CreateTeamMemberRequest, user: AuthUser = Depends(get_current_user)) -> TeamMemberResponse:
     enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="settings_my_team")
 
     try:
         item = team_members_service.create_member(
@@ -332,6 +358,26 @@ def invite_team_member(membership_id: int, user: AuthUser = Depends(get_current_
         )
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Invitația nu este disponibilă momentan") from exc
 
+    runtime_notification = email_notifications_service.resolve_runtime_notification(notification_key="team_invite_user")
+    if runtime_notification is None:
+        audit_log_service.log(
+            actor_email=user.email,
+            actor_role=user.role,
+            action="team.invite.failed",
+            resource=f"team:membership:{membership_id}",
+            details={"reason": "notification_missing", "notification_key": "team_invite_user"},
+        )
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Invitația nu este disponibilă momentan")
+    if not runtime_notification.enabled:
+        audit_log_service.log(
+            actor_email=user.email,
+            actor_role=user.role,
+            action="team.invite.blocked",
+            resource=f"team:membership:{membership_id}",
+            details={"reason": "notification_disabled", "notification_key": runtime_notification.key},
+        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Notificarea de invitație este dezactivată")
+
     settings = load_settings()
     frontend_base_url = str(settings.frontend_base_url or "").strip()
     if frontend_base_url == "":
@@ -453,6 +499,7 @@ def get_subaccount_grantable_modules(
     user: AuthUser = Depends(get_current_user),
 ) -> TeamGrantableModulesResponse:
     enforce_subaccount_action(user=user, action="team:subaccount:list", subaccount_id=subaccount_id)
+    enforce_subaccount_navigation_access(user=user, subaccount_id=subaccount_id, permission_key="settings")
 
     raw_items = team_members_service.list_module_catalog(scope="subaccount")
     catalog = _normalize_module_catalog([item for item in raw_items if isinstance(item, dict)], requested_scope="subaccount")
@@ -493,6 +540,29 @@ def get_subaccount_my_access(
     )
 
 
+@router.get("/agency/my-access", response_model=TeamAgencyMyAccessResponse)
+def get_agency_my_access(
+    user: AuthUser = Depends(get_current_user),
+) -> TeamAgencyMyAccessResponse:
+    try:
+        payload = team_members_service.get_agency_my_access(actor_user=user)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        if _is_db_unavailable_error(exc):
+            payload = team_members_service.get_agency_my_access_fallback(actor_user=user)
+        else:
+            raise
+
+    return TeamAgencyMyAccessResponse(
+        role=str(payload.get("role") or user.role),
+        module_keys=_normalize_module_keys(payload.get("module_keys")),
+        source_scope=str(payload.get("source_scope") or "agency"),
+        access_scope=str(payload.get("access_scope") or (user.access_scope or "agency")),
+        unrestricted_modules=bool(payload.get("unrestricted_modules")),
+    )
+
+
 @router.get("/subaccounts/{subaccount_id}/members", response_model=SubaccountTeamMemberListResponse)
 def list_subaccount_team_members(
     subaccount_id: int,
@@ -503,6 +573,7 @@ def list_subaccount_team_members(
     user: AuthUser = Depends(get_current_user),
 ) -> SubaccountTeamMemberListResponse:
     enforce_subaccount_action(user=user, action="team:subaccount:list", subaccount_id=subaccount_id)
+    enforce_subaccount_navigation_access(user=user, subaccount_id=subaccount_id, permission_key="settings")
     try:
         items, total = team_members_service.list_subaccount_members(
             subaccount_id=subaccount_id,
@@ -526,6 +597,7 @@ def create_subaccount_team_member(
     user: AuthUser = Depends(get_current_user),
 ) -> SubaccountTeamMemberResponse:
     enforce_subaccount_action(user=user, action="team:subaccount:create", subaccount_id=subaccount_id)
+    enforce_subaccount_navigation_access(user=user, subaccount_id=subaccount_id, permission_key="settings")
     try:
         item = team_members_service.create_subaccount_member(
             subaccount_id=subaccount_id,

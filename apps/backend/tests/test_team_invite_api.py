@@ -3,11 +3,26 @@ from types import SimpleNamespace
 
 from app.api import team as team_api
 from app.services.auth import AuthUser
+from app.services.email_notifications import RuntimeEmailNotification
 from app.services.email_templates import RenderedEmailTemplate
 from app.services.mailgun_service import MailgunIntegrationError
 
 
 class TeamInviteApiTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._original_resolve_notification = team_api.email_notifications_service.resolve_runtime_notification
+        team_api.email_notifications_service.resolve_runtime_notification = lambda **kwargs: RuntimeEmailNotification(
+            key="team_invite_user",
+            template_key="team_invite_user",
+            enabled=True,
+            default_enabled=True,
+            is_overridden=False,
+            updated_at=None,
+        )
+
+    def tearDown(self) -> None:
+        team_api.email_notifications_service.resolve_runtime_notification = self._original_resolve_notification
+
     def test_invite_membership_not_found_returns_404(self):
         user = AuthUser(email="admin@example.com", role="agency_admin")
         original_get = team_api.team_members_service.get_membership_with_user
@@ -223,6 +238,90 @@ class TeamInviteApiTests(unittest.TestCase):
             team_api.auth_email_tokens_service.create_user_invite_token_for_existing_user = original_create
             team_api.mailgun_service.send_email = original_send
             team_api.email_templates_service.render_effective_template = original_render
+
+    def test_invite_notification_disabled_returns_409_without_token_or_send(self):
+        user = AuthUser(email="admin@example.com", role="agency_admin")
+        original_get = team_api.team_members_service.get_membership_with_user
+        original_assert = team_api.mailgun_service.assert_available
+        original_settings = team_api.load_settings
+        original_create = team_api.auth_email_tokens_service.create_user_invite_token_for_existing_user
+        original_send = team_api.mailgun_service.send_email
+        try:
+            team_api.team_members_service.get_membership_with_user = lambda **kwargs: {
+                "membership_id": 41,
+                "user_id": 21,
+                "scope_type": "agency",
+                "subaccount_id": None,
+                "status": "active",
+                "email": "member@example.com",
+                "is_active": True,
+            }
+            team_api.mailgun_service.assert_available = lambda: None
+            team_api.email_notifications_service.resolve_runtime_notification = lambda **kwargs: RuntimeEmailNotification(
+                key="team_invite_user",
+                template_key="team_invite_user",
+                enabled=False,
+                default_enabled=True,
+                is_overridden=True,
+                updated_at=None,
+            )
+            team_api.load_settings = lambda: SimpleNamespace(frontend_base_url="https://app.example.com", auth_reset_token_ttl_minutes=60)
+            team_api.auth_email_tokens_service.create_user_invite_token_for_existing_user = lambda **kwargs: (_ for _ in ()).throw(
+                AssertionError("token should not be created when invite notification is disabled")
+            )
+            team_api.mailgun_service.send_email = lambda **kwargs: (_ for _ in ()).throw(
+                AssertionError("should not send when invite notification is disabled")
+            )
+
+            with self.assertRaises(team_api.HTTPException) as ctx:
+                team_api.invite_team_member(membership_id=41, user=user)
+            self.assertEqual(ctx.exception.status_code, 409)
+            self.assertIn("dezactivată", str(ctx.exception.detail))
+        finally:
+            team_api.team_members_service.get_membership_with_user = original_get
+            team_api.mailgun_service.assert_available = original_assert
+            team_api.load_settings = original_settings
+            team_api.auth_email_tokens_service.create_user_invite_token_for_existing_user = original_create
+            team_api.mailgun_service.send_email = original_send
+
+    def test_invite_notification_disabled_has_priority_over_template_disabled(self):
+        user = AuthUser(email="admin@example.com", role="agency_admin")
+        original_get = team_api.team_members_service.get_membership_with_user
+        original_assert = team_api.mailgun_service.assert_available
+        original_render = team_api.email_templates_service.render_effective_template
+        original_settings = team_api.load_settings
+        try:
+            team_api.team_members_service.get_membership_with_user = lambda **kwargs: {
+                "membership_id": 41,
+                "user_id": 21,
+                "scope_type": "agency",
+                "subaccount_id": None,
+                "status": "active",
+                "email": "member@example.com",
+                "is_active": True,
+            }
+            team_api.mailgun_service.assert_available = lambda: None
+            team_api.email_notifications_service.resolve_runtime_notification = lambda **kwargs: RuntimeEmailNotification(
+                key="team_invite_user",
+                template_key="team_invite_user",
+                enabled=False,
+                default_enabled=True,
+                is_overridden=True,
+                updated_at=None,
+            )
+            team_api.email_templates_service.render_effective_template = lambda **kwargs: (_ for _ in ()).throw(
+                AssertionError("template should not be resolved when notification is disabled")
+            )
+            team_api.load_settings = lambda: SimpleNamespace(frontend_base_url="https://app.example.com", auth_reset_token_ttl_minutes=60)
+
+            with self.assertRaises(team_api.HTTPException) as ctx:
+                team_api.invite_team_member(membership_id=41, user=user)
+            self.assertEqual(ctx.exception.status_code, 409)
+        finally:
+            team_api.team_members_service.get_membership_with_user = original_get
+            team_api.mailgun_service.assert_available = original_assert
+            team_api.email_templates_service.render_effective_template = original_render
+            team_api.load_settings = original_settings
 
 
 if __name__ == "__main__":
