@@ -72,6 +72,11 @@ class MediaBuyingStore:
         if self._schema_initialized:
             return
 
+        settings = load_settings()
+        if settings.app_env == "production":
+            self._schema_initialized = True
+            return
+
         with self._schema_lock:
             if self._schema_initialized:
                 return
