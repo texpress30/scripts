@@ -88,6 +88,11 @@ export function deriveAccountSyncStatus(platform: string, account: Record<string
   }
 
   if (lastErrorSummary || lastError) {
+    const combinedError = `${lastErrorSummary || ""} ${lastError || ""}`.toLowerCase();
+    if (combinedError.includes("disabled by feature flag")) {
+      return { uiStatus: "unknown", uiLabel: "Disabled", shortReason: "Platform integration disabled", details };
+    }
+
     const failedHint = [syncHealthStatus, coverageStatus, toStringOrUndefined(account.last_run_status)]
       .filter(Boolean)
       .join(" ")
