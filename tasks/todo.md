@@ -1,6 +1,6 @@
 # TODO
-- [x] Identify cause of `ConnectionTimeout` on backend startup
-- [x] Add connection retry logic in `startup` event loop in `app/main.py`
-- [x] Verify backend tests (`pytest`)
-- [ ] Push changes to Github
-- [x] Update `tasks/lessons.md`
+- [x] Identify cause of `Application failed to respond` (DDL lock contention in startup_event)
+- [x] Update `app/main.py` to bypass `initialize_schema()` in `production`
+- [ ] Verify backend compilation
+- [ ] Update `tasks/lessons.md`
+- [ ] Push to Github
