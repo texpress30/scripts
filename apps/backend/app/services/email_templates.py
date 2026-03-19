@@ -119,6 +119,23 @@ _CANONICAL_EMAIL_TEMPLATES: tuple[EmailTemplateCatalogItem, ...] = (
         ),
         available_variables=("invite_link", "expires_minutes", "user_email"),
     ),
+    EmailTemplateCatalogItem(
+        key="team_account_ready",
+        label="Team · Account Ready",
+        description="Email trimis când utilizatorul are deja parolă setată și poate intra direct în login.",
+        default_subject="Contul tău este pregătit",
+        default_text_body=(
+            "Contul tău este pregătit.\n\n"
+            "Te poți autentifica folosind adresa {{user_email}}:\n"
+            "{{login_link}}"
+        ),
+        default_html_body=(
+            "<p>Contul tău este pregătit.</p>"
+            "<p>Te poți autentifica folosind adresa <strong>{{user_email}}</strong>.</p>"
+            "<p><a href=\"{{login_link}}\">Mergi la login</a></p>"
+        ),
+        available_variables=("login_link", "user_email"),
+    ),
 )
 
 _CANONICAL_SAMPLE_VARIABLES: dict[str, dict[str, str]] = {
@@ -130,6 +147,10 @@ _CANONICAL_SAMPLE_VARIABLES: dict[str, dict[str, str]] = {
     "team_invite_user": {
         "invite_link": "https://app.example.com/activate-invite?token=preview-token",
         "expires_minutes": "60",
+        "user_email": "preview.user@example.com",
+    },
+    "team_account_ready": {
+        "login_link": "https://app.example.com/login",
         "user_email": "preview.user@example.com",
     },
 }

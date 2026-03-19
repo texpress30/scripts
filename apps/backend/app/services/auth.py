@@ -110,6 +110,24 @@ def find_active_user_by_email(email: str) -> dict[str, object] | None:
     }
 
 
+def is_active_user_id(user_id: int) -> bool:
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT is_active
+                FROM users
+                WHERE id = %s
+                LIMIT 1
+                """,
+                (int(user_id),),
+            )
+            row = cur.fetchone()
+    if row is None:
+        return False
+    return bool(row[0])
+
+
 def _coerce_int(value: object) -> int | None:
     try:
         return int(value)
@@ -171,7 +189,7 @@ def authenticate_user_from_db(*, email: str, password: str, requested_role: str)
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, email, password_hash, is_active
+                SELECT id, email, password_hash, is_active, must_reset_password
                 FROM users
                 WHERE LOWER(email) = %s
                 LIMIT 1
@@ -186,9 +204,16 @@ def authenticate_user_from_db(*, email: str, password: str, requested_role: str)
             user_email = str(user_row[1]).strip().lower()
             password_hash = str(user_row[2] or "")
             is_active = bool(user_row[3])
+            must_reset_password = bool(user_row[4])
 
             if not is_active:
                 raise AuthLoginError(status_code=403, message="User account is inactive", reason="user_inactive")
+            if must_reset_password:
+                raise AuthLoginError(
+                    status_code=403,
+                    message="User must set password before login",
+                    reason="password_setup_required",
+                )
             if not verify_password(password, password_hash):
                 raise AuthLoginError(status_code=401, message="Invalid email or password", reason="invalid_credentials")
 
