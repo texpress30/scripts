@@ -1,3 +1,21 @@
+# TODO — Agency Team create wizard real în 2 pași + invite split by password (2026-03-19)
+
+- [x] Re-sync workspace și recitire fișierele cheie frontend/backend pentru flow-ul Team create/invite.
+- [x] Transformare create mode Agency Team în wizard real: Pasul Următor doar schimbă tab-ul, fără create API.
+- [x] Creare user doar la pasul final (Roluri și Permisiuni), cu payload complet și auto-invite păstrat.
+- [x] Păstrare edit mode existent fără transformare în wizard complex.
+- [x] Split invite flow backend: reset link când nu există parolă explicită, login link când parola e setată.
+- [x] Adăugare template email nou `team_account_ready` + variabile minime (`login_link`, `user_email`).
+- [x] Adăugare/actualizare teste backend și frontend pentru noile comportamente.
+- [x] Rulare teste relevante (backend/frontend), build frontend și startup check backend.
+- [x] Commit pe branch curent + make_pr cu titlul/body cerut.
+
+## Review
+- [x] Wizard create nu mai creează utilizatorul la Pasul Următor; submit real doar la final.
+- [x] Invite cu parolă setată folosește login link, fără token reset.
+- [x] Invite fără parolă păstrează flow-ul actual cu reset/invite token.
+- [x] Scope exclus: Sub-account Team, coloană Locație, forgot-password flow.
+
 # TODO — Reorganizare UI sub-account: mutare "Roluri și Permisiuni" în tab dedicat (2026-03-19)
 
 - [x] Re-citire pagină `subaccount/[id]/settings/team` și test suite pentru flux create/edit.
