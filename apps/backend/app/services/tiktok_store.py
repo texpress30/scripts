@@ -26,6 +26,8 @@ class TikTokSnapshotStore:
         return psycopg.connect(settings.database_url)
 
     def _ensure_schema(self) -> None:
+        if getattr(self, "_schema_initialized", False):
+            return
         if self._is_test_mode():
             return
 
@@ -47,6 +49,8 @@ class TikTokSnapshotStore:
                     """
                 )
             conn.commit()
+        self._schema_initialized = True
+
 
     def upsert_snapshot(self, *, payload: dict[str, float | int | str]) -> None:
         self._ensure_schema()

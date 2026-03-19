@@ -244,6 +244,8 @@ class ClientRegistryService:
             self._sync_state_schema_initialized = True
 
     def _ensure_schema(self) -> None:
+        if getattr(self, "_schema_initialized", False):
+            return
         if self._is_test_mode():
             return
 
@@ -349,6 +351,8 @@ class ClientRegistryService:
                     """
                 )
             conn.commit()
+        self._schema_initialized = True
+
 
     def _backfill_blank_mapping_account_currency(self, *, conn) -> None:
         with conn.cursor() as cur:
