@@ -174,7 +174,7 @@ def run_migrations(*, database_url: str | None = None, migrations_dir: Path | No
                     raise
             else:
                 raise
-
+    return []
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Apply SQL migrations")
