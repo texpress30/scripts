@@ -299,7 +299,7 @@ class EmailTemplatesApiTests(unittest.TestCase):
 
         self.assertIsNotNone(preview)
         assert preview is not None
-        self.assertIn("https://app.example.com/activate-invite", preview.rendered_text_body)
+        self.assertIn("https://app.example.com/reset-password", preview.rendered_text_body)
         self.assertEqual(preview.sample_variables["user_email"], "preview.user@example.com")
 
     def test_preview_uses_saved_override_when_no_draft_values_sent(self):
@@ -324,7 +324,30 @@ class EmailTemplatesApiTests(unittest.TestCase):
         assert preview is not None
         self.assertTrue(preview.is_overridden)
         self.assertIn("Subiect override", preview.rendered_subject)
-        self.assertIn("activate-invite", preview.rendered_text_body)
+        self.assertIn("reset-password", preview.rendered_text_body)
+
+    def test_preview_default_team_account_ready_uses_login_sample(self):
+        service = EmailTemplatesService()
+        with patch.object(service, "get_effective_template") as mock_effective:
+            mock_effective.return_value = EffectiveEmailTemplate(
+                key="team_account_ready",
+                label="Team · Account Ready",
+                description="desc",
+                subject="Cont gata pentru {{user_email}}",
+                text_body="Autentificare: {{login_link}}",
+                html_body="<a href='{{login_link}}'>Login</a>",
+                available_variables=("login_link", "user_email"),
+                scope="agency",
+                enabled=True,
+                is_overridden=False,
+                updated_at=None,
+            )
+            preview = service.render_template_preview(template_key="team_account_ready")
+
+        self.assertIsNotNone(preview)
+        assert preview is not None
+        self.assertIn("https://app.example.com/login", preview.rendered_text_body)
+        self.assertEqual(preview.sample_variables["user_email"], "preview.user@example.com")
 
     def test_preview_uses_draft_values_when_sent_in_request(self):
         service = EmailTemplatesService()
@@ -405,6 +428,30 @@ class EmailTemplatesApiTests(unittest.TestCase):
         self.assertIsNotNone(result)
         assert result is not None
         self.assertEqual(result.key, "team_invite_user")
+
+    def test_service_test_send_default_team_account_ready(self):
+        service = EmailTemplatesService()
+        with (
+            patch.object(
+                service,
+                "render_template_preview",
+                return_value=EmailTemplatePreviewResult(
+                    key="team_account_ready",
+                    rendered_subject="Subject ready",
+                    rendered_text_body="Text ready",
+                    rendered_html_body="<p>Html ready</p>",
+                    sample_variables={"login_link": "https://app.example.com/login"},
+                    is_overridden=False,
+                ),
+            ),
+            patch("app.services.mailgun_service.mailgun_service.send_email") as mock_send,
+        ):
+            mock_send.return_value = {"ok": True, "to_email": "qa@example.com", "message": "Queued"}
+            result = service.send_template_test_email(template_key="team_account_ready", to_email="qa@example.com")
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result.key, "team_account_ready")
 
     def test_service_test_send_with_override_and_disabled_template_allowed(self):
         service = EmailTemplatesService()
@@ -707,6 +754,13 @@ class EmailTemplatesApiTests(unittest.TestCase):
         self.assertEqual(len(resp.items), 1)
         self.assertEqual(resp.items[0].key, "team_invite_user")
         self.assertTrue(resp.items[0].is_overridden)
+
+    def test_catalog_contains_account_ready_template(self):
+        service = EmailTemplatesService()
+        keys = [item.key for item in service.list_templates()]
+        self.assertIn("auth_forgot_password", keys)
+        self.assertIn("team_invite_user", keys)
+        self.assertIn("team_account_ready", keys)
 
 
 if __name__ == "__main__":

@@ -138,6 +138,8 @@ describe("AgencyNotificationsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Team · Invite User/i }));
     await waitFor(() => expect(getAgencyEmailNotificationMock).toHaveBeenCalledWith("team_invite_user"));
     expect(await screen.findByText("Template key:")).toBeInTheDocument();
+    expect(screen.getByText(/fără parolă => email set-password/i)).toBeInTheDocument();
+    expect(screen.getByText(/cu parolă => email account-ready\/login/i)).toBeInTheDocument();
   });
 
   it("renders badges and associated template link", async () => {
