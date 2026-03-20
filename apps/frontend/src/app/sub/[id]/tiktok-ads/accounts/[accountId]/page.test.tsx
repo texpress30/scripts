@@ -47,6 +47,9 @@ describe("TikTok account campaigns drilldown", () => {
     expect(screen.getByRole("button", { name: /Export/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Last 30 days/i })).toBeInTheDocument();
     expect(screen.getByText("tt-cmp-1")).toBeInTheDocument();
+    const row = screen.getByText("tt-cmp-1").closest("tr");
+    const dot = row?.querySelector("span[aria-hidden='true']");
+    expect(dot?.className).toContain("bg-slate-300");
     expect(screen.queryByText("Nu există campanii în perioada selectată.")).not.toBeInTheDocument();
     expect(screen.queryByText("II")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Back to accounts/i })).toHaveAttribute("href", "/sub/96/tiktok-ads");

@@ -63,7 +63,11 @@ describe("Sub TikTok Ads details table", () => {
     expect(screen.getByRole("button", { name: /Filter/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Columns/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Export/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "TikTok Main" })).toHaveAttribute("href", "/sub/96/tiktok-ads/accounts/tiktok-1");
+    const link = screen.getByRole("link", { name: "TikTok Main" });
+    expect(link).toHaveAttribute("href", "/sub/96/tiktok-ads/accounts/tiktok-1");
+    const row = link.closest("tr");
+    const dot = row?.querySelector("span[aria-hidden='true']");
+    expect(dot?.className).toContain("bg-emerald-500");
   });
 
   it("refetches payload when choosing Today preset", async () => {

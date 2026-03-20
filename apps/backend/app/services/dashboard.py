@@ -423,15 +423,26 @@ class UnifiedDashboardService:
                         SELECT
                             cpr.account_id,
                             COALESCE(NULLIF(TRIM(apa.account_name), ''), cpr.account_id) AS account_name,
+                            COALESCE(
+                                NULLIF(TRIM(apa.status), ''),
+                                NULLIF(TRIM(COALESCE(cpr.extra_metrics -> '{platform}' ->> 'account_status', '')), ''),
+                                NULLIF(TRIM(COALESCE(cpr.extra_metrics ->> 'account_status', '')), ''),
+                                NULLIF(TRIM(COALESCE(cpr.extra_metrics -> '{platform}' ->> 'status', '')), ''),
+                                NULLIF(TRIM(COALESCE(cpr.extra_metrics ->> 'status', '')), '')
+                            ) AS account_status,
                             cpr.campaign_id,
                             COALESCE(
                                 NULLIF(TRIM(pc.name), ''),
+                                NULLIF(TRIM(COALESCE(pc.raw_payload ->> 'campaign_name', '')), ''),
+                                NULLIF(TRIM(COALESCE(pc.raw_payload ->> 'name', '')), ''),
                                 NULLIF(TRIM(COALESCE(cpr.extra_metrics -> '{platform}' ->> 'campaign_name', '')), ''),
                                 NULLIF(TRIM(COALESCE(cpr.extra_metrics ->> 'campaign_name', '')), ''),
                                 cpr.campaign_id
                             ) AS campaign_name,
                             COALESCE(
                                 NULLIF(TRIM(pc.status), ''),
+                                NULLIF(TRIM(COALESCE(pc.raw_payload ->> 'status', '')), ''),
+                                NULLIF(TRIM(COALESCE(pc.raw_payload ->> 'effective_status', '')), ''),
                                 NULLIF(TRIM(COALESCE(cpr.extra_metrics -> '{platform}' ->> 'campaign_status', '')), ''),
                                 NULLIF(TRIM(COALESCE(cpr.extra_metrics ->> 'campaign_status', '')), ''),
                                 NULLIF(TRIM(COALESCE(cpr.extra_metrics -> '{platform}' ->> 'status', '')), ''),
@@ -2196,27 +2207,28 @@ class UnifiedDashboardService:
         resolved_account_name = normalized_account_id
         for row in rows:
             resolved_account_name = str(row[1] or resolved_account_name).strip() or resolved_account_name
-            campaign_id = str(row[2] or "").strip()
+            account_status = str(row[2] or "").strip().lower() or "unknown"
+            campaign_id = str(row[3] or "").strip()
             if campaign_id == "":
                 continue
-            campaign_name = str(row[3] or campaign_id).strip() or campaign_id
-            campaign_status = str(row[4] or "").strip().lower() or "unknown"
-            report_date = row[5] if isinstance(row[5], date) else end_date
-            account_currency = self._normalize_currency_code(row[6], fallback=reporting_currency)
+            campaign_name = str(row[4] or campaign_id).strip() or campaign_id
+            campaign_status = str(row[5] or "").strip().lower() or "unknown"
+            report_date = row[6] if isinstance(row[6], date) else end_date
+            account_currency = self._normalize_currency_code(row[7], fallback=reporting_currency)
             spend = self._normalize_money(
-                amount=_to_float(row[7]),
-                from_currency=account_currency,
-                to_currency=reporting_currency,
-                rate_date=report_date,
-            )
-            revenue = self._normalize_money(
                 amount=_to_float(row[8]),
                 from_currency=account_currency,
                 to_currency=reporting_currency,
                 rate_date=report_date,
             )
-            impressions = _to_int(row[9])
-            clicks = _to_int(row[10])
+            revenue = self._normalize_money(
+                amount=_to_float(row[9]),
+                from_currency=account_currency,
+                to_currency=reporting_currency,
+                rate_date=report_date,
+            )
+            impressions = _to_int(row[10])
+            clicks = _to_int(row[11])
             current = by_campaign.setdefault(
                 campaign_id,
                 {
@@ -2240,6 +2252,8 @@ class UnifiedDashboardService:
             current["rev_inf"] = _to_float(current.get("rev_inf")) + revenue
             current["impressions"] = _to_int(current.get("impressions")) + impressions
             current["clicks"] = _to_int(current.get("clicks")) + clicks
+            if account_status != "unknown":
+                current["account_status"] = account_status
 
         items: list[dict[str, object]] = []
         for campaign in by_campaign.values():
@@ -2256,6 +2270,7 @@ class UnifiedDashboardService:
             "platform": platform,
             "account_id": normalized_account_id,
             "account_name": resolved_account_name,
+            "account_status": next((str(item.get("account_status") or "").strip().lower() for item in items if str(item.get("account_status") or "").strip()), "unknown"),
             "currency": reporting_currency,
             "date_range": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
             "items": items,

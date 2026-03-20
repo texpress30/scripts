@@ -485,6 +485,7 @@ export type SubAdsCampaignTableResponse = {
   platform: string;
   account_id: string;
   account_name: string;
+  account_status?: string | null;
   currency: string;
   date_range: { start_date: string; end_date: string };
   items: SubAdsCampaignTableItem[];
