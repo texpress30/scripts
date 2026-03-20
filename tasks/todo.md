@@ -5906,3 +5906,23 @@ Plan confirmed: backend-first patch in Meta sync + backend tests only, no Agency
 - [x] Meta write helpers now use real upsert functions from `entity_performance_reports` with commit, mirroring TikTok persistence model.
 - [x] Added backend tests for non-test-mode campaign/ad_group/ad write paths, metadata fields (`campaign_name`/`adset_name`/`ad_name` + statuses), rows_written behavior, and normalization compatibility.
 - [x] Ran `pytest -q apps/backend/tests/test_meta_ads_entity_persistence.py apps/backend/tests/test_dashboard_currency_normalization.py` and `APP_AUTH_SECRET=test python -c "import app.main"`.
+
+# TODO — Meta historical_backfill overflow hardening for entity grains (2026-03-20)
+
+- [x] Audit root cause for Meta entity-grain overflow (`campaign_daily` / `ad_group_daily` / `ad_daily`) and identify offending field path.
+- [x] Repair conversion-value derivation semantics to avoid naive over-summing of `action_values` for entity rows.
+- [x] Add row-level numeric validation + row-level persistence fallback so one invalid row does not fail the whole chunk.
+- [x] Surface `rows_skipped` / `skip_reasons` / skipped-row diagnostics in sync snapshot and per-account summaries.
+- [x] Add backend tests for overflow candidate reproduction, conversion-value fix, row isolation fallback, and snapshot reporting.
+- [x] Run backend tests + startup/import check.
+- [x] Commit and open PR.
+
+## Check-in before execution
+Plan confirmed: backend-only scope (Meta persistence + backend tests), no frontend changes and no Agency/Team/auth/invite/delete/Media Buying/Media Tracker modifications.
+
+## Review
+- [x] Root cause confirmed as **transformation + persistence robustness**: naive `action_values` sum could produce oversized `conversion_value` candidates; a single DB persist error could fail the whole batch path.
+- [x] Fixed conversion value mapping to prefer selected lead action type value when available, with fallback sum only when selected type is unavailable.
+- [x] Implemented pre-upsert numeric overflow candidate checks and row-level retry isolation after batch failure.
+- [x] Snapshot now reports `rows_written`, `rows_skipped`, `skip_reasons`, and sampled skipped row diagnostics without secrets.
+- [x] Verified with `python -m pip install requests -q && pytest -q apps/backend/tests/test_meta_ads_entity_persistence.py apps/backend/tests/test_dashboard_currency_normalization.py` and `APP_AUTH_SECRET=test python -c "import app.main"`.

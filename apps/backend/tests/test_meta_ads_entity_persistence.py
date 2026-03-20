@@ -134,6 +134,7 @@ def test_meta_campaign_daily_sync_persists_rows_and_metadata_with_normalized_acc
     )
 
     assert snapshot["rows_written"] == 1
+    assert snapshot["rows_skipped"] == 0
     assert snapshot["accounts"][0]["rows_written"] == 1
     assert captured_rows[0]["account_id"] == "act_123456"
     assert captured_rows[0]["campaign_id"] == "cmp-1"
@@ -188,6 +189,7 @@ def test_meta_ad_group_daily_sync_persists_adset_metadata_and_rows_written(monke
     )
 
     assert snapshot["rows_written"] == 1
+    assert snapshot["rows_skipped"] == 0
     assert captured_rows[0]["ad_group_id"] == "adset-9"
     assert captured_rows[0]["campaign_id"] == "cmp-2"
     assert captured_rows[0]["extra_metrics"]["meta_ads"]["adset_name"] == "Adset Nine"
@@ -243,6 +245,7 @@ def test_meta_ad_daily_sync_persists_ad_metadata_and_rows_written(monkeypatch):
     )
 
     assert snapshot["rows_written"] == 1
+    assert snapshot["rows_skipped"] == 0
     assert captured_rows[0]["ad_id"] == "ad-7"
     assert captured_rows[0]["ad_group_id"] == "ag-7"
     assert captured_rows[0]["campaign_id"] == "cmp-7"
@@ -250,3 +253,135 @@ def test_meta_ad_daily_sync_persists_ad_metadata_and_rows_written(monkeypatch):
     assert captured_rows[0]["extra_metrics"]["meta_ads"]["adset_name"] == "Set 7"
     assert captured_rows[0]["extra_metrics"]["meta_ads"]["campaign_name"] == "Scale"
     assert captured_rows[0]["extra_metrics"]["meta_ads"]["grain"] == "ad_daily"
+
+
+def test_derive_conversion_value_prefers_selected_action_type_over_naive_sum():
+    action_values = [
+        {"action_type": "omni_purchase", "value": "99999999999.99"},
+        {"action_type": "lead", "value": "120.5"},
+    ]
+
+    derived = meta_ads_service._derive_conversion_value(action_values=action_values, selected_action_type="lead")
+    assert derived == 120.5
+
+
+def test_meta_campaign_daily_sync_skips_numeric_overflow_candidate_but_persists_valid_rows(monkeypatch):
+    captured_rows: list[dict[str, object]] = []
+
+    monkeypatch.setattr(meta_ads_service, "_is_test_mode", lambda: False)
+    monkeypatch.setattr(meta_ads_service, "_resolve_active_access_token_with_source", lambda: ("token", "database", None, None))
+    monkeypatch.setattr(meta_ads_service, "graph_api_version", lambda: "v24.0")
+    monkeypatch.setattr(meta_ads_service, "_resolve_target_account_ids", lambda **kwargs: ["act_999"])
+    monkeypatch.setattr(meta_ads_service, "_probe_account_access", lambda **kwargs: {"account_path": "act_999", "graph_version": "v24.0"})
+    monkeypatch.setattr(meta_ads_service, "_resolve_attached_account_currency", lambda **kwargs: "USD")
+    monkeypatch.setattr(
+        meta_ads_service,
+        "_fetch_campaign_daily_insights",
+        lambda **kwargs: [
+            {
+                "date_start": "2026-03-20",
+                "campaign_id": "cmp-bad",
+                "campaign_name": "Bad Campaign",
+                "spend": "9.0",
+                "impressions": "90",
+                "clicks": "9",
+                "actions": [{"action_type": "lead", "value": "1"}],
+                "action_values": [{"action_type": "lead", "value": "10000000000"}],
+            },
+            {
+                "date_start": "2026-03-20",
+                "campaign_id": "cmp-good",
+                "campaign_name": "Good Campaign",
+                "spend": "10.0",
+                "impressions": "100",
+                "clicks": "11",
+                "actions": [{"action_type": "lead", "value": "2"}],
+                "action_values": [{"action_type": "lead", "value": "45.5"}],
+            },
+        ],
+    )
+
+    def fake_write_campaign(*, rows):
+        captured_rows.extend(rows)
+        return len(rows)
+
+    monkeypatch.setattr(meta_ads_service, "_write_campaign_daily_rows", fake_write_campaign)
+
+    snapshot = meta_ads_service.sync_client(
+        client_id=96,
+        grain="campaign_daily",
+        start_date=date(2026, 3, 20),
+        end_date=date(2026, 3, 20),
+        update_snapshot=False,
+    )
+
+    assert snapshot["rows_written"] == 1
+    assert snapshot["rows_skipped"] == 1
+    assert snapshot["sync_health_status"] == "partial_request_coverage"
+    assert snapshot["skip_reasons"]["numeric_overflow_candidate:conversion_value"] == 1
+    assert snapshot["accounts"][0]["rows_written"] == 1
+    assert snapshot["accounts"][0]["rows_skipped"] == 1
+    assert captured_rows[0]["campaign_id"] == "cmp-good"
+
+
+def test_meta_campaign_daily_sync_batch_error_falls_back_to_row_level(monkeypatch):
+    attempt_rows_count: list[int] = []
+    persisted_rows: list[dict[str, object]] = []
+
+    monkeypatch.setattr(meta_ads_service, "_is_test_mode", lambda: False)
+    monkeypatch.setattr(meta_ads_service, "_resolve_active_access_token_with_source", lambda: ("token", "database", None, None))
+    monkeypatch.setattr(meta_ads_service, "graph_api_version", lambda: "v24.0")
+    monkeypatch.setattr(meta_ads_service, "_resolve_target_account_ids", lambda **kwargs: ["act_404"])
+    monkeypatch.setattr(meta_ads_service, "_probe_account_access", lambda **kwargs: {"account_path": "act_404", "graph_version": "v24.0"})
+    monkeypatch.setattr(meta_ads_service, "_resolve_attached_account_currency", lambda **kwargs: "USD")
+    monkeypatch.setattr(
+        meta_ads_service,
+        "_fetch_campaign_daily_insights",
+        lambda **kwargs: [
+            {
+                "date_start": "2026-03-20",
+                "campaign_id": "cmp-1",
+                "campaign_name": "Campaign 1",
+                "spend": "1.0",
+                "impressions": "10",
+                "clicks": "1",
+                "actions": [{"action_type": "lead", "value": "1"}],
+                "action_values": [{"action_type": "lead", "value": "10"}],
+            },
+            {
+                "date_start": "2026-03-20",
+                "campaign_id": "cmp-2",
+                "campaign_name": "Campaign 2",
+                "spend": "2.0",
+                "impressions": "20",
+                "clicks": "2",
+                "actions": [{"action_type": "lead", "value": "1"}],
+                "action_values": [{"action_type": "lead", "value": "20"}],
+            },
+        ],
+    )
+
+    def flaky_write_campaign(*, rows):
+        attempt_rows_count.append(len(rows))
+        if len(rows) > 1:
+            raise ValueError("numeric field overflow")
+        if rows[0]["campaign_id"] == "cmp-2":
+            raise ValueError("row-level persist failed")
+        persisted_rows.extend(rows)
+        return 1
+
+    monkeypatch.setattr(meta_ads_service, "_write_campaign_daily_rows", flaky_write_campaign)
+
+    snapshot = meta_ads_service.sync_client(
+        client_id=96,
+        grain="campaign_daily",
+        start_date=date(2026, 3, 20),
+        end_date=date(2026, 3, 20),
+        update_snapshot=False,
+    )
+
+    assert attempt_rows_count[0] == 2
+    assert snapshot["rows_written"] == 1
+    assert snapshot["rows_skipped"] == 1
+    assert snapshot["skip_reasons"]["row_persist_error"] == 1
+    assert persisted_rows[0]["campaign_id"] == "cmp-1"
