@@ -11,12 +11,12 @@ import {
   TeamMembershipDetailItem,
   TeamModuleCatalogItem,
   apiRequest,
+  deleteTeamUser,
   deactivateTeamMember,
   getTeamMembershipDetail,
   getTeamModuleCatalog,
   inviteTeamMember,
   reactivateTeamMember,
-  removeTeamMember,
   updateTeamMembership,
 } from "@/lib/api";
 
@@ -34,6 +34,9 @@ type TeamMember = {
   location: string;
   subaccount: string;
   module_keys?: string[];
+  allowed_subaccount_ids?: number[];
+  allowed_subaccounts?: { id: number; name: string; label?: string }[];
+  has_restricted_subaccount_access?: boolean;
   membership_status?: "active" | "inactive" | string;
   is_inherited?: boolean;
 };
@@ -77,8 +80,9 @@ function initials(firstName: string, lastName: string) {
 }
 
 
-function roleValueFromKey(roleKey: string): "admin" | "member" | "viewer" {
+function roleValueFromKey(roleKey: string): "owner" | "admin" | "member" | "viewer" {
   const normalized = String(roleKey || "").trim().toLowerCase();
+  if (normalized.endsWith("_owner")) return "owner";
   if (normalized.endsWith("_admin")) return "admin";
   if (normalized.endsWith("_viewer")) return "viewer";
   return "member";
@@ -88,6 +92,7 @@ function roleKeyFromMode(userType: string, userRole: string): string {
   const type = String(userType || "").trim().toLowerCase();
   const role = String(userRole || "").trim().toLowerCase();
   if (type === "agency") {
+    if (role === "owner") return "agency_owner";
     if (role === "admin") return "agency_admin";
     if (role === "viewer") return "agency_viewer";
     return "agency_member";
@@ -160,7 +165,7 @@ export default function SettingsTeamPage() {
   const [extension, setExtension] = useState("");
   const [userType, setUserType] = useState("agency");
   const [userRole, setUserRole] = useState("member");
-  const [location, setLocation] = useState("România");
+  const [allowedSubaccountIds, setAllowedSubaccountIds] = useState<number[]>([]);
   const [subaccount, setSubaccount] = useState("");
   const [subaccountFieldError, setSubaccountFieldError] = useState("");
   const [moduleFieldError, setModuleFieldError] = useState("");
@@ -170,11 +175,11 @@ export default function SettingsTeamPage() {
   const [saving, setSaving] = useState(false);
   const [inviteLoadingByMembership, setInviteLoadingByMembership] = useState<Record<number, boolean>>({});
   const [lifecycleLoadingByMembership, setLifecycleLoadingByMembership] = useState<Record<number, boolean>>({});
-  const [removeLoadingByMembership, setRemoveLoadingByMembership] = useState<Record<number, boolean>>({});
+  const [deleteLoadingByUser, setDeleteLoadingByUser] = useState<Record<number, boolean>>({});
   const [editingMembershipId, setEditingMembershipId] = useState<number | null>(null);
   const [loadingEditDetail, setLoadingEditDetail] = useState(false);
   const [editLockedInherited, setEditLockedInherited] = useState(false);
-  const [editOriginal, setEditOriginal] = useState<{ userRole: string; moduleKeys: string[] } | null>(null);
+  const [editOriginal, setEditOriginal] = useState<{ userRole: string; moduleKeys: string[]; allowedSubaccountIds: number[] } | null>(null);
   const activeScope = activeScopeFromUserType(userType);
   const activeCatalog = moduleCatalogByScope[activeScope];
 
@@ -267,6 +272,16 @@ export default function SettingsTeamPage() {
     }
   }, [userType, mode, activeCatalog]);
 
+  useEffect(() => {
+    if (userType !== "agency") {
+      setAllowedSubaccountIds([]);
+      return;
+    }
+    if (userRole === "owner" || userRole === "admin") {
+      setAllowedSubaccountIds([]);
+    }
+  }, [userType, userRole]);
+
   function resetCreateForm() {
     setFirstName("");
     setLastName("");
@@ -275,7 +290,7 @@ export default function SettingsTeamPage() {
     setExtension("");
     setUserType("agency");
     setUserRole("member");
-    setLocation("România");
+    setAllowedSubaccountIds([]);
     setSubaccount("");
     setSubaccountFieldError("");
     setModuleFieldError("");
@@ -315,54 +330,51 @@ export default function SettingsTeamPage() {
     return error instanceof Error ? error.message : "Nu am putut actualiza statusul membership-ului";
   }
 
-  function removeMembershipErrorMessage(error: unknown): string {
+  function deleteUserErrorMessage(error: unknown): string {
     if (error instanceof ApiRequestError) {
-      if (error.status === 403) return "Nu ai permisiuni suficiente pentru a elimina acest acces";
-      if (error.status === 404) return "Membership inexistent";
+      if (error.status === 403) return "Nu ai permisiuni suficiente pentru a șterge acest utilizator";
+      if (error.status === 404) return "Utilizator inexistent";
       if (error.status === 409) {
         const normalized = String(error.message || "").toLowerCase();
-        if (normalized.includes("propriul membership") || normalized.includes("sesiunea curentă")) {
-          return "Nu îți poți elimina accesul curent din această sesiune";
+        if (normalized.includes("propriul utilizator") || normalized.includes("sesiunea curentă")) {
+          return "Nu îți poți șterge propriul utilizator din această sesiune";
         }
-        if (normalized.includes("moștenit")) {
-          return "Acest acces este moștenit și nu poate fi eliminat aici";
-        }
-        return error.message || "Acest acces nu poate fi eliminat în acest moment";
+        return error.message || "Acest utilizator nu poate fi șters în acest moment";
       }
-      return error.message || "Nu am putut elimina accesul";
+      return error.message || "Nu am putut șterge utilizatorul";
     }
-    return error instanceof Error ? error.message : "Nu am putut elimina accesul";
+    return error instanceof Error ? error.message : "Nu am putut șterge utilizatorul";
   }
 
-  async function onRemoveMembership(member: TeamMember) {
-    const membershipId = getMembershipId(member);
-    if (membershipId === null) {
-      setErrorMessage("Membership invalid pentru acțiunea selectată.");
+  async function onDeleteUser(member: TeamMember) {
+    const userId = Number(member.user_id);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      setErrorMessage("Utilizator invalid pentru acțiunea selectată.");
       return;
     }
 
     const confirmed = window.confirm(
-      "Sigur vrei să elimini acest acces? Această acțiune șterge doar access grant-ul curent, nu utilizatorul global.",
+      "Sigur vrei să ștergi complet acest utilizator din sistem? Acțiunea elimină utilizatorul din users, toate memberships, permisiunile și tokenurile asociate.",
     );
     if (!confirmed) return;
 
     setErrorMessage("");
-    setRemoveLoadingByMembership((prev) => ({ ...prev, [membershipId]: true }));
+    setDeleteLoadingByUser((prev) => ({ ...prev, [userId]: true }));
     try {
-      const response = await removeTeamMember(membershipId);
-      showToast(response.message || "Accesul a fost eliminat");
+      const response = await deleteTeamUser(userId);
+      showToast(response.message || "Utilizatorul a fost șters complet");
       await loadMembers();
     } catch (error) {
       if (error instanceof ApiRequestError && error.status === 404) {
-        showToast(error.message || "Membership inexistent");
+        showToast(error.message || "Utilizator inexistent");
         await loadMembers();
       } else {
-        setErrorMessage(removeMembershipErrorMessage(error));
+        setErrorMessage(deleteUserErrorMessage(error));
       }
     } finally {
-      setRemoveLoadingByMembership((prev) => {
+      setDeleteLoadingByUser((prev) => {
         const next = { ...prev };
-        delete next[membershipId];
+        delete next[userId];
         return next;
       });
     }
@@ -470,7 +482,6 @@ export default function SettingsTeamPage() {
       setEmail(detail.email || "");
       setPhone(detail.phone || "");
       setExtension(detail.extension || "");
-      setLocation("România");
       setSubaccount(detail.subaccount_id ? String(detail.subaccount_id) : "");
       const scopeFromDetail: CatalogScope = detail.scope_type === "subaccount" ? "subaccount" : "agency";
       setUserType(scopeFromDetail === "subaccount" ? "client" : "agency");
@@ -485,7 +496,11 @@ export default function SettingsTeamPage() {
       );
       const coherentKeys = scopeFromDetail === "agency" ? applyAgencySettingsConsistency(filteredKeys) : filteredKeys;
       setSelectedModuleKeys(coherentKeys);
-      setEditOriginal({ userRole: roleValueFromKey(detail.role_key), moduleKeys: [...coherentKeys].sort() });
+      const initialAllowedSubaccountIds = (detail.allowed_subaccount_ids ?? [])
+        .map((item) => Number(item))
+        .filter((item) => Number.isFinite(item));
+      setAllowedSubaccountIds(initialAllowedSubaccountIds);
+      setEditOriginal({ userRole: roleValueFromKey(detail.role_key), moduleKeys: [...coherentKeys].sort(), allowedSubaccountIds: [...initialAllowedSubaccountIds].sort((a, b) => a - b) });
       setEditLockedInherited(Boolean(detail.is_inherited));
       if (detail.is_inherited) {
         setErrorMessage("Acest access este moștenit și nu poate fi editat aici");
@@ -530,15 +545,23 @@ export default function SettingsTeamPage() {
       ? JSON.stringify([...editOriginal.moduleKeys].sort()) === JSON.stringify([...nextModules].sort())
       : false;
 
-    if (editOriginal && noRoleChange && noModuleChange) {
+    const nextAllowedIds = [...allowedSubaccountIds].sort((a, b) => a - b);
+    const noAllowedSubaccountChange = editOriginal
+      ? JSON.stringify(editOriginal.allowedSubaccountIds) === JSON.stringify(nextAllowedIds)
+      : false;
+
+    if (editOriginal && noRoleChange && noModuleChange && noAllowedSubaccountChange) {
       setSaving(false);
       return;
     }
 
-    const payload: { user_role?: string; module_keys?: string[] } = {
+    const payload: { user_role?: string; module_keys?: string[]; allowed_subaccount_ids?: number[] } = {
       user_role: roleKeyFromMode(userType, userRole),
     };
     payload.module_keys = nextModules;
+    if (userType === "agency" && (userRole === "member" || userRole === "viewer")) {
+      payload.allowed_subaccount_ids = nextAllowedIds;
+    }
 
     try {
       await updateTeamMembership(editingMembershipId, payload);
@@ -570,6 +593,12 @@ export default function SettingsTeamPage() {
 
   async function submitCreateForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (mode === "create" && activeFormTab === "identity") {
+      handleCreateIdentityNextStep();
+      return;
+    }
+    if (mode === "create" && activeFormTab !== "permissions") return;
+
     setSaving(true);
     setErrorMessage("");
     setSubaccountFieldError("");
@@ -597,11 +626,13 @@ export default function SettingsTeamPage() {
         extension,
         user_type: userType,
         user_role: userRole,
-        location,
         subaccount: userType === "client" ? subaccount : "",
         password: advancedOpen ? password : undefined,
       };
       payload.module_keys = nextModules;
+      if (userType === "agency" && (userRole === "member" || userRole === "viewer")) {
+        payload.allowed_subaccount_ids = [...allowedSubaccountIds].sort((a, b) => a - b);
+      }
 
       const createResponse = await apiRequest<{ item: TeamMember }>("/team/members", {
         method: "POST",
@@ -651,6 +682,66 @@ export default function SettingsTeamPage() {
     }
   }
 
+  function validateCreateIdentityStep(): boolean {
+    const normalizedFirstName = firstName.trim();
+    const normalizedLastName = lastName.trim();
+    const normalizedEmail = email.trim();
+    setErrorMessage("");
+    setSubaccountFieldError("");
+    if (!normalizedFirstName) {
+      setErrorMessage("Prenumele este obligatoriu.");
+      return false;
+    }
+    if (!normalizedLastName) {
+      setErrorMessage("Numele este obligatoriu.");
+      return false;
+    }
+    if (!normalizedEmail || !normalizedEmail.includes("@")) {
+      setErrorMessage("Email-ul este obligatoriu.");
+      return false;
+    }
+    if (userType === "client" && !subaccount.trim()) {
+      setSubaccountFieldError("Selectarea unui sub-cont este obligatorie pentru utilizatorii de tip client.");
+      return false;
+    }
+    return true;
+  }
+
+  function handleCreateIdentityNextStep() {
+    if (!validateCreateIdentityStep()) return;
+    setActiveFormTab("permissions");
+  }
+
+  function accessAccountsSummary(member: TeamMember): string {
+    const normalizedUserType = String(member.user_type || "").trim().toLowerCase();
+    const normalizedSubaccount = String(member.subaccount || "").trim();
+    if (normalizedUserType === "client" && normalizedSubaccount && normalizedSubaccount.toLowerCase() !== "toate") {
+      return normalizedSubaccount;
+    }
+    const normalizedRole = String(member.user_role || "").trim().toLowerCase();
+    if (normalizedRole === "owner" || normalizedRole === "admin") {
+      return "Toate conturile";
+    }
+    const allowedIds = (member.allowed_subaccount_ids ?? []).filter((item) => Number.isFinite(Number(item)));
+    const restricted = Boolean(member.has_restricted_subaccount_access) || allowedIds.length > 0;
+    if (!restricted) {
+      return "Toate conturile";
+    }
+    const labels = (member.allowed_subaccounts ?? [])
+      .map((item) => String(item.label || item.name || "").trim())
+      .filter((item) => item !== "");
+    if (labels.length > 0 && labels.length <= 2) return labels.join(", ");
+    return `${allowedIds.length} conturi selectate`;
+  }
+
+  const supportsAgencySubaccountGrants = userType === "agency" && (userRole === "member" || userRole === "viewer");
+  function toggleAllowedSubaccount(optionId: number) {
+    setAllowedSubaccountIds((prev) => {
+      if (prev.includes(optionId)) return prev.filter((item) => item !== optionId);
+      return [...prev, optionId].sort((a, b) => a - b);
+    });
+  }
+
   const shouldShowModulePermissions = activeCatalog.length > 0;
   const permissionEditorItems = useMemo<PermissionEditorItem[]>(
     () =>
@@ -674,8 +765,11 @@ export default function SettingsTeamPage() {
     const normalizedNow = [...selectedModuleKeys.map((key) => key.trim().toLowerCase()).filter((key) => key !== "")].sort();
     const normalizedOriginal = [...editOriginal.moduleKeys].sort();
     const sameModules = JSON.stringify(normalizedNow) === JSON.stringify(normalizedOriginal);
-    return sameRole && sameModules;
-  }, [mode, saving, loadingEditDetail, editLockedInherited, editingMembershipId, editOriginal, selectedModuleKeys, userRole]);
+    const normalizedAllowedNow = [...allowedSubaccountIds].sort((a, b) => a - b);
+    const normalizedAllowedOriginal = [...editOriginal.allowedSubaccountIds].sort((a, b) => a - b);
+    const sameAllowedSubaccounts = JSON.stringify(normalizedAllowedNow) === JSON.stringify(normalizedAllowedOriginal);
+    return sameRole && sameModules && sameAllowedSubaccounts;
+  }, [mode, saving, loadingEditDetail, editLockedInherited, editingMembershipId, editOriginal, selectedModuleKeys, userRole, allowedSubaccountIds]);
 
   function applyAgencySettingsConsistency(keys: string[]): string[] {
     if (activeScope !== "agency") return normalizeSelectedKeys(keys);
@@ -764,6 +858,7 @@ export default function SettingsTeamPage() {
                   </select>
                   <select className="wm-input" value={userRoleFilter} onChange={(e) => { setPage(1); setUserRoleFilter(e.target.value); }}>
                     <option value="">Rol Utilizator</option>
+                    <option value="owner">Owner</option>
                     <option value="admin">Admin</option>
                     <option value="member">Membru</option>
                     <option value="viewer">Viewer</option>
@@ -789,7 +884,7 @@ export default function SettingsTeamPage() {
                         <th className="px-3 py-2">Telefon</th>
                         <th className="px-3 py-2">Tip Utilizator</th>
                         <th className="px-3 py-2">Status</th>
-                        <th className="px-3 py-2">Locație</th>
+                        <th className="px-3 py-2">Acces / Conturi</th>
                         <th className="px-3 py-2 text-right">Acțiuni</th>
                       </tr>
                     </thead>
@@ -823,7 +918,7 @@ export default function SettingsTeamPage() {
                                 <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Inactiv</span>
                               )}
                             </td>
-                            <td className="px-3 py-2">{member.location}</td>
+                            <td className="px-3 py-2">{accessAccountsSummary(member)}</td>
                             <td className="px-3 py-2">
                               <div className="flex items-center justify-end gap-2 text-slate-500">
                                 <button type="button" className="rounded p-1 hover:bg-slate-100" title="Editează" onClick={() => void openEditForm(member)}><Pencil className="h-4 w-4" /></button>
@@ -847,21 +942,21 @@ export default function SettingsTeamPage() {
                                   );
                                 })()}
                                 {(() => {
-                                  const membershipId = getMembershipId(member);
-                                  const isInherited = Boolean(member.is_inherited);
-                                  const loadingRemove = membershipId !== null && Boolean(removeLoadingByMembership[membershipId]);
+                                  const userId = Number(member.user_id);
+                                  const hasValidUserId = Number.isFinite(userId) && userId > 0;
+                                  const loadingDelete = hasValidUserId && Boolean(deleteLoadingByUser[userId]);
                                   return (
                                     <button
                                       type="button"
                                       className="rounded border border-rose-200 px-2 py-1 text-xs text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                      title={isInherited ? "Acces moștenit — nu poate fi eliminat local" : "Elimină accesul"}
-                                      aria-label="Elimină accesul"
-                                      disabled={membershipId === null || loadingRemove || isInherited}
-                                      onClick={() => void onRemoveMembership(member)}
+                                      title={hasValidUserId ? "Șterge utilizatorul complet din sistem" : "Utilizator invalid — nu poate fi șters"}
+                                      aria-label="Șterge utilizator"
+                                      disabled={!hasValidUserId || loadingDelete}
+                                      onClick={() => void onDeleteUser(member)}
                                     >
                                       <span className="inline-flex items-center gap-1">
-                                        {loadingRemove ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                                        Elimină accesul
+                                        {loadingDelete ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                                        Șterge utilizator
                                       </span>
                                     </button>
                                   );
@@ -937,151 +1032,304 @@ export default function SettingsTeamPage() {
                   </div>
                 </aside>
 
-                <form className="wm-card space-y-4 p-4" onSubmit={mode === "edit" ? submitEditForm : submitCreateForm}>
-                  <h2 className="text-lg font-semibold text-slate-900">{activeFormTab === "identity" ? "Informații Utilizator" : "Roluri și Permisiuni"}</h2>
+                {mode === "create" && activeFormTab === "identity" ? (
+                  <div className="wm-card space-y-4 p-4">
+                    <h2 className="text-lg font-semibold text-slate-900">Informații Utilizator</h2>
 
-                  {activeFormTab === "identity" ? (
-                    <>
-                      {subaccountOptionsError ? <p className="text-xs text-amber-700">Sub-conturile nu au putut fi încărcate: {subaccountOptionsError}</p> : null}
-                      {subaccountOptionsLoading ? <p className="text-xs text-slate-500">Se încarcă sub-conturile...</p> : null}
+                    {subaccountOptionsError ? <p className="text-xs text-amber-700">Sub-conturile nu au putut fi încărcate: {subaccountOptionsError}</p> : null}
+                    {subaccountOptionsLoading ? <p className="text-xs text-slate-500">Se încarcă sub-conturile...</p> : null}
 
-                      <div className="flex flex-col gap-3 md:flex-row md:items-center">
-                        <div className="relative h-24 w-24 rounded-full border border-slate-200 bg-slate-50">
-                          <div className="flex h-full w-full items-center justify-center text-slate-400">
-                            <UserCircle2 className="h-14 w-14" />
-                          </div>
-                          <button type="button" className="absolute -bottom-1 -right-1 rounded-full border border-slate-200 bg-white p-1 text-slate-500 hover:bg-slate-50" title="Adaugă imagine">
-                            <Camera className="h-3.5 w-3.5" />
-                          </button>
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                      <div className="relative h-24 w-24 rounded-full border border-slate-200 bg-slate-50">
+                        <div className="flex h-full w-full items-center justify-center text-slate-400">
+                          <UserCircle2 className="h-14 w-14" />
                         </div>
-                        <p className="text-sm text-slate-500">Mărimea propusă este 512x512 px, nu mai mare de 2.5 MB</p>
+                        <button type="button" className="absolute -bottom-1 -right-1 rounded-full border border-slate-200 bg-white p-1 text-slate-500 hover:bg-slate-50" title="Adaugă imagine">
+                          <Camera className="h-3.5 w-3.5" />
+                        </button>
                       </div>
+                      <p className="text-sm text-slate-500">Mărimea propusă este 512x512 px, nu mai mare de 2.5 MB</p>
+                    </div>
 
-                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                        <label className="text-sm text-slate-700">
-                          Prenume
-                          <input className="wm-input mt-1" value={firstName} onChange={(e) => setFirstName(e.target.value)} required disabled={mode === "edit"} />
-                        </label>
-                        <label className="text-sm text-slate-700">
-                          Nume
-                          <input className="wm-input mt-1" value={lastName} onChange={(e) => setLastName(e.target.value)} required disabled={mode === "edit"} />
-                        </label>
-                        <label className="text-sm text-slate-700 md:col-span-2">
-                          Email <span className="text-red-500">*</span>
-                          <input className="wm-input mt-1" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={mode === "edit"} />
-                        </label>
-                        <label className="text-sm text-slate-700">
-                          Telefon
-                          <input className="wm-input mt-1" value={phone} onChange={(e) => setPhone(e.target.value)} disabled={mode === "edit"} />
-                        </label>
-                        <label className="text-sm text-slate-700">
-                          Extensie
-                          <input className="wm-input mt-1" value={extension} onChange={(e) => setExtension(e.target.value)} disabled={mode === "edit"} />
-                        </label>
-                        <label className="text-sm text-slate-700">
-                          Tip Utilizator
-                          <select className="wm-input mt-1" value={userType} onChange={(e) => setUserType(e.target.value)} disabled={mode === "edit"}>
-                            <option value="agency">Agency</option>
-                            <option value="client">Client</option>
-                          </select>
-                        </label>
-                        <label className="text-sm text-slate-700">
-                          Rol Utilizator
-                          <select className="wm-input mt-1" value={userRole} onChange={(e) => setUserRole(e.target.value)} disabled={editLockedInherited}>
-                            <option value="admin">Admin</option>
-                            <option value="member">Membru</option>
-                            <option value="viewer">Viewer</option>
-                          </select>
-                        </label>
-                        <label className="text-sm text-slate-700">
-                          Locație
-                          <input className="wm-input mt-1" value={location} onChange={(e) => setLocation(e.target.value)} disabled={mode === "edit"} />
-                        </label>
-                        <label className="text-sm text-slate-700">
-                          Sub-cont
-                          <select
-                            className="wm-input mt-1"
-                            value={subaccount}
-                            onChange={(e) => {
-                              setSubaccount(e.target.value);
-                              setSubaccountFieldError("");
-                            }}
-                            disabled={userType === "agency" || mode === "edit"}
-                          >
-                            <option value="">Selectează Sub-cont</option>
-                            {subaccountOptions.map((item) => (
-                              <option key={item.id} value={String(item.id)}>{item.label || item.name}</option>
-                            ))}
-                          </select>
-                          {subaccountFieldError ? <p className="mt-1 text-xs text-red-600">{subaccountFieldError}</p> : null}
-                        </label>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <label className="text-sm text-slate-700">
+                        Prenume
+                        <input className="wm-input mt-1" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
+                      </label>
+                      <label className="text-sm text-slate-700">
+                        Nume
+                        <input className="wm-input mt-1" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+                      </label>
+                      <label className="text-sm text-slate-700 md:col-span-2">
+                        Email <span className="text-red-500">*</span>
+                        <input className="wm-input mt-1" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                      </label>
+                      <label className="text-sm text-slate-700">
+                        Telefon
+                        <input className="wm-input mt-1" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                      </label>
+                      <label className="text-sm text-slate-700">
+                        Extensie
+                        <input className="wm-input mt-1" value={extension} onChange={(e) => setExtension(e.target.value)} />
+                      </label>
+                      <label className="text-sm text-slate-700">
+                        Tip Utilizator
+                        <select className="wm-input mt-1" value={userType} onChange={(e) => setUserType(e.target.value)}>
+                          <option value="agency">Agency</option>
+                          <option value="client">Client</option>
+                        </select>
+                      </label>
+                      <label className="text-sm text-slate-700">
+                        Rol Utilizator
+                        <select className="wm-input mt-1" value={userRole} onChange={(e) => setUserRole(e.target.value)}>
+                          <option value="owner">Agency Owner</option>
+                          <option value="admin">Admin</option>
+                          <option value="member">Membru</option>
+                          <option value="viewer">Viewer</option>
+                        </select>
+                      </label>
+                      <label className="text-sm text-slate-700">
+                        Sub-cont
+                        <select
+                          className="wm-input mt-1"
+                          value={subaccount}
+                          onChange={(e) => {
+                            setSubaccount(e.target.value);
+                            setSubaccountFieldError("");
+                          }}
+                          disabled={userType === "agency"}
+                        >
+                          <option value="">Selectează Sub-cont</option>
+                          {subaccountOptions.map((item) => (
+                            <option key={item.id} value={String(item.id)}>{item.label || item.name}</option>
+                          ))}
+                        </select>
+                        {subaccountFieldError ? <p className="mt-1 text-xs text-red-600">{subaccountFieldError}</p> : null}
+                      </label>
+                    </div>
+                    {supportsAgencySubaccountGrants ? (
+                      <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-sm font-medium text-slate-800">Acces sub-account-uri (agency)</p>
+                        <p className="mt-1 text-xs text-slate-600">Niciun sub-account selectat = acces la toate conturile.</p>
+                        <div className="mt-2 max-h-36 space-y-1 overflow-auto pr-1">
+                          {subaccountOptions.map((item) => (
+                            <label key={item.id} className="flex items-center gap-2 text-sm text-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={allowedSubaccountIds.includes(item.id)}
+                                onChange={() => toggleAllowedSubaccount(item.id)}
+                              />
+                              {item.label || item.name}
+                            </label>
+                          ))}
+                        </div>
                       </div>
-                    </>
-                  ) : shouldShowModulePermissions ? (
-                    <PermissionsEditor
-                      scope={activeScope}
-                      items={permissionEditorItems}
-                      selectedKeys={selectedModuleKeys}
-                      onToggle={toggleModule}
-                      loading={moduleCatalogLoading}
-                      loadError={moduleCatalogError ? `Nu am putut încărca modulele: ${moduleCatalogError}` : null}
-                      fieldError={moduleFieldError}
-                      readOnly={editLockedInherited}
-                      summaryHint="Rolul selectat rămâne baza de acces. Toggle-urile restrâng ce vede utilizatorul în navigație."
-                      getItemDisabled={(item) =>
-                        editLockedInherited ||
-                        (activeScope === "agency" && Boolean(item.parentKey) && item.parentKey === "settings" && !selectedModuleKeys.includes("settings"))
-                      }
-                    />
-                  ) : null}
+                    ) : null}
 
-                  {mode === "edit" && editingMembershipId !== null ? (
-                    <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                      Status membership curent: <span className="font-semibold">{members.find((item) => getMembershipId(item) === editingMembershipId)?.membership_status === "inactive" ? "Inactiv" : "Activ"}</span>
-                    </p>
-                  ) : null}
+                    <div>
+                      <button type="button" className="text-sm font-medium text-indigo-600 hover:text-indigo-700" onClick={() => setAdvancedOpen((prev) => !prev)}>
+                        Setări Avansate
+                      </button>
+                      {advancedOpen ? (
+                        <label className="mt-2 block text-sm text-slate-700">
+                          Parolă
+                          <input className="wm-input mt-1" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                        </label>
+                      ) : null}
+                    </div>
 
-                  {activeFormTab === "identity"
-                    ? mode !== "edit" ? (
-                        <>
-                          <div>
-                            <button type="button" className="text-sm font-medium text-indigo-600 hover:text-indigo-700" onClick={() => setAdvancedOpen((prev) => !prev)}>
-                              Setări Avansate
-                            </button>
-                            {advancedOpen ? (
-                              <label className="mt-2 block text-sm text-slate-700">
-                                Parolă
-                                <input className="wm-input mt-1" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-                              </label>
-                            ) : null}
-                          </div>
+                    <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                        checked={autoInviteAfterCreate}
+                        onChange={(e) => setAutoInviteAfterCreate(e.target.checked)}
+                      />
+                      Trimite invitație imediat după creare
+                    </label>
 
-                          <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 rounded border-slate-300 text-indigo-600"
-                              checked={autoInviteAfterCreate}
-                              onChange={(e) => setAutoInviteAfterCreate(e.target.checked)}
-                            />
-                            Trimite invitație imediat după creare
-                          </label>
-                        </>
-                      ) : (
-                        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                          Editarea identității globale (nume/email/telefon) va fi disponibilă într-un task ulterior.
-                        </p>
-                      )
-                    : null}
-
-                  <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
-                    <button type="button" className="wm-btn-secondary" onClick={() => { resetCreateForm(); setMode("list"); }}>
-                      Anulează
-                    </button>
-                    <button type="submit" className="wm-btn-primary" disabled={mode === "edit" ? isEditSaveDisabled : saving}>
-                      {saving ? <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Se salvează...</span> : mode === "edit" ? "Salvează" : "Pasul Următor"}
-                    </button>
+                    <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
+                      <button type="button" className="wm-btn-secondary" onClick={() => { resetCreateForm(); setMode("list"); }}>
+                        Anulează
+                      </button>
+                      <button
+                        type="button"
+                        className="wm-btn-primary"
+                        disabled={saving}
+                        onClick={() => {
+                          handleCreateIdentityNextStep();
+                        }}
+                      >
+                        Pasul Următor
+                      </button>
+                    </div>
                   </div>
-                </form>
+                ) : (
+                  <form
+                    className="wm-card space-y-4 p-4"
+                    onSubmit={mode === "edit" ? submitEditForm : submitCreateForm}
+                  >
+                    <h2 className="text-lg font-semibold text-slate-900">{activeFormTab === "identity" ? "Informații Utilizator" : "Roluri și Permisiuni"}</h2>
+
+                    {activeFormTab === "identity" ? (
+                      <>
+                        {subaccountOptionsError ? <p className="text-xs text-amber-700">Sub-conturile nu au putut fi încărcate: {subaccountOptionsError}</p> : null}
+                        {subaccountOptionsLoading ? <p className="text-xs text-slate-500">Se încarcă sub-conturile...</p> : null}
+
+                        <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                          <div className="relative h-24 w-24 rounded-full border border-slate-200 bg-slate-50">
+                            <div className="flex h-full w-full items-center justify-center text-slate-400">
+                              <UserCircle2 className="h-14 w-14" />
+                            </div>
+                            <button type="button" className="absolute -bottom-1 -right-1 rounded-full border border-slate-200 bg-white p-1 text-slate-500 hover:bg-slate-50" title="Adaugă imagine">
+                              <Camera className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          <p className="text-sm text-slate-500">Mărimea propusă este 512x512 px, nu mai mare de 2.5 MB</p>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                          <label className="text-sm text-slate-700">
+                            Prenume
+                            <input className="wm-input mt-1" value={firstName} onChange={(e) => setFirstName(e.target.value)} required disabled={mode === "edit"} />
+                          </label>
+                          <label className="text-sm text-slate-700">
+                            Nume
+                            <input className="wm-input mt-1" value={lastName} onChange={(e) => setLastName(e.target.value)} required disabled={mode === "edit"} />
+                          </label>
+                          <label className="text-sm text-slate-700 md:col-span-2">
+                            Email <span className="text-red-500">*</span>
+                            <input className="wm-input mt-1" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={mode === "edit"} />
+                          </label>
+                          <label className="text-sm text-slate-700">
+                            Telefon
+                            <input className="wm-input mt-1" value={phone} onChange={(e) => setPhone(e.target.value)} disabled={mode === "edit"} />
+                          </label>
+                          <label className="text-sm text-slate-700">
+                            Extensie
+                            <input className="wm-input mt-1" value={extension} onChange={(e) => setExtension(e.target.value)} disabled={mode === "edit"} />
+                          </label>
+                          <label className="text-sm text-slate-700">
+                            Tip Utilizator
+                            <select className="wm-input mt-1" value={userType} onChange={(e) => setUserType(e.target.value)} disabled={mode === "edit"}>
+                              <option value="agency">Agency</option>
+                              <option value="client">Client</option>
+                            </select>
+                          </label>
+                          <label className="text-sm text-slate-700">
+                            Rol Utilizator
+                            <select className="wm-input mt-1" value={userRole} onChange={(e) => setUserRole(e.target.value)} disabled={editLockedInherited}>
+                              <option value="owner">Agency Owner</option>
+                              <option value="admin">Admin</option>
+                              <option value="member">Membru</option>
+                              <option value="viewer">Viewer</option>
+                            </select>
+                          </label>
+                          <label className="text-sm text-slate-700">
+                            Sub-cont
+                            <select
+                              className="wm-input mt-1"
+                              value={subaccount}
+                              onChange={(e) => {
+                                setSubaccount(e.target.value);
+                                setSubaccountFieldError("");
+                              }}
+                              disabled={userType === "agency" || mode === "edit"}
+                            >
+                              <option value="">Selectează Sub-cont</option>
+                              {subaccountOptions.map((item) => (
+                                <option key={item.id} value={String(item.id)}>{item.label || item.name}</option>
+                              ))}
+                            </select>
+                            {subaccountFieldError ? <p className="mt-1 text-xs text-red-600">{subaccountFieldError}</p> : null}
+                          </label>
+                        </div>
+                        {supportsAgencySubaccountGrants ? (
+                          <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                            <p className="text-sm font-medium text-slate-800">Acces sub-account-uri (agency)</p>
+                            <p className="mt-1 text-xs text-slate-600">Niciun sub-account selectat = acces la toate conturile.</p>
+                            <div className="mt-2 max-h-36 space-y-1 overflow-auto pr-1">
+                              {subaccountOptions.map((item) => (
+                                <label key={item.id} className="flex items-center gap-2 text-sm text-slate-700">
+                                  <input
+                                    type="checkbox"
+                                    checked={allowedSubaccountIds.includes(item.id)}
+                                    onChange={() => toggleAllowedSubaccount(item.id)}
+                                    disabled={editLockedInherited}
+                                  />
+                                  {item.label || item.name}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : shouldShowModulePermissions ? (
+                      <PermissionsEditor
+                        scope={activeScope}
+                        items={permissionEditorItems}
+                        selectedKeys={selectedModuleKeys}
+                        onToggle={toggleModule}
+                        loading={moduleCatalogLoading}
+                        loadError={moduleCatalogError ? `Nu am putut încărca modulele: ${moduleCatalogError}` : null}
+                        fieldError={moduleFieldError}
+                        readOnly={editLockedInherited}
+                        summaryHint="Rolul selectat rămâne baza de acces. Toggle-urile restrâng ce vede utilizatorul în navigație."
+                        getItemDisabled={(item) =>
+                          editLockedInherited ||
+                          (activeScope === "agency" && Boolean(item.parentKey) && item.parentKey === "settings" && !selectedModuleKeys.includes("settings"))
+                        }
+                      />
+                    ) : null}
+
+                    {mode === "edit" && editingMembershipId !== null ? (
+                      <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                        Status membership curent: <span className="font-semibold">{members.find((item) => getMembershipId(item) === editingMembershipId)?.membership_status === "inactive" ? "Inactiv" : "Activ"}</span>
+                      </p>
+                    ) : null}
+
+                    {activeFormTab === "identity"
+                      ? mode !== "edit" ? (
+                          <>
+                            <div>
+                              <button type="button" className="text-sm font-medium text-indigo-600 hover:text-indigo-700" onClick={() => setAdvancedOpen((prev) => !prev)}>
+                                Setări Avansate
+                              </button>
+                              {advancedOpen ? (
+                                <label className="mt-2 block text-sm text-slate-700">
+                                  Parolă
+                                  <input className="wm-input mt-1" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                                </label>
+                              ) : null}
+                            </div>
+
+                            <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                                checked={autoInviteAfterCreate}
+                                onChange={(e) => setAutoInviteAfterCreate(e.target.checked)}
+                              />
+                              Trimite invitație imediat după creare
+                            </label>
+                          </>
+                        ) : (
+                          <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                            Editarea identității globale (nume/email/telefon) va fi disponibilă într-un task ulterior.
+                          </p>
+                        )
+                      : null}
+
+                    <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
+                      <button type="button" className="wm-btn-secondary" onClick={() => { resetCreateForm(); setMode("list"); }}>
+                        Anulează
+                      </button>
+                      <button type="submit" className="wm-btn-primary" disabled={mode === "edit" ? isEditSaveDisabled : saving}>
+                        {saving ? <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Se salvează...</span> : mode === "edit" ? "Salvează" : "Creează utilizator"}
+                      </button>
+                    </div>
+                  </form>
+                )}
               </div>
             </section>
           )}

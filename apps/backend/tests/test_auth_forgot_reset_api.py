@@ -876,6 +876,71 @@ class AuthForgotResetApiTests(unittest.TestCase):
             auth_api.set_user_password = original_set
             auth_api.auth_email_tokens_service.invalidate_active_tokens = original_invalidate
 
+    def test_reset_password_context_invite_token(self):
+        original_validate = auth_api.auth_email_tokens_service.validate_reset_or_invite_token
+        original_consume = auth_api.auth_email_tokens_service.consume_reset_or_invite_token
+        consume_calls = {"count": 0}
+
+        try:
+            auth_api.auth_email_tokens_service.validate_reset_or_invite_token = lambda **kwargs: PasswordResetTokenRecord(
+                id=31,
+                user_id=44,
+                email="invite.user@example.com",
+                token_type="invite_user",
+                expires_at=SimpleNamespace(),
+                consumed_at=None,
+                metadata_json="{}",
+            )
+            auth_api.auth_email_tokens_service.consume_reset_or_invite_token = lambda **kwargs: consume_calls.__setitem__("count", consume_calls["count"] + 1)
+
+            response = auth_api.reset_password_token_context(token="invite-preview-token")
+            self.assertTrue(response.valid)
+            self.assertEqual(response.token_type, "invite_user")
+            self.assertEqual(response.reason, None)
+            self.assertIn("***", str(response.email_hint))
+            self.assertEqual(consume_calls["count"], 0, "context endpoint must not consume token")
+        finally:
+            auth_api.auth_email_tokens_service.validate_reset_or_invite_token = original_validate
+            auth_api.auth_email_tokens_service.consume_reset_or_invite_token = original_consume
+
+    def test_reset_password_context_password_reset_token(self):
+        original_validate = auth_api.auth_email_tokens_service.validate_reset_or_invite_token
+        try:
+            auth_api.auth_email_tokens_service.validate_reset_or_invite_token = lambda **kwargs: PasswordResetTokenRecord(
+                id=32,
+                user_id=45,
+                email="reset.user@example.com",
+                token_type="password_reset",
+                expires_at=SimpleNamespace(),
+                consumed_at=None,
+                metadata_json="{}",
+            )
+
+            response = auth_api.reset_password_token_context(token="reset-preview-token")
+            self.assertTrue(response.valid)
+            self.assertEqual(response.token_type, "password_reset")
+            self.assertEqual(response.reason, None)
+            self.assertIn("***", str(response.email_hint))
+        finally:
+            auth_api.auth_email_tokens_service.validate_reset_or_invite_token = original_validate
+
+    def test_reset_password_context_invalid_or_expired(self):
+        original_validate = auth_api.auth_email_tokens_service.validate_reset_or_invite_token
+        try:
+            auth_api.auth_email_tokens_service.validate_reset_or_invite_token = lambda **kwargs: (_ for _ in ()).throw(
+                AuthEmailTokenError("Token expirat", reason="token_expired", status_code=400)
+            )
+            response = auth_api.reset_password_token_context(token="expired-token")
+            self.assertFalse(response.valid)
+            self.assertEqual(response.reason, "token_expired")
+            self.assertIsNone(response.token_type)
+
+            missing = auth_api.reset_password_token_context(token=" ")
+            self.assertFalse(missing.valid)
+            self.assertEqual(missing.reason, "missing_token")
+        finally:
+            auth_api.auth_email_tokens_service.validate_reset_or_invite_token = original_validate
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -25,7 +25,7 @@ import {
 
 import { apiRequest, getAgencyMyAccess, getSubaccountMyAccess, type TeamAgencyMyAccessResponse, type TeamSubaccountMyAccessResponse } from "@/lib/api";
 import { isPinterestIntegrationEnabled, isSnapchatIntegrationEnabled, isTikTokIntegrationEnabled } from "@/lib/featureFlags";
-import { AppRole, SessionAccessContext, getSessionAccessContext } from "@/lib/session";
+import { AppRole, SessionAccessContext, getSessionAccessContext, isSubaccountScopedContext } from "@/lib/session";
 import { cn } from "@/lib/utils";
 
 type ClientItem = { id: number; name: string; owner_email: string; client_logo_url?: string | null };
@@ -201,7 +201,7 @@ export function resolveSubaccountRouteGuardDecision(params: {
   pathname: string;
 }): string | null {
   const { role, accessContext, allowedSubaccountIds, currentSubId, subSettingsId, pathname } = params;
-  if (!isSubaccountScopedRole(role)) return null;
+  if (!isSubaccountScopedRole(role) && !isSubaccountScopedContext(accessContext)) return null;
 
   const safeSubaccountId = getSafeSubaccountId(accessContext);
   if (safeSubaccountId === null) {
