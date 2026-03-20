@@ -1,3 +1,16 @@
+# TODO — Sub-account Dashboard: 2 grafice spend (2026-03-20)
+
+- [x] Re-sync workspace + recitire AGENTS/todo/lessons + audit endpoint/contract actual pentru Sub-account Dashboard.
+- [x] Backend additive: câmp `spend_by_day` agregat pe zi, pe range-ul selectat și în moneda dashboardului.
+- [x] Frontend Sub-account Dashboard: 2 grafice între KPI și tabel (spend pe zile + spend pe platforme), responsive, fără redesign major.
+- [x] UX states: loading + empty clar; chart platforme exclude spend=0.
+- [x] Teste backend + teste frontend relevante + build frontend.
+
+## Review
+- [x] Confirmare explicită că Agency Dashboard și flow-urile Team/auth/invite/delete/media-buying/media-tracker nu au fost modificate.
+- Rulat `pytest -q apps/backend/tests/test_dashboard_currency_normalization.py` (9 passed).
+- Rulat `npm test -- src/app/sub/[id]/dashboard/page.test.tsx` și `npm run build` în `apps/frontend`.
+
 # TODO — Agency Team UI: agency_owner + grants selector pentru agency_member/viewer (2026-03-20)
 
 - [x] Re-sync workspace + recitire AGENTS/todo/lessons și audit contracte frontend<->backend folosite de Agency Team.

@@ -7,6 +7,7 @@ import React, { useEffect, useState } from "react";
 import { format, startOfMonth, subDays } from "date-fns";
 import { DayPicker, type DateRange } from "react-day-picker";
 import "react-day-picker/dist/style.css";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
@@ -36,6 +37,7 @@ type DashboardResponse = {
     meta_ads?: { accounts?: Array<Record<string, unknown>> };
     tiktok_ads?: { accounts?: Array<Record<string, unknown>> };
   };
+  spend_by_day?: Array<{ date?: string; spend?: number }>;
 };
 
 type PlatformMetrics = {
@@ -55,6 +57,7 @@ type NormalizedMetrics = {
   revenue: number;
   roas: number;
 };
+type SpendByDayPoint = { date: string; spend: number };
 
 type DatePresetKey = "today" | "yesterday" | "last7" | "last14" | "last30" | "month" | "custom";
 
@@ -119,6 +122,15 @@ function normalizeMetrics(value?: PlatformMetrics): NormalizedMetrics {
     revenue,
     roas: spend > 0 ? revenue / spend : 0,
   };
+}
+
+function normalizeSpendByDay(value: DashboardResponse["spend_by_day"]): SpendByDayPoint[] {
+  return (value ?? [])
+    .map((item) => ({
+      date: typeof item?.date === "string" ? item.date : "",
+      spend: safeNumber(item?.spend),
+    }))
+    .filter((item) => item.date !== "");
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -243,6 +255,15 @@ export default function SubDashboardPage() {
   const flaggedPlatforms = [metaSync, tiktokSync].filter((item) => item.uiStatus === "warning" || item.uiStatus === "error");
   const flaggedPlatformCount = flaggedPlatforms.length;
   const affectedAccountCount = flaggedPlatforms.reduce((sum, item) => sum + item.affectedAccountCount, 0);
+  const spendByDay = normalizeSpendByDay(data?.spend_by_day);
+  const hasSpendByDay = spendByDay.some((item) => item.spend > 0);
+  const spendByPlatform = [
+    { name: "Google Ads", spend: google.spend },
+    { name: "Meta Ads", spend: meta.spend },
+    { name: "TikTok Ads", spend: tiktok.spend },
+    { name: "Pinterest Ads", spend: pinterest.spend },
+    { name: "Snapchat Ads", spend: snapchat.spend },
+  ].filter((item) => item.spend > 0);
 
   return (
     <ProtectedPage>
@@ -317,6 +338,61 @@ export default function SubDashboardPage() {
           <MetricCard title="Conversions" value={loading ? "..." : totals.conversions.toLocaleString()} />
           <MetricCard title="Revenue" value={loading ? "..." : formatCurrency(totals.revenue, currencyCode)} />
           <MetricCard title="ROAS" value={loading ? "..." : totals.roas.toFixed(2)} />
+        </section>
+
+        <section className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Spend total pe zile</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <p className="text-sm text-slate-500">Se încarcă datele pentru grafic…</p>
+              ) : !hasSpendByDay ? (
+                <p className="text-sm text-slate-500">Nu există spend în perioada selectată.</p>
+              ) : (
+                <div className="h-64 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={spendByDay}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" tickFormatter={(value: string) => format(new Date(value), "dd MMM")} />
+                      <YAxis tickFormatter={(value: number) => formatCurrency(value, currencyCode)} width={100} />
+                      <Tooltip
+                        formatter={(value: number) => formatCurrency(safeNumber(value), currencyCode)}
+                        labelFormatter={(value: string) => format(new Date(value), "dd MMM yyyy")}
+                      />
+                      <Area type="monotone" dataKey="spend" stroke="#4f46e5" fill="#c7d2fe" strokeWidth={2} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Spend pe platforme</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <p className="text-sm text-slate-500">Se încarcă datele pentru grafic…</p>
+              ) : spendByPlatform.length === 0 ? (
+                <p className="text-sm text-slate-500">Nu există spend pe platforme în perioada selectată.</p>
+              ) : (
+                <div className="h-64 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={spendByPlatform} layout="vertical" margin={{ left: 18 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis type="number" tickFormatter={(value: number) => formatCurrency(value, currencyCode)} />
+                      <YAxis type="category" dataKey="name" width={100} />
+                      <Tooltip formatter={(value: number) => formatCurrency(safeNumber(value), currencyCode)} />
+                      <Bar dataKey="spend" fill="#4f46e5" radius={[0, 6, 6, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </section>
 
         {flaggedPlatformCount > 0 ? (

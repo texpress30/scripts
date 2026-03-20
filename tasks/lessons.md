@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-20: Pentru cerințe de dashboard vizual, livrează întâi contractul additive pe endpoint-ul existent (`spend_by_day`) și construiește chart-urile direct din datele deja disponibile (ex. platform table), evitând endpoint-uri noi sau redesign.
+
 - 2026-03-20: Pentru UI Agency Team cu grants, tratează selectorul de sub-account-uri strict condiționat de rol (`agency_member/viewer`), iar pentru `agency_owner/admin` ascunde controlul și nu trimite restricții în payload.
 
 - 2026-03-20: Pentru roluri agency cu acces restricționabil pe sub-account, modelul corect este tabel de grants dedicat pe membership; listă goală înseamnă explicit acces nelimitat, iar enforcement/listing trebuie să aplice aceeași semantică.
