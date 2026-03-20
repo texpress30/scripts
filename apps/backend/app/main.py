@@ -115,17 +115,23 @@ def root() -> dict[str, str]:
 
 @app.on_event("startup")
 def startup_event() -> None:
-    if settings.app_env == "production":
-        logger.info("Skipping runtime DB schema initialization in production environment.")
-        return
-
     if psycopg is not None:
         max_retries = 5
+        acquired_lock = False
+        global_conn = None
+
+        is_sqlite = settings.database_url.startswith("sqlite")
+
         for attempt in range(max_retries):
             try:
-                with psycopg.connect(settings.database_url) as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("SELECT 1")
+                global_conn = psycopg.connect(settings.database_url)
+                if not is_sqlite:
+                    with global_conn.cursor() as cur:
+                        cur.execute("SELECT pg_try_advisory_lock(1, hashtext('global_schema_init'))")
+                        acquired_lock = bool(cur.fetchone()[0])
+                    global_conn.commit()
+                else:
+                    acquired_lock = True
                 logger.info("Successfully connected to the database on startup.")
                 break
             except Exception as e:
@@ -135,10 +141,29 @@ def startup_event() -> None:
                 logger.warning("Database connection failed (attempt %d/%d): %s. Retrying in 3 seconds...", attempt + 1, max_retries, e)
                 time.sleep(3)
 
-    client_registry_service.initialize_schema()
-    user_profile_service.initialize_schema()
-    team_members_service.initialize_schema()
-    company_settings_service.initialize_schema()
-    auth_email_tokens_service.initialize_schema()
-    email_templates_service.initialize_schema()
-    email_notifications_service.initialize_schema()
+        if not acquired_lock:
+            logger.info("Database schema is being initialized by another worker. Skipping locally.")
+            if global_conn is not None:
+                global_conn.close()
+            return
+
+        try:
+            logger.info("Initializing runtime DB schema...")
+            client_registry_service.initialize_schema()
+            user_profile_service.initialize_schema()
+            team_members_service.initialize_schema()
+            company_settings_service.initialize_schema()
+            auth_email_tokens_service.initialize_schema()
+            email_templates_service.initialize_schema()
+            email_notifications_service.initialize_schema()
+        finally:
+            if global_conn is not None:
+                try:
+                    if not is_sqlite:
+                        with global_conn.cursor() as cur:
+                            cur.execute("SELECT pg_advisory_unlock(1, hashtext('global_schema_init'))")
+                        global_conn.commit()
+                except Exception as unlock_err:
+                    logger.error(f"Failed to release global schema lock: {unlock_err}")
+                finally:
+                    global_conn.close()
