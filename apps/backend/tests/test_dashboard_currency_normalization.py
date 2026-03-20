@@ -293,3 +293,64 @@ def test_get_client_dashboard_returns_spend_by_day_without_breaking_existing_pay
             "platform_spend": {"google_ads": 0.0, "meta_ads": 0.0, "tiktok_ads": 0.0, "pinterest_ads": 0.0, "snapchat_ads": 0.0},
         },
     ]
+
+
+def test_get_client_google_ads_account_performance_uses_real_rows_and_currency():
+    rows = [
+        ("1001", "Google Main RO", "active", date(2026, 3, 1), "RON", 100.0, 220.0, 1000, 120),
+        ("1001", "Google Main RO", "active", date(2026, 3, 2), "RON", 50.0, 80.0, 800, 90),
+        ("1002", "Google Prospecting", "paused", date(2026, 3, 1), "RON", 20.0, 10.0, 300, 20),
+    ]
+
+    class _FakeCursor:
+        def execute(self, sql, params=None):
+            self._last_sql = str(sql)
+
+        def fetchall(self):
+            return rows
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class _FakeConn:
+        def cursor(self):
+            return _FakeCursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    original_connect = unified_dashboard_service._connect
+    original_reporting = dashboard_service_module.client_registry_service.get_client_reporting_currency_decision
+    original_init_schema = dashboard_service_module.performance_reports_store.initialize_schema
+    try:
+        unified_dashboard_service._connect = lambda: _FakeConn()
+        dashboard_service_module.client_registry_service.get_client_reporting_currency_decision = lambda **kwargs: {
+            "reporting_currency": "RON",
+            "reporting_currency_source": "agency_client_currency",
+            "mixed_attached_account_currencies": False,
+            "attached_account_currency_summary": [{"currency": "RON", "account_count": 2}],
+        }
+        dashboard_service_module.performance_reports_store.initialize_schema = lambda: None
+        payload = unified_dashboard_service.get_client_google_ads_account_performance(
+            client_id=96,
+            start_date=date(2026, 3, 1),
+            end_date=date(2026, 3, 31),
+        )
+    finally:
+        unified_dashboard_service._connect = original_connect
+        dashboard_service_module.client_registry_service.get_client_reporting_currency_decision = original_reporting
+        dashboard_service_module.performance_reports_store.initialize_schema = original_init_schema
+
+    assert payload["currency"] == "RON"
+    assert payload["items"][0]["account_id"] == "1001"
+    assert payload["items"][0]["cost"] == 150.0
+    assert payload["items"][0]["rev_inf"] == 300.0
+    assert payload["items"][0]["roas_inf"] == 2.0
+    assert payload["items"][0]["new_visits"] is None
+    assert payload["items"][0]["visits"] is None

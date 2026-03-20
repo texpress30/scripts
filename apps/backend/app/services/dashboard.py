@@ -350,6 +350,56 @@ class UnifiedDashboardService:
                           ) = 'account_daily'
                         """
 
+    def _client_google_ads_account_rows_query(self) -> str:
+        effective_currency_sql = self._effective_attached_account_currency_sql(
+            mapping_currency_expr="mapped.account_currency",
+            platform_currency_expr="apa.currency_code",
+            client_currency_expr="client.currency",
+            fallback_literal="USD",
+        )
+        return f"""
+                        SELECT
+                            mapped.account_id,
+                            COALESCE(NULLIF(TRIM(apa.account_name), ''), mapped.account_id) AS account_name,
+                            COALESCE(NULLIF(TRIM(apa.status), ''), 'active') AS account_status,
+                            apr.report_date,
+                            COALESCE(
+                                NULLIF(TRIM(COALESCE(apr.extra_metrics -> 'google_ads' ->> 'account_currency', '')), ''),
+                                {effective_currency_sql}
+                            ) AS account_currency,
+                            COALESCE(apr.spend, 0) AS spend,
+                            COALESCE(apr.conversion_value, 0) AS conversion_value,
+                            COALESCE(apr.impressions, 0) AS impressions,
+                            COALESCE(apr.clicks, 0) AS clicks
+                        FROM agency_account_client_mappings mapped
+                        JOIN agency_clients client
+                          ON client.id = mapped.client_id
+                        LEFT JOIN agency_platform_accounts apa
+                          ON apa.platform = mapped.platform
+                         AND (
+                              apa.account_id = mapped.account_id
+                              OR (
+                                  mapped.platform = 'google_ads'
+                                  AND regexp_replace(apa.account_id, '[^0-9]', '', 'g') = regexp_replace(mapped.account_id, '[^0-9]', '', 'g')
+                              )
+                         )
+                        LEFT JOIN ad_performance_reports apr
+                          ON apr.platform = mapped.platform
+                         AND apr.platform = 'google_ads'
+                         AND apr.report_date BETWEEN %s AND %s
+                         AND (
+                              mapped.account_id = apr.customer_id
+                              OR regexp_replace(mapped.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                         )
+                         AND COALESCE(
+                              NULLIF(TRIM(COALESCE(apr.extra_metrics -> 'google_ads' ->> 'grain', '')), ''),
+                              'account_daily'
+                         ) = 'account_daily'
+                        WHERE mapped.client_id = %s
+                          AND mapped.platform = 'google_ads'
+                        ORDER BY mapped.account_id, apr.report_date
+                        """
+
 
     def _client_dashboard_reconciliation_rows_query(self) -> str:
         effective_currency_sql = self._effective_attached_account_currency_sql(
@@ -1927,6 +1977,84 @@ class UnifiedDashboardService:
             ),
             "business_inputs": business_inputs_payload,
             "business_derived_metrics": business_derived_metrics,
+        }
+
+    def get_client_google_ads_account_performance(self, *, client_id: int, start_date: date, end_date: date) -> dict[str, object]:
+        if start_date > end_date:
+            raise ValueError("start_date must be <= end_date")
+
+        performance_reports_store.initialize_schema()
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(self._client_google_ads_account_rows_query(), (start_date, end_date, client_id))
+                rows = cur.fetchall()
+
+        currency_decision = self._client_reporting_currency_decision(client_id=client_id)
+        reporting_currency = str(currency_decision.get("reporting_currency") or "USD")
+        by_account: dict[str, dict[str, object]] = {}
+        for row in rows:
+            account_id = str(row[0] or "").strip()
+            if account_id == "":
+                continue
+            account_name = str(row[1] or account_id).strip() or account_id
+            account_status = str(row[2] or "active").strip().lower() or "active"
+            report_date = row[3] if isinstance(row[3], date) else end_date
+            account_currency = self._normalize_currency_code(row[4], fallback=reporting_currency)
+            spend = self._normalize_money(
+                amount=_to_float(row[5]),
+                from_currency=account_currency,
+                to_currency=reporting_currency,
+                rate_date=report_date,
+            )
+            revenue = self._normalize_money(
+                amount=_to_float(row[6]),
+                from_currency=account_currency,
+                to_currency=reporting_currency,
+                rate_date=report_date,
+            )
+            impressions = _to_int(row[7])
+            clicks = _to_int(row[8])
+            current = by_account.setdefault(
+                account_id,
+                {
+                    "account_id": account_id,
+                    "account_name": account_name,
+                    "status": account_status,
+                    "cost": 0.0,
+                    "rev_inf": 0.0,
+                    "roas_inf": 0.0,
+                    "mer_inf": None,
+                    "truecac_inf": None,
+                    "ecr_inf": None,
+                    "ecpnv_inf": None,
+                    "new_visits": None,
+                    "visits": None,
+                    "impressions": 0,
+                    "clicks": 0,
+                },
+            )
+            current["cost"] = _to_float(current.get("cost")) + spend
+            current["rev_inf"] = _to_float(current.get("rev_inf")) + revenue
+            current["impressions"] = _to_int(current.get("impressions")) + impressions
+            current["clicks"] = _to_int(current.get("clicks")) + clicks
+
+        items: list[dict[str, object]] = []
+        for account in by_account.values():
+            cost = round(_to_float(account.get("cost")), 2)
+            revenue = round(_to_float(account.get("rev_inf")), 2)
+            roas = round(revenue / cost, 4) if cost > 0 else 0.0
+            account["cost"] = cost
+            account["rev_inf"] = revenue
+            account["roas_inf"] = roas
+            account["mer_inf"] = round(cost / revenue, 4) if revenue > 0 else None
+            items.append(account)
+
+        items.sort(key=lambda item: _to_float(item.get("cost")), reverse=True)
+        return {
+            "client_id": client_id,
+            "currency": reporting_currency,
+            "date_range": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
+            "items": items,
         }
 
     def _agency_reports_query(self) -> str:

@@ -5813,3 +5813,15 @@ Plan verified: frontend-focused incremental delivery for Agency Notifications se
 - [x] Sub-account grant-ceiling restrictions remain visible and explicitly explained for disabled keys.
 - [x] Existing permission semantics and create/edit payload contracts remain intact (`module_keys` source of truth).
 - [x] Intentionally left out: new permissions, backend contract changes, bulk actions, and full-page redesign.
+
+# TODO — Google Ads sub-table: backend endpoint + real data wiring (2026-03-20)
+
+- [x] Audit modified backend/frontend files and align data contract for sub Google Ads table.
+- [x] Validate frontend table consumes real API payload with currency-aware formatting and date-range presets.
+- [x] Fix/extend focused tests for the new API helper wiring (`getSubGoogleAdsTable`) and preset refetch behavior.
+- [x] Run targeted backend and frontend tests.
+
+## Review
+- [x] Added backend endpoint `/dashboard/{client_id}/google-ads-table` and service aggregation for Google Ads account rows.
+- [x] Frontend sub Google Ads page now fetches real table data via API helper instead of synthetic seeded values.
+- [x] Focused tests pass for backend currency normalization suite and sub Google Ads page interactions.

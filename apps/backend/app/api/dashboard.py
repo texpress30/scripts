@@ -264,3 +264,42 @@ def client_dashboard(
         details={"is_synced": metrics["is_synced"], "start_date": resolved_start.isoformat(), "end_date": resolved_end.isoformat(), "business_period_grain": business_period_grain},
     )
     return metrics
+
+
+@router.get("/{client_id}/google-ads-table")
+def client_google_ads_table(
+    client_id: int,
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    user: AuthUser = Depends(get_current_user),
+    response: Response = None,
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="dashboard:view", scope="subaccount")
+    enforce_subaccount_module_access(user=user, subaccount_id=client_id, module_key="dashboard")
+
+    resolved_end = end_date or date.today()
+    resolved_start = start_date or (resolved_end - timedelta(days=29))
+    if resolved_start > resolved_end:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="start_date must be <= end_date")
+
+    try:
+        payload = unified_dashboard_service.get_client_google_ads_account_performance(
+            client_id=client_id,
+            start_date=resolved_start,
+            end_date=resolved_end,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    if response is not None:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="dashboard.sub.google_ads_table.view",
+        resource=f"client:{client_id}:google_ads",
+        details={"start_date": resolved_start.isoformat(), "end_date": resolved_end.isoformat()},
+    )
+    return payload

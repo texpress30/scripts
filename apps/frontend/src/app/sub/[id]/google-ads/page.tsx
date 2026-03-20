@@ -4,23 +4,21 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import React, { useEffect, useMemo, useState } from "react";
 import { ArrowDownWideNarrow, Columns3, Download, Filter, RotateCcw } from "lucide-react";
+import { format, startOfMonth, subDays } from "date-fns";
+import { DayPicker, type DateRange } from "react-day-picker";
+import "react-day-picker/dist/style.css";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
-import { apiRequest } from "@/lib/api";
+import { apiRequest, getSubGoogleAdsTable, type SubGoogleAdsTableItem } from "@/lib/api";
 
 type ClientItem = { id: number; display_id?: number; name: string };
-type ClientDetails = {
-  client: { id: number; display_id?: number; name: string };
-  platforms: Array<{ platform: string; enabled: boolean; accounts: Array<{ id: string; name: string }> }>;
-};
 type MetricKey = "cost" | "rev_inf" | "roas_inf" | "mer_inf" | "truecac_inf" | "ecr_inf" | "ecpnv_inf" | "new_visits" | "visits";
 type MetricRow = {
   accountId: string;
   accountName: string;
   healthy: boolean;
-  values: Record<MetricKey, number>;
-  deltaPct: Partial<Record<MetricKey, number>>;
+  values: Record<MetricKey, number | null>;
 };
 
 const STORAGE_KEY = "sub-google-ads-visible-columns-v1";
@@ -37,14 +35,46 @@ const METRIC_COLUMNS: Array<{ key: MetricKey; label: string; money?: boolean }> 
 ];
 const DEFAULT_COLUMNS = METRIC_COLUMNS.map((item) => item.key);
 
-function hashNumber(input: string): number {
-  let hash = 0;
-  for (let index = 0; index < input.length; index += 1) hash = (hash * 31 + input.charCodeAt(index)) >>> 0;
-  return hash;
+type DatePresetKey = "today" | "yesterday" | "last7" | "last14" | "last30" | "month" | "custom";
+const PRESET_ITEMS: Array<{ key: DatePresetKey; label: string }> = [
+  { key: "today", label: "Today" },
+  { key: "yesterday", label: "Yesterday" },
+  { key: "last7", label: "Last 7 days" },
+  { key: "last14", label: "Last 14 days" },
+  { key: "last30", label: "Last 30 days" },
+  { key: "month", label: "This month" },
+  { key: "custom", label: "Custom" },
+];
+
+function toIso(value: Date): string {
+  return format(value, "yyyy-MM-dd");
 }
 
-function formatMetric(value: number, key: MetricKey, money?: boolean): string {
-  if (money) return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value);
+function rangeForPreset(preset: DatePresetKey): DateRange {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (preset === "today") return { from: today, to: today };
+  if (preset === "yesterday") {
+    const y = subDays(today, 1);
+    return { from: y, to: y };
+  }
+  if (preset === "last7") return { from: subDays(today, 6), to: today };
+  if (preset === "last14") return { from: subDays(today, 13), to: today };
+  if (preset === "last30") return { from: subDays(today, 29), to: today };
+  if (preset === "month") return { from: startOfMonth(today), to: today };
+  return { from: subDays(today, 29), to: today };
+}
+
+function formatRangeLabel(preset: DatePresetKey, range: DateRange): string {
+  const from = range.from ?? new Date();
+  const to = range.to ?? range.from ?? new Date();
+  const presetLabel = PRESET_ITEMS.find((item) => item.key === preset)?.label ?? "Custom";
+  return `${presetLabel}: ${format(from, "MMM d, yyyy")} - ${format(to, "MMM d, yyyy")}`;
+}
+
+function formatMetric(value: number | null, key: MetricKey, money: boolean | undefined, currencyCode: string): string {
+  if (value === null || !Number.isFinite(value)) return "—";
+  if (money) return new Intl.NumberFormat(undefined, { style: "currency", currency: currencyCode, maximumFractionDigits: 2 }).format(value);
   if (key === "roas_inf" || key === "mer_inf" || key === "ecr_inf") return value.toFixed(2);
   return Math.round(value).toLocaleString();
 }
@@ -56,9 +86,16 @@ export default function SubGoogleAdsPage() {
   const [rows, setRows] = useState<MetricRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [currencyCode, setCurrencyCode] = useState("USD");
   const [columnMenuOpen, setColumnMenuOpen] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState<MetricKey[]>(DEFAULT_COLUMNS);
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
+  const initialRange = rangeForPreset("last30");
+  const [openPicker, setOpenPicker] = useState(false);
+  const [appliedPreset, setAppliedPreset] = useState<DatePresetKey>("last30");
+  const [appliedRange, setAppliedRange] = useState<DateRange>(initialRange);
+  const [draftPreset, setDraftPreset] = useState<DatePresetKey>("last30");
+  const [draftRange, setDraftRange] = useState<DateRange>(initialRange);
 
   useEffect(() => {
     const stored = window.localStorage.getItem(STORAGE_KEY);
@@ -86,49 +123,34 @@ export default function SubGoogleAdsPage() {
       try {
         const clients = await apiRequest<{ items: ClientItem[] }>("/clients");
         const currentClient = clients.items.find((item) => item.id === clientId);
-        const displayId = currentClient?.display_id;
-        if (!displayId) throw new Error("Nu am găsit sub-account-ul curent.");
-        const details = await apiRequest<ClientDetails>(`/clients/display/${displayId}`);
-        const googlePlatform = details.platforms.find((item) => item.platform === "google_ads");
-        const accountRows: MetricRow[] = (googlePlatform?.accounts ?? []).map((account) => {
-          const seed = hashNumber(account.id);
-          const spend = 1800 + (seed % 5000);
-          const revenue = spend * (1.5 + ((seed % 25) / 20));
-          const visits = 4500 + (seed % 18000);
-          const newVisits = Math.max(120, Math.round(visits * (0.18 + ((seed % 7) / 100))));
-          const roas = revenue / spend;
-          const mer = revenue > 0 ? spend / revenue : 0;
-          const trueCac = spend / Math.max(1, newVisits * 0.12);
-          const ecr = (newVisits / Math.max(1, visits)) * 100;
-          const ecpnv = spend / Math.max(1, newVisits);
-          const deltaFactor = ((seed % 21) - 10) / 10;
+        const from = appliedRange.from ?? subDays(new Date(), 29);
+        const to = appliedRange.to ?? from;
+        const payload = await getSubGoogleAdsTable(clientId, { start_date: toIso(from), end_date: toIso(to) });
+        const accountRows: MetricRow[] = payload.items.map((item: SubGoogleAdsTableItem) => {
+          const status = String(item.status || "").trim().toLowerCase();
+          const healthy = status === "active" || status === "connected" || status === "ok";
           return {
-            accountId: account.id,
-            accountName: account.name || account.id,
-            healthy: seed % 4 !== 0,
+            accountId: item.account_id,
+            accountName: item.account_name || item.account_id,
+            healthy,
             values: {
-              cost: spend,
-              rev_inf: revenue,
-              roas_inf: roas,
-              mer_inf: mer,
-              truecac_inf: trueCac,
-              ecr_inf: ecr,
-              ecpnv_inf: ecpnv,
-              new_visits: newVisits,
-              visits: visits,
-            },
-            deltaPct: {
-              cost: deltaFactor,
-              rev_inf: -deltaFactor / 2,
-              roas_inf: deltaFactor / 4,
-              visits: -deltaFactor / 5,
+              cost: item.cost ?? null,
+              rev_inf: item.rev_inf ?? null,
+              roas_inf: item.roas_inf ?? null,
+              mer_inf: item.mer_inf ?? null,
+              truecac_inf: item.truecac_inf ?? null,
+              ecr_inf: item.ecr_inf ?? null,
+              ecpnv_inf: item.ecpnv_inf ?? null,
+              new_visits: item.new_visits ?? null,
+              visits: item.visits ?? null,
             },
           };
         });
 
         if (!ignore) {
-          setClientName(details.client.name || `Sub-account #${clientId}`);
-          setRows(accountRows.sort((a, b) => b.values.cost - a.values.cost));
+          setClientName(currentClient?.name || `Sub-account #${clientId}`);
+          setCurrencyCode(String(payload.currency || "USD").toUpperCase());
+          setRows(accountRows.sort((a, b) => (b.values.cost ?? 0) - (a.values.cost ?? 0)));
           setSelectedAccounts(accountRows.map((item) => item.accountId));
         }
       } catch (err) {
@@ -144,11 +166,12 @@ export default function SubGoogleAdsPage() {
     return () => {
       ignore = true;
     };
-  }, [clientId]);
+  }, [clientId, appliedRange.from, appliedRange.to]);
 
   const title = useMemo(() => `Google Ads - ${clientName}`, [clientName]);
   const allSelected = rows.length > 0 && selectedAccounts.length === rows.length;
   const activeColumns = METRIC_COLUMNS.filter((item) => visibleColumns.includes(item.key));
+  const rangeLabel = formatRangeLabel(appliedPreset, appliedRange);
 
   function toggleAccount(accountId: string) {
     setSelectedAccounts((prev) => (prev.includes(accountId) ? prev.filter((item) => item !== accountId) : [...prev, accountId]));
@@ -164,6 +187,28 @@ export default function SubGoogleAdsPage() {
 
   function resetColumns() {
     setVisibleColumns(DEFAULT_COLUMNS);
+  }
+  function handlePresetClick(nextPreset: DatePresetKey) {
+    setDraftPreset(nextPreset);
+    if (nextPreset === "custom") return;
+    const nextRange = rangeForPreset(nextPreset);
+    setDraftRange(nextRange);
+    if (nextRange.from && nextRange.to) {
+      setAppliedPreset(nextPreset);
+      setAppliedRange(nextRange);
+      setOpenPicker(false);
+    }
+  }
+  function handleCancelRange() {
+    setDraftPreset(appliedPreset);
+    setDraftRange(appliedRange);
+    setOpenPicker(false);
+  }
+  function handleApplyRange() {
+    if (!draftRange.from || !draftRange.to) return;
+    setAppliedPreset(draftPreset);
+    setAppliedRange({ from: draftRange.from, to: draftRange.to });
+    setOpenPicker(false);
   }
 
   return (
@@ -203,6 +248,48 @@ export default function SubGoogleAdsPage() {
                 ) : null}
               </div>
               <button type="button" className="wm-btn-secondary inline-flex items-center gap-2"><Download className="h-4 w-4" />Export</button>
+              <div className="relative">
+                <button type="button" onClick={() => setOpenPicker((current) => !current)} className="wm-btn-secondary whitespace-nowrap">
+                  {rangeLabel}
+                </button>
+                {openPicker ? (
+                  <div className="absolute right-0 z-30 mt-2 flex w-[760px] gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-xl">
+                    <div className="w-48 border-r border-slate-200 pr-3">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Presets</p>
+                      <div className="space-y-1">
+                        {PRESET_ITEMS.map((item) => (
+                          <button
+                            key={item.key}
+                            type="button"
+                            onClick={() => handlePresetClick(item.key)}
+                            className={`w-full rounded-md px-2 py-2 text-left text-sm ${
+                              draftPreset === item.key ? "bg-indigo-50 font-medium text-indigo-700" : "text-slate-700 hover:bg-slate-100"
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex-1">
+                      <DayPicker
+                        mode="range"
+                        numberOfMonths={2}
+                        selected={draftRange}
+                        onSelect={(range) => {
+                          setDraftPreset("custom");
+                          setDraftRange(range ?? { from: undefined, to: undefined });
+                        }}
+                        defaultMonth={draftRange.from}
+                      />
+                      <div className="mt-3 flex justify-end gap-2 border-t border-slate-200 pt-3">
+                        <button type="button" onClick={handleCancelRange} className="wm-btn-secondary">Cancel</button>
+                        <button type="button" onClick={handleApplyRange} disabled={!draftRange.from || !draftRange.to} className="wm-btn-primary disabled:cursor-not-allowed disabled:opacity-60">Update</button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </header>
 
@@ -243,19 +330,13 @@ export default function SubGoogleAdsPage() {
                       </td>
                       {activeColumns.map((column) => {
                         const metricValue = row.values[column.key];
-                        const delta = row.deltaPct[column.key];
                         const alignClass = column.key === "cost" ? "text-right" : "text-center";
                         return (
                           <td key={`${row.accountId}:${column.key}`} className={`px-3 py-3 ${alignClass}`}>
                             <div className="inline-flex flex-col">
                               <span className={`${column.money ? "underline decoration-dotted underline-offset-2" : ""} font-medium text-slate-800`}>
-                                {formatMetric(metricValue, column.key, column.money)}
+                                {formatMetric(metricValue, column.key, column.money, currencyCode)}
                               </span>
-                              {typeof delta === "number" ? (
-                                <span className={`text-[11px] ${delta >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                                  {delta >= 0 ? "+" : ""}{(delta * 100).toFixed(1)}%
-                                </span>
-                              ) : null}
                             </div>
                           </td>
                         );

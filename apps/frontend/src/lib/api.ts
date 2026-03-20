@@ -439,6 +439,41 @@ export async function getSubaccountMyAccess(subaccountId: number): Promise<TeamS
   return apiRequest<TeamSubaccountMyAccessResponse>(`/team/subaccounts/${encodeURIComponent(String(subaccountId))}/my-access`);
 }
 
+export type SubGoogleAdsTableItem = {
+  account_id: string;
+  account_name: string;
+  status: string;
+  cost: number | null;
+  rev_inf: number | null;
+  roas_inf: number | null;
+  mer_inf: number | null;
+  truecac_inf: number | null;
+  ecr_inf: number | null;
+  ecpnv_inf: number | null;
+  new_visits: number | null;
+  visits: number | null;
+  impressions?: number | null;
+  clicks?: number | null;
+};
+
+export type SubGoogleAdsTableResponse = {
+  client_id: number;
+  currency: string;
+  date_range: { start_date: string; end_date: string };
+  items: SubGoogleAdsTableItem[];
+};
+
+export async function getSubGoogleAdsTable(
+  subaccountId: number,
+  params: { start_date: string; end_date: string },
+): Promise<SubGoogleAdsTableResponse> {
+  const search = new URLSearchParams({
+    start_date: params.start_date,
+    end_date: params.end_date,
+  });
+  return apiRequest<SubGoogleAdsTableResponse>(`/dashboard/${encodeURIComponent(String(subaccountId))}/google-ads-table?${search.toString()}`);
+}
+
 export type TeamAgencyMyAccessResponse = {
   role: string;
   module_keys: string[];
