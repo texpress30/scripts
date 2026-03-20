@@ -19,12 +19,13 @@ describe("TikTok account campaigns drilldown", () => {
       platform: "tiktok_ads",
       account_id: "tiktok-1",
       account_name: "TikTok Main",
+      account_status: "active",
       currency: "RON",
       date_range: { start_date: "2026-03-01", end_date: "2026-03-31" },
       items: [{
         campaign_id: "tt-cmp-1",
-        campaign_name: "",
-        status: "unknown",
+        campaign_name: "TikTok Prospecting",
+        status: "active",
         cost: null,
         rev_inf: null,
         roas_inf: null,
@@ -46,12 +47,13 @@ describe("TikTok account campaigns drilldown", () => {
     expect(screen.getByRole("button", { name: /Columns/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Export/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Last 30 days/i })).toBeInTheDocument();
-    expect(screen.getByText("tt-cmp-1")).toBeInTheDocument();
-    const row = screen.getByText("tt-cmp-1").closest("tr");
+    expect(screen.getByText("TikTok Prospecting")).toBeInTheDocument();
+    const row = screen.getByText("TikTok Prospecting").closest("tr");
     const dot = row?.querySelector("span[aria-hidden='true']");
-    expect(dot?.className).toContain("bg-slate-300");
+    expect(dot?.className).toContain("bg-emerald-500");
     expect(screen.queryByText("Nu există campanii în perioada selectată.")).not.toBeInTheDocument();
     expect(screen.queryByText("II")).not.toBeInTheDocument();
+    expect(screen.queryByText("tt-cmp-1")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Back to accounts/i })).toHaveAttribute("href", "/sub/96/tiktok-ads");
   });
 });

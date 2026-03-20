@@ -19,6 +19,7 @@ describe("Meta account campaigns drilldown", () => {
       platform: "meta_ads",
       account_id: "meta-1",
       account_name: "Meta Main",
+      account_status: "active",
       currency: "RON",
       date_range: { start_date: "2026-03-01", end_date: "2026-03-31" },
       items: [],
@@ -33,6 +34,8 @@ describe("Meta account campaigns drilldown", () => {
     expect(screen.getByRole("button", { name: /Columns/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Export/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Last 30 days/i })).toBeInTheDocument();
+    const dot = screen.getByText("Account status").parentElement?.querySelector("span[aria-hidden='true']");
+    expect(dot?.className).toContain("bg-emerald-500");
     expect(screen.getByText("Nu există campanii în perioada selectată.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Back to accounts/i })).toHaveAttribute("href", "/sub/96/meta-ads");
   });

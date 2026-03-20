@@ -462,3 +462,4 @@
 ## 2026-03-20 — Status semantics and normalization after unsatisfied review
 - Nu seta fallback implicit `active` pentru statusuri când metadata lipsește; folosește `unknown` neutru și mapare UI explicită (active / paused / unknown).
 - Pentru platforme cu multiple formate de account id (ex. Meta `act_123` vs `123`), normalizează account_id în toate join-urile și filtrele (facts + mappings + metadata), nu doar într-un singur query.
+- 2026-03-20: Când utilizatorul re-atrage atenția asupra AGENTS workflow, aplică imediat pașii obligatorii în ordine (plan în `tasks/todo.md`, verificări executate, commit, apoi `make_pr`) înainte de mesajul final.

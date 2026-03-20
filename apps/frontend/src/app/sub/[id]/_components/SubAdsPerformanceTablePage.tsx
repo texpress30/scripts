@@ -79,8 +79,8 @@ function formatMetric(value: number | null, key: MetricKey, money: boolean | und
 
 function normalizeStatusKind(statusRaw: string): "active" | "paused" | "unknown" {
   const status = statusRaw.trim().toLowerCase();
-  if (["active", "enabled", "live", "running", "connected", "ok"].includes(status)) return "active";
-  if (["paused", "inactive", "stopped", "disabled", "archived"].includes(status)) return "paused";
+  if (["active", "enabled", "enable", "live", "running", "connected", "ok", "serving", "on"].includes(status)) return "active";
+  if (["paused", "inactive", "stopped", "disabled", "disable", "archived", "off", "ended"].includes(status)) return "paused";
   return "unknown";
 }
 

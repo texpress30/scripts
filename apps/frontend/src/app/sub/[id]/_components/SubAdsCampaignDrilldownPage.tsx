@@ -78,8 +78,8 @@ function formatMetric(value: number | null, key: MetricKey, money: boolean | und
 
 function normalizeStatusKind(statusRaw: string): "active" | "paused" | "unknown" {
   const status = statusRaw.trim().toLowerCase();
-  if (["active", "enabled", "live", "running", "connected", "ok"].includes(status)) return "active";
-  if (["paused", "inactive", "stopped", "disabled", "archived"].includes(status)) return "paused";
+  if (["active", "enabled", "enable", "live", "running", "connected", "ok", "serving", "on"].includes(status)) return "active";
+  if (["paused", "inactive", "stopped", "disabled", "disable", "archived", "off", "ended"].includes(status)) return "paused";
   return "unknown";
 }
 
@@ -99,6 +99,7 @@ export function SubAdsCampaignDrilldownPage({
   fetchCampaigns: (subaccountId: number, accountId: string, params: { start_date: string; end_date: string }) => Promise<SubAdsCampaignTableResponse>;
 }) {
   const [accountName, setAccountName] = useState(accountId);
+  const [accountStatus, setAccountStatus] = useState<"active" | "paused" | "unknown">("unknown");
   const [rows, setRows] = useState<CampaignRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -159,6 +160,7 @@ export function SubAdsCampaignDrilldownPage({
         });
         if (!ignore) {
           setAccountName(payload.account_name || accountId);
+          setAccountStatus(normalizeStatusKind(String(payload.account_status || "")));
           setCurrencyCode(String(payload.currency || "USD").toUpperCase());
           setRows(campaignRows.sort((a, b) => (b.values.cost ?? 0) - (a.values.cost ?? 0)));
         }
@@ -249,6 +251,11 @@ export function SubAdsCampaignDrilldownPage({
                 <ArrowLeft className="h-3.5 w-3.5" /> Back to accounts
               </Link>
               <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
+              <div className="mt-1 inline-flex items-center gap-2 text-xs text-slate-600">
+                <span className={`inline-flex h-2.5 w-2.5 rounded-full ${accountStatus === "active" ? "bg-emerald-500" : accountStatus === "paused" ? "bg-amber-400" : "bg-slate-300"}`} aria-hidden />
+                {accountStatus === "paused" ? <span className="rounded border border-amber-300 bg-amber-50 px-1 py-0.5 font-semibold text-amber-700">II</span> : null}
+                <span>Account status</span>
+              </div>
               <p className="text-xs text-slate-500">Performance multi-campaign • {platformTitle}</p>
             </div>
             <div className="flex items-center gap-2">

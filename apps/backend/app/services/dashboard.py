@@ -420,77 +420,113 @@ class UnifiedDashboardService:
             fallback_literal="USD",
         )
         return f"""
+                        WITH perf_rows AS (
+                            SELECT
+                                cpr.platform,
+                                cpr.account_id,
+                                cpr.campaign_id,
+                                cpr.report_date,
+                                cpr.spend,
+                                cpr.conversion_value,
+                                cpr.impressions,
+                                cpr.clicks,
+                                cpr.extra_metrics
+                            FROM campaign_performance_reports cpr
+                            WHERE cpr.platform = %s
+                              AND cpr.report_date BETWEEN %s AND %s
+                              AND (
+                                   cpr.account_id = %s
+                                   OR {normalized_campaign_account_sql} = {normalized_input_account_sql}
+                              )
+                              AND COALESCE(
+                                   NULLIF(TRIM(COALESCE(cpr.extra_metrics -> '{platform}' ->> 'grain', '')), ''),
+                                   'campaign_daily'
+                              ) = 'campaign_daily'
+                            UNION ALL
+                            SELECT
+                                agpr.platform,
+                                agpr.account_id,
+                                agpr.campaign_id,
+                                agpr.report_date,
+                                agpr.spend,
+                                agpr.conversion_value,
+                                agpr.impressions,
+                                agpr.clicks,
+                                agpr.extra_metrics
+                            FROM ad_group_performance_reports agpr
+                            WHERE agpr.platform = %s
+                              AND agpr.campaign_id IS NOT NULL
+                              AND agpr.report_date BETWEEN %s AND %s
+                              AND (
+                                   agpr.account_id = %s
+                                   OR {self._platform_account_normalized_sql(expr='agpr.account_id', platform=platform)} = {normalized_input_account_sql}
+                              )
+                              AND COALESCE(
+                                   NULLIF(TRIM(COALESCE(agpr.extra_metrics -> '{platform}' ->> 'grain', '')), ''),
+                                   'ad_group_daily'
+                              ) = 'ad_group_daily'
+                        )
                         SELECT
-                            cpr.account_id,
-                            COALESCE(NULLIF(TRIM(apa.account_name), ''), cpr.account_id) AS account_name,
+                            perf.account_id,
+                            COALESCE(NULLIF(TRIM(apa.account_name), ''), perf.account_id) AS account_name,
                             COALESCE(
                                 NULLIF(TRIM(apa.status), ''),
-                                NULLIF(TRIM(COALESCE(cpr.extra_metrics -> '{platform}' ->> 'account_status', '')), ''),
-                                NULLIF(TRIM(COALESCE(cpr.extra_metrics ->> 'account_status', '')), ''),
-                                NULLIF(TRIM(COALESCE(cpr.extra_metrics -> '{platform}' ->> 'status', '')), ''),
-                                NULLIF(TRIM(COALESCE(cpr.extra_metrics ->> 'status', '')), '')
+                                NULLIF(TRIM(COALESCE(perf.extra_metrics -> '{platform}' ->> 'account_status', '')), ''),
+                                NULLIF(TRIM(COALESCE(perf.extra_metrics ->> 'account_status', '')), ''),
+                                NULLIF(TRIM(COALESCE(perf.extra_metrics -> '{platform}' ->> 'status', '')), ''),
+                                NULLIF(TRIM(COALESCE(perf.extra_metrics ->> 'status', '')), '')
                             ) AS account_status,
-                            cpr.campaign_id,
+                            perf.campaign_id,
                             COALESCE(
                                 NULLIF(TRIM(pc.name), ''),
                                 NULLIF(TRIM(COALESCE(pc.raw_payload ->> 'campaign_name', '')), ''),
                                 NULLIF(TRIM(COALESCE(pc.raw_payload ->> 'name', '')), ''),
-                                NULLIF(TRIM(COALESCE(cpr.extra_metrics -> '{platform}' ->> 'campaign_name', '')), ''),
-                                NULLIF(TRIM(COALESCE(cpr.extra_metrics ->> 'campaign_name', '')), ''),
-                                cpr.campaign_id
+                                NULLIF(TRIM(COALESCE(perf.extra_metrics -> '{platform}' ->> 'campaign_name', '')), ''),
+                                NULLIF(TRIM(COALESCE(perf.extra_metrics ->> 'campaign_name', '')), ''),
+                                perf.campaign_id
                             ) AS campaign_name,
                             COALESCE(
                                 NULLIF(TRIM(pc.status), ''),
                                 NULLIF(TRIM(COALESCE(pc.raw_payload ->> 'status', '')), ''),
                                 NULLIF(TRIM(COALESCE(pc.raw_payload ->> 'effective_status', '')), ''),
-                                NULLIF(TRIM(COALESCE(cpr.extra_metrics -> '{platform}' ->> 'campaign_status', '')), ''),
-                                NULLIF(TRIM(COALESCE(cpr.extra_metrics ->> 'campaign_status', '')), ''),
-                                NULLIF(TRIM(COALESCE(cpr.extra_metrics -> '{platform}' ->> 'status', '')), ''),
-                                NULLIF(TRIM(COALESCE(cpr.extra_metrics ->> 'status', '')), '')
+                                NULLIF(TRIM(COALESCE(perf.extra_metrics -> '{platform}' ->> 'campaign_status', '')), ''),
+                                NULLIF(TRIM(COALESCE(perf.extra_metrics ->> 'campaign_status', '')), ''),
+                                NULLIF(TRIM(COALESCE(perf.extra_metrics -> '{platform}' ->> 'status', '')), ''),
+                                NULLIF(TRIM(COALESCE(perf.extra_metrics ->> 'status', '')), '')
                             ) AS campaign_status,
-                            cpr.report_date,
+                            perf.report_date,
                             COALESCE(
-                                NULLIF(TRIM(COALESCE(cpr.extra_metrics -> '{platform}' ->> 'account_currency', '')), ''),
+                                NULLIF(TRIM(COALESCE(perf.extra_metrics -> '{platform}' ->> 'account_currency', '')), ''),
                                 {effective_currency_sql}
                             ) AS account_currency,
-                            COALESCE(cpr.spend, 0) AS spend,
-                            COALESCE(cpr.conversion_value, 0) AS conversion_value,
-                            COALESCE(cpr.impressions, 0) AS impressions,
-                            COALESCE(cpr.clicks, 0) AS clicks
-                        FROM campaign_performance_reports cpr
+                            COALESCE(perf.spend, 0) AS spend,
+                            COALESCE(perf.conversion_value, 0) AS conversion_value,
+                            COALESCE(perf.impressions, 0) AS impressions,
+                            COALESCE(perf.clicks, 0) AS clicks
+                        FROM perf_rows perf
                         JOIN agency_account_client_mappings mapped
-                          ON mapped.platform = cpr.platform
+                          ON mapped.platform = perf.platform
                          AND mapped.client_id = %s
                          AND (
-                              mapped.account_id = cpr.account_id
-                              OR {normalized_mapped_account_sql} = {normalized_campaign_account_sql}
+                              mapped.account_id = perf.account_id
+                              OR {normalized_mapped_account_sql} = {self._platform_account_normalized_sql(expr='perf.account_id', platform=platform)}
                          )
                         JOIN agency_clients client
                           ON client.id = mapped.client_id
                         LEFT JOIN agency_platform_accounts apa
-                          ON apa.platform = cpr.platform
+                          ON apa.platform = perf.platform
                          AND (
-                              apa.account_id = cpr.account_id
-                              OR {normalized_apa_account_sql} = {normalized_campaign_account_sql}
+                              apa.account_id = perf.account_id
+                              OR {normalized_apa_account_sql} = {self._platform_account_normalized_sql(expr='perf.account_id', platform=platform)}
                          )
                         LEFT JOIN platform_campaigns pc
-                         ON pc.platform = cpr.platform
+                         ON pc.platform = perf.platform
                          AND (
-                              pc.account_id = cpr.account_id
-                              OR {normalized_pc_account_sql} = {normalized_campaign_account_sql}
+                              pc.account_id = perf.account_id
+                              OR {normalized_pc_account_sql} = {self._platform_account_normalized_sql(expr='perf.account_id', platform=platform)}
                          )
-                         AND pc.campaign_id = cpr.campaign_id
-                        WHERE cpr.platform = %s
-                          AND cpr.report_date BETWEEN %s AND %s
-                          AND (
-                               cpr.account_id = %s
-                               OR {normalized_campaign_account_sql} = {normalized_input_account_sql}
-                          )
-                          AND COALESCE(
-                               NULLIF(TRIM(COALESCE(cpr.extra_metrics -> '{platform}' ->> 'grain', '')), ''),
-                               'campaign_daily'
-                          ) = 'campaign_daily'
-                        ORDER BY cpr.campaign_id, cpr.report_date
+                         AND pc.campaign_id = perf.campaign_id
+                        ORDER BY perf.campaign_id, perf.report_date
                         """
 
     def _platform_account_normalized_sql(self, *, expr: str, platform: str) -> str:
@@ -2194,7 +2230,19 @@ class UnifiedDashboardService:
             raise ValueError("account_id is required")
 
         performance_reports_store.initialize_schema()
-        params = (client_id, platform, start_date, end_date, normalized_account_id, normalized_account_id)
+        params = (
+            platform,
+            start_date,
+            end_date,
+            normalized_account_id,
+            normalized_account_id,
+            platform,
+            start_date,
+            end_date,
+            normalized_account_id,
+            normalized_account_id,
+            client_id,
+        )
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(self._client_platform_campaign_rows_query(platform=platform), params)

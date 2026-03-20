@@ -40,7 +40,7 @@ describe("Sub Meta Ads details table", () => {
         {
           account_id: "meta-1",
           account_name: "Meta Main",
-          status: "",
+          status: "active",
           cost: 1200,
           rev_inf: 2200,
           roas_inf: 1.83,
@@ -67,7 +67,7 @@ describe("Sub Meta Ads details table", () => {
     const metaLink = screen.getByRole("link", { name: "Meta Main" });
     const metaRow = metaLink.closest("tr");
     const statusDot = metaRow?.querySelector("span[aria-hidden='true']");
-    expect(statusDot?.className).toContain("bg-slate-300");
+    expect(statusDot?.className).toContain("bg-emerald-500");
     expect(screen.queryByText("X")).not.toBeInTheDocument();
   });
 

@@ -5872,3 +5872,18 @@ Plan verificat și executat imediat (nu docs-only): patch local pe rutele Sub-ac
 - [x] Meta campaigns nu mai depind de match strict textual al account_id; normalizarea rezolvă cazurile `act_...` vs numeric.
 - [x] Titlul drilldown folosește account name real când backend îl poate rezolva din metadata/account mapping.
 - [x] TikTok/Meta campaign names folosesc metadata reală când există; fallback la ID doar când numele lipsește.
+
+# TODO — Finalize dashboard status/name normalization patch (2026-03-20)
+
+- [x] Re-read AGENTS instructions and verify current git working tree state.
+- [x] Validate current backend/frontend patch content for scope and consistency.
+- [x] Run targeted backend and frontend tests for touched flows.
+- [x] Update task review notes and capture correction lesson.
+- [x] Commit validated changes and open PR via make_pr tool.
+
+## Review
+- [x] Confirmed modified files are limited to dashboard service and related frontend rendering/tests.
+- [x] Executed targeted checks for backend and frontend routes impacted by the patch.
+
+- Backend check: `pytest -q apps/backend/tests/test_dashboard_currency_normalization.py` (pass).
+- Frontend checks: `pnpm --dir apps/frontend exec vitest run ...` targeted meta/tiktok drilldown suites (pass).

@@ -591,3 +591,8 @@ def test_get_client_platform_account_campaign_performance_uses_tiktok_campaign_n
     assert payload["account_status"] == "active"
     assert payload["items"][0]["campaign_name"] == "TT Campaign"
     assert payload["items"][0]["status"] == "active"
+
+
+def test_client_platform_campaign_rows_query_uses_ad_group_fallback_source():
+    sql = unified_dashboard_service._client_platform_campaign_rows_query(platform="meta_ads")
+    assert "FROM ad_group_performance_reports agpr" in sql
