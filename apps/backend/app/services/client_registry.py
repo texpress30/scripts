@@ -244,11 +244,14 @@ class ClientRegistryService:
             self._sync_state_schema_initialized = True
 
     def _ensure_schema(self) -> None:
+        if getattr(self, "_schema_initialized", False):
+            return
         if self._is_test_mode():
             return
 
         with self._connect_or_raise() as conn:
             with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_xact_lock(1, hashtext(%s))", ("ensure_schema_" + self.__class__.__name__,))
                 cur.execute(
                     """
                     CREATE TABLE IF NOT EXISTS agency_clients (
@@ -348,6 +351,8 @@ class ClientRegistryService:
                     """
                 )
             conn.commit()
+        self._schema_initialized = True
+
 
     def _backfill_blank_mapping_account_currency(self, *, conn) -> None:
         with conn.cursor() as cur:
