@@ -463,6 +463,33 @@ export type SubGoogleAdsTableResponse = {
   items: SubGoogleAdsTableItem[];
 };
 
+export type SubAdsCampaignTableItem = {
+  campaign_id: string;
+  campaign_name: string;
+  status: string;
+  cost: number | null;
+  rev_inf: number | null;
+  roas_inf: number | null;
+  mer_inf: number | null;
+  truecac_inf: number | null;
+  ecr_inf: number | null;
+  ecpnv_inf: number | null;
+  new_visits: number | null;
+  visits: number | null;
+  impressions?: number | null;
+  clicks?: number | null;
+};
+
+export type SubAdsCampaignTableResponse = {
+  client_id: number;
+  platform: string;
+  account_id: string;
+  account_name: string;
+  currency: string;
+  date_range: { start_date: string; end_date: string };
+  items: SubAdsCampaignTableItem[];
+};
+
 export async function getSubGoogleAdsTable(
   subaccountId: number,
   params: { start_date: string; end_date: string },
@@ -494,6 +521,48 @@ export async function getSubTikTokAdsTable(
     end_date: params.end_date,
   });
   return apiRequest<SubGoogleAdsTableResponse>(`/dashboard/${encodeURIComponent(String(subaccountId))}/tiktok-ads-table?${search.toString()}`);
+}
+
+export async function getSubGoogleAdsCampaignsTable(
+  subaccountId: number,
+  accountId: string,
+  params: { start_date: string; end_date: string },
+): Promise<SubAdsCampaignTableResponse> {
+  const search = new URLSearchParams({
+    start_date: params.start_date,
+    end_date: params.end_date,
+  });
+  return apiRequest<SubAdsCampaignTableResponse>(
+    `/dashboard/${encodeURIComponent(String(subaccountId))}/google-ads/accounts/${encodeURIComponent(accountId)}/campaigns?${search.toString()}`,
+  );
+}
+
+export async function getSubMetaAdsCampaignsTable(
+  subaccountId: number,
+  accountId: string,
+  params: { start_date: string; end_date: string },
+): Promise<SubAdsCampaignTableResponse> {
+  const search = new URLSearchParams({
+    start_date: params.start_date,
+    end_date: params.end_date,
+  });
+  return apiRequest<SubAdsCampaignTableResponse>(
+    `/dashboard/${encodeURIComponent(String(subaccountId))}/meta-ads/accounts/${encodeURIComponent(accountId)}/campaigns?${search.toString()}`,
+  );
+}
+
+export async function getSubTikTokAdsCampaignsTable(
+  subaccountId: number,
+  accountId: string,
+  params: { start_date: string; end_date: string },
+): Promise<SubAdsCampaignTableResponse> {
+  const search = new URLSearchParams({
+    start_date: params.start_date,
+    end_date: params.end_date,
+  });
+  return apiRequest<SubAdsCampaignTableResponse>(
+    `/dashboard/${encodeURIComponent(String(subaccountId))}/tiktok-ads/accounts/${encodeURIComponent(accountId)}/campaigns?${search.toString()}`,
+  );
 }
 
 export type TeamAgencyMyAccessResponse = {

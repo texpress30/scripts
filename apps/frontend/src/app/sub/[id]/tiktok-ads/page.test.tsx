@@ -63,7 +63,7 @@ describe("Sub TikTok Ads details table", () => {
     expect(screen.getByRole("button", { name: /Filter/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Columns/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Export/i })).toBeInTheDocument();
-    expect(screen.getByText("TikTok Main")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "TikTok Main" })).toHaveAttribute("href", "/sub/96/tiktok-ads/accounts/tiktok-1");
   });
 
   it("refetches payload when choosing Today preset", async () => {

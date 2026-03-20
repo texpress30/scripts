@@ -455,3 +455,6 @@
 ## 2026-03-20 — Duplication fix after user dissatisfaction
 - Când userul cere explicit replicarea unei structuri existente pe alte rute/platforme, extrage imediat un component comun reutilizabil în loc de copiere/implementări separate.
 - În același task, aliniază contractele backend/frontend pe toate platformele vizate și adaugă teste dedicate per rută nouă, plus ajustări pe testele vechi de placeholder.
+
+## 2026-03-20 — Drilldown follow-up after unsatisfied review
+- Când userul cere explicit drilldown navigabil (listă -> detaliu), verifică din primul patch existența rutei țintă App Router + link-uri reale în tabelul sursă și adaugă teste pentru href/navigation contract.

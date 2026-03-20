@@ -411,3 +411,66 @@ def test_get_client_platform_account_performance_supports_meta_ads():
     assert payload["items"][0]["account_id"] == "meta-1001"
     assert payload["items"][0]["cost"] == 40.0
     assert payload["items"][0]["rev_inf"] == 120.0
+
+
+def test_get_client_platform_account_campaign_performance_filters_by_account_and_range():
+    rows = [
+        ("meta-1001", "Meta Main", "cmp-1", "Campaign 1", "active", date(2026, 3, 10), "RON", 40.0, 120.0, 500, 45),
+        ("meta-1001", "Meta Main", "cmp-1", "Campaign 1", "active", date(2026, 3, 11), "RON", 10.0, 30.0, 100, 10),
+        ("meta-1001", "Meta Main", "cmp-2", "Campaign 2", "paused", date(2026, 3, 10), "RON", 20.0, 15.0, 200, 15),
+    ]
+
+    class _FakeCursor:
+        def execute(self, sql, params=None):
+            self.sql = str(sql)
+            self.params = params
+
+        def fetchall(self):
+            return rows
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class _FakeConn:
+        def cursor(self):
+            return _FakeCursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    original_connect = unified_dashboard_service._connect
+    original_reporting = dashboard_service_module.client_registry_service.get_client_reporting_currency_decision
+    original_init_schema = dashboard_service_module.performance_reports_store.initialize_schema
+    try:
+        unified_dashboard_service._connect = lambda: _FakeConn()
+        dashboard_service_module.client_registry_service.get_client_reporting_currency_decision = lambda **kwargs: {
+            "reporting_currency": "RON",
+            "reporting_currency_source": "agency_client_currency",
+            "mixed_attached_account_currencies": False,
+            "attached_account_currency_summary": [{"currency": "RON", "account_count": 1}],
+        }
+        dashboard_service_module.performance_reports_store.initialize_schema = lambda: None
+        payload = unified_dashboard_service.get_client_platform_account_campaign_performance(
+            client_id=96,
+            platform="meta_ads",
+            account_id="meta-1001",
+            start_date=date(2026, 3, 1),
+            end_date=date(2026, 3, 31),
+        )
+    finally:
+        unified_dashboard_service._connect = original_connect
+        dashboard_service_module.client_registry_service.get_client_reporting_currency_decision = original_reporting
+        dashboard_service_module.performance_reports_store.initialize_schema = original_init_schema
+
+    assert payload["account_id"] == "meta-1001"
+    assert payload["account_name"] == "Meta Main"
+    assert payload["items"][0]["campaign_id"] == "cmp-1"
+    assert payload["items"][0]["cost"] == 50.0
+    assert payload["items"][0]["rev_inf"] == 150.0
+    assert payload["items"][1]["campaign_id"] == "cmp-2"

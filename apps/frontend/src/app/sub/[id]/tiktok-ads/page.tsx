@@ -16,6 +16,7 @@ export default function SubTikTokAdsPage() {
       platformTitle="TikTok Ads"
       platformDescription="Performance multi-account • TikTok Ads"
       storageKey="sub-tiktok-ads-visible-columns-v1"
+      accountRouteBase="tiktok-ads"
       fetchTable={getSubTikTokAdsTable}
     />
   );

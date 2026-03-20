@@ -16,6 +16,7 @@ export default function SubMetaAdsPage() {
       platformTitle="Meta Ads"
       platformDescription="Performance multi-account • Meta Ads"
       storageKey="sub-meta-ads-visible-columns-v1"
+      accountRouteBase="meta-ads"
       fetchTable={getSubMetaAdsTable}
     />
   );

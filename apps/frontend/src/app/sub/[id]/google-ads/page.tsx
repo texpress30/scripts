@@ -16,6 +16,7 @@ export default function SubGoogleAdsPage() {
       platformTitle="Google Ads"
       platformDescription="Performance multi-account • Google Ads"
       storageKey="sub-google-ads-visible-columns-v1"
+      accountRouteBase="google-ads"
       fetchTable={getSubGoogleAdsTable}
     />
   );

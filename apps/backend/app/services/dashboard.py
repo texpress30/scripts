@@ -409,6 +409,81 @@ class UnifiedDashboardService:
                         ORDER BY mapped.account_id, apr.report_date
                         """
 
+    def _client_platform_campaign_rows_query(self, *, platform: str) -> str:
+        if platform not in {"google_ads", "meta_ads", "tiktok_ads"}:
+            raise ValueError("unsupported platform")
+        fuzzy_mapping_match_sql = ""
+        fuzzy_account_match_sql = ""
+        fuzzy_platform_account_join_sql = ""
+        if platform == "google_ads":
+            fuzzy_mapping_match_sql = """
+                           OR regexp_replace(mapped.account_id, '[^0-9]', '', 'g') = regexp_replace(cpr.account_id, '[^0-9]', '', 'g')
+                         """
+            fuzzy_account_match_sql = """
+                           OR regexp_replace(cpr.account_id, '[^0-9]', '', 'g') = regexp_replace(%s, '[^0-9]', '', 'g')
+                         """
+            fuzzy_platform_account_join_sql = """
+                              OR regexp_replace(apa.account_id, '[^0-9]', '', 'g') = regexp_replace(cpr.account_id, '[^0-9]', '', 'g')
+                         """
+        effective_currency_sql = self._effective_attached_account_currency_sql(
+            mapping_currency_expr="mapped.account_currency",
+            platform_currency_expr="apa.currency_code",
+            client_currency_expr="client.currency",
+            fallback_literal="USD",
+        )
+        return f"""
+                        SELECT
+                            cpr.account_id,
+                            COALESCE(NULLIF(TRIM(apa.account_name), ''), cpr.account_id) AS account_name,
+                            cpr.campaign_id,
+                            COALESCE(
+                                NULLIF(TRIM(pc.name), ''),
+                                NULLIF(TRIM(COALESCE(cpr.extra_metrics -> '{platform}' ->> 'campaign_name', '')), ''),
+                                cpr.campaign_id
+                            ) AS campaign_name,
+                            COALESCE(NULLIF(TRIM(pc.status), ''), 'active') AS campaign_status,
+                            cpr.report_date,
+                            COALESCE(
+                                NULLIF(TRIM(COALESCE(cpr.extra_metrics -> '{platform}' ->> 'account_currency', '')), ''),
+                                {effective_currency_sql}
+                            ) AS account_currency,
+                            COALESCE(cpr.spend, 0) AS spend,
+                            COALESCE(cpr.conversion_value, 0) AS conversion_value,
+                            COALESCE(cpr.impressions, 0) AS impressions,
+                            COALESCE(cpr.clicks, 0) AS clicks
+                        FROM campaign_performance_reports cpr
+                        JOIN agency_account_client_mappings mapped
+                          ON mapped.platform = cpr.platform
+                         AND mapped.client_id = %s
+                         AND (
+                              mapped.account_id = cpr.account_id
+                              {fuzzy_mapping_match_sql}
+                         )
+                        JOIN agency_clients client
+                          ON client.id = mapped.client_id
+                        LEFT JOIN agency_platform_accounts apa
+                          ON apa.platform = cpr.platform
+                         AND (
+                              apa.account_id = cpr.account_id
+                              {fuzzy_platform_account_join_sql}
+                         )
+                        LEFT JOIN platform_campaigns pc
+                          ON pc.platform = cpr.platform
+                         AND pc.account_id = cpr.account_id
+                         AND pc.campaign_id = cpr.campaign_id
+                        WHERE cpr.platform = %s
+                          AND cpr.report_date BETWEEN %s AND %s
+                          AND (
+                               cpr.account_id = %s
+                               {fuzzy_account_match_sql}
+                          )
+                          AND COALESCE(
+                               NULLIF(TRIM(COALESCE(cpr.extra_metrics -> '{platform}' ->> 'grain', '')), ''),
+                               'campaign_daily'
+                          ) = 'campaign_daily'
+                        ORDER BY cpr.campaign_id, cpr.report_date
+                        """
+
 
     def _client_dashboard_reconciliation_rows_query(self) -> str:
         effective_currency_sql = self._effective_attached_account_currency_sql(
@@ -2082,6 +2157,104 @@ class UnifiedDashboardService:
             end_date=end_date,
             platform="google_ads",
         )
+
+    def get_client_platform_account_campaign_performance(
+        self,
+        *,
+        client_id: int,
+        platform: str,
+        account_id: str,
+        start_date: date,
+        end_date: date,
+    ) -> dict[str, object]:
+        if start_date > end_date:
+            raise ValueError("start_date must be <= end_date")
+        if platform not in {"google_ads", "meta_ads", "tiktok_ads"}:
+            raise ValueError("unsupported platform")
+        normalized_account_id = str(account_id or "").strip()
+        if normalized_account_id == "":
+            raise ValueError("account_id is required")
+
+        performance_reports_store.initialize_schema()
+        params = (client_id, platform, start_date, end_date, normalized_account_id)
+        if platform == "google_ads":
+            params = (*params, normalized_account_id)
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(self._client_platform_campaign_rows_query(platform=platform), params)
+                rows = cur.fetchall()
+
+        currency_decision = self._client_reporting_currency_decision(client_id=client_id)
+        reporting_currency = str(currency_decision.get("reporting_currency") or "USD")
+
+        by_campaign: dict[str, dict[str, object]] = {}
+        resolved_account_name = normalized_account_id
+        for row in rows:
+            resolved_account_name = str(row[1] or resolved_account_name).strip() or resolved_account_name
+            campaign_id = str(row[2] or "").strip()
+            if campaign_id == "":
+                continue
+            campaign_name = str(row[3] or campaign_id).strip() or campaign_id
+            campaign_status = str(row[4] or "active").strip().lower() or "active"
+            report_date = row[5] if isinstance(row[5], date) else end_date
+            account_currency = self._normalize_currency_code(row[6], fallback=reporting_currency)
+            spend = self._normalize_money(
+                amount=_to_float(row[7]),
+                from_currency=account_currency,
+                to_currency=reporting_currency,
+                rate_date=report_date,
+            )
+            revenue = self._normalize_money(
+                amount=_to_float(row[8]),
+                from_currency=account_currency,
+                to_currency=reporting_currency,
+                rate_date=report_date,
+            )
+            impressions = _to_int(row[9])
+            clicks = _to_int(row[10])
+            current = by_campaign.setdefault(
+                campaign_id,
+                {
+                    "campaign_id": campaign_id,
+                    "campaign_name": campaign_name,
+                    "status": campaign_status,
+                    "cost": 0.0,
+                    "rev_inf": 0.0,
+                    "roas_inf": 0.0,
+                    "mer_inf": None,
+                    "truecac_inf": None,
+                    "ecr_inf": None,
+                    "ecpnv_inf": None,
+                    "new_visits": None,
+                    "visits": None,
+                    "impressions": 0,
+                    "clicks": 0,
+                },
+            )
+            current["cost"] = _to_float(current.get("cost")) + spend
+            current["rev_inf"] = _to_float(current.get("rev_inf")) + revenue
+            current["impressions"] = _to_int(current.get("impressions")) + impressions
+            current["clicks"] = _to_int(current.get("clicks")) + clicks
+
+        items: list[dict[str, object]] = []
+        for campaign in by_campaign.values():
+            cost = round(_to_float(campaign.get("cost")), 2)
+            revenue = round(_to_float(campaign.get("rev_inf")), 2)
+            campaign["cost"] = cost
+            campaign["rev_inf"] = revenue
+            campaign["roas_inf"] = round(revenue / cost, 4) if cost > 0 else 0.0
+            campaign["mer_inf"] = round(cost / revenue, 4) if revenue > 0 else None
+            items.append(campaign)
+        items.sort(key=lambda item: _to_float(item.get("cost")), reverse=True)
+        return {
+            "client_id": client_id,
+            "platform": platform,
+            "account_id": normalized_account_id,
+            "account_name": resolved_account_name,
+            "currency": reporting_currency,
+            "date_range": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
+            "items": items,
+        }
 
     def _agency_reports_query(self) -> str:
         return """

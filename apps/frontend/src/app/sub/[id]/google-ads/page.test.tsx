@@ -63,7 +63,7 @@ describe("Sub Google Ads details table", () => {
     expect(screen.getByRole("columnheader", { name: "Cost" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Rev (∞d)" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "ROAS (∞d)" })).toBeInTheDocument();
-    expect(screen.getByText("Google Main RO")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Google Main RO" })).toHaveAttribute("href", "/sub/96/google-ads/accounts/123-111-0001");
     expect(screen.getByText(/RON\s*2,916\.52/)).toBeInTheDocument();
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });

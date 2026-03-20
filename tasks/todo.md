@@ -5842,3 +5842,20 @@ Plan verificat: abordare incrementală cu componentă comună + endpoint-uri add
 - [x] Meta Ads și TikTok Ads folosesc aceeași structură de tabel/toolbar ca Google Ads, inclusiv selector coloane, schimbare ordine coloane și picker de perioadă.
 - [x] Backend oferă endpoint-uri additive pentru `/dashboard/{client_id}/meta-ads-table` și `/dashboard/{client_id}/tiktok-ads-table` cu payload compatibil.
 - [x] Testele țintite backend + frontend pentru Google/Meta/TikTok/sub-routes au trecut local.
+
+# TODO — Drilldown Sub-account Accounts -> Campaigns pentru Google/Meta/TikTok (2026-03-20)
+
+- [x] Audit rute curente Sub Google/Meta/TikTok Ads, surse date account-level și surse campaign-level existente.
+- [x] Transformare nume cont în link-uri către rute noi `.../accounts/[accountId]` pentru Google/Meta/TikTok.
+- [x] Adăugare pagini noi drilldown per cont cu tabel campanii, aceleași controale UI (Filter/Columns/Export/range) și back navigation clar.
+- [x] Extindere backend minimală cu endpoint-uri campaign-level per platformă + filtrare pe client/account/date range.
+- [x] Conectare helperi API frontend pentru noile endpoint-uri și wiring pe paginile drilldown.
+- [x] Teste frontend+backend țintite + build frontend.
+
+## Check-in before execution
+Plan verificat și executat imediat (nu docs-only): patch local pe rutele Sub-account Ads + dashboard backend, fără atingere Agency/Team/Auth/Media Buying/Media Tracker.
+
+## Review
+- [x] Drilldown cont -> campanii funcționează pe Google/Meta/TikTok via rute noi în App Router.
+- [x] Datele afișate provin din `campaign_performance_reports` + `platform_campaigns` (fără valori fabricate; lipsă => `—`).
+- [x] Range picker refetch-uiește datele în paginile de campaign drilldown.
