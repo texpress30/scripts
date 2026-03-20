@@ -29,8 +29,8 @@ vi.mock("recharts", () => ({
   ResponsiveContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   AreaChart: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Area: () => null,
-  BarChart: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Bar: () => null,
+  LineChart: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Line: () => null,
   CartesianGrid: () => null,
   XAxis: () => null,
   YAxis: () => null,
@@ -55,8 +55,8 @@ describe("SubDashboardPage header and platform links", () => {
       currency: "RON",
       totals: { spend: 10, impressions: 100, clicks: 10, conversions: 1, revenue: 20, roas: 2 },
       spend_by_day: [
-        { date: "2026-03-01", spend: 4 },
-        { date: "2026-03-02", spend: 6 },
+        { date: "2026-03-01", spend: 4, platform_spend: { google_ads: 1, meta_ads: 2, tiktok_ads: 1 } },
+        { date: "2026-03-02", spend: 6, platform_spend: { google_ads: 2, meta_ads: 2, tiktok_ads: 2 } },
       ],
       platforms: {
         google_ads: { spend: 1, impressions: 10, clicks: 1, conversions: 1, revenue: 2 },
@@ -127,8 +127,8 @@ describe("SubDashboardPage header and platform links", () => {
       currency: "RON",
       totals: { spend: 10, impressions: 100, clicks: 10, conversions: 1, revenue: 20, roas: 2 },
       spend_by_day: [
-        { date: "2026-03-01", spend: 4 },
-        { date: "2026-03-02", spend: 6 },
+        { date: "2026-03-01", spend: 4, platform_spend: { google_ads: 1, meta_ads: 2, tiktok_ads: 1 } },
+        { date: "2026-03-02", spend: 6, platform_spend: { google_ads: 2, meta_ads: 2, tiktok_ads: 2 } },
       ],
       platforms: {
         google_ads: { spend: 1, impressions: 10, clicks: 1, conversions: 1, revenue: 2 },

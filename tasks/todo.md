@@ -1,3 +1,17 @@
+# TODO — Sub-dashboard charts follow-up: Spend pe platforme ca Multi-Line (2026-03-20)
+
+- [x] Re-sync + recitire AGENTS/todo/lessons + audit implementare curentă chart-uri sub-dashboard.
+- [x] Backend additive minim pentru serie temporală pe platforme (fără breaking changes pe payload existent).
+- [x] Frontend: înlocuire BarChart cu Multi-Line Chart (Google/Meta/TikTok), culori distincte, linii smooth + markers.
+- [x] Ajustare înălțime pentru ambele chart-uri din rândul median la min `h-80`.
+- [x] Tooltip hover cu valori exacte pe axa timpului pentru toate platformele.
+- [x] Teste backend + frontend + build.
+
+## Review
+- [x] Confirmare explicită: Agency Dashboard, Team/auth/invite/delete, Media Buying/Tracker rămân neatinse.
+- Rulat `pytest -q apps/backend/tests/test_dashboard_currency_normalization.py` (9 passed).
+- Rulat `npm test -- src/app/sub/[id]/dashboard/page.test.tsx` și `npm run build` în `apps/frontend`.
+
 # TODO — Sub-account Dashboard: 2 grafice spend (2026-03-20)
 
 - [x] Re-sync workspace + recitire AGENTS/todo/lessons + audit endpoint/contract actual pentru Sub-account Dashboard.

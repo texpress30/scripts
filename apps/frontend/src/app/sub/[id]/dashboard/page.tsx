@@ -7,7 +7,7 @@ import React, { useEffect, useState } from "react";
 import { format, startOfMonth, subDays } from "date-fns";
 import { DayPicker, type DateRange } from "react-day-picker";
 import "react-day-picker/dist/style.css";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
@@ -37,7 +37,17 @@ type DashboardResponse = {
     meta_ads?: { accounts?: Array<Record<string, unknown>> };
     tiktok_ads?: { accounts?: Array<Record<string, unknown>> };
   };
-  spend_by_day?: Array<{ date?: string; spend?: number }>;
+  spend_by_day?: Array<{
+    date?: string;
+    spend?: number;
+    platform_spend?: {
+      google_ads?: number;
+      meta_ads?: number;
+      tiktok_ads?: number;
+      pinterest_ads?: number;
+      snapchat_ads?: number;
+    };
+  }>;
 };
 
 type PlatformMetrics = {
@@ -57,7 +67,17 @@ type NormalizedMetrics = {
   revenue: number;
   roas: number;
 };
-type SpendByDayPoint = { date: string; spend: number };
+type SpendByDayPoint = {
+  date: string;
+  spend: number;
+  platform_spend: {
+    google_ads: number;
+    meta_ads: number;
+    tiktok_ads: number;
+    pinterest_ads: number;
+    snapchat_ads: number;
+  };
+};
 
 type DatePresetKey = "today" | "yesterday" | "last7" | "last14" | "last30" | "month" | "custom";
 
@@ -129,6 +149,13 @@ function normalizeSpendByDay(value: DashboardResponse["spend_by_day"]): SpendByD
     .map((item) => ({
       date: typeof item?.date === "string" ? item.date : "",
       spend: safeNumber(item?.spend),
+      platform_spend: {
+        google_ads: safeNumber(item?.platform_spend?.google_ads),
+        meta_ads: safeNumber(item?.platform_spend?.meta_ads),
+        tiktok_ads: safeNumber(item?.platform_spend?.tiktok_ads),
+        pinterest_ads: safeNumber(item?.platform_spend?.pinterest_ads),
+        snapchat_ads: safeNumber(item?.platform_spend?.snapchat_ads),
+      },
     }))
     .filter((item) => item.date !== "");
 }
@@ -257,13 +284,13 @@ export default function SubDashboardPage() {
   const affectedAccountCount = flaggedPlatforms.reduce((sum, item) => sum + item.affectedAccountCount, 0);
   const spendByDay = normalizeSpendByDay(data?.spend_by_day);
   const hasSpendByDay = spendByDay.some((item) => item.spend > 0);
-  const spendByPlatform = [
-    { name: "Google Ads", spend: google.spend },
-    { name: "Meta Ads", spend: meta.spend },
-    { name: "TikTok Ads", spend: tiktok.spend },
-    { name: "Pinterest Ads", spend: pinterest.spend },
-    { name: "Snapchat Ads", spend: snapchat.spend },
-  ].filter((item) => item.spend > 0);
+  const spendByPlatformTimeline = spendByDay.map((item) => ({
+    date: item.date,
+    google_ads: item.platform_spend.google_ads,
+    meta_ads: item.platform_spend.meta_ads,
+    tiktok_ads: item.platform_spend.tiktok_ads,
+  }));
+  const hasPlatformTimeline = spendByPlatformTimeline.some((item) => item.google_ads > 0 || item.meta_ads > 0 || item.tiktok_ads > 0);
 
   return (
     <ProtectedPage>
@@ -351,7 +378,7 @@ export default function SubDashboardPage() {
               ) : !hasSpendByDay ? (
                 <p className="text-sm text-slate-500">Nu există spend în perioada selectată.</p>
               ) : (
-                <div className="h-64 w-full">
+                <div className="h-80 min-h-[20rem] w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={spendByDay}>
                       <CartesianGrid strokeDasharray="3 3" />
@@ -376,18 +403,23 @@ export default function SubDashboardPage() {
             <CardContent>
               {loading ? (
                 <p className="text-sm text-slate-500">Se încarcă datele pentru grafic…</p>
-              ) : spendByPlatform.length === 0 ? (
+              ) : !hasPlatformTimeline ? (
                 <p className="text-sm text-slate-500">Nu există spend pe platforme în perioada selectată.</p>
               ) : (
-                <div className="h-64 w-full">
+                <div className="h-80 min-h-[20rem] w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={spendByPlatform} layout="vertical" margin={{ left: 18 }}>
+                    <LineChart data={spendByPlatformTimeline}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis type="number" tickFormatter={(value: number) => formatCurrency(value, currencyCode)} />
-                      <YAxis type="category" dataKey="name" width={100} />
-                      <Tooltip formatter={(value: number) => formatCurrency(safeNumber(value), currencyCode)} />
-                      <Bar dataKey="spend" fill="#4f46e5" radius={[0, 6, 6, 0]} />
-                    </BarChart>
+                      <XAxis dataKey="date" tickFormatter={(value: string) => format(new Date(value), "dd MMM")} />
+                      <YAxis tickFormatter={(value: number) => formatCurrency(value, currencyCode)} width={100} />
+                      <Tooltip
+                        formatter={(value: number) => formatCurrency(safeNumber(value), currencyCode)}
+                        labelFormatter={(value: string) => format(new Date(value), "dd MMM yyyy")}
+                      />
+                      <Line type="monotone" dataKey="google_ads" name="Google Ads" stroke="#22c55e" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                      <Line type="monotone" dataKey="meta_ads" name="Meta Ads" stroke="#2563eb" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                      <Line type="monotone" dataKey="tiktok_ads" name="TikTok Ads" stroke="#111827" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                    </LineChart>
                   </ResponsiveContainer>
                 </div>
               )}

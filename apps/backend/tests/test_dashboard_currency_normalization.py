@@ -188,9 +188,21 @@ def test_build_spend_by_day_fills_selected_range_and_normalizes_currency():
         unified_dashboard_service._get_fx_rate_to_ron = original_rate
 
     assert spend_by_day == [
-        {"date": "2026-03-01", "spend": 60.0},
-        {"date": "2026-03-02", "spend": 0.0},
-        {"date": "2026-03-03", "spend": 12.0},
+        {
+            "date": "2026-03-01",
+            "spend": 60.0,
+            "platform_spend": {"google_ads": 50.0, "meta_ads": 10.0, "tiktok_ads": 0.0, "pinterest_ads": 0.0, "snapchat_ads": 0.0},
+        },
+        {
+            "date": "2026-03-02",
+            "spend": 0.0,
+            "platform_spend": {"google_ads": 0.0, "meta_ads": 0.0, "tiktok_ads": 0.0, "pinterest_ads": 0.0, "snapchat_ads": 0.0},
+        },
+        {
+            "date": "2026-03-03",
+            "spend": 12.0,
+            "platform_spend": {"google_ads": 0.0, "meta_ads": 0.0, "tiktok_ads": 12.0, "pinterest_ads": 0.0, "snapchat_ads": 0.0},
+        },
     ]
 
 
@@ -265,7 +277,19 @@ def test_get_client_dashboard_returns_spend_by_day_without_breaking_existing_pay
     assert payload["totals"]["spend"] == 35.0
     assert "platforms" in payload
     assert payload["spend_by_day"] == [
-        {"date": "2026-03-01", "spend": 10.0},
-        {"date": "2026-03-02", "spend": 25.0},
-        {"date": "2026-03-03", "spend": 0.0},
+        {
+            "date": "2026-03-01",
+            "spend": 10.0,
+            "platform_spend": {"google_ads": 10.0, "meta_ads": 0.0, "tiktok_ads": 0.0, "pinterest_ads": 0.0, "snapchat_ads": 0.0},
+        },
+        {
+            "date": "2026-03-02",
+            "spend": 25.0,
+            "platform_spend": {"google_ads": 0.0, "meta_ads": 25.0, "tiktok_ads": 0.0, "pinterest_ads": 0.0, "snapchat_ads": 0.0},
+        },
+        {
+            "date": "2026-03-03",
+            "spend": 0.0,
+            "platform_spend": {"google_ads": 0.0, "meta_ads": 0.0, "tiktok_ads": 0.0, "pinterest_ads": 0.0, "snapchat_ads": 0.0},
+        },
     ]

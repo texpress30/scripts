@@ -180,10 +180,15 @@ class UnifiedDashboardService:
         start_date: date,
         end_date: date,
     ) -> list[dict[str, object]]:
-        normalized: dict[date, float] = {}
+        normalized_total: dict[date, float] = {}
+        normalized_platform: dict[date, dict[str, float]] = {}
+        supported_platforms = ("google_ads", "meta_ads", "tiktok_ads", "pinterest_ads", "snapchat_ads")
         for row in rows:
             report_date = row[1] if isinstance(row[1], date) else None
             if report_date is None or report_date < start_date or report_date > end_date:
+                continue
+            platform = str(row[0] or "").strip().lower()
+            if platform not in supported_platforms:
                 continue
             account_currency = self._normalize_currency_code(row[2], fallback=target_currency)
             spend_value = self._normalize_money(
@@ -192,12 +197,27 @@ class UnifiedDashboardService:
                 to_currency=target_currency,
                 rate_date=report_date,
             )
-            normalized[report_date] = normalized.get(report_date, 0.0) + spend_value
+            normalized_total[report_date] = normalized_total.get(report_date, 0.0) + spend_value
+            day_platform = normalized_platform.setdefault(report_date, {})
+            day_platform[platform] = day_platform.get(platform, 0.0) + spend_value
 
         payload: list[dict[str, object]] = []
         cursor_day = start_date
         while cursor_day <= end_date:
-            payload.append({"date": cursor_day.isoformat(), "spend": round(normalized.get(cursor_day, 0.0), 2)})
+            by_platform = normalized_platform.get(cursor_day, {})
+            payload.append(
+                {
+                    "date": cursor_day.isoformat(),
+                    "spend": round(normalized_total.get(cursor_day, 0.0), 2),
+                    "platform_spend": {
+                        "google_ads": round(by_platform.get("google_ads", 0.0), 2),
+                        "meta_ads": round(by_platform.get("meta_ads", 0.0), 2),
+                        "tiktok_ads": round(by_platform.get("tiktok_ads", 0.0), 2),
+                        "pinterest_ads": round(by_platform.get("pinterest_ads", 0.0), 2),
+                        "snapchat_ads": round(by_platform.get("snapchat_ads", 0.0), 2),
+                    },
+                }
+            )
             cursor_day = cursor_day + timedelta(days=1)
         return payload
 
