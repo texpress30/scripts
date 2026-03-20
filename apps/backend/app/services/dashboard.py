@@ -350,7 +350,19 @@ class UnifiedDashboardService:
                           ) = 'account_daily'
                         """
 
-    def _client_google_ads_account_rows_query(self) -> str:
+    def _client_platform_account_rows_query(self, *, platform: str) -> str:
+        if platform not in {"google_ads", "meta_ads", "tiktok_ads"}:
+            raise ValueError("unsupported platform")
+        fuzzy_account_match_sql = ""
+        if platform == "google_ads":
+            fuzzy_account_match_sql = """
+                              OR regexp_replace(mapped.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                         """
+        fuzzy_platform_account_join_sql = ""
+        if platform == "google_ads":
+            fuzzy_platform_account_join_sql = """
+                              OR regexp_replace(apa.account_id, '[^0-9]', '', 'g') = regexp_replace(mapped.account_id, '[^0-9]', '', 'g')
+                         """
         effective_currency_sql = self._effective_attached_account_currency_sql(
             mapping_currency_expr="mapped.account_currency",
             platform_currency_expr="apa.currency_code",
@@ -364,7 +376,7 @@ class UnifiedDashboardService:
                             COALESCE(NULLIF(TRIM(apa.status), ''), 'active') AS account_status,
                             apr.report_date,
                             COALESCE(
-                                NULLIF(TRIM(COALESCE(apr.extra_metrics -> 'google_ads' ->> 'account_currency', '')), ''),
+                                NULLIF(TRIM(COALESCE(apr.extra_metrics -> '{platform}' ->> 'account_currency', '')), ''),
                                 {effective_currency_sql}
                             ) AS account_currency,
                             COALESCE(apr.spend, 0) AS spend,
@@ -378,25 +390,22 @@ class UnifiedDashboardService:
                           ON apa.platform = mapped.platform
                          AND (
                               apa.account_id = mapped.account_id
-                              OR (
-                                  mapped.platform = 'google_ads'
-                                  AND regexp_replace(apa.account_id, '[^0-9]', '', 'g') = regexp_replace(mapped.account_id, '[^0-9]', '', 'g')
-                              )
+                              {fuzzy_platform_account_join_sql}
                          )
                         LEFT JOIN ad_performance_reports apr
                           ON apr.platform = mapped.platform
-                         AND apr.platform = 'google_ads'
+                         AND apr.platform = '{platform}'
                          AND apr.report_date BETWEEN %s AND %s
                          AND (
                               mapped.account_id = apr.customer_id
-                              OR regexp_replace(mapped.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                              {fuzzy_account_match_sql}
                          )
                          AND COALESCE(
-                              NULLIF(TRIM(COALESCE(apr.extra_metrics -> 'google_ads' ->> 'grain', '')), ''),
+                              NULLIF(TRIM(COALESCE(apr.extra_metrics -> '{platform}' ->> 'grain', '')), ''),
                               'account_daily'
                          ) = 'account_daily'
                         WHERE mapped.client_id = %s
-                          AND mapped.platform = 'google_ads'
+                          AND mapped.platform = '{platform}'
                         ORDER BY mapped.account_id, apr.report_date
                         """
 
@@ -1979,14 +1988,23 @@ class UnifiedDashboardService:
             "business_derived_metrics": business_derived_metrics,
         }
 
-    def get_client_google_ads_account_performance(self, *, client_id: int, start_date: date, end_date: date) -> dict[str, object]:
+    def get_client_platform_account_performance(
+        self,
+        *,
+        client_id: int,
+        start_date: date,
+        end_date: date,
+        platform: str,
+    ) -> dict[str, object]:
         if start_date > end_date:
             raise ValueError("start_date must be <= end_date")
+        if platform not in {"google_ads", "meta_ads", "tiktok_ads"}:
+            raise ValueError("unsupported platform")
 
         performance_reports_store.initialize_schema()
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(self._client_google_ads_account_rows_query(), (start_date, end_date, client_id))
+                cur.execute(self._client_platform_account_rows_query(platform=platform), (start_date, end_date, client_id))
                 rows = cur.fetchall()
 
         currency_decision = self._client_reporting_currency_decision(client_id=client_id)
@@ -2056,6 +2074,14 @@ class UnifiedDashboardService:
             "date_range": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
             "items": items,
         }
+
+    def get_client_google_ads_account_performance(self, *, client_id: int, start_date: date, end_date: date) -> dict[str, object]:
+        return self.get_client_platform_account_performance(
+            client_id=client_id,
+            start_date=start_date,
+            end_date=end_date,
+            platform="google_ads",
+        )
 
     def _agency_reports_query(self) -> str:
         return """

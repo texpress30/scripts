@@ -3,10 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 import SubMediaTrackerPage from "./media-tracker/page";
-import SubMetaAdsPage from "./meta-ads/page";
 import SubPinterestAdsPage from "./pinterest-ads/page";
 import SubSnapchatAdsPage from "./snapchat-ads/page";
-import SubTikTokAdsPage from "./tiktok-ads/page";
 
 const apiMock = vi.hoisted(() => ({ apiRequest: vi.fn() }));
 
@@ -30,8 +28,6 @@ describe("Sub routes placeholder pages", () => {
 
   it.each([
     ["Media Tracker - Active Life Therapy", SubMediaTrackerPage],
-    ["Meta Ads - Active Life Therapy", SubMetaAdsPage],
-    ["TikTok Ads - Active Life Therapy", SubTikTokAdsPage],
     ["Pinterest Ads - Active Life Therapy", SubPinterestAdsPage],
     ["Snapchat Ads - Active Life Therapy", SubSnapchatAdsPage],
   ])("renders %s", async (expectedTitle, Component) => {

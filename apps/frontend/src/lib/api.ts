@@ -474,6 +474,28 @@ export async function getSubGoogleAdsTable(
   return apiRequest<SubGoogleAdsTableResponse>(`/dashboard/${encodeURIComponent(String(subaccountId))}/google-ads-table?${search.toString()}`);
 }
 
+export async function getSubMetaAdsTable(
+  subaccountId: number,
+  params: { start_date: string; end_date: string },
+): Promise<SubGoogleAdsTableResponse> {
+  const search = new URLSearchParams({
+    start_date: params.start_date,
+    end_date: params.end_date,
+  });
+  return apiRequest<SubGoogleAdsTableResponse>(`/dashboard/${encodeURIComponent(String(subaccountId))}/meta-ads-table?${search.toString()}`);
+}
+
+export async function getSubTikTokAdsTable(
+  subaccountId: number,
+  params: { start_date: string; end_date: string },
+): Promise<SubGoogleAdsTableResponse> {
+  const search = new URLSearchParams({
+    start_date: params.start_date,
+    end_date: params.end_date,
+  });
+  return apiRequest<SubGoogleAdsTableResponse>(`/dashboard/${encodeURIComponent(String(subaccountId))}/tiktok-ads-table?${search.toString()}`);
+}
+
 export type TeamAgencyMyAccessResponse = {
   role: string;
   module_keys: string[];

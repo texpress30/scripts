@@ -451,3 +451,7 @@
 
 - 2026-03-19: Când un wizard folosește un singur `<form>`, aplică guarduri în două straturi (event-level + submit-level) și adaugă test separat pentru `fireEvent.keyDown(..., Enter)`; doar `fireEvent.submit` nu acoperă toate căile reale din browser.
 - 2026-03-19: După feedback că un wizard "deja fixat" încă nu satisface review-ul, adaugă un guard defensiv în `submit` pentru pasul activ și un test explicit "no API before final + exact one call on final CTA" în pagina țintă.
+
+## 2026-03-20 — Duplication fix after user dissatisfaction
+- Când userul cere explicit replicarea unei structuri existente pe alte rute/platforme, extrage imediat un component comun reutilizabil în loc de copiere/implementări separate.
+- În același task, aliniază contractele backend/frontend pe toate platformele vizate și adaugă teste dedicate per rută nouă, plus ajustări pe testele vechi de placeholder.

@@ -354,3 +354,60 @@ def test_get_client_google_ads_account_performance_uses_real_rows_and_currency()
     assert payload["items"][0]["roas_inf"] == 2.0
     assert payload["items"][0]["new_visits"] is None
     assert payload["items"][0]["visits"] is None
+
+
+def test_get_client_platform_account_performance_supports_meta_ads():
+    rows = [
+        ("meta-1001", "Meta Prospecting", "active", date(2026, 3, 10), "RON", 40.0, 120.0, 500, 45),
+    ]
+
+    class _FakeCursor:
+        def execute(self, sql, params=None):
+            self.last_sql = str(sql)
+
+        def fetchall(self):
+            return rows
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class _FakeConn:
+        def cursor(self):
+            return _FakeCursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    original_connect = unified_dashboard_service._connect
+    original_reporting = dashboard_service_module.client_registry_service.get_client_reporting_currency_decision
+    original_init_schema = dashboard_service_module.performance_reports_store.initialize_schema
+    try:
+        unified_dashboard_service._connect = lambda: _FakeConn()
+        dashboard_service_module.client_registry_service.get_client_reporting_currency_decision = lambda **kwargs: {
+            "reporting_currency": "RON",
+            "reporting_currency_source": "agency_client_currency",
+            "mixed_attached_account_currencies": False,
+            "attached_account_currency_summary": [{"currency": "RON", "account_count": 1}],
+        }
+        dashboard_service_module.performance_reports_store.initialize_schema = lambda: None
+        payload = unified_dashboard_service.get_client_platform_account_performance(
+            client_id=96,
+            start_date=date(2026, 3, 1),
+            end_date=date(2026, 3, 31),
+            platform="meta_ads",
+        )
+    finally:
+        unified_dashboard_service._connect = original_connect
+        dashboard_service_module.client_registry_service.get_client_reporting_currency_decision = original_reporting
+        dashboard_service_module.performance_reports_store.initialize_schema = original_init_schema
+
+    assert payload["currency"] == "RON"
+    assert payload["items"][0]["account_id"] == "meta-1001"
+    assert payload["items"][0]["cost"] == 40.0
+    assert payload["items"][0]["rev_inf"] == 120.0

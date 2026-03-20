@@ -5825,3 +5825,20 @@ Plan verified: frontend-focused incremental delivery for Agency Notifications se
 - [x] Added backend endpoint `/dashboard/{client_id}/google-ads-table` and service aggregation for Google Ads account rows.
 - [x] Frontend sub Google Ads page now fetches real table data via API helper instead of synthetic seeded values.
 - [x] Focused tests pass for backend currency normalization suite and sub Google Ads page interactions.
+
+# TODO — Replicare tabel performant Google Ads pe rutele Meta Ads și TikTok Ads (2026-03-20)
+
+- [x] Audit implementare curentă Google Ads + pagini placeholder Meta/TikTok + contracte API backend/frontend.
+- [x] Extrage componentă tabel generică reutilizabilă (coloane, selector, toolbar, date-range picker, sortare/stilizare).
+- [x] Extinde backend cu endpoint-uri Meta/TikTok pentru payload compatibil tabel multi-account.
+- [x] Leagă paginile `sub/[id]/meta-ads` și `sub/[id]/tiktok-ads` la componenta generică și endpoint-urile dedicate.
+- [x] Actualizează/adaugă teste frontend + backend țintite pentru noile rute și comportamente.
+- [x] Rulează verificări țintite și finalizează review în acest TODO.
+
+## Check-in before execution
+Plan verificat: abordare incrementală cu componentă comună + endpoint-uri additive, fără a atinge rutele Pinterest/Snapchat și fără redesign în afara structurii deja aprobată pe Google Ads.
+
+## Review
+- [x] Meta Ads și TikTok Ads folosesc aceeași structură de tabel/toolbar ca Google Ads, inclusiv selector coloane, schimbare ordine coloane și picker de perioadă.
+- [x] Backend oferă endpoint-uri additive pentru `/dashboard/{client_id}/meta-ads-table` și `/dashboard/{client_id}/tiktok-ads-table` cu payload compatibil.
+- [x] Testele țintite backend + frontend pentru Google/Meta/TikTok/sub-routes au trecut local.
