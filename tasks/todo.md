@@ -1,3 +1,16 @@
+# TODO — Login fără selector de rol + derivare automată context din memberships (2026-03-20)
+
+- [x] Re-citire fișiere auth/login backend+frontend și confirmare root-cause pentru rol selectat manual în login.
+- [x] Backend: `LoginRequest.role` opțional + `/auth/login` compat backward-compatible (role opțional, validare doar când e trimis).
+- [x] Backend: derivare automată context acces din memberships active când role lipsește, cu prioritate agency/global peste subaccount.
+- [x] Frontend login: eliminare selector rol și submit strict `email + password`.
+- [x] Frontend session/AppShell: routing bazat pe contextul token-ului derivat (single subaccount redirect direct, multi subaccount fallback sigur existent).
+- [x] Teste backend/frontend pentru toate cazurile cerute + build frontend + startup check backend.
+
+## Review
+- [x] Contract `/auth/login` documentat în review final (role optional compat + derivare automată).
+- [x] Verificat explicit că nu există flow nou de selector în login pentru multi-subaccount.
+
 # TODO — Email Templates/Notifications semantic alignment for forgot vs invite vs account-ready (2026-03-19)
 
 - [x] Re-sync + recitire AGENTS/tasks/lessons și fișiere backend/frontend relevante.

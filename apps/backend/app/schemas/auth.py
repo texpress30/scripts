@@ -4,7 +4,7 @@ from pydantic import BaseModel
 class LoginRequest(BaseModel):
     email: str
     password: str
-    role: str
+    role: str | None = None
 
 
 class LoginResponse(BaseModel):

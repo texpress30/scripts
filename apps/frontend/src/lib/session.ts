@@ -182,6 +182,11 @@ export function isReadOnlyRole(role: AppRole): boolean {
   return role === "agency_viewer" || role === "subaccount_viewer" || role === "client_viewer";
 }
 
+export function isSubaccountScopedContext(context: SessionAccessContext): boolean {
+  if (context.access_scope === "subaccount") return true;
+  return context.role === "subaccount_admin" || context.role === "subaccount_user" || context.role === "subaccount_viewer";
+}
+
 export type SessionInfo = { email: string; role: AppRole };
 
 export function getSessionInfo(): SessionInfo {

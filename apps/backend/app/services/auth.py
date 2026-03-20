@@ -181,9 +181,54 @@ def set_user_password(*, user_id: int, new_password: str) -> None:
                 raise ValueError("Utilizator inactiv sau inexistent")
         conn.commit()
 
-def authenticate_user_from_db(*, email: str, password: str, requested_role: str) -> AuthUser:
+def _is_subaccount_role(role: str) -> bool:
+    return role in {"subaccount_admin", "subaccount_user", "subaccount_viewer"}
+
+
+def _resolve_role_from_memberships(
+    memberships: list[tuple[int, str, str, int | None, str]],
+    requested_role: str | None,
+) -> tuple[str, list[tuple[int, str, str, int | None, str]]]:
+    by_role: dict[str, list[tuple[int, str, str, int | None, str]]] = {}
+    for membership in memberships:
+        role_key = normalize_role(str(membership[1] or ""))
+        by_role.setdefault(role_key, []).append(membership)
+
+    normalized_requested = normalize_role(str(requested_role or "").strip())
+    if normalized_requested:
+        selected = by_role.get(normalized_requested, [])
+        if not selected:
+            raise AuthLoginError(
+                status_code=403,
+                message="Rolul selectat nu este alocat utilizatorului",
+                reason="role_not_owned",
+            )
+        return normalized_requested, selected
+
+    role_priority = (
+        "super_admin",
+        "agency_owner",
+        "agency_admin",
+        "agency_member",
+        "agency_viewer",
+        "subaccount_admin",
+        "subaccount_user",
+        "subaccount_viewer",
+    )
+    for role_key in role_priority:
+        selected = by_role.get(role_key, [])
+        if selected:
+            return role_key, selected
+
+    raise AuthLoginError(
+        status_code=403,
+        message="User has no active membership",
+        reason="no_active_membership",
+    )
+
+
+def authenticate_user_from_db(*, email: str, password: str, requested_role: str | None = None) -> AuthUser:
     normalized_email = email.strip().lower()
-    normalized_role = normalize_role(requested_role)
 
     with _connect() as conn:
         with conn.cursor() as cur:
@@ -219,40 +264,41 @@ def authenticate_user_from_db(*, email: str, password: str, requested_role: str)
 
             cur.execute(
                 """
-                SELECT id, scope_type, subaccount_id, subaccount_name
+                SELECT id, role_key, scope_type, subaccount_id, subaccount_name
                 FROM user_memberships
-                WHERE user_id = %s AND role_key = %s AND status = 'active'
+                WHERE user_id = %s AND status = 'active'
                 ORDER BY id ASC
                 """,
-                (user_id, normalized_role),
+                (user_id,),
             )
             memberships = cur.fetchall()
             if len(memberships) == 0:
-                raise AuthLoginError(
-                    status_code=403,
-                    message="Rolul selectat nu este alocat utilizatorului",
-                    reason="role_not_owned",
-                )
+                raise AuthLoginError(status_code=403, message="User has no active membership", reason="no_active_membership")
 
-            role_is_subaccount = normalized_role.startswith("subaccount_")
-            if len(memberships) > 1 and not role_is_subaccount:
-                raise AuthLoginError(
-                    status_code=409,
-                    message="Există mai multe accesuri active pentru acest rol și selecția de sub-account la login nu este încă implementată",
-                    reason="ambiguous_membership",
+            normalized_memberships = [
+                (
+                    int(row[0]),
+                    normalize_role(str(row[1] or "")),
+                    str(row[2] or ""),
+                    _coerce_int(row[3]),
+                    str(row[4] or ""),
                 )
+                for row in memberships
+            ]
+            normalized_role, selected_memberships = _resolve_role_from_memberships(normalized_memberships, requested_role)
+            role_is_subaccount = _is_subaccount_role(normalized_role)
 
-            membership_ids = tuple(int(row[0]) for row in memberships)
-            first_membership = memberships[0]
-            scope_type = str(first_membership[1] or "") or None
+            membership_ids = tuple(int(row[0]) for row in selected_memberships)
+            first_membership = selected_memberships[0]
+            scope_type = str(first_membership[2] or "") or None
 
             allowed_subaccounts_map: dict[int, str] = {}
-            for row in memberships:
-                subaccount_id = _coerce_int(row[2])
+            for row in selected_memberships:
+                subaccount_id = _coerce_int(row[3])
                 if subaccount_id is None:
                     continue
                 if subaccount_id not in allowed_subaccounts_map:
-                    allowed_subaccounts_map[subaccount_id] = str(row[3] or "")
+                    allowed_subaccounts_map[subaccount_id] = str(row[4] or "")
 
             allowed_subaccount_ids = tuple(sorted(allowed_subaccounts_map.keys()))
             allowed_subaccounts = tuple(
@@ -263,7 +309,7 @@ def authenticate_user_from_db(*, email: str, password: str, requested_role: str)
             primary_subaccount_name = allowed_subaccounts_map.get(primary_subaccount_id or -1, "")
 
             membership_id: int | None
-            if len(memberships) == 1:
+            if len(selected_memberships) == 1:
                 membership_id = int(first_membership[0])
             else:
                 membership_id = None
@@ -275,9 +321,9 @@ def authenticate_user_from_db(*, email: str, password: str, requested_role: str)
                 resolved_subaccount_name = primary_subaccount_name
             else:
                 access_scope = "agency"
-                resolved_scope_type = scope_type
-                resolved_subaccount_id = _coerce_int(first_membership[2])
-                resolved_subaccount_name = str(first_membership[3] or "")
+                resolved_scope_type = scope_type or "agency"
+                resolved_subaccount_id = _coerce_int(first_membership[3])
+                resolved_subaccount_name = str(first_membership[4] or "")
 
             cur.execute("UPDATE users SET last_login_at = NOW(), updated_at = NOW() WHERE id = %s", (user_id,))
         conn.commit()

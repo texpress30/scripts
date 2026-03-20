@@ -123,6 +123,29 @@ export async function getResetPasswordTokenContext(token: string): Promise<Reset
   return apiRequest<ResetPasswordTokenContextApiResponse>(`/auth/reset-password/context?token=${encodeURIComponent(token)}`);
 }
 
+export type LoginApiRequest = {
+  email: string;
+  password: string;
+  role?: string;
+};
+
+export type LoginApiResponse = {
+  access_token: string;
+  token_type: string;
+};
+
+export async function loginWithPassword(payload: LoginApiRequest): Promise<LoginApiResponse> {
+  const body: LoginApiRequest = {
+    email: payload.email,
+    password: payload.password,
+  };
+  if (payload.role && payload.role.trim() !== "") body.role = payload.role;
+  return apiRequest<LoginApiResponse>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 
 export type AccountSyncRun = {
   job_id: string;

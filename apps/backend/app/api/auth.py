@@ -53,7 +53,8 @@ def _mask_email(email: str) -> str:
 @router.post("/login", response_model=LoginResponse)
 def login(payload: LoginRequest) -> LoginResponse:
     email = payload.email.strip().lower()
-    requested_role = normalize_role(payload.role)
+    requested_role_raw = str(payload.role or "").strip()
+    requested_role = normalize_role(requested_role_raw) if requested_role_raw else ""
 
     try:
         rate_limiter_service.check(f"auth:{email}", limit=20, window_seconds=60)
@@ -67,7 +68,7 @@ def login(payload: LoginRequest) -> LoginResponse:
         )
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
-    if not is_supported_role(payload.role):
+    if requested_role_raw and not is_supported_role(payload.role):
         audit_log_service.log(
             actor_email=email,
             actor_role="anonymous",
@@ -102,6 +103,7 @@ def login(payload: LoginRequest) -> LoginResponse:
             details={
                 "source": "db",
                 "role": db_user.role,
+                "requested_role": requested_role or None,
                 "membership_id": db_user.membership_id,
                 "scope_type": db_user.scope_type,
                 "subaccount_id": db_user.subaccount_id,
