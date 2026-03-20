@@ -378,7 +378,7 @@ export default function SubDashboardPage() {
               ) : !hasSpendByDay ? (
                 <p className="text-sm text-slate-500">Nu există spend în perioada selectată.</p>
               ) : (
-                <div className="h-80 min-h-[20rem] w-full">
+                <div className="h-96 min-h-[24rem] w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={spendByDay}>
                       <CartesianGrid strokeDasharray="3 3" />
@@ -406,7 +406,7 @@ export default function SubDashboardPage() {
               ) : !hasPlatformTimeline ? (
                 <p className="text-sm text-slate-500">Nu există spend pe platforme în perioada selectată.</p>
               ) : (
-                <div className="h-80 min-h-[20rem] w-full">
+                <div className="h-96 min-h-[24rem] w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={spendByPlatformTimeline}>
                       <CartesianGrid strokeDasharray="3 3" />
@@ -416,9 +416,9 @@ export default function SubDashboardPage() {
                         formatter={(value: number) => formatCurrency(safeNumber(value), currencyCode)}
                         labelFormatter={(value: string) => format(new Date(value), "dd MMM yyyy")}
                       />
-                      <Line type="monotone" dataKey="google_ads" name="Google Ads" stroke="#22c55e" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                      <Line type="monotone" dataKey="meta_ads" name="Meta Ads" stroke="#2563eb" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                      <Line type="monotone" dataKey="tiktok_ads" name="TikTok Ads" stroke="#111827" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                      <Line type="monotone" dataKey="google_ads" name="Google Ads" stroke="#22c55e" strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
+                      <Line type="monotone" dataKey="meta_ads" name="Meta Ads" stroke="#2563eb" strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
+                      <Line type="monotone" dataKey="tiktok_ads" name="TikTok Ads" stroke="#111827" strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>

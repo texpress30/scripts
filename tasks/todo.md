@@ -1,3 +1,16 @@
+# TODO — Sub-dashboard chart polish: hover-only dots + h-96 (2026-03-20)
+
+- [x] Re-sync + recitire AGENTS/todo/lessons + audit chart styling curent.
+- [x] Setare dots ascunse implicit și vizibile doar la hover pentru chart-ul multi-line Spend pe platforme.
+- [x] Confirmare linii smooth (Bezier/monotone), păstrare culori și fără fill.
+- [x] Ajustare înălțime ambele chart-uri la min `h-96`.
+- [x] Tooltip hover păstrat activ cu valori exacte pe toate platformele.
+- [x] Teste frontend + build frontend.
+
+## Review
+- [x] Confirmare explicită: Agency Dashboard, Team/auth/invite/delete, Media Buying/Tracker rămân neatinse.
+- Rulat `npm test -- src/app/sub/[id]/dashboard/page.test.tsx` și `npm run build` în `apps/frontend`.
+
 # TODO — Sub-dashboard charts follow-up: Spend pe platforme ca Multi-Line (2026-03-20)
 
 - [x] Re-sync + recitire AGENTS/todo/lessons + audit implementare curentă chart-uri sub-dashboard.

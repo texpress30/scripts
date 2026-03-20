@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-20: Pentru chart-uri multi-line comparate cu un chart de referință, ascunde dots implicit (`dot={false}`) și lasă doar `activeDot` pe hover pentru claritate vizuală; crește min-height-ul (ex. `h-96`) înainte de a ajusta alte stiluri.
+
 - 2026-03-20: Pentru cerințe de redesign chart punctual (ex. bar -> multi-line), păstrează contractul existent și extinde doar granularitatea seriei (`platform_spend` per zi) astfel încât frontendul să schimbe vizualizarea fără endpoint nou.
 
 - 2026-03-20: Pentru cerințe de dashboard vizual, livrează întâi contractul additive pe endpoint-ul existent (`spend_by_day`) și construiește chart-urile direct din datele deja disponibile (ex. platform table), evitând endpoint-uri noi sau redesign.
