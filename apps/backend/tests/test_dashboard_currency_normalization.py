@@ -167,3 +167,129 @@ def test_dashboard_spend_matches_media_buying_for_same_client_and_interval():
     assert round(float(day["cost_google"]), 2) == round(float(dashboard_platform_totals["google_ads"]["spend"]), 2)
     assert round(float(day["cost_meta"]), 2) == round(float(dashboard_platform_totals["meta_ads"]["spend"]), 2)
     assert round(float(day["cost_tiktok"]), 2) == round(float(dashboard_platform_totals["tiktok_ads"]["spend"]), 2)
+
+
+def test_build_spend_by_day_fills_selected_range_and_normalizes_currency():
+    original_rate = unified_dashboard_service._get_fx_rate_to_ron
+    try:
+        unified_dashboard_service._get_fx_rate_to_ron = lambda **kwargs: {"USD": 5.0, "RON": 1.0}.get(kwargs.get("currency_code"), 1.0)
+        rows = [
+            ("google_ads", date(2026, 3, 1), "USD", 10.0, 100, 10, 1, 5.0, {}),
+            ("meta_ads", date(2026, 3, 1), "RON", 10.0, 100, 10, 1, 5.0, {}),
+            ("tiktok_ads", date(2026, 3, 3), "RON", 12.0, 100, 10, 1, 5.0, {}),
+        ]
+        spend_by_day = unified_dashboard_service._build_spend_by_day(
+            rows=rows,
+            target_currency="RON",
+            start_date=date(2026, 3, 1),
+            end_date=date(2026, 3, 3),
+        )
+    finally:
+        unified_dashboard_service._get_fx_rate_to_ron = original_rate
+
+    assert spend_by_day == [
+        {
+            "date": "2026-03-01",
+            "spend": 60.0,
+            "platform_spend": {"google_ads": 50.0, "meta_ads": 10.0, "tiktok_ads": 0.0, "pinterest_ads": 0.0, "snapchat_ads": 0.0},
+        },
+        {
+            "date": "2026-03-02",
+            "spend": 0.0,
+            "platform_spend": {"google_ads": 0.0, "meta_ads": 0.0, "tiktok_ads": 0.0, "pinterest_ads": 0.0, "snapchat_ads": 0.0},
+        },
+        {
+            "date": "2026-03-03",
+            "spend": 12.0,
+            "platform_spend": {"google_ads": 0.0, "meta_ads": 0.0, "tiktok_ads": 12.0, "pinterest_ads": 0.0, "snapchat_ads": 0.0},
+        },
+    ]
+
+
+def test_get_client_dashboard_returns_spend_by_day_without_breaking_existing_payload():
+    decision_payload = {
+        "reporting_currency": "RON",
+        "reporting_currency_source": "agency_client_currency",
+        "mixed_attached_account_currencies": False,
+        "attached_account_currency_summary": [{"currency": "RON", "account_count": 1}],
+    }
+    rows = [
+        ("google_ads", date(2026, 3, 1), "RON", 10.0, 100, 10, 1, 20.0, {"google_ads": {"grain": "account_daily"}}),
+        ("meta_ads", date(2026, 3, 2), "RON", 25.0, 200, 20, 2, 35.0, {"meta_ads": {"grain": "account_daily"}}),
+    ]
+
+    class _FakeCursor:
+        def __init__(self):
+            self._last_sql = ""
+
+        def execute(self, sql, params=None):
+            self._last_sql = str(sql)
+
+        def fetchall(self):
+            if "COALESCE(apr.extra_metrics, '{}'::jsonb)" in self._last_sql:
+                return rows
+            return []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class _FakeConn:
+        def __init__(self):
+            self._cursor = _FakeCursor()
+
+        def cursor(self):
+            return self._cursor
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    original_is_test_mode = unified_dashboard_service._is_test_mode
+    original_connect = unified_dashboard_service._connect
+    original_reporting = dashboard_service_module.client_registry_service.get_client_reporting_currency_decision
+    original_init_schema = dashboard_service_module.performance_reports_store.initialize_schema
+    original_sync_summary = unified_dashboard_service._build_dashboard_platform_sync_summary
+    try:
+        unified_dashboard_service._is_test_mode = lambda: False
+        unified_dashboard_service._connect = lambda: _FakeConn()
+        dashboard_service_module.client_registry_service.get_client_reporting_currency_decision = lambda **kwargs: dict(decision_payload)
+        dashboard_service_module.performance_reports_store.initialize_schema = lambda: None
+        unified_dashboard_service._build_dashboard_platform_sync_summary = lambda **kwargs: {}
+
+        payload = unified_dashboard_service.get_client_dashboard(
+            client_id=44,
+            start_date=date(2026, 3, 1),
+            end_date=date(2026, 3, 3),
+        )
+    finally:
+        unified_dashboard_service._is_test_mode = original_is_test_mode
+        unified_dashboard_service._connect = original_connect
+        dashboard_service_module.client_registry_service.get_client_reporting_currency_decision = original_reporting
+        dashboard_service_module.performance_reports_store.initialize_schema = original_init_schema
+        unified_dashboard_service._build_dashboard_platform_sync_summary = original_sync_summary
+
+    assert payload["client_id"] == 44
+    assert payload["totals"]["spend"] == 35.0
+    assert "platforms" in payload
+    assert payload["spend_by_day"] == [
+        {
+            "date": "2026-03-01",
+            "spend": 10.0,
+            "platform_spend": {"google_ads": 10.0, "meta_ads": 0.0, "tiktok_ads": 0.0, "pinterest_ads": 0.0, "snapchat_ads": 0.0},
+        },
+        {
+            "date": "2026-03-02",
+            "spend": 25.0,
+            "platform_spend": {"google_ads": 0.0, "meta_ads": 25.0, "tiktok_ads": 0.0, "pinterest_ads": 0.0, "snapchat_ads": 0.0},
+        },
+        {
+            "date": "2026-03-03",
+            "spend": 0.0,
+            "platform_spend": {"google_ads": 0.0, "meta_ads": 0.0, "tiktok_ads": 0.0, "pinterest_ads": 0.0, "snapchat_ads": 0.0},
+        },
+    ]
