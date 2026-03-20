@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import Header, HTTPException, status
 
-from app.services.auth import AuthError, AuthUser, decode_access_token
+from app.services.auth import AuthError, AuthUser, decode_access_token, is_active_user_id
 from app.services.rbac import AuthorizationError, Scope, normalize_role, require_action
 from app.services.team_members import team_members_service
 
@@ -48,9 +48,21 @@ def get_current_user(authorization: str | None = Header(default=None)) -> AuthUs
 
     token = authorization.split(" ", maxsplit=1)[1].strip()
     try:
-        return decode_access_token(token)
+        user = decode_access_token(token)
     except AuthError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    if user.is_env_admin:
+        return user
+    if user.user_id is None:
+        return user
+    try:
+        if not is_active_user_id(int(user.user_id)):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalid pentru utilizator inexistent sau inactiv")
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalid") from exc
+    return user
 
 
 def enforce_action_scope(*, user: AuthUser, action: str, scope: Scope) -> None:

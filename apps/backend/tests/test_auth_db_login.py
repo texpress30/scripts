@@ -21,15 +21,14 @@ class _FakeCursor:
             return
         if "FROM user_memberships" in sql:
             user_id = params[0]
-            role_key = params[1]
             only_active = "status = 'active'" in sql.lower()
-            self._next_fetchall = [
+            matched = [
                 m
                 for m in self.memberships
                 if int(m[4]) == int(user_id)
-                and str(m[5]) == str(role_key)
                 and (not only_active or str((m[6] if len(m) > 6 else "active") or "").lower() == "active")
             ]
+            self._next_fetchall = matched
             return
         if "UPDATE users SET last_login_at" in sql:
             self.updated_last_login = True
@@ -43,7 +42,7 @@ class _FakeCursor:
     def fetchall(self):
         rows = self._next_fetchall
         self._next_fetchall = []
-        return [(row[0], row[1], row[2], row[3]) for row in rows]
+        return [(row[0], row[5], row[1], row[2], row[3]) for row in rows]
 
     def __enter__(self):
         return self
@@ -73,7 +72,7 @@ class _FakeConn:
 class AuthDbLoginTests(unittest.TestCase):
     def test_login_db_success_agency_admin(self):
         password = "secret123"
-        user_row = (11, "admin@example.com", hash_password(password), True)
+        user_row = (11, "admin@example.com", hash_password(password), True, False)
         memberships = [
             (101, "agency", None, "", 11, "agency_admin", "active"),
         ]
@@ -90,9 +89,9 @@ class AuthDbLoginTests(unittest.TestCase):
         finally:
             auth_service._connect = original_connect
 
-    def test_login_db_success_subaccount_user(self):
+    def test_login_db_success_subaccount_user_single(self):
         password = "p@ss"
-        user_row = (12, "member@example.com", hash_password(password), True)
+        user_row = (12, "member@example.com", hash_password(password), True, False)
         memberships = [
             (202, "subaccount", 55, "Client Z", 12, "subaccount_user", "active"),
         ]
@@ -111,8 +110,26 @@ class AuthDbLoginTests(unittest.TestCase):
         finally:
             auth_service._connect = original_connect
 
+    def test_login_db_success_subaccount_user_multiple(self):
+        user_row = (32, "member-multi@example.com", hash_password("p@ss"), True, False)
+        memberships = [
+            (211, "subaccount", 55, "Client Z", 32, "subaccount_user", "active"),
+            (212, "subaccount", 66, "Client Y", 32, "subaccount_user", "active"),
+        ]
+        cursor = _FakeCursor(user_row=user_row, memberships=memberships)
+        original_connect = auth_service._connect
+        try:
+            auth_service._connect = lambda: _FakeConn(cursor)
+            user = auth_service.authenticate_user_from_db(email="member-multi@example.com", password="p@ss")
+            self.assertEqual(user.role, "subaccount_user")
+            self.assertEqual(user.allowed_subaccount_ids, (55, 66))
+            self.assertIsNone(user.primary_subaccount_id)
+            self.assertEqual(user.access_scope, "subaccount")
+        finally:
+            auth_service._connect = original_connect
+
     def test_invalid_password(self):
-        user_row = (13, "u@example.com", hash_password("good"), True)
+        user_row = (13, "u@example.com", hash_password("good"), True, False)
         memberships = [(301, "agency", None, "", 13, "agency_admin", "active")]
         cursor = _FakeCursor(user_row=user_row, memberships=memberships)
         original_connect = auth_service._connect
@@ -125,7 +142,7 @@ class AuthDbLoginTests(unittest.TestCase):
             auth_service._connect = original_connect
 
     def test_user_inactive(self):
-        user_row = (14, "u@example.com", hash_password("good"), False)
+        user_row = (14, "u@example.com", hash_password("good"), False, False)
         cursor = _FakeCursor(user_row=user_row, memberships=[])
         original_connect = auth_service._connect
         try:
@@ -137,7 +154,7 @@ class AuthDbLoginTests(unittest.TestCase):
             auth_service._connect = original_connect
 
     def test_user_without_membership_for_role(self):
-        user_row = (15, "u@example.com", hash_password("good"), True)
+        user_row = (15, "u@example.com", hash_password("good"), True, False)
         memberships = [(401, "agency", None, "", 15, "agency_member", "active")]
         cursor = _FakeCursor(user_row=user_row, memberships=memberships)
         original_connect = auth_service._connect
@@ -149,8 +166,25 @@ class AuthDbLoginTests(unittest.TestCase):
         finally:
             auth_service._connect = original_connect
 
+    def test_login_prefers_agency_role_when_user_has_agency_and_subaccount(self):
+        user_row = (31, "mixed@example.com", hash_password("good"), True, False)
+        memberships = [
+            (411, "subaccount", 77, "Client Mixed", 31, "subaccount_user", "active"),
+            (412, "agency", None, "", 31, "agency_member", "active"),
+        ]
+        cursor = _FakeCursor(user_row=user_row, memberships=memberships)
+        original_connect = auth_service._connect
+        try:
+            auth_service._connect = lambda: _FakeConn(cursor)
+            user = auth_service.authenticate_user_from_db(email="mixed@example.com", password="good")
+            self.assertEqual(user.role, "agency_member")
+            self.assertEqual(user.access_scope, "agency")
+            self.assertEqual(user.allowed_subaccount_ids, ())
+        finally:
+            auth_service._connect = original_connect
+
     def test_legacy_alias_role_normalization(self):
-        user_row = (16, "u@example.com", hash_password("good"), True)
+        user_row = (16, "u@example.com", hash_password("good"), True, False)
         memberships = [(501, "subaccount", 7, "Client A", 16, "subaccount_user", "active")]
         cursor = _FakeCursor(user_row=user_row, memberships=memberships)
         original_connect = auth_service._connect
@@ -163,7 +197,7 @@ class AuthDbLoginTests(unittest.TestCase):
             auth_service._connect = original_connect
 
     def test_subaccount_user_multiple_memberships_login_succeeds_without_409(self):
-        user_row = (17, "u@example.com", hash_password("good"), True)
+        user_row = (17, "u@example.com", hash_password("good"), True, False)
         memberships = [
             (601, "subaccount", 9, "Client A", 17, "subaccount_user", "active"),
             (602, "subaccount", 10, "Client B", 17, "subaccount_user", "active"),
@@ -184,7 +218,7 @@ class AuthDbLoginTests(unittest.TestCase):
 
 
     def test_subaccount_admin_multiple_memberships_login_succeeds(self):
-        user_row = (18, "admin-sub@example.com", hash_password("good"), True)
+        user_row = (18, "admin-sub@example.com", hash_password("good"), True, False)
         memberships = [
             (701, "subaccount", 21, "Client X", 18, "subaccount_admin", "active"),
             (702, "subaccount", 22, "Client Y", 18, "subaccount_admin", "active"),
@@ -210,7 +244,7 @@ class AuthDbLoginTests(unittest.TestCase):
             )
             auth_api.validate_login_credentials = lambda email, password: True
             auth_api.rate_limiter_service.check = lambda *args, **kwargs: None
-            resp = auth_api.login(LoginRequest(email="admin@example.com", password="ok", role="subaccount_user"))
+            resp = auth_api.login(LoginRequest(email="admin@example.com", password="ok"))
             decoded = decode_access_token(resp.access_token)
             self.assertEqual(decoded.role, "super_admin")
             self.assertTrue(decoded.is_env_admin)
@@ -220,7 +254,7 @@ class AuthDbLoginTests(unittest.TestCase):
             auth_api.rate_limiter_service.check = original_rate
 
     def test_login_ignores_inactive_membership_rows(self):
-        user_row = (19, "mixed@example.com", hash_password("good"), True)
+        user_row = (19, "mixed@example.com", hash_password("good"), True, False)
         memberships = [
             (801, "subaccount", 31, "Client A", 19, "subaccount_user", "inactive"),
             (802, "subaccount", 32, "Client B", 19, "subaccount_user", "active"),
@@ -237,7 +271,7 @@ class AuthDbLoginTests(unittest.TestCase):
 
 
     def test_login_ignores_deleted_membership_row(self):
-        user_row = (20, "removed@example.com", hash_password("good"), True)
+        user_row = (20, "removed@example.com", hash_password("good"), True, False)
         memberships = [
             # Membership 901 was removed from DB, so only 902 is returned by query.
             (902, "subaccount", 42, "Client Active", 20, "subaccount_user", "active"),
@@ -249,6 +283,24 @@ class AuthDbLoginTests(unittest.TestCase):
             user = auth_service.authenticate_user_from_db(email="removed@example.com", password="good", requested_role="subaccount_user")
             self.assertEqual(user.membership_ids, (902,))
             self.assertEqual(user.allowed_subaccount_ids, (42,))
+        finally:
+            auth_service._connect = original_connect
+
+    def test_login_is_blocked_until_initial_password_is_set(self):
+        user_row = (21, "invitee@example.com", hash_password("temp"), True, True)
+        memberships = [(903, "agency", None, "", 21, "agency_member", "active")]
+        cursor = _FakeCursor(user_row=user_row, memberships=memberships)
+        original_connect = auth_service._connect
+        try:
+            auth_service._connect = lambda: _FakeConn(cursor)
+            with self.assertRaises(AuthLoginError) as ctx:
+                auth_service.authenticate_user_from_db(
+                    email="invitee@example.com",
+                    password="temp",
+                    requested_role="agency_member",
+                )
+            self.assertEqual(ctx.exception.status_code, 403)
+            self.assertEqual(ctx.exception.reason, "password_setup_required")
         finally:
             auth_service._connect = original_connect
 
