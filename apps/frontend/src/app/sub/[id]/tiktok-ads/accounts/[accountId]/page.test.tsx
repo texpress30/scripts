@@ -21,7 +21,20 @@ describe("TikTok account campaigns drilldown", () => {
       account_name: "TikTok Main",
       currency: "RON",
       date_range: { start_date: "2026-03-01", end_date: "2026-03-31" },
-      items: [],
+      items: [{
+        campaign_id: "tt-cmp-1",
+        campaign_name: "",
+        status: "unknown",
+        cost: null,
+        rev_inf: null,
+        roas_inf: null,
+        mer_inf: null,
+        truecac_inf: null,
+        ecr_inf: null,
+        ecpnv_inf: null,
+        new_visits: null,
+        visits: null,
+      }],
     });
   });
 
@@ -33,7 +46,9 @@ describe("TikTok account campaigns drilldown", () => {
     expect(screen.getByRole("button", { name: /Columns/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Export/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Last 30 days/i })).toBeInTheDocument();
-    expect(screen.getByText("Nu există campanii în perioada selectată.")).toBeInTheDocument();
+    expect(screen.getByText("tt-cmp-1")).toBeInTheDocument();
+    expect(screen.queryByText("Nu există campanii în perioada selectată.")).not.toBeInTheDocument();
+    expect(screen.queryByText("II")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Back to accounts/i })).toHaveAttribute("href", "/sub/96/tiktok-ads");
   });
 });

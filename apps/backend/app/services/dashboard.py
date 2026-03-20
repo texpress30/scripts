@@ -353,16 +353,9 @@ class UnifiedDashboardService:
     def _client_platform_account_rows_query(self, *, platform: str) -> str:
         if platform not in {"google_ads", "meta_ads", "tiktok_ads"}:
             raise ValueError("unsupported platform")
-        fuzzy_account_match_sql = ""
-        if platform == "google_ads":
-            fuzzy_account_match_sql = """
-                              OR regexp_replace(mapped.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
-                         """
-        fuzzy_platform_account_join_sql = ""
-        if platform == "google_ads":
-            fuzzy_platform_account_join_sql = """
-                              OR regexp_replace(apa.account_id, '[^0-9]', '', 'g') = regexp_replace(mapped.account_id, '[^0-9]', '', 'g')
-                         """
+        normalized_mapped_account_sql = self._platform_account_normalized_sql(expr="mapped.account_id", platform=platform)
+        normalized_report_account_sql = self._platform_account_normalized_sql(expr="apr.customer_id", platform=platform)
+        normalized_apa_account_sql = self._platform_account_normalized_sql(expr="apa.account_id", platform=platform)
         effective_currency_sql = self._effective_attached_account_currency_sql(
             mapping_currency_expr="mapped.account_currency",
             platform_currency_expr="apa.currency_code",
@@ -373,7 +366,10 @@ class UnifiedDashboardService:
                         SELECT
                             mapped.account_id,
                             COALESCE(NULLIF(TRIM(apa.account_name), ''), mapped.account_id) AS account_name,
-                            COALESCE(NULLIF(TRIM(apa.status), ''), 'active') AS account_status,
+                            COALESCE(
+                                NULLIF(TRIM(apa.status), ''),
+                                NULLIF(TRIM(COALESCE(apr.extra_metrics -> '{platform}' ->> 'account_status', '')), '')
+                            ) AS account_status,
                             apr.report_date,
                             COALESCE(
                                 NULLIF(TRIM(COALESCE(apr.extra_metrics -> '{platform}' ->> 'account_currency', '')), ''),
@@ -390,7 +386,7 @@ class UnifiedDashboardService:
                           ON apa.platform = mapped.platform
                          AND (
                               apa.account_id = mapped.account_id
-                              {fuzzy_platform_account_join_sql}
+                              OR {normalized_apa_account_sql} = {normalized_mapped_account_sql}
                          )
                         LEFT JOIN ad_performance_reports apr
                           ON apr.platform = mapped.platform
@@ -398,7 +394,7 @@ class UnifiedDashboardService:
                          AND apr.report_date BETWEEN %s AND %s
                          AND (
                               mapped.account_id = apr.customer_id
-                              {fuzzy_account_match_sql}
+                              OR {normalized_mapped_account_sql} = {normalized_report_account_sql}
                          )
                          AND COALESCE(
                               NULLIF(TRIM(COALESCE(apr.extra_metrics -> '{platform}' ->> 'grain', '')), ''),
@@ -412,19 +408,11 @@ class UnifiedDashboardService:
     def _client_platform_campaign_rows_query(self, *, platform: str) -> str:
         if platform not in {"google_ads", "meta_ads", "tiktok_ads"}:
             raise ValueError("unsupported platform")
-        fuzzy_mapping_match_sql = ""
-        fuzzy_account_match_sql = ""
-        fuzzy_platform_account_join_sql = ""
-        if platform == "google_ads":
-            fuzzy_mapping_match_sql = """
-                           OR regexp_replace(mapped.account_id, '[^0-9]', '', 'g') = regexp_replace(cpr.account_id, '[^0-9]', '', 'g')
-                         """
-            fuzzy_account_match_sql = """
-                           OR regexp_replace(cpr.account_id, '[^0-9]', '', 'g') = regexp_replace(%s, '[^0-9]', '', 'g')
-                         """
-            fuzzy_platform_account_join_sql = """
-                              OR regexp_replace(apa.account_id, '[^0-9]', '', 'g') = regexp_replace(cpr.account_id, '[^0-9]', '', 'g')
-                         """
+        normalized_mapped_account_sql = self._platform_account_normalized_sql(expr="mapped.account_id", platform=platform)
+        normalized_campaign_account_sql = self._platform_account_normalized_sql(expr="cpr.account_id", platform=platform)
+        normalized_apa_account_sql = self._platform_account_normalized_sql(expr="apa.account_id", platform=platform)
+        normalized_pc_account_sql = self._platform_account_normalized_sql(expr="pc.account_id", platform=platform)
+        normalized_input_account_sql = self._platform_account_normalized_sql(expr="%s", platform=platform)
         effective_currency_sql = self._effective_attached_account_currency_sql(
             mapping_currency_expr="mapped.account_currency",
             platform_currency_expr="apa.currency_code",
@@ -439,9 +427,16 @@ class UnifiedDashboardService:
                             COALESCE(
                                 NULLIF(TRIM(pc.name), ''),
                                 NULLIF(TRIM(COALESCE(cpr.extra_metrics -> '{platform}' ->> 'campaign_name', '')), ''),
+                                NULLIF(TRIM(COALESCE(cpr.extra_metrics ->> 'campaign_name', '')), ''),
                                 cpr.campaign_id
                             ) AS campaign_name,
-                            COALESCE(NULLIF(TRIM(pc.status), ''), 'active') AS campaign_status,
+                            COALESCE(
+                                NULLIF(TRIM(pc.status), ''),
+                                NULLIF(TRIM(COALESCE(cpr.extra_metrics -> '{platform}' ->> 'campaign_status', '')), ''),
+                                NULLIF(TRIM(COALESCE(cpr.extra_metrics ->> 'campaign_status', '')), ''),
+                                NULLIF(TRIM(COALESCE(cpr.extra_metrics -> '{platform}' ->> 'status', '')), ''),
+                                NULLIF(TRIM(COALESCE(cpr.extra_metrics ->> 'status', '')), '')
+                            ) AS campaign_status,
                             cpr.report_date,
                             COALESCE(
                                 NULLIF(TRIM(COALESCE(cpr.extra_metrics -> '{platform}' ->> 'account_currency', '')), ''),
@@ -457,7 +452,7 @@ class UnifiedDashboardService:
                          AND mapped.client_id = %s
                          AND (
                               mapped.account_id = cpr.account_id
-                              {fuzzy_mapping_match_sql}
+                              OR {normalized_mapped_account_sql} = {normalized_campaign_account_sql}
                          )
                         JOIN agency_clients client
                           ON client.id = mapped.client_id
@@ -465,17 +460,20 @@ class UnifiedDashboardService:
                           ON apa.platform = cpr.platform
                          AND (
                               apa.account_id = cpr.account_id
-                              {fuzzy_platform_account_join_sql}
+                              OR {normalized_apa_account_sql} = {normalized_campaign_account_sql}
                          )
                         LEFT JOIN platform_campaigns pc
-                          ON pc.platform = cpr.platform
-                         AND pc.account_id = cpr.account_id
+                         ON pc.platform = cpr.platform
+                         AND (
+                              pc.account_id = cpr.account_id
+                              OR {normalized_pc_account_sql} = {normalized_campaign_account_sql}
+                         )
                          AND pc.campaign_id = cpr.campaign_id
                         WHERE cpr.platform = %s
                           AND cpr.report_date BETWEEN %s AND %s
                           AND (
                                cpr.account_id = %s
-                               {fuzzy_account_match_sql}
+                               OR {normalized_campaign_account_sql} = {normalized_input_account_sql}
                           )
                           AND COALESCE(
                                NULLIF(TRIM(COALESCE(cpr.extra_metrics -> '{platform}' ->> 'grain', '')), ''),
@@ -483,6 +481,15 @@ class UnifiedDashboardService:
                           ) = 'campaign_daily'
                         ORDER BY cpr.campaign_id, cpr.report_date
                         """
+
+    def _platform_account_normalized_sql(self, *, expr: str, platform: str) -> str:
+        if platform == "google_ads":
+            return f"regexp_replace(COALESCE({expr}, ''), '[^0-9]', '', 'g')"
+        if platform == "meta_ads":
+            return f"regexp_replace(lower(trim(COALESCE({expr}, ''))), '^act_', '', 'g')"
+        if platform == "tiktok_ads":
+            return f"lower(trim(COALESCE({expr}, '')))"
+        return f"trim(COALESCE({expr}, ''))"
 
 
     def _client_dashboard_reconciliation_rows_query(self) -> str:
@@ -2090,7 +2097,7 @@ class UnifiedDashboardService:
             if account_id == "":
                 continue
             account_name = str(row[1] or account_id).strip() or account_id
-            account_status = str(row[2] or "active").strip().lower() or "active"
+            account_status = str(row[2] or "").strip().lower() or "unknown"
             report_date = row[3] if isinstance(row[3], date) else end_date
             account_currency = self._normalize_currency_code(row[4], fallback=reporting_currency)
             spend = self._normalize_money(
@@ -2176,9 +2183,7 @@ class UnifiedDashboardService:
             raise ValueError("account_id is required")
 
         performance_reports_store.initialize_schema()
-        params = (client_id, platform, start_date, end_date, normalized_account_id)
-        if platform == "google_ads":
-            params = (*params, normalized_account_id)
+        params = (client_id, platform, start_date, end_date, normalized_account_id, normalized_account_id)
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(self._client_platform_campaign_rows_query(platform=platform), params)
@@ -2195,7 +2200,7 @@ class UnifiedDashboardService:
             if campaign_id == "":
                 continue
             campaign_name = str(row[3] or campaign_id).strip() or campaign_id
-            campaign_status = str(row[4] or "active").strip().lower() or "active"
+            campaign_status = str(row[4] or "").strip().lower() or "unknown"
             report_date = row[5] if isinstance(row[5], date) else end_date
             account_currency = self._normalize_currency_code(row[6], fallback=reporting_currency)
             spend = self._normalize_money(

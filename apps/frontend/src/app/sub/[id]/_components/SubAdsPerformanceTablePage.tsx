@@ -16,7 +16,7 @@ type MetricKey = "cost" | "rev_inf" | "roas_inf" | "mer_inf" | "truecac_inf" | "
 type MetricRow = {
   accountId: string;
   accountName: string;
-  healthy: boolean;
+  statusKind: "active" | "paused" | "unknown";
   values: Record<MetricKey, number | null>;
 };
 
@@ -75,6 +75,13 @@ function formatMetric(value: number | null, key: MetricKey, money: boolean | und
   if (money) return new Intl.NumberFormat(undefined, { style: "currency", currency: currencyCode, maximumFractionDigits: 2 }).format(value);
   if (key === "roas_inf" || key === "mer_inf" || key === "ecr_inf") return value.toFixed(2);
   return Math.round(value).toLocaleString();
+}
+
+function normalizeStatusKind(statusRaw: string): "active" | "paused" | "unknown" {
+  const status = statusRaw.trim().toLowerCase();
+  if (["active", "enabled", "live", "running", "connected", "ok"].includes(status)) return "active";
+  if (["paused", "inactive", "stopped", "disabled", "archived"].includes(status)) return "paused";
+  return "unknown";
 }
 
 export function SubAdsPerformanceTablePage({
@@ -137,12 +144,11 @@ export function SubAdsPerformanceTablePage({
         const to = appliedRange.to ?? from;
         const payload = await fetchTable(clientId, { start_date: toIso(from), end_date: toIso(to) });
         const accountRows: MetricRow[] = payload.items.map((item: SubGoogleAdsTableItem) => {
-          const status = String(item.status || "").trim().toLowerCase();
-          const healthy = status === "active" || status === "connected" || status === "ok";
+          const statusKind = normalizeStatusKind(String(item.status || ""));
           return {
             accountId: item.account_id,
             accountName: item.account_name || item.account_id,
-            healthy,
+            statusKind,
             values: {
               cost: item.cost ?? null,
               rev_inf: item.rev_inf ?? null,
@@ -383,8 +389,13 @@ export function SubAdsPerformanceTablePage({
                       <td className="px-3 py-3 text-left">
                         <div className="flex items-center gap-2">
                           <input type="checkbox" checked={selectedAccounts.includes(row.accountId)} onChange={() => toggleAccount(row.accountId)} />
-                          <span className={`inline-flex h-2.5 w-2.5 rounded-full ${row.healthy ? "bg-emerald-500" : "bg-rose-500"}`} aria-hidden />
-                          {!row.healthy ? <span className="rounded border border-rose-200 bg-rose-50 px-1 py-0.5 text-[10px] font-semibold text-rose-700">X</span> : null}
+                          <span
+                            className={`inline-flex h-2.5 w-2.5 rounded-full ${
+                              row.statusKind === "active" ? "bg-emerald-500" : row.statusKind === "paused" ? "bg-amber-400" : "bg-slate-300"
+                            }`}
+                            aria-hidden
+                          />
+                          {row.statusKind === "paused" ? <span className="rounded border border-amber-300 bg-amber-50 px-1 py-0.5 text-[10px] font-semibold text-amber-700">II</span> : null}
                           <Link
                             href={`/sub/${clientId}/${accountRouteBase}/accounts/${encodeURIComponent(row.accountId)}`}
                             className="font-medium text-indigo-700 hover:underline"

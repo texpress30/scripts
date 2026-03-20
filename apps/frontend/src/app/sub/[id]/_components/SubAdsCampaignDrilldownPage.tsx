@@ -15,7 +15,7 @@ type MetricKey = "cost" | "rev_inf" | "roas_inf" | "mer_inf" | "truecac_inf" | "
 type CampaignRow = {
   campaignId: string;
   campaignName: string;
-  healthy: boolean;
+  statusKind: "active" | "paused" | "unknown";
   values: Record<MetricKey, number | null>;
 };
 
@@ -76,6 +76,13 @@ function formatMetric(value: number | null, key: MetricKey, money: boolean | und
   return Math.round(value).toLocaleString();
 }
 
+function normalizeStatusKind(statusRaw: string): "active" | "paused" | "unknown" {
+  const status = statusRaw.trim().toLowerCase();
+  if (["active", "enabled", "live", "running", "connected", "ok"].includes(status)) return "active";
+  if (["paused", "inactive", "stopped", "disabled", "archived"].includes(status)) return "paused";
+  return "unknown";
+}
+
 export function SubAdsCampaignDrilldownPage({
   clientId,
   accountId,
@@ -132,12 +139,11 @@ export function SubAdsCampaignDrilldownPage({
         const to = appliedRange.to ?? from;
         const payload = await fetchCampaigns(clientId, accountId, { start_date: toIso(from), end_date: toIso(to) });
         const campaignRows: CampaignRow[] = payload.items.map((item: SubAdsCampaignTableItem) => {
-          const status = String(item.status || "").trim().toLowerCase();
-          const healthy = status === "active" || status === "connected" || status === "ok";
+          const statusKind = normalizeStatusKind(String(item.status || ""));
           return {
             campaignId: item.campaign_id,
             campaignName: item.campaign_name || item.campaign_id,
-            healthy,
+            statusKind,
             values: {
               cost: item.cost ?? null,
               rev_inf: item.rev_inf ?? null,
@@ -335,7 +341,13 @@ export function SubAdsCampaignDrilldownPage({
                     <tr key={row.campaignId} className="border-b border-slate-100 hover:bg-slate-50/70">
                       <td className="px-3 py-3 text-left">
                         <div className="flex items-center gap-2">
-                          <span className={`inline-flex h-2.5 w-2.5 rounded-full ${row.healthy ? "bg-emerald-500" : "bg-rose-500"}`} aria-hidden />
+                          <span
+                            className={`inline-flex h-2.5 w-2.5 rounded-full ${
+                              row.statusKind === "active" ? "bg-emerald-500" : row.statusKind === "paused" ? "bg-amber-400" : "bg-slate-300"
+                            }`}
+                            aria-hidden
+                          />
+                          {row.statusKind === "paused" ? <span className="rounded border border-amber-300 bg-amber-50 px-1 py-0.5 text-[10px] font-semibold text-amber-700">II</span> : null}
                           <span className="font-medium text-slate-900">{row.campaignName}</span>
                         </div>
                       </td>

@@ -33,7 +33,7 @@ describe("Google account campaigns drilldown", () => {
         {
           campaign_id: "cmp-1",
           campaign_name: "Search RO",
-          status: "active",
+          status: "paused",
           cost: 1000,
           rev_inf: 2500,
           roas_inf: 2.5,
@@ -57,6 +57,7 @@ describe("Google account campaigns drilldown", () => {
     expect(screen.getByRole("button", { name: /Export/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Last 30 days/i })).toBeInTheDocument();
     expect(screen.getByText("Search RO")).toBeInTheDocument();
+    expect(screen.getByText("II")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Back to accounts/i })).toHaveAttribute("href", "/sub/96/google-ads");
   });
 

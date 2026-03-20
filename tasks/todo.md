@@ -5859,3 +5859,16 @@ Plan verificat și executat imediat (nu docs-only): patch local pe rutele Sub-ac
 - [x] Drilldown cont -> campanii funcționează pe Google/Meta/TikTok via rute noi în App Router.
 - [x] Datele afișate provin din `campaign_performance_reports` + `platform_campaigns` (fără valori fabricate; lipsă => `—`).
 - [x] Range picker refetch-uiește datele în paginile de campaign drilldown.
+
+# TODO — Fix drilldown campaigns statuses/names + Meta normalization (2026-03-20)
+
+- [x] Audit root-cause pentru Meta missing campaigns, account name fallback în titlu, TikTok campaign name fallback și status badges misleading.
+- [x] Fix backend normalization joins/filters pentru platform account ids (inclusiv `act_` vs numeric) în campaign/account queries.
+- [x] Fix backend payload semantics: status real/unknown (fără fallback fake `active`) + campaign/account naming fallback corect.
+- [x] Fix frontend rendering pentru status: active=green, paused=II, unknown=neutral (fără roșu-x pentru unknown).
+- [x] Update backend/frontend tests + run backend tests, frontend tests, frontend build.
+
+## Review
+- [x] Meta campaigns nu mai depind de match strict textual al account_id; normalizarea rezolvă cazurile `act_...` vs numeric.
+- [x] Titlul drilldown folosește account name real când backend îl poate rezolva din metadata/account mapping.
+- [x] TikTok/Meta campaign names folosesc metadata reală când există; fallback la ID doar când numele lipsește.

@@ -40,7 +40,7 @@ describe("Sub Meta Ads details table", () => {
         {
           account_id: "meta-1",
           account_name: "Meta Main",
-          status: "active",
+          status: "",
           cost: 1200,
           rev_inf: 2200,
           roas_inf: 1.83,
@@ -64,6 +64,7 @@ describe("Sub Meta Ads details table", () => {
     expect(screen.getByRole("button", { name: /Columns/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Export/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Meta Main" })).toHaveAttribute("href", "/sub/96/meta-ads/accounts/meta-1");
+    expect(screen.queryByText("X")).not.toBeInTheDocument();
   });
 
   it("supports column order changes from columns menu", async () => {
