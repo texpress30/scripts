@@ -1,3 +1,16 @@
+# TODO — Agency Team UI: agency_owner + grants selector pentru agency_member/viewer (2026-03-20)
+
+- [x] Re-sync workspace + recitire AGENTS/todo/lessons și audit contracte frontend<->backend folosite de Agency Team.
+- [x] Extindere Agency Team create/edit cu rol `Agency Owner` și UI grants multi-select pentru `Agency Member/Viewer`.
+- [x] Wiring payload create/patch pentru `allowed_subaccount_ids` cu semantică unrestricted la selecție goală.
+- [x] Preload grants în edit + toggling unrestricted/restricted fără a rupe wizard-ul în 2 pași.
+- [x] Update summary list `Acces / Conturi` pentru modelul owner/admin/member/viewer cu grants.
+- [x] Teste frontend Agency Team + build frontend.
+
+## Review
+- [x] Confirmare explicită că Sub-account Team, delete flow și invite/reset/login flow nu au fost modificate.
+- Rulat `npm test -- src/app/settings/team/page.test.tsx` (43/43 pass) și `npm run build` în `apps/frontend`.
+
 # TODO — Backend foundation: agency_owner + agency grants pe sub-account (2026-03-20)
 
 - [x] Re-sync workspace + audit fișiere backend cerute și confirmare limitări model actual.

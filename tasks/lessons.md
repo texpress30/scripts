@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-20: Pentru UI Agency Team cu grants, tratează selectorul de sub-account-uri strict condiționat de rol (`agency_member/viewer`), iar pentru `agency_owner/admin` ascunde controlul și nu trimite restricții în payload.
+
 - 2026-03-20: Pentru roluri agency cu acces restricționabil pe sub-account, modelul corect este tabel de grants dedicat pe membership; listă goală înseamnă explicit acces nelimitat, iar enforcement/listing trebuie să aplice aceeași semantică.
 
 - 2026-03-20: Când login-ul trebuie simplificat la email+parolă, nu păstra selecția de rol în frontend; fă `role` opțional doar pentru compatibilitate backward și derivă contextul exclusiv pe backend din memberships active cu prioritate agency/global.

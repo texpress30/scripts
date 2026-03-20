@@ -462,6 +462,9 @@ export type TeamMembershipDetailItem = {
   role_key: string;
   role_label: string;
   module_keys: string[];
+  allowed_subaccount_ids?: number[];
+  allowed_subaccounts?: { id: number; name: string; label?: string }[];
+  has_restricted_subaccount_access?: boolean;
   source_scope: string;
   is_inherited: boolean;
   membership_status?: "active" | "inactive" | string;
@@ -479,6 +482,7 @@ export type TeamMembershipDetailResponse = {
 export type UpdateTeamMembershipPayload = {
   user_role?: string;
   module_keys?: string[];
+  allowed_subaccount_ids?: number[];
 };
 
 export async function getTeamMembershipDetail(membershipId: string | number): Promise<TeamMembershipDetailResponse> {

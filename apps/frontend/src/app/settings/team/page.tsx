@@ -34,6 +34,9 @@ type TeamMember = {
   location: string;
   subaccount: string;
   module_keys?: string[];
+  allowed_subaccount_ids?: number[];
+  allowed_subaccounts?: { id: number; name: string; label?: string }[];
+  has_restricted_subaccount_access?: boolean;
   membership_status?: "active" | "inactive" | string;
   is_inherited?: boolean;
 };
@@ -77,8 +80,9 @@ function initials(firstName: string, lastName: string) {
 }
 
 
-function roleValueFromKey(roleKey: string): "admin" | "member" | "viewer" {
+function roleValueFromKey(roleKey: string): "owner" | "admin" | "member" | "viewer" {
   const normalized = String(roleKey || "").trim().toLowerCase();
+  if (normalized.endsWith("_owner")) return "owner";
   if (normalized.endsWith("_admin")) return "admin";
   if (normalized.endsWith("_viewer")) return "viewer";
   return "member";
@@ -88,6 +92,7 @@ function roleKeyFromMode(userType: string, userRole: string): string {
   const type = String(userType || "").trim().toLowerCase();
   const role = String(userRole || "").trim().toLowerCase();
   if (type === "agency") {
+    if (role === "owner") return "agency_owner";
     if (role === "admin") return "agency_admin";
     if (role === "viewer") return "agency_viewer";
     return "agency_member";
@@ -160,6 +165,7 @@ export default function SettingsTeamPage() {
   const [extension, setExtension] = useState("");
   const [userType, setUserType] = useState("agency");
   const [userRole, setUserRole] = useState("member");
+  const [allowedSubaccountIds, setAllowedSubaccountIds] = useState<number[]>([]);
   const [subaccount, setSubaccount] = useState("");
   const [subaccountFieldError, setSubaccountFieldError] = useState("");
   const [moduleFieldError, setModuleFieldError] = useState("");
@@ -173,7 +179,7 @@ export default function SettingsTeamPage() {
   const [editingMembershipId, setEditingMembershipId] = useState<number | null>(null);
   const [loadingEditDetail, setLoadingEditDetail] = useState(false);
   const [editLockedInherited, setEditLockedInherited] = useState(false);
-  const [editOriginal, setEditOriginal] = useState<{ userRole: string; moduleKeys: string[] } | null>(null);
+  const [editOriginal, setEditOriginal] = useState<{ userRole: string; moduleKeys: string[]; allowedSubaccountIds: number[] } | null>(null);
   const activeScope = activeScopeFromUserType(userType);
   const activeCatalog = moduleCatalogByScope[activeScope];
 
@@ -266,6 +272,16 @@ export default function SettingsTeamPage() {
     }
   }, [userType, mode, activeCatalog]);
 
+  useEffect(() => {
+    if (userType !== "agency") {
+      setAllowedSubaccountIds([]);
+      return;
+    }
+    if (userRole === "owner" || userRole === "admin") {
+      setAllowedSubaccountIds([]);
+    }
+  }, [userType, userRole]);
+
   function resetCreateForm() {
     setFirstName("");
     setLastName("");
@@ -274,6 +290,7 @@ export default function SettingsTeamPage() {
     setExtension("");
     setUserType("agency");
     setUserRole("member");
+    setAllowedSubaccountIds([]);
     setSubaccount("");
     setSubaccountFieldError("");
     setModuleFieldError("");
@@ -479,7 +496,11 @@ export default function SettingsTeamPage() {
       );
       const coherentKeys = scopeFromDetail === "agency" ? applyAgencySettingsConsistency(filteredKeys) : filteredKeys;
       setSelectedModuleKeys(coherentKeys);
-      setEditOriginal({ userRole: roleValueFromKey(detail.role_key), moduleKeys: [...coherentKeys].sort() });
+      const initialAllowedSubaccountIds = (detail.allowed_subaccount_ids ?? [])
+        .map((item) => Number(item))
+        .filter((item) => Number.isFinite(item));
+      setAllowedSubaccountIds(initialAllowedSubaccountIds);
+      setEditOriginal({ userRole: roleValueFromKey(detail.role_key), moduleKeys: [...coherentKeys].sort(), allowedSubaccountIds: [...initialAllowedSubaccountIds].sort((a, b) => a - b) });
       setEditLockedInherited(Boolean(detail.is_inherited));
       if (detail.is_inherited) {
         setErrorMessage("Acest access este moștenit și nu poate fi editat aici");
@@ -524,15 +545,23 @@ export default function SettingsTeamPage() {
       ? JSON.stringify([...editOriginal.moduleKeys].sort()) === JSON.stringify([...nextModules].sort())
       : false;
 
-    if (editOriginal && noRoleChange && noModuleChange) {
+    const nextAllowedIds = [...allowedSubaccountIds].sort((a, b) => a - b);
+    const noAllowedSubaccountChange = editOriginal
+      ? JSON.stringify(editOriginal.allowedSubaccountIds) === JSON.stringify(nextAllowedIds)
+      : false;
+
+    if (editOriginal && noRoleChange && noModuleChange && noAllowedSubaccountChange) {
       setSaving(false);
       return;
     }
 
-    const payload: { user_role?: string; module_keys?: string[] } = {
+    const payload: { user_role?: string; module_keys?: string[]; allowed_subaccount_ids?: number[] } = {
       user_role: roleKeyFromMode(userType, userRole),
     };
     payload.module_keys = nextModules;
+    if (userType === "agency" && (userRole === "member" || userRole === "viewer")) {
+      payload.allowed_subaccount_ids = nextAllowedIds;
+    }
 
     try {
       await updateTeamMembership(editingMembershipId, payload);
@@ -601,6 +630,9 @@ export default function SettingsTeamPage() {
         password: advancedOpen ? password : undefined,
       };
       payload.module_keys = nextModules;
+      if (userType === "agency" && (userRole === "member" || userRole === "viewer")) {
+        payload.allowed_subaccount_ids = [...allowedSubaccountIds].sort((a, b) => a - b);
+      }
 
       const createResponse = await apiRequest<{ item: TeamMember }>("/team/members", {
         method: "POST",
@@ -686,7 +718,28 @@ export default function SettingsTeamPage() {
     if (normalizedUserType === "client" && normalizedSubaccount && normalizedSubaccount.toLowerCase() !== "toate") {
       return normalizedSubaccount;
     }
-    return "Niciun cont";
+    const normalizedRole = String(member.user_role || "").trim().toLowerCase();
+    if (normalizedRole === "owner" || normalizedRole === "admin") {
+      return "Toate conturile";
+    }
+    const allowedIds = (member.allowed_subaccount_ids ?? []).filter((item) => Number.isFinite(Number(item)));
+    const restricted = Boolean(member.has_restricted_subaccount_access) || allowedIds.length > 0;
+    if (!restricted) {
+      return "Toate conturile";
+    }
+    const labels = (member.allowed_subaccounts ?? [])
+      .map((item) => String(item.label || item.name || "").trim())
+      .filter((item) => item !== "");
+    if (labels.length > 0 && labels.length <= 2) return labels.join(", ");
+    return `${allowedIds.length} conturi selectate`;
+  }
+
+  const supportsAgencySubaccountGrants = userType === "agency" && (userRole === "member" || userRole === "viewer");
+  function toggleAllowedSubaccount(optionId: number) {
+    setAllowedSubaccountIds((prev) => {
+      if (prev.includes(optionId)) return prev.filter((item) => item !== optionId);
+      return [...prev, optionId].sort((a, b) => a - b);
+    });
   }
 
   const shouldShowModulePermissions = activeCatalog.length > 0;
@@ -712,8 +765,11 @@ export default function SettingsTeamPage() {
     const normalizedNow = [...selectedModuleKeys.map((key) => key.trim().toLowerCase()).filter((key) => key !== "")].sort();
     const normalizedOriginal = [...editOriginal.moduleKeys].sort();
     const sameModules = JSON.stringify(normalizedNow) === JSON.stringify(normalizedOriginal);
-    return sameRole && sameModules;
-  }, [mode, saving, loadingEditDetail, editLockedInherited, editingMembershipId, editOriginal, selectedModuleKeys, userRole]);
+    const normalizedAllowedNow = [...allowedSubaccountIds].sort((a, b) => a - b);
+    const normalizedAllowedOriginal = [...editOriginal.allowedSubaccountIds].sort((a, b) => a - b);
+    const sameAllowedSubaccounts = JSON.stringify(normalizedAllowedNow) === JSON.stringify(normalizedAllowedOriginal);
+    return sameRole && sameModules && sameAllowedSubaccounts;
+  }, [mode, saving, loadingEditDetail, editLockedInherited, editingMembershipId, editOriginal, selectedModuleKeys, userRole, allowedSubaccountIds]);
 
   function applyAgencySettingsConsistency(keys: string[]): string[] {
     if (activeScope !== "agency") return normalizeSelectedKeys(keys);
@@ -802,6 +858,7 @@ export default function SettingsTeamPage() {
                   </select>
                   <select className="wm-input" value={userRoleFilter} onChange={(e) => { setPage(1); setUserRoleFilter(e.target.value); }}>
                     <option value="">Rol Utilizator</option>
+                    <option value="owner">Owner</option>
                     <option value="admin">Admin</option>
                     <option value="member">Membru</option>
                     <option value="viewer">Viewer</option>
@@ -1025,6 +1082,7 @@ export default function SettingsTeamPage() {
                       <label className="text-sm text-slate-700">
                         Rol Utilizator
                         <select className="wm-input mt-1" value={userRole} onChange={(e) => setUserRole(e.target.value)}>
+                          <option value="owner">Agency Owner</option>
                           <option value="admin">Admin</option>
                           <option value="member">Membru</option>
                           <option value="viewer">Viewer</option>
@@ -1049,6 +1107,24 @@ export default function SettingsTeamPage() {
                         {subaccountFieldError ? <p className="mt-1 text-xs text-red-600">{subaccountFieldError}</p> : null}
                       </label>
                     </div>
+                    {supportsAgencySubaccountGrants ? (
+                      <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-sm font-medium text-slate-800">Acces sub-account-uri (agency)</p>
+                        <p className="mt-1 text-xs text-slate-600">Niciun sub-account selectat = acces la toate conturile.</p>
+                        <div className="mt-2 max-h-36 space-y-1 overflow-auto pr-1">
+                          {subaccountOptions.map((item) => (
+                            <label key={item.id} className="flex items-center gap-2 text-sm text-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={allowedSubaccountIds.includes(item.id)}
+                                onChange={() => toggleAllowedSubaccount(item.id)}
+                              />
+                              {item.label || item.name}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
 
                     <div>
                       <button type="button" className="text-sm font-medium text-indigo-600 hover:text-indigo-700" onClick={() => setAdvancedOpen((prev) => !prev)}>
@@ -1143,6 +1219,7 @@ export default function SettingsTeamPage() {
                           <label className="text-sm text-slate-700">
                             Rol Utilizator
                             <select className="wm-input mt-1" value={userRole} onChange={(e) => setUserRole(e.target.value)} disabled={editLockedInherited}>
+                              <option value="owner">Agency Owner</option>
                               <option value="admin">Admin</option>
                               <option value="member">Membru</option>
                               <option value="viewer">Viewer</option>
@@ -1167,6 +1244,25 @@ export default function SettingsTeamPage() {
                             {subaccountFieldError ? <p className="mt-1 text-xs text-red-600">{subaccountFieldError}</p> : null}
                           </label>
                         </div>
+                        {supportsAgencySubaccountGrants ? (
+                          <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                            <p className="text-sm font-medium text-slate-800">Acces sub-account-uri (agency)</p>
+                            <p className="mt-1 text-xs text-slate-600">Niciun sub-account selectat = acces la toate conturile.</p>
+                            <div className="mt-2 max-h-36 space-y-1 overflow-auto pr-1">
+                              {subaccountOptions.map((item) => (
+                                <label key={item.id} className="flex items-center gap-2 text-sm text-slate-700">
+                                  <input
+                                    type="checkbox"
+                                    checked={allowedSubaccountIds.includes(item.id)}
+                                    onChange={() => toggleAllowedSubaccount(item.id)}
+                                    disabled={editLockedInherited}
+                                  />
+                                  {item.label || item.name}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
                       </>
                     ) : shouldShowModulePermissions ? (
                       <PermissionsEditor
