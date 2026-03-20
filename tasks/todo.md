@@ -1,3 +1,15 @@
+# TODO — Backend foundation: agency_owner + agency grants pe sub-account (2026-03-20)
+
+- [x] Re-sync workspace + audit fișiere backend cerute și confirmare limitări model actual.
+- [x] Introducere rol canonic `agency_owner` pe fluxurile backend relevante (RBAC/auth/team) cu full-access.
+- [x] Migrare mică pentru grants `agency membership -> subaccount` + helperi store minimali.
+- [x] Extindere service/auth/guards pentru semantics: owner/admin unrestricted, member/viewer restricted doar când există grants.
+- [x] Ajustare inherited listing în Sub-account Team: exclude owner/admin; include member/viewer doar când unrestricted sau grant match.
+- [x] Teste backend țintite + startup/import check.
+
+## Review
+- [x] Confirmare explicită: frontend, team wizard-uri, delete flow, invite/reset flow neatinse.
+
 # TODO — Login fără selector de rol + derivare automată context din memberships (2026-03-20)
 
 - [x] Re-citire fișiere auth/login backend+frontend și confirmare root-cause pentru rol selectat manual în login.

@@ -91,6 +91,31 @@ def _normalize_member_item(raw: dict[str, object]) -> dict[str, object] | None:
     except Exception:  # noqa: BLE001
         user_id = None
 
+    allowed_subaccount_ids: list[int] = []
+    raw_allowed_ids = raw.get("allowed_subaccount_ids")
+    if isinstance(raw_allowed_ids, list):
+        for item in raw_allowed_ids:
+            try:
+                value = int(item)
+            except Exception:  # noqa: BLE001
+                continue
+            if value not in allowed_subaccount_ids:
+                allowed_subaccount_ids.append(value)
+
+    allowed_subaccounts: list[dict[str, object]] = []
+    raw_allowed = raw.get("allowed_subaccounts")
+    if isinstance(raw_allowed, list):
+        for item in raw_allowed:
+            if not isinstance(item, dict):
+                continue
+            try:
+                subaccount_id = int(item.get("id"))
+            except Exception:  # noqa: BLE001
+                continue
+            name = str(item.get("name") or "")
+            if not any(int(existing.get("id", -1)) == subaccount_id for existing in allowed_subaccounts):
+                allowed_subaccounts.append({"id": subaccount_id, "name": name, "label": name or str(subaccount_id)})
+
     return {
         "id": member_id,
         "membership_id": membership_id,
@@ -105,6 +130,9 @@ def _normalize_member_item(raw: dict[str, object]) -> dict[str, object] | None:
         "location": str(raw.get("location") or "România"),
         "subaccount": str(raw.get("subaccount") or "Toate"),
         "module_keys": _normalize_module_keys(raw.get("module_keys")),
+        "allowed_subaccount_ids": allowed_subaccount_ids,
+        "allowed_subaccounts": allowed_subaccounts,
+        "has_restricted_subaccount_access": bool(raw.get("has_restricted_subaccount_access", False)),
         "membership_status": str(raw.get("membership_status") or "active").strip().lower() or "active",
     }
 
@@ -193,6 +221,7 @@ def create_team_member(payload: CreateTeamMemberRequest, user: AuthUser = Depend
             subaccount=payload.subaccount,
             password=payload.password,
             module_keys=payload.module_keys,
+            allowed_subaccount_ids=payload.allowed_subaccount_ids,
             actor_user=user,
         )
     except ValueError as exc:
@@ -229,7 +258,7 @@ def patch_team_membership(
     user: AuthUser = Depends(get_current_user),
 ) -> TeamMembershipDetailResponse:
     _enforce_membership_edit_actor_role(user)
-    if payload.user_role is None and payload.module_keys is None:
+    if payload.user_role is None and payload.module_keys is None and payload.allowed_subaccount_ids is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nu există câmpuri de actualizat")
 
     try:
@@ -238,6 +267,7 @@ def patch_team_membership(
             actor_user=user,
             user_role=payload.user_role,
             module_keys=payload.module_keys,
+            allowed_subaccount_ids=payload.allowed_subaccount_ids,
         )
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

@@ -293,12 +293,32 @@ def authenticate_user_from_db(*, email: str, password: str, requested_role: str 
             scope_type = str(first_membership[2] or "") or None
 
             allowed_subaccounts_map: dict[int, str] = {}
-            for row in selected_memberships:
-                subaccount_id = _coerce_int(row[3])
-                if subaccount_id is None:
-                    continue
-                if subaccount_id not in allowed_subaccounts_map:
-                    allowed_subaccounts_map[subaccount_id] = str(row[4] or "")
+            if normalized_role in {"agency_member", "agency_viewer"}:
+                selected_membership_ids = [int(row[0]) for row in selected_memberships]
+                if selected_membership_ids:
+                    cur.execute(
+                        """
+                        SELECT subaccount_id
+                        FROM membership_subaccount_access_grants
+                        WHERE membership_id = ANY(%s)
+                        ORDER BY subaccount_id ASC
+                        """,
+                        (selected_membership_ids,),
+                    )
+                    grant_rows = cur.fetchall()
+                    for grant_row in grant_rows:
+                        subaccount_id = _coerce_int(grant_row[0])
+                        if subaccount_id is None:
+                            continue
+                        if subaccount_id not in allowed_subaccounts_map:
+                            allowed_subaccounts_map[subaccount_id] = ""
+            else:
+                for row in selected_memberships:
+                    subaccount_id = _coerce_int(row[3])
+                    if subaccount_id is None:
+                        continue
+                    if subaccount_id not in allowed_subaccounts_map:
+                        allowed_subaccounts_map[subaccount_id] = str(row[4] or "")
 
             allowed_subaccount_ids = tuple(sorted(allowed_subaccounts_map.keys()))
             allowed_subaccounts = tuple(

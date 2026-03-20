@@ -7,9 +7,10 @@ from app.services.auth import AuthLoginError, create_access_token, decode_access
 
 
 class _FakeCursor:
-    def __init__(self, *, user_row, memberships):
+    def __init__(self, *, user_row, memberships, membership_grants=None):
         self.user_row = user_row
         self.memberships = memberships
+        self.membership_grants = membership_grants or {}
         self.updated_last_login = False
         self._next_fetchone = None
         self._next_fetchall = []
@@ -30,6 +31,18 @@ class _FakeCursor:
             ]
             self._next_fetchall = matched
             return
+        if "FROM membership_subaccount_access_grants" in sql:
+            membership_ids = params[0]
+            selected_ids = {int(value) for value in membership_ids}
+            rows: list[tuple[int]] = []
+            for membership_id, subaccount_ids in self.membership_grants.items():
+                if int(membership_id) not in selected_ids:
+                    continue
+                for subaccount_id in subaccount_ids:
+                    rows.append((int(subaccount_id),))
+            rows.sort(key=lambda item: item[0])
+            self._next_fetchall = rows
+            return
         if "UPDATE users SET last_login_at" in sql:
             self.updated_last_login = True
             return
@@ -42,6 +55,8 @@ class _FakeCursor:
     def fetchall(self):
         rows = self._next_fetchall
         self._next_fetchall = []
+        if rows and len(rows[0]) == 1:
+            return rows
         return [(row[0], row[5], row[1], row[2], row[3]) for row in rows]
 
     def __enter__(self):
@@ -180,6 +195,54 @@ class AuthDbLoginTests(unittest.TestCase):
             self.assertEqual(user.role, "agency_member")
             self.assertEqual(user.access_scope, "agency")
             self.assertEqual(user.allowed_subaccount_ids, ())
+        finally:
+            auth_service._connect = original_connect
+
+    def test_login_prefers_agency_owner_over_agency_admin(self):
+        user_row = (33, "owner@example.com", hash_password("good"), True, False)
+        memberships = [
+            (420, "agency", None, "", 33, "agency_admin", "active"),
+            (421, "agency", None, "", 33, "agency_owner", "active"),
+        ]
+        cursor = _FakeCursor(user_row=user_row, memberships=memberships)
+        original_connect = auth_service._connect
+        try:
+            auth_service._connect = lambda: _FakeConn(cursor)
+            user = auth_service.authenticate_user_from_db(email="owner@example.com", password="good")
+            self.assertEqual(user.role, "agency_owner")
+            self.assertEqual(user.access_scope, "agency")
+        finally:
+            auth_service._connect = original_connect
+
+    def test_login_agency_member_with_restricted_grants(self):
+        user_row = (34, "member@example.com", hash_password("good"), True, False)
+        memberships = [
+            (430, "agency", None, "", 34, "agency_member", "active"),
+        ]
+        cursor = _FakeCursor(user_row=user_row, memberships=memberships, membership_grants={430: [8, 11]})
+        original_connect = auth_service._connect
+        try:
+            auth_service._connect = lambda: _FakeConn(cursor)
+            user = auth_service.authenticate_user_from_db(email="member@example.com", password="good")
+            self.assertEqual(user.role, "agency_member")
+            self.assertEqual(user.allowed_subaccount_ids, (8, 11))
+            self.assertEqual(user.access_scope, "agency")
+        finally:
+            auth_service._connect = original_connect
+
+    def test_login_agency_viewer_without_grants_is_unrestricted(self):
+        user_row = (35, "viewer@example.com", hash_password("good"), True, False)
+        memberships = [
+            (431, "agency", None, "", 35, "agency_viewer", "active"),
+        ]
+        cursor = _FakeCursor(user_row=user_row, memberships=memberships, membership_grants={})
+        original_connect = auth_service._connect
+        try:
+            auth_service._connect = lambda: _FakeConn(cursor)
+            user = auth_service.authenticate_user_from_db(email="viewer@example.com", password="good")
+            self.assertEqual(user.role, "agency_viewer")
+            self.assertEqual(user.allowed_subaccount_ids, ())
+            self.assertEqual(user.access_scope, "agency")
         finally:
             auth_service._connect = original_connect
 
