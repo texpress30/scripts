@@ -4,7 +4,7 @@ from pydantic import BaseModel
 class LoginRequest(BaseModel):
     email: str
     password: str
-    role: str
+    role: str | None = None
 
 
 class LoginResponse(BaseModel):
@@ -37,3 +37,10 @@ class ResetPasswordConfirmRequest(BaseModel):
 
 class ResetPasswordConfirmResponse(BaseModel):
     message: str
+
+
+class ResetPasswordTokenContextResponse(BaseModel):
+    valid: bool
+    token_type: str | None = None
+    email_hint: str | None = None
+    reason: str | None = None
