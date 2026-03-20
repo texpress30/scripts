@@ -15,6 +15,9 @@ class TeamMemberItem(BaseModel):
     location: str
     subaccount: str
     module_keys: list[str] = Field(default_factory=list)
+    allowed_subaccount_ids: list[int] = Field(default_factory=list)
+    allowed_subaccounts: list[dict[str, object]] = Field(default_factory=list)
+    has_restricted_subaccount_access: bool = False
     membership_status: str = "active"
 
 
@@ -37,6 +40,7 @@ class CreateTeamMemberRequest(BaseModel):
     subaccount: str = "Toate"
     password: str | None = None
     module_keys: list[str] | None = None
+    allowed_subaccount_ids: list[int] | None = None
 
 
 class TeamMemberResponse(BaseModel):
@@ -151,6 +155,9 @@ class TeamMembershipDetailItem(BaseModel):
     role_key: str
     role_label: str
     module_keys: list[str] = Field(default_factory=list)
+    allowed_subaccount_ids: list[int] = Field(default_factory=list)
+    allowed_subaccounts: list[dict[str, object]] = Field(default_factory=list)
+    has_restricted_subaccount_access: bool = False
     source_scope: str
     is_inherited: bool
     membership_status: str = "active"
@@ -177,6 +184,14 @@ class TeamMembershipRemoveResponse(BaseModel):
     message: str
 
 
+class TeamUserDeleteResponse(BaseModel):
+    user_id: int
+    deleted: bool
+    deleted_memberships_count: int = 0
+    message: str
+
+
 class UpdateTeamMembershipRequest(BaseModel):
     user_role: str | None = None
     module_keys: list[str] | None = None
+    allowed_subaccount_ids: list[int] | None = None

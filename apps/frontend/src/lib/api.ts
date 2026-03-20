@@ -98,6 +98,13 @@ export type ResetPasswordConfirmApiResponse = {
   message: string;
 };
 
+export type ResetPasswordTokenContextApiResponse = {
+  valid: boolean;
+  token_type: "invite_user" | "password_reset" | null;
+  email_hint?: string | null;
+  reason?: string | null;
+};
+
 export async function forgotPassword(email: string): Promise<ForgotPasswordApiResponse> {
   return apiRequest<ForgotPasswordApiResponse>("/auth/forgot-password", {
     method: "POST",
@@ -109,6 +116,33 @@ export async function confirmResetPassword(token: string, newPassword: string): 
   return apiRequest<ResetPasswordConfirmApiResponse>("/auth/reset-password/confirm", {
     method: "POST",
     body: JSON.stringify({ token, new_password: newPassword }),
+  });
+}
+
+export async function getResetPasswordTokenContext(token: string): Promise<ResetPasswordTokenContextApiResponse> {
+  return apiRequest<ResetPasswordTokenContextApiResponse>(`/auth/reset-password/context?token=${encodeURIComponent(token)}`);
+}
+
+export type LoginApiRequest = {
+  email: string;
+  password: string;
+  role?: string;
+};
+
+export type LoginApiResponse = {
+  access_token: string;
+  token_type: string;
+};
+
+export async function loginWithPassword(payload: LoginApiRequest): Promise<LoginApiResponse> {
+  const body: LoginApiRequest = {
+    email: payload.email,
+    password: payload.password,
+  };
+  if (payload.role && payload.role.trim() !== "") body.role = payload.role;
+  return apiRequest<LoginApiResponse>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify(body),
   });
 }
 
@@ -491,6 +525,20 @@ export type TeamMembershipRemoveResponse = {
 
 export async function removeTeamMember(membershipId: string | number): Promise<TeamMembershipRemoveResponse> {
   return apiRequest<TeamMembershipRemoveResponse>(`/team/members/${encodeURIComponent(String(membershipId))}/remove`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export type TeamUserDeleteResponse = {
+  user_id: number;
+  deleted: boolean;
+  deleted_memberships_count: number;
+  message: string;
+};
+
+export async function deleteTeamUser(userId: string | number): Promise<TeamUserDeleteResponse> {
+  return apiRequest<TeamUserDeleteResponse>(`/team/users/${encodeURIComponent(String(userId))}/delete`, {
     method: "POST",
     body: JSON.stringify({}),
   });
