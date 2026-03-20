@@ -68,7 +68,7 @@ function runtimeHintForNotification(key: string): string | null {
     return "Dacă este dezactivată, endpointul forgot-password rămâne anti-enumeration safe, dar nu se mai trimite email.";
   }
   if (key === "team_invite_user") {
-    return "Dacă este dezactivată, invitațiile din Team sunt blocate până la reactivare.";
+    return "Acoperă ambele variante Team: fără parolă => email set-password; cu parolă => email account-ready/login. Dacă este dezactivată, invitațiile sunt blocate.";
   }
   return null;
 }

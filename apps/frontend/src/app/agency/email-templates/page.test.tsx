@@ -71,26 +71,45 @@ describe("AgencyEmailTemplatesPage", () => {
         {
           key: "team_invite_user",
           label: "Team · Invite User",
-          description: "Invite template",
+          description: "Invite template set-password",
           scope: "agency",
           enabled: false,
           is_overridden: true,
           updated_at: "2026-03-18T10:00:00+00:00",
+        },
+        {
+          key: "team_account_ready",
+          label: "Team · Account Ready",
+          description: "Account ready login template",
+          scope: "agency",
+          enabled: true,
+          is_overridden: false,
+          updated_at: null,
         },
       ],
     });
 
     getAgencyEmailTemplateMock.mockImplementation(async (key: string) => ({
       key,
-      label: key === "auth_forgot_password" ? "Auth · Forgot Password" : "Team · Invite User",
-      description: key === "auth_forgot_password" ? "Forgot template" : "Invite template",
-      subject: key === "auth_forgot_password" ? "Reset subject" : "Invite subject",
-      text_body: key === "auth_forgot_password" ? "Reset text {{reset_link}}" : "Invite text {{invite_link}}",
-      html_body: key === "auth_forgot_password" ? "<p>Reset html</p>" : "<p>Invite html</p>",
-      available_variables: key === "auth_forgot_password" ? ["reset_link", "expires_minutes", "user_email"] : ["invite_link", "expires_minutes", "user_email"],
+      label: key === "auth_forgot_password" ? "Auth · Forgot Password" : key === "team_invite_user" ? "Team · Invite User" : "Team · Account Ready",
+      description: key === "auth_forgot_password" ? "Forgot template" : key === "team_invite_user" ? "Invite set-password template" : "Account ready login template",
+      subject: key === "auth_forgot_password" ? "Reset subject" : key === "team_invite_user" ? "Invite subject" : "Ready subject",
+      text_body:
+        key === "auth_forgot_password"
+          ? "Reset text {{reset_link}}"
+          : key === "team_invite_user"
+            ? "Invite text {{invite_link}}"
+            : "Ready text {{login_link}}",
+      html_body: key === "auth_forgot_password" ? "<p>Reset html</p>" : key === "team_invite_user" ? "<p>Invite html</p>" : "<p>Ready html</p>",
+      available_variables:
+        key === "auth_forgot_password"
+          ? ["reset_link", "expires_minutes", "user_email"]
+          : key === "team_invite_user"
+            ? ["invite_link", "expires_minutes", "user_email"]
+            : ["login_link", "user_email"],
       scope: "agency",
       enabled: true,
-      is_overridden: key !== "auth_forgot_password",
+      is_overridden: key === "team_invite_user",
       updated_at: null,
     }));
 
@@ -134,6 +153,7 @@ describe("AgencyEmailTemplatesPage", () => {
 
     expect(screen.getByTestId("app-shell-title")).toHaveTextContent("Email Templates & Notifications");
     expect(await screen.findByText("Auth · Forgot Password")).toBeInTheDocument();
+    expect(screen.getByText("Team · Account Ready")).toBeInTheDocument();
     expect(screen.getAllByText("Enabled").length).toBeGreaterThan(0);
     expect(screen.getByText("Disabled")).toBeInTheDocument();
     expect(screen.getAllByText("Default").length).toBeGreaterThan(0);
@@ -156,6 +176,16 @@ describe("AgencyEmailTemplatesPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Team · Invite User/i }));
     await waitFor(() => expect(getAgencyEmailTemplateMock).toHaveBeenCalledWith("team_invite_user"));
     expect(await screen.findByDisplayValue("Invite subject")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Team · Account Ready/i }));
+    await waitFor(() => expect(getAgencyEmailTemplateMock).toHaveBeenCalledWith("team_account_ready"));
+    expect(await screen.findByDisplayValue("Ready subject")).toBeInTheDocument();
+  });
+
+  it("shows semantic hints for forgot, invite set-password and account-ready login", async () => {
+    render(<AgencyEmailTemplatesPage />);
+    expect(await screen.findByText(/Ai uitat parola/i)).toBeInTheDocument();
+    expect(screen.getByText(/fără parolă/i)).toBeInTheDocument();
+    expect(screen.getByText(/cont gata, mergi la login/i)).toBeInTheDocument();
   });
 
   it("preselects template from query param when provided", async () => {

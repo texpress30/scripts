@@ -98,6 +98,13 @@ export type ResetPasswordConfirmApiResponse = {
   message: string;
 };
 
+export type ResetPasswordTokenContextApiResponse = {
+  valid: boolean;
+  token_type: "invite_user" | "password_reset" | null;
+  email_hint?: string | null;
+  reason?: string | null;
+};
+
 export async function forgotPassword(email: string): Promise<ForgotPasswordApiResponse> {
   return apiRequest<ForgotPasswordApiResponse>("/auth/forgot-password", {
     method: "POST",
@@ -109,6 +116,33 @@ export async function confirmResetPassword(token: string, newPassword: string): 
   return apiRequest<ResetPasswordConfirmApiResponse>("/auth/reset-password/confirm", {
     method: "POST",
     body: JSON.stringify({ token, new_password: newPassword }),
+  });
+}
+
+export async function getResetPasswordTokenContext(token: string): Promise<ResetPasswordTokenContextApiResponse> {
+  return apiRequest<ResetPasswordTokenContextApiResponse>(`/auth/reset-password/context?token=${encodeURIComponent(token)}`);
+}
+
+export type LoginApiRequest = {
+  email: string;
+  password: string;
+  role?: string;
+};
+
+export type LoginApiResponse = {
+  access_token: string;
+  token_type: string;
+};
+
+export async function loginWithPassword(payload: LoginApiRequest): Promise<LoginApiResponse> {
+  const body: LoginApiRequest = {
+    email: payload.email,
+    password: payload.password,
+  };
+  if (payload.role && payload.role.trim() !== "") body.role = payload.role;
+  return apiRequest<LoginApiResponse>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify(body),
   });
 }
 
@@ -405,6 +439,132 @@ export async function getSubaccountMyAccess(subaccountId: number): Promise<TeamS
   return apiRequest<TeamSubaccountMyAccessResponse>(`/team/subaccounts/${encodeURIComponent(String(subaccountId))}/my-access`);
 }
 
+export type SubGoogleAdsTableItem = {
+  account_id: string;
+  account_name: string;
+  status: string;
+  cost: number | null;
+  rev_inf: number | null;
+  roas_inf: number | null;
+  mer_inf: number | null;
+  truecac_inf: number | null;
+  ecr_inf: number | null;
+  ecpnv_inf: number | null;
+  new_visits: number | null;
+  visits: number | null;
+  impressions?: number | null;
+  clicks?: number | null;
+};
+
+export type SubGoogleAdsTableResponse = {
+  client_id: number;
+  currency: string;
+  date_range: { start_date: string; end_date: string };
+  items: SubGoogleAdsTableItem[];
+};
+
+export type SubAdsCampaignTableItem = {
+  campaign_id: string;
+  campaign_name: string;
+  status: string;
+  cost: number | null;
+  rev_inf: number | null;
+  roas_inf: number | null;
+  mer_inf: number | null;
+  truecac_inf: number | null;
+  ecr_inf: number | null;
+  ecpnv_inf: number | null;
+  new_visits: number | null;
+  visits: number | null;
+  impressions?: number | null;
+  clicks?: number | null;
+};
+
+export type SubAdsCampaignTableResponse = {
+  client_id: number;
+  platform: string;
+  account_id: string;
+  account_name: string;
+  currency: string;
+  date_range: { start_date: string; end_date: string };
+  items: SubAdsCampaignTableItem[];
+};
+
+export async function getSubGoogleAdsTable(
+  subaccountId: number,
+  params: { start_date: string; end_date: string },
+): Promise<SubGoogleAdsTableResponse> {
+  const search = new URLSearchParams({
+    start_date: params.start_date,
+    end_date: params.end_date,
+  });
+  return apiRequest<SubGoogleAdsTableResponse>(`/dashboard/${encodeURIComponent(String(subaccountId))}/google-ads-table?${search.toString()}`);
+}
+
+export async function getSubMetaAdsTable(
+  subaccountId: number,
+  params: { start_date: string; end_date: string },
+): Promise<SubGoogleAdsTableResponse> {
+  const search = new URLSearchParams({
+    start_date: params.start_date,
+    end_date: params.end_date,
+  });
+  return apiRequest<SubGoogleAdsTableResponse>(`/dashboard/${encodeURIComponent(String(subaccountId))}/meta-ads-table?${search.toString()}`);
+}
+
+export async function getSubTikTokAdsTable(
+  subaccountId: number,
+  params: { start_date: string; end_date: string },
+): Promise<SubGoogleAdsTableResponse> {
+  const search = new URLSearchParams({
+    start_date: params.start_date,
+    end_date: params.end_date,
+  });
+  return apiRequest<SubGoogleAdsTableResponse>(`/dashboard/${encodeURIComponent(String(subaccountId))}/tiktok-ads-table?${search.toString()}`);
+}
+
+export async function getSubGoogleAdsCampaignsTable(
+  subaccountId: number,
+  accountId: string,
+  params: { start_date: string; end_date: string },
+): Promise<SubAdsCampaignTableResponse> {
+  const search = new URLSearchParams({
+    start_date: params.start_date,
+    end_date: params.end_date,
+  });
+  return apiRequest<SubAdsCampaignTableResponse>(
+    `/dashboard/${encodeURIComponent(String(subaccountId))}/google-ads/accounts/${encodeURIComponent(accountId)}/campaigns?${search.toString()}`,
+  );
+}
+
+export async function getSubMetaAdsCampaignsTable(
+  subaccountId: number,
+  accountId: string,
+  params: { start_date: string; end_date: string },
+): Promise<SubAdsCampaignTableResponse> {
+  const search = new URLSearchParams({
+    start_date: params.start_date,
+    end_date: params.end_date,
+  });
+  return apiRequest<SubAdsCampaignTableResponse>(
+    `/dashboard/${encodeURIComponent(String(subaccountId))}/meta-ads/accounts/${encodeURIComponent(accountId)}/campaigns?${search.toString()}`,
+  );
+}
+
+export async function getSubTikTokAdsCampaignsTable(
+  subaccountId: number,
+  accountId: string,
+  params: { start_date: string; end_date: string },
+): Promise<SubAdsCampaignTableResponse> {
+  const search = new URLSearchParams({
+    start_date: params.start_date,
+    end_date: params.end_date,
+  });
+  return apiRequest<SubAdsCampaignTableResponse>(
+    `/dashboard/${encodeURIComponent(String(subaccountId))}/tiktok-ads/accounts/${encodeURIComponent(accountId)}/campaigns?${search.toString()}`,
+  );
+}
+
 export type TeamAgencyMyAccessResponse = {
   role: string;
   module_keys: string[];
@@ -428,6 +588,9 @@ export type TeamMembershipDetailItem = {
   role_key: string;
   role_label: string;
   module_keys: string[];
+  allowed_subaccount_ids?: number[];
+  allowed_subaccounts?: { id: number; name: string; label?: string }[];
+  has_restricted_subaccount_access?: boolean;
   source_scope: string;
   is_inherited: boolean;
   membership_status?: "active" | "inactive" | string;
@@ -445,6 +608,7 @@ export type TeamMembershipDetailResponse = {
 export type UpdateTeamMembershipPayload = {
   user_role?: string;
   module_keys?: string[];
+  allowed_subaccount_ids?: number[];
 };
 
 export async function getTeamMembershipDetail(membershipId: string | number): Promise<TeamMembershipDetailResponse> {
@@ -491,6 +655,20 @@ export type TeamMembershipRemoveResponse = {
 
 export async function removeTeamMember(membershipId: string | number): Promise<TeamMembershipRemoveResponse> {
   return apiRequest<TeamMembershipRemoveResponse>(`/team/members/${encodeURIComponent(String(membershipId))}/remove`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export type TeamUserDeleteResponse = {
+  user_id: number;
+  deleted: boolean;
+  deleted_memberships_count: number;
+  message: string;
+};
+
+export async function deleteTeamUser(userId: string | number): Promise<TeamUserDeleteResponse> {
+  return apiRequest<TeamUserDeleteResponse>(`/team/users/${encodeURIComponent(String(userId))}/delete`, {
     method: "POST",
     body: JSON.stringify({}),
   });
