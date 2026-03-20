@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-20: Când un sub-route placeholder devine pagină de lucru (ex. Google Ads), izolează schimbarea pe pagina respectivă și ajustează testele placeholder ca să nu rupi celelalte rute „Coming Soon”.
+
 - 2026-03-20: Pentru chart-uri multi-line comparate cu un chart de referință, ascunde dots implicit (`dot={false}`) și lasă doar `activeDot` pe hover pentru claritate vizuală; crește min-height-ul (ex. `h-96`) înainte de a ajusta alte stiluri.
 
 - 2026-03-20: Pentru cerințe de redesign chart punctual (ex. bar -> multi-line), păstrează contractul existent și extinde doar granularitatea seriei (`platform_spend` per zi) astfel încât frontendul să schimbe vizualizarea fără endpoint nou.

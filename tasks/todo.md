@@ -1,3 +1,17 @@
+# TODO — Sub Google Ads details: replace Coming Soon with multi-account performance table (2026-03-20)
+
+- [x] Re-sync + recitire AGENTS/todo/lessons + audit pagină placeholder `sub/[id]/google-ads`.
+- [x] Implementare tabel multi-account cu coloanele cerute și sortare implicită pe Cost.
+- [x] Header controls: Filter, Columns (dropdown), Export.
+- [x] Columns dropdown cu multi-select, Select All, Reset to Default, render dinamic coloane.
+- [x] Persistență selecție coloane în localStorage.
+- [x] Stilizare: status indicators, valori aliniate, underline dotted pentru monetare, tabel full-width responsive.
+- [x] Teste frontend relevante + build frontend.
+
+## Review
+- [x] Confirmare explicită: Agency Dashboard, Team/auth/invite/delete, Media Buying/Tracker, dashboard charts nu au fost modificate.
+- Rulat `npm test -- src/app/sub/[id]/google-ads/page.test.tsx src/app/sub/[id]/sub-routes-placeholder.test.tsx` și `npm run build` în `apps/frontend`.
+
 # TODO — Sub-dashboard chart polish: hover-only dots + h-96 (2026-03-20)
 
 - [x] Re-sync + recitire AGENTS/todo/lessons + audit chart styling curent.
