@@ -153,6 +153,125 @@ class TeamInviteApiTests(unittest.TestCase):
             team_api.mailgun_service.send_email = original_send
             team_api.email_templates_service.render_effective_template = original_render
 
+    def test_invite_user_without_password_uses_reset_link_flow(self):
+        user = AuthUser(email="admin@example.com", role="agency_admin")
+        original_get = team_api.team_members_service.get_membership_with_user
+        original_assert = team_api.mailgun_service.assert_available
+        original_settings = team_api.load_settings
+        original_create = team_api.auth_email_tokens_service.create_user_invite_token_for_existing_user
+        original_render = team_api.email_templates_service.render_effective_template
+        original_send = team_api.mailgun_service.send_email
+        captured: dict[str, object] = {}
+        try:
+            team_api.team_members_service.get_membership_with_user = lambda **kwargs: {
+                "membership_id": 41,
+                "user_id": 21,
+                "scope_type": "agency",
+                "subaccount_id": None,
+                "status": "active",
+                "email": "member@example.com",
+                "is_active": True,
+                "must_reset_password": True,
+            }
+            team_api.mailgun_service.assert_available = lambda: None
+            team_api.load_settings = lambda: SimpleNamespace(frontend_base_url="https://app.example.com", auth_reset_token_ttl_minutes=60)
+            team_api.auth_email_tokens_service.create_user_invite_token_for_existing_user = lambda **kwargs: ("reset-token", None)
+            team_api.email_templates_service.render_effective_template = lambda **kwargs: captured.update(kwargs) or RenderedEmailTemplate(
+                key="team_invite_user",
+                subject="Invitație",
+                text_body="Text",
+                html_body="<p>Text</p>",
+                enabled=True,
+                available_variables=("invite_link", "expires_minutes", "user_email"),
+            )
+            team_api.mailgun_service.send_email = lambda **kwargs: {"ok": True}
+
+            team_api.invite_team_member(membership_id=41, user=user)
+
+            self.assertEqual(captured["template_key"], "team_invite_user")
+            self.assertIn("/reset-password?token=reset-token", str((captured["variables"] or {}).get("invite_link")))
+        finally:
+            team_api.team_members_service.get_membership_with_user = original_get
+            team_api.mailgun_service.assert_available = original_assert
+            team_api.load_settings = original_settings
+            team_api.auth_email_tokens_service.create_user_invite_token_for_existing_user = original_create
+            team_api.email_templates_service.render_effective_template = original_render
+            team_api.mailgun_service.send_email = original_send
+
+    def test_invite_user_with_password_uses_login_link_without_reset_token(self):
+        user = AuthUser(email="admin@example.com", role="agency_admin")
+        original_get = team_api.team_members_service.get_membership_with_user
+        original_assert = team_api.mailgun_service.assert_available
+        original_settings = team_api.load_settings
+        original_create = team_api.auth_email_tokens_service.create_user_invite_token_for_existing_user
+        original_render = team_api.email_templates_service.render_effective_template
+        original_send = team_api.mailgun_service.send_email
+        captured: dict[str, object] = {}
+        try:
+            team_api.team_members_service.get_membership_with_user = lambda **kwargs: {
+                "membership_id": 91,
+                "user_id": 51,
+                "scope_type": "agency",
+                "subaccount_id": None,
+                "status": "active",
+                "email": "ready@example.com",
+                "is_active": True,
+                "must_reset_password": False,
+            }
+            team_api.mailgun_service.assert_available = lambda: None
+            team_api.load_settings = lambda: SimpleNamespace(frontend_base_url="https://portal.example.com/", auth_reset_token_ttl_minutes=60)
+            team_api.auth_email_tokens_service.create_user_invite_token_for_existing_user = lambda **kwargs: (_ for _ in ()).throw(
+                AssertionError("reset token should not be created for password-ready users")
+            )
+            team_api.email_templates_service.render_effective_template = lambda **kwargs: captured.update(kwargs) or RenderedEmailTemplate(
+                key="team_account_ready",
+                subject="Cont pregătit",
+                text_body="Text",
+                html_body="<p>Text</p>",
+                enabled=True,
+                available_variables=("login_link", "user_email"),
+            )
+            team_api.mailgun_service.send_email = lambda **kwargs: {"ok": True}
+
+            team_api.invite_team_member(membership_id=91, user=user)
+
+            self.assertEqual(captured["template_key"], "team_account_ready")
+            self.assertEqual((captured["variables"] or {}).get("login_link"), "https://portal.example.com/login")
+        finally:
+            team_api.team_members_service.get_membership_with_user = original_get
+            team_api.mailgun_service.assert_available = original_assert
+            team_api.load_settings = original_settings
+            team_api.auth_email_tokens_service.create_user_invite_token_for_existing_user = original_create
+            team_api.email_templates_service.render_effective_template = original_render
+            team_api.mailgun_service.send_email = original_send
+
+    def test_invite_user_with_password_missing_frontend_base_url_returns_503(self):
+        user = AuthUser(email="admin@example.com", role="agency_admin")
+        original_get = team_api.team_members_service.get_membership_with_user
+        original_assert = team_api.mailgun_service.assert_available
+        original_settings = team_api.load_settings
+        try:
+            team_api.team_members_service.get_membership_with_user = lambda **kwargs: {
+                "membership_id": 71,
+                "user_id": 37,
+                "scope_type": "agency",
+                "subaccount_id": None,
+                "status": "active",
+                "email": "member@example.com",
+                "is_active": True,
+                "must_reset_password": False,
+            }
+            team_api.mailgun_service.assert_available = lambda: None
+            team_api.load_settings = lambda: SimpleNamespace(frontend_base_url="", auth_reset_token_ttl_minutes=60)
+
+            with self.assertRaises(team_api.HTTPException) as ctx:
+                team_api.invite_team_member(membership_id=71, user=user)
+            self.assertEqual(ctx.exception.status_code, 503)
+        finally:
+            team_api.team_members_service.get_membership_with_user = original_get
+            team_api.mailgun_service.assert_available = original_assert
+            team_api.load_settings = original_settings
+
     def test_invite_override_template_is_used(self):
         user = AuthUser(email="admin@example.com", role="agency_admin")
         original_get = team_api.team_members_service.get_membership_with_user

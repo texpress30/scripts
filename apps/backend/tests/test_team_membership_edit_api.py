@@ -300,6 +300,45 @@ class TeamMembershipEditApiTests(unittest.TestCase):
         finally:
             team_api.team_members_service.remove_membership = original
 
+    def test_delete_user_hard_success(self):
+        user = AuthUser(email="admin@example.com", role="agency_admin", user_id=10)
+        original = team_api.team_members_service.delete_user_hard
+        try:
+            team_api.team_members_service.delete_user_hard = lambda **kwargs: {
+                "user_id": 201,
+                "deleted": True,
+                "deleted_memberships_count": 2,
+                "message": "Utilizator șters complet din sistem",
+            }
+            resp = team_api.delete_team_user_hard(user_id=201, user=user)
+            self.assertEqual(resp.user_id, 201)
+            self.assertTrue(resp.deleted)
+            self.assertEqual(resp.deleted_memberships_count, 2)
+        finally:
+            team_api.team_members_service.delete_user_hard = original
+
+    def test_delete_user_hard_not_found(self):
+        user = AuthUser(email="admin@example.com", role="agency_admin", user_id=10)
+        original = team_api.team_members_service.delete_user_hard
+        try:
+            team_api.team_members_service.delete_user_hard = lambda **kwargs: (_ for _ in ()).throw(LookupError("Utilizator inexistent"))
+            with self.assertRaises(team_api.HTTPException) as ctx:
+                team_api.delete_team_user_hard(user_id=999, user=user)
+            self.assertEqual(ctx.exception.status_code, 404)
+        finally:
+            team_api.team_members_service.delete_user_hard = original
+
+    def test_delete_user_hard_self_conflict(self):
+        user = AuthUser(email="admin@example.com", role="agency_admin", user_id=10)
+        original = team_api.team_members_service.delete_user_hard
+        try:
+            team_api.team_members_service.delete_user_hard = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("Nu îți poți șterge propriul utilizator din sesiunea curentă"))
+            with self.assertRaises(team_api.HTTPException) as ctx:
+                team_api.delete_team_user_hard(user_id=10, user=user)
+            self.assertEqual(ctx.exception.status_code, 409)
+        finally:
+            team_api.team_members_service.delete_user_hard = original
+
 
     def test_get_membership_detail_returns_404_after_remove(self):
         user = AuthUser(email="admin@example.com", role="agency_admin")

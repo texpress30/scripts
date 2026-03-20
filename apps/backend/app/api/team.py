@@ -18,6 +18,7 @@ from app.schemas.team import (
     TeamMemberResponse,
     TeamMembershipStatusResponse,
     TeamMembershipRemoveResponse,
+    TeamUserDeleteResponse,
     TeamModuleCatalogResponse,
     TeamGrantableModulesResponse,
     TeamSubaccountMyAccessResponse,
@@ -90,6 +91,31 @@ def _normalize_member_item(raw: dict[str, object]) -> dict[str, object] | None:
     except Exception:  # noqa: BLE001
         user_id = None
 
+    allowed_subaccount_ids: list[int] = []
+    raw_allowed_ids = raw.get("allowed_subaccount_ids")
+    if isinstance(raw_allowed_ids, list):
+        for item in raw_allowed_ids:
+            try:
+                value = int(item)
+            except Exception:  # noqa: BLE001
+                continue
+            if value not in allowed_subaccount_ids:
+                allowed_subaccount_ids.append(value)
+
+    allowed_subaccounts: list[dict[str, object]] = []
+    raw_allowed = raw.get("allowed_subaccounts")
+    if isinstance(raw_allowed, list):
+        for item in raw_allowed:
+            if not isinstance(item, dict):
+                continue
+            try:
+                subaccount_id = int(item.get("id"))
+            except Exception:  # noqa: BLE001
+                continue
+            name = str(item.get("name") or "")
+            if not any(int(existing.get("id", -1)) == subaccount_id for existing in allowed_subaccounts):
+                allowed_subaccounts.append({"id": subaccount_id, "name": name, "label": name or str(subaccount_id)})
+
     return {
         "id": member_id,
         "membership_id": membership_id,
@@ -104,6 +130,9 @@ def _normalize_member_item(raw: dict[str, object]) -> dict[str, object] | None:
         "location": str(raw.get("location") or "România"),
         "subaccount": str(raw.get("subaccount") or "Toate"),
         "module_keys": _normalize_module_keys(raw.get("module_keys")),
+        "allowed_subaccount_ids": allowed_subaccount_ids,
+        "allowed_subaccounts": allowed_subaccounts,
+        "has_restricted_subaccount_access": bool(raw.get("has_restricted_subaccount_access", False)),
         "membership_status": str(raw.get("membership_status") or "active").strip().lower() or "active",
     }
 
@@ -192,6 +221,7 @@ def create_team_member(payload: CreateTeamMemberRequest, user: AuthUser = Depend
             subaccount=payload.subaccount,
             password=payload.password,
             module_keys=payload.module_keys,
+            allowed_subaccount_ids=payload.allowed_subaccount_ids,
             actor_user=user,
         )
     except ValueError as exc:
@@ -228,7 +258,7 @@ def patch_team_membership(
     user: AuthUser = Depends(get_current_user),
 ) -> TeamMembershipDetailResponse:
     _enforce_membership_edit_actor_role(user)
-    if payload.user_role is None and payload.module_keys is None:
+    if payload.user_role is None and payload.module_keys is None and payload.allowed_subaccount_ids is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nu există câmpuri de actualizat")
 
     try:
@@ -237,6 +267,7 @@ def patch_team_membership(
             actor_user=user,
             user_role=payload.user_role,
             module_keys=payload.module_keys,
+            allowed_subaccount_ids=payload.allowed_subaccount_ids,
         )
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -321,6 +352,33 @@ def remove_team_membership(
         message=str(payload.get("message") or "Membership eliminat"),
     )
 
+
+@router.post("/users/{user_id}/delete", response_model=TeamUserDeleteResponse)
+def delete_team_user_hard(
+    user_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> TeamUserDeleteResponse:
+    _enforce_membership_edit_actor_role(user)
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="settings_my_team")
+    try:
+        payload = team_members_service.delete_user_hard(user_id=user_id, actor_user=user)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return TeamUserDeleteResponse(
+        user_id=int(payload.get("user_id") or user_id),
+        deleted=bool(payload.get("deleted", True)),
+        deleted_memberships_count=int(payload.get("deleted_memberships_count") or 0),
+        message=str(payload.get("message") or "Utilizator șters complet din sistem"),
+    )
+
 @router.post("/members/{membership_id}/invite", response_model=TeamMemberInviteResponse)
 def invite_team_member(membership_id: int, user: AuthUser = Depends(get_current_user)) -> TeamMemberInviteResponse:
     membership = team_members_service.get_membership_with_user(membership_id=membership_id)
@@ -383,21 +441,30 @@ def invite_team_member(membership_id: int, user: AuthUser = Depends(get_current_
     if frontend_base_url == "":
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Invitația nu este disponibilă momentan")
 
-    invite_ttl_minutes = max(1, int(getattr(settings, "auth_reset_token_ttl_minutes", 60)))
-    raw_token, _ = auth_email_tokens_service.create_user_invite_token_for_existing_user(
-        user_id=int(membership["user_id"]),
-        email=email,
-        expires_in_minutes=invite_ttl_minutes,
-    )
-
-    invite_link = f"{frontend_base_url.rstrip('/')}/reset-password?token={raw_token}"
-    rendered_template = email_templates_service.render_effective_template(
-        template_key="team_invite_user",
-        variables={
-            "invite_link": invite_link,
+    should_send_reset_link = bool(membership.get("must_reset_password", True))
+    if should_send_reset_link:
+        invite_ttl_minutes = max(1, int(getattr(settings, "auth_reset_token_ttl_minutes", 60)))
+        raw_token, _ = auth_email_tokens_service.create_user_invite_token_for_existing_user(
+            user_id=int(membership["user_id"]),
+            email=email,
+            expires_in_minutes=invite_ttl_minutes,
+        )
+        template_key = "team_invite_user"
+        template_variables = {
+            "invite_link": f"{frontend_base_url.rstrip('/')}/reset-password?token={raw_token}",
             "expires_minutes": str(invite_ttl_minutes),
             "user_email": email,
-        },
+        }
+    else:
+        template_key = "team_account_ready"
+        template_variables = {
+            "login_link": f"{frontend_base_url.rstrip('/')}/login",
+            "user_email": email,
+        }
+
+    rendered_template = email_templates_service.render_effective_template(
+        template_key=template_key,
+        variables=template_variables,
     )
     if rendered_template is None:
         audit_log_service.log(
@@ -405,7 +472,7 @@ def invite_team_member(membership_id: int, user: AuthUser = Depends(get_current_
             actor_role=user.role,
             action="team.invite.failed",
             resource=f"team:membership:{membership_id}",
-            details={"reason": "template_missing", "template_key": "team_invite_user"},
+            details={"reason": "template_missing", "template_key": template_key},
         )
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Invitația nu este disponibilă momentan")
     if not rendered_template.enabled:
@@ -414,7 +481,7 @@ def invite_team_member(membership_id: int, user: AuthUser = Depends(get_current_
             actor_role=user.role,
             action="team.invite.failed",
             resource=f"team:membership:{membership_id}",
-            details={"reason": "template_disabled", "template_key": "team_invite_user"},
+            details={"reason": "template_disabled", "template_key": template_key},
         )
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Invitația nu este disponibilă momentan")
 
