@@ -172,6 +172,55 @@ class UnifiedDashboardService:
             )
         return platform_totals
 
+    def _build_spend_by_day(
+        self,
+        *,
+        rows: list[tuple[object, object, object, object, object, object, object, object, object]],
+        target_currency: str,
+        start_date: date,
+        end_date: date,
+    ) -> list[dict[str, object]]:
+        normalized_total: dict[date, float] = {}
+        normalized_platform: dict[date, dict[str, float]] = {}
+        supported_platforms = ("google_ads", "meta_ads", "tiktok_ads", "pinterest_ads", "snapchat_ads")
+        for row in rows:
+            report_date = row[1] if isinstance(row[1], date) else None
+            if report_date is None or report_date < start_date or report_date > end_date:
+                continue
+            platform = str(row[0] or "").strip().lower()
+            if platform not in supported_platforms:
+                continue
+            account_currency = self._normalize_currency_code(row[2], fallback=target_currency)
+            spend_value = self._normalize_money(
+                amount=_to_float(row[3]),
+                from_currency=account_currency,
+                to_currency=target_currency,
+                rate_date=report_date,
+            )
+            normalized_total[report_date] = normalized_total.get(report_date, 0.0) + spend_value
+            day_platform = normalized_platform.setdefault(report_date, {})
+            day_platform[platform] = day_platform.get(platform, 0.0) + spend_value
+
+        payload: list[dict[str, object]] = []
+        cursor_day = start_date
+        while cursor_day <= end_date:
+            by_platform = normalized_platform.get(cursor_day, {})
+            payload.append(
+                {
+                    "date": cursor_day.isoformat(),
+                    "spend": round(normalized_total.get(cursor_day, 0.0), 2),
+                    "platform_spend": {
+                        "google_ads": round(by_platform.get("google_ads", 0.0), 2),
+                        "meta_ads": round(by_platform.get("meta_ads", 0.0), 2),
+                        "tiktok_ads": round(by_platform.get("tiktok_ads", 0.0), 2),
+                        "pinterest_ads": round(by_platform.get("pinterest_ads", 0.0), 2),
+                        "snapchat_ads": round(by_platform.get("snapchat_ads", 0.0), 2),
+                    },
+                }
+            )
+            cursor_day = cursor_day + timedelta(days=1)
+        return payload
+
     def _aggregate_agency_rows(self, rows: list[tuple[object, object, object, object, object, object, object, object]]) -> tuple[dict[str, float | int], dict[int, float], dict[int, float], dict[int, str], int]:
         totals: dict[str, float | int] = {"spend": 0.0, "impressions": 0, "clicks": 0, "conversions": 0, "revenue": 0.0}
         spend_by_client_ron: dict[int, float] = {}
@@ -1773,6 +1822,12 @@ class UnifiedDashboardService:
             currency_decision = self._client_reporting_currency_decision(client_id=client_id)
             reporting_currency = str(currency_decision.get("reporting_currency") or "USD")
             platform_totals = self._aggregate_client_rows(rows=rows, target_currency=reporting_currency)
+            spend_by_day = self._build_spend_by_day(
+                rows=rows,
+                target_currency=reporting_currency,
+                start_date=resolved_start,
+                end_date=resolved_end,
+            )
 
             def platform_metrics(name: str) -> dict[str, object]:
                 return self._normalize_platform_metrics(name, {"client_id": client_id, **platform_totals.get(name, {})}, client_id)
@@ -1785,6 +1840,7 @@ class UnifiedDashboardService:
         else:
             currency_decision = self._client_reporting_currency_decision(client_id=client_id)
             reporting_currency = str(currency_decision.get("reporting_currency") or "USD")
+            spend_by_day = []
             google_metrics = self._normalize_platform_metrics("google_ads", google_ads_service.get_metrics(client_id), client_id)
             meta_metrics = self._normalize_platform_metrics("meta_ads", meta_ads_service.get_metrics(client_id), client_id)
             tiktok_metrics = self._normalize_platform_metrics("tiktok_ads", tiktok_ads_service.get_metrics(client_id), client_id)
@@ -1861,6 +1917,7 @@ class UnifiedDashboardService:
                 "snapchat_ads": snapchat_metrics,
             },
             "platform_sync_summary": self._build_dashboard_platform_sync_summary(client_id=client_id),
+            "spend_by_day": spend_by_day,
             "is_synced": bool(
                 google_metrics.get("is_synced")
                 or meta_metrics.get("is_synced")

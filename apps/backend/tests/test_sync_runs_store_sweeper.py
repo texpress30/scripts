@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 from app.services.sync_runs_store import SyncRunsStore
 from app.workers import historical_repair_sweeper
@@ -161,6 +162,7 @@ class HistoricalRepairSweeperWorkerTests(unittest.TestCase):
         calls = []
         original_load_settings = historical_repair_sweeper.load_settings
         original_sweeper = historical_repair_sweeper.sync_runs_store.sweep_stale_historical_runs
+        original_rolling_sweeper = historical_repair_sweeper.sync_runs_store.sweep_stale_rolling_runs
 
         class _Settings:
             sync_run_repair_stale_minutes = 45
@@ -172,16 +174,54 @@ class HistoricalRepairSweeperWorkerTests(unittest.TestCase):
             return {"status": "ok", "processed_count": 0}
 
         historical_repair_sweeper.sync_runs_store.sweep_stale_historical_runs = _sweeper
+        historical_repair_sweeper.sync_runs_store.sweep_stale_rolling_runs = lambda **kwargs: {"status": "ok", "processed_count": 0}
         try:
             summary = historical_repair_sweeper.sweep_stale_historical_runs(limit=12)
         finally:
             historical_repair_sweeper.load_settings = original_load_settings
             historical_repair_sweeper.sync_runs_store.sweep_stale_historical_runs = original_sweeper
+            historical_repair_sweeper.sync_runs_store.sweep_stale_rolling_runs = original_rolling_sweeper
 
-        self.assertEqual(summary["status"], "ok")
+        self.assertIn("historical", summary)
+        self.assertIn("rolling", summary)
         self.assertEqual(calls[0]["stale_after_minutes"], 45)
         self.assertEqual(calls[0]["limit"], 12)
         self.assertEqual(calls[0]["repair_source"], "sweeper")
+
+    def test_main_handles_db_connection_timeout_with_controlled_summary(self):
+        original_sweep = historical_repair_sweeper.sweep_stale_historical_runs
+        original_is_db_error = historical_repair_sweeper.is_db_connection_error
+        original_warning = historical_repair_sweeper.logger.warning
+
+        warning_calls = []
+        print_calls = []
+        try:
+            historical_repair_sweeper.sweep_stale_historical_runs = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("connection timeout expired"))
+            historical_repair_sweeper.is_db_connection_error = lambda exc: True
+            historical_repair_sweeper.logger.warning = lambda *args, **kwargs: warning_calls.append((args, kwargs))
+            with patch("builtins.print", side_effect=lambda payload: print_calls.append(payload)):
+                historical_repair_sweeper.main()
+        finally:
+            historical_repair_sweeper.sweep_stale_historical_runs = original_sweep
+            historical_repair_sweeper.is_db_connection_error = original_is_db_error
+            historical_repair_sweeper.logger.warning = original_warning
+
+        self.assertEqual(len(warning_calls), 1)
+        self.assertEqual(print_calls[0]["status"], "db_unavailable")
+        self.assertEqual(print_calls[0]["error"], "database_connection_unavailable")
+        self.assertEqual(print_calls[0]["total_processed_count"], 0)
+
+    def test_main_re_raises_non_db_errors(self):
+        original_sweep = historical_repair_sweeper.sweep_stale_historical_runs
+        original_is_db_error = historical_repair_sweeper.is_db_connection_error
+        try:
+            historical_repair_sweeper.sweep_stale_historical_runs = lambda **kwargs: (_ for _ in ()).throw(ValueError("bad payload"))
+            historical_repair_sweeper.is_db_connection_error = lambda exc: False
+            with self.assertRaises(ValueError):
+                historical_repair_sweeper.main()
+        finally:
+            historical_repair_sweeper.sweep_stale_historical_runs = original_sweep
+            historical_repair_sweeper.is_db_connection_error = original_is_db_error
 
 
 if __name__ == "__main__":
