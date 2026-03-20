@@ -5887,3 +5887,22 @@ Plan verificat și executat imediat (nu docs-only): patch local pe rutele Sub-ac
 
 - Backend check: `pytest -q apps/backend/tests/test_dashboard_currency_normalization.py` (pass).
 - Frontend checks: `pnpm --dir apps/frontend exec vitest run ...` targeted meta/tiktok drilldown suites (pass).
+
+# TODO — Meta entity persistence end-to-end (campaign/adset/ad) for drilldown data (2026-03-20)
+
+- [x] Audit `meta_ads.py` write paths and confirm root cause for `rows_written: 0` on non-account grains.
+- [x] Implement real non-test-mode upserts for Meta `campaign_daily`, `ad_group_daily`, and `ad_daily` into entity performance tables.
+- [x] Ensure persisted Meta extra_metrics include available naming/status metadata without fabricating values.
+- [x] Validate account id normalization compatibility (`act_...` vs numeric) between persistence and dashboard reads.
+- [x] Add backend tests for write-path upserts, metadata persistence, rows_written semantics, normalization, and dashboard campaign visibility.
+- [x] Run required backend tests + import/startup check.
+- [x] Update review notes, capture correction lesson, commit, and open PR.
+
+## Check-in before execution
+Plan confirmed: backend-first patch in Meta sync + backend tests only, no Agency/Team/auth/invite/delete/Media Buying/Media Tracker changes.
+
+## Review
+- [x] Root cause confirmed in `meta_ads.py`: non-test-mode write helpers returned `0` instead of persisting entity rows, while dashboard drilldown reads `campaign_performance_reports` / `ad_group_performance_reports`.
+- [x] Meta write helpers now use real upsert functions from `entity_performance_reports` with commit, mirroring TikTok persistence model.
+- [x] Added backend tests for non-test-mode campaign/ad_group/ad write paths, metadata fields (`campaign_name`/`adset_name`/`ad_name` + statuses), rows_written behavior, and normalization compatibility.
+- [x] Ran `pytest -q apps/backend/tests/test_meta_ads_entity_persistence.py apps/backend/tests/test_dashboard_currency_normalization.py` and `APP_AUTH_SECRET=test python -c "import app.main"`.

@@ -10,6 +10,11 @@ from urllib import error, parse, request
 
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
+from app.services.entity_performance_reports import (
+    upsert_ad_group_performance_reports,
+    upsert_ad_unit_performance_reports,
+    upsert_campaign_performance_reports,
+)
 from app.services.error_observability import safe_body_snippet, sanitize_payload, sanitize_text
 from app.services.integration_secrets_store import integration_secrets_store
 from app.services.meta_store import meta_snapshot_store
@@ -80,6 +85,12 @@ class MetaAdsService:
     def _is_test_mode(self) -> bool:
         settings = load_settings()
         return settings.app_env == "test"
+
+    def _connect(self):
+        settings = load_settings()
+        if psycopg is None:
+            raise MetaAdsIntegrationError("psycopg is required for campaign/ad_group/ad daily persistence")
+        return psycopg.connect(settings.database_url)
 
     def _is_placeholder(self, value: str) -> bool:
         normalized = value.strip().lower()
@@ -506,25 +517,40 @@ class MetaAdsService:
         target.append(dict(row))
 
     def _write_campaign_daily_rows(self, *, rows: list[dict[str, object]]) -> int:
+        if len(rows) == 0:
+            return 0
         if self._is_test_mode():
             for row in rows:
                 self._upsert_memory_row(self._memory_campaign_daily_rows, ("platform", "account_id", "campaign_id", "report_date"), row)
             return len(rows)
-        return 0
+        with self._connect() as conn:
+            written = int(upsert_campaign_performance_reports(conn, rows) or 0)
+            conn.commit()
+            return written
 
     def _write_ad_group_daily_rows(self, *, rows: list[dict[str, object]]) -> int:
+        if len(rows) == 0:
+            return 0
         if self._is_test_mode():
             for row in rows:
                 self._upsert_memory_row(self._memory_ad_group_daily_rows, ("platform", "account_id", "ad_group_id", "report_date"), row)
             return len(rows)
-        return 0
+        with self._connect() as conn:
+            written = int(upsert_ad_group_performance_reports(conn, rows) or 0)
+            conn.commit()
+            return written
 
     def _write_ad_daily_rows(self, *, rows: list[dict[str, object]]) -> int:
+        if len(rows) == 0:
+            return 0
         if self._is_test_mode():
             for row in rows:
                 self._upsert_memory_row(self._memory_ad_daily_rows, ("platform", "account_id", "ad_id", "report_date"), row)
             return len(rows)
-        return 0
+        with self._connect() as conn:
+            written = int(upsert_ad_unit_performance_reports(conn, rows) or 0)
+            conn.commit()
+            return written
 
     def build_oauth_authorize_url(self) -> dict[str, str]:
         settings = load_settings()
@@ -857,6 +883,9 @@ class MetaAdsService:
                                     **self._base_extra_metrics(item),
                                     "campaign_name": str(item.get("campaign_name") or "").strip() or None,
                                     "campaign_id": campaign_id,
+                                    "campaign_status": str(item.get("campaign_status") or item.get("effective_status") or item.get("status") or "").strip() or None,
+                                    "account_currency": resolved_account_currency,
+                                    "grain": "campaign_daily",
                                     **self._lead_conversion_observability(details=lead_conversion_details),
                                 }
                             },
@@ -916,8 +945,12 @@ class MetaAdsService:
                                     **self._base_extra_metrics(item),
                                     "adset_id": ad_group_id,
                                     "adset_name": str(item.get("adset_name") or "").strip() or None,
+                                    "adset_status": str(item.get("adset_status") or item.get("effective_status") or item.get("status") or "").strip() or None,
                                     "campaign_id": campaign_id,
                                     "campaign_name": str(item.get("campaign_name") or "").strip() or None,
+                                    "campaign_status": str(item.get("campaign_status") or "").strip() or None,
+                                    "account_currency": resolved_account_currency,
+                                    "grain": "ad_group_daily",
                                     **self._lead_conversion_observability(details=lead_conversion_details),
                                 }
                             },
@@ -979,10 +1012,15 @@ class MetaAdsService:
                                     **self._base_extra_metrics(item),
                                     "ad_id": ad_id,
                                     "ad_name": str(item.get("ad_name") or "").strip() or None,
+                                    "ad_status": str(item.get("ad_status") or item.get("effective_status") or item.get("status") or "").strip() or None,
                                     "adset_id": ad_group_id,
                                     "adset_name": str(item.get("adset_name") or "").strip() or None,
+                                    "adset_status": str(item.get("adset_status") or "").strip() or None,
                                     "campaign_id": campaign_id,
                                     "campaign_name": str(item.get("campaign_name") or "").strip() or None,
+                                    "campaign_status": str(item.get("campaign_status") or "").strip() or None,
+                                    "account_currency": resolved_account_currency,
+                                    "grain": "ad_daily",
                                     **self._lead_conversion_observability(details=lead_conversion_details),
                                 }
                             },
