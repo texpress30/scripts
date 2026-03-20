@@ -9,12 +9,16 @@ from app.services.team_members import TeamMembersService, team_members_service
 class _FakeCursor:
     def __init__(self):
         self.queries: list[str] = []
+        self.params: list[tuple | None] = []
         self._next_fetchone = None
 
     def execute(self, query, params=None):
         self.queries.append(str(query).strip())
+        self.params.append(tuple(params) if params is not None else None)
         if "SELECT COUNT(*)" in str(query):
             self._next_fetchone = (0,)
+        if "RETURNING id" in str(query):
+            self._next_fetchone = (11,)
 
     def fetchone(self):
         return self._next_fetchone
@@ -80,6 +84,48 @@ class _FakeConnection:
         return False
 
 
+class _SubMembersCursor:
+    def __init__(self, rows, total):
+        self.rows = rows
+        self.total = total
+        self._next_fetchone = (total,)
+        self.queries: list[str] = []
+        self.params: list[tuple | None] = []
+
+    def execute(self, query, params=None):
+        sql = str(query)
+        self.queries.append(sql)
+        self.params.append(tuple(params) if params is not None else None)
+        if "SELECT COUNT(*) FROM (" in sql:
+            self._next_fetchone = (self.total,)
+
+    def fetchone(self):
+        return self._next_fetchone
+
+    def fetchall(self):
+        return self.rows
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class _SubMembersConn:
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def cursor(self):
+        return self._cursor
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
 class TeamMembersFoundationTests(unittest.TestCase):
     def setUp(self):
         self.user = AuthUser(email="owner@example.com", role="agency_admin")
@@ -97,6 +143,49 @@ class TeamMembersFoundationTests(unittest.TestCase):
         self.assertIn("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active", joined)
         self.assertIn("CREATE TABLE IF NOT EXISTS user_memberships", joined)
         self.assertGreaterEqual(conn.commit_count, 2)
+
+    def test_upsert_user_uses_placeholder_for_must_reset_password_and_persists_true_without_password(self):
+        service = TeamMembersService()
+        conn = _FakeConnection()
+        service._connect = lambda: conn
+
+        user_id = service._upsert_user(
+            first_name="Ana",
+            last_name="Pop",
+            email="ana@example.com",
+            phone="",
+            extension="",
+            avatar_url="",
+            password=None,
+        )
+
+        self.assertEqual(user_id, 11)
+        insert_query = conn.cursor_obj.queries[-1]
+        insert_params = conn.cursor_obj.params[-1]
+        self.assertIn("VALUES (%s, %s, %s, %s, %s, %s, 'ro', COALESCE(%s, ''), TRUE, %s)", insert_query)
+        self.assertEqual(len(insert_params or ()), 9)
+        self.assertIsNone((insert_params or (None,))[6])
+        self.assertEqual(bool((insert_params or (None,))[7]), True)
+
+    def test_upsert_user_persists_false_must_reset_when_password_is_explicit(self):
+        service = TeamMembersService()
+        conn = _FakeConnection()
+        service._connect = lambda: conn
+
+        user_id = service._upsert_user(
+            first_name="Ana",
+            last_name="Pop",
+            email="ana@example.com",
+            phone="",
+            extension="",
+            avatar_url="",
+            password="StrongPassword123!",
+        )
+
+        self.assertEqual(user_id, 11)
+        insert_params = conn.cursor_obj.params[-1]
+        self.assertEqual(len(insert_params or ()), 9)
+        self.assertEqual(bool((insert_params or (True,))[7]), False)
 
     def test_create_agency_member_uses_canonical_role_mapping(self):
         service = TeamMembersService()
@@ -122,6 +211,57 @@ class TeamMembersFoundationTests(unittest.TestCase):
         self.assertEqual(item["user_type"], "agency")
         self.assertEqual(item["user_role"], "admin")
         self.assertEqual(item["subaccount"], "Toate")
+
+    def test_create_agency_owner_uses_canonical_role_mapping(self):
+        service = TeamMembersService()
+        service._upsert_user = lambda **kwargs: 11
+        service._upsert_membership = lambda **kwargs: 101
+        service.set_membership_module_keys = lambda **kwargs: None
+        service.set_membership_allowed_subaccount_ids = lambda **kwargs: None
+        service.get_membership_allowed_subaccount_ids = lambda **kwargs: []
+
+        item = service.create_member(
+            first_name="Owner",
+            last_name="One",
+            email="owner@example.com",
+            phone="",
+            extension="",
+            user_type="agency",
+            user_role="owner",
+            location="România",
+            subaccount="Toate",
+            password=None,
+        )
+        self.assertEqual(item["user_role"], "owner")
+        self.assertEqual(item["allowed_subaccount_ids"], [])
+        self.assertFalse(item["has_restricted_subaccount_access"])
+
+    def test_create_agency_member_persists_allowed_subaccount_grants(self):
+        service = TeamMembersService()
+        service._upsert_user = lambda **kwargs: 11
+        service._upsert_membership = lambda **kwargs: 101
+        service.set_membership_module_keys = lambda **kwargs: None
+        captured: dict[str, object] = {}
+        service.set_membership_allowed_subaccount_ids = lambda **kwargs: captured.update(kwargs)
+        service.get_membership_allowed_subaccount_ids = lambda **kwargs: [4, 9]
+        service._build_allowed_subaccount_payload = lambda **kwargs: ([4, 9], [{"id": 4, "name": "A", "label": "A"}, {"id": 9, "name": "B", "label": "B"}], True)
+
+        item = service.create_member(
+            first_name="Member",
+            last_name="One",
+            email="member@example.com",
+            phone="",
+            extension="",
+            user_type="agency",
+            user_role="member",
+            location="România",
+            subaccount="Toate",
+            password=None,
+            allowed_subaccount_ids=[9, 4, 9],
+        )
+        self.assertEqual(captured["allowed_subaccount_ids"], [4, 9])
+        self.assertEqual(item["allowed_subaccount_ids"], [4, 9])
+        self.assertTrue(item["has_restricted_subaccount_access"])
 
     def test_create_subaccount_member_requires_real_subaccount(self):
         service = TeamMembersService()
@@ -208,6 +348,23 @@ class TeamMembersFoundationTests(unittest.TestCase):
             self.assertEqual(resp.items, [])
         finally:
             team_api.team_members_service.list_members = original
+
+    def test_subaccount_inherited_query_excludes_owner_admin_and_checks_grants(self):
+        service = TeamMembersService()
+        service._resolve_subaccount_by_id = lambda **kwargs: type("_S", (), {"id": 8, "name": "Client A"})()
+        service._membership_module_keys_map = lambda rows: {int(row[0]): ["dashboard"] for row in rows}
+        rows = [
+            (501, 21, "Mia", "A", "mia@example.com", "", "", "agency_member", "active", "agency", True, "Agency access"),
+        ]
+        cursor = _SubMembersCursor(rows=rows, total=1)
+        service._connect = lambda: _SubMembersConn(cursor)
+
+        items, total = service.list_subaccount_members(subaccount_id=8, search="", user_role="", page=1, page_size=10)
+        self.assertEqual(total, 1)
+        self.assertEqual(items[0]["role_key"], "agency_member")
+        joined = "\n".join(cursor.queries)
+        self.assertIn("um.role_key IN ('agency_member', 'agency_viewer')", joined)
+        self.assertIn("membership_subaccount_access_grants", joined)
 
     def test_list_members_endpoint_normalizes_malformed_rows(self):
         original = team_api.team_members_service.list_members

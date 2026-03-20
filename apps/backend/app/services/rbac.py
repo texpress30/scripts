@@ -14,6 +14,7 @@ class ActionPolicy:
 
 
 CANONICAL_ROLES: set[str] = {
+    "agency_owner",
     "agency_admin",
     "agency_member",
     "agency_viewer",
@@ -22,7 +23,7 @@ CANONICAL_ROLES: set[str] = {
     "subaccount_viewer",
 }
 
-SPECIAL_ROLES: set[str] = {"super_admin", "agency_owner"}
+SPECIAL_ROLES: set[str] = {"super_admin"}
 
 LEGACY_ROLE_ALIASES: dict[str, str] = {
     "account_manager": "subaccount_user",

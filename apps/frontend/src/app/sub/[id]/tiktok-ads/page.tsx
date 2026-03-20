@@ -3,11 +3,20 @@
 import { useParams } from "next/navigation";
 import React from "react";
 
-import { SubSectionPlaceholderPage } from "../_components/SubSectionPlaceholderPage";
+import { SubAdsPerformanceTablePage } from "../_components/SubAdsPerformanceTablePage";
+import { getSubTikTokAdsTable } from "@/lib/api";
 
 export default function SubTikTokAdsPage() {
   const params = useParams<{ id: string }>();
   const clientId = Number(params.id);
 
-  return <SubSectionPlaceholderPage clientId={clientId} sectionTitle="TikTok Ads" />;
+  return (
+    <SubAdsPerformanceTablePage
+      clientId={clientId}
+      platformTitle="TikTok Ads"
+      platformDescription="Performance multi-account • TikTok Ads"
+      storageKey="sub-tiktok-ads-visible-columns-v1"
+      fetchTable={getSubTikTokAdsTable}
+    />
+  );
 }
