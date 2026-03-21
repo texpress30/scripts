@@ -443,6 +443,10 @@ export default function SubAccountSettingsPage() {
                         <option value="media">Media</option>
                         <option value="marketing">Marketing</option>
                         <option value="retail">Retail</option>
+                        <option value="auto">Auto</option>
+                        <option value="educatie">Educație</option>
+                        <option value="energie">Energie</option>
+                        <option value="dating">Dating</option>
                       </select>
                       {businessErrors.industry ? <p className="mt-1 text-xs text-red-600">{businessErrors.industry}</p> : null}
                     </label>

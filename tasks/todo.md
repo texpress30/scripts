@@ -6053,3 +6053,15 @@ Plan confirmed: backend-first TikTok metadata + tests, minimal frontend test-onl
 - Verificări executate:
   - `pnpm --dir apps/frontend exec vitest run src/app/sub/[id]/google-ads/page.test.tsx src/app/sub/[id]/meta-ads/page.test.tsx src/app/sub/[id]/tiktok-ads/page.test.tsx`
   - `pnpm --dir apps/frontend run build`
+
+# TODO — Process alignment: AGENTS compliance + commit/PR handoff (2026-03-21)
+
+- [x] Re-read AGENTS instructions and ensure plan-first/task-tracking flow is followed for this turn.
+- [x] Update `tasks/lessons.md` with a concrete lesson from this user correction.
+- [x] Validate pending workspace diff and run at least one relevant verification command.
+- [ ] Commit required repository changes on branch `work`.
+- [ ] Create PR metadata using `make_pr` after commit.
+
+## Review
+- [x] Confirmed process compliance updates are recorded in tasks docs.
+- [ ] Confirmed commit + PR metadata were both completed in this turn.
