@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-21: Pentru cerințe "EXACT tuple", rulez imediat comanda de introspecție pe runtime (`_report_schema_for_grain`) și atașez rezultatul, nu mă bazez doar pe diff-ul din commit.
+
 - 2026-03-21: La TikTok `report/integrated/get`, `campaign_id` este valid în `campaign_daily`, dar pentru `AUCTION_ADGROUP` și `AUCTION_AD` trebuie menținute dimensiunile minime (`adgroup_id` / `ad_id`) și campania se rezolvă din metadata endpoint-uri.
 
 - 2026-03-21: Pentru TikTok reporting cu IDs-only dimensions, păstrez alias parsing (`ad_group_id` și `adgroup_id`) în maparea răspunsului și aliniez schema per grain la contractul de persistență (campaign_id/ad_group_id/ad_id).

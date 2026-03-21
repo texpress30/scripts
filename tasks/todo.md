@@ -1,3 +1,14 @@
+# TODO — RETRY critical: enforce TikTok ad grains dimensions without campaign_id (2026-03-21)
+
+- [x] Re-sync workspace and re-read AGENTS before applying retry fix.
+- [x] Verify `_report_schema_for_grain` uses exact tuples required for all four grains.
+- [x] Verify `campaign_daily` sync still calls `_resolve_and_persist_campaign_metadata_safe` in the sync flow.
+- [x] Run verification command for grain dimension tuples exactly as requested.
+- [x] Run full backend test suite command as requested (`pytest -q`) and record result.
+
+## Review
+- [x] Confirmed runtime schema tuple output now matches requested contract for account/campaign/ad_group/ad grains.
+
 # TODO — TikTok hotfix: remove invalid campaign_id dimensions on ad grains and confirm metadata persist call-path (2026-03-21)
 
 - [x] Sync workspace + re-read AGENTS at task start.
