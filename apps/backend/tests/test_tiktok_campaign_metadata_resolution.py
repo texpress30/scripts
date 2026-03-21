@@ -328,6 +328,65 @@ def test_upsert_campaign_rows_persists_platform_campaign_entities(monkeypatch):
     assert fake_conn.committed is True
 
 
+def test_upsert_campaign_rows_skips_empty_campaign_metadata_rows(monkeypatch):
+    fake_conn = _FakeConn()
+    captured_entities: list[dict[str, object]] = []
+    captured_fact_rows: list[dict[str, object]] = []
+
+    rows = [
+        TikTokCampaignDailyMetric(
+            report_date=date(2026, 3, 20),
+            account_id="tt-acc-empty-metadata",
+            campaign_id="cmp-empty-1",
+            campaign_name="",
+            spend=10.0,
+            impressions=100,
+            clicks=5,
+            conversions=1.0,
+            conversion_value=20.0,
+            extra_metrics={"tiktok_ads": {}},
+        )
+    ]
+
+    monkeypatch.setattr(tiktok_ads_service, "_is_test_mode", lambda: False)
+    monkeypatch.setattr(tiktok_ads_service, "_connect", lambda: fake_conn)
+    monkeypatch.setattr(
+        tiktok_ads_service,
+        "_resolve_and_persist_campaign_metadata",
+        lambda **kwargs: {
+            "cmp-empty-1": {
+                "campaign_id": "cmp-empty-1",
+                "campaign_name": "",
+                "campaign_status": "",
+                "raw_payload": {},
+                "payload_hash": None,
+            }
+        },
+    )
+    monkeypatch.setattr(
+        tiktok_ads_module,
+        "upsert_platform_campaigns",
+        lambda conn, payload: captured_entities.extend(payload) or len(payload),
+    )
+    monkeypatch.setattr(
+        tiktok_ads_module,
+        "upsert_campaign_performance_reports",
+        lambda conn, payload: captured_fact_rows.extend(payload) or len(payload),
+    )
+
+    written = tiktok_ads_service._upsert_campaign_rows(
+        rows,
+        source_window_start=date(2026, 3, 20),
+        source_window_end=date(2026, 3, 20),
+        access_token="token",
+    )
+
+    assert written == 1
+    assert captured_entities == []
+    assert len(captured_fact_rows) == 1
+    assert fake_conn.committed is True
+
+
 def test_upsert_ad_group_rows_persists_platform_ad_groups_before_facts(monkeypatch):
     fake_conn = _FakeConn()
     call_order: list[str] = []
@@ -391,6 +450,69 @@ def test_upsert_ad_group_rows_persists_platform_ad_groups_before_facts(monkeypat
     assert len(captured_ad_groups) == 1
     assert captured_ad_groups[0]["ad_group_id"] == "adg-1"
     assert captured_ad_groups[0]["campaign_id"] == "cmp-1"
+    assert len(captured_fact_rows) == 1
+    assert fake_conn.committed is True
+
+
+def test_upsert_ad_group_rows_skips_empty_ad_group_metadata_rows(monkeypatch):
+    fake_conn = _FakeConn()
+    captured_ad_groups: list[dict[str, object]] = []
+    captured_fact_rows: list[dict[str, object]] = []
+
+    rows = [
+        TikTokAdGroupDailyMetric(
+            report_date=date(2026, 3, 20),
+            account_id="tt-acc-empty-adg",
+            ad_group_id="adg-empty-1",
+            ad_group_name="",
+            campaign_id="",
+            campaign_name="",
+            spend=11.0,
+            impressions=111,
+            clicks=6,
+            conversions=1.0,
+            conversion_value=22.0,
+            extra_metrics={"tiktok_ads": {}},
+        )
+    ]
+
+    monkeypatch.setattr(tiktok_ads_service, "_is_test_mode", lambda: False)
+    monkeypatch.setattr(tiktok_ads_service, "_connect", lambda: fake_conn)
+    monkeypatch.setattr(
+        tiktok_ads_service,
+        "_resolve_and_persist_ad_group_metadata",
+        lambda **kwargs: {
+            "adg-empty-1": {
+                "ad_group_id": "adg-empty-1",
+                "ad_group_name": "",
+                "campaign_id": "",
+                "campaign_name": "",
+                "ad_group_status": "",
+                "raw_payload": {},
+                "payload_hash": None,
+            }
+        },
+    )
+    monkeypatch.setattr(
+        tiktok_ads_module,
+        "upsert_platform_ad_groups",
+        lambda conn, payload: captured_ad_groups.extend(payload) or len(payload),
+    )
+    monkeypatch.setattr(
+        tiktok_ads_module,
+        "upsert_ad_group_performance_reports",
+        lambda conn, payload: captured_fact_rows.extend(payload) or len(payload),
+    )
+
+    written = tiktok_ads_service._upsert_ad_group_rows(
+        rows,
+        source_window_start=date(2026, 3, 20),
+        source_window_end=date(2026, 3, 20),
+        access_token="token",
+    )
+
+    assert written == 1
+    assert captured_ad_groups == []
     assert len(captured_fact_rows) == 1
     assert fake_conn.committed is True
 

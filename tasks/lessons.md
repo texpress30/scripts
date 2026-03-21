@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-21: În metadata resolve TikTok, nu fac upsert fallback pentru entity rows fără semnal real (name/status/raw_payload toate goale); altfel pot suprascrie `platform_campaigns`/`platform_ad_groups` cu `NULL` și `{}` chiar când fetch-ul management API eșuează.
+
 - 2026-03-21: Pentru TikTok ad_group_daily/campaign_daily, numele entity trebuie enrich-uite explicit din endpoint-urile de management (`campaign/get`, `adgroup/get`) imediat după report fetch; nu mă bazez pe `report/integrated/get` pentru name fields.
 
 - 2026-03-21: Când userul cere explicit commit + make_pr în același task, finalizez obligatoriu în ordinea: verificări -> git commit -> make_pr; nu închid răspunsul înainte de ambele.

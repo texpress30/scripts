@@ -1,3 +1,14 @@
+# TODO — TikTok metadata persistence hotfix: prevent empty platform entity upserts (2026-03-21)
+
+- [x] Re-read AGENTS/lessons and audit campaign/ad-group metadata mapping + upsert payload keys in `tiktok_ads.py`.
+- [x] Fix campaign metadata mapping/persistence to always map API name/status/raw payload and skip empty fallback rows from being upserted.
+- [x] Fix ad-group metadata mapping/persistence to map `adgroup_name`/`campaign_id`/raw payload and skip empty fallback rows from being upserted.
+- [x] Run targeted backend TikTok tests and frontend build.
+
+## Review
+- [x] Confirm platform upsert payloads carry expected keys (`platform`, `account_id`, entity id, `name`, `status`, `raw_payload`).
+- [x] Confirm no empty metadata-only rows are written when management metadata fetch returns nothing.
+
 # TODO — TikTok names/ad-groups visibility + DB-safe status columns (2026-03-21)
 
 - [x] Audit TikTok reporting schema + metadata enrichment flow for campaign/ad-group names.

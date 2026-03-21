@@ -1064,6 +1064,81 @@ class TikTokAdsService:
 
         return campaign_metadata
 
+    def _campaign_entity_rows_for_upsert(self, *, account_id: str, metadata_by_id: dict[str, dict[str, object]]) -> list[dict[str, object]]:
+        rows_to_upsert: list[dict[str, object]] = []
+        for campaign_id, payload in metadata_by_id.items():
+            normalized_campaign_id = str(campaign_id or payload.get("campaign_id") or "").strip()
+            if normalized_campaign_id == "":
+                continue
+            campaign_name = str(payload.get("campaign_name") or "").strip() or None
+            campaign_status = str(payload.get("campaign_status") or "").strip() or None
+            raw_payload = payload.get("raw_payload") if isinstance(payload.get("raw_payload"), dict) else {}
+            if campaign_name is None and campaign_status is None and len(raw_payload) == 0:
+                continue
+            rows_to_upsert.append(
+                {
+                    "platform": "tiktok_ads",
+                    "account_id": account_id,
+                    "campaign_id": normalized_campaign_id,
+                    "name": campaign_name,
+                    "status": campaign_status,
+                    "raw_payload": raw_payload,
+                    "payload_hash": payload.get("payload_hash")
+                    or hashlib.sha256(
+                        json.dumps(
+                            {
+                                "campaign_id": normalized_campaign_id,
+                                "campaign_name": campaign_name,
+                                "campaign_status": campaign_status,
+                                "raw_payload": raw_payload,
+                            },
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ).encode("utf-8")
+                    ).hexdigest(),
+                }
+            )
+        return rows_to_upsert
+
+    def _ad_group_entity_rows_for_upsert(self, *, account_id: str, metadata_by_id: dict[str, dict[str, object]]) -> list[dict[str, object]]:
+        rows_to_upsert: list[dict[str, object]] = []
+        for ad_group_id, payload in metadata_by_id.items():
+            normalized_ad_group_id = str(ad_group_id or payload.get("ad_group_id") or "").strip()
+            campaign_id = str(payload.get("campaign_id") or "").strip()
+            if normalized_ad_group_id == "" or campaign_id == "":
+                continue
+            ad_group_name = str(payload.get("ad_group_name") or "").strip() or None
+            ad_group_status = str(payload.get("ad_group_status") or "").strip() or None
+            raw_payload = payload.get("raw_payload") if isinstance(payload.get("raw_payload"), dict) else {}
+            if ad_group_name is None and ad_group_status is None and len(raw_payload) == 0:
+                continue
+            rows_to_upsert.append(
+                {
+                    "platform": "tiktok_ads",
+                    "account_id": account_id,
+                    "campaign_id": campaign_id,
+                    "ad_group_id": normalized_ad_group_id,
+                    "name": ad_group_name,
+                    "status": ad_group_status,
+                    "raw_payload": raw_payload,
+                    "payload_hash": payload.get("payload_hash")
+                    or hashlib.sha256(
+                        json.dumps(
+                            {
+                                "ad_group_id": normalized_ad_group_id,
+                                "campaign_id": campaign_id,
+                                "ad_group_name": ad_group_name,
+                                "ad_group_status": ad_group_status,
+                                "raw_payload": raw_payload,
+                            },
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ).encode("utf-8")
+                    ).hexdigest(),
+                }
+            )
+        return rows_to_upsert
+
     def _resolve_and_persist_campaign_metadata(
         self,
         *,
@@ -1119,31 +1194,7 @@ class TikTokAdsService:
             if payload.get("payload_hash") is not None:
                 base["payload_hash"] = payload.get("payload_hash")
 
-        rows_to_upsert: list[dict[str, object]] = []
-        for campaign_id, payload in metadata_by_id.items():
-            raw_payload = payload.get("raw_payload") if isinstance(payload.get("raw_payload"), dict) else {}
-            rows_to_upsert.append(
-                {
-                    "platform": "tiktok_ads",
-                    "account_id": account_id,
-                    "campaign_id": campaign_id,
-                    "name": str(payload.get("campaign_name") or "").strip() or None,
-                    "status": str(payload.get("campaign_status") or "").strip() or None,
-                    "raw_payload": raw_payload,
-                    "payload_hash": payload.get("payload_hash")
-                    or hashlib.sha256(
-                        json.dumps(
-                            {
-                                "campaign_id": campaign_id,
-                                "campaign_name": str(payload.get("campaign_name") or "").strip() or None,
-                                "campaign_status": str(payload.get("campaign_status") or "").strip() or None,
-                            },
-                            sort_keys=True,
-                            separators=(",", ":"),
-                        ).encode("utf-8")
-                    ).hexdigest(),
-                }
-            )
+        rows_to_upsert = self._campaign_entity_rows_for_upsert(account_id=account_id, metadata_by_id=metadata_by_id)
 
         if len(rows_to_upsert) > 0 and not self._is_test_mode():
             try:
@@ -1321,38 +1372,7 @@ class TikTokAdsService:
             if payload.get("payload_hash") is not None:
                 base["payload_hash"] = payload.get("payload_hash")
 
-        rows_to_upsert: list[dict[str, object]] = []
-        for ad_group_id, payload in metadata_by_id.items():
-            campaign_id = str(payload.get("campaign_id") or "").strip()
-            if campaign_id == "":
-                continue
-            ad_group_name = str(payload.get("ad_group_name") or "").strip()
-            ad_group_status = str(payload.get("ad_group_status") or "").strip()
-            raw_payload = payload.get("raw_payload") if isinstance(payload.get("raw_payload"), dict) else {}
-            rows_to_upsert.append(
-                {
-                    "platform": "tiktok_ads",
-                    "account_id": account_id,
-                    "campaign_id": campaign_id,
-                    "ad_group_id": ad_group_id,
-                    "name": ad_group_name or None,
-                    "status": ad_group_status or None,
-                    "raw_payload": raw_payload,
-                    "payload_hash": payload.get("payload_hash")
-                    or hashlib.sha256(
-                        json.dumps(
-                            {
-                                "ad_group_id": ad_group_id,
-                                "campaign_id": campaign_id,
-                                "ad_group_name": ad_group_name or None,
-                                "ad_group_status": ad_group_status or None,
-                            },
-                            sort_keys=True,
-                            separators=(",", ":"),
-                        ).encode("utf-8")
-                    ).hexdigest(),
-                }
-            )
+        rows_to_upsert = self._ad_group_entity_rows_for_upsert(account_id=account_id, metadata_by_id=metadata_by_id)
 
         if len(rows_to_upsert) > 0 and not self._is_test_mode():
             try:
@@ -2398,23 +2418,12 @@ class TikTokAdsService:
                         )
                         ad_group_metadata_by_id = {}
                     if len(ad_group_metadata_by_id) > 0:
-                        upsert_platform_ad_groups(
-                            conn,
-                            [
-                                {
-                                    "platform": "tiktok_ads",
-                                    "account_id": normalized_account_id,
-                                    "campaign_id": str(payload.get("campaign_id") or "").strip() or None,
-                                    "ad_group_id": str(payload.get("ad_group_id") or "").strip(),
-                                    "name": str(payload.get("ad_group_name") or "").strip() or None,
-                                    "status": str(payload.get("ad_group_status") or "").strip() or None,
-                                    "raw_payload": payload.get("raw_payload") if isinstance(payload.get("raw_payload"), dict) else {},
-                                    "payload_hash": payload.get("payload_hash"),
-                                }
-                                for payload in ad_group_metadata_by_id.values()
-                                if str(payload.get("ad_group_id") or "").strip() != ""
-                            ],
+                        rows_to_upsert = self._ad_group_entity_rows_for_upsert(
+                            account_id=normalized_account_id,
+                            metadata_by_id=ad_group_metadata_by_id,
                         )
+                        if len(rows_to_upsert) > 0:
+                            upsert_platform_ad_groups(conn, rows_to_upsert)
             written = int(upsert_ad_group_performance_reports(conn, payload_rows) or 0)
             conn.commit()
             return written
@@ -2506,22 +2515,12 @@ class TikTokAdsService:
                         )
                         campaign_metadata_by_id = {}
                     if len(campaign_metadata_by_id) > 0:
-                        upsert_platform_campaigns(
-                            conn,
-                            [
-                                {
-                                    "platform": "tiktok_ads",
-                                    "account_id": normalized_account_id,
-                                    "campaign_id": str(payload.get("campaign_id") or "").strip(),
-                                    "name": str(payload.get("campaign_name") or "").strip() or None,
-                                    "status": str(payload.get("campaign_status") or "").strip() or None,
-                                    "raw_payload": payload.get("raw_payload") if isinstance(payload.get("raw_payload"), dict) else {},
-                                    "payload_hash": payload.get("payload_hash"),
-                                }
-                                for payload in campaign_metadata_by_id.values()
-                                if str(payload.get("campaign_id") or "").strip() != ""
-                            ],
+                        rows_to_upsert = self._campaign_entity_rows_for_upsert(
+                            account_id=normalized_account_id,
+                            metadata_by_id=campaign_metadata_by_id,
                         )
+                        if len(rows_to_upsert) > 0:
+                            upsert_platform_campaigns(conn, rows_to_upsert)
             written = int(upsert_campaign_performance_reports(conn, payload_rows) or 0)
             conn.commit()
             return written
