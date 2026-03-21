@@ -1097,14 +1097,20 @@ class TikTokAdsService:
                 campaign_id,
                 {"campaign_id": campaign_id, "campaign_name": "", "campaign_status": "", "raw_payload": {}, "payload_hash": None},
             )
-            fetched_name = str(payload.get("campaign_name") or "").strip()
+            raw_payload = payload.get("raw_payload") if isinstance(payload.get("raw_payload"), dict) else {}
+            fetched_name = str(
+                payload.get("campaign_name")
+                or raw_payload.get("campaign_name")
+                or raw_payload.get("name")
+                or ""
+            ).strip()
             if fetched_name != "":
                 base["campaign_name"] = fetched_name
             fetched_status = str(payload.get("campaign_status") or "").strip()
             if fetched_status != "":
                 base["campaign_status"] = fetched_status
-            if isinstance(payload.get("raw_payload"), dict):
-                base["raw_payload"] = payload.get("raw_payload")
+            if isinstance(raw_payload, dict):
+                base["raw_payload"] = raw_payload
             if payload.get("payload_hash") is not None:
                 base["payload_hash"] = payload.get("payload_hash")
 

@@ -2296,6 +2296,11 @@ class UnifiedDashboardService:
                     "clicks": 0,
                 },
             )
+            if (
+                str(current.get("campaign_name") or "").strip() in {"", campaign_id}
+                and campaign_name not in {"", campaign_id}
+            ):
+                current["campaign_name"] = campaign_name
             current["cost"] = _to_float(current.get("cost")) + spend
             current["rev_inf"] = _to_float(current.get("rev_inf")) + revenue
             current["impressions"] = _to_int(current.get("impressions")) + impressions
