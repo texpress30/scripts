@@ -1750,7 +1750,7 @@ class TikTokAdsService:
 
             report_day, resolved_date_source, date_error = self._parse_tiktok_report_date(row=item, dimensions_map=dimensions)
             campaign_id = str(dimensions.get("campaign_id") or item.get("campaign_id") or "").strip()
-            campaign_name = str(dimensions.get("campaign_name") or metrics_map.get("campaign_name") or item.get("campaign_name") or "").strip()
+            campaign_name = str(dimensions.get("campaign_name") or metrics.get("campaign_name") or item.get("campaign_name") or "").strip()
             if date_error is not None or campaign_id == "":
                 skipped_missing_required += 1
                 if date_error == "missing_stat_time_day":
@@ -1967,9 +1967,9 @@ class TikTokAdsService:
                 or item.get("adgroup_id")
                 or ""
             ).strip()
-            ad_group_name = str(dimensions.get("adgroup_name") or item.get("adgroup_name") or "").strip()
+            ad_group_name = str(dimensions.get("adgroup_name") or metrics.get("adgroup_name") or item.get("adgroup_name") or "").strip()
             campaign_id = str(dimensions.get("campaign_id") or item.get("campaign_id") or "").strip()
-            campaign_name = str(dimensions.get("campaign_name") or metrics_map.get("campaign_name") or item.get("campaign_name") or "").strip()
+            campaign_name = str(dimensions.get("campaign_name") or metrics.get("campaign_name") or item.get("campaign_name") or "").strip()
             if date_error is not None or ad_group_id == "":
                 skipped_missing_required += 1
                 if date_error == "missing_stat_time_day":
@@ -2224,7 +2224,7 @@ class TikTokAdsService:
 
             report_day, resolved_date_source, date_error = self._parse_tiktok_report_date(row=item, dimensions_map=dimensions)
             ad_id = str(dimensions.get("ad_id") or item.get("ad_id") or "").strip()
-            ad_name = str(dimensions.get("ad_name") or item.get("ad_name") or "").strip()
+            ad_name = str(dimensions.get("ad_name") or metrics.get("ad_name") or item.get("ad_name") or "").strip()
             ad_group_id = str(
                 dimensions.get("ad_group_id")
                 or dimensions.get("adgroup_id")
@@ -2232,9 +2232,9 @@ class TikTokAdsService:
                 or item.get("adgroup_id")
                 or ""
             ).strip()
-            ad_group_name = str(dimensions.get("adgroup_name") or item.get("adgroup_name") or "").strip()
+            ad_group_name = str(dimensions.get("adgroup_name") or metrics.get("adgroup_name") or item.get("adgroup_name") or "").strip()
             campaign_id = str(dimensions.get("campaign_id") or item.get("campaign_id") or "").strip()
-            campaign_name = str(dimensions.get("campaign_name") or metrics_map.get("campaign_name") or item.get("campaign_name") or "").strip()
+            campaign_name = str(dimensions.get("campaign_name") or metrics.get("campaign_name") or item.get("campaign_name") or "").strip()
             if date_error is not None or ad_id == "":
                 skipped_missing_required += 1
                 if date_error == "missing_stat_time_day":
