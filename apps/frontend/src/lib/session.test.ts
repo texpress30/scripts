@@ -7,6 +7,7 @@ import {
   getSessionAccessContext,
   getSessionAccessContextFromToken,
   getSessionInfo,
+  isSubaccountScopedContext,
   isReadOnlyRole,
   normalizeAppRole,
 } from "./session";
@@ -90,5 +91,18 @@ describe("session role normalization", () => {
     expect(context.role).toBe("subaccount_viewer");
     expect(context.allowed_subaccount_ids).toEqual([42]);
     expect(context.primary_subaccount_id).toBe(42);
+  });
+
+  it("treats access_scope=subaccount as scoped even when role is agency", () => {
+    expect(
+      isSubaccountScopedContext({
+        email: "user@example.com",
+        role: "agency_member",
+        access_scope: "subaccount",
+        allowed_subaccount_ids: [9],
+        allowed_subaccounts: [{ id: 9, name: "Client 9" }],
+        primary_subaccount_id: 9,
+      })
+    ).toBe(true);
   });
 });

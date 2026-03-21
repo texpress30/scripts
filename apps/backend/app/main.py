@@ -40,6 +40,7 @@ from app.api.rules import router as rules_router
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
 from app.services.company_settings import company_settings_service
+from app.services.subaccount_business_profile_store import subaccount_business_profile_store
 from app.services.auth_email_tokens import auth_email_tokens_service
 from app.services.email_templates import email_templates_service
 from app.services.email_notifications import email_notifications_service
@@ -139,6 +140,7 @@ def startup_event() -> None:
     user_profile_service.initialize_schema()
     team_members_service.initialize_schema()
     company_settings_service.initialize_schema()
+    subaccount_business_profile_store.initialize_schema()
     auth_email_tokens_service.initialize_schema()
     email_templates_service.initialize_schema()
     email_notifications_service.initialize_schema()

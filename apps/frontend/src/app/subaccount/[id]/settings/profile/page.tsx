@@ -1,11 +1,12 @@
 "use client";
 
-import React, { ChangeEvent, FormEvent, useRef, useState } from "react";
+import React, { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { Info, Upload, X } from "lucide-react";
 import { useParams } from "next/navigation";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
+import { apiRequest } from "@/lib/api";
 
 type GeneralForm = {
   friendlyName: string;
@@ -71,50 +72,107 @@ function validatePhone(value: string): string | null {
 
 export default function SubAccountSettingsPage() {
   const params = useParams<{ id: string }>();
+  const subaccountId = String(params.id ?? "").trim();
+  const [headerClientName, setHeaderClientName] = useState("");
 
   const [general, setGeneral] = useState<GeneralForm>({
-    friendlyName: "OMAROSA AGENCY",
-    legalName: "OMAROSA SRL",
-    email: "admin@omarosa.ro",
-    phone: "+40 725 083 012",
-    website: "https://www.omarosa.ro",
-    niche: "agencie_marketing",
-    currency: "RON",
+    friendlyName: "",
+    legalName: "",
+    email: "",
+    phone: "",
+    website: "",
+    niche: "",
+    currency: "",
   });
   const [business, setBusiness] = useState<BusinessForm>({
-    businessType: "srl",
-    industry: "media",
-    registrationIdType: "ro_vat",
-    registrationNumber: "23040624",
+    businessType: "",
+    industry: "",
+    registrationIdType: "",
+    registrationNumber: "",
     notRegistered: false,
-    regions: ["Europa"],
+    regions: [],
   });
   const [address, setAddress] = useState<AddressForm>({
-    street: "Str. Exemplu Nr. 10",
-    city: "București",
-    zipCode: "010101",
-    region: "București",
-    country: "RO",
-    timezone: "Europe/Bucharest",
-    language: "ro",
+    street: "",
+    city: "",
+    zipCode: "",
+    region: "",
+    country: "",
+    timezone: "",
+    language: "",
   });
   const [representative, setRepresentative] = useState<RepresentativeForm>({
-    firstName: "Ana",
-    lastName: "Popescu",
-    email: "ana.popescu@omarosa.ro",
-    jobPosition: "administrator",
-    phone: "+40 721 000 111",
+    firstName: "",
+    lastName: "",
+    email: "",
+    jobPosition: "",
+    phone: "",
   });
 
   const [logoError, setLogoError] = useState("");
   const [logoName, setLogoName] = useState("");
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState("");
+  const [loading, setLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
   const [generalErrors, setGeneralErrors] = useState<Record<string, string>>({});
   const [businessErrors, setBusinessErrors] = useState<Record<string, string>>({});
   const [addressErrors, setAddressErrors] = useState<Record<string, string>>({});
   const [representativeErrors, setRepresentativeErrors] = useState<Record<string, string>>({});
 
   const logoInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProfile() {
+      setLoading(true);
+      setErrorMessage("");
+      try {
+        const profilePayload = await apiRequest<{
+          client_name?: string;
+          general?: Partial<GeneralForm>;
+          business?: Partial<BusinessForm>;
+          address?: Partial<AddressForm>;
+          representative?: Partial<RepresentativeForm>;
+          logo_url?: string;
+        }>(`/clients/${subaccountId}/business-profile`);
+        if (cancelled) return;
+        setHeaderClientName(String(profilePayload?.client_name ?? "").trim());
+        setGeneral((prev) => ({ ...prev, ...(profilePayload.general ?? {}) }));
+        setBusiness((prev) => ({ ...prev, ...(profilePayload.business ?? {}) }));
+        setAddress((prev) => ({ ...prev, ...(profilePayload.address ?? {}) }));
+        setRepresentative((prev) => ({ ...prev, ...(profilePayload.representative ?? {}) }));
+        const loadedLogo = String(profilePayload.logo_url ?? "").trim();
+        setLogoPreviewUrl(loadedLogo);
+        setLogoName(loadedLogo ? "Logo salvat" : "");
+      } catch (err) {
+        if (!cancelled) setErrorMessage(err instanceof Error ? err.message : "Nu am putut încărca profilul business.");
+      }
+      if (!cancelled) setLoading(false);
+    }
+
+    void loadProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, [subaccountId]);
+
+  async function saveBusinessProfile() {
+    await apiRequest(`/clients/${subaccountId}/business-profile`, {
+      method: "PUT",
+      body: JSON.stringify({
+        general,
+        business,
+        address,
+        representative,
+        logo_url: logoPreviewUrl.trim(),
+      }),
+    });
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("subaccount-business-profile-updated", { detail: { subaccountId } }));
+    }
+  }
 
   function showToast(message: string) {
     setToastMessage(message);
@@ -130,17 +188,24 @@ export default function SubAccountSettingsPage() {
       if (logoInputRef.current) logoInputRef.current.value = "";
       return;
     }
-    setLogoError("");
-    setLogoName(file.name);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      setLogoError("");
+      setLogoName(file.name);
+      setLogoPreviewUrl(result);
+    };
+    reader.readAsDataURL(file);
   }
 
   function removeLogo() {
     setLogoName("");
     setLogoError("");
+    setLogoPreviewUrl("");
     if (logoInputRef.current) logoInputRef.current.value = "";
   }
 
-  function submitGeneral(event: FormEvent<HTMLFormElement>) {
+  async function submitGeneral(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextErrors: Record<string, string> = {};
 
@@ -161,10 +226,16 @@ export default function SubAccountSettingsPage() {
 
     setGeneralErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
-    showToast("Informațiile generale au fost actualizate.");
+    try {
+      setErrorMessage("");
+      await saveBusinessProfile();
+      showToast("Informațiile generale au fost actualizate.");
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Nu am putut salva informațiile generale.");
+    }
   }
 
-  function submitBusiness(event: FormEvent<HTMLFormElement>) {
+  async function submitBusiness(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextErrors: Record<string, string> = {};
 
@@ -184,10 +255,16 @@ export default function SubAccountSettingsPage() {
 
     setBusinessErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
-    showToast("Informațiile despre business au fost actualizate.");
+    try {
+      setErrorMessage("");
+      await saveBusinessProfile();
+      showToast("Informațiile despre business au fost actualizate.");
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Nu am putut salva informațiile business.");
+    }
   }
 
-  function submitAddress(event: FormEvent<HTMLFormElement>) {
+  async function submitAddress(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextErrors: Record<string, string> = {};
 
@@ -198,10 +275,16 @@ export default function SubAccountSettingsPage() {
 
     setAddressErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
-    showToast("Adresa business-ului a fost actualizată.");
+    try {
+      setErrorMessage("");
+      await saveBusinessProfile();
+      showToast("Adresa business-ului a fost actualizată.");
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Nu am putut salva adresa business-ului.");
+    }
   }
 
-  function submitRepresentative(event: FormEvent<HTMLFormElement>) {
+  async function submitRepresentative(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextErrors: Record<string, string> = {};
 
@@ -218,16 +301,24 @@ export default function SubAccountSettingsPage() {
 
     setRepresentativeErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
-    showToast("Datele reprezentantului au fost actualizate.");
+    try {
+      setErrorMessage("");
+      await saveBusinessProfile();
+      showToast("Datele reprezentantului au fost actualizate.");
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Nu am putut salva datele reprezentantului.");
+    }
   }
 
   return (
     <ProtectedPage>
-      <AppShell title={`Sub-account #${params.id} — Profil Business`}>
+      <AppShell title={headerClientName ? `${headerClientName} — Profil Business` : `Sub-account #${params.id} — Profil Business`}>
         <main className="p-6">
+          {loading ? <p className="mb-4 text-sm text-slate-500">Se încarcă profilul business...</p> : null}
           {toastMessage ? (
             <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{toastMessage}</div>
           ) : null}
+          {errorMessage ? <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{errorMessage}</div> : null}
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <div className="space-y-4">
@@ -236,8 +327,13 @@ export default function SubAccountSettingsPage() {
 
                 <div className="mt-3 rounded-md border border-dashed border-slate-300 bg-slate-50 p-3">
                   <p className="text-sm font-medium text-slate-700">Logo business</p>
-                  <div className="mt-2 flex h-[180px] w-full max-w-[350px] items-center justify-center rounded-md border border-slate-200 bg-white text-sm text-slate-400">
-                    {logoName || "350px × 180px (max 2.5 MB)"}
+                  <div className="mt-2 flex h-[180px] w-full max-w-[350px] items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-white text-sm text-slate-400">
+                    {logoPreviewUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={logoPreviewUrl} alt="Logo business" className="h-full w-full object-contain" />
+                    ) : (
+                      logoName || "350px × 180px (max 2.5 MB)"
+                    )}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <input ref={logoInputRef} type="file" className="hidden" onChange={onLogoChange} data-testid="logo-input" />
@@ -294,6 +390,7 @@ export default function SubAccountSettingsPage() {
                         <option value="">Selectează</option>
                         <option value="agencie_marketing">Agenție de marketing</option>
                         <option value="ecommerce">E-commerce</option>
+                        <option value="parc_auto">Parc Auto</option>
                         <option value="saas">SaaS</option>
                       </select>
                       {generalErrors.niche ? <p className="mt-1 text-xs text-red-600">{generalErrors.niche}</p> : null}
@@ -346,6 +443,10 @@ export default function SubAccountSettingsPage() {
                         <option value="media">Media</option>
                         <option value="marketing">Marketing</option>
                         <option value="retail">Retail</option>
+                        <option value="auto">Auto</option>
+                        <option value="educatie">Educație</option>
+                        <option value="energie">Energie</option>
+                        <option value="dating">Dating</option>
                       </select>
                       {businessErrors.industry ? <p className="mt-1 text-xs text-red-600">{businessErrors.industry}</p> : null}
                     </label>

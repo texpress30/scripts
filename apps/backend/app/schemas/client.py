@@ -1,7 +1,7 @@
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CreateClientRequest(BaseModel):
@@ -34,6 +34,25 @@ class UpdateClientProfileRequest(BaseModel):
     currency: str | None = None
     platform: str | None = None
     account_id: str | None = None
+
+
+class SubaccountBusinessProfilePayload(BaseModel):
+    general: dict[str, object] = Field(default_factory=dict)
+    business: dict[str, object] = Field(default_factory=dict)
+    address: dict[str, object] = Field(default_factory=dict)
+    representative: dict[str, object] = Field(default_factory=dict)
+    logo_url: str = ""
+
+
+class SubaccountBusinessProfileResponse(BaseModel):
+    client_id: int
+    display_id: int
+    client_name: str = ""
+    general: dict[str, object]
+    business: dict[str, object]
+    address: dict[str, object]
+    representative: dict[str, object]
+    logo_url: str
 
 
 class BusinessInputsImportRequest(BaseModel):
