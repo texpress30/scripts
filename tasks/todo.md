@@ -1,3 +1,14 @@
+# TODO — Verify TikTok metadata resolve always fetches campaign/ad-group names from API (2026-03-21)
+
+- [x] Sync workspace and re-read AGENTS before changes.
+- [x] Audit `_resolve_and_persist_campaign_metadata` for fetch-all campaign_ids behavior and API-name priority.
+- [x] Audit `_resolve_and_persist_ad_group_metadata` for fetch-all ad_group_ids behavior and API-name priority.
+- [x] Add regression tests proving fetch is executed for all IDs and report names are fallback-only.
+- [x] Run backend relevant tests + frontend build.
+
+## Review
+- [x] Confirmed fetch is done for full normalized ID sets; API names override report names, while report names remain fallback when API omits names.
+
 # TODO — TikTok campaign_daily: persist campaign/ad-group metadata before performance upsert (2026-03-21)
 
 - [x] Sync workspace and re-read AGENTS before implementation.

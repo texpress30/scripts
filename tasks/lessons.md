@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-21: După eliminarea `campaign_name` din report dimensions, tratez `campaign/get` și `adgroup/get` ca sursă principală pentru nume și acopăr explicit prin teste că fetch-ul rulează pe toate ID-urile, nu doar pe cele fără fallback.
+
 - 2026-03-21: Pentru TikTok campaign_daily, persistența numelor în dashboard depinde de upsert metadata entity (`platform_campaigns`/`platform_ad_groups`) înaintea fact tables; dacă metadata fetch cade, sync-ul de performance trebuie să continue.
 
 - 2026-03-21: Când userul marchează PR-ul ca nesatisfăcător, evit schimbări administrative-only; livrez fixul tehnic cerut în codul de producție și rulez verificările solicitate înainte de PR.

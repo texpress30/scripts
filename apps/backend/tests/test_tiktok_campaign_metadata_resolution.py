@@ -62,6 +62,68 @@ def test_resolve_and_persist_tiktok_campaign_metadata_by_campaign_id(monkeypatch
     assert fake_conn.committed is True
 
 
+def test_resolve_campaign_metadata_fetches_all_ids_and_prefers_api_name(monkeypatch):
+    captured_fetch_campaign_ids: list[str] = []
+    monkeypatch.setattr(tiktok_ads_service, "_is_test_mode", lambda: True)
+
+    def fake_fetch_campaign_metadata_by_ids(**kwargs):
+        captured_fetch_campaign_ids.extend(kwargs.get("campaign_ids") or [])
+        return {
+            "cmp-api": {
+                "campaign_id": "cmp-api",
+                "campaign_name": "Name From API",
+                "campaign_status": "ENABLE",
+                "raw_payload": {"campaign_id": "cmp-api", "campaign_name": "Name From API"},
+                "payload_hash": "hash-cmp-api",
+            }
+        }
+
+    monkeypatch.setattr(tiktok_ads_service, "_fetch_campaign_metadata_by_ids", fake_fetch_campaign_metadata_by_ids)
+
+    resolved = tiktok_ads_service._resolve_and_persist_campaign_metadata(
+        account_id="tt-acc-fetch-all",
+        access_token="token",
+        campaign_ids=["cmp-api", "cmp-report-only"],
+        report_campaign_name_by_id={"cmp-api": "Report Name", "cmp-report-only": "Report Only Name"},
+    )
+
+    assert sorted(captured_fetch_campaign_ids) == ["cmp-api", "cmp-report-only"]
+    assert resolved["cmp-api"]["campaign_name"] == "Name From API"
+    assert resolved["cmp-report-only"]["campaign_name"] == "Report Only Name"
+
+
+def test_resolve_ad_group_metadata_fetches_all_ids_and_prefers_api_name(monkeypatch):
+    captured_fetch_ad_group_ids: list[str] = []
+    monkeypatch.setattr(tiktok_ads_service, "_is_test_mode", lambda: True)
+
+    def fake_fetch_ad_group_metadata_by_ids(**kwargs):
+        captured_fetch_ad_group_ids.extend(kwargs.get("ad_group_ids") or [])
+        return {
+            "ag-api": {
+                "ad_group_id": "ag-api",
+                "ad_group_name": "AdGroup From API",
+                "campaign_id": "cmp-api",
+                "campaign_name": "Campaign From API",
+                "ad_group_status": "ENABLE",
+                "raw_payload": {"adgroup_id": "ag-api", "adgroup_name": "AdGroup From API", "campaign_id": "cmp-api"},
+                "payload_hash": "hash-ag-api",
+            }
+        }
+
+    monkeypatch.setattr(tiktok_ads_service, "_fetch_ad_group_metadata_by_ids", fake_fetch_ad_group_metadata_by_ids)
+
+    resolved = tiktok_ads_service._resolve_and_persist_ad_group_metadata(
+        account_id="tt-acc-adg-fetch-all",
+        access_token="token",
+        ad_group_ids=["ag-api", "ag-report-only"],
+        report_ad_group_name_by_id={"ag-api": "Report AdGroup", "ag-report-only": "Report Only AdGroup"},
+    )
+
+    assert sorted(captured_fetch_ad_group_ids) == ["ag-api", "ag-report-only"]
+    assert resolved["ag-api"]["ad_group_name"] == "AdGroup From API"
+    assert resolved["ag-report-only"]["ad_group_name"] == "Report Only AdGroup"
+
+
 def test_campaign_daily_report_schema_does_not_request_campaign_name_dimension():
     schema = tiktok_ads_service._report_schema_for_grain("campaign_daily")
     assert "campaign_name" not in schema.dimensions
