@@ -2371,6 +2371,10 @@ class TikTokAdsService:
 
         if self._is_test_mode():
             for row in rows:
+                resolved_campaign_id = str(row.campaign_id or "").strip()
+                tiktok_meta = row.extra_metrics.get("tiktok_ads") if isinstance(row.extra_metrics, dict) else {}
+                if resolved_campaign_id == "" and isinstance(tiktok_meta, dict):
+                    resolved_campaign_id = str(tiktok_meta.get("campaign_id") or "").strip()
                 key = ("tiktok_ads", row.account_id, row.ad_group_id, row.report_date.isoformat())
                 self._memory_ad_group_rows[key] = {
                     "platform": "tiktok_ads",
@@ -2378,7 +2382,7 @@ class TikTokAdsService:
                     "ad_group_id": row.ad_group_id,
                     "ad_group_name": row.ad_group_name,
                     "adgroup_name": row.adgroup_name or row.ad_group_name,
-                    "campaign_id": row.campaign_id,
+                    "campaign_id": resolved_campaign_id or None,
                     "campaign_name": row.campaign_name,
                     "report_date": row.report_date.isoformat(),
                     "spend": row.spend,
@@ -2392,12 +2396,18 @@ class TikTokAdsService:
                 }
             return len(rows)
 
-        payload_rows = [
-            {
+        payload_rows = []
+        for row in rows:
+            resolved_campaign_id = str(row.campaign_id or "").strip()
+            tiktok_meta = row.extra_metrics.get("tiktok_ads") if isinstance(row.extra_metrics, dict) else {}
+            if resolved_campaign_id == "" and isinstance(tiktok_meta, dict):
+                resolved_campaign_id = str(tiktok_meta.get("campaign_id") or "").strip()
+            payload_rows.append(
+                {
                 "platform": "tiktok_ads",
                 "account_id": row.account_id,
                 "ad_group_id": row.ad_group_id,
-                "campaign_id": row.campaign_id or None,
+                "campaign_id": resolved_campaign_id or None,
                 "report_date": row.report_date,
                 "spend": row.spend,
                 "impressions": row.impressions,
@@ -2411,14 +2421,13 @@ class TikTokAdsService:
                         "adgroup_name": row.adgroup_name or row.ad_group_name,
                         "ad_group_name": row.ad_group_name or row.adgroup_name,
                         "campaign_name": row.campaign_name,
-                        "campaign_id": row.campaign_id,
+                        "campaign_id": resolved_campaign_id or None,
                     },
                 },
                 "source_window_start": source_window_start,
                 "source_window_end": source_window_end,
             }
-            for row in rows
-        ]
+            )
         with self._connect() as conn:
             normalized_account_ids = sorted({str(row.account_id or "").strip() for row in rows if str(row.account_id or "").strip() != ""})
             if access_token is None:
@@ -2475,6 +2484,7 @@ class TikTokAdsService:
 
         if self._is_test_mode():
             for row in rows:
+                campaign_extra_metrics = row.extra_metrics if isinstance(row.extra_metrics, dict) else {}
                 key = ("tiktok_ads", row.account_id, row.campaign_id, row.report_date.isoformat())
                 self._memory_campaign_rows[key] = {
                     "platform": "tiktok_ads",
@@ -2487,7 +2497,13 @@ class TikTokAdsService:
                     "clicks": row.clicks,
                     "conversions": row.conversions,
                     "conversion_value": row.conversion_value,
-                    "extra_metrics": row.extra_metrics,
+                    "extra_metrics": {
+                        **campaign_extra_metrics,
+                        "tiktok_ads": {
+                            **(campaign_extra_metrics.get("tiktok_ads") if isinstance(campaign_extra_metrics.get("tiktok_ads"), dict) else {}),
+                            "campaign_name": row.campaign_name,
+                        },
+                    },
                     "source_window_start": source_window_start.isoformat(),
                     "source_window_end": source_window_end.isoformat(),
                 }
@@ -2505,9 +2521,9 @@ class TikTokAdsService:
                 "conversions": row.conversions,
                 "conversion_value": row.conversion_value,
                 "extra_metrics": {
-                    **row.extra_metrics,
+                    **(row.extra_metrics if isinstance(row.extra_metrics, dict) else {}),
                     "tiktok_ads": {
-                        **(row.extra_metrics.get("tiktok_ads") if isinstance(row.extra_metrics.get("tiktok_ads"), dict) else {}),
+                        **(row.extra_metrics.get("tiktok_ads") if isinstance(row.extra_metrics, dict) and isinstance(row.extra_metrics.get("tiktok_ads"), dict) else {}),
                         "campaign_name": row.campaign_name,
                     },
                 },

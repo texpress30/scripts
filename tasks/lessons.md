@@ -505,3 +505,4 @@
 - 2026-03-21: Pentru cerințe UI de navigație repetate pe mai multe pagini similare, auditează mai întâi componenta shared (dacă există) și implementează linkul o singură dată acolo, cu teste per pagină pentru href corect.
 - 2026-03-21: Când utilizatorul reamintește explicit AGENTS workflow, încep imediat cu plan documentat în `tasks/todo.md`, marchez progresul în același task și includ obligatoriu commit + `make_pr` în același turn de livrare.
 - 2026-03-21: Pentru dropdown-uri cerute explicit cu "sortare alfabetică", verific ordinea tuturor opțiunilor (nu doar cele noi) și acopăr ordinea exactă într-un test de UI pe lista de `<option>`.
+- 2026-03-21: După feedback pe persistența TikTok names/IDs, verific explicit atât payloadurile fact (`extra_metrics` + foreign keys), cât și clauzele SQL `ON CONFLICT DO UPDATE` care trebuie să suprascrie valorile NULL existente cu `EXCLUDED`, apoi acopăr prin teste țintite.
