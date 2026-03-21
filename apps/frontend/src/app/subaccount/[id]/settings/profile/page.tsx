@@ -169,6 +169,9 @@ export default function SubAccountSettingsPage() {
         logo_url: logoPreviewUrl.trim(),
       }),
     });
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("subaccount-business-profile-updated", { detail: { subaccountId } }));
+    }
   }
 
   function showToast(message: string) {
@@ -387,6 +390,7 @@ export default function SubAccountSettingsPage() {
                         <option value="">Selectează</option>
                         <option value="agencie_marketing">Agenție de marketing</option>
                         <option value="ecommerce">E-commerce</option>
+                        <option value="parc_auto">Parc Auto</option>
                         <option value="saas">SaaS</option>
                       </select>
                       {generalErrors.niche ? <p className="mt-1 text-xs text-red-600">{generalErrors.niche}</p> : null}

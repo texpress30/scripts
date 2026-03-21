@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 
 type ClientItem = { id: number; name: string; owner_email: string; client_logo_url?: string | null };
 type CompanySettings = { logo_url: string; city: string; country: string; company_name: string };
+type SubaccountBusinessProfileResponse = { address?: { city?: string; country?: string } };
 type TeamMemberItem = { id: number; first_name: string; last_name: string; email: string; user_role: string };
 type TeamMembersResponse = { items: TeamMemberItem[]; total: number };
 
@@ -140,6 +141,14 @@ function roleForImpersonation(value: string): AppRole {
     return role as AppRole;
   }
   return "subaccount_user";
+}
+
+export function formatSubaccountBrandingLocation(city: string | null | undefined, country: string | null | undefined): string {
+  const normalizedCity = String(city ?? "").trim();
+  const normalizedCountry = String(country ?? "").trim();
+  if (normalizedCity && normalizedCountry) return `Locație: ${normalizedCity}, ${normalizedCountry}`;
+  if (normalizedCity) return `Locație: ${normalizedCity}`;
+  return "Locație: -";
 }
 
 type ScopedClientResult = {
@@ -420,6 +429,7 @@ export function AppShell({
   const [search, setSearch] = useState("");
   const [clients, setClients] = useState<ClientItem[]>([]);
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
+  const [subaccountBusinessLocation, setSubaccountBusinessLocation] = useState<{ city: string; country: string } | null>(null);
 
   const [profileOpen, setProfileOpen] = useState(false);
   const [loginAsOpen, setLoginAsOpen] = useState(false);
@@ -481,6 +491,47 @@ export function AppShell({
       ignore = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (contextClientId === null) {
+      setSubaccountBusinessLocation(null);
+      return;
+    }
+
+    let ignore = false;
+    async function loadSubaccountBusinessLocation() {
+      try {
+        const payload = await apiRequest<SubaccountBusinessProfileResponse>(`/clients/${contextClientId}/business-profile`);
+        const city = String(payload?.address?.city ?? "").trim();
+        const countryCodeOrLabel = String(payload?.address?.country ?? "").trim();
+        const country =
+          countryCodeOrLabel === "RO"
+            ? "România"
+            : countryCodeOrLabel === "US"
+            ? "Statele Unite"
+            : countryCodeOrLabel;
+        if (!ignore) {
+          setSubaccountBusinessLocation({ city, country });
+        }
+      } catch {
+        if (!ignore) setSubaccountBusinessLocation(null);
+      }
+    }
+
+    function onBusinessProfileUpdated(event: Event) {
+      const custom = event as CustomEvent<{ subaccountId?: string | number }>;
+      const updatedSubaccountId = Number(custom.detail?.subaccountId ?? 0);
+      if (updatedSubaccountId > 0 && updatedSubaccountId !== contextClientId) return;
+      void loadSubaccountBusinessLocation();
+    }
+
+    void loadSubaccountBusinessLocation();
+    window.addEventListener("subaccount-business-profile-updated", onBusinessProfileUpdated as EventListener);
+    return () => {
+      ignore = true;
+      window.removeEventListener("subaccount-business-profile-updated", onBusinessProfileUpdated as EventListener);
+    };
+  }, [contextClientId]);
 
   useEffect(() => {
     let ignore = false;
@@ -567,7 +618,10 @@ export function AppShell({
   const currentClient = useMemo(() => scopedClients.find((c) => c.id === contextClientId) ?? null, [scopedClients, contextClientId]);
   const isSubContext = contextClientId !== null || isSubSettingsMode;
   const brandingTitle = isSubContext ? (currentClient?.name ?? "Sub-cont") : (companySettings?.company_name || "Agency MCC");
-  const brandingSubtitle = `Locație: ${companySettings?.city || "-"}, ${companySettings?.country || "-"}`;
+  const brandingSubtitle = useMemo(() => {
+    if (!isSubContext) return `Locație: ${companySettings?.city || "-"}, ${companySettings?.country || "-"}`;
+    return formatSubaccountBrandingLocation(subaccountBusinessLocation?.city, subaccountBusinessLocation?.country);
+  }, [isSubContext, companySettings?.city, companySettings?.country, subaccountBusinessLocation?.city, subaccountBusinessLocation?.country]);
   const agencyLogoUrl = companySettings?.logo_url?.trim() || "";
   const subLogoUrl = currentClient?.client_logo_url?.trim() || "";
   const brandingLogoUrl = isSubContext ? subLogoUrl : agencyLogoUrl;

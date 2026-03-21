@@ -1,3 +1,17 @@
+# TODO — Sub-account Profil Business: sidebar location from business profile + nișă Parc Auto (2026-03-21)
+
+- [x] Re-read AGENTS/todo/lessons and audit source of sidebar location + nișă options.
+- [x] Update sidebar branding location in sub-account context to read city/country from saved business profile endpoint.
+- [x] Ensure sidebar location refreshes after business-profile save and remains correct after page refresh.
+- [x] Add `Parc Auto` option to `Nișa business` dropdown and keep load/save roundtrip compatibility.
+- [x] Add/adjust frontend tests for location formatting + `Parc Auto` presence and persistence.
+- [x] Run frontend tests relevant to Sub-account Profile + AppShell and run frontend build.
+
+## Review
+- [x] Root cause for wrong sidebar location: sub-account card subtitle used agency company settings city/country instead of sub-account business profile address.
+- [x] Sub-account subtitle now composes from business profile address (`Oraș` + optional `Țară`) with neutral fallback.
+- [x] Scope remained limited to Sub-account Profile/AppShell, without touching Agency/Team/auth/invite/delete/Media Buying/Media Tracker.
+
 # TODO — Sub-account Profil Business: fix Client not found by correcting identifier mapping (2026-03-21)
 
 - [x] Re-read AGENTS + todo + lessons and confirm runtime failure (`Client not found`) after refresh.

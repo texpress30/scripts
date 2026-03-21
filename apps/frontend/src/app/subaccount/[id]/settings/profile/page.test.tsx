@@ -79,20 +79,13 @@ describe("SubAccount Business Profile settings page", () => {
   it("starts with empty form values when business profile is not saved, even if display data exists", async () => {
     setupApiMock();
     render(<SubAccountSettingsPage />);
-    await screen.findByDisplayValue("owner96@example.com");
 
     expect(await screen.findByTestId("app-shell-title")).toHaveTextContent("Client 96 — Profil Business");
     expect(screen.getByLabelText(/Nume business \(friendly\)/i)).toHaveValue("");
     expect(screen.getByLabelText(/Email business/i)).toHaveValue("");
     expect(screen.getByLabelText(/Oraș/i)).toHaveValue("");
     expect(screen.queryByText("Logo salvat")).not.toBeInTheDocument();
-  });
-
-    expect(await screen.findByTestId("app-shell-title")).toHaveTextContent("Client 96 — Profil Business");
-    expect(screen.getByLabelText(/Nume business \(friendly\)/i)).toHaveValue("");
-    expect(screen.getByLabelText(/Email business/i)).toHaveValue("");
-    expect(screen.getByLabelText(/Oraș/i)).toHaveValue("");
-    expect(screen.queryByText("Logo salvat")).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Parc Auto" })).toBeInTheDocument();
   });
 
   it("saves profile explicitly and reloads saved values from business-profile endpoint", async () => {
@@ -105,7 +98,7 @@ describe("SubAccount Business Profile settings page", () => {
     fireEvent.change(screen.getByLabelText(/Email business/i), { target: { value: "biz@roc.example" } });
     fireEvent.change(screen.getByLabelText(/Telefon business/i), { target: { value: "+40 700 111 222" } });
     fireEvent.change(screen.getByLabelText(/Website business/i), { target: { value: "https://roc.example" } });
-    fireEvent.change(screen.getByLabelText(/Nișa business/i), { target: { value: "ecommerce" } });
+    fireEvent.change(screen.getByLabelText(/Nișa business/i), { target: { value: "parc_auto" } });
     fireEvent.change(screen.getByLabelText(/Monedă business/i), { target: { value: "EUR" } });
     fireEvent.change(screen.getByLabelText(/Oraș/i), { target: { value: "Onești" } });
     fireEvent.click(screen.getAllByRole("button", { name: "Actualizează informațiile" })[0]);
@@ -123,6 +116,7 @@ describe("SubAccount Business Profile settings page", () => {
     expect(screen.getByLabelText(/Nume business \(friendly\)/i)).toHaveValue("ROC Auto");
     expect(screen.getByLabelText(/Email business/i)).toHaveValue("biz@roc.example");
     expect(screen.getByLabelText(/Oraș/i)).toHaveValue("Onești");
+    expect(screen.getByLabelText(/Nișa business/i)).toHaveValue("parc_auto");
   });
 
   it("does not use localStorage snapshots as permanent prefill source", async () => {

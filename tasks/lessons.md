@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-21: În AppShell sub-account, nu folosi `company_settings.city/country` pentru cardul clientului; locația trebuie derivată din business profile-ul sub-account-ului (oraș + țară) cu fallback neutru.
+
 - 2026-03-21: Pentru rute sub-account (`/subaccount/[id]`), validează explicit dacă `id` este `client_id` sau `display_id`; endpoint-urile noi trebuie fie să folosească identifier-ul canonic, fie să accepte robust ambele mappări pentru a evita `Client not found`.
 
 - 2026-03-21: Dacă userul cere explicit „fără prefill”, nu folosesc nici fallback din endpointuri de display (`/clients/display`) și nici rehydrate localStorage; formularul se alimentează exclusiv din endpointul de profil dedicat sau rămâne gol.
