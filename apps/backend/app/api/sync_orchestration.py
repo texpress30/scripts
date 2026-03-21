@@ -841,12 +841,13 @@ def list_account_sync_runs(
         account_id=normalized_account_id,
         limit=int(limit),
     )
+    reconciled_runs = [_reconcile_run_payload(item) for item in runs]
 
     return {
         "platform": normalized_platform,
         "account_id": normalized_account_id,
         "limit": int(limit),
-        "runs": [_serialize_run(item) for item in runs],
+        "runs": [_serialize_run(item) for item in reconciled_runs],
     }
 
 

@@ -701,6 +701,15 @@ export default function AgencyAccountDetailPage() {
                         }
                         if (platform === "tiktok_ads") {
                           const fallback = summary || String(run.error ?? "").trim() || (details && typeof details === "object" ? String((details as { provider_error_message?: unknown }).provider_error_message ?? "").trim() : "") || "run failed";
+                          const staleFeatureFlagError = shouldSuppressStaleTikTokFeatureFlagError({
+                            platform,
+                            syncEnabled: platformSyncEnabled,
+                            hasActiveSync: hasActiveRun,
+                            lastRunStatus: run.status,
+                            errorCategory: category,
+                            errorMessage: fallback,
+                          });
+                          if (staleFeatureFlagError) return null;
                           const presentation = getTikTokErrorPresentation(category, fallback);
                           return (
                             <>
