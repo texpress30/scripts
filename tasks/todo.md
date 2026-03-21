@@ -1,3 +1,15 @@
+# TODO — TikTok metadata hotfix: campaign/ad-group payload parsing + ID dimensions for ad_group_daily/ad_daily (2026-03-21)
+
+- [x] Sync workspace and re-read AGENTS before applying hotfixes.
+- [x] Fix campaign metadata extraction to prioritize TikTok `status` and keep full API payload mapped to entity upserts.
+- [x] Fix ad-group metadata extraction similarly (status + campaign_id aliases + full raw payload).
+- [x] Update report schema dimensions: `ad_group_daily` => (`stat_time_day`,`campaign_id`,`ad_group_id`) and `ad_daily` => (`stat_time_day`,`campaign_id`,`ad_group_id`,`ad_id`).
+- [x] Update row parsers to read `ad_group_id`/`adgroup_id` aliases from report dimensions/items.
+- [x] Run backend relevant tests and frontend build.
+
+## Review
+- [x] Hotfix scope remained limited to TikTok backend service + TikTok backend tests and task docs only.
+
 # TODO — Verify TikTok metadata resolve always fetches campaign/ad-group names from API (2026-03-21)
 
 - [x] Sync workspace and re-read AGENTS before changes.

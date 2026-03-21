@@ -124,6 +124,70 @@ def test_resolve_ad_group_metadata_fetches_all_ids_and_prefers_api_name(monkeypa
     assert resolved["ag-report-only"]["ad_group_name"] == "Report Only AdGroup"
 
 
+def test_fetch_campaign_metadata_by_ids_maps_status_and_full_raw_payload(monkeypatch):
+    monkeypatch.setattr(tiktok_ads_service, "_campaign_get_endpoint", lambda: "https://example.test/campaign/get/")
+    monkeypatch.setattr(
+        tiktok_ads_service,
+        "_http_json",
+        lambda **kwargs: {
+            "data": {
+                "list": [
+                    {
+                        "campaign_id": "123",
+                        "campaign_name": "My Campaign",
+                        "status": "CAMPAIGN_STATUS_ENABLE",
+                        "objective_type": "CONVERSIONS",
+                    }
+                ],
+                "page_info": {"total_page": 1},
+            }
+        },
+    )
+
+    payload = tiktok_ads_service._fetch_campaign_metadata_by_ids(
+        account_id="acc-1",
+        access_token="token",
+        campaign_ids=["123"],
+    )
+
+    assert payload["123"]["campaign_name"] == "My Campaign"
+    assert payload["123"]["campaign_status"] == "CAMPAIGN_STATUS_ENABLE"
+    assert payload["123"]["raw_payload"]["objective_type"] == "CONVERSIONS"
+
+
+def test_fetch_ad_group_metadata_by_ids_maps_campaign_id_status_and_full_raw_payload(monkeypatch):
+    monkeypatch.setattr(tiktok_ads_service, "_adgroup_get_endpoint", lambda: "https://example.test/adgroup/get/")
+    monkeypatch.setattr(
+        tiktok_ads_service,
+        "_http_json",
+        lambda **kwargs: {
+            "data": {
+                "list": [
+                    {
+                        "ad_group_id": "ag-1",
+                        "ad_group_name": "Ad Group A",
+                        "campaign_id": "cmp-1",
+                        "status": "ADGROUP_STATUS_ENABLE",
+                        "placement_type": "PLACEMENT_FEED",
+                    }
+                ],
+                "page_info": {"total_page": 1},
+            }
+        },
+    )
+
+    payload = tiktok_ads_service._fetch_ad_group_metadata_by_ids(
+        account_id="acc-1",
+        access_token="token",
+        ad_group_ids=["ag-1"],
+    )
+
+    assert payload["ag-1"]["ad_group_name"] == "Ad Group A"
+    assert payload["ag-1"]["campaign_id"] == "cmp-1"
+    assert payload["ag-1"]["ad_group_status"] == "ADGROUP_STATUS_ENABLE"
+    assert payload["ag-1"]["raw_payload"]["placement_type"] == "PLACEMENT_FEED"
+
+
 def test_campaign_daily_report_schema_does_not_request_campaign_name_dimension():
     schema = tiktok_ads_service._report_schema_for_grain("campaign_daily")
     assert "campaign_name" not in schema.dimensions
@@ -170,7 +234,7 @@ def test_report_query_params_guard_removes_campaign_name_for_campaign_data_level
 
 def test_ad_group_daily_report_schema_keeps_supported_dimensions_only():
     schema = tiktok_ads_service._report_schema_for_grain("ad_group_daily")
-    assert schema.dimensions == ("stat_time_day", "adgroup_id")
+    assert schema.dimensions == ("stat_time_day", "campaign_id", "ad_group_id")
 
 
 def test_fetch_ad_group_daily_metrics_request_params_exclude_campaign_dimensions(monkeypatch):
@@ -193,8 +257,7 @@ def test_fetch_ad_group_daily_metrics_request_params_exclude_campaign_dimensions
     assert payload == []
     dimensions = captured_request_params.get("dimensions")
     assert isinstance(dimensions, list)
-    assert dimensions == ["stat_time_day", "adgroup_id"]
-    assert "campaign_id" not in dimensions
+    assert dimensions == ["stat_time_day", "campaign_id", "ad_group_id"]
     assert "adgroup_name" not in dimensions
 
 

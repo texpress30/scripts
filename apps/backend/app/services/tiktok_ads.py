@@ -886,12 +886,12 @@ class TikTokAdsService:
         if grain == "ad_group_daily":
             return TikTokReportingSchema(
                 data_level="AUCTION_ADGROUP",
-                dimensions=("stat_time_day", "adgroup_id"),
+                dimensions=("stat_time_day", "campaign_id", "ad_group_id"),
                 metrics=("spend", "impressions", "clicks", "conversion", "total_purchase_value"),
             )
         return TikTokReportingSchema(
             data_level="AUCTION_AD",
-            dimensions=("stat_time_day", "ad_id"),
+            dimensions=("stat_time_day", "campaign_id", "ad_group_id", "ad_id"),
             metrics=("spend", "impressions", "clicks", "conversion", "total_purchase_value"),
         )
 
@@ -1014,6 +1014,7 @@ class TikTokAdsService:
         normalized_ids = [str(item or "").strip() for item in campaign_ids if str(item or "").strip() != ""]
         if len(normalized_ids) == 0:
             return {}
+        filter_campaign_ids: list[object] = [int(item) if item.isdigit() else item for item in normalized_ids]
 
         campaign_metadata: dict[str, dict[str, object]] = {}
         page = 1
@@ -1025,7 +1026,7 @@ class TikTokAdsService:
                 url=endpoint,
                 payload={
                     "advertiser_id": str(account_id),
-                    "filtering": {"campaign_ids": normalized_ids},
+                    "filtering": {"campaign_ids": filter_campaign_ids},
                     "page": page,
                     "page_size": page_size,
                 },
@@ -1044,7 +1045,7 @@ class TikTokAdsService:
                 if campaign_id == "":
                     continue
                 campaign_name = str(item.get("campaign_name") or item.get("name") or "").strip()
-                campaign_status = str(item.get("operation_status") or item.get("status") or item.get("secondary_status") or "").strip()
+                campaign_status = str(item.get("status") or item.get("operation_status") or item.get("secondary_status") or "").strip()
                 raw_payload = dict(item)
                 payload_hash = hashlib.sha256(json.dumps(raw_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
                 campaign_metadata[campaign_id] = {
@@ -1195,6 +1196,7 @@ class TikTokAdsService:
         normalized_ids = [str(item or "").strip() for item in ad_group_ids if str(item or "").strip() != ""]
         if len(normalized_ids) == 0:
             return {}
+        filter_ad_group_ids: list[object] = [int(item) if item.isdigit() else item for item in normalized_ids]
 
         ad_group_metadata: dict[str, dict[str, object]] = {}
         page = 1
@@ -1206,7 +1208,7 @@ class TikTokAdsService:
                 url=endpoint,
                 payload={
                     "advertiser_id": str(account_id),
-                    "filtering": {"adgroup_ids": normalized_ids},
+                    "filtering": {"adgroup_ids": filter_ad_group_ids},
                     "page": page,
                     "page_size": page_size,
                 },
@@ -1225,9 +1227,9 @@ class TikTokAdsService:
                 if ad_group_id == "":
                     continue
                 ad_group_name = str(item.get("adgroup_name") or item.get("ad_group_name") or item.get("name") or "").strip()
-                campaign_id = str(item.get("campaign_id") or "").strip()
+                campaign_id = str(item.get("campaign_id") or item.get("campaignId") or "").strip()
                 campaign_name = str(item.get("campaign_name") or "").strip()
-                ad_group_status = str(item.get("operation_status") or item.get("status") or item.get("secondary_status") or "").strip()
+                ad_group_status = str(item.get("status") or item.get("operation_status") or item.get("secondary_status") or "").strip()
                 raw_payload = dict(item)
                 payload_hash = hashlib.sha256(json.dumps(raw_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
                 ad_group_metadata[ad_group_id] = {
@@ -1905,7 +1907,13 @@ class TikTokAdsService:
                 sample_metric_keys = sorted([str(key) for key in metrics.keys()][:20])
 
             report_day, resolved_date_source, date_error = self._parse_tiktok_report_date(row=item, dimensions_map=dimensions)
-            ad_group_id = str(dimensions.get("adgroup_id") or item.get("adgroup_id") or "").strip()
+            ad_group_id = str(
+                dimensions.get("ad_group_id")
+                or dimensions.get("adgroup_id")
+                or item.get("ad_group_id")
+                or item.get("adgroup_id")
+                or ""
+            ).strip()
             ad_group_name = str(dimensions.get("adgroup_name") or item.get("adgroup_name") or "").strip()
             campaign_id = str(dimensions.get("campaign_id") or item.get("campaign_id") or "").strip()
             campaign_name = str(dimensions.get("campaign_name") or item.get("campaign_name") or "").strip()
@@ -2078,7 +2086,13 @@ class TikTokAdsService:
             report_day, resolved_date_source, date_error = self._parse_tiktok_report_date(row=item, dimensions_map=dimensions)
             ad_id = str(dimensions.get("ad_id") or item.get("ad_id") or "").strip()
             ad_name = str(dimensions.get("ad_name") or item.get("ad_name") or "").strip()
-            ad_group_id = str(dimensions.get("adgroup_id") or item.get("adgroup_id") or "").strip()
+            ad_group_id = str(
+                dimensions.get("ad_group_id")
+                or dimensions.get("adgroup_id")
+                or item.get("ad_group_id")
+                or item.get("adgroup_id")
+                or ""
+            ).strip()
             ad_group_name = str(dimensions.get("adgroup_name") or item.get("adgroup_name") or "").strip()
             campaign_id = str(dimensions.get("campaign_id") or item.get("campaign_id") or "").strip()
             campaign_name = str(dimensions.get("campaign_name") or item.get("campaign_name") or "").strip()
