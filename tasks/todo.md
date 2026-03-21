@@ -5940,3 +5940,21 @@ Plan confirmed: backend-only scope (Meta persistence + backend tests), no fronte
 
 ## Check-in before execution
 Plan confirmed: backend-first TikTok metadata + tests, minimal frontend test-only adjustment; no Agency/Team/auth/invite/delete/Media Buying/Media Tracker changes.
+
+# TODO — Sub-account ads drilldown: campaigns -> ad groups/ad sets (2026-03-21)
+
+- [x] Re-sync workspace + recitire AGENTS/todo/lessons + audit explicit rute existente accounts/campaigns și surse date reale ad_group/adset.
+- [x] Backend minim: endpoint/platform helper pentru campaign -> adgroup/adset filtrat pe client/account/campaign/date range.
+- [x] Frontend campaigns pages: numele campaniei devine link către ruta nouă campaign drilldown (Google/Meta/TikTok).
+- [x] Frontend rute noi + component comun pentru tabel campaign -> adgroup/adset cu controale Filter/Columns/Export + calendar la dreapta.
+- [x] Frontend/backend teste țintite pentru links/rute/empty-loading/fallback/id-name + filtre backend campaign/date/account/client.
+- [x] Rulare verificări cerute: teste backend relevante, teste frontend relevante, build frontend.
+
+## Review
+- [x] Confirmare explicită că Agency/Team/auth/invite/delete/Media Buying/Media Tracker nu au fost atinse.
+- Audit rute existente confirmat: `/{platform}/accounts/[accountId]` (campaigns) existau; rute `.../campaigns/[campaignId]` au fost adăugate pentru toate cele 3 platforme.
+- Date reale folosite din backend: `ad_group_performance_reports` + join metadata (`platform_ad_groups`, `platform_campaigns`, `agency_platform_accounts`), fără hardcode metrici.
+- Verificări executate:
+  - `pytest -q apps/backend/tests/test_dashboard_currency_normalization.py -k \"campaign_adgroup or account_campaign_performance or campaign_rows_query_uses_ad_group_fallback_source\"`
+  - `pnpm --dir apps/frontend exec vitest run src/app/sub/[id]/google-ads/accounts/[accountId]/page.test.tsx src/app/sub/[id]/meta-ads/accounts/[accountId]/page.test.tsx src/app/sub/[id]/tiktok-ads/accounts/[accountId]/page.test.tsx src/app/sub/[id]/google-ads/accounts/[accountId]/campaigns/[campaignId]/page.test.tsx src/app/sub/[id]/meta-ads/accounts/[accountId]/campaigns/[campaignId]/page.test.tsx src/app/sub/[id]/tiktok-ads/accounts/[accountId]/campaigns/[campaignId]/page.test.tsx`
+  - `pnpm --dir apps/frontend run build`

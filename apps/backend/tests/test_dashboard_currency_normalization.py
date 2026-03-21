@@ -709,3 +709,130 @@ def test_get_client_platform_account_campaign_performance_upgrades_campaign_name
 def test_client_platform_campaign_rows_query_uses_ad_group_fallback_source():
     sql = unified_dashboard_service._client_platform_campaign_rows_query(platform="meta_ads")
     assert "FROM ad_group_performance_reports agpr" in sql
+
+
+def test_get_client_platform_campaign_adgroup_performance_filters_by_campaign_and_range():
+    rows = [
+        ("meta-1001", "Meta Main", "active", "cmp-1", "Campaign 1", "ag-1", "Adset 1", "active", date(2026, 3, 10), "RON", 40.0, 120.0, 500, 45),
+        ("meta-1001", "Meta Main", "active", "cmp-1", "Campaign 1", "ag-1", "Adset 1", "active", date(2026, 3, 11), "RON", 10.0, 30.0, 100, 10),
+        ("meta-1001", "Meta Main", "active", "cmp-1", "Campaign 1", "ag-2", "Adset 2", "paused", date(2026, 3, 11), "RON", 5.0, 0.0, 60, 6),
+    ]
+
+    class _FakeCursor:
+        def execute(self, sql, params=None):
+            self.sql = str(sql)
+            self.params = params
+
+        def fetchall(self):
+            return rows
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class _FakeConn:
+        def cursor(self):
+            return _FakeCursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    original_connect = unified_dashboard_service._connect
+    original_reporting = dashboard_service_module.client_registry_service.get_client_reporting_currency_decision
+    original_init_schema = dashboard_service_module.performance_reports_store.initialize_schema
+    try:
+        unified_dashboard_service._connect = lambda: _FakeConn()
+        dashboard_service_module.client_registry_service.get_client_reporting_currency_decision = lambda **kwargs: {
+            "reporting_currency": "RON",
+            "reporting_currency_source": "agency_client_currency",
+            "mixed_attached_account_currencies": False,
+            "attached_account_currency_summary": [{"currency": "RON", "account_count": 1}],
+        }
+        dashboard_service_module.performance_reports_store.initialize_schema = lambda: None
+        payload = unified_dashboard_service.get_client_platform_campaign_adgroup_performance(
+            client_id=96,
+            platform="meta_ads",
+            account_id="meta-1001",
+            campaign_id="cmp-1",
+            start_date=date(2026, 3, 1),
+            end_date=date(2026, 3, 31),
+        )
+    finally:
+        unified_dashboard_service._connect = original_connect
+        dashboard_service_module.client_registry_service.get_client_reporting_currency_decision = original_reporting
+        dashboard_service_module.performance_reports_store.initialize_schema = original_init_schema
+
+    assert payload["account_id"] == "meta-1001"
+    assert payload["campaign_id"] == "cmp-1"
+    assert payload["campaign_name"] == "Campaign 1"
+    assert payload["items"][0]["ad_group_id"] == "ag-1"
+    assert payload["items"][0]["cost"] == 50.0
+    assert payload["items"][1]["ad_group_id"] == "ag-2"
+    assert payload["items"][1]["status"] == "paused"
+
+
+def test_get_client_platform_campaign_adgroup_performance_falls_back_to_ad_group_id_when_name_missing():
+    rows = [
+        ("tiktok-1", "TikTok Main", "active", "cmp-tt-1", "TikTok Prospecting", "ag-fallback", "", "active", date(2026, 3, 10), "USD", 2.0, 4.0, 10, 1),
+    ]
+
+    class _FakeCursor:
+        def execute(self, sql, params=None):
+            self.sql = str(sql)
+            self.params = params
+
+        def fetchall(self):
+            return rows
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class _FakeConn:
+        def cursor(self):
+            return _FakeCursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    original_connect = unified_dashboard_service._connect
+    original_reporting = dashboard_service_module.client_registry_service.get_client_reporting_currency_decision
+    original_init_schema = dashboard_service_module.performance_reports_store.initialize_schema
+    try:
+        unified_dashboard_service._connect = lambda: _FakeConn()
+        dashboard_service_module.client_registry_service.get_client_reporting_currency_decision = lambda **kwargs: {
+            "reporting_currency": "USD",
+            "reporting_currency_source": "agency_client_currency",
+            "mixed_attached_account_currencies": False,
+            "attached_account_currency_summary": [{"currency": "USD", "account_count": 1}],
+        }
+        dashboard_service_module.performance_reports_store.initialize_schema = lambda: None
+        payload = unified_dashboard_service.get_client_platform_campaign_adgroup_performance(
+            client_id=96,
+            platform="tiktok_ads",
+            account_id="tiktok-1",
+            campaign_id="cmp-tt-1",
+            start_date=date(2026, 3, 1),
+            end_date=date(2026, 3, 31),
+        )
+    finally:
+        unified_dashboard_service._connect = original_connect
+        dashboard_service_module.client_registry_service.get_client_reporting_currency_decision = original_reporting
+        dashboard_service_module.performance_reports_store.initialize_schema = original_init_schema
+
+    assert payload["items"][0]["ad_group_name"] == "ag-fallback"
+
+
+def test_client_platform_campaign_adgroup_rows_query_uses_ad_group_reports():
+    sql = unified_dashboard_service._client_platform_campaign_adgroup_rows_query(platform="google_ads")
+    assert "FROM ad_group_performance_reports agpr" in sql

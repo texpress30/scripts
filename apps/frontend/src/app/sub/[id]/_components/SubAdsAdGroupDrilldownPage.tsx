@@ -9,12 +9,12 @@ import "react-day-picker/dist/style.css";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
-import { type SubAdsCampaignTableItem, type SubAdsCampaignTableResponse } from "@/lib/api";
+import { type SubAdsCampaignAdGroupTableItem, type SubAdsCampaignAdGroupTableResponse } from "@/lib/api";
 
 type MetricKey = "cost" | "rev_inf" | "roas_inf" | "mer_inf" | "truecac_inf" | "ecr_inf" | "ecpnv_inf" | "new_visits" | "visits";
-type CampaignRow = {
-  campaignId: string;
-  campaignName: string;
+type AdGroupRow = {
+  adGroupId: string;
+  adGroupName: string;
   statusKind: "active" | "paused" | "unknown";
   values: Record<MetricKey, number | null>;
 };
@@ -83,26 +83,29 @@ function normalizeStatusKind(statusRaw: string): "active" | "paused" | "unknown"
   return "unknown";
 }
 
-export function SubAdsCampaignDrilldownPage({
+export function SubAdsAdGroupDrilldownPage({
   clientId,
   accountId,
+  campaignId,
   platformTitle,
+  itemLabelPlural,
   backRoute,
   storageKey,
-  fetchCampaigns,
-  campaignHref,
+  fetchAdGroups,
 }: {
   clientId: number;
   accountId: string;
+  campaignId: string;
   platformTitle: string;
+  itemLabelPlural: "Ad groups" | "Ad sets";
   backRoute: string;
   storageKey: string;
-  fetchCampaigns: (subaccountId: number, accountId: string, params: { start_date: string; end_date: string }) => Promise<SubAdsCampaignTableResponse>;
-  campaignHref: (campaignId: string) => string;
+  fetchAdGroups: (subaccountId: number, accountId: string, campaignId: string, params: { start_date: string; end_date: string }) => Promise<SubAdsCampaignAdGroupTableResponse>;
 }) {
   const [accountName, setAccountName] = useState(accountId);
+  const [campaignName, setCampaignName] = useState(campaignId);
   const [accountStatus, setAccountStatus] = useState<"active" | "paused" | "unknown">("unknown");
-  const [rows, setRows] = useState<CampaignRow[]>([]);
+  const [rows, setRows] = useState<AdGroupRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [currencyCode, setCurrencyCode] = useState("USD");
@@ -134,18 +137,18 @@ export function SubAdsCampaignDrilldownPage({
 
   useEffect(() => {
     let ignore = false;
-    async function loadCampaigns() {
+    async function loadAdGroups() {
       setLoading(true);
       setError("");
       try {
         const from = appliedRange.from ?? subDays(new Date(), 29);
         const to = appliedRange.to ?? from;
-        const payload = await fetchCampaigns(clientId, accountId, { start_date: toIso(from), end_date: toIso(to) });
-        const campaignRows: CampaignRow[] = payload.items.map((item: SubAdsCampaignTableItem) => {
+        const payload = await fetchAdGroups(clientId, accountId, campaignId, { start_date: toIso(from), end_date: toIso(to) });
+        const adGroupRows: AdGroupRow[] = payload.items.map((item: SubAdsCampaignAdGroupTableItem) => {
           const statusKind = normalizeStatusKind(String(item.status || ""));
           return {
-            campaignId: item.campaign_id,
-            campaignName: item.campaign_name || item.campaign_id,
+            adGroupId: item.ad_group_id,
+            adGroupName: item.ad_group_name || item.ad_group_id,
             statusKind,
             values: {
               cost: item.cost ?? null,
@@ -162,24 +165,25 @@ export function SubAdsCampaignDrilldownPage({
         });
         if (!ignore) {
           setAccountName(payload.account_name || accountId);
+          setCampaignName(payload.campaign_name || campaignId);
           setAccountStatus(normalizeStatusKind(String(payload.account_status || "")));
           setCurrencyCode(String(payload.currency || "USD").toUpperCase());
-          setRows(campaignRows.sort((a, b) => (b.values.cost ?? 0) - (a.values.cost ?? 0)));
+          setRows(adGroupRows.sort((a, b) => (b.values.cost ?? 0) - (a.values.cost ?? 0)));
         }
       } catch (err) {
-        if (!ignore) setError(err instanceof Error ? err.message : "Nu am putut încărca campaniile.");
+        if (!ignore) setError(err instanceof Error ? err.message : `Nu am putut încărca ${itemLabelPlural.toLowerCase()}.`);
       } finally {
         if (!ignore) setLoading(false);
       }
     }
 
-    if (Number.isFinite(clientId) && accountId.trim() !== "") void loadCampaigns();
+    if (Number.isFinite(clientId) && accountId.trim() !== "" && campaignId.trim() !== "") void loadAdGroups();
     return () => {
       ignore = true;
     };
-  }, [clientId, accountId, appliedRange.from, appliedRange.to, fetchCampaigns]);
+  }, [clientId, accountId, campaignId, appliedRange.from, appliedRange.to, fetchAdGroups, itemLabelPlural]);
 
-  const title = useMemo(() => `${platformTitle} Campaigns - ${accountName}`, [platformTitle, accountName]);
+  const title = useMemo(() => `${platformTitle} ${itemLabelPlural} - ${campaignName}`, [platformTitle, itemLabelPlural, campaignName]);
   const activeColumns = visibleColumns
     .map((key) => METRIC_COLUMNS.find((column) => column.key === key))
     .filter((item): item is (typeof METRIC_COLUMNS)[number] => Boolean(item));
@@ -250,7 +254,7 @@ export function SubAdsCampaignDrilldownPage({
           <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <Link href={backRoute} className="mb-2 inline-flex items-center gap-1 text-xs font-medium text-indigo-700 hover:underline">
-                <ArrowLeft className="h-3.5 w-3.5" /> Back to accounts
+                <ArrowLeft className="h-3.5 w-3.5" /> Back to campaigns
               </Link>
               <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
               <div className="mt-1 inline-flex items-center gap-2 text-xs text-slate-600">
@@ -258,7 +262,7 @@ export function SubAdsCampaignDrilldownPage({
                 {accountStatus === "paused" ? <span className="rounded border border-amber-300 bg-amber-50 px-1 py-0.5 font-semibold text-amber-700">II</span> : null}
                 <span>Account status</span>
               </div>
-              <p className="text-xs text-slate-500">Performance multi-campaign • {platformTitle}</p>
+              <p className="text-xs text-slate-500">Account: {accountName} • Campaign: {campaignName}</p>
             </div>
             <div className="flex items-center gap-2">
               <button type="button" className="wm-btn-secondary inline-flex items-center gap-2"><Filter className="h-4 w-4" />Filter</button>
@@ -329,15 +333,15 @@ export function SubAdsCampaignDrilldownPage({
           </header>
 
           {error ? <p className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
-          {loading ? <p className="text-sm text-slate-500">Se încarcă campaniile contului...</p> : null}
-          {!loading && rows.length === 0 ? <p className="text-sm text-slate-500">Nu există campanii în perioada selectată.</p> : null}
+          {loading ? <p className="text-sm text-slate-500">Se încarcă {itemLabelPlural.toLowerCase()} campaniei...</p> : null}
+          {!loading && rows.length === 0 ? <p className="text-sm text-slate-500">Nu există {itemLabelPlural.toLowerCase()} în perioada selectată.</p> : null}
 
           {!loading ? (
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
                   <tr>
-                    <th className="px-3 py-2 text-left">Campaign</th>
+                    <th className="px-3 py-2 text-left">{itemLabelPlural.slice(0, -1)}</th>
                     {activeColumns.map((column) => (
                       <th key={column.key} className={`px-3 py-2 ${column.key === "cost" ? "text-right font-semibold text-slate-700" : "text-center"}`}>
                         <span className="inline-flex items-center gap-1">{column.label}{column.key === "cost" ? <ArrowDownWideNarrow className="h-3.5 w-3.5 text-indigo-600" /> : null}</span>
@@ -347,7 +351,7 @@ export function SubAdsCampaignDrilldownPage({
                 </thead>
                 <tbody>
                   {rows.map((row) => (
-                    <tr key={row.campaignId} className="border-b border-slate-100 hover:bg-slate-50/70">
+                    <tr key={row.adGroupId} className="border-b border-slate-100 hover:bg-slate-50/70">
                       <td className="px-3 py-3 text-left">
                         <div className="flex items-center gap-2">
                           <span
@@ -357,13 +361,11 @@ export function SubAdsCampaignDrilldownPage({
                             aria-hidden
                           />
                           {row.statusKind === "paused" ? <span className="rounded border border-amber-300 bg-amber-50 px-1 py-0.5 text-[10px] font-semibold text-amber-700">II</span> : null}
-                          <Link href={campaignHref(row.campaignId)} className="font-medium text-slate-900 hover:text-indigo-700 hover:underline">
-                            {row.campaignName}
-                          </Link>
+                          <span className="font-medium text-slate-900">{row.adGroupName}</span>
                         </div>
                       </td>
                       {activeColumns.map((column) => (
-                        <td key={`${row.campaignId}:${column.key}`} className={`px-3 py-3 ${column.key === "cost" ? "text-right" : "text-center"}`}>
+                        <td key={`${row.adGroupId}:${column.key}`} className={`px-3 py-3 ${column.key === "cost" ? "text-right" : "text-center"}`}>
                           <span className={`${column.money ? "underline decoration-dotted underline-offset-2" : ""} font-medium text-slate-800`}>
                             {formatMetric(row.values[column.key], column.key, column.money, currencyCode)}
                           </span>

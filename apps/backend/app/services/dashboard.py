@@ -529,6 +529,118 @@ class UnifiedDashboardService:
                         ORDER BY perf.campaign_id, perf.report_date
                         """
 
+    def _client_platform_campaign_adgroup_rows_query(self, *, platform: str) -> str:
+        if platform not in {"google_ads", "meta_ads", "tiktok_ads"}:
+            raise ValueError("unsupported platform")
+        normalized_mapped_account_sql = self._platform_account_normalized_sql(expr="mapped.account_id", platform=platform)
+        normalized_agpr_account_sql = self._platform_account_normalized_sql(expr="agpr.account_id", platform=platform)
+        normalized_apa_account_sql = self._platform_account_normalized_sql(expr="apa.account_id", platform=platform)
+        normalized_pag_account_sql = self._platform_account_normalized_sql(expr="pag.account_id", platform=platform)
+        normalized_pc_account_sql = self._platform_account_normalized_sql(expr="pc.account_id", platform=platform)
+        normalized_input_account_sql = self._platform_account_normalized_sql(expr="%s", platform=platform)
+        effective_currency_sql = self._effective_attached_account_currency_sql(
+            mapping_currency_expr="mapped.account_currency",
+            platform_currency_expr="apa.currency_code",
+            client_currency_expr="client.currency",
+            fallback_literal="USD",
+        )
+        return f"""
+                        SELECT
+                            agpr.account_id,
+                            COALESCE(NULLIF(TRIM(apa.account_name), ''), agpr.account_id) AS account_name,
+                            COALESCE(
+                                NULLIF(TRIM(apa.status), ''),
+                                NULLIF(TRIM(COALESCE(agpr.extra_metrics -> '{platform}' ->> 'account_status', '')), ''),
+                                NULLIF(TRIM(COALESCE(agpr.extra_metrics ->> 'account_status', '')), ''),
+                                NULLIF(TRIM(COALESCE(agpr.extra_metrics -> '{platform}' ->> 'status', '')), ''),
+                                NULLIF(TRIM(COALESCE(agpr.extra_metrics ->> 'status', '')), '')
+                            ) AS account_status,
+                            agpr.campaign_id,
+                            COALESCE(
+                                NULLIF(TRIM(pc.name), ''),
+                                NULLIF(TRIM(COALESCE(pc.raw_payload ->> 'campaign_name', '')), ''),
+                                NULLIF(TRIM(COALESCE(pc.raw_payload ->> 'name', '')), ''),
+                                NULLIF(TRIM(COALESCE(agpr.extra_metrics -> '{platform}' ->> 'campaign_name', '')), ''),
+                                NULLIF(TRIM(COALESCE(agpr.extra_metrics ->> 'campaign_name', '')), ''),
+                                agpr.campaign_id
+                            ) AS campaign_name,
+                            agpr.ad_group_id,
+                            COALESCE(
+                                NULLIF(TRIM(pag.name), ''),
+                                NULLIF(TRIM(COALESCE(pag.raw_payload ->> 'ad_group_name', '')), ''),
+                                NULLIF(TRIM(COALESCE(pag.raw_payload ->> 'adset_name', '')), ''),
+                                NULLIF(TRIM(COALESCE(pag.raw_payload ->> 'name', '')), ''),
+                                NULLIF(TRIM(COALESCE(agpr.extra_metrics -> '{platform}' ->> 'ad_group_name', '')), ''),
+                                NULLIF(TRIM(COALESCE(agpr.extra_metrics -> '{platform}' ->> 'adset_name', '')), ''),
+                                NULLIF(TRIM(COALESCE(agpr.extra_metrics ->> 'ad_group_name', '')), ''),
+                                NULLIF(TRIM(COALESCE(agpr.extra_metrics ->> 'adset_name', '')), ''),
+                                agpr.ad_group_id
+                            ) AS ad_group_name,
+                            COALESCE(
+                                NULLIF(TRIM(pag.status), ''),
+                                NULLIF(TRIM(COALESCE(pag.raw_payload ->> 'status', '')), ''),
+                                NULLIF(TRIM(COALESCE(pag.raw_payload ->> 'effective_status', '')), ''),
+                                NULLIF(TRIM(COALESCE(agpr.extra_metrics -> '{platform}' ->> 'ad_group_status', '')), ''),
+                                NULLIF(TRIM(COALESCE(agpr.extra_metrics -> '{platform}' ->> 'adset_status', '')), ''),
+                                NULLIF(TRIM(COALESCE(agpr.extra_metrics ->> 'ad_group_status', '')), ''),
+                                NULLIF(TRIM(COALESCE(agpr.extra_metrics ->> 'adset_status', '')), ''),
+                                NULLIF(TRIM(COALESCE(agpr.extra_metrics -> '{platform}' ->> 'status', '')), ''),
+                                NULLIF(TRIM(COALESCE(agpr.extra_metrics ->> 'status', '')), '')
+                            ) AS ad_group_status,
+                            agpr.report_date,
+                            COALESCE(
+                                NULLIF(TRIM(COALESCE(agpr.extra_metrics -> '{platform}' ->> 'account_currency', '')), ''),
+                                {effective_currency_sql}
+                            ) AS account_currency,
+                            COALESCE(agpr.spend, 0) AS spend,
+                            COALESCE(agpr.conversion_value, 0) AS conversion_value,
+                            COALESCE(agpr.impressions, 0) AS impressions,
+                            COALESCE(agpr.clicks, 0) AS clicks
+                        FROM ad_group_performance_reports agpr
+                        JOIN agency_account_client_mappings mapped
+                          ON mapped.platform = agpr.platform
+                         AND mapped.client_id = %s
+                         AND (
+                              mapped.account_id = agpr.account_id
+                              OR {normalized_mapped_account_sql} = {normalized_agpr_account_sql}
+                         )
+                        JOIN agency_clients client
+                          ON client.id = mapped.client_id
+                        LEFT JOIN agency_platform_accounts apa
+                          ON apa.platform = agpr.platform
+                         AND (
+                              apa.account_id = agpr.account_id
+                              OR {normalized_apa_account_sql} = {normalized_agpr_account_sql}
+                         )
+                        LEFT JOIN platform_campaigns pc
+                          ON pc.platform = agpr.platform
+                         AND (
+                              pc.account_id = agpr.account_id
+                              OR {normalized_pc_account_sql} = {normalized_agpr_account_sql}
+                         )
+                         AND pc.campaign_id = agpr.campaign_id
+                        LEFT JOIN platform_ad_groups pag
+                          ON pag.platform = agpr.platform
+                         AND (
+                              pag.account_id = agpr.account_id
+                              OR {normalized_pag_account_sql} = {normalized_agpr_account_sql}
+                         )
+                         AND pag.campaign_id = agpr.campaign_id
+                         AND pag.ad_group_id = agpr.ad_group_id
+                        WHERE agpr.platform = %s
+                          AND agpr.report_date BETWEEN %s AND %s
+                          AND agpr.campaign_id = %s
+                          AND (
+                               agpr.account_id = %s
+                               OR {normalized_agpr_account_sql} = {normalized_input_account_sql}
+                          )
+                          AND COALESCE(
+                               NULLIF(TRIM(COALESCE(agpr.extra_metrics -> '{platform}' ->> 'grain', '')), ''),
+                               'ad_group_daily'
+                          ) = 'ad_group_daily'
+                        ORDER BY agpr.ad_group_id, agpr.report_date
+                        """
+
     def _platform_account_normalized_sql(self, *, expr: str, platform: str) -> str:
         if platform == "google_ads":
             return f"regexp_replace(COALESCE({expr}, ''), '[^0-9]', '', 'g')"
@@ -2324,6 +2436,128 @@ class UnifiedDashboardService:
             "account_id": normalized_account_id,
             "account_name": resolved_account_name,
             "account_status": next((str(item.get("account_status") or "").strip().lower() for item in items if str(item.get("account_status") or "").strip()), "unknown"),
+            "currency": reporting_currency,
+            "date_range": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
+            "items": items,
+        }
+
+    def get_client_platform_campaign_adgroup_performance(
+        self,
+        *,
+        client_id: int,
+        platform: str,
+        account_id: str,
+        campaign_id: str,
+        start_date: date,
+        end_date: date,
+    ) -> dict[str, object]:
+        if start_date > end_date:
+            raise ValueError("start_date must be <= end_date")
+        if platform not in {"google_ads", "meta_ads", "tiktok_ads"}:
+            raise ValueError("unsupported platform")
+        normalized_account_id = str(account_id or "").strip()
+        normalized_campaign_id = str(campaign_id or "").strip()
+        if normalized_account_id == "":
+            raise ValueError("account_id is required")
+        if normalized_campaign_id == "":
+            raise ValueError("campaign_id is required")
+
+        performance_reports_store.initialize_schema()
+        params = (
+            client_id,
+            platform,
+            start_date,
+            end_date,
+            normalized_campaign_id,
+            normalized_account_id,
+            normalized_account_id,
+        )
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(self._client_platform_campaign_adgroup_rows_query(platform=platform), params)
+                rows = cur.fetchall()
+
+        currency_decision = self._client_reporting_currency_decision(client_id=client_id)
+        reporting_currency = str(currency_decision.get("reporting_currency") or "USD")
+        by_ad_group: dict[str, dict[str, object]] = {}
+        resolved_account_name = normalized_account_id
+        resolved_campaign_name = normalized_campaign_id
+        account_status_resolved = "unknown"
+        for row in rows:
+            resolved_account_name = str(row[1] or resolved_account_name).strip() or resolved_account_name
+            row_account_status = str(row[2] or "").strip().lower() or "unknown"
+            if account_status_resolved == "unknown" and row_account_status != "unknown":
+                account_status_resolved = row_account_status
+            resolved_campaign_name = str(row[4] or resolved_campaign_name).strip() or resolved_campaign_name
+            ad_group_id = str(row[5] or "").strip()
+            if ad_group_id == "":
+                continue
+            ad_group_name = str(row[6] or ad_group_id).strip() or ad_group_id
+            ad_group_status = str(row[7] or "").strip().lower() or "unknown"
+            report_date = row[8] if isinstance(row[8], date) else end_date
+            account_currency = self._normalize_currency_code(row[9], fallback=reporting_currency)
+            spend = self._normalize_money(
+                amount=_to_float(row[10]),
+                from_currency=account_currency,
+                to_currency=reporting_currency,
+                rate_date=report_date,
+            )
+            revenue = self._normalize_money(
+                amount=_to_float(row[11]),
+                from_currency=account_currency,
+                to_currency=reporting_currency,
+                rate_date=report_date,
+            )
+            impressions = _to_int(row[12])
+            clicks = _to_int(row[13])
+            current = by_ad_group.setdefault(
+                ad_group_id,
+                {
+                    "ad_group_id": ad_group_id,
+                    "ad_group_name": ad_group_name,
+                    "status": ad_group_status,
+                    "cost": 0.0,
+                    "rev_inf": 0.0,
+                    "roas_inf": 0.0,
+                    "mer_inf": None,
+                    "truecac_inf": None,
+                    "ecr_inf": None,
+                    "ecpnv_inf": None,
+                    "new_visits": None,
+                    "visits": None,
+                    "impressions": 0,
+                    "clicks": 0,
+                },
+            )
+            if (
+                str(current.get("ad_group_name") or "").strip() in {"", ad_group_id}
+                and ad_group_name not in {"", ad_group_id}
+            ):
+                current["ad_group_name"] = ad_group_name
+            current["cost"] = _to_float(current.get("cost")) + spend
+            current["rev_inf"] = _to_float(current.get("rev_inf")) + revenue
+            current["impressions"] = _to_int(current.get("impressions")) + impressions
+            current["clicks"] = _to_int(current.get("clicks")) + clicks
+
+        items: list[dict[str, object]] = []
+        for ad_group in by_ad_group.values():
+            cost = round(_to_float(ad_group.get("cost")), 2)
+            revenue = round(_to_float(ad_group.get("rev_inf")), 2)
+            ad_group["cost"] = cost
+            ad_group["rev_inf"] = revenue
+            ad_group["roas_inf"] = round(revenue / cost, 4) if cost > 0 else 0.0
+            ad_group["mer_inf"] = round(cost / revenue, 4) if revenue > 0 else None
+            items.append(ad_group)
+        items.sort(key=lambda item: _to_float(item.get("cost")), reverse=True)
+
+        return {
+            "client_id": client_id,
+            "platform": platform,
+            "account_id": normalized_account_id,
+            "account_name": resolved_account_name,
+            "account_status": account_status_resolved,
+            "campaign_id": normalized_campaign_id,
+            "campaign_name": resolved_campaign_name,
             "currency": reporting_currency,
             "date_range": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
             "items": items,

@@ -19,6 +19,7 @@ export default function SubTikTokAdsAccountCampaignsPage() {
       backRoute={`/sub/${clientId}/tiktok-ads`}
       storageKey="sub-tiktok-ads-campaigns-visible-columns-v1"
       fetchCampaigns={getSubTikTokAdsCampaignsTable}
+      campaignHref={(campaignId) => `/sub/${clientId}/tiktok-ads/accounts/${encodeURIComponent(accountId)}/campaigns/${encodeURIComponent(campaignId)}`}
     />
   );
 }

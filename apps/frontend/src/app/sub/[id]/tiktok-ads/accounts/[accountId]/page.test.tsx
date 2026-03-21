@@ -47,8 +47,11 @@ describe("TikTok account campaigns drilldown", () => {
     expect(screen.getByRole("button", { name: /Columns/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Export/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Last 30 days/i })).toBeInTheDocument();
-    expect(screen.getByText("TikTok Prospecting")).toBeInTheDocument();
-    const row = screen.getByText("TikTok Prospecting").closest("tr");
+    expect(screen.getByRole("link", { name: "TikTok Prospecting" })).toHaveAttribute(
+      "href",
+      "/sub/96/tiktok-ads/accounts/tiktok-1/campaigns/tt-cmp-1",
+    );
+    const row = screen.getByRole("link", { name: "TikTok Prospecting" }).closest("tr");
     const dot = row?.querySelector("span[aria-hidden='true']");
     expect(dot?.className).toContain("bg-emerald-500");
     expect(screen.queryByText("Nu există campanii în perioada selectată.")).not.toBeInTheDocument();
@@ -84,6 +87,9 @@ describe("TikTok account campaigns drilldown", () => {
 
     render(<SubTikTokAdsAccountCampaignsPage />);
 
-    expect(await screen.findByText("tt-cmp-fallback")).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "tt-cmp-fallback" })).toHaveAttribute(
+      "href",
+      "/sub/96/tiktok-ads/accounts/tiktok-1/campaigns/tt-cmp-fallback",
+    );
   });
 });

@@ -19,6 +19,7 @@ export default function SubGoogleAdsAccountCampaignsPage() {
       backRoute={`/sub/${clientId}/google-ads`}
       storageKey="sub-google-ads-campaigns-visible-columns-v1"
       fetchCampaigns={getSubGoogleAdsCampaignsTable}
+      campaignHref={(campaignId) => `/sub/${clientId}/google-ads/accounts/${encodeURIComponent(accountId)}/campaigns/${encodeURIComponent(campaignId)}`}
     />
   );
 }

@@ -19,6 +19,7 @@ export default function SubMetaAdsAccountCampaignsPage() {
       backRoute={`/sub/${clientId}/meta-ads`}
       storageKey="sub-meta-ads-campaigns-visible-columns-v1"
       fetchCampaigns={getSubMetaAdsCampaignsTable}
+      campaignHref={(campaignId) => `/sub/${clientId}/meta-ads/accounts/${encodeURIComponent(accountId)}/campaigns/${encodeURIComponent(campaignId)}`}
     />
   );
 }

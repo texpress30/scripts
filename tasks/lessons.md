@@ -470,3 +470,4 @@
 - 2026-03-21: Nu adăuga câmpuri nevalidate în TikTok reporting `dimensions` (ex. `campaign_name`); confirmă suportul endpoint-ului și rezolvă numele prin `campaign/get` + persist în `platform_campaigns`.
 - 2026-03-21: Pentru buguri runtime TikTok dimensions, adaugă test direct pe request params finali din `_fetch_*_metrics` (nu doar pe schema) ca să previi regresii unde builder-ul reintroduce câmpuri invalide.
 - 2026-03-21: Nu randa niciodată în UI normal blob-uri tehnice (`Observability: {...}`); convertește marker-ele interne în mesaje operaționale scurte și păstrează dump-ul doar pentru debugging intern.
+- 2026-03-21: După feedback "unsatisfied" pe un PR complex, următorul patch trebuie să înceapă cu audit explicit al rutelor existente + surselor reale de date și să livreze drilldown complet navigabil (link în tabel sursă + rută destinație + endpoint backend filtrat) în același increment, cu teste pe ambele capete.

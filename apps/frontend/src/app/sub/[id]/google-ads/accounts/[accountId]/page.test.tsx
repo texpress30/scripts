@@ -56,7 +56,10 @@ describe("Google account campaigns drilldown", () => {
     expect(screen.getByRole("button", { name: /Columns/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Export/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Last 30 days/i })).toBeInTheDocument();
-    expect(screen.getByText("Search RO")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Search RO" })).toHaveAttribute(
+      "href",
+      "/sub/96/google-ads/accounts/123-111-0001/campaigns/cmp-1",
+    );
     expect(screen.getByText("II")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Back to accounts/i })).toHaveAttribute("href", "/sub/96/google-ads");
   });

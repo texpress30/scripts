@@ -389,6 +389,51 @@ def _client_platform_account_campaigns(
     return payload
 
 
+def _client_platform_campaign_adgroups(
+    *,
+    client_id: int,
+    account_id: str,
+    campaign_id: str,
+    start_date: date | None,
+    end_date: date | None,
+    user: AuthUser,
+    response: Response | None,
+    platform: str,
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="dashboard:view", scope="subaccount")
+    enforce_subaccount_module_access(user=user, subaccount_id=client_id, module_key="dashboard")
+
+    resolved_end = end_date or date.today()
+    resolved_start = start_date or (resolved_end - timedelta(days=29))
+    if resolved_start > resolved_end:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="start_date must be <= end_date")
+
+    try:
+        payload = unified_dashboard_service.get_client_platform_campaign_adgroup_performance(
+            client_id=client_id,
+            platform=platform,
+            account_id=account_id,
+            campaign_id=campaign_id,
+            start_date=resolved_start,
+            end_date=resolved_end,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    if response is not None:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action=f"dashboard.sub.{platform}_campaign_adgroups.view",
+        resource=f"client:{client_id}:{platform}:account:{account_id}:campaign:{campaign_id}",
+        details={"start_date": resolved_start.isoformat(), "end_date": resolved_end.isoformat()},
+    )
+    return payload
+
+
 @router.get("/{client_id}/meta-ads-table")
 def client_meta_ads_table(
     client_id: int,
@@ -477,6 +522,72 @@ def client_tiktok_ads_account_campaigns(
     return _client_platform_account_campaigns(
         client_id=client_id,
         account_id=account_id,
+        start_date=start_date,
+        end_date=end_date,
+        user=user,
+        response=response,
+        platform="tiktok_ads",
+    )
+
+
+@router.get("/{client_id}/google-ads/accounts/{account_id}/campaigns/{campaign_id}/adgroups")
+def client_google_ads_campaign_adgroups(
+    client_id: int,
+    account_id: str,
+    campaign_id: str,
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    user: AuthUser = Depends(get_current_user),
+    response: Response = None,
+) -> dict[str, object]:
+    return _client_platform_campaign_adgroups(
+        client_id=client_id,
+        account_id=account_id,
+        campaign_id=campaign_id,
+        start_date=start_date,
+        end_date=end_date,
+        user=user,
+        response=response,
+        platform="google_ads",
+    )
+
+
+@router.get("/{client_id}/meta-ads/accounts/{account_id}/campaigns/{campaign_id}/adgroups")
+def client_meta_ads_campaign_adgroups(
+    client_id: int,
+    account_id: str,
+    campaign_id: str,
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    user: AuthUser = Depends(get_current_user),
+    response: Response = None,
+) -> dict[str, object]:
+    return _client_platform_campaign_adgroups(
+        client_id=client_id,
+        account_id=account_id,
+        campaign_id=campaign_id,
+        start_date=start_date,
+        end_date=end_date,
+        user=user,
+        response=response,
+        platform="meta_ads",
+    )
+
+
+@router.get("/{client_id}/tiktok-ads/accounts/{account_id}/campaigns/{campaign_id}/adgroups")
+def client_tiktok_ads_campaign_adgroups(
+    client_id: int,
+    account_id: str,
+    campaign_id: str,
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    user: AuthUser = Depends(get_current_user),
+    response: Response = None,
+) -> dict[str, object]:
+    return _client_platform_campaign_adgroups(
+        client_id=client_id,
+        account_id=account_id,
+        campaign_id=campaign_id,
         start_date=start_date,
         end_date=end_date,
         user=user,

@@ -491,6 +491,36 @@ export type SubAdsCampaignTableResponse = {
   items: SubAdsCampaignTableItem[];
 };
 
+export type SubAdsCampaignAdGroupTableItem = {
+  ad_group_id: string;
+  ad_group_name: string;
+  status: string;
+  cost: number | null;
+  rev_inf: number | null;
+  roas_inf: number | null;
+  mer_inf: number | null;
+  truecac_inf: number | null;
+  ecr_inf: number | null;
+  ecpnv_inf: number | null;
+  new_visits: number | null;
+  visits: number | null;
+  impressions?: number | null;
+  clicks?: number | null;
+};
+
+export type SubAdsCampaignAdGroupTableResponse = {
+  client_id: number;
+  platform: string;
+  account_id: string;
+  account_name: string;
+  account_status?: string | null;
+  campaign_id: string;
+  campaign_name: string;
+  currency: string;
+  date_range: { start_date: string; end_date: string };
+  items: SubAdsCampaignAdGroupTableItem[];
+};
+
 export async function getSubGoogleAdsTable(
   subaccountId: number,
   params: { start_date: string; end_date: string },
@@ -563,6 +593,51 @@ export async function getSubTikTokAdsCampaignsTable(
   });
   return apiRequest<SubAdsCampaignTableResponse>(
     `/dashboard/${encodeURIComponent(String(subaccountId))}/tiktok-ads/accounts/${encodeURIComponent(accountId)}/campaigns?${search.toString()}`,
+  );
+}
+
+export async function getSubGoogleAdsCampaignAdGroupsTable(
+  subaccountId: number,
+  accountId: string,
+  campaignId: string,
+  params: { start_date: string; end_date: string },
+): Promise<SubAdsCampaignAdGroupTableResponse> {
+  const search = new URLSearchParams({
+    start_date: params.start_date,
+    end_date: params.end_date,
+  });
+  return apiRequest<SubAdsCampaignAdGroupTableResponse>(
+    `/dashboard/${encodeURIComponent(String(subaccountId))}/google-ads/accounts/${encodeURIComponent(accountId)}/campaigns/${encodeURIComponent(campaignId)}/adgroups?${search.toString()}`,
+  );
+}
+
+export async function getSubMetaAdsCampaignAdGroupsTable(
+  subaccountId: number,
+  accountId: string,
+  campaignId: string,
+  params: { start_date: string; end_date: string },
+): Promise<SubAdsCampaignAdGroupTableResponse> {
+  const search = new URLSearchParams({
+    start_date: params.start_date,
+    end_date: params.end_date,
+  });
+  return apiRequest<SubAdsCampaignAdGroupTableResponse>(
+    `/dashboard/${encodeURIComponent(String(subaccountId))}/meta-ads/accounts/${encodeURIComponent(accountId)}/campaigns/${encodeURIComponent(campaignId)}/adgroups?${search.toString()}`,
+  );
+}
+
+export async function getSubTikTokAdsCampaignAdGroupsTable(
+  subaccountId: number,
+  accountId: string,
+  campaignId: string,
+  params: { start_date: string; end_date: string },
+): Promise<SubAdsCampaignAdGroupTableResponse> {
+  const search = new URLSearchParams({
+    start_date: params.start_date,
+    end_date: params.end_date,
+  });
+  return apiRequest<SubAdsCampaignAdGroupTableResponse>(
+    `/dashboard/${encodeURIComponent(String(subaccountId))}/tiktok-ads/accounts/${encodeURIComponent(accountId)}/campaigns/${encodeURIComponent(campaignId)}/adgroups?${search.toString()}`,
   );
 }
 

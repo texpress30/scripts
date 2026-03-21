@@ -39,4 +39,28 @@ describe("Meta account campaigns drilldown", () => {
     expect(screen.getByText("Nu există campanii în perioada selectată.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Back to accounts/i })).toHaveAttribute("href", "/sub/96/meta-ads");
   });
+
+  it("renders campaign name as link to campaign drilldown", async () => {
+    apiMock.getSubMetaAdsCampaignsTable.mockResolvedValueOnce({
+      client_id: 96,
+      platform: "meta_ads",
+      account_id: "meta-1",
+      account_name: "Meta Main",
+      account_status: "active",
+      currency: "RON",
+      date_range: { start_date: "2026-03-01", end_date: "2026-03-31" },
+      items: [{
+        campaign_id: "meta-cmp-1",
+        campaign_name: "Meta Prospecting",
+        status: "active",
+        cost: null, rev_inf: null, roas_inf: null, mer_inf: null, truecac_inf: null, ecr_inf: null, ecpnv_inf: null, new_visits: null, visits: null,
+      }],
+    });
+
+    render(<SubMetaAdsAccountCampaignsPage />);
+    expect(await screen.findByRole("link", { name: "Meta Prospecting" })).toHaveAttribute(
+      "href",
+      "/sub/96/meta-ads/accounts/meta-1/campaigns/meta-cmp-1",
+    );
+  });
 });
