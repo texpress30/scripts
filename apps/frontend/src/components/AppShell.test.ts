@@ -93,7 +93,7 @@ describe("AppShell sub-account access helpers", () => {
   });
 
   it("keeps agency role unguarded", () => {
-    const accessContext = context({ role: "agency_admin", allowed_subaccount_ids: [] });
+    const accessContext = context({ role: "agency_admin", access_scope: "agency", allowed_subaccount_ids: [] });
 
     const redirect = resolveSubaccountRouteGuardDecision({
       role: "agency_admin",
