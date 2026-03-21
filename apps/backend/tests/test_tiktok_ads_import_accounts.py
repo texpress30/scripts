@@ -297,8 +297,8 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
         self.assertNotIn("campaign_name", ad_group_schema.dimensions)
         self.assertNotIn("conversion_value", ad_group_schema.metrics)
         self.assertEqual(ad_schema.dimensions, ("stat_time_day", "ad_id"))
-        self.assertNotIn("adgroup_id", ad_schema.dimensions)
         self.assertNotIn("campaign_id", ad_schema.dimensions)
+        self.assertNotIn("adgroup_id", ad_schema.dimensions)
         self.assertNotIn("conversion_value", ad_schema.metrics)
 
     def test_reporting_fetchers_generate_structurally_valid_requests_for_known_tiktok_errors(self):
@@ -318,8 +318,8 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
                 return {"code": 40020, "message": "campaign_name is not supported"}
             if data_level == "AUCTION_ADGROUP" and "campaign_id" in dimensions:
                 return {"code": 40021, "message": "data_level AUCTION_ADGROUP and dimension campaign_id do not match"}
-            if data_level == "AUCTION_AD" and "adgroup_id" in dimensions:
-                return {"code": 40022, "message": "data_level AUCTION_AD and dimension adgroup_id do not match"}
+            if data_level == "AUCTION_AD" and "campaign_id" in dimensions:
+                return {"code": 40022, "message": "data_level AUCTION_AD and dimension campaign_id do not match"}
             if "conversion_value" in metrics:
                 return {"code": 40010, "message": "Invalid metric fields: ['conversion_value']"}
             if len(dimensions) < 1 or len(dimensions) > 4:
@@ -368,7 +368,6 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
         self.assertNotIn("campaign_id", captured.get("AUCTION_ADGROUP", []))
         self.assertNotIn("campaign_name", captured.get("AUCTION_ADGROUP", []))
         self.assertEqual(captured.get("AUCTION_AD"), ["stat_time_day", "ad_id"])
-        self.assertNotIn("adgroup_id", captured.get("AUCTION_AD", []))
         self.assertNotIn("campaign_id", captured.get("AUCTION_AD", []))
 
     def test_campaign_adgroup_ad_daily_do_not_request_conversion_value_and_keep_fallback(self):

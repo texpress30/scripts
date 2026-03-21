@@ -880,7 +880,7 @@ class TikTokAdsService:
         if grain == "campaign_daily":
             return TikTokReportingSchema(
                 data_level="AUCTION_CAMPAIGN",
-                dimensions=("stat_time_day", "campaign_id", "campaign_name"),
+                dimensions=("stat_time_day", "campaign_id"),
                 metrics=("spend", "impressions", "clicks", "conversion", "total_purchase_value"),
             )
         if grain == "ad_group_daily":
@@ -1014,6 +1014,7 @@ class TikTokAdsService:
         normalized_ids = [str(item or "").strip() for item in campaign_ids if str(item or "").strip() != ""]
         if len(normalized_ids) == 0:
             return {}
+        filter_campaign_ids: list[object] = [int(item) if item.isdigit() else item for item in normalized_ids]
 
         campaign_metadata: dict[str, dict[str, object]] = {}
         page = 1
@@ -1025,7 +1026,7 @@ class TikTokAdsService:
                 url=endpoint,
                 payload={
                     "advertiser_id": str(account_id),
-                    "filtering": {"campaign_ids": normalized_ids},
+                    "filtering": {"campaign_ids": filter_campaign_ids},
                     "page": page,
                     "page_size": page_size,
                 },
@@ -1044,7 +1045,7 @@ class TikTokAdsService:
                 if campaign_id == "":
                     continue
                 campaign_name = str(item.get("campaign_name") or item.get("name") or "").strip()
-                campaign_status = str(item.get("operation_status") or item.get("status") or item.get("secondary_status") or "").strip()
+                campaign_status = str(item.get("status") or item.get("operation_status") or item.get("secondary_status") or "").strip()
                 raw_payload = dict(item)
                 payload_hash = hashlib.sha256(json.dumps(raw_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
                 campaign_metadata[campaign_id] = {
@@ -1191,10 +1192,11 @@ class TikTokAdsService:
                 for campaign_id in sorted(fallback_ids)
             }
 
-    def _fetch_ad_group_metadata_by_ids(self, *, account_id: str, access_token: str, ad_group_ids: list[str]) -> dict[str, dict[str, object]]:
-        normalized_ids = [str(item or "").strip() for item in ad_group_ids if str(item or "").strip() != ""]
+    def _fetch_adgroup_metadata_by_ids(self, *, account_id: str, access_token: str, adgroup_ids: list[str]) -> dict[str, dict[str, object]]:
+        normalized_ids = [str(item or "").strip() for item in adgroup_ids if str(item or "").strip() != ""]
         if len(normalized_ids) == 0:
             return {}
+        filter_ad_group_ids: list[object] = [int(item) if item.isdigit() else item for item in normalized_ids]
 
         ad_group_metadata: dict[str, dict[str, object]] = {}
         page = 1
@@ -1206,7 +1208,7 @@ class TikTokAdsService:
                 url=endpoint,
                 payload={
                     "advertiser_id": str(account_id),
-                    "filtering": {"adgroup_ids": normalized_ids},
+                    "filtering": {"adgroup_ids": filter_ad_group_ids},
                     "page": page,
                     "page_size": page_size,
                 },
@@ -1225,9 +1227,9 @@ class TikTokAdsService:
                 if ad_group_id == "":
                     continue
                 ad_group_name = str(item.get("adgroup_name") or item.get("ad_group_name") or item.get("name") or "").strip()
-                campaign_id = str(item.get("campaign_id") or "").strip()
+                campaign_id = str(item.get("campaign_id") or item.get("campaignId") or "").strip()
                 campaign_name = str(item.get("campaign_name") or "").strip()
-                ad_group_status = str(item.get("operation_status") or item.get("status") or item.get("secondary_status") or "").strip()
+                ad_group_status = str(item.get("status") or item.get("operation_status") or item.get("secondary_status") or "").strip()
                 raw_payload = dict(item)
                 payload_hash = hashlib.sha256(json.dumps(raw_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
                 ad_group_metadata[ad_group_id] = {
@@ -1246,6 +1248,13 @@ class TikTokAdsService:
                 break
             page += 1
         return ad_group_metadata
+
+    def _fetch_ad_group_metadata_by_ids(self, *, account_id: str, access_token: str, ad_group_ids: list[str]) -> dict[str, dict[str, object]]:
+        return self._fetch_adgroup_metadata_by_ids(
+            account_id=account_id,
+            access_token=access_token,
+            adgroup_ids=ad_group_ids,
+        )
 
     def _resolve_and_persist_ad_group_metadata(
         self,
@@ -1792,6 +1801,52 @@ class TikTokAdsService:
                 )
             )
 
+        if len(rows) > 0:
+            report_campaign_name_by_id = {
+                str(row.campaign_id or "").strip(): str(row.campaign_name or "").strip()
+                for row in rows
+                if str(row.campaign_id or "").strip() != "" and str(row.campaign_name or "").strip() != ""
+            }
+            try:
+                campaign_metadata_by_id = self._fetch_campaign_metadata_by_ids(
+                    account_id=account_id,
+                    access_token=access_token,
+                    campaign_ids=[row.campaign_id for row in rows],
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "TikTok campaign metadata enrichment failed after reporting fetch; keeping report-level names. account_id=%s error=%s",
+                    account_id,
+                    sanitize_text(str(exc), max_len=300),
+                )
+                campaign_metadata_by_id = {}
+            if len(campaign_metadata_by_id) > 0:
+                enriched_rows: list[TikTokCampaignDailyMetric] = []
+                for row in rows:
+                    payload = campaign_metadata_by_id.get(str(row.campaign_id or "").strip(), {})
+                    resolved_name = str(payload.get("campaign_name") or report_campaign_name_by_id.get(row.campaign_id) or row.campaign_name or "").strip()
+                    enriched_rows.append(
+                        TikTokCampaignDailyMetric(
+                            report_date=row.report_date,
+                            account_id=row.account_id,
+                            campaign_id=row.campaign_id,
+                            campaign_name=resolved_name,
+                            spend=row.spend,
+                            impressions=row.impressions,
+                            clicks=row.clicks,
+                            conversions=row.conversions,
+                            conversion_value=row.conversion_value,
+                            extra_metrics={
+                                **row.extra_metrics,
+                                "tiktok_ads": {
+                                    **(row.extra_metrics.get("tiktok_ads") if isinstance(row.extra_metrics.get("tiktok_ads"), dict) else {}),
+                                    "campaign_name": resolved_name,
+                                },
+                            },
+                        )
+                    )
+                rows = enriched_rows
+
         self._record_reporting_fetch_observability(
             grain="campaign_daily",
             account_id=account_id,
@@ -1905,7 +1960,13 @@ class TikTokAdsService:
                 sample_metric_keys = sorted([str(key) for key in metrics.keys()][:20])
 
             report_day, resolved_date_source, date_error = self._parse_tiktok_report_date(row=item, dimensions_map=dimensions)
-            ad_group_id = str(dimensions.get("adgroup_id") or item.get("adgroup_id") or "").strip()
+            ad_group_id = str(
+                dimensions.get("ad_group_id")
+                or dimensions.get("adgroup_id")
+                or item.get("ad_group_id")
+                or item.get("adgroup_id")
+                or ""
+            ).strip()
             ad_group_name = str(dimensions.get("adgroup_name") or item.get("adgroup_name") or "").strip()
             campaign_id = str(dimensions.get("campaign_id") or item.get("campaign_id") or "").strip()
             campaign_name = str(dimensions.get("campaign_name") or item.get("campaign_name") or "").strip()
@@ -1962,6 +2023,92 @@ class TikTokAdsService:
                     },
                 )
             )
+
+        if len(rows) > 0:
+            report_ad_group_name_by_id = {
+                str(row.ad_group_id or "").strip(): str(row.ad_group_name or "").strip()
+                for row in rows
+                if str(row.ad_group_id or "").strip() != "" and str(row.ad_group_name or "").strip() != ""
+            }
+            report_campaign_name_by_id = {
+                str(row.campaign_id or "").strip(): str(row.campaign_name or "").strip()
+                for row in rows
+                if str(row.campaign_id or "").strip() != "" and str(row.campaign_name or "").strip() != ""
+            }
+            try:
+                ad_group_metadata_by_id = self._fetch_adgroup_metadata_by_ids(
+                    account_id=account_id,
+                    access_token=access_token,
+                    adgroup_ids=[row.ad_group_id for row in rows],
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "TikTok ad group metadata enrichment failed after reporting fetch; keeping report-level ad group fields. account_id=%s error=%s",
+                    account_id,
+                    sanitize_text(str(exc), max_len=300),
+                )
+                ad_group_metadata_by_id = {}
+
+            resolved_campaign_ids = {
+                str((ad_group_metadata_by_id.get(str(row.ad_group_id or "").strip()) or {}).get("campaign_id") or row.campaign_id or "").strip()
+                for row in rows
+                if str((ad_group_metadata_by_id.get(str(row.ad_group_id or "").strip()) or {}).get("campaign_id") or row.campaign_id or "").strip() != ""
+            }
+            if len(resolved_campaign_ids) > 0:
+                try:
+                    campaign_metadata_by_id = self._fetch_campaign_metadata_by_ids(
+                        account_id=account_id,
+                        access_token=access_token,
+                        campaign_ids=sorted(resolved_campaign_ids),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "TikTok campaign metadata enrichment failed for ad groups; keeping fallback campaign names. account_id=%s error=%s",
+                        account_id,
+                        sanitize_text(str(exc), max_len=300),
+                    )
+                    campaign_metadata_by_id = {}
+            else:
+                campaign_metadata_by_id = {}
+
+            enriched_rows: list[TikTokAdGroupDailyMetric] = []
+            for row in rows:
+                ad_group_metadata = ad_group_metadata_by_id.get(str(row.ad_group_id or "").strip(), {})
+                resolved_campaign_id = str(ad_group_metadata.get("campaign_id") or row.campaign_id or "").strip()
+                campaign_metadata = campaign_metadata_by_id.get(resolved_campaign_id, {})
+                resolved_ad_group_name = str(ad_group_metadata.get("ad_group_name") or report_ad_group_name_by_id.get(row.ad_group_id) or row.ad_group_name or "").strip()
+                resolved_campaign_name = str(
+                    campaign_metadata.get("campaign_name")
+                    or ad_group_metadata.get("campaign_name")
+                    or report_campaign_name_by_id.get(resolved_campaign_id)
+                    or row.campaign_name
+                    or ""
+                ).strip()
+                enriched_rows.append(
+                    TikTokAdGroupDailyMetric(
+                        report_date=row.report_date,
+                        account_id=row.account_id,
+                        ad_group_id=row.ad_group_id,
+                        ad_group_name=resolved_ad_group_name,
+                        campaign_id=resolved_campaign_id,
+                        campaign_name=resolved_campaign_name,
+                        spend=row.spend,
+                        impressions=row.impressions,
+                        clicks=row.clicks,
+                        conversions=row.conversions,
+                        conversion_value=row.conversion_value,
+                        extra_metrics={
+                            **row.extra_metrics,
+                            "tiktok_ads": {
+                                **(row.extra_metrics.get("tiktok_ads") if isinstance(row.extra_metrics.get("tiktok_ads"), dict) else {}),
+                                "campaign_id": resolved_campaign_id or None,
+                                "campaign_name": resolved_campaign_name,
+                                "ad_group_name": resolved_ad_group_name or None,
+                            },
+                        },
+                    )
+                )
+            rows = enriched_rows
 
         self._record_reporting_fetch_observability(
             grain="ad_group_daily",
@@ -2078,7 +2225,13 @@ class TikTokAdsService:
             report_day, resolved_date_source, date_error = self._parse_tiktok_report_date(row=item, dimensions_map=dimensions)
             ad_id = str(dimensions.get("ad_id") or item.get("ad_id") or "").strip()
             ad_name = str(dimensions.get("ad_name") or item.get("ad_name") or "").strip()
-            ad_group_id = str(dimensions.get("adgroup_id") or item.get("adgroup_id") or "").strip()
+            ad_group_id = str(
+                dimensions.get("ad_group_id")
+                or dimensions.get("adgroup_id")
+                or item.get("ad_group_id")
+                or item.get("adgroup_id")
+                or ""
+            ).strip()
             ad_group_name = str(dimensions.get("adgroup_name") or item.get("adgroup_name") or "").strip()
             campaign_id = str(dimensions.get("campaign_id") or item.get("campaign_id") or "").strip()
             campaign_name = str(dimensions.get("campaign_name") or item.get("campaign_name") or "").strip()
@@ -2161,7 +2314,14 @@ class TikTokAdsService:
 
         return rows
 
-    def _upsert_ad_group_rows(self, rows: list[TikTokAdGroupDailyMetric], *, source_window_start: date, source_window_end: date) -> int:
+    def _upsert_ad_group_rows(
+        self,
+        rows: list[TikTokAdGroupDailyMetric],
+        *,
+        source_window_start: date,
+        source_window_end: date,
+        access_token: str | None = None,
+    ) -> int:
         if len(rows) == 0:
             return 0
 
@@ -2206,11 +2366,67 @@ class TikTokAdsService:
             for row in rows
         ]
         with self._connect() as conn:
+            normalized_account_ids = sorted({str(row.account_id or "").strip() for row in rows if str(row.account_id or "").strip() != ""})
+            if access_token is None:
+                logger.warning(
+                    "TikTok ad group metadata fetch skipped during upsert because access_token is missing. account_ids=%s",
+                    ",".join(normalized_account_ids),
+                )
+            else:
+                for normalized_account_id in normalized_account_ids:
+                    account_rows = [row for row in rows if str(row.account_id or "").strip() == normalized_account_id]
+                    ad_group_ids = sorted({str(row.ad_group_id or "").strip() for row in account_rows if str(row.ad_group_id or "").strip() != ""})
+                    report_ad_group_name_by_id = {
+                        str(row.ad_group_id or "").strip(): str(row.ad_group_name or "").strip()
+                        for row in account_rows
+                        if str(row.ad_group_id or "").strip() != "" and str(row.ad_group_name or "").strip() != ""
+                    }
+                    if len(ad_group_ids) == 0:
+                        continue
+                    try:
+                        ad_group_metadata_by_id = self._resolve_and_persist_ad_group_metadata(
+                            account_id=normalized_account_id,
+                            access_token=access_token,
+                            ad_group_ids=ad_group_ids,
+                            report_ad_group_name_by_id=report_ad_group_name_by_id,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "TikTok ad group metadata resolve failed during upsert; continuing with fact persistence. account_id=%s error=%s",
+                            normalized_account_id,
+                            sanitize_text(str(exc), max_len=300),
+                        )
+                        ad_group_metadata_by_id = {}
+                    if len(ad_group_metadata_by_id) > 0:
+                        upsert_platform_ad_groups(
+                            conn,
+                            [
+                                {
+                                    "platform": "tiktok_ads",
+                                    "account_id": normalized_account_id,
+                                    "campaign_id": str(payload.get("campaign_id") or "").strip() or None,
+                                    "ad_group_id": str(payload.get("ad_group_id") or "").strip(),
+                                    "name": str(payload.get("ad_group_name") or "").strip() or None,
+                                    "status": str(payload.get("ad_group_status") or "").strip() or None,
+                                    "raw_payload": payload.get("raw_payload") if isinstance(payload.get("raw_payload"), dict) else {},
+                                    "payload_hash": payload.get("payload_hash"),
+                                }
+                                for payload in ad_group_metadata_by_id.values()
+                                if str(payload.get("ad_group_id") or "").strip() != ""
+                            ],
+                        )
             written = int(upsert_ad_group_performance_reports(conn, payload_rows) or 0)
             conn.commit()
             return written
 
-    def _upsert_campaign_rows(self, rows: list[TikTokCampaignDailyMetric], *, source_window_start: date, source_window_end: date) -> int:
+    def _upsert_campaign_rows(
+        self,
+        rows: list[TikTokCampaignDailyMetric],
+        *,
+        source_window_start: date,
+        source_window_end: date,
+        access_token: str | None = None,
+    ) -> int:
         if len(rows) == 0:
             return 0
 
@@ -2233,34 +2449,6 @@ class TikTokAdsService:
                     "source_window_end": source_window_end.isoformat(),
                 }
             return len(rows)
-
-        campaign_entity_by_id: dict[str, dict[str, object]] = {}
-        for row in rows:
-            campaign_id = str(row.campaign_id or "").strip()
-            account_id = str(row.account_id or "").strip()
-            if campaign_id == "" or account_id == "":
-                continue
-            campaign_name = str(row.campaign_name or "").strip()
-            tiktok_meta = row.extra_metrics.get("tiktok_ads") if isinstance(row.extra_metrics, dict) else None
-            campaign_status = str((tiktok_meta or {}).get("campaign_status") or "").strip() if isinstance(tiktok_meta, dict) else ""
-            raw_payload = {
-                "campaign_id": campaign_id,
-                "campaign_name": campaign_name or None,
-                "campaign_status": campaign_status or None,
-                "source": "report.integrated.get",
-            }
-            payload_hash = hashlib.sha256(
-                json.dumps(raw_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-            ).hexdigest()
-            campaign_entity_by_id[campaign_id] = {
-                "platform": "tiktok_ads",
-                "account_id": account_id,
-                "campaign_id": campaign_id,
-                "name": campaign_name or None,
-                "status": campaign_status or None,
-                "raw_payload": raw_payload,
-                "payload_hash": payload_hash,
-            }
 
         payload_rows = [
             {
@@ -2286,8 +2474,54 @@ class TikTokAdsService:
             for row in rows
         ]
         with self._connect() as conn:
-            if len(campaign_entity_by_id) > 0:
-                upsert_platform_campaigns(conn, list(campaign_entity_by_id.values()))
+            normalized_account_ids = sorted({str(row.account_id or "").strip() for row in rows if str(row.account_id or "").strip() != ""})
+            if access_token is None:
+                logger.warning(
+                    "TikTok campaign metadata fetch skipped during upsert because access_token is missing. account_ids=%s",
+                    ",".join(normalized_account_ids),
+                )
+            else:
+                for normalized_account_id in normalized_account_ids:
+                    account_rows = [row for row in rows if str(row.account_id or "").strip() == normalized_account_id]
+                    campaign_ids = sorted({str(row.campaign_id or "").strip() for row in account_rows if str(row.campaign_id or "").strip() != ""})
+                    report_campaign_name_by_id = {
+                        str(row.campaign_id or "").strip(): str(row.campaign_name or "").strip()
+                        for row in account_rows
+                        if str(row.campaign_id or "").strip() != "" and str(row.campaign_name or "").strip() != ""
+                    }
+                    if len(campaign_ids) == 0:
+                        continue
+                    try:
+                        campaign_metadata_by_id = self._resolve_and_persist_campaign_metadata(
+                            account_id=normalized_account_id,
+                            access_token=access_token,
+                            campaign_ids=campaign_ids,
+                            report_campaign_name_by_id=report_campaign_name_by_id,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "TikTok campaign metadata resolve failed during upsert; continuing with fact persistence. account_id=%s error=%s",
+                            normalized_account_id,
+                            sanitize_text(str(exc), max_len=300),
+                        )
+                        campaign_metadata_by_id = {}
+                    if len(campaign_metadata_by_id) > 0:
+                        upsert_platform_campaigns(
+                            conn,
+                            [
+                                {
+                                    "platform": "tiktok_ads",
+                                    "account_id": normalized_account_id,
+                                    "campaign_id": str(payload.get("campaign_id") or "").strip(),
+                                    "name": str(payload.get("campaign_name") or "").strip() or None,
+                                    "status": str(payload.get("campaign_status") or "").strip() or None,
+                                    "raw_payload": payload.get("raw_payload") if isinstance(payload.get("raw_payload"), dict) else {},
+                                    "payload_hash": payload.get("payload_hash"),
+                                }
+                                for payload in campaign_metadata_by_id.values()
+                                if str(payload.get("campaign_id") or "").strip() != ""
+                            ],
+                        )
             written = int(upsert_campaign_performance_reports(conn, payload_rows) or 0)
             conn.commit()
             return written
@@ -2591,6 +2825,7 @@ class TikTokAdsService:
                     enriched_campaign_rows,
                     source_window_start=range_start,
                     source_window_end=range_end,
+                    access_token=access_token,
                 )
                 for row in enriched_campaign_rows:
                     totals["spend"] += row.spend
@@ -2683,6 +2918,7 @@ class TikTokAdsService:
                     enriched_ad_group_rows,
                     source_window_start=range_start,
                     source_window_end=range_end,
+                    access_token=access_token,
                 )
                 for row in enriched_ad_group_rows:
                     totals["spend"] += row.spend
