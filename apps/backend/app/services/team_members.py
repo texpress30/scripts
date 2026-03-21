@@ -13,6 +13,7 @@ except Exception:  # noqa: BLE001
     psycopg = None
 
 CANONICAL_ROLE_KEYS: tuple[str, ...] = (
+    "agency_owner",
     "agency_admin",
     "agency_member",
     "agency_viewer",
@@ -22,6 +23,7 @@ CANONICAL_ROLE_KEYS: tuple[str, ...] = (
 )
 
 _UI_TO_CANONICAL_ROLE_MAP: dict[tuple[str, str], str] = {
+    ("agency", "owner"): "agency_owner",
     ("agency", "admin"): "agency_admin",
     ("agency", "member"): "agency_member",
     ("agency", "viewer"): "agency_viewer",
@@ -31,6 +33,7 @@ _UI_TO_CANONICAL_ROLE_MAP: dict[tuple[str, str], str] = {
 }
 
 _CANONICAL_TO_UI_ROLE_MAP: dict[str, tuple[str, str]] = {
+    "agency_owner": ("agency", "owner"),
     "agency_admin": ("agency", "admin"),
     "agency_member": ("agency", "member"),
     "agency_viewer": ("agency", "viewer"),
@@ -176,7 +179,7 @@ class TeamMembersService:
                         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                         CONSTRAINT user_memberships_scope_type_check CHECK (scope_type IN ('agency', 'subaccount')),
-                        CONSTRAINT user_memberships_role_key_check CHECK (role_key IN ('agency_admin','agency_member','agency_viewer','subaccount_admin','subaccount_user','subaccount_viewer')),
+                        CONSTRAINT user_memberships_role_key_check CHECK (role_key IN ('agency_owner','agency_admin','agency_member','agency_viewer','subaccount_admin','subaccount_user','subaccount_viewer')),
                         CONSTRAINT user_memberships_scope_subaccount_guard CHECK (
                             (scope_type = 'agency' AND subaccount_id IS NULL)
                             OR
@@ -195,6 +198,14 @@ class TeamMembersService:
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_user_memberships_subaccount_id ON user_memberships(subaccount_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_user_memberships_role_key ON user_memberships(role_key)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_user_memberships_status ON user_memberships(status)")
+                cur.execute("ALTER TABLE user_memberships DROP CONSTRAINT IF EXISTS user_memberships_role_key_check")
+                cur.execute(
+                    """
+                    ALTER TABLE user_memberships
+                    ADD CONSTRAINT user_memberships_role_key_check
+                    CHECK (role_key IN ('agency_owner','agency_admin','agency_member','agency_viewer','subaccount_admin','subaccount_user','subaccount_viewer'))
+                    """
+                )
 
                 cur.execute(
                     """
@@ -216,6 +227,28 @@ class TeamMembersService:
                     """
                     CREATE INDEX IF NOT EXISTS idx_membership_module_permissions_membership_id
                     ON membership_module_permissions (membership_id)
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS membership_subaccount_access_grants (
+                        id BIGSERIAL PRIMARY KEY,
+                        membership_id BIGINT NOT NULL REFERENCES user_memberships(id) ON DELETE CASCADE,
+                        subaccount_id INTEGER NOT NULL,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_membership_subaccount_access_grants_unique
+                    ON membership_subaccount_access_grants (membership_id, subaccount_id)
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_membership_subaccount_access_grants_membership_id
+                    ON membership_subaccount_access_grants (membership_id)
                     """
                 )
 
@@ -389,6 +422,68 @@ class TeamMembersService:
                     )
             conn.commit()
 
+    def _normalize_allowed_subaccount_ids(self, value: list[int] | tuple[int, ...] | None) -> list[int]:
+        if value is None:
+            return []
+        normalized: list[int] = []
+        for raw in value:
+            try:
+                numeric = int(raw)
+            except Exception:  # noqa: BLE001
+                continue
+            if numeric <= 0:
+                continue
+            if numeric not in normalized:
+                normalized.append(numeric)
+        return sorted(normalized)
+
+    def get_membership_allowed_subaccount_ids(self, *, membership_id: int) -> list[int]:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT subaccount_id
+                    FROM membership_subaccount_access_grants
+                    WHERE membership_id = %s
+                    ORDER BY subaccount_id ASC
+                    """,
+                    (int(membership_id),),
+                )
+                rows = cur.fetchall()
+        return [int(row[0]) for row in rows if self._safe_int(row[0]) is not None]
+
+    def set_membership_allowed_subaccount_ids(self, *, membership_id: int, allowed_subaccount_ids: list[int]) -> None:
+        normalized_ids = self._normalize_allowed_subaccount_ids(allowed_subaccount_ids)
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM membership_subaccount_access_grants WHERE membership_id = %s", (int(membership_id),))
+                for subaccount_id in normalized_ids:
+                    cur.execute(
+                        """
+                        INSERT INTO membership_subaccount_access_grants (membership_id, subaccount_id)
+                        VALUES (%s, %s)
+                        ON CONFLICT (membership_id, subaccount_id) DO NOTHING
+                        """,
+                        (int(membership_id), int(subaccount_id)),
+                    )
+            conn.commit()
+
+    def _build_allowed_subaccount_payload(self, *, allowed_subaccount_ids: list[int]) -> tuple[list[int], list[dict[str, object]], bool]:
+        normalized_ids = self._normalize_allowed_subaccount_ids(allowed_subaccount_ids)
+        if len(normalized_ids) == 0:
+            return [], [], False
+        clients = client_registry_service.list_clients()
+        by_id = {int(item["id"]): str(item.get("name") or "") for item in clients if item.get("id") is not None}
+        payload = [
+            {
+                "id": subaccount_id,
+                "name": by_id.get(subaccount_id, ""),
+                "label": by_id.get(subaccount_id, "") or f"Sub-account #{subaccount_id}",
+            }
+            for subaccount_id in normalized_ids
+        ]
+        return normalized_ids, payload, True
+
     def _membership_module_keys_map(self, membership_rows: list[tuple[int, str, str]]) -> dict[int, list[str]]:
         out: dict[int, list[str]] = {}
         for membership_id, role_key, scope_type in membership_rows:
@@ -468,13 +563,18 @@ class TeamMembersService:
         access_scope = str(actor_user.access_scope or "").strip().lower() or "agency"
 
         if not actor_role.startswith("subaccount_"):
+            if actor_role in {"agency_member", "agency_viewer"} and len(actor_user.allowed_subaccount_ids) > 0:
+                requested = int(subaccount_id)
+                allowed = {int(value) for value in actor_user.allowed_subaccount_ids}
+                if requested not in allowed:
+                    raise PermissionError("Nu ai acces la acest sub-account")
             return {
                 "subaccount_id": int(subaccount_id),
                 "role": actor_role,
                 "module_keys": self.default_module_keys_for_scope(scope_type="subaccount"),
                 "source_scope": "agency",
                 "access_scope": access_scope,
-                "unrestricted_modules": True,
+                "unrestricted_modules": actor_role in {"agency_owner", "agency_admin", "super_admin"} or len(actor_user.allowed_subaccount_ids) == 0,
             }
 
         if actor_user.user_id is None:
@@ -620,8 +720,9 @@ class TeamMembersService:
         avatar_url: str,
         password: str | None,
     ) -> int:
-        settings = load_settings()
-        password_hash = hash_password(password.strip()) if password and password.strip() else hash_password(settings.app_login_password)
+        has_explicit_password = bool(password and password.strip())
+        password_hash = hash_password(password.strip()) if has_explicit_password else None
+        must_reset_password = not has_explicit_password
 
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -631,14 +732,15 @@ class TeamMembersService:
                         email, first_name, last_name, phone, extension, avatar_url, platform_language,
                         password_hash, is_active, must_reset_password
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, 'ro', %s, TRUE, FALSE)
+                    VALUES (%s, %s, %s, %s, %s, %s, 'ro', COALESCE(%s, ''), TRUE, %s)
                     ON CONFLICT(email) DO UPDATE
                     SET first_name = EXCLUDED.first_name,
                         last_name = EXCLUDED.last_name,
                         phone = EXCLUDED.phone,
                         extension = EXCLUDED.extension,
                         avatar_url = EXCLUDED.avatar_url,
-                        password_hash = COALESCE(EXCLUDED.password_hash, users.password_hash),
+                        password_hash = CASE WHEN %s THEN EXCLUDED.password_hash ELSE users.password_hash END,
+                        must_reset_password = EXCLUDED.must_reset_password,
                         updated_at = NOW()
                     RETURNING id
                     """,
@@ -650,6 +752,8 @@ class TeamMembersService:
                         extension,
                         avatar_url,
                         password_hash,
+                        must_reset_password,
+                        has_explicit_password,
                     ),
                 )
                 row = cur.fetchone()
@@ -726,6 +830,7 @@ class TeamMembersService:
         subaccount: str,
         password: str | None,
         module_keys: list[str] | None = None,
+        allowed_subaccount_ids: list[int] | None = None,
         actor_user: AuthUser | None = None,
     ) -> dict[str, object]:
         normalized_email = email.strip().lower()
@@ -784,6 +889,15 @@ class TeamMembersService:
             scope_type=scope_type,
             module_keys=resolved_module_keys,
         )
+        if role_key in {"agency_member", "agency_viewer"}:
+            self.set_membership_allowed_subaccount_ids(
+                membership_id=membership_id,
+                allowed_subaccount_ids=self._normalize_allowed_subaccount_ids(allowed_subaccount_ids),
+            )
+            allowed_ids = self.get_membership_allowed_subaccount_ids(membership_id=membership_id)
+            payload_ids, payload_subaccounts, has_restricted = self._build_allowed_subaccount_payload(allowed_subaccount_ids=allowed_ids)
+        else:
+            payload_ids, payload_subaccounts, has_restricted = ([], [], False)
 
         mapped_user_type, mapped_user_role = self.map_canonical_to_payload_role(role_key=role_key)
         return {
@@ -798,6 +912,9 @@ class TeamMembersService:
             "location": normalized_location,
             "subaccount": subaccount_name,
             "module_keys": resolved_module_keys,
+            "allowed_subaccount_ids": payload_ids,
+            "allowed_subaccounts": payload_subaccounts,
+            "has_restricted_subaccount_access": has_restricted,
         }
 
     def list_members(
@@ -889,8 +1006,17 @@ class TeamMembersService:
             user_id = self._safe_int(row[1])
             if membership_id is None or user_id is None:
                 continue
+            role_key = str(row[7] or "")
+            allowed_ids: list[int] = []
+            allowed_subaccounts: list[dict[str, object]] = []
+            has_restricted_access = False
+            if role_key in {"agency_member", "agency_viewer"}:
+                allowed_ids = self.get_membership_allowed_subaccount_ids(membership_id=membership_id)
+                allowed_ids, allowed_subaccounts, has_restricted_access = self._build_allowed_subaccount_payload(
+                    allowed_subaccount_ids=allowed_ids
+                )
 
-            mapped_user_type, mapped_user_role = self._safe_map_member_role(role_key=row[7], scope_type=row[9])
+            mapped_user_type, mapped_user_role = self._safe_map_member_role(role_key=role_key, scope_type=row[9])
             items.append(
                 {
                     "id": membership_id,
@@ -906,6 +1032,9 @@ class TeamMembersService:
                     "location": "România",
                     "subaccount": str(row[8] or "Toate"),
                     "module_keys": membership_module_map.get(membership_id, []),
+                    "allowed_subaccount_ids": allowed_ids,
+                    "allowed_subaccounts": allowed_subaccounts,
+                    "has_restricted_subaccount_access": has_restricted_access,
                     "membership_status": self._normalize_membership_status(row[10] if len(row) > 10 else "active"),
                 }
             )
@@ -927,6 +1056,7 @@ class TeamMembersService:
 
     def _role_label(self, *, role_key: str) -> str:
         labels = {
+            "agency_owner": "Agency Owner",
             "agency_admin": "Agency Admin",
             "agency_member": "Agency Member",
             "agency_viewer": "Agency Viewer",
@@ -954,8 +1084,19 @@ class TeamMembersService:
 
         clauses_agency: list[str] = [
             "um.scope_type = 'agency'",
+            "um.role_key IN ('agency_member', 'agency_viewer')",
+            """(
+                NOT EXISTS (
+                    SELECT 1 FROM membership_subaccount_access_grants msag
+                    WHERE msag.membership_id = um.id
+                )
+                OR EXISTS (
+                    SELECT 1 FROM membership_subaccount_access_grants msag
+                    WHERE msag.membership_id = um.id AND msag.subaccount_id = %s
+                )
+            )""",
         ]
-        values_agency: list[object] = []
+        values_agency: list[object] = [int(subaccount_id)]
 
         if search.strip():
             token = f"%{search.strip().lower()}%"
@@ -976,8 +1117,11 @@ class TeamMembersService:
             if role_candidate not in CANONICAL_ROLE_KEYS:
                 raise ValueError("Rol invalid")
             if role_candidate.startswith("agency_"):
-                clauses_agency.append("um.role_key = %s")
-                values_agency.append(role_candidate)
+                if role_candidate in {"agency_owner", "agency_admin"}:
+                    clauses_agency.append("1=0")
+                else:
+                    clauses_agency.append("um.role_key = %s")
+                    values_agency.append(role_candidate)
                 clauses_direct.append("1=0")
             else:
                 clauses_direct.append("um.role_key = %s")
@@ -1181,12 +1325,13 @@ class TeamMembersService:
 
         if normalized_scope == "agency":
             aliases = {
+                "owner": "agency_owner",
                 "admin": "agency_admin",
                 "member": "agency_member",
                 "viewer": "agency_viewer",
             }
             candidate = aliases.get(candidate, candidate)
-            if candidate not in {"agency_admin", "agency_member", "agency_viewer"}:
+            if candidate not in {"agency_owner", "agency_admin", "agency_member", "agency_viewer"}:
                 raise ValueError("Rol invalid pentru membership agency")
             return candidate
 
@@ -1272,6 +1417,10 @@ class TeamMembersService:
             role_key=role_key,
             scope_type=scope_type,
         )
+        allowed_ids, allowed_subaccounts, has_restricted = ([], [], False)
+        if role_key in {"agency_member", "agency_viewer"}:
+            allowed = self.get_membership_allowed_subaccount_ids(membership_id=int(row[0]))
+            allowed_ids, allowed_subaccounts, has_restricted = self._build_allowed_subaccount_payload(allowed_subaccount_ids=allowed)
 
         return {
             "membership_id": int(row[0]),
@@ -1282,6 +1431,9 @@ class TeamMembersService:
             "role_key": role_key,
             "role_label": self._role_label(role_key=role_key),
             "module_keys": module_keys,
+            "allowed_subaccount_ids": allowed_ids,
+            "allowed_subaccounts": allowed_subaccounts,
+            "has_restricted_subaccount_access": has_restricted,
             "source_scope": scope_type,
             "is_inherited": bool(inherited_for_actor),
             "is_active": str(row[6] or "") == "active",
@@ -1293,7 +1445,15 @@ class TeamMembersService:
             "extension": str(row[11] or ""),
         }
 
-    def update_membership(self, *, membership_id: int, actor_user: AuthUser, user_role: str | None, module_keys: list[str] | None) -> dict[str, object]:
+    def update_membership(
+        self,
+        *,
+        membership_id: int,
+        actor_user: AuthUser,
+        user_role: str | None,
+        module_keys: list[str] | None,
+        allowed_subaccount_ids: list[int] | None = None,
+    ) -> dict[str, object]:
         current = self.get_membership_detail(membership_id=membership_id, actor_user=actor_user)
         if current is None:
             raise LookupError("Membership inexistent")
@@ -1304,6 +1464,8 @@ class TeamMembersService:
         role_key = str(current.get("role_key") or "").strip().lower()
         subaccount_id = current.get("subaccount_id")
         resolved_module_keys = current.get("module_keys") if isinstance(current.get("module_keys"), list) else []
+        existing_allowed_ids = current.get("allowed_subaccount_ids") if isinstance(current.get("allowed_subaccount_ids"), list) else []
+        resolved_allowed_subaccount_ids = self._normalize_allowed_subaccount_ids(existing_allowed_ids)
 
         if user_role is not None:
             role_key = self._normalize_update_role_for_scope(scope_type=scope_type, user_role=user_role)
@@ -1313,6 +1475,8 @@ class TeamMembersService:
             resolved_module_keys = self._normalize_module_keys_for_scope(scope_type=normalized_scope, module_keys=module_keys)
             if len(resolved_module_keys) == 0:
                 raise ValueError("Selectează cel puțin o cheie de navigare")
+        if allowed_subaccount_ids is not None:
+            resolved_allowed_subaccount_ids = self._normalize_allowed_subaccount_ids(allowed_subaccount_ids)
 
         grantable = self.get_grantable_module_keys_for_actor(
             actor_user=actor_user,
@@ -1350,6 +1514,14 @@ class TeamMembersService:
                         (int(membership_id), module_key),
                     )
             conn.commit()
+
+        if scope_type == "agency" and role_key in {"agency_member", "agency_viewer"}:
+            self.set_membership_allowed_subaccount_ids(
+                membership_id=int(membership_id),
+                allowed_subaccount_ids=resolved_allowed_subaccount_ids,
+            )
+        elif scope_type == "agency":
+            self.set_membership_allowed_subaccount_ids(membership_id=int(membership_id), allowed_subaccount_ids=[])
 
         updated = self.get_membership_detail(membership_id=membership_id, actor_user=actor_user)
         if updated is None:
@@ -1418,6 +1590,54 @@ class TeamMembersService:
             "message": "Membership eliminat",
         }
 
+    def delete_user_hard(self, *, user_id: int, actor_user: AuthUser) -> dict[str, object]:
+        target_user_id = int(user_id)
+        actor_user_id = int(actor_user.user_id) if actor_user.user_id is not None else None
+        if actor_user_id is not None and target_user_id == actor_user_id:
+            raise RuntimeError("Nu îți poți șterge propriul utilizator din sesiunea curentă")
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT email
+                    FROM users
+                    WHERE id = %s
+                    LIMIT 1
+                    """,
+                    (target_user_id,),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    raise LookupError("Utilizator inexistent")
+                email = str(row[0] or "").strip().lower()
+
+                cur.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM user_memberships
+                    WHERE user_id = %s
+                    """,
+                    (target_user_id,),
+                )
+                count_row = cur.fetchone()
+                deleted_memberships_count = int(count_row[0] or 0) if count_row is not None else 0
+
+                if email != "":
+                    cur.execute("DELETE FROM team_members WHERE LOWER(email) = %s", (email,))
+
+                cur.execute("DELETE FROM users WHERE id = %s", (target_user_id,))
+                if int(cur.rowcount or 0) != 1:
+                    raise LookupError("Utilizator inexistent")
+            conn.commit()
+
+        return {
+            "user_id": target_user_id,
+            "deleted": True,
+            "deleted_memberships_count": deleted_memberships_count,
+            "message": "Utilizator șters complet din sistem",
+        }
+
     def deactivate_membership(self, *, membership_id: int, actor_user: AuthUser) -> dict[str, object]:
         return self._transition_membership_status(membership_id=membership_id, actor_user=actor_user, target_status="inactive")
 
@@ -1429,7 +1649,7 @@ class TeamMembersService:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT um.id, um.user_id, um.scope_type, um.subaccount_id, um.status, u.email, u.is_active
+                    SELECT um.id, um.user_id, um.scope_type, um.subaccount_id, um.status, u.email, u.is_active, u.must_reset_password
                     FROM user_memberships um
                     JOIN users u ON u.id = um.user_id
                     WHERE um.id = %s
@@ -1450,6 +1670,7 @@ class TeamMembersService:
             "status": str(row[4]),
             "email": str(row[5] or "").strip().lower(),
             "is_active": bool(row[6]),
+            "must_reset_password": bool(row[7]),
         }
 
 
