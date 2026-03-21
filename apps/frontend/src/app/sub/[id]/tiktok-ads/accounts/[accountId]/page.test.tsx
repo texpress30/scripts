@@ -56,4 +56,34 @@ describe("TikTok account campaigns drilldown", () => {
     expect(screen.queryByText("tt-cmp-1")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Back to accounts/i })).toHaveAttribute("href", "/sub/96/tiktok-ads");
   });
+
+  it("falls back to campaign_id only when campaign_name is missing", async () => {
+    apiMock.getSubTikTokAdsCampaignsTable.mockResolvedValueOnce({
+      client_id: 96,
+      platform: "tiktok_ads",
+      account_id: "tiktok-1",
+      account_name: "TikTok Main",
+      account_status: "active",
+      currency: "RON",
+      date_range: { start_date: "2026-03-01", end_date: "2026-03-31" },
+      items: [{
+        campaign_id: "tt-cmp-fallback",
+        campaign_name: "",
+        status: "active",
+        cost: null,
+        rev_inf: null,
+        roas_inf: null,
+        mer_inf: null,
+        truecac_inf: null,
+        ecr_inf: null,
+        ecpnv_inf: null,
+        new_visits: null,
+        visits: null,
+      }],
+    });
+
+    render(<SubTikTokAdsAccountCampaignsPage />);
+
+    expect(await screen.findByText("tt-cmp-fallback")).toBeInTheDocument();
+  });
 });

@@ -465,3 +465,4 @@
 - 2026-03-20: Când utilizatorul re-atrage atenția asupra AGENTS workflow, aplică imediat pașii obligatorii în ordine (plan în `tasks/todo.md`, verificări executate, commit, apoi `make_pr`) înainte de mesajul final.
 - 2026-03-20: Când drilldown-ul depinde de tabele entity-level, verifică explicit că write helpers pentru fiecare grain persistă și în non-test-mode; un helper care întoarce `0` în producție poate face UI-ul gol chiar dacă account_daily are date.
 - 2026-03-20: Pentru erori Postgres `numeric field overflow` pe sync-uri chunked, investighează întâi derivarea metricilor (ex. `action_values` sum) și adaugă izolare row-level la persistență; altfel un singur row invalid poate bloca tot chunk-ul.
+- 2026-03-21: Pentru TikTok când UI arată `campaign_id`, verifică mai întâi schema `report.integrated.get` pe `dimensions` (ex. lipsa `campaign_name`) și completează cu metadata fetch + persist în `platform_campaigns` înainte de orice fix frontend.

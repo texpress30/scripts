@@ -5926,3 +5926,17 @@ Plan confirmed: backend-only scope (Meta persistence + backend tests), no fronte
 - [x] Implemented pre-upsert numeric overflow candidate checks and row-level retry isolation after batch failure.
 - [x] Snapshot now reports `rows_written`, `rows_skipped`, `skip_reasons`, and sampled skipped row diagnostics without secrets.
 - [x] Verified with `python -m pip install requests -q && pytest -q apps/backend/tests/test_meta_ads_entity_persistence.py apps/backend/tests/test_dashboard_currency_normalization.py` and `APP_AUTH_SECRET=test python -c "import app.main"`.
+
+# TODO — TikTok campaign name resolution by campaign_id (2026-03-21)
+
+- [x] Audit why TikTok campaign rows fall back to `campaign_id` despite existing facts.
+- [x] Implement campaign metadata fetch by `campaign_id` from TikTok campaign endpoint and persist to `platform_campaigns`.
+- [x] Wire TikTok sync grains (`campaign_daily` / `ad_group_daily` / `ad_daily`) to enrich campaign names/statuses from metadata before upsert.
+- [x] Ensure dashboard read path behavior is validated: return campaign name when present, fallback to id only when missing.
+- [x] Add backend tests for metadata resolution/persistence and fallback semantics.
+- [x] Add frontend TikTok drilldown test coverage for campaign_name vs campaign_id fallback.
+- [x] Run backend tests, frontend tests, and frontend build.
+- [x] Commit and open PR.
+
+## Check-in before execution
+Plan confirmed: backend-first TikTok metadata + tests, minimal frontend test-only adjustment; no Agency/Team/auth/invite/delete/Media Buying/Media Tracker changes.
