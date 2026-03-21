@@ -292,13 +292,10 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
         self.assertEqual(campaign_schema.dimensions, ("stat_time_day", "campaign_id"))
         self.assertNotIn("campaign_name", campaign_schema.dimensions)
         self.assertNotIn("conversion_value", campaign_schema.metrics)
-        self.assertEqual(ad_group_schema.dimensions, ("stat_time_day", "adgroup_id"))
-        self.assertNotIn("campaign_id", ad_group_schema.dimensions)
+        self.assertEqual(ad_group_schema.dimensions, ("stat_time_day", "campaign_id", "ad_group_id"))
         self.assertNotIn("campaign_name", ad_group_schema.dimensions)
         self.assertNotIn("conversion_value", ad_group_schema.metrics)
-        self.assertEqual(ad_schema.dimensions, ("stat_time_day", "ad_id"))
-        self.assertNotIn("adgroup_id", ad_schema.dimensions)
-        self.assertNotIn("campaign_id", ad_schema.dimensions)
+        self.assertEqual(ad_schema.dimensions, ("stat_time_day", "campaign_id", "ad_group_id", "ad_id"))
         self.assertNotIn("conversion_value", ad_schema.metrics)
 
     def test_reporting_fetchers_generate_structurally_valid_requests_for_known_tiktok_errors(self):
@@ -364,8 +361,7 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
 
         self.assertEqual(captured.get("AUCTION_CAMPAIGN"), ["stat_time_day", "campaign_id"])
         self.assertNotIn("campaign_name", captured.get("AUCTION_CAMPAIGN", []))
-        self.assertEqual(captured.get("AUCTION_ADGROUP"), ["stat_time_day", "adgroup_id"])
-        self.assertNotIn("campaign_id", captured.get("AUCTION_ADGROUP", []))
+        self.assertEqual(captured.get("AUCTION_ADGROUP"), ["stat_time_day", "campaign_id", "ad_group_id"])
         self.assertNotIn("campaign_name", captured.get("AUCTION_ADGROUP", []))
         self.assertEqual(captured.get("AUCTION_AD"), ["stat_time_day", "ad_id"])
         self.assertNotIn("campaign_id", captured.get("AUCTION_AD", []))
