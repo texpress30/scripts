@@ -1,3 +1,355 @@
+# TODO — Sub-account Profil Business: sidebar location from business profile + nișă Parc Auto (2026-03-21)
+
+- [x] Re-read AGENTS/todo/lessons and audit source of sidebar location + nișă options.
+- [x] Update sidebar branding location in sub-account context to read city/country from saved business profile endpoint.
+- [x] Ensure sidebar location refreshes after business-profile save and remains correct after page refresh.
+- [x] Add `Parc Auto` option to `Nișa business` dropdown and keep load/save roundtrip compatibility.
+- [x] Add/adjust frontend tests for location formatting + `Parc Auto` presence and persistence.
+- [x] Run frontend tests relevant to Sub-account Profile + AppShell and run frontend build.
+
+## Review
+- [x] Root cause for wrong sidebar location: sub-account card subtitle used agency company settings city/country instead of sub-account business profile address.
+- [x] Sub-account subtitle now composes from business profile address (`Oraș` + optional `Țară`) with neutral fallback.
+- [x] Scope remained limited to Sub-account Profile/AppShell, without touching Agency/Team/auth/invite/delete/Media Buying/Media Tracker.
+
+# TODO — Sub-account Profil Business: fix Client not found by correcting identifier mapping (2026-03-21)
+
+- [x] Re-read AGENTS + todo + lessons and confirm runtime failure (`Client not found`) after refresh.
+- [x] Audit identifier mismatch between route id and backend endpoint lookup (`display_id` vs real sub-account/client id).
+- [x] Implement robust identifier resolution in backend business-profile API (support direct client/subaccount id and display-id alias).
+- [x] Switch frontend load/save path to canonical `/clients/{subaccount_id}/business-profile`.
+- [x] Keep title binding without form prefill fallback and ensure no localStorage truth-source reintroduction.
+- [x] Add/update backend and frontend tests for valid save+reload and no false `Client not found`.
+- [x] Run backend tests + frontend tests + frontend build.
+
+## Review
+- [x] Root cause fixed: route `/subaccount/[id]` passed subaccount/client id while endpoint expected display id only.
+- [x] Canonical runtime path now uses `/clients/{subaccount_id}/business-profile`; display endpoint remains compatibility alias.
+- [x] Refresh now reloads persisted profile from backend store, not localStorage.
+
+# TODO — Sub-account Profil Business: remove forbidden prefill and use explicit business profile source (2026-03-21)
+
+- [x] Re-read AGENTS + tasks and confirm root-cause from prior patch (`/clients/display/{id}` + localStorage prefill path).
+- [x] Add dedicated backend load/save path for sub-account business profile (separate from client display details).
+- [x] Update Sub-account Profil Business page to load only explicit business-profile data (or empty) and remove localStorage rehydrate logic.
+- [x] Keep title/client display usage isolated to headline only, not form values.
+- [x] Update frontend tests for no-prefill, empty-first-load, save+reload, and localStorage non-prefill guarantees.
+- [x] Add backend tests proving business-profile endpoint returns empty payload without display fallback and persists explicit save values.
+- [x] Run backend tests + frontend tests + frontend build.
+
+## Review
+- [x] Root cause confirmed and removed: form no longer hydrates from `/clients/display/{id}` data and no longer rehydrates from `subaccount_profile_settings_*` localStorage snapshot.
+- [x] New source of truth for form load/save: `/clients/display/{display_id}/business-profile` only.
+- [x] Scope unchanged for Agency / Team / auth / invite / delete / Media Buying / Media Tracker.
+
+# TODO — Sub-account Profil Business: prefill/save/location/logo persistence hardening (2026-03-21)
+
+- [x] Re-sync context + audit implementare existentă pentru `/subaccount/[id]/settings/profile` și contractele API disponibile.
+- [x] Conectare prefill la `/clients/display/{id}` pentru nume/email/monedă/logo și afișare loading/error state în pagină.
+- [x] Salvare secțiune generală prin `PATCH /clients/display/{id}` (name/currency/client_logo_url) și fallback persistență locală pentru secțiunile business/adresă/reprezentant.
+- [x] Fix UX logo: preview real (data URL), remove/reset corect, limită dimensiune păstrată, fără upload backend nou.
+- [x] Update teste frontend pentru încărcare prefill API + verificare PATCH save.
+- [x] Rulare teste țintite frontend + build frontend.
+
+## Review
+- [x] Root-cause adresat: pagina era strict statică (mock-like), fără prefill runtime și fără persistență la save.
+- [x] Logo storage audit: în acest increment logo-ul este persistat în `client_logo_url` via PATCH ca string URL/DataURL; nu s-a introdus storage de fișiere în backend.
+- [x] Scope control: alte pagini/settings și flow-uri team/auth/dashboard neatinse.
+
+# TODO — Sub Google Ads details: replace Coming Soon with multi-account performance table (2026-03-20)
+
+- [x] Re-sync + recitire AGENTS/todo/lessons + audit pagină placeholder `sub/[id]/google-ads`.
+- [x] Implementare tabel multi-account cu coloanele cerute și sortare implicită pe Cost.
+- [x] Header controls: Filter, Columns (dropdown), Export.
+- [x] Columns dropdown cu multi-select, Select All, Reset to Default, render dinamic coloane.
+- [x] Persistență selecție coloane în localStorage.
+- [x] Stilizare: status indicators, valori aliniate, underline dotted pentru monetare, tabel full-width responsive.
+- [x] Teste frontend relevante + build frontend.
+
+## Review
+- [x] Confirmare explicită: Agency Dashboard, Team/auth/invite/delete, Media Buying/Tracker, dashboard charts nu au fost modificate.
+- Rulat `npm test -- src/app/sub/[id]/google-ads/page.test.tsx src/app/sub/[id]/sub-routes-placeholder.test.tsx` și `npm run build` în `apps/frontend`.
+
+# TODO — Sub-dashboard chart polish: hover-only dots + h-96 (2026-03-20)
+
+- [x] Re-sync + recitire AGENTS/todo/lessons + audit chart styling curent.
+- [x] Setare dots ascunse implicit și vizibile doar la hover pentru chart-ul multi-line Spend pe platforme.
+- [x] Confirmare linii smooth (Bezier/monotone), păstrare culori și fără fill.
+- [x] Ajustare înălțime ambele chart-uri la min `h-96`.
+- [x] Tooltip hover păstrat activ cu valori exacte pe toate platformele.
+- [x] Teste frontend + build frontend.
+
+## Review
+- [x] Confirmare explicită: Agency Dashboard, Team/auth/invite/delete, Media Buying/Tracker rămân neatinse.
+- Rulat `npm test -- src/app/sub/[id]/dashboard/page.test.tsx` și `npm run build` în `apps/frontend`.
+
+# TODO — Sub-dashboard charts follow-up: Spend pe platforme ca Multi-Line (2026-03-20)
+
+- [x] Re-sync + recitire AGENTS/todo/lessons + audit implementare curentă chart-uri sub-dashboard.
+- [x] Backend additive minim pentru serie temporală pe platforme (fără breaking changes pe payload existent).
+- [x] Frontend: înlocuire BarChart cu Multi-Line Chart (Google/Meta/TikTok), culori distincte, linii smooth + markers.
+- [x] Ajustare înălțime pentru ambele chart-uri din rândul median la min `h-80`.
+- [x] Tooltip hover cu valori exacte pe axa timpului pentru toate platformele.
+- [x] Teste backend + frontend + build.
+
+## Review
+- [x] Confirmare explicită: Agency Dashboard, Team/auth/invite/delete, Media Buying/Tracker rămân neatinse.
+- Rulat `pytest -q apps/backend/tests/test_dashboard_currency_normalization.py` (9 passed).
+- Rulat `npm test -- src/app/sub/[id]/dashboard/page.test.tsx` și `npm run build` în `apps/frontend`.
+
+# TODO — Sub-account Dashboard: 2 grafice spend (2026-03-20)
+
+- [x] Re-sync workspace + recitire AGENTS/todo/lessons + audit endpoint/contract actual pentru Sub-account Dashboard.
+- [x] Backend additive: câmp `spend_by_day` agregat pe zi, pe range-ul selectat și în moneda dashboardului.
+- [x] Frontend Sub-account Dashboard: 2 grafice între KPI și tabel (spend pe zile + spend pe platforme), responsive, fără redesign major.
+- [x] UX states: loading + empty clar; chart platforme exclude spend=0.
+- [x] Teste backend + teste frontend relevante + build frontend.
+
+## Review
+- [x] Confirmare explicită că Agency Dashboard și flow-urile Team/auth/invite/delete/media-buying/media-tracker nu au fost modificate.
+- Rulat `pytest -q apps/backend/tests/test_dashboard_currency_normalization.py` (9 passed).
+- Rulat `npm test -- src/app/sub/[id]/dashboard/page.test.tsx` și `npm run build` în `apps/frontend`.
+
+# TODO — Agency Team UI: agency_owner + grants selector pentru agency_member/viewer (2026-03-20)
+
+- [x] Re-sync workspace + recitire AGENTS/todo/lessons și audit contracte frontend<->backend folosite de Agency Team.
+- [x] Extindere Agency Team create/edit cu rol `Agency Owner` și UI grants multi-select pentru `Agency Member/Viewer`.
+- [x] Wiring payload create/patch pentru `allowed_subaccount_ids` cu semantică unrestricted la selecție goală.
+- [x] Preload grants în edit + toggling unrestricted/restricted fără a rupe wizard-ul în 2 pași.
+- [x] Update summary list `Acces / Conturi` pentru modelul owner/admin/member/viewer cu grants.
+- [x] Teste frontend Agency Team + build frontend.
+
+## Review
+- [x] Confirmare explicită că Sub-account Team, delete flow și invite/reset/login flow nu au fost modificate.
+- Rulat `npm test -- src/app/settings/team/page.test.tsx` (43/43 pass) și `npm run build` în `apps/frontend`.
+
+# TODO — Backend foundation: agency_owner + agency grants pe sub-account (2026-03-20)
+
+- [x] Re-sync workspace + audit fișiere backend cerute și confirmare limitări model actual.
+- [x] Introducere rol canonic `agency_owner` pe fluxurile backend relevante (RBAC/auth/team) cu full-access.
+- [x] Migrare mică pentru grants `agency membership -> subaccount` + helperi store minimali.
+- [x] Extindere service/auth/guards pentru semantics: owner/admin unrestricted, member/viewer restricted doar când există grants.
+- [x] Ajustare inherited listing în Sub-account Team: exclude owner/admin; include member/viewer doar când unrestricted sau grant match.
+- [x] Teste backend țintite + startup/import check.
+
+## Review
+- [x] Confirmare explicită: frontend, team wizard-uri, delete flow, invite/reset flow neatinse.
+
+# TODO — Login fără selector de rol + derivare automată context din memberships (2026-03-20)
+
+- [x] Re-citire fișiere auth/login backend+frontend și confirmare root-cause pentru rol selectat manual în login.
+- [x] Backend: `LoginRequest.role` opțional + `/auth/login` compat backward-compatible (role opțional, validare doar când e trimis).
+- [x] Backend: derivare automată context acces din memberships active când role lipsește, cu prioritate agency/global peste subaccount.
+- [x] Frontend login: eliminare selector rol și submit strict `email + password`.
+- [x] Frontend session/AppShell: routing bazat pe contextul token-ului derivat (single subaccount redirect direct, multi subaccount fallback sigur existent).
+- [x] Teste backend/frontend pentru toate cazurile cerute + build frontend + startup check backend.
+
+## Review
+- [x] Contract `/auth/login` documentat în review final (role optional compat + derivare automată).
+- [x] Verificat explicit că nu există flow nou de selector în login pentru multi-subaccount.
+
+# TODO — Email Templates/Notifications semantic alignment for forgot vs invite vs account-ready (2026-03-19)
+
+- [x] Re-sync + recitire AGENTS/tasks/lessons și fișiere backend/frontend relevante.
+- [x] Audit catalog backend + UI pentru template keys și descrieri semantice.
+- [x] Aliniere metadata backend pentru `auth_forgot_password`, `team_invite_user`, `team_account_ready` (descrieri + sample vars coerente).
+- [x] Update UI Email Templates cu hint-uri semantice explicite pentru cele trei flow-uri.
+- [x] Update UI Notifications cu hint clar că `team_invite_user` acoperă set-password vs account-ready/login.
+- [x] Teste backend + frontend țintite și build frontend.
+
+## Review
+- [x] `team_account_ready` este tratat și afișat clar ca template canonic de primă clasă.
+- [x] Preview/test-send context rămâne coerent pentru forgot vs invite set-password vs account-ready login.
+- [x] Nu au fost atinse Team wizard-urile, delete/remove flow sau runtime auth semantics.
+
+# TODO — Reset-password UX context: invite vs forgot token semantics (2026-03-19)
+
+- [x] Re-sync + recitire AGENTS/tasks/lessons + fișiere backend/frontend relevante pentru reset-password.
+- [x] Adăugare endpoint backend additive de context token (validare fără consum) pentru `invite_user` vs `password_reset`.
+- [x] UI `/reset-password` actualizat cu copy/CTA diferențiat pe tip token și succes diferențiat.
+- [x] Stare invalid/expirat/consumat și fallback safe dacă fetch context eșuează.
+- [x] Teste backend pentru endpoint context (invite/reset/invalid + non-consume token).
+- [x] Teste frontend pentru copy invite/reset, success diferențiat, invalid token, fallback safe.
+- [x] Rulare verificări backend + frontend țintite și build frontend.
+
+## Review
+- [x] Diferența semantică invite vs forgot-password este vizibilă în UX fără schimbare de contracte existente.
+- [x] Team wizard-urile și flow-ul de delete/remove nu au fost atinse.
+
+# TODO — Create/Invite auth semantics hardening (2026-03-19)
+
+- [x] Re-sync + recitire AGENTS/tasks/lessons și fișierele backend relevante pentru create/invite/login/reset.
+- [x] Audit flow actual pentru create cu/fără parolă + invite template branch + reset-confirm compat.
+- [x] Eliminare fallback password utilizabil la create fără parolă și păstrare `must_reset_password` ca stare reală.
+- [x] Blocare login DB când `must_reset_password=true` până la `reset-password/confirm`.
+- [x] Păstrare branch invite: `team_account_ready` + `/login` fără token pentru conturi cu parolă, respectiv token+`/reset-password` pentru conturi fără parolă.
+- [x] Adăugare/actualizare teste backend pentru noile garanții.
+- [x] Rulare teste backend țintite + startup/import check backend.
+
+## Review
+- [x] User creat fără parolă nu mai primește hash fallback utilizabil și nu poate face login înainte de setarea inițială.
+- [x] `reset-password/confirm` rămâne compatibil pentru tokenuri invite și scoate userul din `must_reset_password`.
+
+# TODO — Sub-account Team wizard parity follow-up (2026-03-19)
+
+- [x] Revalidare cerințe user + verificare implementare actuală în `subaccount/[id]/settings/team`.
+- [x] Harden submit create flow: submit-ul în create mode rulează exclusiv în tab-ul `permissions`.
+- [x] Consolidare teste wizard Sub-account pentru regula "0 apeluri înainte de final" + "exact 1 apel la `Creează utilizator`".
+- [x] Rulare verificări cerute pentru frontend test command și frontend build.
+
+## Review
+- [x] Sub-account Team are step 1 non-form + step 2 form real, fără create API înainte de submit final.
+- [x] Create API este chemat o singură dată doar pe butonul final `Creează utilizator`.
+
+# TODO — Sub-account Team: wizard real în 2 pași (2026-03-19)
+
+- [x] Re-sync + recitire AGENTS/tasks/lessons + fișierele Sub-account Team page/test/api helper înainte de modificări.
+- [x] Confirmare cauză: create folosea un `<form>` global pe ambele tab-uri, iar butonul submit era etichetat `Înainte` în create mode.
+- [x] Fix structural: create + tab user randat non-form; create + tab permissions randat în `<form>` real cu submit final.
+- [x] Pas 1: `Înainte` rulează doar validare locală + trecere la tab-ul de permissions, fără create API.
+- [x] Pas 2: buton final explicit `Creează utilizator`; request create exclusiv aici.
+- [x] Persistență local state între pași și la revenire pe tab-ul user.
+- [x] Teste frontend actualizate pentru next-step no-create, Enter no-create, persistență date, label final și create-only-on-final-submit.
+- [x] Rulare teste pagină Sub-account Team + build frontend.
+
+## Review
+- [x] Create API nu mai pornește din pasul 1 în Sub-account Team.
+- [x] Pasul 2 are submit explicit `Creează utilizator`.
+- [x] Agency Team și flow-urile invite/delete nu au fost atinse în acest task.
+
+# TODO — Agency Team hard delete user complet (2026-03-19)
+
+- [x] Re-sync + recitire AGENTS/tasks + fișiere backend/frontend cerute înainte de modificări.
+- [x] Confirmare cauză: acțiunea existentă folosea `POST /team/members/{membership_id}/remove` (remove membership), nu delete user global.
+- [x] Backend: endpoint nou `POST /team/users/{user_id}/delete` (agency/admin scoped), separat de remove membership.
+- [x] Service: helper `delete_user_hard(...)` care șterge `users` (cascade memberships/permissions/auth_email_tokens) + cleanup legacy `team_members` după email.
+- [x] Protecții: self-delete blocat (409), user missing (404), payload clar (`user_id`, `deleted`, `deleted_memberships_count`, `message`).
+- [x] Auth/dependencies: check DB-backed minim pentru tokenuri non-env-admin (`user_id` activ în `users`), altfel 401.
+- [x] Frontend Agency Team: buton/acțiune schimbate pe hard delete user (`Șterge utilizator`), confirm explicit, refetch list, mapare erori 403/404/409.
+- [x] Teste backend + frontend actualizate pentru noua semantică și no-regression de bază.
+- [x] Rulare verificări relevante (backend tests țintite, import check backend, frontend tests, frontend build).
+
+## Review
+- [x] Agency Team șterge acum utilizatorul complet, nu doar grant-ul curent.
+- [x] Remove membership endpoint rămâne separat (compatibil pentru alte zone, inclusiv Sub-account semantics).
+- [x] Tokenurile vechi pentru user șters sunt respinse prin verificare DB-backed în `get_current_user`.
+
+# TODO — REDO Agency Team wizard: separare structurală pas 1 non-form vs pas 2 form (2026-03-19)
+
+- [x] Re-sync workspace + re-citire AGENTS/tasks/page.tsx/page.test.tsx înainte de modificări.
+- [x] Confirmare cauză runtime: create mode folosea un `<form>` global pentru ambele etape + footer mutabil, ceea ce păstra căi de submit/click-through în pasul 1.
+- [x] Refactor `settings/team/page.tsx`: create + identity randat în container non-form, create + permissions randat în `<form>` real de submit.
+- [x] Separare structurală footer step1 vs footer submit final pentru a elimina click-through spre `Creează utilizator`.
+- [x] Păstrare state local între pași (înainte/înapoi) fără request create înainte de submit final.
+- [x] Actualizare teste explicite în `page.test.tsx` pentru non-form step1, Enter fără create, persistență state și create-only-on-final-submit.
+- [x] Rulare comenzi cerute (`pnpm --prefix apps/frontend test -- --run ...`, `pnpm --prefix apps/frontend run build`) + verificare țintită suplimentară pe testul paginii.
+
+## Review
+- [x] Root cause confirmat: `<form>` global cross-step în create mode (nu separare structurală pe etapă).
+- [x] Pasul 1 nu mai are submit form și nu poate porni create API.
+- [x] Pasul 2 este singurul loc cu submit real (`Creează utilizator`).
+- [x] Invite/delete/remove/Sub-account Team nu au fost modificate.
+
+# TODO — AGENTS correction follow-up: enforce executed-work reporting (2026-03-19)
+
+- [x] Re-read repository AGENTS instructions and confirm mandatory workflow gates (plan, verify, commit, PR).
+- [x] Verify current git state before claiming implementation/test outcomes.
+- [x] Record correction-driven safeguards in `tasks/lessons.md` to prevent reporting unexecuted work.
+- [x] Document review notes for this corrective housekeeping task.
+
+## Review
+- [x] Workflow now explicitly includes git-state validation before final reporting.
+- [x] Correction pattern has been captured as a durable lesson for future turns.
+
+# TODO — Hotfix real Agency Team wizard: `Pasul următor` nu trebuie să creeze userul (2026-03-19)
+
+- [x] Re-citire AGENTS/tasks/lessons + `page.tsx` și `page.test.tsx` pentru flow-ul Agency Team create.
+- [x] Confirmare cauză: submit global pe `<form>` putea fi declanșat din pasul 1 (ex. Enter), iar fixul anterior nu avea hardening suficient pe toate trigger-ele UI.
+- [x] Guard strat 1 (UI event): handler dedicat pentru `Pasul Următor` + intercept Enter în pasul 1.
+- [x] Guard strat 2 (submit): blocare explicită create când `activeFormTab !== "permissions"` în create mode.
+- [x] Menținere create final doar în pasul 2; fără schimbări pe edit/invite/delete/sub-account team.
+- [x] Teste frontend focalizate pentru click + submit/Enter în pasul 1 și no-regression.
+- [x] Rulare teste Agency Team + build frontend.
+
+## Review
+- [x] `Pasul următor` validează și mută pe `Roluri și Permisiuni`, fără create request.
+- [x] Enter în pasul 1 nu mai poate crea userul (nici submit, nici keydown).
+- [x] Create API pornește doar din pasul 2 (`permissions`).
+
+# TODO — Agency Team: înlocuire `Locație` cu `Acces / Conturi` și eliminare semnificație geografică falsă (2026-03-19)
+
+- [x] Re-citire AGENTS/tasks/lessons + `apps/frontend/src/app/settings/team/page.tsx` și testele aferente.
+- [x] Confirmare cauză: `location` era state/field UI defaultat la „România”, folosit în listă și payload create, deși nu exprimă acces real.
+- [x] Listare Agency Team: înlocuire coloană `Locație` cu `Acces / Conturi` și render semantic corect (`subaccount` pentru client, `Niciun cont` pentru agency).
+- [x] Form create/edit: eliminare câmp editabil `Locație` din flow, fără modificări de wizard/roluri/permisiuni.
+- [x] Păstrare flow create/edit/list/invite/lifecycle fără regresii funcționale.
+- [x] Adăugare teste frontend focalizate (`Acces / Conturi`, no `Locație`, behavior client/agency).
+- [x] Rulare teste frontend relevante + build frontend.
+
+## Review
+- [x] UI Agency Team nu mai afișează „România” ca pseudo-locație în listare/form.
+- [x] Coloana nouă exprimă corect accesul la conturi, fără termeni geografici falși.
+- [x] Wizard-ul în 2 pași și invite flow nu au fost atinse.
+
+# TODO — Hotfix backend cron-sync-run-repair: DB timeout hardening one-shot sweeper (2026-03-19)
+
+- [x] Re-citire AGENTS/tasks + fișierele `historical_repair_sweeper.py` și `sync_runs_store.py`.
+- [x] Confirmare cauză: timeout/operational DB errors scapă necontrolat din store până la entrypoint-ul one-shot worker.
+- [x] Hardening minim în entrypoint: handling explicit pentru erori de conexiune DB + logging operațional sigur.
+- [x] Menținere logică de sweep/repair neschimbată pe happy path (DB disponibil).
+- [x] Teste backend focalizate pentru DB timeout handling + no-regression.
+- [x] Rulare teste backend țintite + import/startup check util.
+
+## Review
+- [x] Cron one-shot nu mai cade cu traceback brut la `ConnectionTimeout`/`OperationalError`; produce rezultat controlat `status=db_unavailable`.
+- [x] Logging-ul nou nu expune secrete (`DATABASE_URL` etc.), doar context operațional minimal.
+- [x] Semantica de stale detection/repair rămâne neschimbată când DB este disponibil.
+
+# TODO — Hotfix frontend Agency Team wizard: Pasul următor fără submit/create (2026-03-19)
+
+- [x] Re-citire `apps/frontend/src/app/settings/team/page.tsx` și confirmare că submit-ul global poate crea din pasul 1 (Enter).
+- [x] Păstrare `Pasul Următor` ca `type="button"` și hardening pe `submitCreateForm(...)` cu guard pentru pasul 1.
+- [x] Guard pas 1: validează identity local, comută pe `Roluri și Permisiuni`, iese fără create request.
+- [x] Verificare că create API rămâne doar pe submit final din pasul 2.
+- [x] Adăugare test pentru Enter key în pasul 1 (fără create API, cu tranziție la pasul 2).
+- [x] Rulare teste frontend relevante + build frontend.
+
+## Review
+- [x] Cauza bugului: submit global al formularului (inclusiv Enter) nu avea guard clar pentru `activeFormTab === "identity"`, astfel putea intra în create flow prea devreme.
+- [x] `Pasul următor` și submit-ul din pasul 1 nu mai declanșează create API.
+- [x] Edit mode rămâne funcțional, fără schimbări de contract/backend.
+
+# TODO — Hotfix backend create user: SQL placeholder mismatch must_reset_password (2026-03-19)
+
+- [x] Re-citire `apps/backend/app/services/team_members.py` și confirmare mismatch placeholders/params în `_upsert_user`.
+- [x] Fix minim: înlocuire hardcodare `FALSE` din VALUES cu placeholder `%s` pentru `must_reset_password`.
+- [x] Păstrare `ON CONFLICT ... must_reset_password = EXCLUDED.must_reset_password` coerent.
+- [x] Adăugare teste backend focalizate pentru `_upsert_user` (cu/ fără parolă explicită).
+- [x] Rulare teste backend relevante + startup check backend.
+
+## Review
+- [x] Cauza: query SQL avea 7 placeholders pentru VALUES, dar param tuple trimitea 8 argumente.
+- [x] Create user nu mai crapă pe eroarea `the query has 7 placeholders but 8 parameters were passed`.
+- [x] `must_reset_password` este persistat corect pe insert și update.
+
+# TODO — Agency Team create wizard real în 2 pași + invite split by password (2026-03-19)
+
+- [x] Re-sync workspace și recitire fișierele cheie frontend/backend pentru flow-ul Team create/invite.
+- [x] Transformare create mode Agency Team în wizard real: Pasul Următor doar schimbă tab-ul, fără create API.
+- [x] Creare user doar la pasul final (Roluri și Permisiuni), cu payload complet și auto-invite păstrat.
+- [x] Păstrare edit mode existent fără transformare în wizard complex.
+- [x] Split invite flow backend: reset link când nu există parolă explicită, login link când parola e setată.
+- [x] Adăugare template email nou `team_account_ready` + variabile minime (`login_link`, `user_email`).
+- [x] Adăugare/actualizare teste backend și frontend pentru noile comportamente.
+- [x] Rulare teste relevante (backend/frontend), build frontend și startup check backend.
+- [x] Commit pe branch curent + make_pr cu titlul/body cerut.
+
+## Review
+- [x] Wizard create nu mai creează utilizatorul la Pasul Următor; submit real doar la final.
+- [x] Invite cu parolă setată folosește login link, fără token reset.
+- [x] Invite fără parolă păstrează flow-ul actual cu reset/invite token.
+- [x] Scope exclus: Sub-account Team, coloană Locație, forgot-password flow.
+
 # TODO — Reorganizare UI sub-account: mutare "Roluri și Permisiuni" în tab dedicat (2026-03-19)
 
 - [x] Re-citire pagină `subaccount/[id]/settings/team` și test suite pentru flux create/edit.
@@ -5519,3 +5871,212 @@ Plan verified: frontend-focused incremental delivery for Agency Notifications se
 - [x] Sub-account grant-ceiling restrictions remain visible and explicitly explained for disabled keys.
 - [x] Existing permission semantics and create/edit payload contracts remain intact (`module_keys` source of truth).
 - [x] Intentionally left out: new permissions, backend contract changes, bulk actions, and full-page redesign.
+
+# TODO — Google Ads sub-table: backend endpoint + real data wiring (2026-03-20)
+
+- [x] Audit modified backend/frontend files and align data contract for sub Google Ads table.
+- [x] Validate frontend table consumes real API payload with currency-aware formatting and date-range presets.
+- [x] Fix/extend focused tests for the new API helper wiring (`getSubGoogleAdsTable`) and preset refetch behavior.
+- [x] Run targeted backend and frontend tests.
+
+## Review
+- [x] Added backend endpoint `/dashboard/{client_id}/google-ads-table` and service aggregation for Google Ads account rows.
+- [x] Frontend sub Google Ads page now fetches real table data via API helper instead of synthetic seeded values.
+- [x] Focused tests pass for backend currency normalization suite and sub Google Ads page interactions.
+
+# TODO — Replicare tabel performant Google Ads pe rutele Meta Ads și TikTok Ads (2026-03-20)
+
+- [x] Audit implementare curentă Google Ads + pagini placeholder Meta/TikTok + contracte API backend/frontend.
+- [x] Extrage componentă tabel generică reutilizabilă (coloane, selector, toolbar, date-range picker, sortare/stilizare).
+- [x] Extinde backend cu endpoint-uri Meta/TikTok pentru payload compatibil tabel multi-account.
+- [x] Leagă paginile `sub/[id]/meta-ads` și `sub/[id]/tiktok-ads` la componenta generică și endpoint-urile dedicate.
+- [x] Actualizează/adaugă teste frontend + backend țintite pentru noile rute și comportamente.
+- [x] Rulează verificări țintite și finalizează review în acest TODO.
+
+## Check-in before execution
+Plan verificat: abordare incrementală cu componentă comună + endpoint-uri additive, fără a atinge rutele Pinterest/Snapchat și fără redesign în afara structurii deja aprobată pe Google Ads.
+
+## Review
+- [x] Meta Ads și TikTok Ads folosesc aceeași structură de tabel/toolbar ca Google Ads, inclusiv selector coloane, schimbare ordine coloane și picker de perioadă.
+- [x] Backend oferă endpoint-uri additive pentru `/dashboard/{client_id}/meta-ads-table` și `/dashboard/{client_id}/tiktok-ads-table` cu payload compatibil.
+- [x] Testele țintite backend + frontend pentru Google/Meta/TikTok/sub-routes au trecut local.
+
+# TODO — Drilldown Sub-account Accounts -> Campaigns pentru Google/Meta/TikTok (2026-03-20)
+
+- [x] Audit rute curente Sub Google/Meta/TikTok Ads, surse date account-level și surse campaign-level existente.
+- [x] Transformare nume cont în link-uri către rute noi `.../accounts/[accountId]` pentru Google/Meta/TikTok.
+- [x] Adăugare pagini noi drilldown per cont cu tabel campanii, aceleași controale UI (Filter/Columns/Export/range) și back navigation clar.
+- [x] Extindere backend minimală cu endpoint-uri campaign-level per platformă + filtrare pe client/account/date range.
+- [x] Conectare helperi API frontend pentru noile endpoint-uri și wiring pe paginile drilldown.
+- [x] Teste frontend+backend țintite + build frontend.
+
+## Check-in before execution
+Plan verificat și executat imediat (nu docs-only): patch local pe rutele Sub-account Ads + dashboard backend, fără atingere Agency/Team/Auth/Media Buying/Media Tracker.
+
+## Review
+- [x] Drilldown cont -> campanii funcționează pe Google/Meta/TikTok via rute noi în App Router.
+- [x] Datele afișate provin din `campaign_performance_reports` + `platform_campaigns` (fără valori fabricate; lipsă => `—`).
+- [x] Range picker refetch-uiește datele în paginile de campaign drilldown.
+
+# TODO — Fix drilldown campaigns statuses/names + Meta normalization (2026-03-20)
+
+- [x] Audit root-cause pentru Meta missing campaigns, account name fallback în titlu, TikTok campaign name fallback și status badges misleading.
+- [x] Fix backend normalization joins/filters pentru platform account ids (inclusiv `act_` vs numeric) în campaign/account queries.
+- [x] Fix backend payload semantics: status real/unknown (fără fallback fake `active`) + campaign/account naming fallback corect.
+- [x] Fix frontend rendering pentru status: active=green, paused=II, unknown=neutral (fără roșu-x pentru unknown).
+- [x] Update backend/frontend tests + run backend tests, frontend tests, frontend build.
+
+## Review
+- [x] Meta campaigns nu mai depind de match strict textual al account_id; normalizarea rezolvă cazurile `act_...` vs numeric.
+- [x] Titlul drilldown folosește account name real când backend îl poate rezolva din metadata/account mapping.
+- [x] TikTok/Meta campaign names folosesc metadata reală când există; fallback la ID doar când numele lipsește.
+
+# TODO — Finalize dashboard status/name normalization patch (2026-03-20)
+
+- [x] Re-read AGENTS instructions and verify current git working tree state.
+- [x] Validate current backend/frontend patch content for scope and consistency.
+- [x] Run targeted backend and frontend tests for touched flows.
+- [x] Update task review notes and capture correction lesson.
+- [x] Commit validated changes and open PR via make_pr tool.
+
+## Review
+- [x] Confirmed modified files are limited to dashboard service and related frontend rendering/tests.
+- [x] Executed targeted checks for backend and frontend routes impacted by the patch.
+
+- Backend check: `pytest -q apps/backend/tests/test_dashboard_currency_normalization.py` (pass).
+- Frontend checks: `pnpm --dir apps/frontend exec vitest run ...` targeted meta/tiktok drilldown suites (pass).
+
+# TODO — Meta entity persistence end-to-end (campaign/adset/ad) for drilldown data (2026-03-20)
+
+- [x] Audit `meta_ads.py` write paths and confirm root cause for `rows_written: 0` on non-account grains.
+- [x] Implement real non-test-mode upserts for Meta `campaign_daily`, `ad_group_daily`, and `ad_daily` into entity performance tables.
+- [x] Ensure persisted Meta extra_metrics include available naming/status metadata without fabricating values.
+- [x] Validate account id normalization compatibility (`act_...` vs numeric) between persistence and dashboard reads.
+- [x] Add backend tests for write-path upserts, metadata persistence, rows_written semantics, normalization, and dashboard campaign visibility.
+- [x] Run required backend tests + import/startup check.
+- [x] Update review notes, capture correction lesson, commit, and open PR.
+
+## Check-in before execution
+Plan confirmed: backend-first patch in Meta sync + backend tests only, no Agency/Team/auth/invite/delete/Media Buying/Media Tracker changes.
+
+## Review
+- [x] Root cause confirmed in `meta_ads.py`: non-test-mode write helpers returned `0` instead of persisting entity rows, while dashboard drilldown reads `campaign_performance_reports` / `ad_group_performance_reports`.
+- [x] Meta write helpers now use real upsert functions from `entity_performance_reports` with commit, mirroring TikTok persistence model.
+- [x] Added backend tests for non-test-mode campaign/ad_group/ad write paths, metadata fields (`campaign_name`/`adset_name`/`ad_name` + statuses), rows_written behavior, and normalization compatibility.
+- [x] Ran `pytest -q apps/backend/tests/test_meta_ads_entity_persistence.py apps/backend/tests/test_dashboard_currency_normalization.py` and `APP_AUTH_SECRET=test python -c "import app.main"`.
+
+# TODO — Meta historical_backfill overflow hardening for entity grains (2026-03-20)
+
+- [x] Audit root cause for Meta entity-grain overflow (`campaign_daily` / `ad_group_daily` / `ad_daily`) and identify offending field path.
+- [x] Repair conversion-value derivation semantics to avoid naive over-summing of `action_values` for entity rows.
+- [x] Add row-level numeric validation + row-level persistence fallback so one invalid row does not fail the whole chunk.
+- [x] Surface `rows_skipped` / `skip_reasons` / skipped-row diagnostics in sync snapshot and per-account summaries.
+- [x] Add backend tests for overflow candidate reproduction, conversion-value fix, row isolation fallback, and snapshot reporting.
+- [x] Run backend tests + startup/import check.
+- [x] Commit and open PR.
+
+## Check-in before execution
+Plan confirmed: backend-only scope (Meta persistence + backend tests), no frontend changes and no Agency/Team/auth/invite/delete/Media Buying/Media Tracker modifications.
+
+## Review
+- [x] Root cause confirmed as **transformation + persistence robustness**: naive `action_values` sum could produce oversized `conversion_value` candidates; a single DB persist error could fail the whole batch path.
+- [x] Fixed conversion value mapping to prefer selected lead action type value when available, with fallback sum only when selected type is unavailable.
+- [x] Implemented pre-upsert numeric overflow candidate checks and row-level retry isolation after batch failure.
+- [x] Snapshot now reports `rows_written`, `rows_skipped`, `skip_reasons`, and sampled skipped row diagnostics without secrets.
+- [x] Verified with `python -m pip install requests -q && pytest -q apps/backend/tests/test_meta_ads_entity_persistence.py apps/backend/tests/test_dashboard_currency_normalization.py` and `APP_AUTH_SECRET=test python -c "import app.main"`.
+
+# TODO — TikTok campaign name resolution by campaign_id (2026-03-21)
+
+- [x] Audit why TikTok campaign rows fall back to `campaign_id` despite existing facts.
+- [x] Implement campaign metadata fetch by `campaign_id` from TikTok campaign endpoint and persist to `platform_campaigns`.
+- [x] Wire TikTok sync grains (`campaign_daily` / `ad_group_daily` / `ad_daily`) to enrich campaign names/statuses from metadata before upsert.
+- [x] Ensure dashboard read path behavior is validated: return campaign name when present, fallback to id only when missing.
+- [x] Add backend tests for metadata resolution/persistence and fallback semantics.
+- [x] Add frontend TikTok drilldown test coverage for campaign_name vs campaign_id fallback.
+- [x] Run backend tests, frontend tests, and frontend build.
+- [x] Commit and open PR.
+
+## Check-in before execution
+Plan confirmed: backend-first TikTok metadata + tests, minimal frontend test-only adjustment; no Agency/Team/auth/invite/delete/Media Buying/Media Tracker changes.
+
+# TODO — Sub-account ads drilldown: campaigns -> ad groups/ad sets (2026-03-21)
+
+- [x] Re-sync workspace + recitire AGENTS/todo/lessons + audit explicit rute existente accounts/campaigns și surse date reale ad_group/adset.
+- [x] Backend minim: endpoint/platform helper pentru campaign -> adgroup/adset filtrat pe client/account/campaign/date range.
+- [x] Frontend campaigns pages: numele campaniei devine link către ruta nouă campaign drilldown (Google/Meta/TikTok).
+- [x] Frontend rute noi + component comun pentru tabel campaign -> adgroup/adset cu controale Filter/Columns/Export + calendar la dreapta.
+- [x] Frontend/backend teste țintite pentru links/rute/empty-loading/fallback/id-name + filtre backend campaign/date/account/client.
+- [x] Rulare verificări cerute: teste backend relevante, teste frontend relevante, build frontend.
+
+## Review
+- [x] Confirmare explicită că Agency/Team/auth/invite/delete/Media Buying/Media Tracker nu au fost atinse.
+- Audit rute existente confirmat: `/{platform}/accounts/[accountId]` (campaigns) existau; rute `.../campaigns/[campaignId]` au fost adăugate pentru toate cele 3 platforme.
+- Date reale folosite din backend: `ad_group_performance_reports` + join metadata (`platform_ad_groups`, `platform_campaigns`, `agency_platform_accounts`), fără hardcode metrici.
+- Verificări executate:
+  - `pytest -q apps/backend/tests/test_dashboard_currency_normalization.py -k \"campaign_adgroup or account_campaign_performance or campaign_rows_query_uses_ad_group_fallback_source\"`
+  - `pnpm --dir apps/frontend exec vitest run src/app/sub/[id]/google-ads/accounts/[accountId]/page.test.tsx src/app/sub/[id]/meta-ads/accounts/[accountId]/page.test.tsx src/app/sub/[id]/tiktok-ads/accounts/[accountId]/page.test.tsx src/app/sub/[id]/google-ads/accounts/[accountId]/campaigns/[campaignId]/page.test.tsx src/app/sub/[id]/meta-ads/accounts/[accountId]/campaigns/[campaignId]/page.test.tsx src/app/sub/[id]/tiktok-ads/accounts/[accountId]/campaigns/[campaignId]/page.test.tsx`
+  - `pnpm --dir apps/frontend run build`
+
+# TODO — TikTok ad_group_daily campaign linkage fix for campaign->adgroups drilldown (2026-03-21)
+
+- [x] Re-sync + recitire AGENTS/todo/lessons și audit root cause pe TikTok `ad_group_daily` (dimensions vs mapper fields).
+- [x] Implementare metadata resolver TikTok pe `adgroup_id` (`adgroup/get`) pentru `campaign_id`, `ad_group_name`, `campaign_name`, status.
+- [x] Enrichment `ad_group_daily` rows înainte de upsert: `campaign_id` corect, nume/status în `extra_metrics`, fără valori fabricate.
+- [x] Persistență metadata adgroup în entity store (`platform_ad_groups`) cu fallback safe la erori.
+- [x] Teste backend: request dimensions validate, enrichment campaign linkage, fallback behavior, no-crash la metadata paths.
+- [x] Teste frontend TikTok campaign->adgroups pentru non-empty rows + name vs id fallback.
+- [x] Run backend tests relevante + frontend tests relevante + frontend build.
+
+## Review
+- [x] Confirmare explicită: Agency/Team/auth/invite/delete/Media Buying/Media Tracker nu au fost atinse.
+- Root cause confirmat: `ad_group_daily` cere doar `stat_time_day` + `adgroup_id`; mapperul citea și `campaign_id`/`campaign_name`/`adgroup_name`, deci facts puteau fi persistate fără `campaign_id` legat.
+- Fix: metadata TikTok din `adgroup/get` este rezolvată pe `adgroup_id`, apoi folosită la enrichment (`campaign_id`, `ad_group_name`, `campaign_name`, status) înainte de `_upsert_ad_group_rows`.
+- Persistență metadata: `platform_ad_groups` prin `upsert_platform_ad_groups` (best-effort; dacă eșuează, sync facts continuă).
+- Verificări executate:
+  - `python -m pip install requests`
+  - `pytest -q apps/backend/tests/test_tiktok_campaign_metadata_resolution.py apps/backend/tests/test_dashboard_currency_normalization.py -k "ad_group or campaign_adgroup or tiktok"`
+  - `pnpm --dir apps/frontend exec vitest run src/app/sub/[id]/tiktok-ads/accounts/[accountId]/campaigns/[campaignId]/page.test.tsx`
+  - `pnpm --dir apps/frontend run build`
+
+# TODO — Add "Back to Dashboard" on Sub-account platform account-list pages (2026-03-21)
+
+- [x] Audit shared rendering for `/sub/[id]/google-ads`, `/sub/[id]/meta-ads`, `/sub/[id]/tiktok-ads` account-list pages.
+- [x] Add top-level `Back to Dashboard` navigation once in shared account-list component.
+- [x] Ensure route target is `/sub/[id]/dashboard` for all 3 platform pages.
+- [x] Add/update frontend tests for Google/Meta/TikTok account-list pages to assert presence + href.
+- [x] Run frontend tests relevante and frontend build.
+
+## Review
+- [x] Confirmare explicită că nu au fost atinse Agency / Team / auth / invite / delete / Media Buying / Media Tracker.
+- Audit confirmat: Google/Meta/TikTok account-list pages folosesc componenta shared `SubAdsPerformanceTablePage`, deci linkul a fost adăugat o singură dată acolo.
+- Linkul `Back to Dashboard` este randat sus în header și navighează la `/sub/{id}/dashboard` pentru toate cele 3 pagini.
+- Verificări executate:
+  - `pnpm --dir apps/frontend exec vitest run src/app/sub/[id]/google-ads/page.test.tsx src/app/sub/[id]/meta-ads/page.test.tsx src/app/sub/[id]/tiktok-ads/page.test.tsx`
+  - `pnpm --dir apps/frontend run build`
+
+# TODO — Process alignment: AGENTS compliance + commit/PR handoff (2026-03-21)
+
+- [x] Re-read AGENTS instructions and ensure plan-first/task-tracking flow is followed for this turn.
+- [x] Update `tasks/lessons.md` with a concrete lesson from this user correction.
+- [x] Validate pending workspace diff and run at least one relevant verification command.
+- [ ] Commit required repository changes on branch `work`.
+- [ ] Create PR metadata using `make_pr` after commit.
+
+## Review
+- [x] Confirmed process compliance updates are recorded in tasks docs.
+- [ ] Confirmed commit + PR metadata were both completed in this turn.
+
+# TODO — Dropdown updates: industrie + nișă medical options sorted (2026-03-21)
+
+- [x] Re-read AGENTS and capture this follow-up task in todo before code edits.
+- [x] Update `Nișa business` dropdown with: Recuperare Medicală, Ortopedie, Stomatologie, Estetică Medicală.
+- [x] Update `Industrie` dropdown with: Servicii Medicale.
+- [x] Sort all options alphabetically in both dropdowns (keeping `Selectează` placeholder first).
+- [x] Run targeted frontend tests for subaccount profile page.
+- [x] Update `tasks/lessons.md` for this correction pattern.
+- [ ] Commit and run `make_pr`.
+
+## Review
+- [x] Confirmed both dropdown lists include the requested values and are alphabetically ordered.
+- [x] Confirmed verification command(s) passed.
+- [ ] Confirmed commit + PR metadata creation completed.

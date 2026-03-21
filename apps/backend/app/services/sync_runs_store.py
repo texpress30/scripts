@@ -44,6 +44,28 @@ _TERMINAL_RUN_STATUSES = ("done", "error")
 logger = logging.getLogger(__name__)
 
 
+def is_db_connection_error(error: Exception) -> bool:
+    if psycopg is not None:
+        try:
+            if isinstance(error, psycopg.OperationalError):
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            connection_timeout = getattr(getattr(psycopg, "errors", None), "ConnectionTimeout", None)
+            if connection_timeout is not None and isinstance(error, connection_timeout):
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+
+    name = error.__class__.__name__.lower()
+    text = str(error).lower()
+    return any(
+        marker in name or marker in text
+        for marker in ("connectiontimeout", "operationalerror", "connection timeout", "connection refused")
+    )
+
+
 class SyncRunsStore:
     def __init__(self) -> None:
         self._schema_lock = Lock()

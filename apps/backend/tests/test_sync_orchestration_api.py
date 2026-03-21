@@ -749,6 +749,45 @@ class SyncOrchestrationApiTests(unittest.TestCase):
         self.assertEqual(int(metadata.get("rows_downloaded") or 0), expected_downloaded)
         self.assertEqual(int(metadata.get("rows_mapped") or 0), expected_mapped)
 
+    def test_account_runs_endpoint_reconciles_stale_running_to_done_when_chunks_are_terminal(self):
+        headers = self._auth_headers()
+        original_list_platform_accounts = sync_orchestration.client_registry_service.list_platform_accounts
+        try:
+            sync_orchestration.client_registry_service.list_platform_accounts = lambda *, platform: [
+                {"id": "123456789", "name": "TikTok A", "attached_client_id": 11}
+            ] if platform == "tiktok_ads" else original_list_platform_accounts(platform=platform)
+
+            with patch.dict(os.environ, {"FF_TIKTOK_INTEGRATION": "1"}, clear=False):
+                created = self.client.post(
+                    "/agency/sync-runs/batch",
+                    headers=headers,
+                    json={
+                        "platform": "tiktok_ads",
+                        "account_ids": ["123456789"],
+                        "job_type": "historical_backfill",
+                        "start_date": str(date(2026, 2, 1)),
+                        "end_date": str(date(2026, 2, 2)),
+                        "chunk_days": 1,
+                        "grain": "campaign_daily",
+                    },
+                )
+        finally:
+            sync_orchestration.client_registry_service.list_platform_accounts = original_list_platform_accounts
+
+        self.assertEqual(created.status_code, 200)
+        job_id = created.json()["runs"][0]["job_id"]
+        self.state["runs"][job_id]["status"] = "running"
+        chunk_rows = [c for c in self.state["chunks"] if c.get("job_id") == job_id]
+        self.assertGreaterEqual(len(chunk_rows), 1)
+        for chunk in chunk_rows:
+            chunk["status"] = "done"
+
+        response = self.client.get("/agency/sync-runs/accounts/tiktok_ads/123456789?limit=10", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        runs = response.json().get("runs") or []
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(runs[0].get("status"), "done")
+
     def test_account_runs_and_chunk_details_shape(self):
         headers = self._auth_headers()
         created = self.client.post(

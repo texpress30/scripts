@@ -32,6 +32,7 @@ vi.mock("@/lib/api", () => ({
 
 describe("Agency Account detail Meta/TikTok parity", () => {
   beforeEach(() => {
+    vi.useRealTimers();
     apiMock.apiRequest.mockReset();
     apiMock.listAccountSyncRuns.mockReset();
     apiMock.repairSyncRun.mockReset();
@@ -149,6 +150,56 @@ describe("Agency Account detail Meta/TikTok parity", () => {
     expect(screen.queryByText(/Category:\s*run failed/i)).not.toBeInTheDocument();
     fireEvent.click(await screen.findByText("Show logs"));
     expect(await screen.findByText(/Rows downloaded: 3 · Rows mapped: 0/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Chunk finalizat fără rânduri mapate/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Observability:/i)).not.toBeInTheDocument();
+  });
+
+  it("renders clean chunk error text and does not render raw observability JSON", async () => {
+    paramsState.platform = "tiktok_ads";
+    paramsState.accountId = "tt_1";
+
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients/accounts/tiktok_ads") {
+        return Promise.resolve({ items: [{ id: "tt_1", name: "TikTok One", platform: "tiktok_ads", client_name: "Client B" }] });
+      }
+      if (path.includes("/accounts/tiktok_ads/tt_1")) {
+        return Promise.resolve({
+          runs: [
+            {
+              job_id: "tt-run-json-err",
+              job_type: "historical_backfill",
+              status: "error",
+              chunks_total: 1,
+              chunks_done: 1,
+              created_at: "2026-03-09T09:00:00Z",
+            },
+          ],
+        });
+      }
+      if (path.includes("/agency/sync-runs/tt-run-json-err/chunks")) {
+        return Promise.resolve({
+          chunks: [
+            {
+              chunk_index: 0,
+              status: "error",
+              error: "{\"error\":\"provider timeout\"}",
+              metadata: {
+                rows_downloaded: 0,
+                rows_mapped: 0,
+                zero_row_observability: [{ zero_row_marker: "provider_returned_empty_list", account_id: "tt_1" }],
+              },
+            },
+          ],
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountDetailPage />);
+    fireEvent.click(await screen.findByText("Show logs"));
+    expect(await screen.findByText(/Error: Chunk finalizat cu eroare\. Verifică detaliile run-ului\./i)).toBeInTheDocument();
+    expect(screen.queryByText(/Observability:/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\{\"error\"\:\"provider timeout\"\}/i)).not.toBeInTheDocument();
   });
 
   it("shows disabled TikTok sync banner when platform sync_enabled is false", async () => {
@@ -209,6 +260,73 @@ describe("Agency Account detail Meta/TikTok parity", () => {
     fireEvent.click(await screen.findByText("Show logs"));
     expect(await screen.findByText(/Category: Acces refuzat de TikTok la advertiser/i)).toBeInTheDocument();
     expect(await screen.findByText(/Details: Advertiser access denied/i)).toBeInTheDocument();
+  });
+
+  it("stops TikTok auto-refresh polling after a stale running run reconciles to done", async () => {
+    paramsState.platform = "tiktok_ads";
+    paramsState.accountId = "tt_1";
+
+    let runsCalls = 0;
+    let runStatus: "running" | "done" = "running";
+    const clearIntervalSpy = vi.spyOn(window, "clearInterval");
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients/accounts/tiktok_ads") {
+        return Promise.resolve({ sync_enabled: true, items: [{ id: "tt_1", name: "TikTok One", platform: "tiktok_ads", client_name: "Client B" }] });
+      }
+      if (path.includes("/accounts/tiktok_ads/tt_1")) {
+        runsCalls += 1;
+        return Promise.resolve({
+          runs: [{ job_id: "tt-run-1", job_type: "historical_backfill", status: runStatus, chunks_total: 1, chunks_done: runStatus === "done" ? 1 : 0, created_at: "2026-03-09T09:00:00Z" }],
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountDetailPage />);
+    expect(await screen.findByText(/Auto-refresh activ/i)).toBeInTheDocument();
+    expect(runsCalls).toBeGreaterThan(0);
+
+    runStatus = "done";
+    fireEvent.click(screen.getByRole("button", { name: /Refresh/i }));
+    expect(await screen.findByText(/Auto-refresh oprit/i)).toBeInTheDocument();
+    expect(clearIntervalSpy).toHaveBeenCalled();
+    clearIntervalSpy.mockRestore();
+  });
+
+  it("hides stale TikTok feature-flag failure banner when integration is enabled and run is done", async () => {
+    paramsState.platform = "tiktok_ads";
+    paramsState.accountId = "tt_1";
+
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients/accounts/tiktok_ads") {
+        return Promise.resolve({
+          sync_enabled: true,
+          items: [{ id: "tt_1", name: "TikTok One", platform: "tiktok_ads", client_name: "Client B", last_run_status: "done", has_active_sync: false }],
+        });
+      }
+      if (path.includes("/accounts/tiktok_ads/tt_1")) {
+        return Promise.resolve({
+          runs: [
+            {
+              job_id: "tt-run-flag",
+              job_type: "historical_backfill",
+              status: "error",
+              last_error_category: "integration_disabled",
+              last_error_summary: "TikTok integration is disabled by feature flag.",
+              chunks_total: 1,
+              chunks_done: 1,
+              created_at: "2026-03-09T09:00:00Z",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountDetailPage />);
+    await screen.findByText(/Account: TikTok One/);
+    expect(screen.queryByText(/Ultimul run a eșuat/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/disabled by feature flag/i)).not.toBeInTheDocument();
   });
 
   it("hides superseded failed historical runs and clears false terminal banner", async () => {
