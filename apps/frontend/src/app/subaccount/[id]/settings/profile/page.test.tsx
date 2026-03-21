@@ -42,11 +42,9 @@ describe("SubAccount Business Profile settings page", () => {
     };
 
     vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
-      if (path === "/clients/display/96") {
-        return { client: { name: "Client 96", owner_email: "owner96@example.com", currency: "EUR", client_logo_url: "https://cdn/logo.png" } };
-      }
-      if (path === "/clients/display/96/business-profile" && (!options || !options.method || options.method === "GET")) {
+      if (path === "/clients/96/business-profile" && (!options || !options.method || options.method === "GET")) {
         return {
+          client_name: "Client 96",
           client_id: 1,
           display_id: 96,
           general: db.general,
@@ -56,7 +54,7 @@ describe("SubAccount Business Profile settings page", () => {
           logo_url: db.logo_url,
         };
       }
-      if (path === "/clients/display/96/business-profile" && options?.method === "PUT") {
+      if (path === "/clients/96/business-profile" && options?.method === "PUT") {
         const payload = JSON.parse(String(options.body ?? "{}")) as Store;
         db.general = payload.general ?? {};
         db.business = payload.business ?? {};
@@ -64,6 +62,7 @@ describe("SubAccount Business Profile settings page", () => {
         db.representative = payload.representative ?? {};
         db.logo_url = String(payload.logo_url ?? "");
         return {
+          client_name: "Client 96",
           client_id: 1,
           display_id: 96,
           general: db.general,
@@ -89,6 +88,13 @@ describe("SubAccount Business Profile settings page", () => {
     expect(screen.queryByText("Logo salvat")).not.toBeInTheDocument();
   });
 
+    expect(await screen.findByTestId("app-shell-title")).toHaveTextContent("Client 96 — Profil Business");
+    expect(screen.getByLabelText(/Nume business \(friendly\)/i)).toHaveValue("");
+    expect(screen.getByLabelText(/Email business/i)).toHaveValue("");
+    expect(screen.getByLabelText(/Oraș/i)).toHaveValue("");
+    expect(screen.queryByText("Logo salvat")).not.toBeInTheDocument();
+  });
+
   it("saves profile explicitly and reloads saved values from business-profile endpoint", async () => {
     setupApiMock();
     const { unmount } = render(<SubAccountSettingsPage />);
@@ -106,7 +112,7 @@ describe("SubAccount Business Profile settings page", () => {
     await screen.findByText("Informațiile generale au fost actualizate.");
 
     expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
-      "/clients/display/96/business-profile",
+      "/clients/96/business-profile",
       expect.objectContaining({ method: "PUT" }),
     );
 

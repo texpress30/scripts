@@ -47,6 +47,7 @@ class SubaccountBusinessProfilePayload(BaseModel):
 class SubaccountBusinessProfileResponse(BaseModel):
     client_id: int
     display_id: int
+    client_name: str = ""
     general: dict[str, object]
     business: dict[str, object]
     address: dict[str, object]

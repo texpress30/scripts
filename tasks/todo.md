@@ -1,3 +1,18 @@
+# TODO — Sub-account Profil Business: fix Client not found by correcting identifier mapping (2026-03-21)
+
+- [x] Re-read AGENTS + todo + lessons and confirm runtime failure (`Client not found`) after refresh.
+- [x] Audit identifier mismatch between route id and backend endpoint lookup (`display_id` vs real sub-account/client id).
+- [x] Implement robust identifier resolution in backend business-profile API (support direct client/subaccount id and display-id alias).
+- [x] Switch frontend load/save path to canonical `/clients/{subaccount_id}/business-profile`.
+- [x] Keep title binding without form prefill fallback and ensure no localStorage truth-source reintroduction.
+- [x] Add/update backend and frontend tests for valid save+reload and no false `Client not found`.
+- [x] Run backend tests + frontend tests + frontend build.
+
+## Review
+- [x] Root cause fixed: route `/subaccount/[id]` passed subaccount/client id while endpoint expected display id only.
+- [x] Canonical runtime path now uses `/clients/{subaccount_id}/business-profile`; display endpoint remains compatibility alias.
+- [x] Refresh now reloads persisted profile from backend store, not localStorage.
+
 # TODO — Sub-account Profil Business: remove forbidden prefill and use explicit business profile source (2026-03-21)
 
 - [x] Re-read AGENTS + tasks and confirm root-cause from prior patch (`/clients/display/{id}` + localStorage prefill path).

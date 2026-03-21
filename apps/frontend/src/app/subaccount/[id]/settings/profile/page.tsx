@@ -129,18 +129,16 @@ export default function SubAccountSettingsPage() {
       setLoading(true);
       setErrorMessage("");
       try {
-        const [profilePayload, detailsPayload] = await Promise.all([
-          apiRequest<{
-            general?: Partial<GeneralForm>;
-            business?: Partial<BusinessForm>;
-            address?: Partial<AddressForm>;
-            representative?: Partial<RepresentativeForm>;
-            logo_url?: string;
-          }>(`/clients/display/${subaccountId}/business-profile`),
-          apiRequest<{ client?: { name?: string } }>(`/clients/display/${subaccountId}`),
-        ]);
+        const profilePayload = await apiRequest<{
+          client_name?: string;
+          general?: Partial<GeneralForm>;
+          business?: Partial<BusinessForm>;
+          address?: Partial<AddressForm>;
+          representative?: Partial<RepresentativeForm>;
+          logo_url?: string;
+        }>(`/clients/${subaccountId}/business-profile`);
         if (cancelled) return;
-        setHeaderClientName(String(detailsPayload?.client?.name ?? "").trim());
+        setHeaderClientName(String(profilePayload?.client_name ?? "").trim());
         setGeneral((prev) => ({ ...prev, ...(profilePayload.general ?? {}) }));
         setBusiness((prev) => ({ ...prev, ...(profilePayload.business ?? {}) }));
         setAddress((prev) => ({ ...prev, ...(profilePayload.address ?? {}) }));
@@ -161,7 +159,7 @@ export default function SubAccountSettingsPage() {
   }, [subaccountId]);
 
   async function saveBusinessProfile() {
-    await apiRequest(`/clients/display/${subaccountId}/business-profile`, {
+    await apiRequest(`/clients/${subaccountId}/business-profile`, {
       method: "PUT",
       body: JSON.stringify({
         general,
