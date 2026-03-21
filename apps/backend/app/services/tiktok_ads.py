@@ -1202,13 +1202,21 @@ class TikTokAdsService:
         page: int = 1,
         page_size: int = 1000,
     ) -> dict[str, object]:
+        normalized_dimensions = [str(item).strip() for item in dimensions if str(item).strip() != ""]
+        if str(data_level).strip().upper() == "AUCTION_CAMPAIGN" and "campaign_name" in normalized_dimensions:
+            normalized_dimensions = [item for item in normalized_dimensions if item != "campaign_name"]
+            logger.warning(
+                "tiktok_reporting_removed_unsupported_dimension data_level=%s removed_dimension=campaign_name advertiser_id=%s",
+                data_level,
+                str(account_id),
+            )
         return {
             "advertiser_id": str(account_id),
             "report_type": str(report_type or "BASIC"),
             "service_type": str(service_type or "AUCTION"),
             "query_mode": str(query_mode or "REGULAR"),
             "data_level": str(data_level),
-            "dimensions": list(dimensions),
+            "dimensions": normalized_dimensions,
             "metrics": list(metrics),
             "start_date": start_date.isoformat(),
             "end_date": end_date.isoformat(),

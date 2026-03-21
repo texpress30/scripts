@@ -67,6 +67,45 @@ def test_campaign_daily_report_schema_does_not_request_campaign_name_dimension()
     assert "campaign_name" not in schema.dimensions
 
 
+def test_fetch_campaign_daily_metrics_request_params_exclude_campaign_name_dimension(monkeypatch):
+    monkeypatch.setenv("APP_AUTH_SECRET", "test-secret")
+    captured_request_params: dict[str, object] = {}
+
+    def fake_report_integrated_get(**kwargs):
+        captured_request_params["dimensions"] = list(kwargs.get("dimensions") or [])
+        return {"code": 0, "data": {"list": []}}
+
+    monkeypatch.setattr(tiktok_ads_service, "_report_integrated_get", fake_report_integrated_get)
+
+    payload = tiktok_ads_service._fetch_campaign_daily_metrics(
+        account_id="tt-acc-params",
+        access_token="token",
+        start_date=date(2026, 3, 20),
+        end_date=date(2026, 3, 20),
+    )
+
+    assert payload == []
+    dimensions = captured_request_params.get("dimensions")
+    assert isinstance(dimensions, list)
+    assert dimensions == ["stat_time_day", "campaign_id"]
+    assert "campaign_name" not in dimensions
+
+
+def test_report_query_params_guard_removes_campaign_name_for_campaign_data_level():
+    params = tiktok_ads_service._build_report_integrated_query_params(
+        account_id="tt-acc-guard",
+        report_type="BASIC",
+        service_type="AUCTION",
+        query_mode="REGULAR",
+        data_level="AUCTION_CAMPAIGN",
+        dimensions=["stat_time_day", "campaign_id", "campaign_name"],
+        metrics=["spend"],
+        start_date=date(2026, 3, 20),
+        end_date=date(2026, 3, 20),
+    )
+    assert params["dimensions"] == ["stat_time_day", "campaign_id"]
+
+
 def test_upsert_campaign_rows_persists_platform_campaign_entities(monkeypatch):
     fake_conn = _FakeConn()
     captured_entities: list[dict[str, object]] = []
