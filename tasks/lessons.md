@@ -1,5 +1,21 @@
 # Lessons
 
+- 2026-03-21: Când userul cere explicit commit + make_pr în același task, finalizez obligatoriu în ordinea: verificări -> git commit -> make_pr; nu închid răspunsul înainte de ambele.
+
+- 2026-03-21: După pull-uri cu merge conflict, verific imediat că test expectations rămân aliniate cu contractul runtime al schemelor (dimensiuni exacte), altfel apar regresii false.
+
+- 2026-03-21: Pentru cerințe "EXACT tuple", rulez imediat comanda de introspecție pe runtime (`_report_schema_for_grain`) și atașez rezultatul, nu mă bazez doar pe diff-ul din commit.
+
+- 2026-03-21: La TikTok `report/integrated/get`, `campaign_id` este valid în `campaign_daily`, dar pentru `AUCTION_ADGROUP` și `AUCTION_AD` trebuie menținute dimensiunile minime (`adgroup_id` / `ad_id`) și campania se rezolvă din metadata endpoint-uri.
+
+- 2026-03-21: Pentru TikTok reporting cu IDs-only dimensions, păstrez alias parsing (`ad_group_id` și `adgroup_id`) în maparea răspunsului și aliniez schema per grain la contractul de persistență (campaign_id/ad_group_id/ad_id).
+
+- 2026-03-21: După eliminarea `campaign_name` din report dimensions, tratez `campaign/get` și `adgroup/get` ca sursă principală pentru nume și acopăr explicit prin teste că fetch-ul rulează pe toate ID-urile, nu doar pe cele fără fallback.
+
+- 2026-03-21: Pentru TikTok campaign_daily, persistența numelor în dashboard depinde de upsert metadata entity (`platform_campaigns`/`platform_ad_groups`) înaintea fact tables; dacă metadata fetch cade, sync-ul de performance trebuie să continue.
+
+- 2026-03-21: Când userul marchează PR-ul ca nesatisfăcător, evit schimbări administrative-only; livrez fixul tehnic cerut în codul de producție și rulez verificările solicitate înainte de PR.
+
 - 2026-03-21: În AppShell sub-account, nu folosi `company_settings.city/country` pentru cardul clientului; locația trebuie derivată din business profile-ul sub-account-ului (oraș + țară) cu fallback neutru.
 
 - 2026-03-21: Pentru rute sub-account (`/subaccount/[id]`), validează explicit dacă `id` este `client_id` sau `display_id`; endpoint-urile noi trebuie fie să folosească identifier-ul canonic, fie să accepte robust ambele mappări pentru a evita `Client not found`.

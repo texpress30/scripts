@@ -1,3 +1,104 @@
+# TODO — Finalize TikTok schema fix merge + commit/PR packaging (2026-03-21)
+
+- [x] Reconcile merge state and keep exact TikTok dimensions (`adgroup_id`/`ad_id`) in runtime schema + tests.
+- [x] Re-run mandatory runtime introspection command for all grains.
+- [x] Run targeted backend tests and frontend build smoke check.
+- [x] Commit changes and prepare PR title/body with summary + verification.
+
+## Review
+- [x] Merge conflict resolved with runtime schema preserving exact valid dimension tuples and tests aligned.
+
+# TODO — TikTok retry: enforce ad_group_daily/ad_daily API-valid dimensions and verify runtime tuples (2026-03-21)
+
+- [x] Re-sync workspace + resolve merge state before applying retry fix.
+- [x] Set ad_group_daily dimensions to exact `("stat_time_day", "adgroup_id")`.
+- [x] Set ad_daily dimensions to exact `("stat_time_day", "ad_id")`.
+- [x] Run mandatory schema-print verification command and capture output.
+- [x] Run backend tests + frontend build.
+
+## Review
+- [x] Reporting schema now matches exact requested tuples; campaign metadata resolve/upsert path remains active in campaign_daily flow.
+
+# TODO — RETRY critical: enforce TikTok ad grains dimensions without campaign_id (2026-03-21)
+
+- [x] Re-sync workspace and re-read AGENTS before applying retry fix.
+- [x] Verify `_report_schema_for_grain` uses exact tuples required for all four grains.
+- [x] Verify `campaign_daily` sync still calls `_resolve_and_persist_campaign_metadata_safe` in the sync flow.
+- [x] Run verification command for grain dimension tuples exactly as requested.
+- [x] Run full backend test suite command as requested (`pytest -q`) and record result.
+
+## Review
+- [x] Confirmed runtime schema tuple output now matches requested contract for account/campaign/ad_group/ad grains.
+
+# TODO — TikTok hotfix: remove invalid campaign_id dimensions on ad grains and confirm metadata persist call-path (2026-03-21)
+
+- [x] Sync workspace + re-read AGENTS at task start.
+- [x] Set `_report_schema_for_grain('ad_group_daily')` dimensions back to `("stat_time_day", "adgroup_id")`.
+- [x] Set `_report_schema_for_grain('ad_daily')` dimensions back to `("stat_time_day", "ad_id")`.
+- [x] Verify campaign metadata persistence path remains active during `campaign_daily` sync (`_resolve_and_persist_campaign_metadata_safe` + upsert flow).
+- [x] Update backend tests to match valid TikTok dimension contracts.
+- [x] Run backend relevant tests + frontend build.
+
+## Review
+- [x] Fixed invalid TikTok dimension contract for AUCTION_ADGROUP/AUCTION_AD without touching Agency/Team/auth/invite/delete or Media Buying/Tracker.
+
+# TODO — TikTok metadata hotfix: campaign/ad-group payload parsing + ID dimensions for ad_group_daily/ad_daily (2026-03-21)
+
+- [x] Sync workspace and re-read AGENTS before applying hotfixes.
+- [x] Fix campaign metadata extraction to prioritize TikTok `status` and keep full API payload mapped to entity upserts.
+- [x] Fix ad-group metadata extraction similarly (status + campaign_id aliases + full raw payload).
+- [x] Update report schema dimensions: `ad_group_daily` => (`stat_time_day`,`campaign_id`,`ad_group_id`) and `ad_daily` => (`stat_time_day`,`campaign_id`,`ad_group_id`,`ad_id`).
+- [x] Update row parsers to read `ad_group_id`/`adgroup_id` aliases from report dimensions/items.
+- [x] Run backend relevant tests and frontend build.
+
+## Review
+- [x] Hotfix scope remained limited to TikTok backend service + TikTok backend tests and task docs only.
+
+# TODO — Verify TikTok metadata resolve always fetches campaign/ad-group names from API (2026-03-21)
+
+- [x] Sync workspace and re-read AGENTS before changes.
+- [x] Audit `_resolve_and_persist_campaign_metadata` for fetch-all campaign_ids behavior and API-name priority.
+- [x] Audit `_resolve_and_persist_ad_group_metadata` for fetch-all ad_group_ids behavior and API-name priority.
+- [x] Add regression tests proving fetch is executed for all IDs and report names are fallback-only.
+- [x] Run backend relevant tests + frontend build.
+
+## Review
+- [x] Confirmed fetch is done for full normalized ID sets; API names override report names, while report names remain fallback when API omits names.
+
+# TODO — TikTok campaign_daily: persist campaign/ad-group metadata before performance upsert (2026-03-21)
+
+- [x] Sync workspace and re-read AGENTS before implementation.
+- [x] Update `_upsert_campaign_rows` to resolve metadata from TikTok API using report IDs/names and persist `platform_campaigns` before performance facts.
+- [x] Add optional `access_token` propagation into `_upsert_campaign_rows`; warn+skip metadata fetch when missing token.
+- [x] Apply the same metadata-first persistence pattern in `_upsert_ad_group_rows` for `platform_ad_groups`.
+- [x] Keep resilience: metadata resolve errors are logged and campaign/ad-group performance upsert continues.
+- [x] Run backend relevant tests + frontend build.
+
+## Review
+- [x] Scope remained strict to TikTok backend service/tests and task docs; no Agency/Team/auth/invite/delete and no Media Buying/Tracker changes.
+
+# TODO — TikTok campaign_daily reporting schema: remove unsupported name dimensions (2026-03-21)
+
+- [x] Sync workspace (`git fetch` + `git pull`) and re-read AGENTS + lessons before implementation.
+- [x] Update `_report_schema_for_grain` in `apps/backend/app/services/tiktok_ads.py` so `campaign_daily` dimensions are exactly `("stat_time_day", "campaign_id")`.
+- [x] Verify all grains in `_report_schema_for_grain` avoid unsupported name dimensions (`campaign_name`, `adgroup_name`, `ad_name`).
+- [x] Run backend relevant tests and frontend build.
+
+## Review
+- [x] Patch kept strictly in TikTok backend reporting schema scope; no Agency/Team/auth/invite/delete and no Media Buying/Tracker changes.
+
+# TODO — GitHub Connector remote sync (2026-03-21)
+
+- [x] Start with a fresh terminal execution context and run the exact remote add/set-url command provided by user.
+- [x] Run `git fetch origin`.
+- [x] Run `git pull origin main --allow-unrelated-histories`.
+- [x] Verify remote configuration and branch status after sync.
+
+## Review
+- [x] `origin` is configured to the requested GitHub URL for both fetch and push.
+- [x] Fetch completed successfully and updated remote refs.
+- [x] Pull against `origin/main` completed with `Already up to date.`
+
 # TODO — Sub-account Profil Business: sidebar location from business profile + nișă Parc Auto (2026-03-21)
 
 - [x] Re-read AGENTS/todo/lessons and audit source of sidebar location + nișă options.
