@@ -1,11 +1,12 @@
 "use client";
 
-import React, { ChangeEvent, FormEvent, useRef, useState } from "react";
+import React, { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Info, Upload, X } from "lucide-react";
 import { useParams } from "next/navigation";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
+import { apiRequest } from "@/lib/api";
 
 type GeneralForm = {
   friendlyName: string;
@@ -71,6 +72,8 @@ function validatePhone(value: string): string | null {
 
 export default function SubAccountSettingsPage() {
   const params = useParams<{ id: string }>();
+  const subaccountId = useMemo(() => String(params.id ?? "").trim(), [params.id]);
+  const storageKey = useMemo(() => `subaccount_profile_settings_${subaccountId}`, [subaccountId]);
 
   const [general, setGeneral] = useState<GeneralForm>({
     friendlyName: "OMAROSA AGENCY",
@@ -108,13 +111,90 @@ export default function SubAccountSettingsPage() {
 
   const [logoError, setLogoError] = useState("");
   const [logoName, setLogoName] = useState("");
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState("");
+  const [loading, setLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
   const [generalErrors, setGeneralErrors] = useState<Record<string, string>>({});
   const [businessErrors, setBusinessErrors] = useState<Record<string, string>>({});
   const [addressErrors, setAddressErrors] = useState<Record<string, string>>({});
   const [representativeErrors, setRepresentativeErrors] = useState<Record<string, string>>({});
 
   const logoInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProfile() {
+      setLoading(true);
+      setErrorMessage("");
+      try {
+        const payload = await apiRequest<{
+          client?: { name?: string; owner_email?: string; currency?: string; client_logo_url?: string };
+        }>(`/clients/display/${subaccountId}`);
+        if (cancelled) return;
+        const client = payload?.client ?? {};
+        setGeneral((prev) => ({
+          ...prev,
+          friendlyName: String(client.name ?? prev.friendlyName),
+          legalName: String(client.name ?? prev.legalName),
+          email: String(client.owner_email ?? prev.email),
+          currency: String(client.currency ?? prev.currency).toUpperCase(),
+        }));
+        const nextLogo = String(client.client_logo_url ?? "").trim();
+        setLogoPreviewUrl(nextLogo);
+        setLogoName(nextLogo ? "Logo salvat" : "");
+      } catch (err) {
+        if (!cancelled) {
+          setErrorMessage(err instanceof Error ? err.message : "Nu am putut încărca profilul business.");
+        }
+      }
+
+      try {
+        const raw = window.localStorage.getItem(storageKey);
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as {
+          general?: Partial<GeneralForm>;
+          business?: Partial<BusinessForm>;
+          address?: Partial<AddressForm>;
+          representative?: Partial<RepresentativeForm>;
+        };
+        if (cancelled) return;
+        if (parsed.general) setGeneral((prev) => ({ ...prev, ...parsed.general }));
+        if (parsed.business) setBusiness((prev) => ({ ...prev, ...parsed.business }));
+        if (parsed.address) setAddress((prev) => ({ ...prev, ...parsed.address }));
+        if (parsed.representative) setRepresentative((prev) => ({ ...prev, ...parsed.representative }));
+      } catch {
+        // ignore corrupted local snapshot
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void loadProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, [storageKey, subaccountId]);
+
+  function persistLocalSnapshot(next: {
+    general?: GeneralForm;
+    business?: BusinessForm;
+    address?: AddressForm;
+    representative?: RepresentativeForm;
+  }) {
+    try {
+      const payload = {
+        general: next.general ?? general,
+        business: next.business ?? business,
+        address: next.address ?? address,
+        representative: next.representative ?? representative,
+      };
+      window.localStorage.setItem(storageKey, JSON.stringify(payload));
+    } catch {
+      // non-blocking persistence
+    }
+  }
 
   function showToast(message: string) {
     setToastMessage(message);
@@ -130,17 +210,24 @@ export default function SubAccountSettingsPage() {
       if (logoInputRef.current) logoInputRef.current.value = "";
       return;
     }
-    setLogoError("");
-    setLogoName(file.name);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      setLogoError("");
+      setLogoName(file.name);
+      setLogoPreviewUrl(result);
+    };
+    reader.readAsDataURL(file);
   }
 
   function removeLogo() {
     setLogoName("");
     setLogoError("");
+    setLogoPreviewUrl("");
     if (logoInputRef.current) logoInputRef.current.value = "";
   }
 
-  function submitGeneral(event: FormEvent<HTMLFormElement>) {
+  async function submitGeneral(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextErrors: Record<string, string> = {};
 
@@ -161,7 +248,21 @@ export default function SubAccountSettingsPage() {
 
     setGeneralErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
-    showToast("Informațiile generale au fost actualizate.");
+    try {
+      setErrorMessage("");
+      await apiRequest(`/clients/display/${subaccountId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: general.friendlyName.trim(),
+          currency: general.currency.trim().toUpperCase(),
+          client_logo_url: logoPreviewUrl.trim(),
+        }),
+      });
+      persistLocalSnapshot({ general });
+      showToast("Informațiile generale au fost actualizate.");
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Nu am putut salva informațiile generale.");
+    }
   }
 
   function submitBusiness(event: FormEvent<HTMLFormElement>) {
@@ -184,6 +285,7 @@ export default function SubAccountSettingsPage() {
 
     setBusinessErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
+    persistLocalSnapshot({ business });
     showToast("Informațiile despre business au fost actualizate.");
   }
 
@@ -198,6 +300,7 @@ export default function SubAccountSettingsPage() {
 
     setAddressErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
+    persistLocalSnapshot({ address });
     showToast("Adresa business-ului a fost actualizată.");
   }
 
@@ -218,6 +321,7 @@ export default function SubAccountSettingsPage() {
 
     setRepresentativeErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
+    persistLocalSnapshot({ representative });
     showToast("Datele reprezentantului au fost actualizate.");
   }
 
@@ -225,9 +329,11 @@ export default function SubAccountSettingsPage() {
     <ProtectedPage>
       <AppShell title={`Sub-account #${params.id} — Profil Business`}>
         <main className="p-6">
+          {loading ? <p className="mb-4 text-sm text-slate-500">Se încarcă profilul business...</p> : null}
           {toastMessage ? (
             <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{toastMessage}</div>
           ) : null}
+          {errorMessage ? <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{errorMessage}</div> : null}
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <div className="space-y-4">
@@ -236,8 +342,13 @@ export default function SubAccountSettingsPage() {
 
                 <div className="mt-3 rounded-md border border-dashed border-slate-300 bg-slate-50 p-3">
                   <p className="text-sm font-medium text-slate-700">Logo business</p>
-                  <div className="mt-2 flex h-[180px] w-full max-w-[350px] items-center justify-center rounded-md border border-slate-200 bg-white text-sm text-slate-400">
-                    {logoName || "350px × 180px (max 2.5 MB)"}
+                  <div className="mt-2 flex h-[180px] w-full max-w-[350px] items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-white text-sm text-slate-400">
+                    {logoPreviewUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={logoPreviewUrl} alt="Logo business" className="h-full w-full object-contain" />
+                    ) : (
+                      logoName || "350px × 180px (max 2.5 MB)"
+                    )}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <input ref={logoInputRef} type="file" className="hidden" onChange={onLogoChange} data-testid="logo-input" />
