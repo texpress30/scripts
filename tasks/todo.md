@@ -1,3 +1,15 @@
+# TODO — TikTok names/ad-groups visibility + DB-safe status columns (2026-03-21)
+
+- [x] Audit TikTok reporting schema + metadata enrichment flow for campaign/ad-group names.
+- [x] Enrich campaign_daily and ad_group_daily rows from TikTok management metadata (`campaign/get`, `adgroup/get`) after report fetch.
+- [x] Add explicit `_fetch_adgroup_metadata_by_ids` helper and preserve backward-compatible wrapper.
+- [x] Remove non-existent `agency_platform_accounts` run-status column writes from cleanup update path.
+- [x] Run targeted backend TikTok/dashboard sync-store tests.
+
+## Review
+- [x] Campaign/ad-group display fields now resolve from metadata APIs instead of relying on reporting names, with report fallback preserved.
+- [x] Cleanup path no longer updates missing run-status columns.
+
 # TODO — Finalize TikTok schema fix merge + commit/PR packaging (2026-03-21)
 
 - [x] Reconcile merge state and keep exact TikTok dimensions (`adgroup_id`/`ad_id`) in runtime schema + tests.

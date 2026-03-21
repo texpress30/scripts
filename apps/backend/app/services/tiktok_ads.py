@@ -1192,8 +1192,8 @@ class TikTokAdsService:
                 for campaign_id in sorted(fallback_ids)
             }
 
-    def _fetch_ad_group_metadata_by_ids(self, *, account_id: str, access_token: str, ad_group_ids: list[str]) -> dict[str, dict[str, object]]:
-        normalized_ids = [str(item or "").strip() for item in ad_group_ids if str(item or "").strip() != ""]
+    def _fetch_adgroup_metadata_by_ids(self, *, account_id: str, access_token: str, adgroup_ids: list[str]) -> dict[str, dict[str, object]]:
+        normalized_ids = [str(item or "").strip() for item in adgroup_ids if str(item or "").strip() != ""]
         if len(normalized_ids) == 0:
             return {}
         filter_ad_group_ids: list[object] = [int(item) if item.isdigit() else item for item in normalized_ids]
@@ -1248,6 +1248,13 @@ class TikTokAdsService:
                 break
             page += 1
         return ad_group_metadata
+
+    def _fetch_ad_group_metadata_by_ids(self, *, account_id: str, access_token: str, ad_group_ids: list[str]) -> dict[str, dict[str, object]]:
+        return self._fetch_adgroup_metadata_by_ids(
+            account_id=account_id,
+            access_token=access_token,
+            adgroup_ids=ad_group_ids,
+        )
 
     def _resolve_and_persist_ad_group_metadata(
         self,
@@ -1794,6 +1801,52 @@ class TikTokAdsService:
                 )
             )
 
+        if len(rows) > 0:
+            report_campaign_name_by_id = {
+                str(row.campaign_id or "").strip(): str(row.campaign_name or "").strip()
+                for row in rows
+                if str(row.campaign_id or "").strip() != "" and str(row.campaign_name or "").strip() != ""
+            }
+            try:
+                campaign_metadata_by_id = self._fetch_campaign_metadata_by_ids(
+                    account_id=account_id,
+                    access_token=access_token,
+                    campaign_ids=[row.campaign_id for row in rows],
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "TikTok campaign metadata enrichment failed after reporting fetch; keeping report-level names. account_id=%s error=%s",
+                    account_id,
+                    sanitize_text(str(exc), max_len=300),
+                )
+                campaign_metadata_by_id = {}
+            if len(campaign_metadata_by_id) > 0:
+                enriched_rows: list[TikTokCampaignDailyMetric] = []
+                for row in rows:
+                    payload = campaign_metadata_by_id.get(str(row.campaign_id or "").strip(), {})
+                    resolved_name = str(payload.get("campaign_name") or report_campaign_name_by_id.get(row.campaign_id) or row.campaign_name or "").strip()
+                    enriched_rows.append(
+                        TikTokCampaignDailyMetric(
+                            report_date=row.report_date,
+                            account_id=row.account_id,
+                            campaign_id=row.campaign_id,
+                            campaign_name=resolved_name,
+                            spend=row.spend,
+                            impressions=row.impressions,
+                            clicks=row.clicks,
+                            conversions=row.conversions,
+                            conversion_value=row.conversion_value,
+                            extra_metrics={
+                                **row.extra_metrics,
+                                "tiktok_ads": {
+                                    **(row.extra_metrics.get("tiktok_ads") if isinstance(row.extra_metrics.get("tiktok_ads"), dict) else {}),
+                                    "campaign_name": resolved_name,
+                                },
+                            },
+                        )
+                    )
+                rows = enriched_rows
+
         self._record_reporting_fetch_observability(
             grain="campaign_daily",
             account_id=account_id,
@@ -1970,6 +2023,92 @@ class TikTokAdsService:
                     },
                 )
             )
+
+        if len(rows) > 0:
+            report_ad_group_name_by_id = {
+                str(row.ad_group_id or "").strip(): str(row.ad_group_name or "").strip()
+                for row in rows
+                if str(row.ad_group_id or "").strip() != "" and str(row.ad_group_name or "").strip() != ""
+            }
+            report_campaign_name_by_id = {
+                str(row.campaign_id or "").strip(): str(row.campaign_name or "").strip()
+                for row in rows
+                if str(row.campaign_id or "").strip() != "" and str(row.campaign_name or "").strip() != ""
+            }
+            try:
+                ad_group_metadata_by_id = self._fetch_adgroup_metadata_by_ids(
+                    account_id=account_id,
+                    access_token=access_token,
+                    adgroup_ids=[row.ad_group_id for row in rows],
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "TikTok ad group metadata enrichment failed after reporting fetch; keeping report-level ad group fields. account_id=%s error=%s",
+                    account_id,
+                    sanitize_text(str(exc), max_len=300),
+                )
+                ad_group_metadata_by_id = {}
+
+            resolved_campaign_ids = {
+                str((ad_group_metadata_by_id.get(str(row.ad_group_id or "").strip()) or {}).get("campaign_id") or row.campaign_id or "").strip()
+                for row in rows
+                if str((ad_group_metadata_by_id.get(str(row.ad_group_id or "").strip()) or {}).get("campaign_id") or row.campaign_id or "").strip() != ""
+            }
+            if len(resolved_campaign_ids) > 0:
+                try:
+                    campaign_metadata_by_id = self._fetch_campaign_metadata_by_ids(
+                        account_id=account_id,
+                        access_token=access_token,
+                        campaign_ids=sorted(resolved_campaign_ids),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "TikTok campaign metadata enrichment failed for ad groups; keeping fallback campaign names. account_id=%s error=%s",
+                        account_id,
+                        sanitize_text(str(exc), max_len=300),
+                    )
+                    campaign_metadata_by_id = {}
+            else:
+                campaign_metadata_by_id = {}
+
+            enriched_rows: list[TikTokAdGroupDailyMetric] = []
+            for row in rows:
+                ad_group_metadata = ad_group_metadata_by_id.get(str(row.ad_group_id or "").strip(), {})
+                resolved_campaign_id = str(ad_group_metadata.get("campaign_id") or row.campaign_id or "").strip()
+                campaign_metadata = campaign_metadata_by_id.get(resolved_campaign_id, {})
+                resolved_ad_group_name = str(ad_group_metadata.get("ad_group_name") or report_ad_group_name_by_id.get(row.ad_group_id) or row.ad_group_name or "").strip()
+                resolved_campaign_name = str(
+                    campaign_metadata.get("campaign_name")
+                    or ad_group_metadata.get("campaign_name")
+                    or report_campaign_name_by_id.get(resolved_campaign_id)
+                    or row.campaign_name
+                    or ""
+                ).strip()
+                enriched_rows.append(
+                    TikTokAdGroupDailyMetric(
+                        report_date=row.report_date,
+                        account_id=row.account_id,
+                        ad_group_id=row.ad_group_id,
+                        ad_group_name=resolved_ad_group_name,
+                        campaign_id=resolved_campaign_id,
+                        campaign_name=resolved_campaign_name,
+                        spend=row.spend,
+                        impressions=row.impressions,
+                        clicks=row.clicks,
+                        conversions=row.conversions,
+                        conversion_value=row.conversion_value,
+                        extra_metrics={
+                            **row.extra_metrics,
+                            "tiktok_ads": {
+                                **(row.extra_metrics.get("tiktok_ads") if isinstance(row.extra_metrics.get("tiktok_ads"), dict) else {}),
+                                "campaign_id": resolved_campaign_id or None,
+                                "campaign_name": resolved_campaign_name,
+                                "ad_group_name": resolved_ad_group_name or None,
+                            },
+                        },
+                    )
+                )
+            rows = enriched_rows
 
         self._record_reporting_fetch_observability(
             grain="ad_group_daily",

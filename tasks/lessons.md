@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-21: Pentru TikTok ad_group_daily/campaign_daily, numele entity trebuie enrich-uite explicit din endpoint-urile de management (`campaign/get`, `adgroup/get`) imediat după report fetch; nu mă bazez pe `report/integrated/get` pentru name fields.
+
 - 2026-03-21: Când userul cere explicit commit + make_pr în același task, finalizez obligatoriu în ordinea: verificări -> git commit -> make_pr; nu închid răspunsul înainte de ambele.
 
 - 2026-03-21: După pull-uri cu merge conflict, verific imediat că test expectations rămân aliniate cu contractul runtime al schemelor (dimensiuni exacte), altfel apar regresii false.
