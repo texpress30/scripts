@@ -30,6 +30,27 @@ class TeamSubaccountApiTests(unittest.TestCase):
         user = AuthUser(email="admin@example.com", role="agency_admin")
         deps.enforce_subaccount_action(user=user, action="team:subaccount:list", subaccount_id=77)
 
+    def test_agency_owner_can_access_any_subaccount(self):
+        user = AuthUser(email="owner@example.com", role="agency_owner")
+        deps.enforce_subaccount_action(user=user, action="team:subaccount:list", subaccount_id=91)
+
+    def test_agency_member_without_grants_has_unrestricted_subaccount_access(self):
+        user = AuthUser(email="member@example.com", role="agency_member", access_scope="agency")
+        deps.enforce_subaccount_action(user=user, action="team:subaccount:list", subaccount_id=91)
+
+    def test_agency_member_with_grants_is_restricted_to_list(self):
+        user = AuthUser(email="member@example.com", role="agency_member", allowed_subaccount_ids=(12, 15), access_scope="agency")
+        deps.enforce_subaccount_action(user=user, action="team:subaccount:list", subaccount_id=12)
+        with self.assertRaises(deps.HTTPException) as ctx:
+            deps.enforce_subaccount_action(user=user, action="team:subaccount:list", subaccount_id=99)
+        self.assertEqual(ctx.exception.status_code, 403)
+
+    def test_agency_viewer_with_grants_is_restricted_to_list(self):
+        user = AuthUser(email="viewer@example.com", role="agency_viewer", allowed_subaccount_ids=(4,), access_scope="agency")
+        with self.assertRaises(deps.HTTPException) as ctx:
+            deps.enforce_subaccount_action(user=user, action="team:subaccount:list", subaccount_id=5)
+        self.assertEqual(ctx.exception.status_code, 403)
+
     def test_list_subaccount_members_endpoint(self):
         user = AuthUser(email="admin@example.com", role="agency_admin")
         original = team_api.team_members_service.list_subaccount_members

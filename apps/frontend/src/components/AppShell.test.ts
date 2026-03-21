@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   AGENCY_SETTINGS_ITEMS,
   buildScopedClients,
+  formatSubaccountBrandingLocation,
   filterAgencyNavItems,
   filterAgencySettingsItems,
   filterSubaccountNavItems,
@@ -30,6 +31,11 @@ function context(overrides: Partial<SessionAccessContext>): SessionAccessContext
 }
 
 describe("AppShell sub-account access helpers", () => {
+  it("formats subaccount sidebar location from business profile city/country", () => {
+    expect(formatSubaccountBrandingLocation("Onești", "România")).toBe("Locație: Onești, România");
+    expect(formatSubaccountBrandingLocation("Onești", "")).toBe("Locație: Onești");
+    expect(formatSubaccountBrandingLocation("", "")).toBe("Locație: -");
+  });
 
   it("keeps settings pages out of agency main nav and in settings nav", () => {
     const navItems = getNavItems("/agency/dashboard");
@@ -93,7 +99,7 @@ describe("AppShell sub-account access helpers", () => {
   });
 
   it("keeps agency role unguarded", () => {
-    const accessContext = context({ role: "agency_admin", allowed_subaccount_ids: [] });
+    const accessContext = context({ role: "agency_admin", access_scope: "agency", allowed_subaccount_ids: [] });
 
     const redirect = resolveSubaccountRouteGuardDecision({
       role: "agency_admin",

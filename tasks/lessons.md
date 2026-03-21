@@ -1,5 +1,41 @@
 # Lessons
 
+- 2026-03-21: În AppShell sub-account, nu folosi `company_settings.city/country` pentru cardul clientului; locația trebuie derivată din business profile-ul sub-account-ului (oraș + țară) cu fallback neutru.
+
+- 2026-03-21: Pentru rute sub-account (`/subaccount/[id]`), validează explicit dacă `id` este `client_id` sau `display_id`; endpoint-urile noi trebuie fie să folosească identifier-ul canonic, fie să accepte robust ambele mappări pentru a evita `Client not found`.
+
+- 2026-03-21: Dacă userul cere explicit „fără prefill”, nu folosesc nici fallback din endpointuri de display (`/clients/display`) și nici rehydrate localStorage; formularul se alimentează exclusiv din endpointul de profil dedicat sau rămâne gol.
+
+- 2026-03-21: După ce utilizatorul corectează procesul/formatul, actualizez imediat `tasks/lessons.md` în același task și evit să trimit promisiuni de implementare înainte de execuție reală în repo.
+
+- 2026-03-20: Când un sub-route placeholder devine pagină de lucru (ex. Google Ads), izolează schimbarea pe pagina respectivă și ajustează testele placeholder ca să nu rupi celelalte rute „Coming Soon”.
+
+- 2026-03-20: Pentru chart-uri multi-line comparate cu un chart de referință, ascunde dots implicit (`dot={false}`) și lasă doar `activeDot` pe hover pentru claritate vizuală; crește min-height-ul (ex. `h-96`) înainte de a ajusta alte stiluri.
+
+- 2026-03-20: Pentru cerințe de redesign chart punctual (ex. bar -> multi-line), păstrează contractul existent și extinde doar granularitatea seriei (`platform_spend` per zi) astfel încât frontendul să schimbe vizualizarea fără endpoint nou.
+
+- 2026-03-20: Pentru cerințe de dashboard vizual, livrează întâi contractul additive pe endpoint-ul existent (`spend_by_day`) și construiește chart-urile direct din datele deja disponibile (ex. platform table), evitând endpoint-uri noi sau redesign.
+
+- 2026-03-20: Pentru UI Agency Team cu grants, tratează selectorul de sub-account-uri strict condiționat de rol (`agency_member/viewer`), iar pentru `agency_owner/admin` ascunde controlul și nu trimite restricții în payload.
+
+- 2026-03-20: Pentru roluri agency cu acces restricționabil pe sub-account, modelul corect este tabel de grants dedicat pe membership; listă goală înseamnă explicit acces nelimitat, iar enforcement/listing trebuie să aplice aceeași semantică.
+
+- 2026-03-20: Când login-ul trebuie simplificat la email+parolă, nu păstra selecția de rol în frontend; fă `role` opțional doar pentru compatibilitate backward și derivă contextul exclusiv pe backend din memberships active cu prioritate agency/global.
+
+- 2026-03-19: Când semantica auth se schimbă (forgot vs invite vs account-ready), aliniază simultan catalogul backend (descrieri + sample vars) și UI admin (Email Templates + Notifications hints), altfel runtime corect rămâne opac pentru operatori.
+
+- 2026-03-19: Când același endpoint confirmă tokenuri de invite și forgot-reset, expune un endpoint mic de context (validate-only, non-consuming) pentru frontend, ca să poți diferenția copy-ul UX fără să fragmentezi contractul de confirm.
+
+- 2026-03-19: Pentru create user fără parolă explicită, nu folosi niciodată hash fallback reutilizabil; persistă hash gol + `must_reset_password=true` și blochează login-ul DB până la confirmarea tokenului de setare inițială.
+
+- 2026-03-19: Pentru Sub-account Team wizard create, nu păstra submit button cu label ambiguu (`Înainte`) în același `<form>` cross-tab; separă structural pasul 1 non-form și pasul 2 form cu CTA final explicit `Creează utilizator`.
+
+- 2026-03-19: Pentru cerințe “delete user de peste tot”, nu reutiliza endpointul de remove membership; adaugă endpoint dedicat pe `user_id` + guard DB-backed în auth pentru a invalida tokenurile vechi după hard delete.
+
+- 2026-03-19: Pentru wizard create în doi pași, evită `<form>` global peste etape; separă structural step1 non-form și step2 form cu footere distincte, altfel apar click-through/submit-through greu de eliminat doar cu guard-uri.
+
+- 2026-03-19: După corecție de proces, nu raporta niciodată implementări/teste ca finalizate fără execuție reală în workspace; verifică explicit `git status` + comenzile rulate înainte de mesajul final.
+
 - 2026-03-18: Pentru cerințe de nav filtering pe permissions, livrează în același patch atât filtrarea sidebar/settings cât și redirect guards pure + teste unit pentru fiecare scope (agency main, agency settings, subaccount main/settings), ca să eviți regresii de rute nepermise.
 
 - 2026-03-18: După feedback "unsatisfied" pe un PR mare, livrează următorul increment strict pe pagina/flow cerut (aici Sub-account Team roles & permissions), cu wiring real pe contractele existente și teste compacte de regresie pentru create/edit + grant ceiling.
@@ -190,6 +226,7 @@
 - 2026-03-04: După feedback de tip "unsatisfied" pe PR mare, păstrează următorul increment strict pe scope-ul cerut (ex. backend-only dedupe) și evită modificările frontend până la taskul dedicat.
 - 2026-03-04: Pentru run repair țintit pe job_id, folosește lock tranzacțional DB (`pg_advisory_xact_lock`) + `FOR UPDATE` pe run/chunks; un simplu check aplicativ nu e suficient în deployment-uri multiple.
 - 2026-03-04: Pentru acțiuni operaționale UI pe run-uri active, afișează CTA-ul strict context-aware (tip/status), folosește stare in-flight dedicată ca anti-double-click și bazează stop-ul polling pe aceeași sursă de adevăr `hasActiveRun` după refetch.
+- 2026-03-21: Pentru buguri de denumiri campanii TikTok, verifică explicit ambele verigi: dimensiunile cerute în report API (`campaign_name`) și persistența entity în `platform_campaigns`; fixuri doar pe fallback UI nu rezolvă cauza.
 - 2026-03-04: Pentru erori TS de tip "Duplicate function implementation" raportate din CI/Vercel, validează întâi snapshot-ul curent prin căutare explicită a declarațiilor duplicate și rulează build local înainte de a aplica refactor inutil.
 - 2026-03-05: Pentru retry țintit al run-urilor terminale, păstrează retry-ul minimal (doar chunk-uri `error/failed`) și folosește metadata (`retry_of_job_id`, `retry_reason`) + lock tranzacțional per run sursă pentru a evita duplicate concurente.
 - 2026-03-05: După feedback "unsatisfied" pe un PR mare full-stack, următorul increment trebuie ținut strict pe scope-ul explicit (aici frontend-only în pagina de detail), fără modificări backend în afara helper-ului client minim necesar.
@@ -412,3 +449,35 @@
 - 2026-03-19: Pentru erori de tip `ConnectionTimeout` la startup în mediul de producție/serverless, adaugă un mecanism de retry cu sleep fix in blocul de `startup` (ex: `main.py`) înainte ca modulele dependente să încerce să inițializeze conexiuni.
 - 2026-03-19: Evită executarea de DDL (`CREATE TABLE`, `ALTER TABLE`) în cadrul evenimentelor de startup (`@app.on_event("startup")`) ale aplicației web. Într-un deploy blue-green (ex. Railway), noul container va încerca să obțină `ACCESS EXCLUSIVE` lock pe tabele active, blocând procesul de startup și declanșând un crash loop prin timeout-uri repetate pe rutele de sănătate. Bazează-te pe migration runner în producție.
 - 2026-03-19: Pentru integrări dezactivate prin feature flag, asigură-te că erorile de tip "disabled by feature flag" salvate în backend sunt interpretate corect în frontend ca status "unknown" / "Disabled". Nu le trata ca erori sau warning-uri obișnuite, altfel UI-ul va afișa bannere de degradare a sincronizării în mod fals.
+
+- 2026-03-19: Când adaugi un nou parametru într-un INSERT SQL (`must_reset_password`), aliniază explicit numărul placeholderelor din VALUES cu tuple-ul de parametri și adaugă test țintit pe query/params pentru a preveni regressii de tip "X placeholders but Y parameters".
+
+- 2026-03-19: Pentru wizard-uri pe un singur `<form>`, nu e suficient ca butonul de step să fie `type="button"`; trebuie și guard în `onSubmit` pentru pasul curent, altfel Enter key poate declanșa submit/create prematur din pasul 1.
+
+- 2026-03-19: Pentru cron-uri one-shot DB-backed, tratează explicit erorile de conexiune la nivel de entrypoint (nu doar în store) și returnează un summary controlat + warning scurt, altfel deploy-ul vede crash opac pe timeout tranzitoriu.
+
+- 2026-03-19: Când un câmp legacy (ex. `location`) nu mai are semnificație de business, nu îl cosmetiza cu valori hardcodate; elimină-l din UI-ul editabil și afișează explicit un summary derivat din datele reale de acces (`subaccount`/`agency`).
+
+- 2026-03-19: Când un wizard folosește un singur `<form>`, aplică guarduri în două straturi (event-level + submit-level) și adaugă test separat pentru `fireEvent.keyDown(..., Enter)`; doar `fireEvent.submit` nu acoperă toate căile reale din browser.
+- 2026-03-19: După feedback că un wizard "deja fixat" încă nu satisface review-ul, adaugă un guard defensiv în `submit` pentru pasul activ și un test explicit "no API before final + exact one call on final CTA" în pagina țintă.
+
+## 2026-03-20 — Duplication fix after user dissatisfaction
+- Când userul cere explicit replicarea unei structuri existente pe alte rute/platforme, extrage imediat un component comun reutilizabil în loc de copiere/implementări separate.
+- În același task, aliniază contractele backend/frontend pe toate platformele vizate și adaugă teste dedicate per rută nouă, plus ajustări pe testele vechi de placeholder.
+
+## 2026-03-20 — Drilldown follow-up after unsatisfied review
+- Când userul cere explicit drilldown navigabil (listă -> detaliu), verifică din primul patch existența rutei țintă App Router + link-uri reale în tabelul sursă și adaugă teste pentru href/navigation contract.
+
+## 2026-03-20 — Status semantics and normalization after unsatisfied review
+- Nu seta fallback implicit `active` pentru statusuri când metadata lipsește; folosește `unknown` neutru și mapare UI explicită (active / paused / unknown).
+- Pentru platforme cu multiple formate de account id (ex. Meta `act_123` vs `123`), normalizează account_id în toate join-urile și filtrele (facts + mappings + metadata), nu doar într-un singur query.
+- 2026-03-20: Când utilizatorul re-atrage atenția asupra AGENTS workflow, aplică imediat pașii obligatorii în ordine (plan în `tasks/todo.md`, verificări executate, commit, apoi `make_pr`) înainte de mesajul final.
+- 2026-03-20: Când drilldown-ul depinde de tabele entity-level, verifică explicit că write helpers pentru fiecare grain persistă și în non-test-mode; un helper care întoarce `0` în producție poate face UI-ul gol chiar dacă account_daily are date.
+- 2026-03-20: Pentru erori Postgres `numeric field overflow` pe sync-uri chunked, investighează întâi derivarea metricilor (ex. `action_values` sum) și adaugă izolare row-level la persistență; altfel un singur row invalid poate bloca tot chunk-ul.
+- 2026-03-21: Pentru TikTok când UI arată `campaign_id`, verifică mai întâi schema `report.integrated.get` pe `dimensions` (ex. lipsa `campaign_name`) și completează cu metadata fetch + persist în `platform_campaigns` înainte de orice fix frontend.
+- 2026-03-21: Nu adăuga câmpuri nevalidate în TikTok reporting `dimensions` (ex. `campaign_name`); confirmă suportul endpoint-ului și rezolvă numele prin `campaign/get` + persist în `platform_campaigns`.
+- 2026-03-21: Pentru buguri runtime TikTok dimensions, adaugă test direct pe request params finali din `_fetch_*_metrics` (nu doar pe schema) ca să previi regresii unde builder-ul reintroduce câmpuri invalide.
+- 2026-03-21: Nu randa niciodată în UI normal blob-uri tehnice (`Observability: {...}`); convertește marker-ele interne în mesaje operaționale scurte și păstrează dump-ul doar pentru debugging intern.
+- 2026-03-21: După feedback "unsatisfied" pe un PR complex, următorul patch trebuie să înceapă cu audit explicit al rutelor existente + surselor reale de date și să livreze drilldown complet navigabil (link în tabel sursă + rută destinație + endpoint backend filtrat) în același increment, cu teste pe ambele capete.
+- 2026-03-21: Pentru TikTok `ad_group_daily`, nu presupune că reporting returnează `campaign_id`/`adgroup_name`; rezolvă explicit metadata prin `adgroup/get` pe `adgroup_id`, mapează `campaign_id` înainte de upsert facts și păstrează flow-ul best-effort dacă metadata fetch/persist eșuează.
+- 2026-03-21: Pentru cerințe UI de navigație repetate pe mai multe pagini similare, auditează mai întâi componenta shared (dacă există) și implementează linkul o singură dată acolo, cu teste per pagină pentru href corect.
