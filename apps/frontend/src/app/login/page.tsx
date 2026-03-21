@@ -1,24 +1,18 @@
 "use client";
 
-import { Activity, Lock, Mail, Shield } from "lucide-react";
+import { Activity, Lock, Mail } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import React, { FormEvent, useEffect, useState } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { apiRequest } from "@/lib/api";
+import { loginWithPassword } from "@/lib/api";
 import { getSessionAccessContextFromToken } from "@/lib/session";
-
-type LoginResponse = {
-  access_token: string;
-  token_type: string;
-};
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("admin@example.com");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState("agency_admin");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [resetSuccess, setResetSuccess] = useState(false);
@@ -35,21 +29,13 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const data = await apiRequest<LoginResponse>("/auth/login", {
-        method: "POST",
-        body: JSON.stringify({ email, password, role }),
-      });
+      const data = await loginWithPassword({ email, password });
 
       localStorage.setItem("mcc_token", data.access_token);
       localStorage.setItem("mcc_user", email);
 
       const context = getSessionAccessContextFromToken(data.access_token);
-      const shouldUseSubaccountRoute =
-        context.role === "subaccount_admin" ||
-        context.role === "subaccount_user" ||
-        context.role === "subaccount_viewer" ||
-        context.role === "account_manager" ||
-        context.role === "client_viewer";
+      const shouldUseSubaccountRoute = context.access_scope === "subaccount";
 
       if (shouldUseSubaccountRoute && context.allowed_subaccount_ids.length === 1) {
         router.push(`/sub/${context.allowed_subaccount_ids[0]}/dashboard`);
@@ -106,21 +92,6 @@ export default function LoginPage() {
                     className="h-10 w-full bg-transparent text-sm outline-none"
                     required
                   />
-                </div>
-              </label>
-
-              <label className="block">
-                <span className="mb-1 block text-sm font-medium text-slate-700">Rol</span>
-                <div className="flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3">
-                  <Shield className="h-4 w-4 text-slate-400" />
-                  <select value={role} onChange={(e) => setRole(e.target.value)} className="h-10 w-full bg-transparent text-sm outline-none">
-                    <option value="agency_admin">Agency Admin</option>
-                    <option value="agency_member">Agency Member</option>
-                    <option value="agency_viewer">Agency Viewer</option>
-                    <option value="subaccount_admin">Subaccount Admin</option>
-                    <option value="subaccount_user">Subaccount User</option>
-                    <option value="subaccount_viewer">Subaccount Viewer</option>
-                  </select>
                 </div>
               </label>
 
