@@ -1,3 +1,15 @@
+# TODO — TikTok campaign_daily: persist campaign/ad-group metadata before performance upsert (2026-03-21)
+
+- [x] Sync workspace and re-read AGENTS before implementation.
+- [x] Update `_upsert_campaign_rows` to resolve metadata from TikTok API using report IDs/names and persist `platform_campaigns` before performance facts.
+- [x] Add optional `access_token` propagation into `_upsert_campaign_rows`; warn+skip metadata fetch when missing token.
+- [x] Apply the same metadata-first persistence pattern in `_upsert_ad_group_rows` for `platform_ad_groups`.
+- [x] Keep resilience: metadata resolve errors are logged and campaign/ad-group performance upsert continues.
+- [x] Run backend relevant tests + frontend build.
+
+## Review
+- [x] Scope remained strict to TikTok backend service/tests and task docs; no Agency/Team/auth/invite/delete and no Media Buying/Tracker changes.
+
 # TODO — TikTok campaign_daily reporting schema: remove unsupported name dimensions (2026-03-21)
 
 - [x] Sync workspace (`git fetch` + `git pull`) and re-read AGENTS + lessons before implementation.

@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-21: Pentru TikTok campaign_daily, persistența numelor în dashboard depinde de upsert metadata entity (`platform_campaigns`/`platform_ad_groups`) înaintea fact tables; dacă metadata fetch cade, sync-ul de performance trebuie să continue.
+
 - 2026-03-21: Când userul marchează PR-ul ca nesatisfăcător, evit schimbări administrative-only; livrez fixul tehnic cerut în codul de producție și rulez verificările solicitate înainte de PR.
 
 - 2026-03-21: În AppShell sub-account, nu folosi `company_settings.city/country` pentru cardul clientului; locația trebuie derivată din business profile-ul sub-account-ului (oraș + țară) cu fallback neutru.
