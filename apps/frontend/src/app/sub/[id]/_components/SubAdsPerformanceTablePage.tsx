@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import React, { useEffect, useMemo, useState } from "react";
-import { ArrowDownWideNarrow, ArrowDown, ArrowUp, Columns3, Download, Filter, RotateCcw } from "lucide-react";
+import { ArrowDownWideNarrow, ArrowDown, ArrowLeft, ArrowUp, Columns3, Download, Filter, RotateCcw } from "lucide-react";
 import { format, startOfMonth, subDays } from "date-fns";
 import { DayPicker, type DateRange } from "react-day-picker";
 import "react-day-picker/dist/style.css";
@@ -259,6 +259,9 @@ export function SubAdsPerformanceTablePage({
         <section className="wm-card p-4">
           <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
+              <Link href={`/sub/${clientId}/dashboard`} className="mb-2 inline-flex items-center gap-1 text-xs font-medium text-indigo-700 hover:underline">
+                <ArrowLeft className="h-3.5 w-3.5" /> Back to Dashboard
+              </Link>
               <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
               <p className="text-xs text-slate-500">{platformDescription}</p>
             </div>

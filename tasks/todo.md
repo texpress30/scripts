@@ -5979,3 +5979,19 @@ Plan confirmed: backend-first TikTok metadata + tests, minimal frontend test-onl
   - `pytest -q apps/backend/tests/test_tiktok_campaign_metadata_resolution.py apps/backend/tests/test_dashboard_currency_normalization.py -k "ad_group or campaign_adgroup or tiktok"`
   - `pnpm --dir apps/frontend exec vitest run src/app/sub/[id]/tiktok-ads/accounts/[accountId]/campaigns/[campaignId]/page.test.tsx`
   - `pnpm --dir apps/frontend run build`
+
+# TODO — Add "Back to Dashboard" on Sub-account platform account-list pages (2026-03-21)
+
+- [x] Audit shared rendering for `/sub/[id]/google-ads`, `/sub/[id]/meta-ads`, `/sub/[id]/tiktok-ads` account-list pages.
+- [x] Add top-level `Back to Dashboard` navigation once in shared account-list component.
+- [x] Ensure route target is `/sub/[id]/dashboard` for all 3 platform pages.
+- [x] Add/update frontend tests for Google/Meta/TikTok account-list pages to assert presence + href.
+- [x] Run frontend tests relevante and frontend build.
+
+## Review
+- [x] Confirmare explicită că nu au fost atinse Agency / Team / auth / invite / delete / Media Buying / Media Tracker.
+- Audit confirmat: Google/Meta/TikTok account-list pages folosesc componenta shared `SubAdsPerformanceTablePage`, deci linkul a fost adăugat o singură dată acolo.
+- Linkul `Back to Dashboard` este randat sus în header și navighează la `/sub/{id}/dashboard` pentru toate cele 3 pagini.
+- Verificări executate:
+  - `pnpm --dir apps/frontend exec vitest run src/app/sub/[id]/google-ads/page.test.tsx src/app/sub/[id]/meta-ads/page.test.tsx src/app/sub/[id]/tiktok-ads/page.test.tsx`
+  - `pnpm --dir apps/frontend run build`

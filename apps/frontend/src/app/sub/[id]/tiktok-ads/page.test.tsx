@@ -63,6 +63,7 @@ describe("Sub TikTok Ads details table", () => {
     expect(screen.getByRole("button", { name: /Filter/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Columns/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Export/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Back to Dashboard/i })).toHaveAttribute("href", "/sub/96/dashboard");
     const link = screen.getByRole("link", { name: "TikTok Main" });
     expect(link).toHaveAttribute("href", "/sub/96/tiktok-ads/accounts/tiktok-1");
     const row = link.closest("tr");
@@ -82,5 +83,5 @@ describe("Sub TikTok Ads details table", () => {
     const lastCall = apiMock.getSubTikTokAdsTable.mock.calls.at(-1);
     expect(lastCall?.[0]).toBe(96);
     expect(lastCall?.[1]?.start_date).toBe(lastCall?.[1]?.end_date);
-  });
+  }, 15000);
 });

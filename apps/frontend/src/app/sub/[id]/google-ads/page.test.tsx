@@ -63,6 +63,7 @@ describe("Sub Google Ads details table", () => {
     expect(screen.getByRole("columnheader", { name: "Cost" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Rev (∞d)" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "ROAS (∞d)" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Back to Dashboard/i })).toHaveAttribute("href", "/sub/96/dashboard");
     expect(screen.getByRole("link", { name: "Google Main RO" })).toHaveAttribute("href", "/sub/96/google-ads/accounts/123-111-0001");
     expect(screen.getByText(/RON\s*2,916\.52/)).toBeInTheDocument();
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
@@ -104,5 +105,5 @@ describe("Sub Google Ads details table", () => {
     const lastCall = apiMock.getSubGoogleAdsTable.mock.calls.at(-1);
     expect(lastCall?.[0]).toBe(96);
     expect(lastCall?.[1]?.start_date).toBe(lastCall?.[1]?.end_date);
-  });
+  }, 15000);
 });

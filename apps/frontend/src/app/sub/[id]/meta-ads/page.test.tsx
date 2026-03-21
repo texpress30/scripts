@@ -63,6 +63,7 @@ describe("Sub Meta Ads details table", () => {
     expect(screen.getByRole("button", { name: /Filter/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Columns/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Export/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Back to Dashboard/i })).toHaveAttribute("href", "/sub/96/dashboard");
     expect(screen.getByRole("link", { name: "Meta Main" })).toHaveAttribute("href", "/sub/96/meta-ads/accounts/meta-1");
     const metaLink = screen.getByRole("link", { name: "Meta Main" });
     const metaRow = metaLink.closest("tr");
