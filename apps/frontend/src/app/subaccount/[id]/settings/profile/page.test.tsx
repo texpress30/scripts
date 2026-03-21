@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
 import SubAccountSettingsPage from "./page";
+import { apiRequest } from "@/lib/api";
 
 vi.mock("next/navigation", () => ({ useParams: () => ({ id: "96" }) }));
+vi.mock("@/lib/api", () => ({ apiRequest: vi.fn() }));
 vi.mock("@/components/ProtectedPage", () => ({ ProtectedPage: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
 vi.mock("@/components/AppShell", () => ({
   AppShell: ({ children, title }: { children: React.ReactNode; title: React.ReactNode }) => (
@@ -17,7 +19,12 @@ vi.mock("@/components/AppShell", () => ({
 
 describe("SubAccount Business Profile settings page", () => {
   beforeEach(() => {
-    vi.useFakeTimers();
+    vi.useRealTimers();
+    window.localStorage.clear();
+    vi.mocked(apiRequest).mockReset();
+    vi.mocked(apiRequest).mockResolvedValue({
+      client: { name: "Client 96", owner_email: "owner96@example.com", currency: "eur", client_logo_url: "" },
+    });
   });
 
   it("renders all required business profile sections in Romanian", () => {
@@ -34,8 +41,9 @@ describe("SubAccount Business Profile settings page", () => {
     expect(screen.getByLabelText(/Website business/i)).toBeInTheDocument();
   });
 
-  it("validates general information fields and shows success toast on valid submit", () => {
+  it("validates general information fields and shows success toast on valid submit", async () => {
     render(<SubAccountSettingsPage />);
+    await screen.findByDisplayValue("owner96@example.com");
 
     fireEvent.change(screen.getByLabelText(/Email business/i), { target: { value: "email_invalid" } });
     fireEvent.change(screen.getByLabelText(/Website business/i), { target: { value: "site-invalid" } });
@@ -53,6 +61,24 @@ describe("SubAccount Business Profile settings page", () => {
 
     fireEvent.click(screen.getAllByRole("button", { name: "Actualizează informațiile" })[0]);
 
-    expect(screen.getByText("Informațiile generale au fost actualizate.")).toBeInTheDocument();
+    expect(await screen.findByText("Informațiile generale au fost actualizate.")).toBeInTheDocument();
+  });
+
+  it("loads profile defaults from API and persists general updates via PATCH", async () => {
+    render(<SubAccountSettingsPage />);
+
+    expect((await screen.findAllByDisplayValue("Client 96")).length).toBeGreaterThan(0);
+    expect(screen.getByDisplayValue("owner96@example.com")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/Nume business \(friendly\)/i), { target: { value: "Client 96 Updated" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Actualizează informațiile" })[0]);
+
+    expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
+      "/clients/display/96",
+      expect.objectContaining({
+        method: "PATCH",
+        body: expect.stringContaining("\"name\":\"Client 96 Updated\""),
+      }),
+    );
   });
 });

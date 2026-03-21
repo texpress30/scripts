@@ -1,3 +1,17 @@
+# TODO — Sub-account Profil Business: prefill/save/location/logo persistence hardening (2026-03-21)
+
+- [x] Re-sync context + audit implementare existentă pentru `/subaccount/[id]/settings/profile` și contractele API disponibile.
+- [x] Conectare prefill la `/clients/display/{id}` pentru nume/email/monedă/logo și afișare loading/error state în pagină.
+- [x] Salvare secțiune generală prin `PATCH /clients/display/{id}` (name/currency/client_logo_url) și fallback persistență locală pentru secțiunile business/adresă/reprezentant.
+- [x] Fix UX logo: preview real (data URL), remove/reset corect, limită dimensiune păstrată, fără upload backend nou.
+- [x] Update teste frontend pentru încărcare prefill API + verificare PATCH save.
+- [x] Rulare teste țintite frontend + build frontend.
+
+## Review
+- [x] Root-cause adresat: pagina era strict statică (mock-like), fără prefill runtime și fără persistență la save.
+- [x] Logo storage audit: în acest increment logo-ul este persistat în `client_logo_url` via PATCH ca string URL/DataURL; nu s-a introdus storage de fișiere în backend.
+- [x] Scope control: alte pagini/settings și flow-uri team/auth/dashboard neatinse.
+
 # TODO — Sub Google Ads details: replace Coming Soon with multi-account performance table (2026-03-20)
 
 - [x] Re-sync + recitire AGENTS/todo/lessons + audit pagină placeholder `sub/[id]/google-ads`.
