@@ -1466,11 +1466,7 @@ class SyncRunsStore:
                 backfill_completed_through = %s,
                 last_success_at = %s,
                 last_error = %s,
-                last_run_status = %s,
-                last_run_type = %s,
-                last_run_started_at = %s,
-                last_run_finished_at = %s,
-                updated_at = NOW()
+                last_run_id = last_run_id
             WHERE platform = 'tiktok_ads'
               AND BTRIM(COALESCE(account_id, '')) = %s
             """,
@@ -1478,10 +1474,6 @@ class SyncRunsStore:
                 backfill_completed_through,
                 last_success_at,
                 last_error,
-                last_run_status,
-                last_run_type,
-                last_run_started_at,
-                last_run_finished_at,
                 normalized_account_id,
             ),
         )
