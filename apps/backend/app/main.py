@@ -116,17 +116,23 @@ def root() -> dict[str, str]:
 
 @app.on_event("startup")
 def startup_event() -> None:
-    if settings.app_env == "production":
-        logger.info("Skipping runtime DB schema initialization in production environment.")
-        return
-
     if psycopg is not None:
         max_retries = 5
+        acquired_lock = False
+        global_conn = None
+
+        is_sqlite = settings.database_url.startswith("sqlite")
+
         for attempt in range(max_retries):
             try:
-                with psycopg.connect(settings.database_url) as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("SELECT 1")
+                global_conn = psycopg.connect(settings.database_url)
+                if not is_sqlite:
+                    with global_conn.cursor() as cur:
+                        cur.execute("SELECT pg_try_advisory_lock(1, hashtext('global_schema_init'))")
+                        acquired_lock = bool(cur.fetchone()[0])
+                    global_conn.commit()
+                else:
+                    acquired_lock = True
                 logger.info("Successfully connected to the database on startup.")
                 break
             except Exception as e:
