@@ -1,3 +1,37 @@
+# TODO — TikTok campaign_daily: persist campaign/ad-group metadata before performance upsert (2026-03-21)
+
+- [x] Sync workspace and re-read AGENTS before implementation.
+- [x] Update `_upsert_campaign_rows` to resolve metadata from TikTok API using report IDs/names and persist `platform_campaigns` before performance facts.
+- [x] Add optional `access_token` propagation into `_upsert_campaign_rows`; warn+skip metadata fetch when missing token.
+- [x] Apply the same metadata-first persistence pattern in `_upsert_ad_group_rows` for `platform_ad_groups`.
+- [x] Keep resilience: metadata resolve errors are logged and campaign/ad-group performance upsert continues.
+- [x] Run backend relevant tests + frontend build.
+
+## Review
+- [x] Scope remained strict to TikTok backend service/tests and task docs; no Agency/Team/auth/invite/delete and no Media Buying/Tracker changes.
+
+# TODO — TikTok campaign_daily reporting schema: remove unsupported name dimensions (2026-03-21)
+
+- [x] Sync workspace (`git fetch` + `git pull`) and re-read AGENTS + lessons before implementation.
+- [x] Update `_report_schema_for_grain` in `apps/backend/app/services/tiktok_ads.py` so `campaign_daily` dimensions are exactly `("stat_time_day", "campaign_id")`.
+- [x] Verify all grains in `_report_schema_for_grain` avoid unsupported name dimensions (`campaign_name`, `adgroup_name`, `ad_name`).
+- [x] Run backend relevant tests and frontend build.
+
+## Review
+- [x] Patch kept strictly in TikTok backend reporting schema scope; no Agency/Team/auth/invite/delete and no Media Buying/Tracker changes.
+
+# TODO — GitHub Connector remote sync (2026-03-21)
+
+- [x] Start with a fresh terminal execution context and run the exact remote add/set-url command provided by user.
+- [x] Run `git fetch origin`.
+- [x] Run `git pull origin main --allow-unrelated-histories`.
+- [x] Verify remote configuration and branch status after sync.
+
+## Review
+- [x] `origin` is configured to the requested GitHub URL for both fetch and push.
+- [x] Fetch completed successfully and updated remote refs.
+- [x] Pull against `origin/main` completed with `Already up to date.`
+
 # TODO — Sub-account Profil Business: sidebar location from business profile + nișă Parc Auto (2026-03-21)
 
 - [x] Re-read AGENTS/todo/lessons and audit source of sidebar location + nișă options.
