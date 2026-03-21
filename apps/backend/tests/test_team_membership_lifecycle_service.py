@@ -105,6 +105,47 @@ class _CursorRemoveMembership:
     def __exit__(self, exc_type, exc, tb):
         return False
 
+
+class _CursorDeleteUserHard:
+    def __init__(self, *, user_exists: bool = True, memberships_count: int = 2):
+        self.rowcount = 0
+        self._next_fetchone = None
+        self.user_exists = user_exists
+        self.memberships_count = memberships_count
+        self.deleted_team_members_email = None
+        self.deleted_user_id = None
+
+    def execute(self, query, params=None):
+        sql = str(query)
+        self.rowcount = 0
+        if "SELECT email" in sql and "FROM users" in sql:
+            if self.user_exists:
+                self._next_fetchone = ("ana@example.com",)
+            else:
+                self._next_fetchone = None
+            return
+        if "SELECT COUNT(*)" in sql and "FROM user_memberships" in sql:
+            self._next_fetchone = (self.memberships_count,)
+            return
+        if "DELETE FROM team_members" in sql:
+            self.deleted_team_members_email = str(params[0])
+            self.rowcount = 1
+            return
+        if "DELETE FROM users" in sql:
+            self.deleted_user_id = int(params[0])
+            self.rowcount = 1 if self.user_exists else 0
+            return
+        raise AssertionError(f"Unexpected SQL: {sql}")
+
+    def fetchone(self):
+        return self._next_fetchone
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
 class _Conn:
     def __init__(self, cursor):
         self._cursor = cursor
@@ -220,6 +261,40 @@ class TeamMembershipLifecycleServiceTests(unittest.TestCase):
                 team_members_service.remove_membership(membership_id=33, actor_user=actor)
         finally:
             team_members_service.get_membership_detail = original_get
+
+    def test_delete_user_hard_success_deletes_user_and_legacy_team_members(self):
+        original_connect = team_members_service._connect
+        cursor = _CursorDeleteUserHard(user_exists=True, memberships_count=3)
+        conn = _Conn(cursor)
+        try:
+            team_members_service._connect = lambda: conn
+            actor = AuthUser(email="admin@example.com", role="agency_admin", user_id=999)
+            result = team_members_service.delete_user_hard(user_id=55, actor_user=actor)
+            self.assertTrue(result["deleted"])
+            self.assertEqual(result["user_id"], 55)
+            self.assertEqual(result["deleted_memberships_count"], 3)
+            self.assertEqual(cursor.deleted_team_members_email, "ana@example.com")
+            self.assertEqual(cursor.deleted_user_id, 55)
+            self.assertTrue(conn.committed)
+        finally:
+            team_members_service._connect = original_connect
+
+    def test_delete_user_hard_blocks_self_delete(self):
+        actor = AuthUser(email="admin@example.com", role="agency_admin", user_id=42)
+        with self.assertRaisesRegex(RuntimeError, "propriul utilizator"):
+            team_members_service.delete_user_hard(user_id=42, actor_user=actor)
+
+    def test_delete_user_hard_missing_user_raises_lookup(self):
+        original_connect = team_members_service._connect
+        cursor = _CursorDeleteUserHard(user_exists=False, memberships_count=0)
+        conn = _Conn(cursor)
+        try:
+            team_members_service._connect = lambda: conn
+            actor = AuthUser(email="admin@example.com", role="agency_admin", user_id=9)
+            with self.assertRaisesRegex(LookupError, "inexistent"):
+                team_members_service.delete_user_hard(user_id=777, actor_user=actor)
+        finally:
+            team_members_service._connect = original_connect
 
     def test_grantable_modules_ignore_inactive_membership(self):
         original_connect = team_members_service._connect

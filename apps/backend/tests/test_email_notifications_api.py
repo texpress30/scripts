@@ -76,6 +76,8 @@ class EmailNotificationsApiTests(unittest.TestCase):
         assert invite is not None
         self.assertEqual(forgot.template_key, "auth_forgot_password")
         self.assertEqual(invite.template_key, "team_invite_user")
+        self.assertIn("fără parolă", str(invite.description).lower())
+        self.assertIn("cu parolă", str(invite.description).lower())
 
     def test_effective_notification_defaults_when_no_override(self):
         service = EmailNotificationsService()

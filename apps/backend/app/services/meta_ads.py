@@ -2,14 +2,21 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import secrets
 from datetime import date, datetime, timedelta, timezone
+import math
 import re
 from typing import Literal
 from urllib import error, parse, request
 
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
+from app.services.entity_performance_reports import (
+    upsert_ad_group_performance_reports,
+    upsert_ad_unit_performance_reports,
+    upsert_campaign_performance_reports,
+)
 from app.services.error_observability import safe_body_snippet, sanitize_payload, sanitize_text
 from app.services.integration_secrets_store import integration_secrets_store
 from app.services.meta_store import meta_snapshot_store
@@ -34,6 +41,10 @@ _META_LEAD_ACTION_TYPE_PRIORITY: tuple[str, ...] = (
 )
 _META_LEAD_ACTION_TYPES: set[str] = set(_META_LEAD_ACTION_TYPE_PRIORITY)
 _META_ACCOUNT_DAILY_CHUNK_DAYS = 7
+_ENTITY_NUMERIC_ABS_LIMIT = 10_000_000_000.0
+
+
+logger = logging.getLogger(__name__)
 
 
 class MetaAdsIntegrationError(RuntimeError):
@@ -80,6 +91,12 @@ class MetaAdsService:
     def _is_test_mode(self) -> bool:
         settings = load_settings()
         return settings.app_env == "test"
+
+    def _connect(self):
+        settings = load_settings()
+        if psycopg is None:
+            raise MetaAdsIntegrationError("psycopg is required for campaign/ad_group/ad daily persistence")
+        return psycopg.connect(settings.database_url)
 
     def _is_placeholder(self, value: str) -> bool:
         normalized = value.strip().lower()
@@ -337,15 +354,129 @@ class MetaAdsService:
             "lead_action_values_found": details.get("lead_action_values_found") if isinstance(details.get("lead_action_values_found"), dict) else {},
         }
 
-    def _derive_conversion_value(self, *, action_values: object) -> float:
+    def _derive_conversion_value(self, *, action_values: object, selected_action_type: str | None = None) -> float:
         if not isinstance(action_values, list):
             return 0.0
+        if selected_action_type:
+            selected = str(selected_action_type).strip().lower()
+            if selected != "":
+                for item in action_values:
+                    if not isinstance(item, dict):
+                        continue
+                    action_type = str(item.get("action_type") or "").strip().lower()
+                    if action_type != selected:
+                        continue
+                    return self._parse_numeric(item.get("value"))
         total = 0.0
         for item in action_values:
             if not isinstance(item, dict):
                 continue
             total += self._parse_numeric(item.get("value"))
         return total
+
+    def _entity_row_identity(self, *, row: dict[str, object], grain: str) -> dict[str, object]:
+        identity: dict[str, object] = {
+            "grain": grain,
+            "platform": str(row.get("platform") or ""),
+            "account_id": str(row.get("account_id") or ""),
+            "report_date": str(row.get("report_date") or ""),
+        }
+        if grain == "campaign_daily":
+            identity["campaign_id"] = str(row.get("campaign_id") or "")
+        elif grain == "ad_group_daily":
+            identity["campaign_id"] = str(row.get("campaign_id") or "")
+            identity["ad_group_id"] = str(row.get("ad_group_id") or "")
+        elif grain == "ad_daily":
+            identity["campaign_id"] = str(row.get("campaign_id") or "")
+            identity["ad_group_id"] = str(row.get("ad_group_id") or "")
+            identity["ad_id"] = str(row.get("ad_id") or "")
+        return identity
+
+    def _validate_entity_row_numeric_fields(self, *, row: dict[str, object], grain: str) -> tuple[bool, str | None, float | None]:
+        for field in ("spend", "conversions", "conversion_value"):
+            raw_value = row.get(field)
+            value = self._parse_numeric(raw_value)
+            if not math.isfinite(value):
+                return False, field, value
+            if abs(value) >= _ENTITY_NUMERIC_ABS_LIMIT:
+                return False, field, value
+        return True, None, None
+
+    def _persist_entity_rows_with_row_level_resilience(self, *, grain: str, rows: list[dict[str, object]]) -> dict[str, object]:
+        if len(rows) == 0:
+            return {"rows_written": 0, "rows_skipped": 0, "skip_reasons": {}, "skipped_rows": []}
+
+        skip_reasons: dict[str, int] = {}
+        skipped_rows: list[dict[str, object]] = []
+        valid_rows: list[dict[str, object]] = []
+
+        for row in rows:
+            is_valid, field, value = self._validate_entity_row_numeric_fields(row=row, grain=grain)
+            if is_valid:
+                valid_rows.append(row)
+                continue
+            reason_key = f"numeric_overflow_candidate:{field or 'unknown'}"
+            skip_reasons[reason_key] = skip_reasons.get(reason_key, 0) + 1
+            detail = {
+                **self._entity_row_identity(row=row, grain=grain),
+                "reason": reason_key,
+                "field": field,
+                "value": value,
+            }
+            skipped_rows.append(detail)
+            logger.warning("Meta entity row skipped before upsert due to numeric overflow candidate: %s", sanitize_payload(detail))
+
+        if len(valid_rows) == 0:
+            return {
+                "rows_written": 0,
+                "rows_skipped": len(skipped_rows),
+                "skip_reasons": skip_reasons,
+                "skipped_rows": skipped_rows,
+            }
+
+        write_method = (
+            self._write_campaign_daily_rows
+            if grain == "campaign_daily"
+            else self._write_ad_group_daily_rows
+            if grain == "ad_group_daily"
+            else self._write_ad_daily_rows
+        )
+        try:
+            written = int(write_method(rows=valid_rows) or 0)
+            return {
+                "rows_written": written,
+                "rows_skipped": len(skipped_rows),
+                "skip_reasons": skip_reasons,
+                "skipped_rows": skipped_rows,
+            }
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Meta %s batch upsert failed; retrying row-by-row for isolation. error=%s",
+                grain,
+                sanitize_text(str(exc), max_len=300),
+            )
+
+        written = 0
+        for row in valid_rows:
+            try:
+                written += int(write_method(rows=[row]) or 0)
+            except Exception as exc:  # noqa: BLE001
+                reason_key = "row_persist_error"
+                skip_reasons[reason_key] = skip_reasons.get(reason_key, 0) + 1
+                detail = {
+                    **self._entity_row_identity(row=row, grain=grain),
+                    "reason": reason_key,
+                    "error": sanitize_text(str(exc), max_len=300),
+                }
+                skipped_rows.append(detail)
+                logger.warning("Meta entity row skipped after row-level persist error: %s", sanitize_payload(detail))
+
+        return {
+            "rows_written": written,
+            "rows_skipped": len(skipped_rows),
+            "skip_reasons": skip_reasons,
+            "skipped_rows": skipped_rows,
+        }
 
     def _base_extra_metrics(self, item: dict[str, object]) -> dict[str, object]:
         return {
@@ -506,25 +637,40 @@ class MetaAdsService:
         target.append(dict(row))
 
     def _write_campaign_daily_rows(self, *, rows: list[dict[str, object]]) -> int:
+        if len(rows) == 0:
+            return 0
         if self._is_test_mode():
             for row in rows:
                 self._upsert_memory_row(self._memory_campaign_daily_rows, ("platform", "account_id", "campaign_id", "report_date"), row)
             return len(rows)
-        return 0
+        with self._connect() as conn:
+            written = int(upsert_campaign_performance_reports(conn, rows) or 0)
+            conn.commit()
+            return written
 
     def _write_ad_group_daily_rows(self, *, rows: list[dict[str, object]]) -> int:
+        if len(rows) == 0:
+            return 0
         if self._is_test_mode():
             for row in rows:
                 self._upsert_memory_row(self._memory_ad_group_daily_rows, ("platform", "account_id", "ad_group_id", "report_date"), row)
             return len(rows)
-        return 0
+        with self._connect() as conn:
+            written = int(upsert_ad_group_performance_reports(conn, rows) or 0)
+            conn.commit()
+            return written
 
     def _write_ad_daily_rows(self, *, rows: list[dict[str, object]]) -> int:
+        if len(rows) == 0:
+            return 0
         if self._is_test_mode():
             for row in rows:
                 self._upsert_memory_row(self._memory_ad_daily_rows, ("platform", "account_id", "ad_id", "report_date"), row)
             return len(rows)
-        return 0
+        with self._connect() as conn:
+            written = int(upsert_ad_unit_performance_reports(conn, rows) or 0)
+            conn.commit()
+            return written
 
     def build_oauth_authorize_url(self) -> dict[str, str]:
         settings = load_settings()
@@ -662,6 +808,9 @@ class MetaAdsService:
         account_ids = self._resolve_target_account_ids(client_id=int(client_id), account_id=account_id)
 
         rows_written = 0
+        rows_skipped = 0
+        aggregate_skip_reasons: dict[str, int] = {}
+        aggregate_skipped_rows: list[dict[str, object]] = []
         totals = {
             "spend": 0.0,
             "impressions": 0,
@@ -714,7 +863,10 @@ class MetaAdsService:
                         clicks = self._parse_int(item.get("clicks"))
                         lead_conversion_details = self._derive_lead_conversion_details(actions=item.get("actions"))
                         conversions = float(lead_conversion_details.get("conversions") or 0.0)
-                        conversion_value = self._derive_conversion_value(action_values=item.get("action_values"))
+                        conversion_value = self._derive_conversion_value(
+                            action_values=item.get("action_values"),
+                            selected_action_type=str(lead_conversion_details.get("lead_action_type_selected") or ""),
+                        )
 
                         performance_reports_store.write_daily_report(
                             report_date=report_date_value,
@@ -839,7 +991,10 @@ class MetaAdsService:
                     clicks = self._parse_int(item.get("clicks"))
                     lead_conversion_details = self._derive_lead_conversion_details(actions=item.get("actions"))
                     conversions = float(lead_conversion_details.get("conversions") or 0.0)
-                    conversion_value = self._derive_conversion_value(action_values=item.get("action_values"))
+                    conversion_value = self._derive_conversion_value(
+                        action_values=item.get("action_values"),
+                        selected_action_type=str(lead_conversion_details.get("lead_action_type_selected") or ""),
+                    )
 
                     campaign_rows.append(
                         {
@@ -857,6 +1012,9 @@ class MetaAdsService:
                                     **self._base_extra_metrics(item),
                                     "campaign_name": str(item.get("campaign_name") or "").strip() or None,
                                     "campaign_id": campaign_id,
+                                    "campaign_status": str(item.get("campaign_status") or item.get("effective_status") or item.get("status") or "").strip() or None,
+                                    "account_currency": resolved_account_currency,
+                                    "grain": "campaign_daily",
                                     **self._lead_conversion_observability(details=lead_conversion_details),
                                 }
                             },
@@ -871,8 +1029,19 @@ class MetaAdsService:
                     account_totals["conversions"] += conversions
                     account_totals["conversion_value"] += conversion_value
 
-                account_rows_written = self._write_campaign_daily_rows(rows=campaign_rows)
+                persist_result = self._persist_entity_rows_with_row_level_resilience(grain="campaign_daily", rows=campaign_rows)
+                account_rows_written = int(persist_result.get("rows_written") or 0)
+                account_rows_skipped = int(persist_result.get("rows_skipped") or 0)
+                account_skip_reasons = persist_result.get("skip_reasons") if isinstance(persist_result.get("skip_reasons"), dict) else {}
+                account_skipped_rows = persist_result.get("skipped_rows") if isinstance(persist_result.get("skipped_rows"), list) else []
                 rows_written += account_rows_written
+                rows_skipped += account_rows_skipped
+                for key, count in account_skip_reasons.items():
+                    reason = str(key or "").strip()
+                    if reason == "":
+                        continue
+                    aggregate_skip_reasons[reason] = aggregate_skip_reasons.get(reason, 0) + int(count or 0)
+                aggregate_skipped_rows.extend([item for item in account_skipped_rows if isinstance(item, dict)])
             elif resolved_grain == "ad_group_daily":
                 insights_rows = self._fetch_ad_group_daily_insights(
                     account_id=account_id,
@@ -896,7 +1065,10 @@ class MetaAdsService:
                     clicks = self._parse_int(item.get("clicks"))
                     lead_conversion_details = self._derive_lead_conversion_details(actions=item.get("actions"))
                     conversions = float(lead_conversion_details.get("conversions") or 0.0)
-                    conversion_value = self._derive_conversion_value(action_values=item.get("action_values"))
+                    conversion_value = self._derive_conversion_value(
+                        action_values=item.get("action_values"),
+                        selected_action_type=str(lead_conversion_details.get("lead_action_type_selected") or ""),
+                    )
                     campaign_id = str(item.get("campaign_id") or "").strip() or None
 
                     ad_group_rows.append(
@@ -916,8 +1088,12 @@ class MetaAdsService:
                                     **self._base_extra_metrics(item),
                                     "adset_id": ad_group_id,
                                     "adset_name": str(item.get("adset_name") or "").strip() or None,
+                                    "adset_status": str(item.get("adset_status") or item.get("effective_status") or item.get("status") or "").strip() or None,
                                     "campaign_id": campaign_id,
                                     "campaign_name": str(item.get("campaign_name") or "").strip() or None,
+                                    "campaign_status": str(item.get("campaign_status") or "").strip() or None,
+                                    "account_currency": resolved_account_currency,
+                                    "grain": "ad_group_daily",
                                     **self._lead_conversion_observability(details=lead_conversion_details),
                                 }
                             },
@@ -932,8 +1108,19 @@ class MetaAdsService:
                     account_totals["conversions"] += conversions
                     account_totals["conversion_value"] += conversion_value
 
-                account_rows_written = self._write_ad_group_daily_rows(rows=ad_group_rows)
+                persist_result = self._persist_entity_rows_with_row_level_resilience(grain="ad_group_daily", rows=ad_group_rows)
+                account_rows_written = int(persist_result.get("rows_written") or 0)
+                account_rows_skipped = int(persist_result.get("rows_skipped") or 0)
+                account_skip_reasons = persist_result.get("skip_reasons") if isinstance(persist_result.get("skip_reasons"), dict) else {}
+                account_skipped_rows = persist_result.get("skipped_rows") if isinstance(persist_result.get("skipped_rows"), list) else []
                 rows_written += account_rows_written
+                rows_skipped += account_rows_skipped
+                for key, count in account_skip_reasons.items():
+                    reason = str(key or "").strip()
+                    if reason == "":
+                        continue
+                    aggregate_skip_reasons[reason] = aggregate_skip_reasons.get(reason, 0) + int(count or 0)
+                aggregate_skipped_rows.extend([item for item in account_skipped_rows if isinstance(item, dict)])
             else:
                 insights_rows = self._fetch_ad_daily_insights(
                     account_id=account_id,
@@ -957,7 +1144,10 @@ class MetaAdsService:
                     clicks = self._parse_int(item.get("clicks"))
                     lead_conversion_details = self._derive_lead_conversion_details(actions=item.get("actions"))
                     conversions = float(lead_conversion_details.get("conversions") or 0.0)
-                    conversion_value = self._derive_conversion_value(action_values=item.get("action_values"))
+                    conversion_value = self._derive_conversion_value(
+                        action_values=item.get("action_values"),
+                        selected_action_type=str(lead_conversion_details.get("lead_action_type_selected") or ""),
+                    )
                     campaign_id = str(item.get("campaign_id") or "").strip() or None
                     ad_group_id = str(item.get("adset_id") or "").strip() or None
 
@@ -979,10 +1169,15 @@ class MetaAdsService:
                                     **self._base_extra_metrics(item),
                                     "ad_id": ad_id,
                                     "ad_name": str(item.get("ad_name") or "").strip() or None,
+                                    "ad_status": str(item.get("ad_status") or item.get("effective_status") or item.get("status") or "").strip() or None,
                                     "adset_id": ad_group_id,
                                     "adset_name": str(item.get("adset_name") or "").strip() or None,
+                                    "adset_status": str(item.get("adset_status") or "").strip() or None,
                                     "campaign_id": campaign_id,
                                     "campaign_name": str(item.get("campaign_name") or "").strip() or None,
+                                    "campaign_status": str(item.get("campaign_status") or "").strip() or None,
+                                    "account_currency": resolved_account_currency,
+                                    "grain": "ad_daily",
                                     **self._lead_conversion_observability(details=lead_conversion_details),
                                 }
                             },
@@ -997,8 +1192,19 @@ class MetaAdsService:
                     account_totals["conversions"] += conversions
                     account_totals["conversion_value"] += conversion_value
 
-                account_rows_written = self._write_ad_daily_rows(rows=ad_rows)
+                persist_result = self._persist_entity_rows_with_row_level_resilience(grain="ad_daily", rows=ad_rows)
+                account_rows_written = int(persist_result.get("rows_written") or 0)
+                account_rows_skipped = int(persist_result.get("rows_skipped") or 0)
+                account_skip_reasons = persist_result.get("skip_reasons") if isinstance(persist_result.get("skip_reasons"), dict) else {}
+                account_skipped_rows = persist_result.get("skipped_rows") if isinstance(persist_result.get("skipped_rows"), list) else []
                 rows_written += account_rows_written
+                rows_skipped += account_rows_skipped
+                for key, count in account_skip_reasons.items():
+                    reason = str(key or "").strip()
+                    if reason == "":
+                        continue
+                    aggregate_skip_reasons[reason] = aggregate_skip_reasons.get(reason, 0) + int(count or 0)
+                aggregate_skipped_rows.extend([item for item in account_skipped_rows if isinstance(item, dict)])
 
             totals["spend"] += account_totals["spend"]
             totals["impressions"] += account_totals["impressions"]
@@ -1012,6 +1218,8 @@ class MetaAdsService:
                         "account_id": account_id,
                         "account_path": probe.get("account_path"),
                         "rows_written": account_rows_written,
+                        "rows_skipped": account_rows_skipped,
+                        "skip_reasons": account_skip_reasons,
                         "spend": round(account_totals["spend"], 2),
                         "impressions": account_totals["impressions"],
                         "clicks": account_totals["clicks"],
@@ -1032,6 +1240,8 @@ class MetaAdsService:
                 sync_health_status = "full_request_coverage"
         else:
             sync_health_status = "full_request_coverage"
+        if rows_skipped > 0 and sync_health_status == "full_request_coverage":
+            sync_health_status = "partial_request_coverage"
 
         snapshot = {
             "status": "error" if sync_health_status in {"partial_request_coverage", "failed_request_coverage"} else "ok",
@@ -1044,6 +1254,9 @@ class MetaAdsService:
             "end_date": resolved_end.isoformat(),
             "accounts_processed": len(account_ids),
             "rows_written": rows_written,
+            "rows_skipped": rows_skipped,
+            "skip_reasons": aggregate_skip_reasons,
+            "skipped_rows_sample": aggregate_skipped_rows[:20],
             "token_source": token_source,
             "spend": round(totals["spend"], 2),
             "impressions": int(totals["impressions"]),
