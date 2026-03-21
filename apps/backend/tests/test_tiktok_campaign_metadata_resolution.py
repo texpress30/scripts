@@ -62,6 +62,132 @@ def test_resolve_and_persist_tiktok_campaign_metadata_by_campaign_id(monkeypatch
     assert fake_conn.committed is True
 
 
+def test_resolve_campaign_metadata_fetches_all_ids_and_prefers_api_name(monkeypatch):
+    captured_fetch_campaign_ids: list[str] = []
+    monkeypatch.setattr(tiktok_ads_service, "_is_test_mode", lambda: True)
+
+    def fake_fetch_campaign_metadata_by_ids(**kwargs):
+        captured_fetch_campaign_ids.extend(kwargs.get("campaign_ids") or [])
+        return {
+            "cmp-api": {
+                "campaign_id": "cmp-api",
+                "campaign_name": "Name From API",
+                "campaign_status": "ENABLE",
+                "raw_payload": {"campaign_id": "cmp-api", "campaign_name": "Name From API"},
+                "payload_hash": "hash-cmp-api",
+            }
+        }
+
+    monkeypatch.setattr(tiktok_ads_service, "_fetch_campaign_metadata_by_ids", fake_fetch_campaign_metadata_by_ids)
+
+    resolved = tiktok_ads_service._resolve_and_persist_campaign_metadata(
+        account_id="tt-acc-fetch-all",
+        access_token="token",
+        campaign_ids=["cmp-api", "cmp-report-only"],
+        report_campaign_name_by_id={"cmp-api": "Report Name", "cmp-report-only": "Report Only Name"},
+    )
+
+    assert sorted(captured_fetch_campaign_ids) == ["cmp-api", "cmp-report-only"]
+    assert resolved["cmp-api"]["campaign_name"] == "Name From API"
+    assert resolved["cmp-report-only"]["campaign_name"] == "Report Only Name"
+
+
+def test_resolve_ad_group_metadata_fetches_all_ids_and_prefers_api_name(monkeypatch):
+    captured_fetch_ad_group_ids: list[str] = []
+    monkeypatch.setattr(tiktok_ads_service, "_is_test_mode", lambda: True)
+
+    def fake_fetch_ad_group_metadata_by_ids(**kwargs):
+        captured_fetch_ad_group_ids.extend(kwargs.get("ad_group_ids") or [])
+        return {
+            "ag-api": {
+                "ad_group_id": "ag-api",
+                "ad_group_name": "AdGroup From API",
+                "campaign_id": "cmp-api",
+                "campaign_name": "Campaign From API",
+                "ad_group_status": "ENABLE",
+                "raw_payload": {"adgroup_id": "ag-api", "adgroup_name": "AdGroup From API", "campaign_id": "cmp-api"},
+                "payload_hash": "hash-ag-api",
+            }
+        }
+
+    monkeypatch.setattr(tiktok_ads_service, "_fetch_ad_group_metadata_by_ids", fake_fetch_ad_group_metadata_by_ids)
+
+    resolved = tiktok_ads_service._resolve_and_persist_ad_group_metadata(
+        account_id="tt-acc-adg-fetch-all",
+        access_token="token",
+        ad_group_ids=["ag-api", "ag-report-only"],
+        report_ad_group_name_by_id={"ag-api": "Report AdGroup", "ag-report-only": "Report Only AdGroup"},
+    )
+
+    assert sorted(captured_fetch_ad_group_ids) == ["ag-api", "ag-report-only"]
+    assert resolved["ag-api"]["ad_group_name"] == "AdGroup From API"
+    assert resolved["ag-report-only"]["ad_group_name"] == "Report Only AdGroup"
+
+
+def test_fetch_campaign_metadata_by_ids_maps_status_and_full_raw_payload(monkeypatch):
+    monkeypatch.setattr(tiktok_ads_service, "_campaign_get_endpoint", lambda: "https://example.test/campaign/get/")
+    monkeypatch.setattr(
+        tiktok_ads_service,
+        "_http_json",
+        lambda **kwargs: {
+            "data": {
+                "list": [
+                    {
+                        "campaign_id": "123",
+                        "campaign_name": "My Campaign",
+                        "status": "CAMPAIGN_STATUS_ENABLE",
+                        "objective_type": "CONVERSIONS",
+                    }
+                ],
+                "page_info": {"total_page": 1},
+            }
+        },
+    )
+
+    payload = tiktok_ads_service._fetch_campaign_metadata_by_ids(
+        account_id="acc-1",
+        access_token="token",
+        campaign_ids=["123"],
+    )
+
+    assert payload["123"]["campaign_name"] == "My Campaign"
+    assert payload["123"]["campaign_status"] == "CAMPAIGN_STATUS_ENABLE"
+    assert payload["123"]["raw_payload"]["objective_type"] == "CONVERSIONS"
+
+
+def test_fetch_ad_group_metadata_by_ids_maps_campaign_id_status_and_full_raw_payload(monkeypatch):
+    monkeypatch.setattr(tiktok_ads_service, "_adgroup_get_endpoint", lambda: "https://example.test/adgroup/get/")
+    monkeypatch.setattr(
+        tiktok_ads_service,
+        "_http_json",
+        lambda **kwargs: {
+            "data": {
+                "list": [
+                    {
+                        "ad_group_id": "ag-1",
+                        "ad_group_name": "Ad Group A",
+                        "campaign_id": "cmp-1",
+                        "status": "ADGROUP_STATUS_ENABLE",
+                        "placement_type": "PLACEMENT_FEED",
+                    }
+                ],
+                "page_info": {"total_page": 1},
+            }
+        },
+    )
+
+    payload = tiktok_ads_service._fetch_ad_group_metadata_by_ids(
+        account_id="acc-1",
+        access_token="token",
+        ad_group_ids=["ag-1"],
+    )
+
+    assert payload["ag-1"]["ad_group_name"] == "Ad Group A"
+    assert payload["ag-1"]["campaign_id"] == "cmp-1"
+    assert payload["ag-1"]["ad_group_status"] == "ADGROUP_STATUS_ENABLE"
+    assert payload["ag-1"]["raw_payload"]["placement_type"] == "PLACEMENT_FEED"
+
+
 def test_campaign_daily_report_schema_does_not_request_campaign_name_dimension():
     schema = tiktok_ads_service._report_schema_for_grain("campaign_daily")
     assert "campaign_name" not in schema.dimensions
@@ -108,7 +234,7 @@ def test_report_query_params_guard_removes_campaign_name_for_campaign_data_level
 
 def test_ad_group_daily_report_schema_keeps_supported_dimensions_only():
     schema = tiktok_ads_service._report_schema_for_grain("ad_group_daily")
-    assert schema.dimensions == ("stat_time_day", "adgroup_id")
+    assert schema.dimensions == ("stat_time_day", "campaign_id", "ad_group_id")
 
 
 def test_fetch_ad_group_daily_metrics_request_params_exclude_campaign_dimensions(monkeypatch):
@@ -131,8 +257,7 @@ def test_fetch_ad_group_daily_metrics_request_params_exclude_campaign_dimensions
     assert payload == []
     dimensions = captured_request_params.get("dimensions")
     assert isinstance(dimensions, list)
-    assert dimensions == ["stat_time_day", "adgroup_id"]
-    assert "campaign_id" not in dimensions
+    assert dimensions == ["stat_time_day", "campaign_id", "ad_group_id"]
     assert "adgroup_name" not in dimensions
 
 
@@ -169,11 +294,25 @@ def test_upsert_campaign_rows_persists_platform_campaign_entities(monkeypatch):
         "upsert_campaign_performance_reports",
         lambda conn, payload: captured_fact_rows.extend(payload) or len(payload),
     )
+    monkeypatch.setattr(
+        tiktok_ads_service,
+        "_resolve_and_persist_campaign_metadata",
+        lambda **kwargs: {
+            "cmp-entity-1": {
+                "campaign_id": "cmp-entity-1",
+                "campaign_name": "Entity Campaign Name",
+                "campaign_status": "ENABLE",
+                "raw_payload": {"campaign_id": "cmp-entity-1", "campaign_name": "Entity Campaign Name", "operation_status": "ENABLE"},
+                "payload_hash": "hash-entity-1",
+            }
+        },
+    )
 
     written = tiktok_ads_service._upsert_campaign_rows(
         rows,
         source_window_start=date(2026, 3, 20),
         source_window_end=date(2026, 3, 20),
+        access_token="token",
     )
 
     assert written == 1
@@ -185,6 +324,73 @@ def test_upsert_campaign_rows_persists_platform_campaign_entities(monkeypatch):
     assert captured_entities[0]["status"] == "ENABLE"
     assert isinstance(captured_entities[0]["payload_hash"], str) and len(captured_entities[0]["payload_hash"]) > 0
     assert captured_entities[0]["raw_payload"]["campaign_name"] == "Entity Campaign Name"
+    assert len(captured_fact_rows) == 1
+    assert fake_conn.committed is True
+
+
+def test_upsert_ad_group_rows_persists_platform_ad_groups_before_facts(monkeypatch):
+    fake_conn = _FakeConn()
+    call_order: list[str] = []
+    captured_ad_groups: list[dict[str, object]] = []
+    captured_fact_rows: list[dict[str, object]] = []
+
+    rows = [
+        TikTokAdGroupDailyMetric(
+            report_date=date(2026, 3, 20),
+            account_id="tt-acc-adg",
+            ad_group_id="adg-1",
+            ad_group_name="Ad Group One",
+            campaign_id="cmp-1",
+            campaign_name="Campaign One",
+            spend=11.0,
+            impressions=111,
+            clicks=6,
+            conversions=1.0,
+            conversion_value=22.0,
+            extra_metrics={"tiktok_ads": {}},
+        )
+    ]
+
+    monkeypatch.setattr(tiktok_ads_service, "_is_test_mode", lambda: False)
+    monkeypatch.setattr(tiktok_ads_service, "_connect", lambda: fake_conn)
+    monkeypatch.setattr(
+        tiktok_ads_service,
+        "_resolve_and_persist_ad_group_metadata",
+        lambda **kwargs: {
+            "adg-1": {
+                "ad_group_id": "adg-1",
+                "ad_group_name": "Ad Group One",
+                "campaign_id": "cmp-1",
+                "campaign_name": "Campaign One",
+                "ad_group_status": "ENABLE",
+                "raw_payload": {"adgroup_id": "adg-1"},
+                "payload_hash": "hash-adg-1",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        tiktok_ads_module,
+        "upsert_platform_ad_groups",
+        lambda conn, payload: call_order.append("ad_groups") or captured_ad_groups.extend(payload) or len(payload),
+    )
+    monkeypatch.setattr(
+        tiktok_ads_module,
+        "upsert_ad_group_performance_reports",
+        lambda conn, payload: call_order.append("facts") or captured_fact_rows.extend(payload) or len(payload),
+    )
+
+    written = tiktok_ads_service._upsert_ad_group_rows(
+        rows,
+        source_window_start=date(2026, 3, 20),
+        source_window_end=date(2026, 3, 20),
+        access_token="token",
+    )
+
+    assert written == 1
+    assert call_order == ["ad_groups", "facts"]
+    assert len(captured_ad_groups) == 1
+    assert captured_ad_groups[0]["ad_group_id"] == "adg-1"
+    assert captured_ad_groups[0]["campaign_id"] == "cmp-1"
     assert len(captured_fact_rows) == 1
     assert fake_conn.committed is True
 
@@ -231,7 +437,7 @@ def test_campaign_daily_sync_uses_metadata_name_instead_of_campaign_id_fallback(
 
     captured_upsert_rows: list[dict[str, object]] = []
 
-    def fake_upsert_campaign_rows(rows, *, source_window_start, source_window_end):
+    def fake_upsert_campaign_rows(rows, *, source_window_start, source_window_end, access_token=None):
         captured_upsert_rows.extend(rows)
         return len(rows)
 
@@ -296,7 +502,7 @@ def test_campaign_daily_sync_keeps_campaign_id_fallback_when_metadata_name_missi
     monkeypatch.setattr(
         tiktok_ads_service,
         "_upsert_campaign_rows",
-        lambda rows, *, source_window_start, source_window_end: captured_upsert_rows.extend(rows) or len(rows),
+        lambda rows, *, source_window_start, source_window_end, access_token=None: captured_upsert_rows.extend(rows) or len(rows),
     )
     monkeypatch.setattr(tiktok_ads_module.tiktok_snapshot_store, "upsert_snapshot", lambda payload: None)
 
@@ -348,7 +554,7 @@ def test_campaign_daily_sync_continues_when_campaign_metadata_fetch_fails(monkey
     monkeypatch.setattr(
         tiktok_ads_service,
         "_upsert_campaign_rows",
-        lambda rows, *, source_window_start, source_window_end: captured_upsert_rows.extend(rows) or len(rows),
+        lambda rows, *, source_window_start, source_window_end, access_token=None: captured_upsert_rows.extend(rows) or len(rows),
     )
 
     payload = tiktok_ads_service.sync_client(
@@ -424,7 +630,7 @@ def test_ad_group_daily_sync_enriches_campaign_id_and_ad_group_name_from_metadat
     monkeypatch.setattr(
         tiktok_ads_service,
         "_upsert_ad_group_rows",
-        lambda rows, *, source_window_start, source_window_end: captured_upsert_rows.extend(rows) or len(rows),
+        lambda rows, *, source_window_start, source_window_end, access_token=None: captured_upsert_rows.extend(rows) or len(rows),
     )
     monkeypatch.setattr(tiktok_ads_module.tiktok_snapshot_store, "upsert_snapshot", lambda payload: None)
 
@@ -504,7 +710,7 @@ def test_ad_group_daily_sync_uses_ad_group_id_fallback_when_name_missing(monkeyp
     monkeypatch.setattr(
         tiktok_ads_service,
         "_upsert_ad_group_rows",
-        lambda rows, *, source_window_start, source_window_end: captured_upsert_rows.extend(rows) or len(rows),
+        lambda rows, *, source_window_start, source_window_end, access_token=None: captured_upsert_rows.extend(rows) or len(rows),
     )
     monkeypatch.setattr(tiktok_ads_module.tiktok_snapshot_store, "upsert_snapshot", lambda payload: None)
 
