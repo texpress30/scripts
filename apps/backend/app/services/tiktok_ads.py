@@ -880,7 +880,7 @@ class TikTokAdsService:
         if grain == "campaign_daily":
             return TikTokReportingSchema(
                 data_level="AUCTION_CAMPAIGN",
-                dimensions=("stat_time_day", "campaign_id"),
+                dimensions=("stat_time_day", "campaign_id", "campaign_name"),
                 metrics=("spend", "impressions", "clicks", "conversion", "total_purchase_value"),
             )
         if grain == "ad_group_daily":
@@ -1986,6 +1986,34 @@ class TikTokAdsService:
                 }
             return len(rows)
 
+        campaign_entity_by_id: dict[str, dict[str, object]] = {}
+        for row in rows:
+            campaign_id = str(row.campaign_id or "").strip()
+            account_id = str(row.account_id or "").strip()
+            if campaign_id == "" or account_id == "":
+                continue
+            campaign_name = str(row.campaign_name or "").strip()
+            tiktok_meta = row.extra_metrics.get("tiktok_ads") if isinstance(row.extra_metrics, dict) else None
+            campaign_status = str((tiktok_meta or {}).get("campaign_status") or "").strip() if isinstance(tiktok_meta, dict) else ""
+            raw_payload = {
+                "campaign_id": campaign_id,
+                "campaign_name": campaign_name or None,
+                "campaign_status": campaign_status or None,
+                "source": "report.integrated.get",
+            }
+            payload_hash = hashlib.sha256(
+                json.dumps(raw_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            ).hexdigest()
+            campaign_entity_by_id[campaign_id] = {
+                "platform": "tiktok_ads",
+                "account_id": account_id,
+                "campaign_id": campaign_id,
+                "name": campaign_name or None,
+                "status": campaign_status or None,
+                "raw_payload": raw_payload,
+                "payload_hash": payload_hash,
+            }
+
         payload_rows = [
             {
                 "platform": "tiktok_ads",
@@ -2010,6 +2038,8 @@ class TikTokAdsService:
             for row in rows
         ]
         with self._connect() as conn:
+            if len(campaign_entity_by_id) > 0:
+                upsert_platform_campaigns(conn, list(campaign_entity_by_id.values()))
             written = int(upsert_campaign_performance_reports(conn, payload_rows) or 0)
             conn.commit()
             return written

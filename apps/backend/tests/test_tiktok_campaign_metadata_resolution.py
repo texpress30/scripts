@@ -62,6 +62,64 @@ def test_resolve_and_persist_tiktok_campaign_metadata_by_campaign_id(monkeypatch
     assert fake_conn.committed is True
 
 
+def test_campaign_daily_report_schema_requests_campaign_name_dimension():
+    schema = tiktok_ads_service._report_schema_for_grain("campaign_daily")
+    assert "campaign_name" in schema.dimensions
+
+
+def test_upsert_campaign_rows_persists_platform_campaign_entities(monkeypatch):
+    fake_conn = _FakeConn()
+    captured_entities: list[dict[str, object]] = []
+    captured_fact_rows: list[dict[str, object]] = []
+
+    rows = [
+        TikTokCampaignDailyMetric(
+            report_date=date(2026, 3, 20),
+            account_id="tt-acc-entity",
+            campaign_id="cmp-entity-1",
+            campaign_name="Entity Campaign Name",
+            spend=10.0,
+            impressions=100,
+            clicks=5,
+            conversions=1.0,
+            conversion_value=20.0,
+            extra_metrics={"tiktok_ads": {"campaign_status": "ENABLE"}},
+        )
+    ]
+
+    monkeypatch.setattr(tiktok_ads_service, "_is_test_mode", lambda: False)
+    monkeypatch.setattr(tiktok_ads_service, "_connect", lambda: fake_conn)
+
+    monkeypatch.setattr(
+        tiktok_ads_module,
+        "upsert_platform_campaigns",
+        lambda conn, payload: captured_entities.extend(payload) or len(payload),
+    )
+    monkeypatch.setattr(
+        tiktok_ads_module,
+        "upsert_campaign_performance_reports",
+        lambda conn, payload: captured_fact_rows.extend(payload) or len(payload),
+    )
+
+    written = tiktok_ads_service._upsert_campaign_rows(
+        rows,
+        source_window_start=date(2026, 3, 20),
+        source_window_end=date(2026, 3, 20),
+    )
+
+    assert written == 1
+    assert len(captured_entities) == 1
+    assert captured_entities[0]["platform"] == "tiktok_ads"
+    assert captured_entities[0]["account_id"] == "tt-acc-entity"
+    assert captured_entities[0]["campaign_id"] == "cmp-entity-1"
+    assert captured_entities[0]["name"] == "Entity Campaign Name"
+    assert captured_entities[0]["status"] == "ENABLE"
+    assert isinstance(captured_entities[0]["payload_hash"], str) and len(captured_entities[0]["payload_hash"]) > 0
+    assert captured_entities[0]["raw_payload"]["campaign_name"] == "Entity Campaign Name"
+    assert len(captured_fact_rows) == 1
+    assert fake_conn.committed is True
+
+
 def test_campaign_daily_sync_uses_metadata_name_instead_of_campaign_id_fallback(monkeypatch):
     monkeypatch.setenv("FF_TIKTOK_INTEGRATION", "1")
     monkeypatch.setenv("APP_AUTH_SECRET", "test-secret")
