@@ -1,3 +1,24 @@
+# TODO — Finalize TikTok schema fix merge + commit/PR packaging (2026-03-21)
+
+- [x] Reconcile merge state and keep exact TikTok dimensions (`adgroup_id`/`ad_id`) in runtime schema + tests.
+- [x] Re-run mandatory runtime introspection command for all grains.
+- [x] Run targeted backend tests and frontend build smoke check.
+- [x] Commit changes and prepare PR title/body with summary + verification.
+
+## Review
+- [x] Merge conflict resolved with runtime schema preserving exact valid dimension tuples and tests aligned.
+
+# TODO — TikTok retry: enforce ad_group_daily/ad_daily API-valid dimensions and verify runtime tuples (2026-03-21)
+
+- [x] Re-sync workspace + resolve merge state before applying retry fix.
+- [x] Set ad_group_daily dimensions to exact `("stat_time_day", "adgroup_id")`.
+- [x] Set ad_daily dimensions to exact `("stat_time_day", "ad_id")`.
+- [x] Run mandatory schema-print verification command and capture output.
+- [x] Run backend tests + frontend build.
+
+## Review
+- [x] Reporting schema now matches exact requested tuples; campaign metadata resolve/upsert path remains active in campaign_daily flow.
+
 # TODO — RETRY critical: enforce TikTok ad grains dimensions without campaign_id (2026-03-21)
 
 - [x] Re-sync workspace and re-read AGENTS before applying retry fix.

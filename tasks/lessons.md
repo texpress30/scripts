@@ -1,5 +1,9 @@
 # Lessons
 
+- 2026-03-21: Când userul cere explicit commit + make_pr în același task, finalizez obligatoriu în ordinea: verificări -> git commit -> make_pr; nu închid răspunsul înainte de ambele.
+
+- 2026-03-21: După pull-uri cu merge conflict, verific imediat că test expectations rămân aliniate cu contractul runtime al schemelor (dimensiuni exacte), altfel apar regresii false.
+
 - 2026-03-21: Pentru cerințe "EXACT tuple", rulez imediat comanda de introspecție pe runtime (`_report_schema_for_grain`) și atașez rezultatul, nu mă bazez doar pe diff-ul din commit.
 
 - 2026-03-21: La TikTok `report/integrated/get`, `campaign_id` este valid în `campaign_daily`, dar pentru `AUCTION_ADGROUP` și `AUCTION_AD` trebuie menținute dimensiunile minime (`adgroup_id` / `ad_id`) și campania se rezolvă din metadata endpoint-uri.

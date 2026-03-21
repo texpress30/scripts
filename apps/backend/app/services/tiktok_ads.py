@@ -881,13 +881,13 @@ class TikTokAdsService:
             return TikTokReportingSchema(
                 data_level="AUCTION_CAMPAIGN",
                 dimensions=("stat_time_day", "campaign_id"),
-                metrics=("spend", "impressions", "clicks", "conversion", "total_purchase_value", "campaign_name"),
+                metrics=("spend", "impressions", "clicks", "conversion", "total_purchase_value"),
             )
         if grain == "ad_group_daily":
             return TikTokReportingSchema(
                 data_level="AUCTION_ADGROUP",
                 dimensions=("stat_time_day", "adgroup_id"),
-                metrics=("spend", "impressions", "clicks", "conversion", "total_purchase_value", "adgroup_name", "campaign_id"),
+                metrics=("spend", "impressions", "clicks", "conversion", "total_purchase_value", "adgroup_name", "campaign_id", "campaign_name"),
             )
         return TikTokReportingSchema(
             data_level="AUCTION_AD",

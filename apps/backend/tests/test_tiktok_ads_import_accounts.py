@@ -295,7 +295,9 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
         self.assertEqual(ad_group_schema.dimensions, ("stat_time_day", "campaign_id", "ad_group_id"))
         self.assertNotIn("campaign_name", ad_group_schema.dimensions)
         self.assertNotIn("conversion_value", ad_group_schema.metrics)
-        self.assertEqual(ad_schema.dimensions, ("stat_time_day", "campaign_id", "ad_group_id", "ad_id"))
+        self.assertEqual(ad_schema.dimensions, ("stat_time_day", "ad_id"))
+        self.assertNotIn("campaign_id", ad_schema.dimensions)
+        self.assertNotIn("adgroup_id", ad_schema.dimensions)
         self.assertNotIn("conversion_value", ad_schema.metrics)
 
     def test_reporting_fetchers_generate_structurally_valid_requests_for_known_tiktok_errors(self):
