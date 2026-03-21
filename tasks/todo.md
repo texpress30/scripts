@@ -1,3 +1,15 @@
+# TODO — GitHub Connector remote sync (2026-03-21)
+
+- [x] Start with a fresh terminal execution context and run the exact remote add/set-url command provided by user.
+- [x] Run `git fetch origin`.
+- [x] Run `git pull origin main --allow-unrelated-histories`.
+- [x] Verify remote configuration and branch status after sync.
+
+## Review
+- [x] `origin` is configured to the requested GitHub URL for both fetch and push.
+- [x] Fetch completed successfully and updated remote refs.
+- [x] Pull against `origin/main` completed with `Already up to date.`
+
 # TODO — Sub-account Profil Business: sidebar location from business profile + nișă Parc Auto (2026-03-21)
 
 - [x] Re-read AGENTS/todo/lessons and audit source of sidebar location + nișă options.
