@@ -234,7 +234,7 @@ def test_report_query_params_guard_removes_campaign_name_for_campaign_data_level
 
 def test_ad_group_daily_report_schema_keeps_supported_dimensions_only():
     schema = tiktok_ads_service._report_schema_for_grain("ad_group_daily")
-    assert schema.dimensions == ("stat_time_day", "adgroup_id")
+    assert schema.dimensions == ("stat_time_day", "campaign_id", "ad_group_id")
 
 
 def test_fetch_ad_group_daily_metrics_request_params_exclude_campaign_dimensions(monkeypatch):
@@ -257,8 +257,7 @@ def test_fetch_ad_group_daily_metrics_request_params_exclude_campaign_dimensions
     assert payload == []
     dimensions = captured_request_params.get("dimensions")
     assert isinstance(dimensions, list)
-    assert dimensions == ["stat_time_day", "adgroup_id"]
-    assert "campaign_id" not in dimensions
+    assert dimensions == ["stat_time_day", "campaign_id", "ad_group_id"]
     assert "adgroup_name" not in dimensions
 
 
