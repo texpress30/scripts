@@ -89,6 +89,21 @@ function normalizeAccountId(value: string): string {
   return value.replace(/[-_]/g, "").trim();
 }
 
+function tiktokZeroRowOperationalMessage(marker: string): string | null {
+  if (marker === "provider_returned_empty_list") return "Nu au fost returnate date pentru acest interval.";
+  if (marker === "response_parsed_but_zero_rows_mapped") return "Chunk finalizat fără rânduri mapate.";
+  return null;
+}
+
+function formatChunkErrorMessage(error?: string | null): string {
+  const raw = String(error ?? "").trim();
+  if (!raw) return "Chunk finalizat cu eroare.";
+  if ((raw.startsWith("{") && raw.endsWith("}")) || raw.startsWith("[") || raw.includes("\"error\":")) {
+    return "Chunk finalizat cu eroare. Verifică detaliile run-ului.";
+  }
+  return raw;
+}
+
 function accountListEndpoint(platform: string): string | null {
   const normalized = String(platform).trim();
   if (normalized === "google_ads") return "/clients/accounts/google";
@@ -701,6 +716,15 @@ export default function AgencyAccountDetailPage() {
                         }
                         if (platform === "tiktok_ads") {
                           const fallback = summary || String(run.error ?? "").trim() || (details && typeof details === "object" ? String((details as { provider_error_message?: unknown }).provider_error_message ?? "").trim() : "") || "run failed";
+                          const staleFeatureFlagError = shouldSuppressStaleTikTokFeatureFlagError({
+                            platform,
+                            syncEnabled: platformSyncEnabled,
+                            hasActiveSync: hasActiveRun,
+                            lastRunStatus: run.status,
+                            errorCategory: category,
+                            errorMessage: fallback,
+                          });
+                          if (staleFeatureFlagError) return null;
                           const presentation = getTikTokErrorPresentation(category, fallback);
                           return (
                             <>
@@ -739,6 +763,10 @@ export default function AgencyAccountDetailPage() {
                                     const chunkRowsDownloaded = chunkMetadata ? Number((chunkMetadata as Record<string, unknown>).rows_downloaded ?? (chunkMetadata as Record<string, unknown>).provider_row_count ?? 0) : 0;
                                     const chunkRowsMapped = chunkMetadata ? Number((chunkMetadata as Record<string, unknown>).rows_mapped ?? 0) : 0;
                                     const zeroRowObservability = chunkMetadata ? (chunkMetadata as Record<string, unknown>).zero_row_observability : null;
+                                    const zeroRowMarker = Array.isArray(zeroRowObservability) && zeroRowObservability.length > 0 && typeof zeroRowObservability[0] === "object"
+                                      ? String(((zeroRowObservability[0] as Record<string, unknown>).zero_row_marker as string | undefined) || "").trim()
+                                      : "";
+                                    const zeroRowOperationalMessage = tiktokZeroRowOperationalMessage(zeroRowMarker);
                                     return (
                                       <>
                                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -747,10 +775,10 @@ export default function AgencyAccountDetailPage() {
                                   </div>
                                   <p className="mt-1">Attempts: {chunk.attempts ?? 0} · Rows: {chunk.rows_written ?? 0} · Duration: {chunk.duration_ms ?? "-"} ms</p>
                                   {platform === "tiktok_ads" ? <p className="mt-1">Rows downloaded: {chunkRowsDownloaded} · Rows mapped: {chunkRowsMapped}</p> : null}
-                                  {platform === "tiktok_ads" && Array.isArray(zeroRowObservability) && zeroRowObservability.length > 0 ? (
-                                    <p className="mt-1 text-amber-700">Observability: {JSON.stringify(zeroRowObservability[0])}</p>
+                                  {platform === "tiktok_ads" && (chunk.status ?? "").toString().toLowerCase() === "done" && zeroRowOperationalMessage ? (
+                                    <p className="mt-1 text-slate-600">{zeroRowOperationalMessage}</p>
                                   ) : null}
-                                  {chunk.error ? <p className="mt-1 text-red-600">Error: {chunk.error}</p> : null}
+                                  {chunk.error ? <p className="mt-1 text-red-600">Error: {formatChunkErrorMessage(chunk.error)}</p> : null}
                                       </>
                                     );
                                   })()}

@@ -12,6 +12,8 @@ from app.schemas.client import (
     DetachGoogleAccountRequest,
     DetachPlatformAccountRequest,
     UpdateClientProfileRequest,
+    SubaccountBusinessProfilePayload,
+    SubaccountBusinessProfileResponse,
     MediaBuyingConfigUpdateRequest,
     MediaBuyingLeadDailyValueUpsertRequest,
     MediaTrackerWorksheetManualValuesUpsertRequest,
@@ -30,6 +32,7 @@ from app.services.sync_constants import (
     PLATFORM_SNAPCHAT_ADS,
     PLATFORM_TIKTOK_ADS,
 )
+from app.services.subaccount_business_profile_store import subaccount_business_profile_store
 
 router = APIRouter(prefix="/clients", tags=["clients"])
 
@@ -365,6 +368,63 @@ def update_client_profile(
     if updated is None:
         raise HTTPException(status_code=404, detail="Client not found")
     return updated
+
+
+@router.get("/display/{display_id}/business-profile", response_model=SubaccountBusinessProfileResponse)
+def get_subaccount_business_profile(display_id: int, user: AuthUser = Depends(get_current_user)) -> SubaccountBusinessProfileResponse:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    details = client_registry_service.get_client_details_by_display_id(display_id=display_id)
+    if details is None:
+        raise HTTPException(status_code=404, detail="Client not found")
+    client_payload = details.get("client", {}) if isinstance(details, dict) else {}
+    client_id = int(client_payload.get("id") or 0)
+    if client_id <= 0:
+        raise HTTPException(status_code=404, detail="Client not found")
+    profile = subaccount_business_profile_store.get_profile(client_id=client_id)
+    return SubaccountBusinessProfileResponse(
+        client_id=client_id,
+        display_id=int(display_id),
+        general=dict(profile.get("general") or {}),
+        business=dict(profile.get("business") or {}),
+        address=dict(profile.get("address") or {}),
+        representative=dict(profile.get("representative") or {}),
+        logo_url=str(profile.get("logo_url") or ""),
+    )
+
+
+@router.put("/display/{display_id}/business-profile", response_model=SubaccountBusinessProfileResponse)
+def upsert_subaccount_business_profile(
+    display_id: int,
+    payload: SubaccountBusinessProfilePayload,
+    user: AuthUser = Depends(get_current_user),
+) -> SubaccountBusinessProfileResponse:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    details = client_registry_service.get_client_details_by_display_id(display_id=display_id)
+    if details is None:
+        raise HTTPException(status_code=404, detail="Client not found")
+    client_payload = details.get("client", {}) if isinstance(details, dict) else {}
+    client_id = int(client_payload.get("id") or 0)
+    if client_id <= 0:
+        raise HTTPException(status_code=404, detail="Client not found")
+    profile = subaccount_business_profile_store.upsert_profile(
+        client_id=client_id,
+        payload={
+            "general": payload.general,
+            "business": payload.business,
+            "address": payload.address,
+            "representative": payload.representative,
+            "logo_url": payload.logo_url,
+        },
+    )
+    return SubaccountBusinessProfileResponse(
+        client_id=client_id,
+        display_id=int(display_id),
+        general=dict(profile.get("general") or {}),
+        business=dict(profile.get("business") or {}),
+        address=dict(profile.get("address") or {}),
+        representative=dict(profile.get("representative") or {}),
+        logo_url=str(profile.get("logo_url") or ""),
+    )
 
 
 @router.post("/{client_id}/business-inputs/import", response_model=BusinessInputsImportResponse)
