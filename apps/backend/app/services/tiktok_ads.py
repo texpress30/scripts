@@ -886,7 +886,7 @@ class TikTokAdsService:
         if grain == "ad_group_daily":
             return TikTokReportingSchema(
                 data_level="AUCTION_ADGROUP",
-                dimensions=("stat_time_day", "adgroup_id", "campaign_id"),
+                dimensions=("stat_time_day", "adgroup_id"),
                 metrics=("spend", "impressions", "clicks", "conversion", "total_purchase_value"),
             )
         return TikTokReportingSchema(
