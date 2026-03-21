@@ -884,7 +884,18 @@ class ClientRegistryService:
                     ) latest ON TRUE
                     LEFT JOIN LATERAL (
                       SELECT
-                        BOOL_OR(sr.status IN ('queued', 'running', 'pending')) AS has_active_sync
+                        BOOL_OR(
+                          sr.status IN ('queued', 'running', 'pending')
+                          AND (
+                            COALESCE(sr.chunks_total, 0) <= 0
+                            OR EXISTS (
+                              SELECT 1
+                              FROM sync_run_chunks src
+                              WHERE src.job_id = sr.job_id
+                                AND src.status IN ('queued', 'running', 'pending')
+                            )
+                          )
+                        ) AS has_active_sync
                       FROM sync_runs sr
                       WHERE sr.platform = a.platform AND sr.account_id = a.account_id
                     ) active ON TRUE
