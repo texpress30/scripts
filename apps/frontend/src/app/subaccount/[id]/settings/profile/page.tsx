@@ -1,6 +1,6 @@
 "use client";
 
-import React, { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import React, { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { Info, Upload, X } from "lucide-react";
 import { useParams } from "next/navigation";
 
@@ -72,41 +72,41 @@ function validatePhone(value: string): string | null {
 
 export default function SubAccountSettingsPage() {
   const params = useParams<{ id: string }>();
-  const subaccountId = useMemo(() => String(params.id ?? "").trim(), [params.id]);
-  const storageKey = useMemo(() => `subaccount_profile_settings_${subaccountId}`, [subaccountId]);
+  const subaccountId = String(params.id ?? "").trim();
+  const [headerClientName, setHeaderClientName] = useState("");
 
   const [general, setGeneral] = useState<GeneralForm>({
-    friendlyName: "OMAROSA AGENCY",
-    legalName: "OMAROSA SRL",
-    email: "admin@omarosa.ro",
-    phone: "+40 725 083 012",
-    website: "https://www.omarosa.ro",
-    niche: "agencie_marketing",
-    currency: "RON",
+    friendlyName: "",
+    legalName: "",
+    email: "",
+    phone: "",
+    website: "",
+    niche: "",
+    currency: "",
   });
   const [business, setBusiness] = useState<BusinessForm>({
-    businessType: "srl",
-    industry: "media",
-    registrationIdType: "ro_vat",
-    registrationNumber: "23040624",
+    businessType: "",
+    industry: "",
+    registrationIdType: "",
+    registrationNumber: "",
     notRegistered: false,
-    regions: ["Europa"],
+    regions: [],
   });
   const [address, setAddress] = useState<AddressForm>({
-    street: "Str. Exemplu Nr. 10",
-    city: "București",
-    zipCode: "010101",
-    region: "București",
-    country: "RO",
-    timezone: "Europe/Bucharest",
-    language: "ro",
+    street: "",
+    city: "",
+    zipCode: "",
+    region: "",
+    country: "",
+    timezone: "",
+    language: "",
   });
   const [representative, setRepresentative] = useState<RepresentativeForm>({
-    firstName: "Ana",
-    lastName: "Popescu",
-    email: "ana.popescu@omarosa.ro",
-    jobPosition: "administrator",
-    phone: "+40 721 000 111",
+    firstName: "",
+    lastName: "",
+    email: "",
+    jobPosition: "",
+    phone: "",
   });
 
   const [logoError, setLogoError] = useState("");
@@ -129,71 +129,48 @@ export default function SubAccountSettingsPage() {
       setLoading(true);
       setErrorMessage("");
       try {
-        const payload = await apiRequest<{
-          client?: { name?: string; owner_email?: string; currency?: string; client_logo_url?: string };
-        }>(`/clients/display/${subaccountId}`);
+        const [profilePayload, detailsPayload] = await Promise.all([
+          apiRequest<{
+            general?: Partial<GeneralForm>;
+            business?: Partial<BusinessForm>;
+            address?: Partial<AddressForm>;
+            representative?: Partial<RepresentativeForm>;
+            logo_url?: string;
+          }>(`/clients/display/${subaccountId}/business-profile`),
+          apiRequest<{ client?: { name?: string } }>(`/clients/display/${subaccountId}`),
+        ]);
         if (cancelled) return;
-        const client = payload?.client ?? {};
-        setGeneral((prev) => ({
-          ...prev,
-          friendlyName: String(client.name ?? prev.friendlyName),
-          legalName: String(client.name ?? prev.legalName),
-          email: String(client.owner_email ?? prev.email),
-          currency: String(client.currency ?? prev.currency).toUpperCase(),
-        }));
-        const nextLogo = String(client.client_logo_url ?? "").trim();
-        setLogoPreviewUrl(nextLogo);
-        setLogoName(nextLogo ? "Logo salvat" : "");
+        setHeaderClientName(String(detailsPayload?.client?.name ?? "").trim());
+        setGeneral((prev) => ({ ...prev, ...(profilePayload.general ?? {}) }));
+        setBusiness((prev) => ({ ...prev, ...(profilePayload.business ?? {}) }));
+        setAddress((prev) => ({ ...prev, ...(profilePayload.address ?? {}) }));
+        setRepresentative((prev) => ({ ...prev, ...(profilePayload.representative ?? {}) }));
+        const loadedLogo = String(profilePayload.logo_url ?? "").trim();
+        setLogoPreviewUrl(loadedLogo);
+        setLogoName(loadedLogo ? "Logo salvat" : "");
       } catch (err) {
-        if (!cancelled) {
-          setErrorMessage(err instanceof Error ? err.message : "Nu am putut încărca profilul business.");
-        }
+        if (!cancelled) setErrorMessage(err instanceof Error ? err.message : "Nu am putut încărca profilul business.");
       }
-
-      try {
-        const raw = window.localStorage.getItem(storageKey);
-        if (!raw) return;
-        const parsed = JSON.parse(raw) as {
-          general?: Partial<GeneralForm>;
-          business?: Partial<BusinessForm>;
-          address?: Partial<AddressForm>;
-          representative?: Partial<RepresentativeForm>;
-        };
-        if (cancelled) return;
-        if (parsed.general) setGeneral((prev) => ({ ...prev, ...parsed.general }));
-        if (parsed.business) setBusiness((prev) => ({ ...prev, ...parsed.business }));
-        if (parsed.address) setAddress((prev) => ({ ...prev, ...parsed.address }));
-        if (parsed.representative) setRepresentative((prev) => ({ ...prev, ...parsed.representative }));
-      } catch {
-        // ignore corrupted local snapshot
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+      if (!cancelled) setLoading(false);
     }
 
     void loadProfile();
     return () => {
       cancelled = true;
     };
-  }, [storageKey, subaccountId]);
+  }, [subaccountId]);
 
-  function persistLocalSnapshot(next: {
-    general?: GeneralForm;
-    business?: BusinessForm;
-    address?: AddressForm;
-    representative?: RepresentativeForm;
-  }) {
-    try {
-      const payload = {
-        general: next.general ?? general,
-        business: next.business ?? business,
-        address: next.address ?? address,
-        representative: next.representative ?? representative,
-      };
-      window.localStorage.setItem(storageKey, JSON.stringify(payload));
-    } catch {
-      // non-blocking persistence
-    }
+  async function saveBusinessProfile() {
+    await apiRequest(`/clients/display/${subaccountId}/business-profile`, {
+      method: "PUT",
+      body: JSON.stringify({
+        general,
+        business,
+        address,
+        representative,
+        logo_url: logoPreviewUrl.trim(),
+      }),
+    });
   }
 
   function showToast(message: string) {
@@ -250,22 +227,14 @@ export default function SubAccountSettingsPage() {
     if (Object.keys(nextErrors).length > 0) return;
     try {
       setErrorMessage("");
-      await apiRequest(`/clients/display/${subaccountId}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          name: general.friendlyName.trim(),
-          currency: general.currency.trim().toUpperCase(),
-          client_logo_url: logoPreviewUrl.trim(),
-        }),
-      });
-      persistLocalSnapshot({ general });
+      await saveBusinessProfile();
       showToast("Informațiile generale au fost actualizate.");
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : "Nu am putut salva informațiile generale.");
     }
   }
 
-  function submitBusiness(event: FormEvent<HTMLFormElement>) {
+  async function submitBusiness(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextErrors: Record<string, string> = {};
 
@@ -285,11 +254,16 @@ export default function SubAccountSettingsPage() {
 
     setBusinessErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
-    persistLocalSnapshot({ business });
-    showToast("Informațiile despre business au fost actualizate.");
+    try {
+      setErrorMessage("");
+      await saveBusinessProfile();
+      showToast("Informațiile despre business au fost actualizate.");
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Nu am putut salva informațiile business.");
+    }
   }
 
-  function submitAddress(event: FormEvent<HTMLFormElement>) {
+  async function submitAddress(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextErrors: Record<string, string> = {};
 
@@ -300,11 +274,16 @@ export default function SubAccountSettingsPage() {
 
     setAddressErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
-    persistLocalSnapshot({ address });
-    showToast("Adresa business-ului a fost actualizată.");
+    try {
+      setErrorMessage("");
+      await saveBusinessProfile();
+      showToast("Adresa business-ului a fost actualizată.");
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Nu am putut salva adresa business-ului.");
+    }
   }
 
-  function submitRepresentative(event: FormEvent<HTMLFormElement>) {
+  async function submitRepresentative(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextErrors: Record<string, string> = {};
 
@@ -321,13 +300,18 @@ export default function SubAccountSettingsPage() {
 
     setRepresentativeErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
-    persistLocalSnapshot({ representative });
-    showToast("Datele reprezentantului au fost actualizate.");
+    try {
+      setErrorMessage("");
+      await saveBusinessProfile();
+      showToast("Datele reprezentantului au fost actualizate.");
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Nu am putut salva datele reprezentantului.");
+    }
   }
 
   return (
     <ProtectedPage>
-      <AppShell title={`Sub-account #${params.id} — Profil Business`}>
+      <AppShell title={headerClientName ? `${headerClientName} — Profil Business` : `Sub-account #${params.id} — Profil Business`}>
         <main className="p-6">
           {loading ? <p className="mb-4 text-sm text-slate-500">Se încarcă profilul business...</p> : null}
           {toastMessage ? (

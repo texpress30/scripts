@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-21: Dacă userul cere explicit „fără prefill”, nu folosesc nici fallback din endpointuri de display (`/clients/display`) și nici rehydrate localStorage; formularul se alimentează exclusiv din endpointul de profil dedicat sau rămâne gol.
+
 - 2026-03-21: După ce utilizatorul corectează procesul/formatul, actualizez imediat `tasks/lessons.md` în același task și evit să trimit promisiuni de implementare înainte de execuție reală în repo.
 
 - 2026-03-20: Când un sub-route placeholder devine pagină de lucru (ex. Google Ads), izolează schimbarea pe pagina respectivă și ajustează testele placeholder ca să nu rupi celelalte rute „Coming Soon”.

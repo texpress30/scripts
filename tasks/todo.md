@@ -1,3 +1,18 @@
+# TODO — Sub-account Profil Business: remove forbidden prefill and use explicit business profile source (2026-03-21)
+
+- [x] Re-read AGENTS + tasks and confirm root-cause from prior patch (`/clients/display/{id}` + localStorage prefill path).
+- [x] Add dedicated backend load/save path for sub-account business profile (separate from client display details).
+- [x] Update Sub-account Profil Business page to load only explicit business-profile data (or empty) and remove localStorage rehydrate logic.
+- [x] Keep title/client display usage isolated to headline only, not form values.
+- [x] Update frontend tests for no-prefill, empty-first-load, save+reload, and localStorage non-prefill guarantees.
+- [x] Add backend tests proving business-profile endpoint returns empty payload without display fallback and persists explicit save values.
+- [x] Run backend tests + frontend tests + frontend build.
+
+## Review
+- [x] Root cause confirmed and removed: form no longer hydrates from `/clients/display/{id}` data and no longer rehydrates from `subaccount_profile_settings_*` localStorage snapshot.
+- [x] New source of truth for form load/save: `/clients/display/{display_id}/business-profile` only.
+- [x] Scope unchanged for Agency / Team / auth / invite / delete / Media Buying / Media Tracker.
+
 # TODO — Sub-account Profil Business: prefill/save/location/logo persistence hardening (2026-03-21)
 
 - [x] Re-sync context + audit implementare existentă pentru `/subaccount/[id]/settings/profile` și contractele API disponibile.

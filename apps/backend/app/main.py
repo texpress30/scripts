@@ -40,6 +40,7 @@ from app.api.rules import router as rules_router
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
 from app.services.company_settings import company_settings_service
+from app.services.subaccount_business_profile_store import subaccount_business_profile_store
 from app.services.auth_email_tokens import auth_email_tokens_service
 from app.services.email_templates import email_templates_service
 from app.services.email_notifications import email_notifications_service
@@ -141,29 +142,11 @@ def startup_event() -> None:
                 logger.warning("Database connection failed (attempt %d/%d): %s. Retrying in 3 seconds...", attempt + 1, max_retries, e)
                 time.sleep(3)
 
-        if not acquired_lock:
-            logger.info("Database schema is being initialized by another worker. Skipping locally.")
-            if global_conn is not None:
-                global_conn.close()
-            return
-
-        try:
-            logger.info("Initializing runtime DB schema...")
-            client_registry_service.initialize_schema()
-            user_profile_service.initialize_schema()
-            team_members_service.initialize_schema()
-            company_settings_service.initialize_schema()
-            auth_email_tokens_service.initialize_schema()
-            email_templates_service.initialize_schema()
-            email_notifications_service.initialize_schema()
-        finally:
-            if global_conn is not None:
-                try:
-                    if not is_sqlite:
-                        with global_conn.cursor() as cur:
-                            cur.execute("SELECT pg_advisory_unlock(1, hashtext('global_schema_init'))")
-                        global_conn.commit()
-                except Exception as unlock_err:
-                    logger.error(f"Failed to release global schema lock: {unlock_err}")
-                finally:
-                    global_conn.close()
+    client_registry_service.initialize_schema()
+    user_profile_service.initialize_schema()
+    team_members_service.initialize_schema()
+    company_settings_service.initialize_schema()
+    subaccount_business_profile_store.initialize_schema()
+    auth_email_tokens_service.initialize_schema()
+    email_templates_service.initialize_schema()
+    email_notifications_service.initialize_schema()
