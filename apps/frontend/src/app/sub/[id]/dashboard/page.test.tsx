@@ -25,6 +25,17 @@ vi.mock("@/components/ui/card", () => ({
   CardTitle: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   CardContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
+vi.mock("recharts", () => ({
+  ResponsiveContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  AreaChart: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Area: () => null,
+  LineChart: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Line: () => null,
+  CartesianGrid: () => null,
+  XAxis: () => null,
+  YAxis: () => null,
+  Tooltip: () => null,
+}));
 
 describe("SubDashboardPage header and platform links", () => {
   beforeEach(() => {
@@ -43,6 +54,10 @@ describe("SubDashboardPage header and platform links", () => {
       client_id: 96,
       currency: "RON",
       totals: { spend: 10, impressions: 100, clicks: 10, conversions: 1, revenue: 20, roas: 2 },
+      spend_by_day: [
+        { date: "2026-03-01", spend: 4, platform_spend: { google_ads: 1, meta_ads: 2, tiktok_ads: 1 } },
+        { date: "2026-03-02", spend: 6, platform_spend: { google_ads: 2, meta_ads: 2, tiktok_ads: 2 } },
+      ],
       platforms: {
         google_ads: { spend: 1, impressions: 10, clicks: 1, conversions: 1, revenue: 2 },
         meta_ads: { spend: 2, impressions: 20, clicks: 2, conversions: 1, revenue: 3 },
@@ -111,6 +126,10 @@ describe("SubDashboardPage header and platform links", () => {
       client_id: 96,
       currency: "RON",
       totals: { spend: 10, impressions: 100, clicks: 10, conversions: 1, revenue: 20, roas: 2 },
+      spend_by_day: [
+        { date: "2026-03-01", spend: 4, platform_spend: { google_ads: 1, meta_ads: 2, tiktok_ads: 1 } },
+        { date: "2026-03-02", spend: 6, platform_spend: { google_ads: 2, meta_ads: 2, tiktok_ads: 2 } },
+      ],
       platforms: {
         google_ads: { spend: 1, impressions: 10, clicks: 1, conversions: 1, revenue: 2 },
         meta_ads: { spend: 2, impressions: 20, clicks: 2, conversions: 1, revenue: 3 },
@@ -128,6 +147,49 @@ describe("SubDashboardPage header and platform links", () => {
 
     await screen.findByRole("link", { name: "Meta Ads" });
     expect(screen.queryByText("Some platform totals may be incomplete due to sync issues.")).toBeNull();
+  });
+
+  it("renders both spend charts between KPI and platform table", async () => {
+    render(<SubDashboardPage />);
+
+    expect(await screen.findByText("Spend total pe zile")).toBeInTheDocument();
+    expect(screen.getByText("Spend pe platforme")).toBeInTheDocument();
+  });
+
+  it("shows loading and empty states for charts", async () => {
+    apiMock.apiRequest.mockResolvedValueOnce({
+      client_id: 96,
+      currency: "RON",
+      totals: { spend: 0, impressions: 0, clicks: 0, conversions: 0, revenue: 0, roas: 0 },
+      spend_by_day: [],
+      platforms: {
+        google_ads: { spend: 0, impressions: 0, clicks: 0, conversions: 0, revenue: 0 },
+        meta_ads: { spend: 0, impressions: 0, clicks: 0, conversions: 0, revenue: 0 },
+        tiktok_ads: { spend: 0, impressions: 0, clicks: 0, conversions: 0, revenue: 0 },
+        pinterest_ads: { spend: 0, impressions: 0, clicks: 0, conversions: 0, revenue: 0 },
+        snapchat_ads: { spend: 0, impressions: 0, clicks: 0, conversions: 0, revenue: 0 },
+      },
+      platform_sync_summary: { meta_ads: { accounts: [] }, tiktok_ads: { accounts: [] } },
+    });
+
+    render(<SubDashboardPage />);
+
+    expect(screen.getAllByText("Se încarcă datele pentru grafic…").length).toBeGreaterThan(0);
+    expect(await screen.findByText("Nu există spend în perioada selectată.")).toBeInTheDocument();
+    expect(screen.getByText("Nu există spend pe platforme în perioada selectată.")).toBeInTheDocument();
+  });
+
+  it("reloads dashboard for selected calendar range", async () => {
+    render(<SubDashboardPage />);
+    await screen.findByRole("link", { name: "Google Ads" });
+
+    fireEvent.click(screen.getByRole("button", { name: /Last 30 days/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Today" }));
+
+    expect(apiMock.apiRequest).toHaveBeenLastCalledWith(expect.stringMatching(/start_date=\d{4}-\d{2}-\d{2}&end_date=\d{4}-\d{2}-\d{2}/));
+    const requestPath = String(apiMock.apiRequest.mock.calls.at(-1)?.[0] ?? "");
+    const params = new URLSearchParams(requestPath.split("?")[1] ?? "");
+    expect(params.get("start_date")).toBe(params.get("end_date"));
   });
 
   it("redirects to first allowed module when dashboard permission is missing", async () => {
