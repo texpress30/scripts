@@ -1,3 +1,15 @@
+# TODO — TikTok hotfix: remove invalid campaign_id dimensions on ad grains and confirm metadata persist call-path (2026-03-21)
+
+- [x] Sync workspace + re-read AGENTS at task start.
+- [x] Set `_report_schema_for_grain('ad_group_daily')` dimensions back to `("stat_time_day", "adgroup_id")`.
+- [x] Set `_report_schema_for_grain('ad_daily')` dimensions back to `("stat_time_day", "ad_id")`.
+- [x] Verify campaign metadata persistence path remains active during `campaign_daily` sync (`_resolve_and_persist_campaign_metadata_safe` + upsert flow).
+- [x] Update backend tests to match valid TikTok dimension contracts.
+- [x] Run backend relevant tests + frontend build.
+
+## Review
+- [x] Fixed invalid TikTok dimension contract for AUCTION_ADGROUP/AUCTION_AD without touching Agency/Team/auth/invite/delete or Media Buying/Tracker.
+
 # TODO — TikTok metadata hotfix: campaign/ad-group payload parsing + ID dimensions for ad_group_daily/ad_daily (2026-03-21)
 
 - [x] Sync workspace and re-read AGENTS before applying hotfixes.

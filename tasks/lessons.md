@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-21: La TikTok `report/integrated/get`, `campaign_id` este valid în `campaign_daily`, dar pentru `AUCTION_ADGROUP` și `AUCTION_AD` trebuie menținute dimensiunile minime (`adgroup_id` / `ad_id`) și campania se rezolvă din metadata endpoint-uri.
+
 - 2026-03-21: Pentru TikTok reporting cu IDs-only dimensions, păstrez alias parsing (`ad_group_id` și `adgroup_id`) în maparea răspunsului și aliniez schema per grain la contractul de persistență (campaign_id/ad_group_id/ad_id).
 
 - 2026-03-21: După eliminarea `campaign_name` din report dimensions, tratez `campaign/get` și `adgroup/get` ca sursă principală pentru nume și acopăr explicit prin teste că fetch-ul rulează pe toate ID-urile, nu doar pe cele fără fallback.

@@ -313,6 +313,10 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
 
             if data_level == "AUCTION_CAMPAIGN" and "campaign_name" in dimensions:
                 return {"code": 40020, "message": "campaign_name is not supported"}
+            if data_level == "AUCTION_ADGROUP" and "campaign_id" in dimensions:
+                return {"code": 40021, "message": "data_level AUCTION_ADGROUP and dimension campaign_id do not match"}
+            if data_level == "AUCTION_AD" and "campaign_id" in dimensions:
+                return {"code": 40022, "message": "data_level AUCTION_AD and dimension campaign_id do not match"}
             if "conversion_value" in metrics:
                 return {"code": 40010, "message": "Invalid metric fields: ['conversion_value']"}
             if len(dimensions) < 1 or len(dimensions) > 4:
@@ -359,7 +363,8 @@ class TikTokAdsImportAccountsTests(unittest.TestCase):
         self.assertNotIn("campaign_name", captured.get("AUCTION_CAMPAIGN", []))
         self.assertEqual(captured.get("AUCTION_ADGROUP"), ["stat_time_day", "campaign_id", "ad_group_id"])
         self.assertNotIn("campaign_name", captured.get("AUCTION_ADGROUP", []))
-        self.assertEqual(captured.get("AUCTION_AD"), ["stat_time_day", "campaign_id", "ad_group_id", "ad_id"])
+        self.assertEqual(captured.get("AUCTION_AD"), ["stat_time_day", "ad_id"])
+        self.assertNotIn("campaign_id", captured.get("AUCTION_AD", []))
 
     def test_campaign_adgroup_ad_daily_do_not_request_conversion_value_and_keep_fallback(self):
         service = TikTokAdsService()
