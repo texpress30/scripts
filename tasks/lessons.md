@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-21: Pentru TikTok ad-group facts, păstrez explicit ambele chei în `extra_metrics` (`adgroup_name` și `ad_group_name`) și propag `campaign_id`/`campaign_name` în upsert payload; altfel dashboard queries pe alias pot returna `NULL` deși numele sunt parse-uite.
+
 - 2026-03-21: În metadata resolve TikTok, nu fac upsert fallback pentru entity rows fără semnal real (name/status/raw_payload toate goale); altfel pot suprascrie `platform_campaigns`/`platform_ad_groups` cu `NULL` și `{}` chiar când fetch-ul management API eșuează.
 
 - 2026-03-21: Pentru TikTok ad_group_daily/campaign_daily, numele entity trebuie enrich-uite explicit din endpoint-urile de management (`campaign/get`, `adgroup/get`) imediat după report fetch; nu mă bazez pe `report/integrated/get` pentru name fields.

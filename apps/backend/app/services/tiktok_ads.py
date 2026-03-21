@@ -122,7 +122,7 @@ class TikTokCampaignDailyMetric:
     report_date: date
     account_id: str
     campaign_id: str
-    campaign_name: str
+    campaign_name: str | None
     spend: float
     impressions: int
     clicks: int
@@ -135,9 +135,10 @@ class TikTokAdGroupDailyMetric:
     report_date: date
     account_id: str
     ad_group_id: str
-    ad_group_name: str
-    campaign_id: str
-    campaign_name: str
+    ad_group_name: str | None
+    adgroup_name: str | None
+    campaign_id: str | None
+    campaign_name: str | None
     spend: float
     impressions: int
     clicks: int
@@ -1104,12 +1105,24 @@ class TikTokAdsService:
         rows_to_upsert: list[dict[str, object]] = []
         for ad_group_id, payload in metadata_by_id.items():
             normalized_ad_group_id = str(ad_group_id or payload.get("ad_group_id") or "").strip()
-            campaign_id = str(payload.get("campaign_id") or "").strip()
+            raw_payload = payload.get("raw_payload") if isinstance(payload.get("raw_payload"), dict) else {}
+            campaign_id = str(
+                payload.get("campaign_id")
+                or payload.get("campaignId")
+                or raw_payload.get("campaign_id")
+                or raw_payload.get("campaignId")
+                or ""
+            ).strip()
             if normalized_ad_group_id == "" or campaign_id == "":
                 continue
-            ad_group_name = str(payload.get("ad_group_name") or "").strip() or None
+            ad_group_name = str(
+                payload.get("ad_group_name")
+                or payload.get("adgroup_name")
+                or raw_payload.get("ad_group_name")
+                or raw_payload.get("adgroup_name")
+                or ""
+            ).strip() or None
             ad_group_status = str(payload.get("ad_group_status") or "").strip() or None
-            raw_payload = payload.get("raw_payload") if isinstance(payload.get("raw_payload"), dict) else {}
             if ad_group_name is None and ad_group_status is None and len(raw_payload) == 0:
                 continue
             rows_to_upsert.append(
@@ -1279,7 +1292,7 @@ class TikTokAdsService:
                     continue
                 ad_group_name = str(item.get("adgroup_name") or item.get("ad_group_name") or item.get("name") or "").strip()
                 campaign_id = str(item.get("campaign_id") or item.get("campaignId") or "").strip()
-                campaign_name = str(item.get("campaign_name") or "").strip()
+                campaign_name = str(item.get("campaign_name") or item.get("campaignName") or "").strip()
                 ad_group_status = str(item.get("status") or item.get("operation_status") or item.get("secondary_status") or "").strip()
                 raw_payload = dict(item)
                 payload_hash = hashlib.sha256(json.dumps(raw_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
@@ -1356,8 +1369,8 @@ class TikTokAdsService:
             )
             raw_payload = payload.get("raw_payload") if isinstance(payload.get("raw_payload"), dict) else {}
             fetched_name = str(payload.get("ad_group_name") or raw_payload.get("adgroup_name") or raw_payload.get("ad_group_name") or "").strip()
-            fetched_campaign_id = str(payload.get("campaign_id") or raw_payload.get("campaign_id") or "").strip()
-            fetched_campaign_name = str(payload.get("campaign_name") or raw_payload.get("campaign_name") or "").strip()
+            fetched_campaign_id = str(payload.get("campaign_id") or raw_payload.get("campaign_id") or raw_payload.get("campaignId") or "").strip()
+            fetched_campaign_name = str(payload.get("campaign_name") or raw_payload.get("campaign_name") or raw_payload.get("campaignName") or "").strip()
             fetched_status = str(payload.get("ad_group_status") or raw_payload.get("operation_status") or raw_payload.get("status") or "").strip()
             if fetched_name != "":
                 base["ad_group_name"] = fetched_name
@@ -2023,6 +2036,7 @@ class TikTokAdsService:
                     account_id=account_id,
                     ad_group_id=ad_group_id,
                     ad_group_name=ad_group_name,
+                    adgroup_name=ad_group_name,
                     campaign_id=campaign_id,
                     campaign_name=campaign_name,
                     spend=spend,
@@ -2034,6 +2048,7 @@ class TikTokAdsService:
                         "tiktok_ads": {
                             "dimensions": dimensions,
                             "metrics": metrics,
+                            "adgroup_name": ad_group_name,
                             "ad_group_name": ad_group_name,
                             "campaign_id": campaign_id,
                             "campaign_name": campaign_name,
@@ -2096,7 +2111,14 @@ class TikTokAdsService:
                 ad_group_metadata = ad_group_metadata_by_id.get(str(row.ad_group_id or "").strip(), {})
                 resolved_campaign_id = str(ad_group_metadata.get("campaign_id") or row.campaign_id or "").strip()
                 campaign_metadata = campaign_metadata_by_id.get(resolved_campaign_id, {})
-                resolved_ad_group_name = str(ad_group_metadata.get("ad_group_name") or report_ad_group_name_by_id.get(row.ad_group_id) or row.ad_group_name or "").strip()
+                resolved_ad_group_name = str(
+                    ad_group_metadata.get("ad_group_name")
+                    or ad_group_metadata.get("adgroup_name")
+                    or report_ad_group_name_by_id.get(row.ad_group_id)
+                    or row.ad_group_name
+                    or row.adgroup_name
+                    or ""
+                ).strip()
                 resolved_campaign_name = str(
                     campaign_metadata.get("campaign_name")
                     or ad_group_metadata.get("campaign_name")
@@ -2110,6 +2132,7 @@ class TikTokAdsService:
                         account_id=row.account_id,
                         ad_group_id=row.ad_group_id,
                         ad_group_name=resolved_ad_group_name,
+                        adgroup_name=resolved_ad_group_name,
                         campaign_id=resolved_campaign_id,
                         campaign_name=resolved_campaign_name,
                         spend=row.spend,
@@ -2123,6 +2146,7 @@ class TikTokAdsService:
                                 **(row.extra_metrics.get("tiktok_ads") if isinstance(row.extra_metrics.get("tiktok_ads"), dict) else {}),
                                 "campaign_id": resolved_campaign_id or None,
                                 "campaign_name": resolved_campaign_name,
+                                "adgroup_name": resolved_ad_group_name or None,
                                 "ad_group_name": resolved_ad_group_name or None,
                             },
                         },
@@ -2353,6 +2377,7 @@ class TikTokAdsService:
                     "account_id": row.account_id,
                     "ad_group_id": row.ad_group_id,
                     "ad_group_name": row.ad_group_name,
+                    "adgroup_name": row.adgroup_name or row.ad_group_name,
                     "campaign_id": row.campaign_id,
                     "campaign_name": row.campaign_name,
                     "report_date": row.report_date.isoformat(),
@@ -2379,7 +2404,16 @@ class TikTokAdsService:
                 "clicks": row.clicks,
                 "conversions": row.conversions,
                 "conversion_value": row.conversion_value,
-                "extra_metrics": row.extra_metrics,
+                "extra_metrics": {
+                    **(row.extra_metrics if isinstance(row.extra_metrics, dict) else {}),
+                    "tiktok_ads": {
+                        **(row.extra_metrics.get("tiktok_ads") if isinstance(row.extra_metrics, dict) and isinstance(row.extra_metrics.get("tiktok_ads"), dict) else {}),
+                        "adgroup_name": row.adgroup_name or row.ad_group_name,
+                        "ad_group_name": row.ad_group_name or row.adgroup_name,
+                        "campaign_name": row.campaign_name,
+                        "campaign_id": row.campaign_id,
+                    },
+                },
                 "source_window_start": source_window_start,
                 "source_window_end": source_window_end,
             }
@@ -2893,6 +2927,7 @@ class TikTokAdsService:
                             account_id=row.account_id,
                             ad_group_id=row.ad_group_id,
                             ad_group_name=resolved_ad_group_name,
+                            adgroup_name=resolved_ad_group_name,
                             campaign_id=resolved_campaign_id,
                             campaign_name=resolved_campaign_name,
                             spend=row.spend,

@@ -1,3 +1,14 @@
+# TODO — TikTok metadata data-flow fix: propagate names/campaign_id into facts + entity upserts (2026-03-21)
+
+- [x] Audit current TikTok dataclasses/parsers/upsert payloads for campaign/ad-group name propagation and ad-group campaign_id mapping.
+- [x] Patch `tiktok_ads.py` so parsed `campaign_name` / `adgroup_name` / `campaign_id` are preserved in metric objects and packed into `extra_metrics` during fact upserts.
+- [x] Patch ad-group metadata mapping/upsert fallback logic to always resolve `campaign_id` aliases (including `campaignId`) before persisting `platform_ad_groups`.
+- [x] Run targeted backend TikTok tests and frontend build.
+
+## Review
+- [x] Confirm `campaign_performance_reports.extra_metrics->'campaign_name'` and `ad_group_performance_reports.extra_metrics->'adgroup_name'` are populated from row data when available.
+- [x] Confirm `platform_ad_groups.campaign_id` is populated in mapped entity rows when metadata payload contains alias keys.
+
 # TODO — TikTok metadata persistence hotfix: prevent empty platform entity upserts (2026-03-21)
 
 - [x] Re-read AGENTS/lessons and audit campaign/ad-group metadata mapping + upsert payload keys in `tiktok_ads.py`.

@@ -399,6 +399,7 @@ def test_upsert_ad_group_rows_persists_platform_ad_groups_before_facts(monkeypat
             account_id="tt-acc-adg",
             ad_group_id="adg-1",
             ad_group_name="Ad Group One",
+            adgroup_name="Ad Group One",
             campaign_id="cmp-1",
             campaign_name="Campaign One",
             spend=11.0,
@@ -451,6 +452,9 @@ def test_upsert_ad_group_rows_persists_platform_ad_groups_before_facts(monkeypat
     assert captured_ad_groups[0]["ad_group_id"] == "adg-1"
     assert captured_ad_groups[0]["campaign_id"] == "cmp-1"
     assert len(captured_fact_rows) == 1
+    assert captured_fact_rows[0]["extra_metrics"]["tiktok_ads"]["adgroup_name"] == "Ad Group One"
+    assert captured_fact_rows[0]["extra_metrics"]["tiktok_ads"]["campaign_name"] == "Campaign One"
+    assert captured_fact_rows[0]["extra_metrics"]["tiktok_ads"]["campaign_id"] == "cmp-1"
     assert fake_conn.committed is True
 
 
@@ -465,6 +469,7 @@ def test_upsert_ad_group_rows_skips_empty_ad_group_metadata_rows(monkeypatch):
             account_id="tt-acc-empty-adg",
             ad_group_id="adg-empty-1",
             ad_group_name="",
+            adgroup_name="",
             campaign_id="",
             campaign_name="",
             spend=11.0,
@@ -700,6 +705,7 @@ def test_ad_group_daily_sync_enriches_campaign_id_and_ad_group_name_from_metadat
         account_id="tt-acc-ag-1",
         ad_group_id="ag-200",
         ad_group_name="",
+        adgroup_name="",
         campaign_id="",
         campaign_name="",
         spend=6.0,
@@ -780,6 +786,7 @@ def test_ad_group_daily_sync_uses_ad_group_id_fallback_when_name_missing(monkeyp
         account_id="tt-acc-ag-2",
         ad_group_id="ag-300",
         ad_group_name="",
+        adgroup_name="",
         campaign_id="cmp-300",
         campaign_name="",
         spend=4.0,
