@@ -59,6 +59,13 @@ function resolveErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function semanticHintForTemplate(key: string): string | null {
+  if (key === "auth_forgot_password") return "Semnificație: «Ai uitat parola?» → resetare parolă.";
+  if (key === "team_invite_user") return "Semnificație: user nou fără parolă → setează parola contului (primul login).";
+  if (key === "team_account_ready") return "Semnificație: user nou cu parolă setată → cont gata, mergi la login.";
+  return null;
+}
+
 function StatusBadge({ enabled }: { enabled: boolean }) {
   return (
     <span
@@ -509,6 +516,7 @@ export default function AgencyEmailTemplatesPage() {
               <ul className="space-y-2">
                 {items.map((item) => {
                   const isActive = item.key === selectedKey;
+                  const semanticHint = semanticHintForTemplate(item.key);
                   return (
                     <li key={item.key}>
                       <button
@@ -522,6 +530,7 @@ export default function AgencyEmailTemplatesPage() {
                           <div>
                             <p className="text-sm font-semibold text-slate-900">{item.label}</p>
                             <p className="mt-1 text-xs text-slate-600">{item.description}</p>
+                            {semanticHint ? <p className="mt-1 text-[11px] text-indigo-700">{semanticHint}</p> : null}
                           </div>
                           <StatusBadge enabled={item.enabled} />
                         </div>
@@ -550,6 +559,9 @@ export default function AgencyEmailTemplatesPage() {
                       <OverrideBadge overridden={detail.is_overridden} />
                     </div>
                     <p className="mt-1 text-sm text-slate-600">{detail.description}</p>
+                    {semanticHintForTemplate(detail.key) ? (
+                      <p className="mt-1 text-xs text-indigo-700">{semanticHintForTemplate(detail.key)}</p>
+                    ) : null}
                     <p className="mt-2 text-xs text-slate-500">Updated: {formatDate(detail.updated_at)}</p>
                   </div>
 
