@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 from app.services import tiktok_ads as tiktok_ads_module
-from app.services.tiktok_ads import TikTokCampaignDailyMetric, tiktok_ads_service
+from app.services.tiktok_ads import TikTokAdGroupDailyMetric, TikTokCampaignDailyMetric, tiktok_ads_service
 
 
 class _FakeConn:
@@ -104,6 +104,36 @@ def test_report_query_params_guard_removes_campaign_name_for_campaign_data_level
         end_date=date(2026, 3, 20),
     )
     assert params["dimensions"] == ["stat_time_day", "campaign_id"]
+
+
+def test_ad_group_daily_report_schema_keeps_supported_dimensions_only():
+    schema = tiktok_ads_service._report_schema_for_grain("ad_group_daily")
+    assert schema.dimensions == ("stat_time_day", "adgroup_id")
+
+
+def test_fetch_ad_group_daily_metrics_request_params_exclude_campaign_dimensions(monkeypatch):
+    monkeypatch.setenv("APP_AUTH_SECRET", "test-secret")
+    captured_request_params: dict[str, object] = {}
+
+    def fake_report_integrated_get(**kwargs):
+        captured_request_params["dimensions"] = list(kwargs.get("dimensions") or [])
+        return {"code": 0, "data": {"list": []}}
+
+    monkeypatch.setattr(tiktok_ads_service, "_report_integrated_get", fake_report_integrated_get)
+
+    payload = tiktok_ads_service._fetch_ad_group_daily_metrics(
+        account_id="tt-acc-adgroup-params",
+        access_token="token",
+        start_date=date(2026, 3, 20),
+        end_date=date(2026, 3, 20),
+    )
+
+    assert payload == []
+    dimensions = captured_request_params.get("dimensions")
+    assert isinstance(dimensions, list)
+    assert dimensions == ["stat_time_day", "adgroup_id"]
+    assert "campaign_id" not in dimensions
+    assert "adgroup_name" not in dimensions
 
 
 def test_upsert_campaign_rows_persists_platform_campaign_entities(monkeypatch):
@@ -331,3 +361,160 @@ def test_campaign_daily_sync_continues_when_campaign_metadata_fetch_fails(monkey
     assert payload["rows_written"] == 1
     assert captured_upsert_rows[0].campaign_id == "cmp-400"
     assert captured_upsert_rows[0].campaign_name == ""
+
+
+def test_ad_group_daily_sync_enriches_campaign_id_and_ad_group_name_from_metadata(monkeypatch):
+    monkeypatch.setenv("FF_TIKTOK_INTEGRATION", "1")
+    monkeypatch.setenv("APP_AUTH_SECRET", "test-secret")
+
+    base_row = TikTokAdGroupDailyMetric(
+        report_date=date(2026, 3, 20),
+        account_id="tt-acc-ag-1",
+        ad_group_id="ag-200",
+        ad_group_name="",
+        campaign_id="",
+        campaign_name="",
+        spend=6.0,
+        impressions=60,
+        clicks=3,
+        conversions=1.0,
+        conversion_value=12.0,
+        extra_metrics={"tiktok_ads": {}},
+    )
+
+    monkeypatch.setattr(tiktok_ads_service, "_access_token_with_source", lambda: ("token", "database", None))
+    monkeypatch.setattr(tiktok_ads_service, "_resolve_target_account_ids", lambda **kwargs: ["tt-acc-ag-1"])
+    monkeypatch.setattr(tiktok_ads_service, "_probe_selected_advertiser_access", lambda **kwargs: {"status": "ok"})
+    monkeypatch.setattr(tiktok_ads_service, "_fetch_ad_group_daily_metrics", lambda **kwargs: [base_row])
+    monkeypatch.setattr(
+        tiktok_ads_service,
+        "_consume_reporting_fetch_observability",
+        lambda **kwargs: {"rows_downloaded": 1, "rows_mapped": 1, "zero_row_marker": None},
+    )
+    monkeypatch.setattr(
+        tiktok_ads_service,
+        "_resolve_and_persist_ad_group_metadata",
+        lambda **kwargs: {
+            "ag-200": {
+                "ad_group_id": "ag-200",
+                "ad_group_name": "Resolved Ad Group",
+                "campaign_id": "cmp-200",
+                "campaign_name": "Campaign From Adgroup",
+                "ad_group_status": "ENABLE",
+                "raw_payload": {"adgroup_id": "ag-200"},
+                "payload_hash": "ag-h-200",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        tiktok_ads_service,
+        "_resolve_and_persist_campaign_metadata",
+        lambda **kwargs: {
+            "cmp-200": {
+                "campaign_id": "cmp-200",
+                "campaign_name": "Resolved Campaign",
+                "campaign_status": "ENABLE",
+                "raw_payload": {"campaign_id": "cmp-200"},
+                "payload_hash": "cmp-h-200",
+            }
+        },
+    )
+
+    captured_upsert_rows: list[TikTokAdGroupDailyMetric] = []
+    monkeypatch.setattr(
+        tiktok_ads_service,
+        "_upsert_ad_group_rows",
+        lambda rows, *, source_window_start, source_window_end: captured_upsert_rows.extend(rows) or len(rows),
+    )
+    monkeypatch.setattr(tiktok_ads_module.tiktok_snapshot_store, "upsert_snapshot", lambda payload: None)
+
+    payload = tiktok_ads_service.sync_client(
+        client_id=96,
+        grain="ad_group_daily",
+        start_date=date(2026, 3, 20),
+        end_date=date(2026, 3, 20),
+    )
+
+    assert payload["rows_written"] == 1
+    assert captured_upsert_rows[0].campaign_id == "cmp-200"
+    assert captured_upsert_rows[0].campaign_name == "Resolved Campaign"
+    assert captured_upsert_rows[0].ad_group_name == "Resolved Ad Group"
+    assert captured_upsert_rows[0].extra_metrics["tiktok_ads"]["campaign_id"] == "cmp-200"
+    assert captured_upsert_rows[0].extra_metrics["tiktok_ads"]["ad_group_name"] == "Resolved Ad Group"
+
+
+def test_ad_group_daily_sync_uses_ad_group_id_fallback_when_name_missing(monkeypatch):
+    monkeypatch.setenv("FF_TIKTOK_INTEGRATION", "1")
+    monkeypatch.setenv("APP_AUTH_SECRET", "test-secret")
+
+    base_row = TikTokAdGroupDailyMetric(
+        report_date=date(2026, 3, 20),
+        account_id="tt-acc-ag-2",
+        ad_group_id="ag-300",
+        ad_group_name="",
+        campaign_id="cmp-300",
+        campaign_name="",
+        spend=4.0,
+        impressions=40,
+        clicks=2,
+        conversions=0.0,
+        conversion_value=0.0,
+        extra_metrics={"tiktok_ads": {}},
+    )
+
+    monkeypatch.setattr(tiktok_ads_service, "_access_token_with_source", lambda: ("token", "database", None))
+    monkeypatch.setattr(tiktok_ads_service, "_resolve_target_account_ids", lambda **kwargs: ["tt-acc-ag-2"])
+    monkeypatch.setattr(tiktok_ads_service, "_probe_selected_advertiser_access", lambda **kwargs: {"status": "ok"})
+    monkeypatch.setattr(tiktok_ads_service, "_fetch_ad_group_daily_metrics", lambda **kwargs: [base_row])
+    monkeypatch.setattr(
+        tiktok_ads_service,
+        "_consume_reporting_fetch_observability",
+        lambda **kwargs: {"rows_downloaded": 1, "rows_mapped": 1, "zero_row_marker": None},
+    )
+    monkeypatch.setattr(
+        tiktok_ads_service,
+        "_resolve_and_persist_ad_group_metadata",
+        lambda **kwargs: {
+            "ag-300": {
+                "ad_group_id": "ag-300",
+                "ad_group_name": "",
+                "campaign_id": "cmp-300",
+                "campaign_name": "",
+                "ad_group_status": "",
+                "raw_payload": {},
+                "payload_hash": "ag-h-300",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        tiktok_ads_service,
+        "_resolve_and_persist_campaign_metadata",
+        lambda **kwargs: {
+            "cmp-300": {
+                "campaign_id": "cmp-300",
+                "campaign_name": "",
+                "campaign_status": "",
+                "raw_payload": {},
+                "payload_hash": "cmp-h-300",
+            }
+        },
+    )
+
+    captured_upsert_rows: list[TikTokAdGroupDailyMetric] = []
+    monkeypatch.setattr(
+        tiktok_ads_service,
+        "_upsert_ad_group_rows",
+        lambda rows, *, source_window_start, source_window_end: captured_upsert_rows.extend(rows) or len(rows),
+    )
+    monkeypatch.setattr(tiktok_ads_module.tiktok_snapshot_store, "upsert_snapshot", lambda payload: None)
+
+    payload = tiktok_ads_service.sync_client(
+        client_id=96,
+        grain="ad_group_daily",
+        start_date=date(2026, 3, 20),
+        end_date=date(2026, 3, 20),
+    )
+
+    assert payload["rows_written"] == 1
+    assert captured_upsert_rows[0].campaign_id == "cmp-300"
+    assert captured_upsert_rows[0].ad_group_name == ""

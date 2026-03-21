@@ -35,4 +35,41 @@ describe("TikTok campaign ad groups drilldown", () => {
     expect(screen.getByText("Nu există ad groups în perioada selectată.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Back to campaigns/i })).toHaveAttribute("href", "/sub/96/tiktok-ads/accounts/tt-1");
   });
+
+  it("renders ad_group_name when backend returns rows", async () => {
+    apiMock.getSubTikTokAdsCampaignAdGroupsTable.mockResolvedValueOnce({
+      client_id: 96,
+      platform: "tiktok_ads",
+      account_id: "tt-1",
+      account_name: "TikTok Main",
+      account_status: "active",
+      campaign_id: "cmp-tt-1",
+      campaign_name: "TikTok Prospecting",
+      currency: "USD",
+      date_range: { start_date: "2026-03-01", end_date: "2026-03-31" },
+      items: [{ ad_group_id: "ag-1", ad_group_name: "Winners AG", status: "active", cost: null, rev_inf: null, roas_inf: null, mer_inf: null, truecac_inf: null, ecr_inf: null, ecpnv_inf: null, new_visits: null, visits: null }],
+    });
+
+    render(<SubTikTokAdsCampaignAdGroupsPage />);
+    expect(await screen.findByText("Winners AG")).toBeInTheDocument();
+    expect(screen.queryByText("Nu există ad groups în perioada selectată.")).not.toBeInTheDocument();
+  });
+
+  it("falls back to ad_group_id only when ad_group_name missing", async () => {
+    apiMock.getSubTikTokAdsCampaignAdGroupsTable.mockResolvedValueOnce({
+      client_id: 96,
+      platform: "tiktok_ads",
+      account_id: "tt-1",
+      account_name: "TikTok Main",
+      account_status: "active",
+      campaign_id: "cmp-tt-1",
+      campaign_name: "TikTok Prospecting",
+      currency: "USD",
+      date_range: { start_date: "2026-03-01", end_date: "2026-03-31" },
+      items: [{ ad_group_id: "ag-fallback", ad_group_name: "", status: "active", cost: null, rev_inf: null, roas_inf: null, mer_inf: null, truecac_inf: null, ecr_inf: null, ecpnv_inf: null, new_visits: null, visits: null }],
+    });
+
+    render(<SubTikTokAdsCampaignAdGroupsPage />);
+    expect(await screen.findByText("ag-fallback")).toBeInTheDocument();
+  });
 });

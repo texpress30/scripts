@@ -5958,3 +5958,24 @@ Plan confirmed: backend-first TikTok metadata + tests, minimal frontend test-onl
   - `pytest -q apps/backend/tests/test_dashboard_currency_normalization.py -k \"campaign_adgroup or account_campaign_performance or campaign_rows_query_uses_ad_group_fallback_source\"`
   - `pnpm --dir apps/frontend exec vitest run src/app/sub/[id]/google-ads/accounts/[accountId]/page.test.tsx src/app/sub/[id]/meta-ads/accounts/[accountId]/page.test.tsx src/app/sub/[id]/tiktok-ads/accounts/[accountId]/page.test.tsx src/app/sub/[id]/google-ads/accounts/[accountId]/campaigns/[campaignId]/page.test.tsx src/app/sub/[id]/meta-ads/accounts/[accountId]/campaigns/[campaignId]/page.test.tsx src/app/sub/[id]/tiktok-ads/accounts/[accountId]/campaigns/[campaignId]/page.test.tsx`
   - `pnpm --dir apps/frontend run build`
+
+# TODO — TikTok ad_group_daily campaign linkage fix for campaign->adgroups drilldown (2026-03-21)
+
+- [x] Re-sync + recitire AGENTS/todo/lessons și audit root cause pe TikTok `ad_group_daily` (dimensions vs mapper fields).
+- [x] Implementare metadata resolver TikTok pe `adgroup_id` (`adgroup/get`) pentru `campaign_id`, `ad_group_name`, `campaign_name`, status.
+- [x] Enrichment `ad_group_daily` rows înainte de upsert: `campaign_id` corect, nume/status în `extra_metrics`, fără valori fabricate.
+- [x] Persistență metadata adgroup în entity store (`platform_ad_groups`) cu fallback safe la erori.
+- [x] Teste backend: request dimensions validate, enrichment campaign linkage, fallback behavior, no-crash la metadata paths.
+- [x] Teste frontend TikTok campaign->adgroups pentru non-empty rows + name vs id fallback.
+- [x] Run backend tests relevante + frontend tests relevante + frontend build.
+
+## Review
+- [x] Confirmare explicită: Agency/Team/auth/invite/delete/Media Buying/Media Tracker nu au fost atinse.
+- Root cause confirmat: `ad_group_daily` cere doar `stat_time_day` + `adgroup_id`; mapperul citea și `campaign_id`/`campaign_name`/`adgroup_name`, deci facts puteau fi persistate fără `campaign_id` legat.
+- Fix: metadata TikTok din `adgroup/get` este rezolvată pe `adgroup_id`, apoi folosită la enrichment (`campaign_id`, `ad_group_name`, `campaign_name`, status) înainte de `_upsert_ad_group_rows`.
+- Persistență metadata: `platform_ad_groups` prin `upsert_platform_ad_groups` (best-effort; dacă eșuează, sync facts continuă).
+- Verificări executate:
+  - `python -m pip install requests`
+  - `pytest -q apps/backend/tests/test_tiktok_campaign_metadata_resolution.py apps/backend/tests/test_dashboard_currency_normalization.py -k "ad_group or campaign_adgroup or tiktok"`
+  - `pnpm --dir apps/frontend exec vitest run src/app/sub/[id]/tiktok-ads/accounts/[accountId]/campaigns/[campaignId]/page.test.tsx`
+  - `pnpm --dir apps/frontend run build`

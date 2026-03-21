@@ -20,7 +20,7 @@ from app.services.entity_performance_reports import (
 )
 from app.services.integration_secrets_store import integration_secrets_store
 from app.services.performance_reports import performance_reports_store
-from app.services.platform_entity_store import upsert_platform_campaigns
+from app.services.platform_entity_store import upsert_platform_ad_groups, upsert_platform_campaigns
 from app.services.tiktok_account_daily_identity_resolver import resolve_tiktok_account_daily_persistence_identity
 from app.services.tiktok_store import tiktok_snapshot_store
 
@@ -1006,6 +1006,10 @@ class TikTokAdsService:
         settings = load_settings()
         return f"{settings.tiktok_api_base_url.rstrip('/')}/open_api/{settings.tiktok_api_version.strip('/')}/campaign/get/"
 
+    def _adgroup_get_endpoint(self) -> str:
+        settings = load_settings()
+        return f"{settings.tiktok_api_base_url.rstrip('/')}/open_api/{settings.tiktok_api_version.strip('/')}/adgroup/get/"
+
     def _fetch_campaign_metadata_by_ids(self, *, account_id: str, access_token: str, campaign_ids: list[str]) -> dict[str, dict[str, object]]:
         normalized_ids = [str(item or "").strip() for item in campaign_ids if str(item or "").strip() != ""]
         if len(normalized_ids) == 0:
@@ -1185,6 +1189,209 @@ class TikTokAdsService:
                     "payload_hash": None,
                 }
                 for campaign_id in sorted(fallback_ids)
+            }
+
+    def _fetch_ad_group_metadata_by_ids(self, *, account_id: str, access_token: str, ad_group_ids: list[str]) -> dict[str, dict[str, object]]:
+        normalized_ids = [str(item or "").strip() for item in ad_group_ids if str(item or "").strip() != ""]
+        if len(normalized_ids) == 0:
+            return {}
+
+        ad_group_metadata: dict[str, dict[str, object]] = {}
+        page = 1
+        page_size = 100
+        endpoint = self._adgroup_get_endpoint()
+        while True:
+            payload = self._http_json(
+                method="POST",
+                url=endpoint,
+                payload={
+                    "advertiser_id": str(account_id),
+                    "filtering": {"adgroup_ids": normalized_ids},
+                    "page": page,
+                    "page_size": page_size,
+                },
+                headers={"Access-Token": access_token},
+            )
+            container = payload.get("data")
+            if not isinstance(container, dict):
+                break
+            rows = container.get("list")
+            if not isinstance(rows, list):
+                break
+            for item in rows:
+                if not isinstance(item, dict):
+                    continue
+                ad_group_id = str(item.get("adgroup_id") or item.get("ad_group_id") or "").strip()
+                if ad_group_id == "":
+                    continue
+                ad_group_name = str(item.get("adgroup_name") or item.get("ad_group_name") or item.get("name") or "").strip()
+                campaign_id = str(item.get("campaign_id") or "").strip()
+                campaign_name = str(item.get("campaign_name") or "").strip()
+                ad_group_status = str(item.get("operation_status") or item.get("status") or item.get("secondary_status") or "").strip()
+                raw_payload = dict(item)
+                payload_hash = hashlib.sha256(json.dumps(raw_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+                ad_group_metadata[ad_group_id] = {
+                    "ad_group_id": ad_group_id,
+                    "ad_group_name": ad_group_name,
+                    "campaign_id": campaign_id,
+                    "campaign_name": campaign_name,
+                    "ad_group_status": ad_group_status,
+                    "raw_payload": raw_payload,
+                    "payload_hash": payload_hash,
+                }
+
+            page_info = container.get("page_info") if isinstance(container.get("page_info"), dict) else {}
+            total_pages = int(page_info.get("total_page") or 1)
+            if page >= total_pages:
+                break
+            page += 1
+        return ad_group_metadata
+
+    def _resolve_and_persist_ad_group_metadata(
+        self,
+        *,
+        account_id: str,
+        access_token: str,
+        ad_group_ids: list[str],
+        report_ad_group_name_by_id: dict[str, str],
+    ) -> dict[str, dict[str, object]]:
+        normalized_ids = sorted({str(item or "").strip() for item in ad_group_ids if str(item or "").strip() != ""})
+        if len(normalized_ids) == 0:
+            return {}
+
+        metadata_by_id: dict[str, dict[str, object]] = {
+            ad_group_id: {
+                "ad_group_id": ad_group_id,
+                "ad_group_name": str(report_ad_group_name_by_id.get(ad_group_id) or "").strip(),
+                "campaign_id": "",
+                "campaign_name": "",
+                "ad_group_status": "",
+                "raw_payload": {},
+                "payload_hash": None,
+            }
+            for ad_group_id in normalized_ids
+        }
+        try:
+            fetched = self._fetch_ad_group_metadata_by_ids(account_id=account_id, access_token=access_token, ad_group_ids=normalized_ids)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "TikTok ad group metadata fetch failed; continuing with report-level ad group fields. account_id=%s error=%s",
+                account_id,
+                sanitize_text(str(exc), max_len=300),
+            )
+            fetched = {}
+
+        for ad_group_id, payload in fetched.items():
+            base = metadata_by_id.setdefault(
+                ad_group_id,
+                {
+                    "ad_group_id": ad_group_id,
+                    "ad_group_name": "",
+                    "campaign_id": "",
+                    "campaign_name": "",
+                    "ad_group_status": "",
+                    "raw_payload": {},
+                    "payload_hash": None,
+                },
+            )
+            raw_payload = payload.get("raw_payload") if isinstance(payload.get("raw_payload"), dict) else {}
+            fetched_name = str(payload.get("ad_group_name") or raw_payload.get("adgroup_name") or raw_payload.get("ad_group_name") or "").strip()
+            fetched_campaign_id = str(payload.get("campaign_id") or raw_payload.get("campaign_id") or "").strip()
+            fetched_campaign_name = str(payload.get("campaign_name") or raw_payload.get("campaign_name") or "").strip()
+            fetched_status = str(payload.get("ad_group_status") or raw_payload.get("operation_status") or raw_payload.get("status") or "").strip()
+            if fetched_name != "":
+                base["ad_group_name"] = fetched_name
+            if fetched_campaign_id != "":
+                base["campaign_id"] = fetched_campaign_id
+            if fetched_campaign_name != "":
+                base["campaign_name"] = fetched_campaign_name
+            if fetched_status != "":
+                base["ad_group_status"] = fetched_status
+            if isinstance(raw_payload, dict):
+                base["raw_payload"] = raw_payload
+            if payload.get("payload_hash") is not None:
+                base["payload_hash"] = payload.get("payload_hash")
+
+        rows_to_upsert: list[dict[str, object]] = []
+        for ad_group_id, payload in metadata_by_id.items():
+            campaign_id = str(payload.get("campaign_id") or "").strip()
+            if campaign_id == "":
+                continue
+            ad_group_name = str(payload.get("ad_group_name") or "").strip()
+            ad_group_status = str(payload.get("ad_group_status") or "").strip()
+            raw_payload = payload.get("raw_payload") if isinstance(payload.get("raw_payload"), dict) else {}
+            rows_to_upsert.append(
+                {
+                    "platform": "tiktok_ads",
+                    "account_id": account_id,
+                    "campaign_id": campaign_id,
+                    "ad_group_id": ad_group_id,
+                    "name": ad_group_name or None,
+                    "status": ad_group_status or None,
+                    "raw_payload": raw_payload,
+                    "payload_hash": payload.get("payload_hash")
+                    or hashlib.sha256(
+                        json.dumps(
+                            {
+                                "ad_group_id": ad_group_id,
+                                "campaign_id": campaign_id,
+                                "ad_group_name": ad_group_name or None,
+                                "ad_group_status": ad_group_status or None,
+                            },
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ).encode("utf-8")
+                    ).hexdigest(),
+                }
+            )
+
+        if len(rows_to_upsert) > 0 and not self._is_test_mode():
+            try:
+                with self._connect() as conn:
+                    upsert_platform_ad_groups(conn, rows_to_upsert)
+                    conn.commit()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "TikTok ad group metadata persistence failed; continuing with fact persistence. account_id=%s error=%s",
+                    account_id,
+                    sanitize_text(str(exc), max_len=300),
+                )
+
+        return metadata_by_id
+
+    def _resolve_and_persist_ad_group_metadata_safe(
+        self,
+        *,
+        account_id: str,
+        access_token: str,
+        ad_group_ids: list[str],
+        report_ad_group_name_by_id: dict[str, str],
+    ) -> dict[str, dict[str, object]]:
+        try:
+            return self._resolve_and_persist_ad_group_metadata(
+                account_id=account_id,
+                access_token=access_token,
+                ad_group_ids=ad_group_ids,
+                report_ad_group_name_by_id=report_ad_group_name_by_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "TikTok ad group metadata resolve/persist failed; continuing with report-level ad group fields. account_id=%s error=%s",
+                account_id,
+                sanitize_text(str(exc), max_len=300),
+            )
+            fallback_ids = {str(item or "").strip() for item in ad_group_ids if str(item or "").strip() != ""}
+            return {
+                ad_group_id: {
+                    "ad_group_id": ad_group_id,
+                    "ad_group_name": str(report_ad_group_name_by_id.get(ad_group_id) or "").strip(),
+                    "campaign_id": "",
+                    "campaign_name": "",
+                    "ad_group_status": "",
+                    "raw_payload": {},
+                    "payload_hash": None,
+                }
+                for ad_group_id in sorted(fallback_ids)
             }
 
     def _build_report_integrated_query_params(
@@ -2408,25 +2615,51 @@ class TikTokAdsService:
                 rows_mapped += int(fetch_stats.get("rows_mapped") or 0)
                 if fetch_stats.get("zero_row_marker") is not None:
                     zero_row_observability.append(fetch_stats)
-                report_name_by_id = {row.campaign_id: row.campaign_name for row in ad_group_rows if str(row.campaign_name or "").strip() != ""}
+                report_name_by_id = {row.campaign_id: row.campaign_name for row in ad_group_rows if str(row.campaign_id or "").strip() != "" and str(row.campaign_name or "").strip() != ""}
+                report_ad_group_name_by_id = {row.ad_group_id: row.ad_group_name for row in ad_group_rows if str(row.ad_group_id or "").strip() != "" and str(row.ad_group_name or "").strip() != ""}
+                ad_group_metadata_by_id = self._resolve_and_persist_ad_group_metadata_safe(
+                    account_id=account_id,
+                    access_token=access_token,
+                    ad_group_ids=[row.ad_group_id for row in ad_group_rows],
+                    report_ad_group_name_by_id=report_ad_group_name_by_id,
+                )
+                resolved_campaign_ids = {
+                    str(row.campaign_id or "").strip()
+                    for row in ad_group_rows
+                    if str(row.campaign_id or "").strip() != ""
+                }
+                resolved_campaign_ids.update(
+                    str((ad_group_metadata_by_id.get(row.ad_group_id) or {}).get("campaign_id") or "").strip()
+                    for row in ad_group_rows
+                    if str((ad_group_metadata_by_id.get(row.ad_group_id) or {}).get("campaign_id") or "").strip() != ""
+                )
                 campaign_metadata_by_id = self._resolve_and_persist_campaign_metadata_safe(
                     account_id=account_id,
                     access_token=access_token,
-                    campaign_ids=[row.campaign_id for row in ad_group_rows],
+                    campaign_ids=sorted(resolved_campaign_ids),
                     report_campaign_name_by_id=report_name_by_id,
                 )
                 enriched_ad_group_rows: list[TikTokAdGroupDailyMetric] = []
                 for row in ad_group_rows:
-                    metadata = campaign_metadata_by_id.get(row.campaign_id, {})
-                    resolved_campaign_name = str(metadata.get("campaign_name") or row.campaign_name or "").strip()
-                    resolved_campaign_status = str(metadata.get("campaign_status") or "").strip()
+                    ad_group_metadata = ad_group_metadata_by_id.get(row.ad_group_id, {})
+                    resolved_campaign_id = str(row.campaign_id or ad_group_metadata.get("campaign_id") or "").strip()
+                    campaign_metadata = campaign_metadata_by_id.get(resolved_campaign_id, {})
+                    resolved_campaign_name = str(
+                        campaign_metadata.get("campaign_name")
+                        or ad_group_metadata.get("campaign_name")
+                        or row.campaign_name
+                        or ""
+                    ).strip()
+                    resolved_campaign_status = str(campaign_metadata.get("campaign_status") or "").strip()
+                    resolved_ad_group_name = str(row.ad_group_name or ad_group_metadata.get("ad_group_name") or "").strip()
+                    resolved_ad_group_status = str(ad_group_metadata.get("ad_group_status") or "").strip()
                     enriched_ad_group_rows.append(
                         TikTokAdGroupDailyMetric(
                             report_date=row.report_date,
                             account_id=row.account_id,
                             ad_group_id=row.ad_group_id,
-                            ad_group_name=row.ad_group_name,
-                            campaign_id=row.campaign_id,
+                            ad_group_name=resolved_ad_group_name,
+                            campaign_id=resolved_campaign_id,
                             campaign_name=resolved_campaign_name,
                             spend=row.spend,
                             impressions=row.impressions,
@@ -2437,7 +2670,10 @@ class TikTokAdsService:
                                 **row.extra_metrics,
                                 "tiktok_ads": {
                                     **(row.extra_metrics.get("tiktok_ads") if isinstance(row.extra_metrics.get("tiktok_ads"), dict) else {}),
+                                    "campaign_id": resolved_campaign_id or None,
                                     "campaign_name": resolved_campaign_name,
+                                    "ad_group_name": resolved_ad_group_name or None,
+                                    "ad_group_status": resolved_ad_group_status or None,
                                     "campaign_status": resolved_campaign_status or None,
                                 },
                             },
