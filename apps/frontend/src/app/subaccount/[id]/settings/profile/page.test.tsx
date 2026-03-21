@@ -79,6 +79,14 @@ describe("SubAccount Business Profile settings page", () => {
   it("starts with empty form values when business profile is not saved, even if display data exists", async () => {
     setupApiMock();
     render(<SubAccountSettingsPage />);
+    await screen.findByDisplayValue("owner96@example.com");
+
+    expect(await screen.findByTestId("app-shell-title")).toHaveTextContent("Client 96 — Profil Business");
+    expect(screen.getByLabelText(/Nume business \(friendly\)/i)).toHaveValue("");
+    expect(screen.getByLabelText(/Email business/i)).toHaveValue("");
+    expect(screen.getByLabelText(/Oraș/i)).toHaveValue("");
+    expect(screen.queryByText("Logo salvat")).not.toBeInTheDocument();
+  });
 
     expect(await screen.findByTestId("app-shell-title")).toHaveTextContent("Client 96 — Profil Business");
     expect(screen.getByLabelText(/Nume business \(friendly\)/i)).toHaveValue("");

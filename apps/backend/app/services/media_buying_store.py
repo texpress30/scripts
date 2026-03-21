@@ -72,12 +72,18 @@ class MediaBuyingStore:
         if self._schema_initialized:
             return
 
+        settings = load_settings()
+        if settings.app_env == "production":
+            self._schema_initialized = True
+            return
+
         with self._schema_lock:
             if self._schema_initialized:
                 return
 
             with self._connect() as conn:
                 with conn.cursor() as cur:
+                    cur.execute("SELECT pg_advisory_xact_lock(1, hashtext(%s))", ("ensure_schema_" + self.__class__.__name__,))
                     cur.execute("SELECT to_regclass('public.media_buying_configs')")
                     config_row = cur.fetchone() or (None,)
                     cur.execute("SELECT to_regclass('public.media_buying_lead_daily_manual_values')")
