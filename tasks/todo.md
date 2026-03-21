@@ -1,3 +1,13 @@
+# TODO — TikTok campaign_daily reporting schema: remove unsupported name dimensions (2026-03-21)
+
+- [x] Sync workspace (`git fetch` + `git pull`) and re-read AGENTS + lessons before implementation.
+- [x] Update `_report_schema_for_grain` in `apps/backend/app/services/tiktok_ads.py` so `campaign_daily` dimensions are exactly `("stat_time_day", "campaign_id")`.
+- [x] Verify all grains in `_report_schema_for_grain` avoid unsupported name dimensions (`campaign_name`, `adgroup_name`, `ad_name`).
+- [x] Run backend relevant tests and frontend build.
+
+## Review
+- [x] Patch kept strictly in TikTok backend reporting schema scope; no Agency/Team/auth/invite/delete and no Media Buying/Tracker changes.
+
 # TODO — GitHub Connector remote sync (2026-03-21)
 
 - [x] Start with a fresh terminal execution context and run the exact remote add/set-url command provided by user.
