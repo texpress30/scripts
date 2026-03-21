@@ -467,3 +467,4 @@
 - 2026-03-20: Când drilldown-ul depinde de tabele entity-level, verifică explicit că write helpers pentru fiecare grain persistă și în non-test-mode; un helper care întoarce `0` în producție poate face UI-ul gol chiar dacă account_daily are date.
 - 2026-03-20: Pentru erori Postgres `numeric field overflow` pe sync-uri chunked, investighează întâi derivarea metricilor (ex. `action_values` sum) și adaugă izolare row-level la persistență; altfel un singur row invalid poate bloca tot chunk-ul.
 - 2026-03-21: Pentru TikTok când UI arată `campaign_id`, verifică mai întâi schema `report.integrated.get` pe `dimensions` (ex. lipsa `campaign_name`) și completează cu metadata fetch + persist în `platform_campaigns` înainte de orice fix frontend.
+- 2026-03-21: Nu adăuga câmpuri nevalidate în TikTok reporting `dimensions` (ex. `campaign_name`); confirmă suportul endpoint-ului și rezolvă numele prin `campaign/get` + persist în `platform_campaigns`.

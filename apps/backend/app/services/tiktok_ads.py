@@ -1154,6 +1154,39 @@ class TikTokAdsService:
 
         return metadata_by_id
 
+    def _resolve_and_persist_campaign_metadata_safe(
+        self,
+        *,
+        account_id: str,
+        access_token: str,
+        campaign_ids: list[str],
+        report_campaign_name_by_id: dict[str, str],
+    ) -> dict[str, dict[str, object]]:
+        try:
+            return self._resolve_and_persist_campaign_metadata(
+                account_id=account_id,
+                access_token=access_token,
+                campaign_ids=campaign_ids,
+                report_campaign_name_by_id=report_campaign_name_by_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "TikTok campaign metadata resolve/persist failed; continuing with report-level campaign names. account_id=%s error=%s",
+                account_id,
+                sanitize_text(str(exc), max_len=300),
+            )
+            fallback_ids = {str(item or "").strip() for item in campaign_ids if str(item or "").strip() != ""}
+            return {
+                campaign_id: {
+                    "campaign_id": campaign_id,
+                    "campaign_name": str(report_campaign_name_by_id.get(campaign_id) or "").strip(),
+                    "campaign_status": "",
+                    "raw_payload": {},
+                    "payload_hash": None,
+                }
+                for campaign_id in sorted(fallback_ids)
+            }
+
     def _build_report_integrated_query_params(
         self,
         *,
@@ -2307,7 +2340,7 @@ class TikTokAdsService:
                 if fetch_stats.get("zero_row_marker") is not None:
                     zero_row_observability.append(fetch_stats)
                 report_name_by_id = {row.campaign_id: row.campaign_name for row in campaign_rows if str(row.campaign_name or "").strip() != ""}
-                campaign_metadata_by_id = self._resolve_and_persist_campaign_metadata(
+                campaign_metadata_by_id = self._resolve_and_persist_campaign_metadata_safe(
                     account_id=account_id,
                     access_token=access_token,
                     campaign_ids=[row.campaign_id for row in campaign_rows],
@@ -2368,7 +2401,7 @@ class TikTokAdsService:
                 if fetch_stats.get("zero_row_marker") is not None:
                     zero_row_observability.append(fetch_stats)
                 report_name_by_id = {row.campaign_id: row.campaign_name for row in ad_group_rows if str(row.campaign_name or "").strip() != ""}
-                campaign_metadata_by_id = self._resolve_and_persist_campaign_metadata(
+                campaign_metadata_by_id = self._resolve_and_persist_campaign_metadata_safe(
                     account_id=account_id,
                     access_token=access_token,
                     campaign_ids=[row.campaign_id for row in ad_group_rows],
@@ -2431,7 +2464,7 @@ class TikTokAdsService:
                 if fetch_stats.get("zero_row_marker") is not None:
                     zero_row_observability.append(fetch_stats)
                 report_name_by_id = {row.campaign_id: row.campaign_name for row in ad_rows if str(row.campaign_name or "").strip() != ""}
-                campaign_metadata_by_id = self._resolve_and_persist_campaign_metadata(
+                campaign_metadata_by_id = self._resolve_and_persist_campaign_metadata_safe(
                     account_id=account_id,
                     access_token=access_token,
                     campaign_ids=[row.campaign_id for row in ad_rows],

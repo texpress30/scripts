@@ -62,9 +62,9 @@ def test_resolve_and_persist_tiktok_campaign_metadata_by_campaign_id(monkeypatch
     assert fake_conn.committed is True
 
 
-def test_campaign_daily_report_schema_requests_campaign_name_dimension():
+def test_campaign_daily_report_schema_does_not_request_campaign_name_dimension():
     schema = tiktok_ads_service._report_schema_for_grain("campaign_daily")
-    assert "campaign_name" in schema.dimensions
+    assert "campaign_name" not in schema.dimensions
 
 
 def test_upsert_campaign_rows_persists_platform_campaign_entities(monkeypatch):
@@ -239,4 +239,56 @@ def test_campaign_daily_sync_keeps_campaign_id_fallback_when_metadata_name_missi
     )
 
     assert payload["rows_written"] == 1
+    assert captured_upsert_rows[0].campaign_name == ""
+
+
+def test_campaign_daily_sync_continues_when_campaign_metadata_fetch_fails(monkeypatch):
+    monkeypatch.setenv("FF_TIKTOK_INTEGRATION", "1")
+    monkeypatch.setenv("APP_AUTH_SECRET", "test-secret")
+
+    base_row = TikTokCampaignDailyMetric(
+        report_date=date(2026, 3, 20),
+        account_id="tt-acc-4",
+        campaign_id="cmp-400",
+        campaign_name="",
+        spend=7.0,
+        impressions=70,
+        clicks=4,
+        conversions=1.0,
+        conversion_value=14.0,
+        extra_metrics={"tiktok_ads": {}},
+    )
+
+    monkeypatch.setattr(tiktok_ads_service, "_access_token_with_source", lambda: ("token", "database", None))
+    monkeypatch.setattr(tiktok_ads_service, "_resolve_target_account_ids", lambda **kwargs: ["tt-acc-4"])
+    monkeypatch.setattr(tiktok_ads_service, "_probe_selected_advertiser_access", lambda **kwargs: {"status": "ok"})
+    monkeypatch.setattr(tiktok_ads_service, "_fetch_campaign_daily_metrics", lambda **kwargs: [base_row])
+    monkeypatch.setattr(
+        tiktok_ads_service,
+        "_consume_reporting_fetch_observability",
+        lambda **kwargs: {"rows_downloaded": 1, "rows_mapped": 1, "zero_row_marker": None},
+    )
+    monkeypatch.setattr(
+        tiktok_ads_service,
+        "_resolve_and_persist_campaign_metadata",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("campaign/get failed")),
+    )
+    monkeypatch.setattr(tiktok_ads_module.tiktok_snapshot_store, "upsert_snapshot", lambda payload: None)
+
+    captured_upsert_rows: list[TikTokCampaignDailyMetric] = []
+    monkeypatch.setattr(
+        tiktok_ads_service,
+        "_upsert_campaign_rows",
+        lambda rows, *, source_window_start, source_window_end: captured_upsert_rows.extend(rows) or len(rows),
+    )
+
+    payload = tiktok_ads_service.sync_client(
+        client_id=96,
+        grain="campaign_daily",
+        start_date=date(2026, 3, 20),
+        end_date=date(2026, 3, 20),
+    )
+
+    assert payload["rows_written"] == 1
+    assert captured_upsert_rows[0].campaign_id == "cmp-400"
     assert captured_upsert_rows[0].campaign_name == ""
