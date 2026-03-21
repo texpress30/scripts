@@ -150,6 +150,56 @@ describe("Agency Account detail Meta/TikTok parity", () => {
     expect(screen.queryByText(/Category:\s*run failed/i)).not.toBeInTheDocument();
     fireEvent.click(await screen.findByText("Show logs"));
     expect(await screen.findByText(/Rows downloaded: 3 · Rows mapped: 0/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Chunk finalizat fără rânduri mapate/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Observability:/i)).not.toBeInTheDocument();
+  });
+
+  it("renders clean chunk error text and does not render raw observability JSON", async () => {
+    paramsState.platform = "tiktok_ads";
+    paramsState.accountId = "tt_1";
+
+    apiMock.apiRequest.mockImplementation((path: string) => {
+      if (path === "/clients/accounts/tiktok_ads") {
+        return Promise.resolve({ items: [{ id: "tt_1", name: "TikTok One", platform: "tiktok_ads", client_name: "Client B" }] });
+      }
+      if (path.includes("/accounts/tiktok_ads/tt_1")) {
+        return Promise.resolve({
+          runs: [
+            {
+              job_id: "tt-run-json-err",
+              job_type: "historical_backfill",
+              status: "error",
+              chunks_total: 1,
+              chunks_done: 1,
+              created_at: "2026-03-09T09:00:00Z",
+            },
+          ],
+        });
+      }
+      if (path.includes("/agency/sync-runs/tt-run-json-err/chunks")) {
+        return Promise.resolve({
+          chunks: [
+            {
+              chunk_index: 0,
+              status: "error",
+              error: "{\"error\":\"provider timeout\"}",
+              metadata: {
+                rows_downloaded: 0,
+                rows_mapped: 0,
+                zero_row_observability: [{ zero_row_marker: "provider_returned_empty_list", account_id: "tt_1" }],
+              },
+            },
+          ],
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AgencyAccountDetailPage />);
+    fireEvent.click(await screen.findByText("Show logs"));
+    expect(await screen.findByText(/Error: Chunk finalizat cu eroare\. Verifică detaliile run-ului\./i)).toBeInTheDocument();
+    expect(screen.queryByText(/Observability:/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\{\"error\"\:\"provider timeout\"\}/i)).not.toBeInTheDocument();
   });
 
   it("shows disabled TikTok sync banner when platform sync_enabled is false", async () => {
