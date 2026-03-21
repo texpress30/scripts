@@ -80,6 +80,7 @@ describe("SubAccount Business Profile settings page", () => {
   it("starts with empty form values when business profile is not saved, even if display data exists", async () => {
     setupApiMock();
     render(<SubAccountSettingsPage />);
+    await screen.findByDisplayValue("owner96@example.com");
 
     expect(await screen.findByTestId("app-shell-title")).toHaveTextContent("Client 96 — Profil Business");
     expect(screen.getByLabelText(/Nume business \(friendly\)/i)).toHaveValue("");
