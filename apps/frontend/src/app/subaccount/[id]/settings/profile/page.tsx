@@ -390,8 +390,12 @@ export default function SubAccountSettingsPage() {
                         <option value="">Selectează</option>
                         <option value="agencie_marketing">Agenție de marketing</option>
                         <option value="ecommerce">E-commerce</option>
+                        <option value="estetica_medicala">Estetică Medicală</option>
+                        <option value="ortopedie">Ortopedie</option>
                         <option value="parc_auto">Parc Auto</option>
+                        <option value="recuperare_medicala">Recuperare Medicală</option>
                         <option value="saas">SaaS</option>
+                        <option value="stomatologie">Stomatologie</option>
                       </select>
                       {generalErrors.niche ? <p className="mt-1 text-xs text-red-600">{generalErrors.niche}</p> : null}
                     </label>
@@ -440,13 +444,14 @@ export default function SubAccountSettingsPage() {
                       Industrie <span className="text-red-500">*</span>
                       <select className="wm-input mt-1" value={business.industry} onChange={(e) => setBusiness((prev) => ({ ...prev, industry: e.target.value }))}>
                         <option value="">Selectează</option>
-                        <option value="media">Media</option>
-                        <option value="marketing">Marketing</option>
-                        <option value="retail">Retail</option>
                         <option value="auto">Auto</option>
+                        <option value="dating">Dating</option>
                         <option value="educatie">Educație</option>
                         <option value="energie">Energie</option>
-                        <option value="dating">Dating</option>
+                        <option value="marketing">Marketing</option>
+                        <option value="media">Media</option>
+                        <option value="retail">Retail</option>
+                        <option value="servicii_medicale">Servicii Medicale</option>
                       </select>
                       {businessErrors.industry ? <p className="mt-1 text-xs text-red-600">{businessErrors.industry}</p> : null}
                     </label>

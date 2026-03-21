@@ -482,3 +482,4 @@
 - 2026-03-21: Pentru TikTok `ad_group_daily`, nu presupune că reporting returnează `campaign_id`/`adgroup_name`; rezolvă explicit metadata prin `adgroup/get` pe `adgroup_id`, mapează `campaign_id` înainte de upsert facts și păstrează flow-ul best-effort dacă metadata fetch/persist eșuează.
 - 2026-03-21: Pentru cerințe UI de navigație repetate pe mai multe pagini similare, auditează mai întâi componenta shared (dacă există) și implementează linkul o singură dată acolo, cu teste per pagină pentru href corect.
 - 2026-03-21: Când utilizatorul reamintește explicit AGENTS workflow, încep imediat cu plan documentat în `tasks/todo.md`, marchez progresul în același task și includ obligatoriu commit + `make_pr` în același turn de livrare.
+- 2026-03-21: Pentru dropdown-uri cerute explicit cu "sortare alfabetică", verific ordinea tuturor opțiunilor (nu doar cele noi) și acopăr ordinea exactă într-un test de UI pe lista de `<option>`.

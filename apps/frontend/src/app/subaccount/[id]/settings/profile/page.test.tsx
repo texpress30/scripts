@@ -86,6 +86,32 @@ describe("SubAccount Business Profile settings page", () => {
     expect(screen.getByLabelText(/Oraș/i)).toHaveValue("");
     expect(screen.queryByText("Logo salvat")).not.toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Parc Auto" })).toBeInTheDocument();
+
+    const nicheOptions = Array.from(screen.getByLabelText(/Nișa business/i).querySelectorAll("option")).map((opt) => opt.textContent);
+    expect(nicheOptions).toEqual([
+      "Selectează",
+      "Agenție de marketing",
+      "E-commerce",
+      "Estetică Medicală",
+      "Ortopedie",
+      "Parc Auto",
+      "Recuperare Medicală",
+      "SaaS",
+      "Stomatologie",
+    ]);
+
+    const industryOptions = Array.from(screen.getByLabelText(/Industrie/i).querySelectorAll("option")).map((opt) => opt.textContent);
+    expect(industryOptions).toEqual([
+      "Selectează",
+      "Auto",
+      "Dating",
+      "Educație",
+      "Energie",
+      "Marketing",
+      "Media",
+      "Retail",
+      "Servicii Medicale",
+    ]);
   });
 
   it("saves profile explicitly and reloads saved values from business-profile endpoint", async () => {

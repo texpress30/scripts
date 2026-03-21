@@ -6065,3 +6065,18 @@ Plan confirmed: backend-first TikTok metadata + tests, minimal frontend test-onl
 ## Review
 - [x] Confirmed process compliance updates are recorded in tasks docs.
 - [ ] Confirmed commit + PR metadata were both completed in this turn.
+
+# TODO — Dropdown updates: industrie + nișă medical options sorted (2026-03-21)
+
+- [x] Re-read AGENTS and capture this follow-up task in todo before code edits.
+- [x] Update `Nișa business` dropdown with: Recuperare Medicală, Ortopedie, Stomatologie, Estetică Medicală.
+- [x] Update `Industrie` dropdown with: Servicii Medicale.
+- [x] Sort all options alphabetically in both dropdowns (keeping `Selectează` placeholder first).
+- [x] Run targeted frontend tests for subaccount profile page.
+- [x] Update `tasks/lessons.md` for this correction pattern.
+- [ ] Commit and run `make_pr`.
+
+## Review
+- [x] Confirmed both dropdown lists include the requested values and are alphabetically ordered.
+- [x] Confirmed verification command(s) passed.
+- [ ] Confirmed commit + PR metadata creation completed.
