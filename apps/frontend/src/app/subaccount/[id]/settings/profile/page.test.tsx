@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
 import SubAccountSettingsPage from "./page";
+import { apiRequest } from "@/lib/api";
 
 vi.mock("next/navigation", () => ({ useParams: () => ({ id: "96" }) }));
+vi.mock("@/lib/api", () => ({ apiRequest: vi.fn() }));
 vi.mock("@/components/ProtectedPage", () => ({ ProtectedPage: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
 vi.mock("@/components/AppShell", () => ({
   AppShell: ({ children, title }: { children: React.ReactNode; title: React.ReactNode }) => (
@@ -15,44 +17,121 @@ vi.mock("@/components/AppShell", () => ({
   ),
 }));
 
+type Store = {
+  general: Record<string, unknown>;
+  business: Record<string, unknown>;
+  address: Record<string, unknown>;
+  representative: Record<string, unknown>;
+  logo_url: string;
+};
+
 describe("SubAccount Business Profile settings page", () => {
   beforeEach(() => {
-    vi.useFakeTimers();
+    vi.useRealTimers();
+    window.localStorage.clear();
   });
 
-  it("renders all required business profile sections in Romanian", () => {
+  function setupApiMock(initial?: Partial<Store>) {
+    const db: Store = {
+      general: {},
+      business: {},
+      address: {},
+      representative: {},
+      logo_url: "",
+      ...(initial ?? {}),
+    };
+
+    vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
+      if (path === "/clients/display/96") {
+        return { client: { name: "Client 96", owner_email: "owner96@example.com", currency: "EUR", client_logo_url: "https://cdn/logo.png" } };
+      }
+      if (path === "/clients/display/96/business-profile" && (!options || !options.method || options.method === "GET")) {
+        return {
+          client_id: 1,
+          display_id: 96,
+          general: db.general,
+          business: db.business,
+          address: db.address,
+          representative: db.representative,
+          logo_url: db.logo_url,
+        };
+      }
+      if (path === "/clients/display/96/business-profile" && options?.method === "PUT") {
+        const payload = JSON.parse(String(options.body ?? "{}")) as Store;
+        db.general = payload.general ?? {};
+        db.business = payload.business ?? {};
+        db.address = payload.address ?? {};
+        db.representative = payload.representative ?? {};
+        db.logo_url = String(payload.logo_url ?? "");
+        return {
+          client_id: 1,
+          display_id: 96,
+          general: db.general,
+          business: db.business,
+          address: db.address,
+          representative: db.representative,
+          logo_url: db.logo_url,
+        };
+      }
+      throw new Error(`Unexpected path ${path}`);
+    });
+  }
+
+  it("starts with empty form values when business profile is not saved, even if display data exists", async () => {
+    setupApiMock();
     render(<SubAccountSettingsPage />);
 
-    expect(screen.getByText("Informații generale")).toBeInTheDocument();
-    expect(screen.getByText("Informații business")).toBeInTheDocument();
-    expect(screen.getByText("Adresă fizică business")).toBeInTheDocument();
-    expect(screen.getByText("Reprezentant autorizat")).toBeInTheDocument();
-
-    expect(screen.getByLabelText(/Nume business \(friendly\)/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Denumire legală business/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Email business/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Website business/i)).toBeInTheDocument();
+    expect(await screen.findByTestId("app-shell-title")).toHaveTextContent("Client 96 — Profil Business");
+    expect(screen.getByLabelText(/Nume business \(friendly\)/i)).toHaveValue("");
+    expect(screen.getByLabelText(/Email business/i)).toHaveValue("");
+    expect(screen.getByLabelText(/Oraș/i)).toHaveValue("");
+    expect(screen.queryByText("Logo salvat")).not.toBeInTheDocument();
   });
 
-  it("validates general information fields and shows success toast on valid submit", () => {
+  it("saves profile explicitly and reloads saved values from business-profile endpoint", async () => {
+    setupApiMock();
+    const { unmount } = render(<SubAccountSettingsPage />);
+    await screen.findByTestId("app-shell-title");
+
+    fireEvent.change(screen.getByLabelText(/Nume business \(friendly\)/i), { target: { value: "ROC Auto" } });
+    fireEvent.change(screen.getByLabelText(/Denumire legală business/i), { target: { value: "ROC Auto SRL" } });
+    fireEvent.change(screen.getByLabelText(/Email business/i), { target: { value: "biz@roc.example" } });
+    fireEvent.change(screen.getByLabelText(/Telefon business/i), { target: { value: "+40 700 111 222" } });
+    fireEvent.change(screen.getByLabelText(/Website business/i), { target: { value: "https://roc.example" } });
+    fireEvent.change(screen.getByLabelText(/Nișa business/i), { target: { value: "ecommerce" } });
+    fireEvent.change(screen.getByLabelText(/Monedă business/i), { target: { value: "EUR" } });
+    fireEvent.change(screen.getByLabelText(/Oraș/i), { target: { value: "Onești" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Actualizează informațiile" })[0]);
+    await screen.findByText("Informațiile generale au fost actualizate.");
+
+    expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
+      "/clients/display/96/business-profile",
+      expect.objectContaining({ method: "PUT" }),
+    );
+
+    unmount();
     render(<SubAccountSettingsPage />);
+    await screen.findByTestId("app-shell-title");
 
-    fireEvent.change(screen.getByLabelText(/Email business/i), { target: { value: "email_invalid" } });
-    fireEvent.change(screen.getByLabelText(/Website business/i), { target: { value: "site-invalid" } });
-    fireEvent.change(screen.getByLabelText(/Telefon business/i), { target: { value: "123" } });
+    expect(screen.getByLabelText(/Nume business \(friendly\)/i)).toHaveValue("ROC Auto");
+    expect(screen.getByLabelText(/Email business/i)).toHaveValue("biz@roc.example");
+    expect(screen.getByLabelText(/Oraș/i)).toHaveValue("Onești");
+  });
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Actualizează informațiile" })[0]);
+  it("does not use localStorage snapshots as permanent prefill source", async () => {
+    window.localStorage.setItem(
+      "subaccount_profile_settings_96",
+      JSON.stringify({
+        general: { friendlyName: "From localStorage", email: "ls@example.com" },
+        address: { city: "Storage City" },
+      }),
+    );
+    setupApiMock();
+    render(<SubAccountSettingsPage />);
+    await screen.findByTestId("app-shell-title");
 
-    expect(screen.getByText(/adresă de email validă/i)).toBeInTheDocument();
-    expect(screen.getByText(/url valid/i)).toBeInTheDocument();
-    expect(screen.getByText(/număr de telefon valid/i)).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText(/Email business/i), { target: { value: "admin@omarosa.ro" } });
-    fireEvent.change(screen.getByLabelText(/Website business/i), { target: { value: "https://omarosa.ro" } });
-    fireEvent.change(screen.getByLabelText(/Telefon business/i), { target: { value: "+40 725 083 012" } });
-
-    fireEvent.click(screen.getAllByRole("button", { name: "Actualizează informațiile" })[0]);
-
-    expect(screen.getByText("Informațiile generale au fost actualizate.")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Nume business \(friendly\)/i)).toHaveValue("");
+    expect(screen.getByLabelText(/Email business/i)).toHaveValue("");
+    expect(screen.getByLabelText(/Oraș/i)).toHaveValue("");
   });
 });
