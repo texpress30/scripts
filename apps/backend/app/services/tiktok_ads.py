@@ -882,18 +882,18 @@ class TikTokAdsService:
             return TikTokReportingSchema(
                 data_level="AUCTION_CAMPAIGN",
                 dimensions=("stat_time_day", "campaign_id"),
-                metrics=("spend", "impressions", "clicks", "conversion", "total_purchase_value"),
+                metrics=("spend", "impressions", "clicks", "conversion", "total_purchase_value", "campaign_name"),
             )
         if grain == "ad_group_daily":
             return TikTokReportingSchema(
                 data_level="AUCTION_ADGROUP",
                 dimensions=("stat_time_day", "adgroup_id"),
-                metrics=("spend", "impressions", "clicks", "conversion", "total_purchase_value", "adgroup_name", "campaign_id", "campaign_name"),
+                metrics=("spend", "impressions", "clicks", "conversion", "total_purchase_value", "adgroup_name", "campaign_id", "campaign_name", "adgroup_name"),
             )
         return TikTokReportingSchema(
             data_level="AUCTION_AD",
             dimensions=("stat_time_day", "ad_id"),
-            metrics=("spend", "impressions", "clicks", "conversion", "total_purchase_value"),
+            metrics=("spend", "impressions", "clicks", "conversion", "total_purchase_value", "campaign_id", "campaign_name", "adgroup_id", "adgroup_name", "ad_name"),
         )
 
     def _record_reporting_fetch_observability(
@@ -2379,6 +2379,7 @@ class TikTokAdsService:
                 self._memory_ad_group_rows[key] = {
                     "platform": "tiktok_ads",
                     "account_id": row.account_id,
+                    "campaign_id": row.campaign_id,
                     "ad_group_id": row.ad_group_id,
                     "ad_group_name": row.ad_group_name,
                     "adgroup_name": row.adgroup_name or row.ad_group_name,
@@ -2406,6 +2407,7 @@ class TikTokAdsService:
                 {
                 "platform": "tiktok_ads",
                 "account_id": row.account_id,
+                "campaign_id": row.campaign_id,
                 "ad_group_id": row.ad_group_id,
                 "campaign_id": resolved_campaign_id or None,
                 "report_date": row.report_date,
