@@ -261,3 +261,48 @@ def test_list_and_count_for_client(monkeypatch):
     assert filtered_kind[0]["client_id"] == 1
     assert filtered_kind[0]["kind"] == "image"
     assert c["client_id"] == 2
+
+
+def test_cleanup_candidates_and_mark_purged(monkeypatch):
+    fake_collection = FakeCollection()
+    monkeypatch.setattr(repository_module, "load_settings", _settings)
+    monkeypatch.setattr(repository_module, "get_s3_bucket_name", lambda: "assets-bucket")
+    monkeypatch.setattr(repository_module, "get_mongo_collection", lambda _name: fake_collection)
+
+    first = repository_module.media_metadata_repository.create_draft(
+        client_id=1,
+        kind="image",
+        source="user_upload",
+        original_filename="a.png",
+        mime_type="image/png",
+        media_id="m1",
+    )
+    second = repository_module.media_metadata_repository.create_draft(
+        client_id=1,
+        kind="image",
+        source="user_upload",
+        original_filename="b.png",
+        mime_type="image/png",
+        media_id="m2",
+    )
+    third = repository_module.media_metadata_repository.create_draft(
+        client_id=1,
+        kind="image",
+        source="user_upload",
+        original_filename="c.png",
+        mime_type="image/png",
+        media_id="m3",
+    )
+
+    repository_module.media_metadata_repository.soft_delete(media_id=second["media_id"])
+    repository_module.media_metadata_repository.soft_delete(media_id=first["media_id"])
+
+    candidates = repository_module.media_metadata_repository.list_cleanup_candidates(limit=10)
+    assert [item["media_id"] for item in candidates] == [second["media_id"], first["media_id"]]
+
+    purged = repository_module.media_metadata_repository.mark_purged(media_id=first["media_id"])
+    assert purged is not None
+    assert purged["status"] == "purged"
+    assert purged["purged_at"] is not None
+    assert purged["deleted_at"] is not None
+    assert third["status"] == "draft"

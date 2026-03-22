@@ -1,3 +1,15 @@
+# TODO — Storage media cleanup batch for delete_requested records (2026-03-22)
+
+- [x] Refresh workspace state and re-audit storage repository/models/providers/delete/read/access plus tests.
+- [x] Add minimal repository methods for cleanup batch selection and mark_purged persistence.
+- [x] Implement `StorageMediaCleanupService.run_batch(limit=...)` with S3 delete_object + per-item outcomes.
+- [x] Enforce cleanup scope: process only `delete_requested`, deterministic ordering, no endpoint/scheduler wiring, no hard delete.
+- [x] Add focused tests for ordering, S3 delete params (incl version_id), missing-object idempotency, skips/failures, and runtime errors.
+- [x] Run targeted backend tests and update review + lessons.
+
+## Review
+- [x] Confirm no new cleanup endpoint, no scheduler wiring, no hard delete, no creative/frontend changes.
+
 # TODO — Storage media soft delete endpoint + service (2026-03-22)
 
 - [x] Refresh repo state and re-audit storage router/repository/models/read/access/config/tests before coding.

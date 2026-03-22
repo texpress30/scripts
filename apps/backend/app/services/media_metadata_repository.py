@@ -7,6 +7,7 @@ from app.services.media_metadata_models import (
     MEDIA_FILE_STATUS_DELETE_REQUESTED,
     MEDIA_FILE_STATUS_DRAFT,
     MEDIA_FILE_STATUS_READY,
+    MEDIA_FILE_STATUS_PURGED,
     MediaFileKind,
     MediaFileSource,
     MediaStorageDescriptor,
@@ -203,6 +204,34 @@ class MediaMetadataRepository:
         if metadata is not None:
             set_payload["metadata"] = dict(metadata)
         self._collection().update_one({"media_id": normalized_media_id}, {"$set": set_payload})
+        return self.get_by_media_id(normalized_media_id)
+
+
+    def list_cleanup_candidates(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        resolved_limit = max(0, int(limit))
+        cursor = (
+            self._collection()
+            .find({"status": MEDIA_FILE_STATUS_DELETE_REQUESTED})
+            .sort([("deleted_at", 1), ("created_at", 1), ("media_id", 1)])
+            .limit(resolved_limit)
+        )
+        return [self._normalize(item) for item in cursor if isinstance(item, dict)]
+
+    def mark_purged(self, *, media_id: str, purged_at: datetime | None = None) -> dict[str, Any] | None:
+        normalized_media_id = str(media_id or "").strip()
+        if normalized_media_id == "":
+            return None
+        now = utcnow()
+        self._collection().update_one(
+            {"media_id": normalized_media_id},
+            {
+                "$set": {
+                    "status": MEDIA_FILE_STATUS_PURGED,
+                    "purged_at": purged_at or now,
+                    "updated_at": now,
+                }
+            },
+        )
         return self.get_by_media_id(normalized_media_id)
 
     def soft_delete(self, *, media_id: str, deleted_at: datetime | None = None) -> dict[str, Any] | None:
