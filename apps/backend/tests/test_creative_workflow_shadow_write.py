@@ -13,6 +13,7 @@ def _new_service_with_flag(
     enabled: bool,
     core_writes_source_enabled: bool = False,
     derived_writes_source_enabled: bool = False,
+    publish_persist_enabled: bool = False,
     read_through_enabled: bool = False,
     reads_source_enabled: bool = False,
 ) -> workflow_module.CreativeWorkflowService:
@@ -23,6 +24,7 @@ def _new_service_with_flag(
             creative_workflow_mongo_shadow_write_enabled=enabled,
             creative_workflow_mongo_core_writes_source_enabled=core_writes_source_enabled,
             creative_workflow_mongo_derived_writes_source_enabled=derived_writes_source_enabled,
+            creative_workflow_mongo_publish_persist_enabled=publish_persist_enabled,
             creative_workflow_mongo_read_through_enabled=read_through_enabled,
             creative_workflow_mongo_reads_source_enabled=reads_source_enabled,
         ),
@@ -184,6 +186,134 @@ def test_publish_to_channel_remains_unchanged(monkeypatch):
     assert called["publish"] == 1
     assert published["native_object_type"] == "ad_creative"
     assert service._next_publish_id == original_next_publish_id + 1
+
+
+def test_publish_mongo_persist_flag_off_keeps_legacy_behavior(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, core_writes_source_enabled=False, derived_writes_source_enabled=True, publish_persist_enabled=False)
+    asset = _create_asset(service)
+    upsert_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "upsert_asset", lambda payload: upsert_calls.append(dict(payload)) or payload)
+
+    published = service.publish_to_channel(int(asset["id"]), "meta", None)
+
+    assert published["asset_id"] == int(asset["id"])
+    assert upsert_calls == []
+
+
+def test_publish_mongo_persist_ignored_if_prerequisites_missing(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, core_writes_source_enabled=False, derived_writes_source_enabled=True, publish_persist_enabled=True)
+    asset = _create_asset(service)
+    mongo_get_calls = {"count": 0}
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "get_by_creative_id", lambda _asset_id: mongo_get_calls.__setitem__("count", mongo_get_calls["count"] + 1))
+
+    service.publish_to_channel(int(asset["id"]), "meta")
+
+    assert mongo_get_calls["count"] == 0
+
+
+def test_publish_mongo_persist_on_uses_mongo_first_and_persists_publish_history(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, core_writes_source_enabled=True, derived_writes_source_enabled=True, publish_persist_enabled=True)
+    mongo_asset = _mongo_asset_payload(asset_id=555)
+    mongo_get_calls = {"count": 0}
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "get_by_creative_id", lambda _asset_id: mongo_get_calls.__setitem__("count", mongo_get_calls["count"] + 1) or dict(mongo_asset))
+    monkeypatch.setattr(workflow_module.creative_counters_repository, "next_publish_id", lambda: 2001)
+    upsert_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "upsert_asset", lambda payload: upsert_calls.append(dict(payload)) or payload)
+
+    published = service.publish_to_channel(555, "meta")
+
+    assert mongo_get_calls["count"] == 1
+    assert published["id"] == 2001
+    assert upsert_calls[0]["publish_history"][-1]["id"] == 2001
+    assert service._published[2001].native_id == published["native_id"]
+
+
+def test_publish_mongo_persist_falls_back_to_local_when_mongo_missing(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False)
+    local_asset = _create_asset(service)
+    local_variant = service.add_variant(int(local_asset["id"]), "H", "B", "CTA", "media")
+    monkeypatch.setattr(
+        workflow_module,
+        "load_settings",
+        lambda: SimpleNamespace(
+            creative_workflow_mongo_shadow_write_enabled=False,
+            creative_workflow_mongo_core_writes_source_enabled=True,
+            creative_workflow_mongo_derived_writes_source_enabled=True,
+            creative_workflow_mongo_publish_persist_enabled=True,
+            creative_workflow_mongo_read_through_enabled=False,
+            creative_workflow_mongo_reads_source_enabled=False,
+        ),
+    )
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "get_by_creative_id", lambda _asset_id: None)
+    monkeypatch.setattr(workflow_module.creative_counters_repository, "next_publish_id", lambda: 3001)
+    upsert_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "upsert_asset", lambda payload: upsert_calls.append(dict(payload)) or payload)
+
+    published = service.publish_to_channel(int(local_asset["id"]), "meta", int(local_variant["id"]))
+
+    assert published["id"] == 3001
+    assert upsert_calls[0]["id"] == int(local_asset["id"])
+
+
+def test_publish_next_id_failure_prevents_external_publish(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, core_writes_source_enabled=True, derived_writes_source_enabled=True, publish_persist_enabled=True)
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "get_by_creative_id", lambda _asset_id: _mongo_asset_payload(asset_id=601))
+    monkeypatch.setattr(
+        workflow_module.creative_counters_repository,
+        "next_publish_id",
+        lambda: (_ for _ in ()).throw(RuntimeError("counter down")),
+    )
+    publish_calls = {"count": 0}
+    monkeypatch.setattr(service._adapters["meta"], "publish", lambda asset, variant: publish_calls.__setitem__("count", publish_calls["count"] + 1) or "native-1")
+
+    with pytest.raises(RuntimeError):
+        service.publish_to_channel(601, "meta")
+
+    assert publish_calls["count"] == 0
+
+
+def test_publish_external_failure_does_not_upsert_and_does_not_touch_local_published(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, core_writes_source_enabled=True, derived_writes_source_enabled=True, publish_persist_enabled=True)
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "get_by_creative_id", lambda _asset_id: _mongo_asset_payload(asset_id=602))
+    monkeypatch.setattr(workflow_module.creative_counters_repository, "next_publish_id", lambda: 4001)
+    upsert_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "upsert_asset", lambda payload: upsert_calls.append(dict(payload)) or payload)
+    monkeypatch.setattr(
+        service._adapters["meta"],
+        "publish",
+        lambda asset, variant: (_ for _ in ()).throw(RuntimeError("external failed")),
+    )
+
+    with pytest.raises(RuntimeError):
+        service.publish_to_channel(602, "meta")
+
+    assert upsert_calls == []
+    assert 4001 not in service._published
+
+
+def test_publish_external_success_but_mongo_upsert_failure_returns_success_without_duplicate_publish(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, core_writes_source_enabled=True, derived_writes_source_enabled=True, publish_persist_enabled=True)
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "get_by_creative_id", lambda _asset_id: _mongo_asset_payload(asset_id=603))
+    monkeypatch.setattr(workflow_module.creative_counters_repository, "next_publish_id", lambda: 5001)
+    publish_calls = {"count": 0}
+
+    def _publish(asset, variant):
+        publish_calls["count"] += 1
+        return "native-success"
+
+    monkeypatch.setattr(service._adapters["meta"], "publish", _publish)
+    monkeypatch.setattr(
+        workflow_module.creative_assets_repository,
+        "upsert_asset",
+        lambda payload: (_ for _ in ()).throw(RuntimeError("mongo write failed")),
+    )
+
+    published = service.publish_to_channel(603, "meta")
+
+    assert publish_calls["count"] == 1
+    assert published["id"] == 5001
+    assert published["native_id"] == "native-success"
+    assert service._published[5001].native_id == "native-success"
 
 
 def test_core_writes_flag_off_keeps_create_add_link_on_local_path(monkeypatch):
@@ -636,6 +766,16 @@ def test_derived_writes_setting_default_is_off(monkeypatch):
     assert settings.creative_workflow_mongo_derived_writes_source_enabled is False
 
 
+def test_publish_persist_setting_default_is_off(monkeypatch):
+    monkeypatch.setenv("APP_AUTH_SECRET", "test-secret")
+    monkeypatch.delenv("CREATIVE_WORKFLOW_MONGO_PUBLISH_PERSIST_ENABLED", raising=False)
+
+    from app.core.config import load_settings
+
+    settings = load_settings()
+    assert settings.creative_workflow_mongo_publish_persist_enabled is False
+
+
 def _mongo_asset_payload(*, asset_id: int, client_id: int = 55) -> dict[str, object]:
     return {
         "id": asset_id,
@@ -655,6 +795,7 @@ def _mongo_asset_payload(*, asset_id: int, client_id: int = 55) -> dict[str, obj
         "creative_variants": [{"id": 200, "headline": "H", "body": "B", "cta": "CTA", "media": "m"}],
         "performance_scores": {"meta": 10.0},
         "campaign_links": [{"id": 300, "campaign_id": 1, "ad_set_id": 2}],
+        "publish_history": [],
     }
 
 

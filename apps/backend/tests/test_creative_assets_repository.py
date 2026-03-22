@@ -92,6 +92,7 @@ def _asset_payload(*, creative_id: int, client_id: int = 101, name: str = "Asset
         ],
         "performance_scores": {"ctr": 1.2},
         "campaign_links": [{"id": 1, "campaign_id": 7, "ad_set_id": 9}],
+        "publish_history": [{"id": 10, "asset_id": creative_id, "channel": "meta", "native_id": "n-1", "status": "published"}],
     }
 
 
@@ -106,6 +107,7 @@ def test_upsert_asset_creates_document(monkeypatch):
     assert created["client_id"] == 101
     assert created["metadata"]["format"] == "image"
     assert len(created["creative_variants"]) == 1
+    assert created["publish_history"][0]["id"] == 10
     assert created["created_at"] is not None
     assert created["updated_at"] is not None
 
@@ -120,6 +122,7 @@ def test_get_by_creative_id_returns_document(monkeypatch):
     assert found is not None
     assert found["creative_id"] == 21
     assert found["name"] == "Asset One"
+    assert found["publish_history"][0]["channel"] == "meta"
 
 
 def test_second_upsert_updates_existing_keeps_created_at_and_updates_updated_at(monkeypatch):

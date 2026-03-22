@@ -151,6 +151,21 @@ class CreativeWorkflowService:
             return False
         return True
 
+    def _mongo_publish_persist_requested_enabled(self) -> bool:
+        try:
+            settings = load_settings()
+        except Exception:  # noqa: BLE001
+            return False
+        return bool(getattr(settings, "creative_workflow_mongo_publish_persist_enabled", False))
+
+    def _mongo_publish_persist_enabled(self) -> bool:
+        if not self._mongo_publish_persist_requested_enabled():
+            return False
+        if not self._mongo_core_writes_source_enabled() or not self._mongo_derived_writes_source_enabled():
+            logger.info("creative_workflow.publish_persist_ignored_missing_workflow_prerequisites")
+            return False
+        return True
+
     def _sync_local_counter(self, *, counter_name: str, allocated_id: int) -> None:
         next_value = max(1, int(allocated_id) + 1)
         if counter_name == "asset":
@@ -159,6 +174,8 @@ class CreativeWorkflowService:
             self._next_variant_id = max(int(self._next_variant_id), next_value)
         elif counter_name == "link":
             self._next_link_id = max(int(self._next_link_id), next_value)
+        elif counter_name == "publish":
+            self._next_publish_id = max(int(self._next_publish_id), next_value)
 
     def _next_id_for_counter(self, *, counter_name: str) -> int:
         if not self._mongo_shadow_write_enabled():
@@ -213,6 +230,18 @@ class CreativeWorkflowService:
         variants = self._variants.get(int(asset_id), [])
         links = self._links.get(int(asset_id), [])
         performance_scores = self._performance_scores.get(int(asset_id), {})
+        publish_history = [
+            {
+                "id": item.id,
+                "asset_id": item.asset_id,
+                "channel": item.channel,
+                "native_object_type": "ad_creative",
+                "native_id": item.native_id,
+                "status": item.status,
+            }
+            for item in self._published.values()
+            if int(item.asset_id) == int(asset_id)
+        ]
         return {
             "id": asset.id,
             "client_id": asset.client_id,
@@ -246,6 +275,7 @@ class CreativeWorkflowService:
                 }
                 for link in links
             ],
+            "publish_history": publish_history,
         }
 
     def _build_asset_snapshot(
@@ -265,6 +295,7 @@ class CreativeWorkflowService:
         creative_variants: list[dict[str, object]] | None = None,
         performance_scores: dict[str, float] | None = None,
         campaign_links: list[dict[str, object]] | None = None,
+        publish_history: list[dict[str, object]] | None = None,
     ) -> dict[str, object]:
         return {
             "id": int(asset_id),
@@ -285,6 +316,7 @@ class CreativeWorkflowService:
             "creative_variants": list(creative_variants or []),
             "performance_scores": dict(performance_scores or {}),
             "campaign_links": list(campaign_links or []),
+            "publish_history": list(publish_history or []),
         }
 
     def _resolve_asset_snapshot_for_write(self, *, asset_id: int, operation: str) -> dict[str, object] | None:
@@ -377,6 +409,7 @@ class CreativeWorkflowService:
         creative_variants = payload.get("creative_variants") if isinstance(payload.get("creative_variants"), list) else []
         performance_scores = payload.get("performance_scores") if isinstance(payload.get("performance_scores"), dict) else {}
         campaign_links = payload.get("campaign_links") if isinstance(payload.get("campaign_links"), list) else []
+        publish_history = payload.get("publish_history") if isinstance(payload.get("publish_history"), list) else []
 
         try:
             asset = CreativeAsset(
@@ -433,13 +466,49 @@ class CreativeWorkflowService:
         self._variants[asset_id] = variants
         self._performance_scores[asset_id] = {str(key): float(value) for key, value in performance_scores.items()}
         self._links[asset_id] = links
+        for published_id in [item.id for item in self._published.values() if int(item.asset_id) == int(asset_id)]:
+            self._published.pop(int(published_id), None)
+        publish_ids: list[int] = []
+        for item in publish_history:
+            if not isinstance(item, dict):
+                continue
+            publish_id = int(item.get("id") or 0)
+            if publish_id <= 0:
+                continue
+            record = PublishedCreative(
+                id=publish_id,
+                asset_id=asset_id,
+                channel=str(item.get("channel") or "") or "meta",
+                native_id=str(item.get("native_id") or ""),
+                status=str(item.get("status") or "published"),
+            )
+            self._published[publish_id] = record
+            publish_ids.append(publish_id)
 
         self._sync_local_counter(counter_name="asset", allocated_id=asset_id)
         if len(variants) > 0:
             self._sync_local_counter(counter_name="variant", allocated_id=max(item.id for item in variants))
         if len(links) > 0:
             self._sync_local_counter(counter_name="link", allocated_id=max(item.id for item in links))
+        if len(publish_ids) > 0:
+            self._sync_local_counter(counter_name="publish", allocated_id=max(publish_ids))
         return asset
+
+    def _asset_for_publish_from_snapshot(self, *, snapshot: dict[str, object], asset_id: int) -> CreativeAsset:
+        metadata = snapshot.get("metadata") if isinstance(snapshot.get("metadata"), dict) else {}
+        return CreativeAsset(
+            id=int(asset_id),
+            client_id=int(snapshot.get("client_id") or 0),
+            name=str(snapshot.get("name") or ""),
+            format=str(metadata.get("format") or ""),
+            dimensions=str(metadata.get("dimensions") or ""),
+            objective_fit=str(metadata.get("objective_fit") or ""),
+            platform_fit=[str(item) for item in list(metadata.get("platform_fit") or [])],
+            language=str(metadata.get("language") or ""),
+            brand_tags=[str(item) for item in list(metadata.get("brand_tags") or [])],
+            legal_status=str(metadata.get("legal_status") or ""),
+            approval_status=str(metadata.get("approval_status") or ""),
+        )
 
     def _resolve_asset_local_or_mongo(self, *, asset_id: int, operation: str) -> CreativeAsset | None:
         local_asset = self._assets.get(int(asset_id))
@@ -904,12 +973,82 @@ class CreativeWorkflowService:
         return payload
 
     def publish_to_channel(self, asset_id: int, channel: Channel, variant_id: int | None = None) -> dict[str, object]:
-        asset = self._assets.get(asset_id)
-        if asset is None:
-            raise ValueError("Asset not found")
         if channel not in self._adapters:
             raise ValueError("Unsupported channel")
 
+        if self._mongo_publish_persist_enabled():
+            with self._lock:
+                snapshot = self._resolve_asset_snapshot_for_derived_write(asset_id=asset_id, operation="publish_to_channel")
+                if snapshot is None:
+                    raise ValueError("Asset not found")
+                resolved_asset_id = int(snapshot.get("id") or snapshot.get("creative_id") or snapshot.get("asset_id") or asset_id)
+                asset_for_publish = self._asset_for_publish_from_snapshot(snapshot=snapshot, asset_id=resolved_asset_id)
+                variants = [dict(item) for item in list(snapshot.get("creative_variants") or []) if isinstance(item, dict)]
+                variant = None
+                if variant_id is not None:
+                    variant_payload = next((item for item in variants if int(item.get("id") or 0) == int(variant_id)), None)
+                    if variant_payload is None:
+                        raise ValueError("Variant not found")
+                    variant = CreativeVariant(
+                        id=int(variant_payload.get("id") or 0),
+                        asset_id=resolved_asset_id,
+                        headline=str(variant_payload.get("headline") or ""),
+                        body=str(variant_payload.get("body") or ""),
+                        cta=str(variant_payload.get("cta") or ""),
+                        media=str(variant_payload.get("media") or ""),
+                    )
+                publish_id = int(creative_counters_repository.next_publish_id())
+                self._sync_local_counter(counter_name="publish", allocated_id=publish_id)
+                native_id = self._adapters[channel].publish(asset_for_publish, variant)
+                publish_record = {
+                    "id": publish_id,
+                    "asset_id": resolved_asset_id,
+                    "channel": channel,
+                    "native_object_type": "ad_creative",
+                    "native_id": native_id,
+                    "status": "published",
+                }
+                publish_history = [dict(item) for item in list(snapshot.get("publish_history") or []) if isinstance(item, dict)]
+                publish_history.append(dict(publish_record))
+                snapshot["publish_history"] = publish_history
+                snapshot["id"] = resolved_asset_id
+                snapshot["creative_id"] = resolved_asset_id
+                snapshot["asset_id"] = resolved_asset_id
+                try:
+                    persisted = creative_assets_repository.upsert_asset(snapshot)
+                    persisted_snapshot = dict(persisted) if isinstance(persisted, dict) and len(persisted) > 0 else snapshot
+                    self._hydrate_local_cache_after_persist(
+                        persisted_snapshot=persisted_snapshot,
+                        operation="publish_to_channel",
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "creative_workflow.publish_external_success_mongo_persist_failed asset_id=%s publish_id=%s error=%s",
+                        resolved_asset_id,
+                        publish_id,
+                        exc.__class__.__name__,
+                    )
+
+                published = PublishedCreative(
+                    id=publish_id,
+                    asset_id=resolved_asset_id,
+                    channel=channel,
+                    native_id=native_id,
+                    status="published",
+                )
+                self._published[publish_id] = published
+                return {
+                    "id": published.id,
+                    "asset_id": published.asset_id,
+                    "channel": published.channel,
+                    "native_object_type": "ad_creative",
+                    "native_id": published.native_id,
+                    "status": published.status,
+                }
+
+        asset = self._assets.get(asset_id)
+        if asset is None:
+            raise ValueError("Asset not found")
         variant = None
         if variant_id is not None:
             variant = next((item for item in self._variants.get(asset_id, []) if item.id == variant_id), None)

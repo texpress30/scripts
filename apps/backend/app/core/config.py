@@ -81,6 +81,7 @@ class Settings:
     creative_workflow_mongo_shadow_write_enabled: bool
     creative_workflow_mongo_core_writes_source_enabled: bool
     creative_workflow_mongo_derived_writes_source_enabled: bool
+    creative_workflow_mongo_publish_persist_enabled: bool
     creative_workflow_mongo_read_through_enabled: bool
     creative_workflow_mongo_reads_source_enabled: bool
 
@@ -222,6 +223,7 @@ def load_settings() -> Settings:
         creative_workflow_mongo_shadow_write_enabled=_parse_bool_env("CREATIVE_WORKFLOW_MONGO_SHADOW_WRITE_ENABLED", default=False),
         creative_workflow_mongo_core_writes_source_enabled=_parse_bool_env("CREATIVE_WORKFLOW_MONGO_CORE_WRITES_SOURCE_ENABLED", default=False),
         creative_workflow_mongo_derived_writes_source_enabled=_parse_bool_env("CREATIVE_WORKFLOW_MONGO_DERIVED_WRITES_SOURCE_ENABLED", default=False),
+        creative_workflow_mongo_publish_persist_enabled=_parse_bool_env("CREATIVE_WORKFLOW_MONGO_PUBLISH_PERSIST_ENABLED", default=False),
         creative_workflow_mongo_read_through_enabled=_parse_bool_env("CREATIVE_WORKFLOW_MONGO_READ_THROUGH_ENABLED", default=False),
         creative_workflow_mongo_reads_source_enabled=_parse_bool_env("CREATIVE_WORKFLOW_MONGO_READS_SOURCE_ENABLED", default=False),
     )

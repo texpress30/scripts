@@ -86,6 +86,7 @@ class CreativeAssetsRepository:
             "creative_variants": [dict(item) for item in list(asset.get("creative_variants") or []) if isinstance(item, dict)],
             "performance_scores": dict(asset.get("performance_scores") or {}),
             "campaign_links": [dict(item) for item in list(asset.get("campaign_links") or []) if isinstance(item, dict)],
+            "publish_history": [dict(item) for item in list(asset.get("publish_history") or []) if isinstance(item, dict)],
             "schema_version": int(asset.get("schema_version") or _SCHEMA_VERSION),
         }
         if asset.get("client_id") is not None:
@@ -103,6 +104,7 @@ class CreativeAssetsRepository:
         normalized["creative_variants"] = [dict(item) for item in list(normalized.get("creative_variants") or []) if isinstance(item, dict)]
         normalized["performance_scores"] = dict(normalized.get("performance_scores") or {})
         normalized["campaign_links"] = [dict(item) for item in list(normalized.get("campaign_links") or []) if isinstance(item, dict)]
+        normalized["publish_history"] = [dict(item) for item in list(normalized.get("publish_history") or []) if isinstance(item, dict)]
         return normalized
 
 

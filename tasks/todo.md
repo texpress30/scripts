@@ -1,3 +1,20 @@
+# TODO — Creative workflow publish persistence în Mongo (feature-flagged, safe) (2026-03-22)
+
+- [x] Refresh workspace state și inspect explicit: `creative_workflow.py`, creative repositories/counters, `api/creative.py`, publish adapters/helpers, `core/config.py`, teste backend.
+- [x] Adaugă flag nou `CREATIVE_WORKFLOW_MONGO_PUBLISH_PERSIST_ENABLED` (default OFF) în settings + `.env.example` + doc minim.
+- [x] Activează publish persist doar când sunt ON toate: publish flag + core-writes + derived-writes; dacă prerechizitele lipsesc, păstrează comportamentul actual + log scurt.
+- [x] Extinde agregatul Mongo cu `publish_history` menținând compatibilitatea documentelor vechi fără acest câmp.
+- [x] Implementează `publish_to_channel(...)` Mongo-first write snapshot (fallback local doar la miss) când flag-ul este activ.
+- [x] Menține ordinea safe: resolve snapshot -> next_publish_id -> external publish (single call) -> append publish_history -> upsert Mongo -> local mirror compat.
+- [x] Tratează cazul critic: publish extern reușit dar upsert Mongo eșuează => nu reapela publish, fără retry/outbox, returnează succes extern și actualizează `_published` local.
+- [x] Menține neschimbate endpoint-urile `/creative`, contractele API, frontend, media/S3, backfill/migrare.
+- [x] Adaugă teste focused pentru OFF/ON/prerechizite, mongo-first/fallback, ordinea apelurilor, eșecuri counter/external/upsert, non-duplicate publish, local mirror compat.
+- [x] Rulează testele țintite și completează review.
+
+## Review
+- [x] Confirm publish persist Mongo este strict feature-flagged + gated de workflow Mongo complet.
+- [x] Confirm fără schimbări pe endpoint-uri `/creative`, frontend, media_id, backfill/migrare, retry/outbox.
+
 # TODO — Creative workflow Mongo source-of-truth pentru mutații non-publish derivate (2026-03-22)
 
 - [x] Refresh workspace state și inspect explicit: `creative_workflow.py`, repository-urile creative, `api/creative.py`, `core/config.py`, și testele backend.

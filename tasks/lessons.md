@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-22: Pentru publish persistence feature-flagged pe Mongo, tratez strict ordinea `next_publish_id -> external publish (single call) -> upsert`; dacă upsert-ul cade după publish extern reușit, nu retry/replay în același apel și returnez succesul extern cu mirror local compatibil.
+
 - 2026-03-22: Pentru mutații derivate migrate pe Mongo source-of-truth, activez flag-ul derivat doar împreună cu core-writes și tratez erorile Mongo read/upsert ca hard-fail (fără fallback local), cu local hydrate doar după persist reușit.
 
 - 2026-03-22: Când feedback-ul cere Mongo source-of-truth doar pentru mutații specifice, adaugă un flag dedicat de core writes și separă explicit write snapshot (Mongo-first/fallback) de local mirror/cache; nu lăsa mutații locale înainte de succesul `upsert_asset`.
