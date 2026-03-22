@@ -6580,3 +6580,24 @@ Plan verificat: patch izolat doar în backend recommendations/config/tests, făr
 - [x] Confirm rutele `/ai` și endpoint-ul legacy `/ai/legacy/{client_id}` au rămas neschimbate.
 - [x] Confirm fără backfill/migrare/outbox/retry/replay și fără modificări frontend.
 - [x] Verificări rulate: `cd apps/backend && pytest -q tests/test_ai_recommendations_repository.py tests/test_recommendations_mongo_source.py tests/test_storage_foundation_settings.py`.
+
+# TODO — Subaccount Profile logo storage flow (logo_media_id + preview fallback) (2026-03-22)
+
+- [x] Reîncarc workspace-ul și inspectez explicit fișierele cerute pentru profile/settings/storage backend+frontend.
+- [x] Extind backend business profile payload/response cu `logo_media_id` opțional, păstrând compatibilitatea cu `logo_url`.
+- [x] Persist `logo_media_id` în store-ul business profile fără backfill/migrare.
+- [x] La GET profile, încerc preview `logo_url` din storage pe baza `logo_media_id`, cu fallback robust la `logo_url` legacy / string gol.
+- [x] Adaug helper frontend generic pentru storage flow (init upload, upload presigned, complete, access URL helper).
+- [x] Înlocuiesc flow-ul vechi FileReader/data URL din pagina Subaccount Settings Profile cu flow storage + `logo_media_id`.
+- [x] Păstrez Remove ca detach-only: golește `logo_media_id` și `logo_url` în profil, fără delete din storage.
+- [x] Adaug teste focused backend+frontend pentru OFF/legacy/new/remove/error/upload flow.
+- [x] Rulez teste țintite și completez review.
+- [x] Commit + make_pr în același turn.
+
+## Check-in before execution
+Plan verificat: modificări strict în profile/settings + helper storage shared + backend clients profile, fără creative media library/publish/storage delete/backfill.
+
+## Review
+- [x] Confirm patch-ul este izolat pe profile/settings + storage helper reutilizabil.
+- [x] Confirm fără creative media library UI, fără storage delete, fără backfill/migrare, fără publish flow changes.
+- [x] Verificări rulate: `cd apps/backend && pytest -q tests/test_clients_business_profile_api.py tests/test_storage_api_upload_init.py -k "business_profile or storage"` și `cd apps/frontend && pnpm exec vitest run src/app/subaccount/[id]/settings/profile/page.test.tsx`.
