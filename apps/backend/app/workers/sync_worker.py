@@ -12,6 +12,7 @@ from app.services.entity_performance_reports import upsert_ad_group_performance_
 from app.services.platform_entity_store import upsert_platform_ad_groups, upsert_platform_ads, upsert_platform_campaigns, upsert_platform_keywords
 from app.services.google_ads import google_ads_service
 from app.services.meta_ads import MetaAdsIntegrationError, meta_ads_service
+from app.services.storage_media_remote_ingest import storage_media_remote_ingest_service
 from app.services.tiktok_ads import TikTokAdsIntegrationError, tiktok_ads_service
 from app.services.platform_watermarks_reconcile import reconcile_platform_account_watermarks
 from app.services.sync_run_chunks_store import sync_run_chunks_store
@@ -21,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 _SUPPORTED_GRAINS = {"account_daily", "campaign_daily", "ad_group_daily", "ad_daily", "keyword_daily"}
 _GRAIN_NOT_SUPPORTED_ERROR = "grain_not_supported"
+_STORAGE_MEDIA_SYNC_WORKER_REMOTE_INGEST_SOURCE = "platform_sync"
+_ALLOWED_STORAGE_MEDIA_KINDS = {"image", "video", "document"}
 
 
 def _as_date(value: object) -> date:
@@ -35,6 +38,119 @@ def _normalize_run_grain(run: dict[str, object]) -> str:
     if grain == "":
         return "account_daily"
     return grain
+
+
+def _storage_media_sync_worker_remote_ingest_enabled() -> bool:
+    try:
+        settings = load_settings()
+    except Exception:  # noqa: BLE001
+        return False
+    return bool(getattr(settings, "storage_media_sync_worker_remote_ingest_enabled", False))
+
+
+def _resolve_remote_url_for_storage_ingest(snapshot: dict[str, object]) -> str:
+    candidates = (
+        snapshot.get("remote_url"),
+        snapshot.get("media_remote_url"),
+        snapshot.get("creative_remote_url"),
+        snapshot.get("document_remote_url"),
+    )
+    for candidate in candidates:
+        normalized = str(candidate or "").strip()
+        if normalized != "":
+            return normalized
+    return ""
+
+
+def _resolve_kind_for_storage_ingest(snapshot: dict[str, object]) -> str:
+    raw_kind = str(
+        snapshot.get("remote_media_kind")
+        or snapshot.get("media_kind")
+        or "",
+    ).strip().lower()
+    if raw_kind in _ALLOWED_STORAGE_MEDIA_KINDS:
+        return raw_kind
+    return ""
+
+
+def _best_effort_archive_sync_remote_media(
+    *,
+    platform: str,
+    job_id: str,
+    chunk_index: int,
+    grain: str,
+    account_id: str,
+    client_id: int,
+    snapshot: dict[str, object],
+    success_metadata: dict[str, object],
+) -> None:
+    if not _storage_media_sync_worker_remote_ingest_enabled():
+        logger.info(
+            "sync_worker.remote_ingest_disabled platform=%s job_id=%s chunk_index=%s",
+            platform,
+            job_id,
+            chunk_index,
+        )
+        return
+
+    remote_url = _resolve_remote_url_for_storage_ingest(snapshot)
+    if remote_url == "":
+        logger.info(
+            "sync_worker.remote_ingest_skipped reason=missing_remote_url platform=%s job_id=%s chunk_index=%s",
+            platform,
+            job_id,
+            chunk_index,
+        )
+        return
+
+    kind = _resolve_kind_for_storage_ingest(snapshot)
+    if kind == "":
+        logger.info(
+            "sync_worker.remote_ingest_skipped reason=missing_kind platform=%s job_id=%s chunk_index=%s",
+            platform,
+            job_id,
+            chunk_index,
+        )
+        return
+
+    original_filename = str(snapshot.get("remote_original_filename") or "").strip() or None
+    mime_type = str(snapshot.get("remote_mime_type") or "").strip() or None
+    ingest_metadata = {
+        "platform": platform,
+        "account_id": account_id,
+        "job_id": job_id,
+        "chunk_index": int(chunk_index),
+        "grain": grain,
+    }
+
+    try:
+        ingest_result = storage_media_remote_ingest_service.upload_from_url(
+            client_id=int(client_id),
+            kind=kind,
+            source=_STORAGE_MEDIA_SYNC_WORKER_REMOTE_INGEST_SOURCE,
+            remote_url=remote_url,
+            original_filename=original_filename,
+            mime_type=mime_type,
+            metadata=ingest_metadata,
+        )
+        success_metadata["storage_media_id"] = str(ingest_result.media_id)
+        success_metadata["storage_bucket"] = str(ingest_result.bucket)
+        success_metadata["storage_key"] = str(ingest_result.key)
+        logger.info(
+            "sync_worker.remote_ingest_success platform=%s job_id=%s chunk_index=%s media_id=%s",
+            platform,
+            job_id,
+            chunk_index,
+            ingest_result.media_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "sync_worker.remote_ingest_failed platform=%s job_id=%s chunk_index=%s error=%s",
+            platform,
+            job_id,
+            chunk_index,
+            exc.__class__.__name__,
+        )
 
 
 
@@ -410,6 +526,16 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
             zero_row_observability = snapshot.get("zero_row_observability")
             if isinstance(zero_row_observability, list):
                 success_metadata["zero_row_observability"] = sanitize_payload(zero_row_observability)
+            _best_effort_archive_sync_remote_media(
+                platform=platform,
+                job_id=job_id,
+                chunk_index=chunk_index,
+                grain=grain,
+                account_id=account_id,
+                client_id=client_id,
+                snapshot=snapshot,
+                success_metadata=success_metadata,
+            )
         elif platform != "google_ads":
             raise RuntimeError(f"unsupported platform '{platform}'")
         elif grain == "campaign_daily":
