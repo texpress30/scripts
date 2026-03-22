@@ -9,6 +9,7 @@ from threading import Lock
 from typing import Literal
 
 from app.core.config import load_settings
+from app.services.ai_recommendations_repository import ai_recommendations_repository
 from app.services.dashboard import unified_dashboard_service
 
 RecommendationStatus = Literal["new", "approved", "rejected", "applied", "expired"]
@@ -83,9 +84,33 @@ class RecommendationsService:
         self._lock = Lock()
         self._queue = RedisQueueMock()
 
+    def _mongo_source_enabled(self) -> bool:
+        try:
+            settings = load_settings()
+        except Exception:  # noqa: BLE001
+            return False
+        return bool(getattr(settings, "ai_recommendations_mongo_source_enabled", False))
+
     def generate_recommendations(self, client_id: int) -> list[dict[str, object]]:
         payload = self._build_rule_based_payload(client_id)
         llm_payload = self._refine_with_llm(payload)
+        if self._mongo_source_enabled():
+            now = datetime.now(timezone.utc).isoformat()
+            recommendation_id = ai_recommendations_repository.next_recommendation_id()
+            created = ai_recommendations_repository.create_recommendation(
+                {
+                    "recommendation_id": recommendation_id,
+                    "client_id": int(client_id),
+                    "payload": asdict(llm_payload),
+                    "status": "new",
+                    "source": "rules+llm",
+                    "created_at": now,
+                    "updated_at": now,
+                    "snoozed_until": None,
+                    "actions": [],
+                }
+            )
+            return [self._serialize_from_dict(created)]
         with self._lock:
             record = RecommendationRecord(id=self._next_id, client_id=client_id, payload=llm_payload)
             self._next_id += 1
@@ -93,10 +118,15 @@ class RecommendationsService:
             return [self._serialize(record)]
 
     def list_recommendations(self, client_id: int) -> list[dict[str, object]]:
+        if self._mongo_source_enabled():
+            items = ai_recommendations_repository.list_recommendations(client_id=int(client_id))
+            return [self._serialize_from_dict(item) for item in items]
         with self._lock:
             return [self._serialize(item) for item in self._items.get(client_id, [])]
 
     def list_actions(self, client_id: int) -> list[dict[str, object]]:
+        if self._mongo_source_enabled():
+            return ai_recommendations_repository.list_actions(client_id=int(client_id))
         with self._lock:
             recommendation_ids = {item.id for item in self._items.get(client_id, [])}
             actions = [asdict(action) for action in self._actions if action.recommendation_id in recommendation_ids]
@@ -110,6 +140,73 @@ class RecommendationsService:
         actor: str,
         snooze_days: int = 3,
     ) -> dict[str, object]:
+        if self._mongo_source_enabled():
+            recommendation = ai_recommendations_repository.get_recommendation(
+                client_id=int(client_id),
+                recommendation_id=int(recommendation_id),
+            )
+            if not isinstance(recommendation, dict):
+                raise ValueError("Recommendation not found")
+
+            now = datetime.now(timezone.utc).isoformat()
+            if action == "approve":
+                updated = ai_recommendations_repository.update_recommendation_and_append_action(
+                    client_id=int(client_id),
+                    recommendation_id=int(recommendation_id),
+                    status="approved",
+                    updated_at=now,
+                    action={
+                        "recommendation_id": int(recommendation_id),
+                        "action": "approve",
+                        "actor": actor,
+                        "status": "ok",
+                        "details": {"message": "Recommendation approved"},
+                        "timestamp": now,
+                    },
+                    snoozed_until=recommendation.get("snoozed_until"),
+                )
+                if not isinstance(updated, dict):
+                    raise ValueError("Recommendation not found")
+                self._enqueue_apply_job(client_id=client_id, recommendation_id=recommendation_id, actor=actor)
+            elif action == "dismiss":
+                updated = ai_recommendations_repository.update_recommendation_and_append_action(
+                    client_id=int(client_id),
+                    recommendation_id=int(recommendation_id),
+                    status="rejected",
+                    updated_at=now,
+                    action={
+                        "recommendation_id": int(recommendation_id),
+                        "action": "dismiss",
+                        "actor": actor,
+                        "status": "ok",
+                        "details": {"message": "Recommendation dismissed"},
+                        "timestamp": now,
+                    },
+                    snoozed_until=recommendation.get("snoozed_until"),
+                )
+                if not isinstance(updated, dict):
+                    raise ValueError("Recommendation not found")
+            else:
+                snoozed_until = (datetime.now(timezone.utc) + timedelta(days=snooze_days)).isoformat()
+                updated = ai_recommendations_repository.update_recommendation_and_append_action(
+                    client_id=int(client_id),
+                    recommendation_id=int(recommendation_id),
+                    status="expired",
+                    updated_at=now,
+                    action={
+                        "recommendation_id": int(recommendation_id),
+                        "action": "snooze",
+                        "actor": actor,
+                        "status": "ok",
+                        "details": {"snoozed_days": snooze_days},
+                        "timestamp": now,
+                    },
+                    snoozed_until=snoozed_until,
+                )
+                if not isinstance(updated, dict):
+                    raise ValueError("Recommendation not found")
+            return self.get_recommendation(client_id, recommendation_id)
+
         with self._lock:
             recommendation = self._find_recommendation(client_id, recommendation_id)
             if action == "approve":
@@ -156,6 +253,14 @@ class RecommendationsService:
         return self.get_recommendation(client_id, recommendation_id)
 
     def get_recommendation(self, client_id: int, recommendation_id: int) -> dict[str, object]:
+        if self._mongo_source_enabled():
+            recommendation = ai_recommendations_repository.get_recommendation(
+                client_id=int(client_id),
+                recommendation_id=int(recommendation_id),
+            )
+            if not isinstance(recommendation, dict):
+                raise ValueError("Recommendation not found")
+            return self._serialize_from_dict(recommendation)
         with self._lock:
             recommendation = self._find_recommendation(client_id, recommendation_id)
             return self._serialize(recommendation)
@@ -186,6 +291,23 @@ class RecommendationsService:
             queue_name="recommendations_apply",
             payload={"client_id": client_id, "recommendation_id": recommendation_id, "actor": actor},
         )
+        if self._mongo_source_enabled():
+            now = datetime.now(timezone.utc).isoformat()
+            ai_recommendations_repository.append_action(
+                client_id=int(client_id),
+                recommendation_id=int(recommendation_id),
+                updated_at=now,
+                action={
+                    "recommendation_id": int(recommendation_id),
+                    "action": "apply",
+                    "actor": "system_worker",
+                    "status": "queued",
+                    "details": {"job_id": job["job_id"]},
+                    "timestamp": now,
+                },
+            )
+            self._process_apply_queue()
+            return
         self._process_apply_queue()
         with self._lock:
             self._actions.append(
@@ -206,6 +328,30 @@ class RecommendationsService:
         client_id = int(job["payload"]["client_id"])
         recommendation_id = int(job["payload"]["recommendation_id"])
         apply_result = self._apply_platform_change(client_id=client_id, recommendation_id=recommendation_id)
+
+        if self._mongo_source_enabled():
+            status = "applied" if apply_result["status"] == "success" else "approved"
+            now = datetime.now(timezone.utc).isoformat()
+            ai_recommendations_repository.append_action(
+                client_id=client_id,
+                recommendation_id=recommendation_id,
+                updated_at=now,
+                action={
+                    "recommendation_id": recommendation_id,
+                    "action": "apply",
+                    "actor": "system_worker",
+                    "status": str(apply_result["status"]),
+                    "details": dict(apply_result),
+                    "timestamp": now,
+                },
+            )
+            ai_recommendations_repository.update_recommendation_state(
+                client_id=client_id,
+                recommendation_id=recommendation_id,
+                status=status,
+                updated_at=now,
+            )
+            return
 
         with self._lock:
             recommendation = self._find_recommendation(client_id, recommendation_id)
@@ -333,6 +479,18 @@ class RecommendationsService:
             "created_at": recommendation.created_at,
             "updated_at": recommendation.updated_at,
             "snoozed_until": recommendation.snoozed_until,
+        }
+
+    def _serialize_from_dict(self, recommendation: dict[str, object]) -> dict[str, object]:
+        return {
+            "id": int(recommendation.get("recommendation_id") or recommendation.get("id") or 0),
+            "client_id": int(recommendation.get("client_id") or 0),
+            "status": str(recommendation.get("status") or ""),
+            "payload": dict(recommendation.get("payload") or {}),
+            "source": str(recommendation.get("source") or "rules+llm"),
+            "created_at": str(recommendation.get("created_at") or ""),
+            "updated_at": str(recommendation.get("updated_at") or ""),
+            "snoozed_until": recommendation.get("snoozed_until"),
         }
 
 

@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
+import { completeDirectUpload, getMediaAccessUrl, initDirectUpload, uploadFileToPresignedUrl } from "@/lib/storage-client";
 
 type GeneralForm = {
   friendlyName: string;
@@ -112,6 +113,9 @@ export default function SubAccountSettingsPage() {
   const [logoError, setLogoError] = useState("");
   const [logoName, setLogoName] = useState("");
   const [logoPreviewUrl, setLogoPreviewUrl] = useState("");
+  const [logoMediaId, setLogoMediaId] = useState("");
+  const [profileClientId, setProfileClientId] = useState<number | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -130,22 +134,28 @@ export default function SubAccountSettingsPage() {
       setErrorMessage("");
       try {
         const profilePayload = await apiRequest<{
+          client_id?: number;
           client_name?: string;
           general?: Partial<GeneralForm>;
           business?: Partial<BusinessForm>;
           address?: Partial<AddressForm>;
           representative?: Partial<RepresentativeForm>;
           logo_url?: string;
+          logo_media_id?: string | null;
         }>(`/clients/${subaccountId}/business-profile`);
         if (cancelled) return;
+        const resolvedClientId = Number(profilePayload?.client_id ?? 0);
+        setProfileClientId(Number.isFinite(resolvedClientId) && resolvedClientId > 0 ? resolvedClientId : null);
         setHeaderClientName(String(profilePayload?.client_name ?? "").trim());
         setGeneral((prev) => ({ ...prev, ...(profilePayload.general ?? {}) }));
         setBusiness((prev) => ({ ...prev, ...(profilePayload.business ?? {}) }));
         setAddress((prev) => ({ ...prev, ...(profilePayload.address ?? {}) }));
         setRepresentative((prev) => ({ ...prev, ...(profilePayload.representative ?? {}) }));
         const loadedLogo = String(profilePayload.logo_url ?? "").trim();
+        const loadedLogoMediaId = String(profilePayload.logo_media_id ?? "").trim();
         setLogoPreviewUrl(loadedLogo);
-        setLogoName(loadedLogo ? "Logo salvat" : "");
+        setLogoMediaId(loadedLogoMediaId);
+        setLogoName(loadedLogo ? "Logo salvat" : loadedLogoMediaId ? "Logo salvat" : "");
       } catch (err) {
         if (!cancelled) setErrorMessage(err instanceof Error ? err.message : "Nu am putut încărca profilul business.");
       }
@@ -166,7 +176,8 @@ export default function SubAccountSettingsPage() {
         business,
         address,
         representative,
-        logo_url: logoPreviewUrl.trim(),
+        logo_url: logoMediaId ? "" : logoPreviewUrl.trim(),
+        logo_media_id: logoMediaId.trim() || null,
       }),
     });
     if (typeof window !== "undefined") {
@@ -179,29 +190,74 @@ export default function SubAccountSettingsPage() {
     window.setTimeout(() => setToastMessage(""), 2200);
   }
 
-  function onLogoChange(event: ChangeEvent<HTMLInputElement>) {
+  async function onLogoChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
+    const allowedTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/svg+xml"];
+    if (!allowedTypes.includes(file.type)) {
+      setLogoError("Tip de fișier invalid. Acceptăm PNG, JPG, WEBP sau SVG.");
+      setLogoName("");
+      if (logoInputRef.current) logoInputRef.current.value = "";
+      return;
+    }
     if (file.size > 2.5 * 1024 * 1024) {
       setLogoError("Fișierul depășește limita de 2.5 MB.");
       setLogoName("");
       if (logoInputRef.current) logoInputRef.current.value = "";
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = typeof reader.result === "string" ? reader.result : "";
+    if (!profileClientId || profileClientId <= 0) {
+      setLogoError("Nu am putut identifica clientul pentru upload.");
+      return;
+    }
+    setLogoUploading(true);
+    try {
+      const initPayload = await initDirectUpload({
+        clientId: profileClientId,
+        kind: "image",
+        fileName: file.name,
+        mimeType: file.type,
+        sizeBytes: file.size,
+        metadata: { source: "subaccount_business_profile_logo" },
+      });
+      await uploadFileToPresignedUrl({
+        url: initPayload.upload.url,
+        method: initPayload.upload.method,
+        headers: initPayload.upload.headers,
+        file,
+      });
+      await completeDirectUpload({
+        clientId: profileClientId,
+        mediaId: initPayload.media_id,
+      });
+      let previewUrl = "";
+      try {
+        const accessPayload = await getMediaAccessUrl({
+          clientId: profileClientId,
+          mediaId: initPayload.media_id,
+          disposition: "inline",
+        });
+        previewUrl = String(accessPayload.url || "").trim();
+      } catch {
+        previewUrl = URL.createObjectURL(file);
+      }
       setLogoError("");
       setLogoName(file.name);
-      setLogoPreviewUrl(result);
-    };
-    reader.readAsDataURL(file);
+      setLogoMediaId(initPayload.media_id);
+      setLogoPreviewUrl(previewUrl);
+    } catch (err) {
+      setLogoError(err instanceof Error ? err.message : "Upload logo eșuat.");
+      setLogoName("");
+    } finally {
+      setLogoUploading(false);
+    }
   }
 
   function removeLogo() {
     setLogoName("");
     setLogoError("");
     setLogoPreviewUrl("");
+    setLogoMediaId("");
     if (logoInputRef.current) logoInputRef.current.value = "";
   }
 
@@ -336,14 +392,15 @@ export default function SubAccountSettingsPage() {
                     )}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <input ref={logoInputRef} type="file" className="hidden" onChange={onLogoChange} data-testid="logo-input" />
-                    <button type="button" className="wm-btn-secondary inline-flex items-center gap-2" onClick={() => logoInputRef.current?.click()}>
+                    <input ref={logoInputRef} type="file" className="hidden" onChange={onLogoChange} data-testid="logo-input" accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml" />
+                    <button type="button" className="wm-btn-secondary inline-flex items-center gap-2" onClick={() => logoInputRef.current?.click()} disabled={logoUploading}>
                       <Upload className="h-4 w-4" /> Upload
                     </button>
-                    <button type="button" className="wm-btn-secondary inline-flex items-center gap-2" onClick={removeLogo}>
+                    <button type="button" className="wm-btn-secondary inline-flex items-center gap-2" onClick={removeLogo} disabled={logoUploading}>
                       <X className="h-4 w-4" /> Remove
                     </button>
                   </div>
+                  {logoUploading ? <p className="mt-2 text-xs text-slate-500">Se încarcă logo-ul...</p> : null}
                   {logoError ? <p className="mt-2 text-xs text-red-600">{logoError}</p> : null}
                 </div>
 

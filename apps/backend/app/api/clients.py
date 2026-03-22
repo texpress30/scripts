@@ -24,6 +24,7 @@ from app.services.auth import AuthUser
 from app.services.client_registry import PlatformAccountAlreadyAttachedError, client_registry_service
 from app.services.client_business_inputs_import_service import client_business_inputs_import_service
 from app.services.media_buying_store import media_buying_store
+from app.services.storage_media_access import StorageMediaAccessError, storage_media_access_service
 from app.services.media_tracker_worksheet import media_tracker_worksheet_service
 from app.services.sync_constants import (
     PLATFORM_GOOGLE_ADS,
@@ -392,8 +393,29 @@ def _resolve_client_from_subaccount_identifier_or_404(*, identifier: int) -> tup
     return client_id, display_id, client_name
 
 
+def _resolve_logo_preview_url(*, client_id: int, profile: dict[str, object]) -> str:
+    logo_media_id = str(profile.get("logo_media_id") or "").strip()
+    legacy_logo_url = str(profile.get("logo_url") or "").strip()
+    if logo_media_id == "":
+        return legacy_logo_url
+    try:
+        access_payload = storage_media_access_service.build_access_url(
+            client_id=int(client_id),
+            media_id=logo_media_id,
+            disposition="inline",
+        )
+        return str(access_payload.get("url") or "").strip() or legacy_logo_url
+    except StorageMediaAccessError:
+        return legacy_logo_url
+    except RuntimeError:
+        return legacy_logo_url
+    except Exception:
+        return legacy_logo_url
+
+
 def _build_subaccount_business_profile_response(*, identifier: int, profile: dict[str, object]) -> SubaccountBusinessProfileResponse:
     client_id, display_id, client_name = _resolve_client_from_subaccount_identifier_or_404(identifier=identifier)
+    logo_media_id = str(profile.get("logo_media_id") or "").strip() or None
     return SubaccountBusinessProfileResponse(
         client_id=client_id,
         display_id=display_id,
@@ -402,7 +424,8 @@ def _build_subaccount_business_profile_response(*, identifier: int, profile: dic
         business=dict(profile.get("business") or {}),
         address=dict(profile.get("address") or {}),
         representative=dict(profile.get("representative") or {}),
-        logo_url=str(profile.get("logo_url") or ""),
+        logo_url=_resolve_logo_preview_url(client_id=client_id, profile=profile),
+        logo_media_id=logo_media_id,
     )
 
 
@@ -430,6 +453,7 @@ def upsert_subaccount_business_profile_by_subaccount_id(
             "address": payload.address,
             "representative": payload.representative,
             "logo_url": payload.logo_url,
+            "logo_media_id": payload.logo_media_id,
         },
     )
     return _build_subaccount_business_profile_response(identifier=subaccount_id, profile=profile)

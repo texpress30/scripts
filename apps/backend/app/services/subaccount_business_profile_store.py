@@ -18,6 +18,7 @@ _EMPTY_PROFILE = {
     "address": {},
     "representative": {},
     "logo_url": "",
+    "logo_media_id": None,
 }
 
 
@@ -43,12 +44,14 @@ class SubaccountBusinessProfileStore:
         address = data.get("address") if isinstance(data.get("address"), dict) else {}
         representative = data.get("representative") if isinstance(data.get("representative"), dict) else {}
         logo_url = str(data.get("logo_url") or "").strip()
+        logo_media_id = str(data.get("logo_media_id") or "").strip() or None
         return {
             "general": {str(k): v for k, v in general.items()},
             "business": {str(k): v for k, v in business.items()},
             "address": {str(k): v for k, v in address.items()},
             "representative": {str(k): v for k, v in representative.items()},
             "logo_url": logo_url,
+            "logo_media_id": logo_media_id,
         }
 
     def _ensure_schema(self) -> None:
@@ -113,4 +116,3 @@ class SubaccountBusinessProfileStore:
 
 
 subaccount_business_profile_store = SubaccountBusinessProfileStore()
-
