@@ -1,3 +1,22 @@
+# TODO — Creative workflow Mongo core writes source-of-truth for create/add_variant/link (2026-03-22)
+
+- [x] Refresh workspace state and inspect explicitly: `creative_workflow.py`, creative repositories, `/api/creative.py`, `core/config.py`, and existing backend tests.
+- [x] Add new config flag `CREATIVE_WORKFLOW_MONGO_CORE_WRITES_SOURCE_ENABLED` (default OFF) in settings, `.env.example`, and minimal config docs.
+- [x] Implement Mongo source-of-truth write path (flagged) for `create_asset`, `add_variant`, `link_to_campaign` with clear helpers:
+  - Mongo-first write snapshot resolution + local fallback where requested.
+  - Persist via `creative_assets_repository.upsert_asset(...)` before mutating local mirror/cache.
+  - Predictable failure when upsert fails (no local-only success).
+  - Keep response payloads and API contracts unchanged.
+- [x] Keep `generate_variants`, `update_approval`, `set_performance_scores` local-source-of-truth model unchanged (shadow-write best-effort only).
+- [x] Keep `publish_to_channel`, `/creative` endpoints, media/S3 flows, frontend, and backfill/migration unchanged.
+- [x] Ensure local counters remain compatible with Mongo-allocated IDs and hydrated snapshots.
+- [x] Add focused tests for OFF/ON behavior, mongo-first/fallback snapshot resolution, no local-only mutation on upsert failure, local cache hydration-after-success, counter compatibility, and shadow-write non-duplication.
+- [x] Run targeted tests and complete review notes.
+
+## Review
+- [x] Confirm only the three requested methods moved to Mongo source-of-truth when new flag ON.
+- [x] Confirm excluded methods/flows/endpoints/frontend/backfill remain unchanged.
+
 # TODO — Creative workflow Mongo-first reads for get/list (feature-flagged) (2026-03-22)
 
 - [x] Refresh workspace state and inspect creative workflow/repositories/config/API/tests.

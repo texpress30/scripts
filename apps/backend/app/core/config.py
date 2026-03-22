@@ -79,6 +79,7 @@ class Settings:
     mailgun_reply_to: str
     mailgun_enabled: bool
     creative_workflow_mongo_shadow_write_enabled: bool
+    creative_workflow_mongo_core_writes_source_enabled: bool
     creative_workflow_mongo_read_through_enabled: bool
     creative_workflow_mongo_reads_source_enabled: bool
 
@@ -218,6 +219,7 @@ def load_settings() -> Settings:
         mailgun_reply_to=_get_env("MAILGUN_REPLY_TO", default=""),
         mailgun_enabled=_parse_bool_env("MAILGUN_ENABLED", default=True),
         creative_workflow_mongo_shadow_write_enabled=_parse_bool_env("CREATIVE_WORKFLOW_MONGO_SHADOW_WRITE_ENABLED", default=False),
+        creative_workflow_mongo_core_writes_source_enabled=_parse_bool_env("CREATIVE_WORKFLOW_MONGO_CORE_WRITES_SOURCE_ENABLED", default=False),
         creative_workflow_mongo_read_through_enabled=_parse_bool_env("CREATIVE_WORKFLOW_MONGO_READ_THROUGH_ENABLED", default=False),
         creative_workflow_mongo_reads_source_enabled=_parse_bool_env("CREATIVE_WORKFLOW_MONGO_READS_SOURCE_ENABLED", default=False),
     )

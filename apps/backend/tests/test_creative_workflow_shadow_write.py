@@ -11,6 +11,7 @@ def _new_service_with_flag(
     monkeypatch,
     *,
     enabled: bool,
+    core_writes_source_enabled: bool = False,
     read_through_enabled: bool = False,
     reads_source_enabled: bool = False,
 ) -> workflow_module.CreativeWorkflowService:
@@ -19,6 +20,7 @@ def _new_service_with_flag(
         "load_settings",
         lambda: SimpleNamespace(
             creative_workflow_mongo_shadow_write_enabled=enabled,
+            creative_workflow_mongo_core_writes_source_enabled=core_writes_source_enabled,
             creative_workflow_mongo_read_through_enabled=read_through_enabled,
             creative_workflow_mongo_reads_source_enabled=reads_source_enabled,
         ),
@@ -180,6 +182,214 @@ def test_publish_to_channel_remains_unchanged(monkeypatch):
     assert called["publish"] == 1
     assert published["native_object_type"] == "ad_creative"
     assert service._next_publish_id == original_next_publish_id + 1
+
+
+def test_core_writes_flag_off_keeps_create_add_link_on_local_path(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=True, core_writes_source_enabled=False)
+    create_get_calls = {"count": 0}
+    monkeypatch.setattr(workflow_module.creative_counters_repository, "next_asset_id", lambda: 1)
+    monkeypatch.setattr(workflow_module.creative_counters_repository, "next_variant_id", lambda: 2)
+    monkeypatch.setattr(workflow_module.creative_counters_repository, "next_link_id", lambda: 3)
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "get_by_creative_id", lambda _asset_id: create_get_calls.__setitem__("count", create_get_calls["count"] + 1))
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "upsert_asset", lambda payload: payload)
+
+    created = _create_asset(service)
+    variant = service.add_variant(int(created["id"]), "H", "B", "CTA", "media")
+    link = service.link_to_campaign(int(created["id"]), campaign_id=10, ad_set_id=20)
+
+    assert created["id"] == 1
+    assert variant["id"] == 2
+    assert link["id"] == 3
+    assert create_get_calls["count"] == 0
+
+
+def test_core_writes_create_asset_uses_next_id_and_upsert_then_hydrates_local(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=True, core_writes_source_enabled=True)
+    monkeypatch.setattr(workflow_module.creative_counters_repository, "next_asset_id", lambda: 44)
+    upsert_calls: list[dict[str, object]] = []
+
+    def _upsert(payload: dict[str, object]):
+        upsert_calls.append(dict(payload))
+        persisted = dict(payload)
+        persisted["name"] = "Persisted Name"
+        return persisted
+
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "upsert_asset", _upsert)
+
+    created = _create_asset(service)
+
+    assert created["id"] == 44
+    assert created["name"] == "Persisted Name"
+    assert service._assets[44].name == "Persisted Name"
+    assert service._next_asset_id == 45
+    assert len(upsert_calls) == 1
+
+
+def test_core_writes_create_asset_upsert_failure_does_not_leave_local_asset(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=True, core_writes_source_enabled=True)
+    monkeypatch.setattr(workflow_module.creative_counters_repository, "next_asset_id", lambda: 9)
+    monkeypatch.setattr(
+        workflow_module.creative_assets_repository,
+        "upsert_asset",
+        lambda payload: (_ for _ in ()).throw(RuntimeError("mongo down")),
+    )
+
+    with pytest.raises(RuntimeError):
+        _create_asset(service)
+
+    assert 9 not in service._assets
+
+
+def test_core_writes_add_variant_reads_snapshot_mongo_first_and_persists(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=True, core_writes_source_enabled=True)
+    mongo_snapshot = _mongo_asset_payload(asset_id=321)
+    mongo_get_calls = {"count": 0}
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "get_by_creative_id", lambda _asset_id: mongo_get_calls.__setitem__("count", mongo_get_calls["count"] + 1) or dict(mongo_snapshot))
+    monkeypatch.setattr(workflow_module.creative_counters_repository, "next_variant_id", lambda: 901)
+    upsert_payloads: list[dict[str, object]] = []
+
+    def _upsert(payload: dict[str, object]):
+        upsert_payloads.append(dict(payload))
+        persisted = dict(payload)
+        persisted["name"] = "mongo-persisted"
+        return persisted
+
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "upsert_asset", _upsert)
+
+    variant = service.add_variant(321, "H2", "B2", "CTA2", "media2")
+
+    assert mongo_get_calls["count"] == 1
+    assert variant["id"] == 901
+    assert upsert_payloads[0]["creative_variants"][-1]["headline"] == "H2"
+    assert service._assets[321].name == "mongo-persisted"
+    assert service._next_variant_id == 902
+
+
+def test_core_writes_add_variant_falls_back_to_local_when_mongo_missing(monkeypatch):
+    flag_state = {"core": False}
+    monkeypatch.setattr(
+        workflow_module,
+        "load_settings",
+        lambda: SimpleNamespace(
+            creative_workflow_mongo_shadow_write_enabled=False,
+            creative_workflow_mongo_core_writes_source_enabled=flag_state["core"],
+            creative_workflow_mongo_read_through_enabled=False,
+            creative_workflow_mongo_reads_source_enabled=False,
+        ),
+    )
+    service = workflow_module.CreativeWorkflowService()
+    local_asset = _create_asset(service)
+    flag_state["core"] = True
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "get_by_creative_id", lambda _asset_id: None)
+    monkeypatch.setattr(workflow_module.creative_counters_repository, "next_variant_id", lambda: 77)
+    upsert_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "upsert_asset", lambda payload: upsert_calls.append(dict(payload)) or payload)
+
+    created = service.add_variant(int(local_asset["id"]), "H", "B", "CTA", "media")
+
+    assert created["id"] == 77
+    assert upsert_calls[0]["id"] == int(local_asset["id"])
+
+
+def test_core_writes_add_variant_upsert_failure_does_not_mutate_local(monkeypatch):
+    flag_state = {"core": False}
+    monkeypatch.setattr(
+        workflow_module,
+        "load_settings",
+        lambda: SimpleNamespace(
+            creative_workflow_mongo_shadow_write_enabled=False,
+            creative_workflow_mongo_core_writes_source_enabled=flag_state["core"],
+            creative_workflow_mongo_read_through_enabled=False,
+            creative_workflow_mongo_reads_source_enabled=False,
+        ),
+    )
+    service = workflow_module.CreativeWorkflowService()
+    local_asset = _create_asset(service)
+    flag_state["core"] = True
+    original_variants = list(service._variants.get(int(local_asset["id"]), []))
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "get_by_creative_id", lambda _asset_id: None)
+    monkeypatch.setattr(workflow_module.creative_counters_repository, "next_variant_id", lambda: 88)
+    monkeypatch.setattr(
+        workflow_module.creative_assets_repository,
+        "upsert_asset",
+        lambda payload: (_ for _ in ()).throw(RuntimeError("mongo down")),
+    )
+
+    with pytest.raises(RuntimeError):
+        service.add_variant(int(local_asset["id"]), "H", "B", "CTA", "media")
+
+    assert service._variants[int(local_asset["id"])] == original_variants
+
+
+def test_core_writes_link_to_campaign_mongo_first_and_local_fallback(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=True, core_writes_source_enabled=True)
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "get_by_creative_id", lambda _asset_id: _mongo_asset_payload(asset_id=432))
+    monkeypatch.setattr(workflow_module.creative_counters_repository, "next_link_id", lambda: 505)
+    upsert_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "upsert_asset", lambda payload: upsert_calls.append(dict(payload)) or payload)
+
+    link = service.link_to_campaign(432, campaign_id=111, ad_set_id=222)
+
+    assert link["id"] == 505
+    assert upsert_calls[0]["campaign_links"][-1]["campaign_id"] == 111
+    assert service._next_link_id == 506
+
+
+def test_core_writes_link_to_campaign_fallback_local_and_no_local_only_success_on_failure(monkeypatch):
+    flag_state = {"core": False}
+    monkeypatch.setattr(
+        workflow_module,
+        "load_settings",
+        lambda: SimpleNamespace(
+            creative_workflow_mongo_shadow_write_enabled=False,
+            creative_workflow_mongo_core_writes_source_enabled=flag_state["core"],
+            creative_workflow_mongo_read_through_enabled=False,
+            creative_workflow_mongo_reads_source_enabled=False,
+        ),
+    )
+    service = workflow_module.CreativeWorkflowService()
+    created = _create_asset(service)
+    flag_state["core"] = True
+    existing_links = list(service._links.get(int(created["id"]), []))
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "get_by_creative_id", lambda _asset_id: None)
+    monkeypatch.setattr(workflow_module.creative_counters_repository, "next_link_id", lambda: 606)
+    monkeypatch.setattr(
+        workflow_module.creative_assets_repository,
+        "upsert_asset",
+        lambda payload: (_ for _ in ()).throw(RuntimeError("mongo down")),
+    )
+
+    with pytest.raises(RuntimeError):
+        service.link_to_campaign(int(created["id"]), campaign_id=1, ad_set_id=2)
+
+    assert service._links[int(created["id"])] == existing_links
+
+
+def test_core_writes_do_not_double_call_shadow_upsert(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=True, core_writes_source_enabled=True)
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "get_by_creative_id", lambda _asset_id: None)
+    monkeypatch.setattr(workflow_module.creative_counters_repository, "next_asset_id", lambda: 100)
+    monkeypatch.setattr(workflow_module.creative_counters_repository, "next_variant_id", lambda: 101)
+    monkeypatch.setattr(workflow_module.creative_counters_repository, "next_link_id", lambda: 102)
+    upsert_counter = {"count": 0}
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "upsert_asset", lambda payload: upsert_counter.__setitem__("count", upsert_counter["count"] + 1) or payload)
+
+    created = _create_asset(service)
+    service.add_variant(int(created["id"]), "H", "B", "CTA", "media")
+    service.link_to_campaign(int(created["id"]), campaign_id=1, ad_set_id=2)
+
+    assert upsert_counter["count"] == 3
+
+
+def test_core_writes_setting_default_is_off(monkeypatch):
+    monkeypatch.delenv("APP_AUTH_SECRET", raising=False)
+    monkeypatch.setenv("APP_AUTH_SECRET", "test-secret")
+    monkeypatch.delenv("CREATIVE_WORKFLOW_MONGO_CORE_WRITES_SOURCE_ENABLED", raising=False)
+
+    from app.core.config import load_settings
+
+    settings = load_settings()
+    assert settings.creative_workflow_mongo_core_writes_source_enabled is False
 
 
 def _mongo_asset_payload(*, asset_id: int, client_id: int = 55) -> dict[str, object]:
