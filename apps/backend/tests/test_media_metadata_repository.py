@@ -95,8 +95,13 @@ class FakeCursor:
     def __init__(self, docs: list[dict[str, object]]) -> None:
         self.docs = list(docs)
 
-    def sort(self, key: str, order: int):
-        reverse = int(order) < 0
+    def sort(self, key, order: int | None = None):
+        if isinstance(key, list):
+            for sort_key, sort_order in reversed(key):
+                reverse = int(sort_order) < 0
+                self.docs.sort(key=lambda item: item.get(sort_key), reverse=reverse)
+            return self
+        reverse = int(order or 1) < 0
         self.docs.sort(key=lambda item: item.get(key), reverse=reverse)
         return self
 
@@ -251,8 +256,7 @@ def test_list_and_count_for_client(monkeypatch):
 
     assert total == 2
     assert len(listed) == 1
-    assert listed[0]["media_id"] in {a["media_id"], b["media_id"]}
-    assert listed[0]["media_id"] != (b["media_id"] if listed[0]["media_id"] == a["media_id"] else a["media_id"])
+    assert listed[0]["media_id"] == a["media_id"]
     assert len(filtered_kind) == 1
     assert filtered_kind[0]["client_id"] == 1
     assert filtered_kind[0]["kind"] == "image"

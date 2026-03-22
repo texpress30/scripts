@@ -31,6 +31,10 @@ class StorageMediaReadService:
         limit: int | None = None,
         offset: int | None = None,
     ) -> dict[str, Any]:
+        normalized_client_id = int(client_id)
+        if normalized_client_id <= 0:
+            raise StorageMediaReadError("client_id must be a positive integer", status_code=400)
+
         normalized_kind = str(kind or "").strip()
         normalized_status = str(status or "").strip()
         if normalized_kind != "" and normalized_kind not in _SUPPORTED_KINDS:
@@ -45,7 +49,7 @@ class StorageMediaReadService:
         resolved_offset = 0 if offset is None else max(0, int(offset))
 
         items = media_metadata_repository.list_for_client(
-            client_id=int(client_id),
+            client_id=normalized_client_id,
             kind=normalized_kind or None,
             status=normalized_status or None,
             limit=resolved_limit,
@@ -53,7 +57,7 @@ class StorageMediaReadService:
             include_deleted_by_default=False,
         )
         total = media_metadata_repository.count_for_client(
-            client_id=int(client_id),
+            client_id=normalized_client_id,
             kind=normalized_kind or None,
             status=normalized_status or None,
             include_deleted_by_default=False,
@@ -66,6 +70,10 @@ class StorageMediaReadService:
         }
 
     def get_media_detail(self, *, client_id: int, media_id: str) -> dict[str, Any]:
+        normalized_client_id = int(client_id)
+        if normalized_client_id <= 0:
+            raise StorageMediaReadError("client_id must be a positive integer", status_code=400)
+
         normalized_media_id = str(media_id or "").strip()
         if normalized_media_id == "":
             raise StorageMediaReadError("media_id is required", status_code=400)
@@ -73,7 +81,7 @@ class StorageMediaReadService:
         record = media_metadata_repository.get_by_media_id(normalized_media_id)
         if record is None:
             raise StorageMediaReadError("Media record not found", status_code=404)
-        if int(record.get("client_id") or 0) != int(client_id):
+        if int(record.get("client_id") or 0) != normalized_client_id:
             raise StorageMediaReadError("Media record not found", status_code=404)
 
         record_status = str(record.get("status") or "").strip()

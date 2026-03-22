@@ -1,3 +1,15 @@
+# TODO — Rework storage media read APIs after unsatisfied review (2026-03-22)
+
+- [x] Refresh repo state and re-audit existing storage read/router/repository/tests against exact scope.
+- [x] Apply minimal fixes so list/detail contracts, status defaults, and error mapping are explicit and predictable.
+- [x] Add/adjust focused tests for ordering, filters, pagination, detail ownership/not-found, purged handling, and runtime Mongo unavailability.
+- [x] Run targeted backend tests for storage read flow and related storage foundation suites.
+- [x] Update review notes + lessons with this correction pattern.
+
+## Review
+- [x] Confirm no download/view URL, delete, or cleanup job was implemented.
+- [x] Confirm no creative workflow integration and no frontend changes.
+
 # TODO — Storage media read APIs: list + detail from Mongo metadata (2026-03-22)
 
 - [x] Re-sync workspace and re-audit storage router/repository/services before implementation.

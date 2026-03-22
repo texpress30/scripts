@@ -147,7 +147,7 @@ class MediaMetadataRepository:
         cursor = (
             self._collection()
             .find(filters)
-            .sort("created_at", -1)
+            .sort([("created_at", -1), ("media_id", -1)])
             .skip(max(0, int(offset)))
             .limit(max(0, int(limit)))
         )

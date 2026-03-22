@@ -137,3 +137,30 @@ def test_list_media_runtime_error_bubbles(monkeypatch):
     monkeypatch.setattr(service_module, "media_metadata_repository", FakeRepo())
     with pytest.raises(RuntimeError):
         service_module.storage_media_read_service.list_media(client_id=1)
+
+
+def test_detail_delete_requested_is_returned(monkeypatch):
+    now = datetime.now(timezone.utc)
+
+    class FakeRepo:
+        def get_by_media_id(self, media_id: str):
+            return _record(media_id=media_id, client_id=5, kind="image", status="delete_requested", created_at=now)
+
+    monkeypatch.setattr(service_module, "media_metadata_repository", FakeRepo())
+    detail = service_module.storage_media_read_service.get_media_detail(client_id=5, media_id="delete-me")
+    assert detail["status"] == "delete_requested"
+
+
+def test_service_rejects_non_positive_client_id(monkeypatch):
+    class FakeRepo:
+        def list_for_client(self, **kwargs):
+            return []
+
+        def count_for_client(self, **kwargs):
+            return 0
+
+    monkeypatch.setattr(service_module, "media_metadata_repository", FakeRepo())
+
+    with pytest.raises(service_module.StorageMediaReadError) as exc:
+        service_module.storage_media_read_service.list_media(client_id=0)
+    assert exc.value.status_code == 400
