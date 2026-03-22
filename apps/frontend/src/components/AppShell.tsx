@@ -30,7 +30,7 @@ import { cn } from "@/lib/utils";
 
 type ClientItem = { id: number; name: string; owner_email: string; client_logo_url?: string | null };
 type CompanySettings = { logo_url: string; city: string; country: string; company_name: string };
-type SubaccountBusinessProfileResponse = { address?: { city?: string; country?: string } };
+type SubaccountBusinessProfileResponse = { address?: { city?: string; country?: string }; logo_url?: string; logo_media_id?: string | null };
 type TeamMemberItem = { id: number; first_name: string; last_name: string; email: string; user_role: string };
 type TeamMembersResponse = { items: TeamMemberItem[]; total: number };
 
@@ -149,6 +149,19 @@ export function formatSubaccountBrandingLocation(city: string | null | undefined
   if (normalizedCity && normalizedCountry) return `Locație: ${normalizedCity}, ${normalizedCountry}`;
   if (normalizedCity) return `Locație: ${normalizedCity}`;
   return "Locație: -";
+}
+
+export function resolveSubaccountBrandingLogoUrl(
+  payload: SubaccountBusinessProfileResponse | null,
+  clientLogoUrl: string | null | undefined,
+): string {
+  const profileLogoUrl = String(payload?.logo_url ?? "").trim();
+  if (profileLogoUrl !== "") return profileLogoUrl;
+  return String(clientLogoUrl ?? "").trim();
+}
+
+export function shouldRenderBrandingLogo(logoUrl: string, imageLoadFailed: boolean): boolean {
+  return String(logoUrl || "").trim() !== "" && !imageLoadFailed;
 }
 
 type ScopedClientResult = {
@@ -429,7 +442,8 @@ export function AppShell({
   const [search, setSearch] = useState("");
   const [clients, setClients] = useState<ClientItem[]>([]);
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
-  const [subaccountBusinessLocation, setSubaccountBusinessLocation] = useState<{ city: string; country: string } | null>(null);
+  const [subaccountBusinessProfile, setSubaccountBusinessProfile] = useState<{ city: string; country: string; logoUrl: string } | null>(null);
+  const [brandingImageLoadFailed, setBrandingImageLoadFailed] = useState(false);
 
   const [profileOpen, setProfileOpen] = useState(false);
   const [loginAsOpen, setLoginAsOpen] = useState(false);
@@ -494,7 +508,7 @@ export function AppShell({
 
   useEffect(() => {
     if (contextClientId === null) {
-      setSubaccountBusinessLocation(null);
+      setSubaccountBusinessProfile(null);
       return;
     }
 
@@ -502,6 +516,7 @@ export function AppShell({
     async function loadSubaccountBusinessLocation() {
       try {
         const payload = await apiRequest<SubaccountBusinessProfileResponse>(`/clients/${contextClientId}/business-profile`);
+        const contextClientLogoUrl = clients.find((item) => item.id === contextClientId)?.client_logo_url;
         const city = String(payload?.address?.city ?? "").trim();
         const countryCodeOrLabel = String(payload?.address?.country ?? "").trim();
         const country =
@@ -510,11 +525,12 @@ export function AppShell({
             : countryCodeOrLabel === "US"
             ? "Statele Unite"
             : countryCodeOrLabel;
+        const logoUrl = resolveSubaccountBrandingLogoUrl(payload, contextClientLogoUrl);
         if (!ignore) {
-          setSubaccountBusinessLocation({ city, country });
+          setSubaccountBusinessProfile({ city, country, logoUrl });
         }
       } catch {
-        if (!ignore) setSubaccountBusinessLocation(null);
+        if (!ignore) setSubaccountBusinessProfile(null);
       }
     }
 
@@ -531,7 +547,7 @@ export function AppShell({
       ignore = true;
       window.removeEventListener("subaccount-business-profile-updated", onBusinessProfileUpdated as EventListener);
     };
-  }, [contextClientId]);
+  }, [clients, contextClientId]);
 
   useEffect(() => {
     let ignore = false;
@@ -620,12 +636,16 @@ export function AppShell({
   const brandingTitle = isSubContext ? (currentClient?.name ?? "Sub-cont") : (companySettings?.company_name || "Agency MCC");
   const brandingSubtitle = useMemo(() => {
     if (!isSubContext) return `Locație: ${companySettings?.city || "-"}, ${companySettings?.country || "-"}`;
-    return formatSubaccountBrandingLocation(subaccountBusinessLocation?.city, subaccountBusinessLocation?.country);
-  }, [isSubContext, companySettings?.city, companySettings?.country, subaccountBusinessLocation?.city, subaccountBusinessLocation?.country]);
+    return formatSubaccountBrandingLocation(subaccountBusinessProfile?.city, subaccountBusinessProfile?.country);
+  }, [isSubContext, companySettings?.city, companySettings?.country, subaccountBusinessProfile?.city, subaccountBusinessProfile?.country]);
   const agencyLogoUrl = companySettings?.logo_url?.trim() || "";
-  const subLogoUrl = currentClient?.client_logo_url?.trim() || "";
+  const subLogoUrl = subaccountBusinessProfile?.logoUrl?.trim() || "";
   const brandingLogoUrl = isSubContext ? subLogoUrl : agencyLogoUrl;
   const brandingInitials = useMemo(() => initials(brandingTitle), [brandingTitle]);
+
+  useEffect(() => {
+    setBrandingImageLoadFailed(false);
+  }, [brandingLogoUrl]);
 
   const sessionInfo = { email: sessionAccessContext.email, role: sessionAccessContext.role };
   const profileName = useMemo(() => {
@@ -848,9 +868,9 @@ export function AppShell({
       <div className="border-b border-slate-200 px-3 py-3 dark:border-slate-700">
         <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-center dark:border-slate-700 dark:bg-slate-800/50">
           <div className="mx-auto mb-2 flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-white dark:border-slate-600 dark:bg-slate-900">
-            {brandingLogoUrl ? (
+            {shouldRenderBrandingLogo(brandingLogoUrl, brandingImageLoadFailed) ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={brandingLogoUrl} alt="Logo context" className="h-full w-full object-cover" />
+              <img src={brandingLogoUrl} alt="Logo context" className="h-full w-full object-cover" onError={() => setBrandingImageLoadFailed(true)} />
             ) : (
               <span className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">{brandingInitials}</span>
             )}

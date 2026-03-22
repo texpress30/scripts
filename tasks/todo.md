@@ -6620,3 +6620,19 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, f�
 - [x] Root cause confirmat: excepții ne-mapate din `initialize_indexes()`/`create_draft()` (ex. erori Mongo runtime) ajungeau în catch-all API și produceau 500 generic fără context util în logs.
 - [x] Fix minim: mapare explicită în `storage_upload_init_service` la `RuntimeError` + logging contextual în router pentru init upload.
 - [x] Scope păstrat: fără modificări Creative UI/publish flow/refactor mare storage.
+
+# TODO — Sidebar subaccount avatar logo sync cu Profil Business (2026-03-22)
+
+- [x] Reîncarc workspace-ul și inspectez explicit `AppShell`, sursa de date sidebar, pagina profil business și contractele backend relevante.
+- [x] Identific sursa reală pentru avatar subaccount: branding din `AppShell` + payload business-profile (`/clients/{id}/business-profile`) folosit deja pentru locație.
+- [x] Aplic patch minim în sidebar pentru a folosi `logo_url` din business-profile (cu fallback la `client_logo_url` legacy).
+- [x] Păstrez fallback pe inițiale când nu există logo și adaug fallback la inițiale la eroare de încărcare imagine.
+- [x] Mențin refresh fără hard refresh folosind mecanismul existent `subaccount-business-profile-updated` după save/remove.
+- [x] Adaug teste focused frontend pentru rezoluția logo/fallback + emiterea evenimentului de refresh după save/remove.
+- [x] Rulez teste țintite și completez review.
+- [x] Commit + make_pr în același turn.
+
+## Review
+- [x] Componenta sidebar modificată: `apps/frontend/src/components/AppShell.tsx` (branding avatar subaccount).
+- [x] Sursa de date pentru logo în sidebar: `GET /clients/{id}/business-profile` (`logo_url` preview/fallback), cu fallback secundar la `client_logo_url` din `/clients`.
+- [x] Fără modificări pe Creative UI, publish flow, storage delete/cleanup sau refactor mare shell.

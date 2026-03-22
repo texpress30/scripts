@@ -543,3 +543,4 @@
 
 - 2026-03-22: După orice corecție de proces din partea userului, verific imediat AGENTS.md, aliniez workflow-ul (plan/check-in/track/review) și actualizez `tasks/lessons.md` în același turn.
 - 2026-03-22: Pentru buguri storage `/uploads/init` cu 500 generic, investighez mai întâi excepția reală din path-ul `initialize_indexes/create_draft`, mapez predictibil la RuntimeError/StorageUploadInitError și adaug logging contextual în router (client_id/kind/original_filename) înainte de a atinge UI.
+- 2026-03-22: Pentru cerințe de branding sidebar după profil business update, prefer sursa canonicală deja disponibilă (`/clients/{id}/business-profile` cu `logo_url`) și reutilizez evenimentul existent de refresh; evit extinderi backend inutile când payloadul deja conține logo preview.

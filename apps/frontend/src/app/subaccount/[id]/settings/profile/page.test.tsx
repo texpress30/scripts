@@ -165,6 +165,7 @@ describe("SubAccount Business Profile settings page", () => {
 
     render(<SubAccountSettingsPage />);
     await screen.findByTestId("app-shell-title");
+    const dispatchSpy = vi.spyOn(window, "dispatchEvent");
 
     const fileInput = screen.getByTestId("logo-input") as HTMLInputElement;
     const file = new File(["logo"], "logo.png", { type: "image/png" });
@@ -191,12 +192,14 @@ describe("SubAccount Business Profile settings page", () => {
     const putBody = JSON.parse(String(putCall?.[1]?.body ?? "{}"));
     expect(putBody.logo_media_id).toBe("m_logo_1");
     expect(putBody.logo_url).toBe("");
+    expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: "subaccount-business-profile-updated" }));
   });
 
   it("remove logo clears logo_media_id and logo_url in saved payload", async () => {
     setupApiMock({ logo_url: "https://preview.local/old.png", logo_media_id: "m_old" });
     render(<SubAccountSettingsPage />);
     await screen.findByTestId("app-shell-title");
+    const dispatchSpy = vi.spyOn(window, "dispatchEvent");
 
     fireEvent.click(screen.getByRole("button", { name: /Remove/i }));
     fireEvent.change(screen.getByLabelText(/Nume business \(friendly\)/i), { target: { value: "Detach Biz" } });
@@ -213,6 +216,7 @@ describe("SubAccount Business Profile settings page", () => {
     const putBody = JSON.parse(String(putCall?.[1]?.body ?? "{}"));
     expect(putBody.logo_media_id).toBeNull();
     expect(putBody.logo_url).toBe("");
+    expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: "subaccount-business-profile-updated" }));
   });
 
   it("shows clear error for invalid file type and oversized file", async () => {
