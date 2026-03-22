@@ -9,10 +9,16 @@ from typing import Literal
 from app.core.config import load_settings
 from app.services.creative_assets_repository import creative_assets_repository
 from app.services.creative_counters_repository import creative_counters_repository
+from app.services.media_metadata_models import MEDIA_FILE_STATUS_READY
+from app.services.media_metadata_repository import media_metadata_repository
 
 
 Channel = Literal["google", "meta", "tiktok"]
 logger = logging.getLogger(__name__)
+
+
+class CreativeWorkflowValidationError(ValueError):
+    pass
 
 
 @dataclass
@@ -38,6 +44,7 @@ class CreativeVariant:
     body: str
     cta: str
     media: str
+    media_id: str | None = None
 
 
 @dataclass
@@ -166,6 +173,41 @@ class CreativeWorkflowService:
             return False
         return True
 
+    def _media_id_linking_enabled(self) -> bool:
+        try:
+            settings = load_settings()
+        except Exception:  # noqa: BLE001
+            return False
+        return bool(getattr(settings, "creative_workflow_media_id_linking_enabled", False))
+
+    def _resolve_media_value(self, *, media: str | None, media_id: str | None) -> str:
+        media_value = str(media or "").strip()
+        media_id_value = str(media_id or "").strip()
+        if media_value != "":
+            return media_value
+        if media_id_value != "":
+            return f"media_id:{media_id_value}"
+        raise CreativeWorkflowValidationError("media sau media_id este obligatoriu")
+
+    def _validate_media_id_for_asset(self, *, asset_client_id: int, media_id: str | None) -> str | None:
+        normalized_media_id = str(media_id or "").strip()
+        if normalized_media_id == "":
+            return None
+        if not self._media_id_linking_enabled():
+            raise CreativeWorkflowValidationError(
+                "media_id requires CREATIVE_WORKFLOW_MEDIA_ID_LINKING_ENABLED=true",
+            )
+        record = media_metadata_repository.get_by_media_id(normalized_media_id)
+        if not isinstance(record, dict):
+            raise CreativeWorkflowValidationError("media_id not found")
+        status = str(record.get("status") or "").strip().lower()
+        if status != MEDIA_FILE_STATUS_READY:
+            raise CreativeWorkflowValidationError("media_id is not ready")
+        record_client_id = int(record.get("client_id") or 0)
+        if asset_client_id > 0 and record_client_id > 0 and asset_client_id != record_client_id:
+            raise CreativeWorkflowValidationError("media_id client mismatch")
+        return normalized_media_id
+
     def _sync_local_counter(self, *, counter_name: str, allocated_id: int) -> None:
         next_value = max(1, int(allocated_id) + 1)
         if counter_name == "asset":
@@ -263,6 +305,7 @@ class CreativeWorkflowService:
                     "body": variant.body,
                     "cta": variant.cta,
                     "media": variant.media,
+                    "media_id": variant.media_id,
                 }
                 for variant in variants
             ],
@@ -443,6 +486,7 @@ class CreativeWorkflowService:
                     body=str(item.get("body") or ""),
                     cta=str(item.get("cta") or ""),
                     media=str(item.get("media") or ""),
+                    media_id=str(item.get("media_id") or "").strip() or None,
                 )
             )
 
@@ -676,7 +720,8 @@ class CreativeWorkflowService:
         headline: str,
         body: str,
         cta: str,
-        media: str,
+        media: str | None,
+        media_id: str | None = None,
         *,
         _shadow_persist: bool = True,
         _force_local_write_path: bool = False,
@@ -686,6 +731,9 @@ class CreativeWorkflowService:
                 snapshot = self._resolve_asset_snapshot_for_write(asset_id=asset_id, operation="add_variant")
                 if snapshot is None:
                     raise ValueError("Asset not found")
+                resolved_client_id = int(snapshot.get("client_id") or 0)
+                validated_media_id = self._validate_media_id_for_asset(asset_client_id=resolved_client_id, media_id=media_id)
+                resolved_media = self._resolve_media_value(media=media, media_id=validated_media_id)
                 variant_id = self._next_id_for_core_write(counter_name="variant")
                 resolved_asset_id = int(snapshot.get("id") or snapshot.get("creative_id") or snapshot.get("asset_id") or asset_id)
                 variants = [
@@ -698,7 +746,8 @@ class CreativeWorkflowService:
                     "headline": headline,
                     "body": body,
                     "cta": cta,
-                    "media": media,
+                    "media": resolved_media,
+                    "media_id": validated_media_id,
                 }
                 variants.append(variant_payload)
                 snapshot["creative_variants"] = variants
@@ -725,12 +774,15 @@ class CreativeWorkflowService:
                     "headline": headline,
                     "body": body,
                     "cta": cta,
-                    "media": media,
+                    "media": resolved_media,
+                    "media_id": validated_media_id,
                 }
 
         asset = self._resolve_asset_local_or_mongo(asset_id=asset_id, operation="add_variant")
         if asset is None:
             raise ValueError("Asset not found")
+        validated_media_id = self._validate_media_id_for_asset(asset_client_id=int(asset.client_id), media_id=media_id)
+        resolved_media = self._resolve_media_value(media=media, media_id=validated_media_id)
 
         with self._lock:
             variant = CreativeVariant(
@@ -739,7 +791,8 @@ class CreativeWorkflowService:
                 headline=headline,
                 body=body,
                 cta=cta,
-                media=media,
+                media=resolved_media,
+                media_id=validated_media_id,
             )
             self._variants.setdefault(asset.id, []).append(variant)
 
@@ -750,6 +803,7 @@ class CreativeWorkflowService:
             "body": variant.body,
             "cta": variant.cta,
             "media": variant.media,
+            "media_id": variant.media_id,
         }
         if _shadow_persist:
             self._shadow_upsert_asset(asset_id=asset.id, operation="add_variant")

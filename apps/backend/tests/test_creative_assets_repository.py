@@ -88,7 +88,7 @@ def _asset_payload(*, creative_id: int, client_id: int = 101, name: str = "Asset
             "approval_status": "draft",
         },
         "creative_variants": [
-            {"id": 1, "headline": "H1", "body": "B1", "cta": "Learn", "media": "hero_v1"},
+            {"id": 1, "headline": "H1", "body": "B1", "cta": "Learn", "media": "hero_v1", "media_id": "m_hero_v1"},
         ],
         "performance_scores": {"ctr": 1.2},
         "campaign_links": [{"id": 1, "campaign_id": 7, "ad_set_id": 9}],
@@ -107,6 +107,7 @@ def test_upsert_asset_creates_document(monkeypatch):
     assert created["client_id"] == 101
     assert created["metadata"]["format"] == "image"
     assert len(created["creative_variants"]) == 1
+    assert created["creative_variants"][0]["media_id"] == "m_hero_v1"
     assert created["publish_history"][0]["id"] == 10
     assert created["created_at"] is not None
     assert created["updated_at"] is not None
@@ -148,6 +149,7 @@ def test_second_upsert_updates_existing_keeps_created_at_and_updates_updated_at(
     assert len(fake_collection.docs) == 1
     assert updated["creative_id"] == 31
     assert updated["name"] == "Asset A v2"
+    assert updated["creative_variants"][0]["media_id"] is None
     assert updated["created_at"] == first_created_at
     assert updated["updated_at"] > first_updated_at
 
@@ -187,3 +189,15 @@ def test_initialize_indexes(monkeypatch):
     assert fake_collection.index_calls[0]["name"] == "ux_creative_assets_creative_id"
     assert fake_collection.index_calls[0]["unique"] is True
     assert fake_collection.index_calls[1]["name"] == "ix_creative_assets_client_updated_at"
+
+
+def test_normalize_old_document_without_media_id_remains_compatible(monkeypatch):
+    fake_collection = FakeCollection()
+    monkeypatch.setattr(repository_module, "get_mongo_collection", lambda _name: fake_collection)
+    payload = _asset_payload(creative_id=51)
+    payload["creative_variants"] = [{"id": 1, "headline": "H1", "body": "B1", "cta": "Learn", "media": "legacy"}]
+
+    created = repository_module.creative_assets_repository.upsert_asset(payload)
+
+    assert created["creative_variants"][0]["media"] == "legacy"
+    assert created["creative_variants"][0]["media_id"] is None

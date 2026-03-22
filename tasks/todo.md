@@ -6538,3 +6538,24 @@ Plan verified: keep this turn minimal and process-focused, touching only `tasks/
 - [x] Confirmed only process-tracking docs were updated.
 - [x] Confirmed verification command(s) ran before commit.
 - [x] Confirmed commit and PR metadata were completed in the same turn.
+
+# TODO — Creative workflow media_id linking (feature-flagged, backward-compatible) (2026-03-22)
+
+- [x] Reîncarc workspace-ul și inspectez explicit fișierele cerute (`api/creative.py`, `creative_workflow.py`, `creative_assets_repository.py`, `media_metadata_repository.py`, `core/config.py`, teste backend relevante).
+- [x] Adaug setting nou `CREATIVE_WORKFLOW_MEDIA_ID_LINKING_ENABLED` (default OFF) în config + `.env.example` + doc minim.
+- [x] Extind modelele API creative pentru `media_id: Optional[str]` fără breaking changes și fără eliminarea câmpului legacy `media`.
+- [x] Extind modelul intern variantă + `add_variant/get_asset/list_assets` pentru a purta `media_id` feature-flagged, cu fallback compatibil când vine doar `media_id`.
+- [x] Validez `media_id` via `media_metadata_repository.get_by_media_id(...)` (exists, status ready, client ownership compatibil) când flag-ul este ON.
+- [x] Fac comportament explicit când flag-ul este OFF și se trimite `media_id` (eroare clară, fără impact pe fluxul legacy fără `media_id`).
+- [x] Persist `media_id` în `creative_assets_repository` și asigur rehidratarea compatibilă pentru documente vechi fără `media_id`.
+- [x] Adaug/actualizez teste focused pentru OFF/ON, validare, persistență/list/get/hidratare și default setting.
+- [x] Rulez teste țintite și completez review.
+- [x] Commit + make_pr în același turn.
+
+## Check-in before execution
+Plan verificat: patch minim și izolat în backend creative/config/tests, fără schimbări frontend/rute/backfill/publish major.
+
+## Review
+- [x] Confirm patch-ul rămâne izolat pe backend creative/config/tests, fără frontend/rute noi/backfill.
+- [x] Confirm media rămâne compatibil legacy (nu devine sursă unică), iar media_id este opțional și feature-flagged.
+- [x] Verificări rulate: `cd apps/backend && pytest -q tests/test_storage_foundation_settings.py tests/test_creative_assets_repository.py tests/test_creative_api_media_id.py tests/test_creative_workflow_shadow_write.py`.

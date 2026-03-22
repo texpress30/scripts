@@ -18,6 +18,7 @@ def test_load_settings_storage_foundation_defaults(monkeypatch):
     monkeypatch.delenv("CREATIVE_WORKFLOW_MONGO_PUBLISH_PERSIST_ENABLED", raising=False)
     monkeypatch.delenv("CREATIVE_WORKFLOW_MONGO_READ_THROUGH_ENABLED", raising=False)
     monkeypatch.delenv("CREATIVE_WORKFLOW_MONGO_READS_SOURCE_ENABLED", raising=False)
+    monkeypatch.delenv("CREATIVE_WORKFLOW_MEDIA_ID_LINKING_ENABLED", raising=False)
     monkeypatch.delenv("MONGO_DATABASE", raising=False)
 
     settings = load_settings()
@@ -36,6 +37,7 @@ def test_load_settings_storage_foundation_defaults(monkeypatch):
     assert settings.creative_workflow_mongo_publish_persist_enabled is False
     assert settings.creative_workflow_mongo_read_through_enabled is False
     assert settings.creative_workflow_mongo_reads_source_enabled is False
+    assert settings.creative_workflow_media_id_linking_enabled is False
     assert settings.mongo_uri == ""
     assert settings.mongo_database == ""
 
@@ -57,6 +59,7 @@ def test_load_settings_storage_foundation_custom_values(monkeypatch):
     monkeypatch.setenv("CREATIVE_WORKFLOW_MONGO_PUBLISH_PERSIST_ENABLED", "true")
     monkeypatch.setenv("CREATIVE_WORKFLOW_MONGO_READ_THROUGH_ENABLED", "true")
     monkeypatch.setenv("CREATIVE_WORKFLOW_MONGO_READS_SOURCE_ENABLED", "true")
+    monkeypatch.setenv("CREATIVE_WORKFLOW_MEDIA_ID_LINKING_ENABLED", "true")
     monkeypatch.setenv("MONGO_DATABASE", "mcc_assets")
 
     settings = load_settings()
@@ -75,5 +78,6 @@ def test_load_settings_storage_foundation_custom_values(monkeypatch):
     assert settings.creative_workflow_mongo_publish_persist_enabled is True
     assert settings.creative_workflow_mongo_read_through_enabled is True
     assert settings.creative_workflow_mongo_reads_source_enabled is True
+    assert settings.creative_workflow_media_id_linking_enabled is True
     assert settings.mongo_uri == "mongodb://localhost:27017"
     assert settings.mongo_database == "mcc_assets"

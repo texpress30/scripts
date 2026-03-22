@@ -16,6 +16,7 @@ def _new_service_with_flag(
     publish_persist_enabled: bool = False,
     read_through_enabled: bool = False,
     reads_source_enabled: bool = False,
+    media_id_linking_enabled: bool = False,
 ) -> workflow_module.CreativeWorkflowService:
     monkeypatch.setattr(
         workflow_module,
@@ -27,6 +28,7 @@ def _new_service_with_flag(
             creative_workflow_mongo_publish_persist_enabled=publish_persist_enabled,
             creative_workflow_mongo_read_through_enabled=read_through_enabled,
             creative_workflow_mongo_reads_source_enabled=reads_source_enabled,
+            creative_workflow_media_id_linking_enabled=media_id_linking_enabled,
         ),
     )
     return workflow_module.CreativeWorkflowService()
@@ -96,6 +98,79 @@ def test_add_variant_flag_on_uses_counter_and_upsert(monkeypatch):
     assert service._next_variant_id == 73
     assert len(upsert_calls) == 1
     assert upsert_calls[0]["creative_variants"][0]["id"] == 72
+
+
+def test_add_variant_flag_off_rejects_media_id_with_clear_error(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, media_id_linking_enabled=False)
+    asset = _create_asset(service)
+
+    with pytest.raises(workflow_module.CreativeWorkflowValidationError, match="CREATIVE_WORKFLOW_MEDIA_ID_LINKING_ENABLED"):
+        service.add_variant(int(asset["id"]), "H", "B", "CTA", "media", media_id="m_1")
+
+
+def test_add_variant_media_id_only_uses_stable_media_fallback(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, media_id_linking_enabled=True)
+    asset = _create_asset(service)
+    calls = {"media_id": None}
+
+    def _get_by_media_id(media_id: str):
+        calls["media_id"] = media_id
+        return {"media_id": media_id, "status": "ready", "client_id": 12}
+
+    monkeypatch.setattr(workflow_module.media_metadata_repository, "get_by_media_id", _get_by_media_id)
+    created = service.add_variant(int(asset["id"]), "H", "B", "CTA", "", media_id="m_2")
+
+    assert calls["media_id"] == "m_2"
+    assert created["media"] == "media_id:m_2"
+    assert created["media_id"] == "m_2"
+    assert service.get_asset(int(asset["id"]))["creative_variants"][0]["media_id"] == "m_2"
+
+
+def test_add_variant_media_and_media_id_accepts_and_persists_both(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=True, media_id_linking_enabled=True)
+    monkeypatch.setattr(workflow_module.creative_counters_repository, "next_asset_id", lambda: 10)
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "upsert_asset", lambda payload: payload)
+    asset = _create_asset(service)
+
+    monkeypatch.setattr(workflow_module.creative_counters_repository, "next_variant_id", lambda: 88)
+    monkeypatch.setattr(
+        workflow_module.media_metadata_repository,
+        "get_by_media_id",
+        lambda media_id: {"media_id": media_id, "status": "ready", "client_id": 12},
+    )
+    upsert_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "upsert_asset", lambda payload: upsert_calls.append(dict(payload)) or payload)
+    created = service.add_variant(int(asset["id"]), "H", "B", "CTA", "legacy-media", media_id="m_ok")
+
+    assert created["id"] == 88
+    assert created["media"] == "legacy-media"
+    assert created["media_id"] == "m_ok"
+    assert upsert_calls[0]["creative_variants"][-1]["media_id"] == "m_ok"
+
+
+def test_add_variant_media_id_validation_errors_are_predictable(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, media_id_linking_enabled=True)
+    asset = _create_asset(service)
+
+    monkeypatch.setattr(workflow_module.media_metadata_repository, "get_by_media_id", lambda _media_id: None)
+    with pytest.raises(workflow_module.CreativeWorkflowValidationError, match="not found"):
+        service.add_variant(int(asset["id"]), "H", "B", "CTA", "m", media_id="missing")
+
+    monkeypatch.setattr(
+        workflow_module.media_metadata_repository,
+        "get_by_media_id",
+        lambda media_id: {"media_id": media_id, "status": "draft", "client_id": 12},
+    )
+    with pytest.raises(workflow_module.CreativeWorkflowValidationError, match="not ready"):
+        service.add_variant(int(asset["id"]), "H", "B", "CTA", "m", media_id="not-ready")
+
+    monkeypatch.setattr(
+        workflow_module.media_metadata_repository,
+        "get_by_media_id",
+        lambda media_id: {"media_id": media_id, "status": "ready", "client_id": 999},
+    )
+    with pytest.raises(workflow_module.CreativeWorkflowValidationError, match="client mismatch"):
+        service.add_variant(int(asset["id"]), "H", "B", "CTA", "m", media_id="wrong-client")
 
 
 def test_link_to_campaign_flag_on_uses_counter_and_upsert(monkeypatch):
@@ -792,7 +867,7 @@ def _mongo_asset_payload(*, asset_id: int, client_id: int = 55) -> dict[str, obj
             "legal_status": "pending",
             "approval_status": "draft",
         },
-        "creative_variants": [{"id": 200, "headline": "H", "body": "B", "cta": "CTA", "media": "m"}],
+        "creative_variants": [{"id": 200, "headline": "H", "body": "B", "cta": "CTA", "media": "m", "media_id": "m_200"}],
         "performance_scores": {"meta": 10.0},
         "campaign_links": [{"id": 300, "campaign_id": 1, "ad_set_id": 2}],
         "publish_history": [],
@@ -824,7 +899,27 @@ def test_get_asset_read_through_hydrates_from_mongo_and_reuses_local(monkeypatch
 
     assert first["id"] == 123
     assert second["id"] == 123
+    assert first["creative_variants"][0]["media_id"] == "m_200"
     assert calls["get"] == 1
+
+
+def test_get_and_list_keep_legacy_documents_without_media_id_compatible(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, read_through_enabled=True)
+
+    def _legacy_payload(asset_id: int):
+        payload = _mongo_asset_payload(asset_id=asset_id)
+        payload["creative_variants"] = [{"id": 3, "headline": "H", "body": "B", "cta": "CTA", "media": "legacy"}]
+        return payload
+
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "get_by_creative_id", lambda asset_id: _legacy_payload(asset_id))
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "list_assets", lambda **kwargs: [_legacy_payload(321)])
+
+    item = service.get_asset(321)
+    listed = service.list_assets(client_id=55)
+
+    assert item["creative_variants"][0]["media"] == "legacy"
+    assert item["creative_variants"][0]["media_id"] is None
+    assert listed[0]["creative_variants"][0]["media_id"] is None
 
 
 def test_local_asset_has_priority_over_mongo(monkeypatch):

@@ -33,6 +33,7 @@ Variabile importante:
 - `CREATIVE_WORKFLOW_MONGO_CORE_WRITES_SOURCE_ENABLED` (default `false`; când e `true`, `create_asset` / `add_variant` / `link_to_campaign` folosesc Mongo ca source-of-truth pentru write path)
 - `CREATIVE_WORKFLOW_MONGO_DERIVED_WRITES_SOURCE_ENABLED` (default `false`; devine activ doar împreună cu `CREATIVE_WORKFLOW_MONGO_CORE_WRITES_SOURCE_ENABLED` pentru `generate_variants` / `update_approval` / `set_performance_scores`)
 - `CREATIVE_WORKFLOW_MONGO_PUBLISH_PERSIST_ENABLED` (default `false`; persistă `publish_to_channel` în Mongo doar când sunt active și `CORE_WRITES` + `DERIVED_WRITES`)
+- `CREATIVE_WORKFLOW_MEDIA_ID_LINKING_ENABLED` (default `false`; permite `media_id` opțional în `add_variant`, cu validare minimă prin media metadata repository)
 - `APP_ENV=test` trebuie folosit doar în teste automate (pytest), altfel aplicația poate porni în mod de test și pierde persistența la restart.
 - Google Ads production flow:
   - `GOOGLE_ADS_MODE=production`

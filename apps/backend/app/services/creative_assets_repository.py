@@ -14,6 +14,13 @@ def _utcnow() -> datetime:
 
 
 class CreativeAssetsRepository:
+    def _normalize_variant(self, payload: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(payload)
+        normalized["media"] = str(normalized.get("media") or "")
+        media_id = str(normalized.get("media_id") or "").strip()
+        normalized["media_id"] = media_id or None
+        return normalized
+
     def _collection(self):
         collection = get_mongo_collection(_COLLECTION_NAME)
         if collection is None:
@@ -83,7 +90,11 @@ class CreativeAssetsRepository:
             "asset_id": int(asset.get("asset_id") or creative_id),
             "name": str(asset.get("name") or "").strip(),
             "metadata": dict(asset.get("metadata") or {}),
-            "creative_variants": [dict(item) for item in list(asset.get("creative_variants") or []) if isinstance(item, dict)],
+            "creative_variants": [
+                self._normalize_variant(dict(item))
+                for item in list(asset.get("creative_variants") or [])
+                if isinstance(item, dict)
+            ],
             "performance_scores": dict(asset.get("performance_scores") or {}),
             "campaign_links": [dict(item) for item in list(asset.get("campaign_links") or []) if isinstance(item, dict)],
             "publish_history": [dict(item) for item in list(asset.get("publish_history") or []) if isinstance(item, dict)],
@@ -101,7 +112,11 @@ class CreativeAssetsRepository:
         if internal_id is not None:
             normalized["mongo_id"] = str(internal_id)
         normalized["metadata"] = dict(normalized.get("metadata") or {})
-        normalized["creative_variants"] = [dict(item) for item in list(normalized.get("creative_variants") or []) if isinstance(item, dict)]
+        normalized["creative_variants"] = [
+            self._normalize_variant(dict(item))
+            for item in list(normalized.get("creative_variants") or [])
+            if isinstance(item, dict)
+        ]
         normalized["performance_scores"] = dict(normalized.get("performance_scores") or {})
         normalized["campaign_links"] = [dict(item) for item in list(normalized.get("campaign_links") or []) if isinstance(item, dict)]
         normalized["publish_history"] = [dict(item) for item in list(normalized.get("publish_history") or []) if isinstance(item, dict)]
