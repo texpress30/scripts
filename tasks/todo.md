@@ -1,3 +1,15 @@
+# TODO — Internal remote URL fetch + ingest helper (2026-03-22)
+
+- [x] Refresh repo state and re-audit storage ingest/init/providers/config/runner/tests before coding.
+- [x] Add dedicated `StorageMediaRemoteIngestService` with public `upload_from_url(...)` and strict delegation to `StorageMediaIngestService.upload_bytes(...)`.
+- [x] Add minimal URL guardrails (http/https only, reject localhost/loopback hostnames), bounded sync fetch with timeout/max-bytes config, and filename/mime fallback rules.
+- [x] Keep implementation isolated (no endpoint, no job wiring, no retry logic, no SSRF hardening beyond requested guards).
+- [x] Add focused tests for delegation params, guardrails, content-size protection, mime/filename inference, and error propagation.
+- [x] Run targeted backend tests and update review + lessons.
+
+## Review
+- [x] Confirm no new endpoint, no job integration, no retry logic, no full SSRF hardening, no creative/frontend changes.
+
 # TODO — Internal backend ingest helper (upload_bytes) for media storage (2026-03-22)
 
 - [x] Refresh repo state and re-audit storage init/complete/repository/providers/cleanup runner/tests before coding.
