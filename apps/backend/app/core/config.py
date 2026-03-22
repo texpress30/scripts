@@ -45,6 +45,7 @@ class Settings:
     storage_s3_region: str
     storage_s3_endpoint_url: str
     storage_s3_presigned_ttl_seconds: int
+    storage_media_cleanup_batch_limit: int
     mongo_uri: str
     mongo_database: str
     cors_origins: tuple[str, ...]
@@ -177,6 +178,7 @@ def load_settings() -> Settings:
         storage_s3_region=_get_env("STORAGE_S3_REGION", default=""),
         storage_s3_endpoint_url=_get_env("STORAGE_S3_ENDPOINT_URL", default=""),
         storage_s3_presigned_ttl_seconds=_parse_positive_int_env("STORAGE_S3_PRESIGNED_TTL_SECONDS", default=900),
+        storage_media_cleanup_batch_limit=_parse_positive_int_env("STORAGE_MEDIA_CLEANUP_BATCH_LIMIT", default=100),
         mongo_uri=_get_env("MONGO_URI", default=""),
         mongo_database=_get_env("MONGO_DATABASE", default=""),
         cors_origins=_parse_csv_env("APP_CORS_ORIGINS", default="http://localhost:3000,http://127.0.0.1:3000"),

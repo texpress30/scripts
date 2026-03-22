@@ -261,3 +261,14 @@ cd apps/frontend && npm run build
 - `POST /auth/reset-password/confirm` acceptă acum tokenuri `password_reset` și `invite_user`.
 - UI „Trimite invitație” este disponibil în Agency Team și apelează backend-ul `POST /team/members/{membership_id}/invite`.
 - Invite UI în Sub-account Team rămâne pentru taskul următor.
+
+
+## Storage media cleanup batch runner (manual + Railway Scheduled Job)
+- **Manual run (default limit from config):** `cd apps/backend && PYTHONPATH=. python -m app.workers.storage_media_cleanup_runner`
+- **Manual run (explicit limit):** `cd apps/backend && PYTHONPATH=. python -m app.workers.storage_media_cleanup_runner --limit 200`
+- **Railway Scheduled Job command (recommended):** `cd apps/backend && PYTHONPATH=. python -m app.workers.storage_media_cleanup_runner`
+- Batch size env: `STORAGE_MEDIA_CLEANUP_BATCH_LIMIT` (default `100`).
+- Runner output: JSON summary cu `limit`, `processed`, `purged`, `skipped`, `failed` (plus `status`).
+- Exit code semantics:
+  - `0` când batch-ul rulează (inclusiv dacă are item-uri `failed`/`skipped`)
+  - non-zero doar la eroare globală (ex: provider/config indisponibil, excepție neprevăzută înainte/în jurul run-ului).
