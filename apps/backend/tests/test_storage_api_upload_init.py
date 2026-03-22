@@ -8,6 +8,7 @@ import pytest
 from app.services.auth import AuthUser
 from app.services.storage_upload_complete import StorageUploadCompleteError
 from app.services.storage_upload_init import StorageUploadInitError
+from app.services.storage_media_read import StorageMediaReadError
 
 
 class _FakeHTTPException(Exception):
@@ -191,5 +192,101 @@ def test_storage_upload_complete_endpoint_maps_runtime_unavailable(monkeypatch):
             ),
             user=_admin_user(),
         )
+
+    assert getattr(exc.value, "status_code", None) == 503
+
+
+def test_storage_media_list_endpoint_returns_payload(monkeypatch):
+    _install_fake_fastapi_module()
+    _install_fake_pydantic_module()
+    from app.api import storage as storage_api
+
+    monkeypatch.setattr(storage_api, "enforce_action_scope", lambda **_kwargs: None)
+    monkeypatch.setattr(storage_api, "enforce_agency_navigation_access", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        storage_api.storage_media_read_service,
+        "list_media",
+        lambda **_kwargs: {
+            "items": [
+                {
+                    "media_id": "m1",
+                    "client_id": 1,
+                    "kind": "image",
+                    "source": "user_upload",
+                    "status": "ready",
+                    "original_filename": "f.png",
+                    "mime_type": "image/png",
+                    "size_bytes": 100,
+                    "created_at": "2026-03-22T12:00:00Z",
+                    "uploaded_at": "2026-03-22T12:05:00Z",
+                }
+            ],
+            "limit": 25,
+            "offset": 0,
+            "total": 1,
+        },
+    )
+
+    response = storage_api.list_media(client_id=1, kind=None, status_filter=None, limit=25, offset=0, user=_admin_user())
+    assert response.total == 1
+    assert response.items[0]["media_id"] == "m1"
+
+
+def test_storage_media_detail_endpoint_returns_payload(monkeypatch):
+    _install_fake_fastapi_module()
+    _install_fake_pydantic_module()
+    from app.api import storage as storage_api
+
+    monkeypatch.setattr(storage_api, "enforce_action_scope", lambda **_kwargs: None)
+    monkeypatch.setattr(storage_api, "enforce_agency_navigation_access", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        storage_api.storage_media_read_service,
+        "get_media_detail",
+        lambda **_kwargs: {
+            "media_id": "m1",
+            "client_id": 1,
+            "kind": "image",
+            "source": "user_upload",
+            "status": "ready",
+            "original_filename": "f.png",
+            "mime_type": "image/png",
+            "size_bytes": 100,
+            "created_at": "2026-03-22T12:00:00Z",
+            "uploaded_at": "2026-03-22T12:05:00Z",
+            "metadata": {},
+            "storage": {
+                "provider": "s3",
+                "bucket": "media-bucket",
+                "key": "clients/1/image/m1/f.png",
+                "region": "eu-central-1",
+                "etag": None,
+                "version_id": None,
+            },
+            "updated_at": "2026-03-22T12:05:00Z",
+            "deleted_at": None,
+            "purged_at": None,
+        },
+    )
+
+    response = storage_api.get_media_detail(media_id="m1", client_id=1, user=_admin_user())
+    assert response.media_id == "m1"
+    assert response.storage["bucket"] == "media-bucket"
+
+
+def test_storage_media_endpoint_maps_runtime_unavailable(monkeypatch):
+    _install_fake_fastapi_module()
+    _install_fake_pydantic_module()
+    from app.api import storage as storage_api
+
+    monkeypatch.setattr(storage_api, "enforce_action_scope", lambda **_kwargs: None)
+    monkeypatch.setattr(storage_api, "enforce_agency_navigation_access", lambda **_kwargs: None)
+
+    def _raise_error(**_kwargs):
+        raise StorageMediaReadError("Mongo unavailable", status_code=503)
+
+    monkeypatch.setattr(storage_api.storage_media_read_service, "list_media", _raise_error)
+
+    with pytest.raises(Exception) as exc:
+        storage_api.list_media(client_id=1, kind=None, status_filter=None, limit=25, offset=0, user=_admin_user())
 
     assert getattr(exc.value, "status_code", None) == 503

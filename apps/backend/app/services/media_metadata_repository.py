@@ -21,6 +21,27 @@ _COLLECTION_NAME = "media_files"
 
 
 class MediaMetadataRepository:
+    def _filters_for_client(
+        self,
+        *,
+        client_id: int,
+        kind: str | None = None,
+        status: str | None = None,
+        include_deleted_by_default: bool = False,
+    ) -> dict[str, Any]:
+        filters: dict[str, Any] = {"client_id": int(client_id)}
+        normalized_kind = str(kind or "").strip()
+        if normalized_kind != "":
+            filters["kind"] = normalized_kind
+        normalized_status = str(status or "").strip()
+        if normalized_status != "":
+            filters["status"] = normalized_status
+        elif include_deleted_by_default:
+            filters["status"] = {"$ne": "purged"}
+        else:
+            filters["status"] = {"$nin": ["purged", "delete_requested"]}
+        return filters
+
     def _collection(self):
         collection = get_mongo_collection(_COLLECTION_NAME)
         if collection is None:
@@ -106,6 +127,47 @@ class MediaMetadataRepository:
             return None
         found = self._collection().find_one({"storage.bucket": normalized_bucket, "storage.key": normalized_key})
         return self._normalize(found)
+
+    def list_for_client(
+        self,
+        *,
+        client_id: int,
+        kind: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        include_deleted_by_default: bool = False,
+    ) -> list[dict[str, Any]]:
+        filters = self._filters_for_client(
+            client_id=client_id,
+            kind=kind,
+            status=status,
+            include_deleted_by_default=include_deleted_by_default,
+        )
+        cursor = (
+            self._collection()
+            .find(filters)
+            .sort("created_at", -1)
+            .skip(max(0, int(offset)))
+            .limit(max(0, int(limit)))
+        )
+        return [self._normalize(item) for item in cursor if isinstance(item, dict)]
+
+    def count_for_client(
+        self,
+        *,
+        client_id: int,
+        kind: str | None = None,
+        status: str | None = None,
+        include_deleted_by_default: bool = False,
+    ) -> int:
+        filters = self._filters_for_client(
+            client_id=client_id,
+            kind=kind,
+            status=status,
+            include_deleted_by_default=include_deleted_by_default,
+        )
+        return int(self._collection().count_documents(filters) or 0)
 
     def mark_ready(
         self,

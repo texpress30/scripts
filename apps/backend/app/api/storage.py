@@ -8,6 +8,7 @@ from app.services.auth import AuthUser
 from app.services.client_registry import client_registry_service
 from app.services.storage_upload_complete import StorageUploadCompleteError, storage_upload_complete_service
 from app.services.storage_upload_init import StorageUploadInitError, storage_upload_init_service
+from app.services.storage_media_read import StorageMediaReadError, storage_media_read_service
 
 router = APIRouter(prefix="/storage", tags=["storage"])
 
@@ -69,6 +70,43 @@ class StorageUploadCompleteResponse(BaseModel):
     version_id: str | None = None
 
 
+class StorageMediaListItem(BaseModel):
+    media_id: str
+    client_id: int
+    kind: str
+    source: str
+    status: str
+    original_filename: str
+    mime_type: str
+    size_bytes: int | None = None
+    created_at: Any | None = None
+    uploaded_at: Any | None = None
+
+
+class StorageMediaListResponse(BaseModel):
+    items: list[StorageMediaListItem]
+    limit: int
+    offset: int
+    total: int
+
+
+class StorageMediaDetailStorage(BaseModel):
+    provider: str
+    bucket: str
+    key: str
+    region: str
+    etag: str | None = None
+    version_id: str | None = None
+
+
+class StorageMediaDetailResponse(StorageMediaListItem):
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    storage: StorageMediaDetailStorage
+    updated_at: Any | None = None
+    deleted_at: Any | None = None
+    purged_at: Any | None = None
+
+
 @router.get("/media-usage", response_model=StorageUsageResponse)
 def list_media_usage(
     search: str = Query(default=""),
@@ -126,3 +164,50 @@ def complete_direct_upload(
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to complete upload") from exc
     return StorageUploadCompleteResponse(**response_payload)
+
+
+@router.get("/media", response_model=StorageMediaListResponse)
+def list_media(
+    client_id: int = Query(..., ge=1),
+    kind: Literal["image", "video", "document"] | None = Query(default=None),
+    status_filter: Literal["draft", "ready", "delete_requested", "purged"] | None = Query(default=None, alias="status"),
+    limit: int = Query(default=25, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    user: AuthUser = Depends(get_current_user),
+) -> StorageMediaListResponse:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="settings_media_storage_usage")
+    try:
+        payload = storage_media_read_service.list_media(
+            client_id=client_id,
+            kind=kind,
+            status=status_filter,
+            limit=limit,
+            offset=offset,
+        )
+    except StorageMediaReadError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list media") from exc
+    return StorageMediaListResponse(**payload)
+
+
+@router.get("/media/{media_id}", response_model=StorageMediaDetailResponse)
+def get_media_detail(
+    media_id: str,
+    client_id: int = Query(..., ge=1),
+    user: AuthUser = Depends(get_current_user),
+) -> StorageMediaDetailResponse:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="settings_media_storage_usage")
+    try:
+        payload = storage_media_read_service.get_media_detail(client_id=client_id, media_id=media_id)
+    except StorageMediaReadError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get media detail") from exc
+    return StorageMediaDetailResponse(**payload)

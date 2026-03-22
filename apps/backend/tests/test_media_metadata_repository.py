@@ -30,9 +30,16 @@ class FakeCollection:
 
     def find_one(self, query: dict[str, object]):
         for doc in self.docs:
-            if all(self._get_field(doc, key) == value for key, value in query.items()):
+            if self._matches(doc, query):
                 return dict(doc)
         return None
+
+    def find(self, query: dict[str, object]):
+        matches = [dict(doc) for doc in self.docs if self._matches(doc, query)]
+        return FakeCursor(matches)
+
+    def count_documents(self, query: dict[str, object]) -> int:
+        return sum(1 for doc in self.docs if self._matches(doc, query))
 
     def update_one(self, query: dict[str, object], update: dict[str, dict[str, object]]):
         target = self.find_one(query)
@@ -45,6 +52,19 @@ class FakeCollection:
             if existing.get("_id") == target.get("_id"):
                 self.docs[idx] = target
                 break
+
+    def _matches(self, payload: dict[str, object], query: dict[str, object]) -> bool:
+        for key, value in query.items():
+            current = self._get_field(payload, key)
+            if isinstance(value, dict):
+                if "$ne" in value and current == value["$ne"]:
+                    return False
+                if "$nin" in value and current in value["$nin"]:
+                    return False
+                continue
+            if current != value:
+                return False
+        return True
 
     def _get_field(self, payload: dict[str, object], key: str):
         if "." not in key:
@@ -69,6 +89,27 @@ class FakeCollection:
                 cursor[part] = child
             cursor = child
         cursor[parts[-1]] = value
+
+
+class FakeCursor:
+    def __init__(self, docs: list[dict[str, object]]) -> None:
+        self.docs = list(docs)
+
+    def sort(self, key: str, order: int):
+        reverse = int(order) < 0
+        self.docs.sort(key=lambda item: item.get(key), reverse=reverse)
+        return self
+
+    def skip(self, value: int):
+        self.docs = self.docs[int(value) :]
+        return self
+
+    def limit(self, value: int):
+        self.docs = self.docs[: int(value)]
+        return self
+
+    def __iter__(self):
+        return iter(self.docs)
 
 
 def _settings():
@@ -173,3 +214,46 @@ def test_repository_raises_when_mongo_not_configured(monkeypatch):
 
     with pytest.raises(RuntimeError):
         repository_module.media_metadata_repository.get_by_media_id("abc123")
+
+
+def test_list_and_count_for_client(monkeypatch):
+    fake_collection = FakeCollection()
+    monkeypatch.setattr(repository_module, "load_settings", _settings)
+    monkeypatch.setattr(repository_module, "get_s3_bucket_name", lambda: "assets-bucket")
+    monkeypatch.setattr(repository_module, "get_mongo_collection", lambda _name: fake_collection)
+
+    a = repository_module.media_metadata_repository.create_draft(
+        client_id=1,
+        kind="image",
+        source="user_upload",
+        original_filename="a.png",
+        mime_type="image/png",
+    )
+    b = repository_module.media_metadata_repository.create_draft(
+        client_id=1,
+        kind="video",
+        source="user_upload",
+        original_filename="b.mp4",
+        mime_type="video/mp4",
+    )
+    c = repository_module.media_metadata_repository.create_draft(
+        client_id=2,
+        kind="image",
+        source="user_upload",
+        original_filename="c.png",
+        mime_type="image/png",
+    )
+
+    # newest first due created_at desc; skip first, get second only
+    listed = repository_module.media_metadata_repository.list_for_client(client_id=1, limit=1, offset=1)
+    total = repository_module.media_metadata_repository.count_for_client(client_id=1)
+    filtered_kind = repository_module.media_metadata_repository.list_for_client(client_id=1, kind="image", limit=10, offset=0)
+
+    assert total == 2
+    assert len(listed) == 1
+    assert listed[0]["media_id"] in {a["media_id"], b["media_id"]}
+    assert listed[0]["media_id"] != (b["media_id"] if listed[0]["media_id"] == a["media_id"] else a["media_id"])
+    assert len(filtered_kind) == 1
+    assert filtered_kind[0]["client_id"] == 1
+    assert filtered_kind[0]["kind"] == "image"
+    assert c["client_id"] == 2

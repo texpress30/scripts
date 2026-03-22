@@ -1,3 +1,20 @@
+# TODO — Storage media read APIs: list + detail from Mongo metadata (2026-03-22)
+
+- [x] Re-sync workspace and re-audit storage router/repository/services before implementation.
+- [x] Confirm scope boundaries (read-only APIs, no download/delete/cleanup/creative/frontend changes).
+- [x] Extend media metadata repository minimally for list + count with client/kind/status filters and limit/offset.
+- [x] Add dedicated media-read service (separate from router) for list/detail ownership checks and runtime-safe error mapping.
+- [x] Add GET endpoints `/storage/media` and `/storage/media/{media_id}` with clear response models.
+- [x] Enforce deterministic list ordering (created_at desc), limit defaults/max, and strict client scoping.
+- [x] Implement default status rule for list (exclude purged and delete_requested when status filter is omitted).
+- [x] Add focused tests for repository/service/endpoint list+detail behavior and error cases.
+- [x] Run targeted backend tests and update tasks docs/lessons.
+
+## Review
+- [x] Confirm no download/view URL, delete, or cleanup job added.
+- [x] Confirm no creative workflow integration and no frontend changes.
+- [x] Confirm patch remains isolated to storage read flow.
+
 # TODO — Storage upload complete backend flow: verify S3 object and mark ready (2026-03-22)
 
 - [x] Re-sync workspace and re-read AGENTS + relevant storage/media/provider/config files before coding.
