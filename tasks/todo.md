@@ -1,3 +1,309 @@
+# TODO — Creative workflow publish persistence în Mongo (feature-flagged, safe) (2026-03-22)
+
+- [x] Refresh workspace state și inspect explicit: `creative_workflow.py`, creative repositories/counters, `api/creative.py`, publish adapters/helpers, `core/config.py`, teste backend.
+- [x] Adaugă flag nou `CREATIVE_WORKFLOW_MONGO_PUBLISH_PERSIST_ENABLED` (default OFF) în settings + `.env.example` + doc minim.
+- [x] Activează publish persist doar când sunt ON toate: publish flag + core-writes + derived-writes; dacă prerechizitele lipsesc, păstrează comportamentul actual + log scurt.
+- [x] Extinde agregatul Mongo cu `publish_history` menținând compatibilitatea documentelor vechi fără acest câmp.
+- [x] Implementează `publish_to_channel(...)` Mongo-first write snapshot (fallback local doar la miss) când flag-ul este activ.
+- [x] Menține ordinea safe: resolve snapshot -> next_publish_id -> external publish (single call) -> append publish_history -> upsert Mongo -> local mirror compat.
+- [x] Tratează cazul critic: publish extern reușit dar upsert Mongo eșuează => nu reapela publish, fără retry/outbox, returnează succes extern și actualizează `_published` local.
+- [x] Menține neschimbate endpoint-urile `/creative`, contractele API, frontend, media/S3, backfill/migrare.
+- [x] Adaugă teste focused pentru OFF/ON/prerechizite, mongo-first/fallback, ordinea apelurilor, eșecuri counter/external/upsert, non-duplicate publish, local mirror compat.
+- [x] Rulează testele țintite și completează review.
+
+## Review
+- [x] Confirm publish persist Mongo este strict feature-flagged + gated de workflow Mongo complet.
+- [x] Confirm fără schimbări pe endpoint-uri `/creative`, frontend, media_id, backfill/migrare, retry/outbox.
+
+# TODO — Creative workflow Mongo source-of-truth pentru mutații non-publish derivate (2026-03-22)
+
+- [x] Refresh workspace state și inspect explicit: `creative_workflow.py`, repository-urile creative, `api/creative.py`, `core/config.py`, și testele backend.
+- [x] Adaugă flag nou `CREATIVE_WORKFLOW_MONGO_DERIVED_WRITES_SOURCE_ENABLED` cu default OFF în settings + `.env.example` + doc minim.
+- [x] Activează write path derived doar când sunt ON ambele: `CREATIVE_WORKFLOW_MONGO_DERIVED_WRITES_SOURCE_ENABLED` și `CREATIVE_WORKFLOW_MONGO_CORE_WRITES_SOURCE_ENABLED`; dacă derived ON și core OFF, păstrează comportamentul actual + log scurt.
+- [x] Mută source-of-truth pe Mongo (feature-flagged) pentru `generate_variants`, `update_approval`, `set_performance_scores` cu snapshot de lucru (Mongo-first + fallback local doar la miss) și persist-before-local-hydrate.
+- [x] Menține fallback strict: NU fallback local la erori Mongo runtime/config/provider pentru write snapshot pe metodele derivate.
+- [x] Menține counter compatibility pentru variante alocate din Mongo (`next_variant_id`) și evită coliziuni locale.
+- [x] Evită persistențe repetate în `generate_variants` (un singur `upsert_asset` pe snapshot-ul final).
+- [x] Nu modifica design-ul deja introdus pentru `create_asset`/`add_variant`/`link_to_campaign`, nici `publish_to_channel`, `/creative`, S3/media, frontend, backfill/migrare.
+- [x] Adaugă teste focused pentru OFF/ON, gating derived+core, Mongo-first/fallback strict, erori read/upsert fără local-only success, counters, și non-duplicare shadow-write.
+- [x] Rulează testele țintite și completează review-ul.
+
+## Review
+- [x] Confirm metodele derivate folosesc Mongo source-of-truth doar când sunt active ambele flag-uri (derived + core).
+- [x] Confirm `create_asset`/`add_variant`/`link_to_campaign`, `publish_to_channel` și endpoint-urile `/creative` au rămas neschimbate ca design în acest task.
+
+# TODO — Creative workflow Mongo core writes source-of-truth for create/add_variant/link (2026-03-22)
+
+- [x] Refresh workspace state and inspect explicitly: `creative_workflow.py`, creative repositories, `/api/creative.py`, `core/config.py`, and existing backend tests.
+- [x] Add new config flag `CREATIVE_WORKFLOW_MONGO_CORE_WRITES_SOURCE_ENABLED` (default OFF) in settings, `.env.example`, and minimal config docs.
+- [x] Implement Mongo source-of-truth write path (flagged) for `create_asset`, `add_variant`, `link_to_campaign` with clear helpers:
+  - Mongo-first write snapshot resolution + local fallback where requested.
+  - Persist via `creative_assets_repository.upsert_asset(...)` before mutating local mirror/cache.
+  - Predictable failure when upsert fails (no local-only success).
+  - Keep response payloads and API contracts unchanged.
+- [x] Keep `generate_variants`, `update_approval`, `set_performance_scores` local-source-of-truth model unchanged (shadow-write best-effort only).
+- [x] Keep `publish_to_channel`, `/creative` endpoints, media/S3 flows, frontend, and backfill/migration unchanged.
+- [x] Ensure local counters remain compatible with Mongo-allocated IDs and hydrated snapshots.
+- [x] Add focused tests for OFF/ON behavior, mongo-first/fallback snapshot resolution, no local-only mutation on upsert failure, local cache hydration-after-success, counter compatibility, and shadow-write non-duplication.
+- [x] Run targeted tests and complete review notes.
+
+## Review
+- [x] Confirm only the three requested methods moved to Mongo source-of-truth when new flag ON.
+- [x] Confirm excluded methods/flows/endpoints/frontend/backfill remain unchanged.
+
+# TODO — Creative workflow Mongo-first reads for get/list (feature-flagged) (2026-03-22)
+
+- [x] Refresh workspace state and inspect creative workflow/repositories/config/API/tests.
+- [x] Add feature flag `CREATIVE_WORKFLOW_MONGO_READS_SOURCE_ENABLED` with default OFF in settings and env example.
+- [x] Implement Mongo-first `get_asset(...)` read path with local fallback and cache update.
+- [x] Implement Mongo-first `list_assets(...)` baseline + local-missing merge without duplicates/overwrite of Mongo entries.
+- [x] Keep non-publish mutations source-of-truth model unchanged (in-memory + optional shadow-write).
+- [x] Keep publish flow and `/creative` API contracts unchanged.
+- [x] Sync local counters after Mongo hydration to avoid lower-ID generation.
+- [x] Add focused tests for OFF/ON Mongo-first behavior, fallback/error cases, dedupe/priorities, and counter sync.
+- [x] Run targeted tests and document review boundaries.
+
+## Review
+- [x] Confirmed Mongo-first mode applies only to `get_asset`/`list_assets` when flag ON.
+- [x] Confirmed no mutation source-of-truth migration, no publish changes, no endpoint/frontend/backfill changes.
+
+# TODO — Creative workflow Mongo read-through / lazy hydration (feature-flagged) (2026-03-22)
+
+- [x] Refresh workspace state and inspect `creative_workflow.py`, creative repositories, `api/creative.py`, config and tests.
+- [x] Add feature flag `CREATIVE_WORKFLOW_MONGO_READ_THROUGH_ENABLED` (default OFF) in settings and env example.
+- [x] Implement local-first helper for lazy Mongo hydration (`get_by_creative_id`) without overwriting existing local assets.
+- [x] Apply read-through helper to `get_asset`, `add_variant`, `generate_variants`, `update_approval`, `link_to_campaign`, `set_performance_scores`.
+- [x] Extend `list_assets` with safe Mongo merge/hydration for missing local assets only.
+- [x] Sync local counters (`_next_asset_id`, `_next_variant_id`, `_next_link_id`) after hydration to avoid ID regressions.
+- [x] Keep behavior best-effort on Mongo errors (predictable not-found fallback, local list continues).
+- [x] Add focused tests for OFF/ON behavior, hydration reuse, local priority, mutation continuation, list merge, counter sync, and error fallback.
+- [x] Run targeted tests and capture review boundaries.
+
+## Review
+- [x] Confirmed in-memory remains source of truth; Mongo is read-through/lazy hydration only.
+- [x] Confirmed no changes to publish flow, no `/creative` contract changes, no backfill/migration, no frontend changes.
+
+# TODO — Creative workflow Mongo shadow-write integration (feature-flagged) (2026-03-22)
+
+- [x] Refresh workspace state and inspect `creative_workflow.py`, creative repositories, `api/creative.py`, config and existing tests.
+- [x] Add feature flag `CREATIVE_WORKFLOW_MONGO_SHADOW_WRITE_ENABLED` (default OFF) in settings and env example.
+- [x] Keep in-memory source of truth and wire shadow-write only for mutating methods (`create_asset`, `add_variant`, `generate_variants`, `update_approval`, `link_to_campaign`, `set_performance_scores`).
+- [x] Use `creative_counters_repository` for asset/variant/link ID allocations when flag is ON and keep local counters compatible.
+- [x] Persist aggregate snapshots via `creative_assets_repository.upsert_asset(...)` best-effort; do not fail closed on Mongo errors.
+- [x] Keep read paths and publish flow unchanged (`list_assets`, `get_asset`, `publish_to_channel`, `_published`, `_next_publish_id`, `reset`).
+- [x] Add focused tests for OFF/ON paths, counter/repo calls, non-blocking failures, counter compatibility, and unchanged creative API contracts.
+- [x] Run targeted tests and document boundaries.
+
+## Review
+- [x] Confirm no read-path migration to Mongo and no endpoint contract changes.
+- [x] Confirm no publish flow changes, no backfill/migration, and no frontend changes.
+
+# TODO — Creative workflow Mongo persistent counters foundation (2026-03-22)
+
+- [x] Refresh workspace state and inspect `creative_workflow.py`, `creative_assets_repository.py`, `mongo_provider.py`, `core/config.py`, and existing tests.
+- [x] Add a dedicated counters collection/repository with atomic `next_id(counter_name)` allocation using Mongo `find_one_and_update + $inc + upsert`.
+- [x] Add small helper methods for logical counter types used by current in-memory workflow IDs (`asset`, `variant`, `link`, `publish`).
+- [x] Keep repository runtime-safe when Mongo is missing (clear runtime error only on use).
+- [x] Add focused tests for start-at-1 behavior, increments, counter independence, helper delegation, timestamp updates, missing-config errors, and index init.
+- [x] Run targeted tests and document review boundaries.
+
+## Review
+- [x] Confirm no changes to `creative_workflow.py`.
+- [x] Confirm no `/creative` endpoint changes, no Mongo wiring in workflow, no backfill/migration, no frontend changes.
+
+# TODO — Creative workflow Mongo aggregate foundation (2026-03-22)
+
+- [x] Refresh workspace state and inspect `api/creative.py`, `services/creative_workflow.py`, `services/mongo_provider.py`, `core/config.py`, and existing repository/test patterns.
+- [x] Add a dedicated Mongo collection/repository for creative asset aggregates without changing creative service/API behavior.
+- [x] Implement minimal aggregate repository methods (`upsert_asset`, `get_by_creative_id`, `list_assets`) with predictable created/updated timestamp behavior.
+- [x] Add minimal indexes (unique creative id + client/updated list helper index) and runtime-safe missing Mongo error behavior.
+- [x] Add focused repository tests (no real Mongo) for create/get/update/list/filter/indexes/missing-config runtime errors.
+- [x] Run targeted tests and document review boundaries.
+
+## Review
+- [x] Confirm no changes to `creative_workflow_service` behavior and no `/creative` endpoint contract changes.
+- [x] Confirm no backfill/migration, no frontend changes, and no switch to `media_id` as creative primary reference.
+
+# TODO — First controlled worker integration for remote media archival (2026-03-22)
+
+- [x] Refresh workspace state and inspect exact target files (`sync_worker`, schedulers/sweepers, storage ingest services) before implementation.
+- [x] Choose exactly one real integration point in a processing worker and keep integration feature-flagged + default OFF.
+- [x] Add a flow-specific settings flag and wire a best-effort call to `StorageMediaRemoteIngestService.upload_from_url(...)` with minimal context only.
+- [x] Keep behavior unchanged with flag OFF; skip safely on missing context; log concise success/skip/failure without crashing main flow.
+- [x] Add focused tests for off/on/skip/error/success paths and settings defaults.
+- [x] Run targeted tests and document review boundaries.
+
+## Review
+- [x] Confirmed integration was added in a single worker location only (`sync_worker.py`, TikTok branch).
+- [x] Confirmed no new endpoint, no frontend changes, no creative workflow integration, no retry logic, no schema migrations.
+
+# TODO — Internal remote URL fetch + ingest helper (2026-03-22)
+
+- [x] Refresh repo state and re-audit storage ingest/init/providers/config/runner/tests before coding.
+- [x] Add dedicated `StorageMediaRemoteIngestService` with public `upload_from_url(...)` and strict delegation to `StorageMediaIngestService.upload_bytes(...)`.
+- [x] Add minimal URL guardrails (http/https only, reject localhost/loopback hostnames), bounded sync fetch with timeout/max-bytes config, and filename/mime fallback rules.
+- [x] Keep implementation isolated (no endpoint, no job wiring, no retry logic, no SSRF hardening beyond requested guards).
+- [x] Add focused tests for delegation params, guardrails, content-size protection, mime/filename inference, and error propagation.
+- [x] Run targeted backend tests and update review + lessons.
+
+## Review
+- [x] Confirm no new endpoint, no job integration, no retry logic, no full SSRF hardening, no creative/frontend changes.
+
+# TODO — Internal backend ingest helper (upload_bytes) for media storage (2026-03-22)
+
+- [x] Refresh repo state and re-audit storage init/complete/repository/providers/cleanup runner/tests before coding.
+- [x] Add dedicated `StorageMediaIngestService` with public `upload_bytes(...)` for backend internal sources only.
+- [x] Reuse existing key/filename sanitization pattern (`clients/{client_id}/{kind}/{media_id}/{sanitized_filename}`) without changing HTTP contracts.
+- [x] Implement draft -> put_object -> mark_ready flow with clear runtime errors and no rollback complexity.
+- [x] Add focused unit tests for success path, metadata persistence, source validation, and failure ordering (no S3 on draft fail / no mark_ready on put fail).
+- [x] Run targeted backend tests and update review + lessons.
+
+## Review
+- [x] Confirm no new endpoint, no integration into existing jobs, no URL-download, no creative/frontend changes.
+
+# TODO — Storage media cleanup batch for delete_requested records (2026-03-22)
+
+- [x] Refresh workspace state and re-audit storage repository/models/providers/delete/read/access plus tests.
+- [x] Add minimal repository methods for cleanup batch selection and mark_purged persistence.
+- [x] Implement `StorageMediaCleanupService.run_batch(limit=...)` with S3 delete_object + per-item outcomes.
+- [x] Enforce cleanup scope: process only `delete_requested`, deterministic ordering, no endpoint/scheduler wiring, no hard delete.
+- [x] Add focused tests for ordering, S3 delete params (incl version_id), missing-object idempotency, skips/failures, and runtime errors.
+- [x] Run targeted backend tests and update review + lessons.
+
+## Review
+- [x] Confirm no new cleanup endpoint, no scheduler wiring, no hard delete, no creative/frontend changes.
+
+# TODO — Storage media soft delete endpoint + service (2026-03-22)
+
+- [x] Refresh repo state and re-audit storage router/repository/models/read/access/config/tests before coding.
+- [x] Add dedicated soft-delete service (Mongo fetch + ownership/status checks + repository soft_delete call + runtime-safe errors).
+- [x] Add `DELETE /storage/media/{media_id}` endpoint with `client_id` query param and focused response model.
+- [x] Keep behavior coherent: ready/draft deletable, delete_requested idempotent, purged/not-found/mismatch => 404, no S3 calls.
+- [x] Add focused unit tests for service and router, including runtime Mongo error and explicit no-S3 behavior.
+- [x] Run targeted backend tests and update review + lessons.
+
+## Review
+- [x] Confirm no cleanup/hard-delete/S3-delete/upload-cron/creative/frontend changes.
+
+# TODO — Storage media access URL endpoint (presigned GET) after unsatisfied review (2026-03-22)
+
+- [x] Refresh repo state and re-audit storage router/read/upload/provider/config modules plus existing tests.
+- [x] Add a dedicated service for media access-url generation (Mongo lookup, ownership/status validation, S3 presign GET params).
+- [x] Add `GET /storage/media/{media_id}/access-url` endpoint + response model + `client_id`/`disposition` query handling.
+- [x] Keep behavior strict: only `ready`, 404 for missing/mismatch/purged, 409 for invalid state/storage incomplete, 503 for provider/config unavailable.
+- [x] Add focused unit tests for disposition/content headers, payload mapping, and error scenarios without real AWS/Mongo.
+- [x] Run targeted backend tests and update review + lessons.
+
+## Review
+- [x] Confirm no delete/cleanup/upload-cron/creative/frontend changes were implemented.
+
+# TODO — Rework storage media read APIs after unsatisfied review (2026-03-22)
+
+- [x] Refresh repo state and re-audit existing storage read/router/repository/tests against exact scope.
+- [x] Apply minimal fixes so list/detail contracts, status defaults, and error mapping are explicit and predictable.
+- [x] Add/adjust focused tests for ordering, filters, pagination, detail ownership/not-found, purged handling, and runtime Mongo unavailability.
+- [x] Run targeted backend tests for storage read flow and related storage foundation suites.
+- [x] Update review notes + lessons with this correction pattern.
+
+## Review
+- [x] Confirm no download/view URL, delete, or cleanup job was implemented.
+- [x] Confirm no creative workflow integration and no frontend changes.
+
+# TODO — Storage media read APIs: list + detail from Mongo metadata (2026-03-22)
+
+- [x] Re-sync workspace and re-audit storage router/repository/services before implementation.
+- [x] Confirm scope boundaries (read-only APIs, no download/delete/cleanup/creative/frontend changes).
+- [x] Extend media metadata repository minimally for list + count with client/kind/status filters and limit/offset.
+- [x] Add dedicated media-read service (separate from router) for list/detail ownership checks and runtime-safe error mapping.
+- [x] Add GET endpoints `/storage/media` and `/storage/media/{media_id}` with clear response models.
+- [x] Enforce deterministic list ordering (created_at desc), limit defaults/max, and strict client scoping.
+- [x] Implement default status rule for list (exclude purged and delete_requested when status filter is omitted).
+- [x] Add focused tests for repository/service/endpoint list+detail behavior and error cases.
+- [x] Run targeted backend tests and update tasks docs/lessons.
+
+## Review
+- [x] Confirm no download/view URL, delete, or cleanup job added.
+- [x] Confirm no creative workflow integration and no frontend changes.
+- [x] Confirm patch remains isolated to storage read flow.
+
+# TODO — Storage upload complete backend flow: verify S3 object and mark ready (2026-03-22)
+
+- [x] Re-sync workspace and re-read AGENTS + relevant storage/media/provider/config files before coding.
+- [x] Audit current upload-init service, storage router, and media repository to integrate complete flow with minimal changes.
+- [x] Add dedicated upload-complete service for draft fetch/validation, S3 `head_object`, and mark-ready persistence.
+- [x] Add `POST /storage/uploads/complete` endpoint with explicit request/response models and runtime-safe error mapping.
+- [x] Keep complete flow strict on `media_id` + draft storage info (ignore client-provided bucket/key).
+- [x] Add guardrails for missing record, client mismatch, invalid status, missing storage info, missing S3 object, and idempotent ready behavior.
+- [x] Add focused unit tests for service + endpoint behavior (no real AWS/Mongo calls).
+- [x] Run targeted backend tests and update tasks docs/lessons.
+
+## Review
+- [x] Confirm no list/delete/download/cleanup endpoints added.
+- [x] Confirm no creative workflow integration and no frontend changes.
+- [x] Confirm no refactor outside direct storage complete scope.
+
+# TODO — Storage upload init backend flow: draft + presigned URL (2026-03-22)
+
+- [x] Re-sync workspace and re-read AGENTS + storage/media/provider/config files before implementation.
+- [x] Audit current storage router and media metadata repository/provider integration points.
+- [x] Add dedicated upload-init service (separate from router) to validate input, build S3 key, create Mongo draft, and generate presigned PUT URL.
+- [x] Add `POST /storage/uploads/init` endpoint with explicit request/response models and runtime error mapping.
+- [x] Ensure media indexes are initialized safely before first real upload-init use.
+- [x] Handle missing S3/Mongo config/providers with clear runtime 503 errors (no import/startup crash).
+- [x] Add focused tests for service + endpoint payloads, key format, sanitization, presigned params, and missing-config errors.
+- [x] Run targeted backend tests and update task docs/lessons.
+
+## Review
+- [x] Confirm no upload completion endpoint implemented.
+- [x] Confirm no S3 object verification (`head_object`) implemented.
+- [x] Confirm no list/delete/download endpoints and no creative/frontend integration changes.
+
+# TODO — Mongo media metadata foundation: model + repository + indexes (2026-03-22)
+
+- [x] Re-sync workspace and re-read AGENTS + target backend files before coding.
+- [x] Audit current provider/config/storage structure and choose coherent placement for media metadata model/repository.
+- [x] Add media metadata document model + statuses for Mongo collection foundation (no API wiring).
+- [x] Add Mongo repository methods: create draft, get by id, get by storage, mark ready, soft delete, normalization helpers.
+- [x] Add index initializer for unique storage key + list/filter + cleanup indexes.
+- [x] Ensure repository fails clearly at runtime when Mongo config is missing, without import-time crashes.
+- [x] Add focused unit tests (fakes/mocks, no real Mongo) for repository operations and index creation.
+- [x] Run targeted backend tests and update task docs/lessons.
+
+## Review
+- [x] Confirm no new endpoints/presigned/upload flow/UI changes.
+- [x] Confirm no creative workflow integration yet.
+- [x] Confirm implementation remains isolated and extensible for next tasks.
+
+# TODO — Backend foundation minimal: S3 + Mongo providers/config only (2026-03-22)
+
+- [x] Update workspace state and re-read AGENTS + backend files listed in task scope before coding.
+- [x] Audit existing settings/config style and service module patterns for reusable providers.
+- [x] Add minimal backend dependencies for AWS S3 client + synchronous MongoDB client.
+- [x] Extend backend settings with S3/Mongo env vars using safe defaults that do not break startup when unset.
+- [x] Add reusable provider modules for S3 client and Mongo client/database access (no business logic, no endpoint changes).
+- [x] Update `.env.example`/config documentation for new S3 and Mongo variables.
+- [x] Add focused tests for settings loading and provider factories (mocked, no real network).
+- [x] Run targeted backend tests and confirm existing API contracts remain unchanged.
+
+## Review
+- [x] Confirm no new endpoints/routes and no creative workflow/API contract changes.
+- [x] Confirm no upload/presigned flow implementation and no media repository/collections added.
+- [x] Confirm Postgres path remains intact and startup remains resilient when S3/Mongo env vars are absent.
+
+# TODO — TikTok campaign/ad-group persistence follow-up: campaign_name JSON + upsert overwrite guarantees (2026-03-21)
+
+- [x] Re-sync workspace and re-read AGENTS instructions before implementation.
+- [x] Audit `tiktok_ads.py` and `platform_entity_store.py` for campaign/ad-group JSON packing and ON CONFLICT overwrite behavior.
+- [x] Fix `_upsert_campaign_rows` to always include `campaign_name` in `extra_metrics.tiktok_ads` payloads (including test-mode persistence path).
+- [x] Fix ad-group fact payload mapping to always pass resolved `campaign_id` into `ad_group_performance_reports`.
+- [x] Verify `platform_entity_store.py` ON CONFLICT clauses overwrite `campaign_id`/`name`/`status` with `EXCLUDED` values (no COALESCE preference of stale NULLs).
+- [x] Run targeted backend tests for TikTok/entity upsert paths.
+
+## Review
+- [x] Confirm campaign facts now carry `extra_metrics.tiktok_ads.campaign_name` for persisted rows.
+- [x] Confirm ad-group facts map `campaign_id` into DB insert payloads with fallback from `extra_metrics` when needed.
+- [x] Confirm platform entity upsert SQL uses direct `EXCLUDED` assignments for name/status/campaign_id overwrite semantics.
+
 # TODO — TikTok metadata data-flow fix: propagate names/campaign_id into facts + entity upserts (2026-03-21)
 
 - [x] Audit current TikTok dataclasses/parsers/upsert payloads for campaign/ad-group name propagation and ad-group campaign_id mapping.
@@ -6215,3 +6521,20 @@ Plan confirmed: backend-first TikTok metadata + tests, minimal frontend test-onl
 - [x] Confirmed both dropdown lists include the requested values and are alphabetically ordered.
 - [x] Confirmed verification command(s) passed.
 - [ ] Confirmed commit + PR metadata creation completed.
+
+# TODO — Process alignment follow-through after AGENTS reminder (2026-03-22)
+
+- [x] Re-read AGENTS instructions and confirm mandatory workflow order for this turn.
+- [x] Record plan-first/check-in/review notes in `tasks/todo.md` before implementation.
+- [x] Update `tasks/lessons.md` with this correction pattern from user reminder.
+- [x] Run at least one verification command before finalization.
+- [x] Commit changes on current branch.
+- [x] Create PR metadata with `make_pr` immediately after commit.
+
+## Check-in before execution
+Plan verified: keep this turn minimal and process-focused, touching only `tasks/todo.md` and `tasks/lessons.md` to align with AGENTS workflow reminder.
+
+## Review
+- [x] Confirmed only process-tracking docs were updated.
+- [x] Confirmed verification command(s) ran before commit.
+- [x] Confirmed commit and PR metadata were completed in the same turn.
