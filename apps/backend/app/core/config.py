@@ -78,6 +78,7 @@ class Settings:
     mailgun_from_name: str
     mailgun_reply_to: str
     mailgun_enabled: bool
+    creative_workflow_mongo_shadow_write_enabled: bool
 
 
 def _get_env(name: str, default: str | None = None, required: bool = False) -> str:
@@ -214,4 +215,5 @@ def load_settings() -> Settings:
         mailgun_from_name=_get_env("MAILGUN_FROM_NAME", default=""),
         mailgun_reply_to=_get_env("MAILGUN_REPLY_TO", default=""),
         mailgun_enabled=_parse_bool_env("MAILGUN_ENABLED", default=True),
+        creative_workflow_mongo_shadow_write_enabled=_parse_bool_env("CREATIVE_WORKFLOW_MONGO_SHADOW_WRITE_ENABLED", default=False),
     )

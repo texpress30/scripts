@@ -12,6 +12,7 @@ def test_load_settings_storage_foundation_defaults(monkeypatch):
     monkeypatch.delenv("STORAGE_MEDIA_REMOTE_FETCH_TIMEOUT_SECONDS", raising=False)
     monkeypatch.delenv("STORAGE_MEDIA_REMOTE_FETCH_MAX_BYTES", raising=False)
     monkeypatch.delenv("STORAGE_MEDIA_SYNC_WORKER_REMOTE_INGEST_ENABLED", raising=False)
+    monkeypatch.delenv("CREATIVE_WORKFLOW_MONGO_SHADOW_WRITE_ENABLED", raising=False)
     monkeypatch.delenv("MONGO_DATABASE", raising=False)
 
     settings = load_settings()
@@ -24,6 +25,7 @@ def test_load_settings_storage_foundation_defaults(monkeypatch):
     assert settings.storage_media_remote_fetch_timeout_seconds == 15
     assert settings.storage_media_remote_fetch_max_bytes == 10485760
     assert settings.storage_media_sync_worker_remote_ingest_enabled is False
+    assert settings.creative_workflow_mongo_shadow_write_enabled is False
     assert settings.mongo_uri == ""
     assert settings.mongo_database == ""
 
@@ -39,6 +41,7 @@ def test_load_settings_storage_foundation_custom_values(monkeypatch):
     monkeypatch.setenv("STORAGE_MEDIA_REMOTE_FETCH_TIMEOUT_SECONDS", "20")
     monkeypatch.setenv("STORAGE_MEDIA_REMOTE_FETCH_MAX_BYTES", "2048")
     monkeypatch.setenv("STORAGE_MEDIA_SYNC_WORKER_REMOTE_INGEST_ENABLED", "true")
+    monkeypatch.setenv("CREATIVE_WORKFLOW_MONGO_SHADOW_WRITE_ENABLED", "true")
     monkeypatch.setenv("MONGO_DATABASE", "mcc_assets")
 
     settings = load_settings()
@@ -51,5 +54,6 @@ def test_load_settings_storage_foundation_custom_values(monkeypatch):
     assert settings.storage_media_remote_fetch_timeout_seconds == 20
     assert settings.storage_media_remote_fetch_max_bytes == 2048
     assert settings.storage_media_sync_worker_remote_ingest_enabled is True
+    assert settings.creative_workflow_mongo_shadow_write_enabled is True
     assert settings.mongo_uri == "mongodb://localhost:27017"
     assert settings.mongo_database == "mcc_assets"

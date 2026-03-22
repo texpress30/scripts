@@ -1,3 +1,18 @@
+# TODO — Creative workflow Mongo shadow-write integration (feature-flagged) (2026-03-22)
+
+- [x] Refresh workspace state and inspect `creative_workflow.py`, creative repositories, `api/creative.py`, config and existing tests.
+- [x] Add feature flag `CREATIVE_WORKFLOW_MONGO_SHADOW_WRITE_ENABLED` (default OFF) in settings and env example.
+- [x] Keep in-memory source of truth and wire shadow-write only for mutating methods (`create_asset`, `add_variant`, `generate_variants`, `update_approval`, `link_to_campaign`, `set_performance_scores`).
+- [x] Use `creative_counters_repository` for asset/variant/link ID allocations when flag is ON and keep local counters compatible.
+- [x] Persist aggregate snapshots via `creative_assets_repository.upsert_asset(...)` best-effort; do not fail closed on Mongo errors.
+- [x] Keep read paths and publish flow unchanged (`list_assets`, `get_asset`, `publish_to_channel`, `_published`, `_next_publish_id`, `reset`).
+- [x] Add focused tests for OFF/ON paths, counter/repo calls, non-blocking failures, counter compatibility, and unchanged creative API contracts.
+- [x] Run targeted tests and document boundaries.
+
+## Review
+- [x] Confirm no read-path migration to Mongo and no endpoint contract changes.
+- [x] Confirm no publish flow changes, no backfill/migration, and no frontend changes.
+
 # TODO — Creative workflow Mongo persistent counters foundation (2026-03-22)
 
 - [x] Refresh workspace state and inspect `creative_workflow.py`, `creative_assets_repository.py`, `mongo_provider.py`, `core/config.py`, and existing tests.
