@@ -1,3 +1,19 @@
+# TODO — Creative workflow Mongo read-through / lazy hydration (feature-flagged) (2026-03-22)
+
+- [x] Refresh workspace state and inspect `creative_workflow.py`, creative repositories, `api/creative.py`, config and tests.
+- [x] Add feature flag `CREATIVE_WORKFLOW_MONGO_READ_THROUGH_ENABLED` (default OFF) in settings and env example.
+- [x] Implement local-first helper for lazy Mongo hydration (`get_by_creative_id`) without overwriting existing local assets.
+- [x] Apply read-through helper to `get_asset`, `add_variant`, `generate_variants`, `update_approval`, `link_to_campaign`, `set_performance_scores`.
+- [x] Extend `list_assets` with safe Mongo merge/hydration for missing local assets only.
+- [x] Sync local counters (`_next_asset_id`, `_next_variant_id`, `_next_link_id`) after hydration to avoid ID regressions.
+- [x] Keep behavior best-effort on Mongo errors (predictable not-found fallback, local list continues).
+- [x] Add focused tests for OFF/ON behavior, hydration reuse, local priority, mutation continuation, list merge, counter sync, and error fallback.
+- [x] Run targeted tests and capture review boundaries.
+
+## Review
+- [x] Confirmed in-memory remains source of truth; Mongo is read-through/lazy hydration only.
+- [x] Confirmed no changes to publish flow, no `/creative` contract changes, no backfill/migration, no frontend changes.
+
 # TODO — Creative workflow Mongo shadow-write integration (feature-flagged) (2026-03-22)
 
 - [x] Refresh workspace state and inspect `creative_workflow.py`, creative repositories, `api/creative.py`, config and existing tests.

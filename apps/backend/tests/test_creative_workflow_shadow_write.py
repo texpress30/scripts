@@ -7,11 +7,19 @@ import pytest
 from app.services import creative_workflow as workflow_module
 
 
-def _new_service_with_flag(monkeypatch, *, enabled: bool) -> workflow_module.CreativeWorkflowService:
+def _new_service_with_flag(
+    monkeypatch,
+    *,
+    enabled: bool,
+    read_through_enabled: bool = False,
+) -> workflow_module.CreativeWorkflowService:
     monkeypatch.setattr(
         workflow_module,
         "load_settings",
-        lambda: SimpleNamespace(creative_workflow_mongo_shadow_write_enabled=enabled),
+        lambda: SimpleNamespace(
+            creative_workflow_mongo_shadow_write_enabled=enabled,
+            creative_workflow_mongo_read_through_enabled=read_through_enabled,
+        ),
     )
     return workflow_module.CreativeWorkflowService()
 
@@ -170,3 +178,139 @@ def test_publish_to_channel_remains_unchanged(monkeypatch):
     assert called["publish"] == 1
     assert published["native_object_type"] == "ad_creative"
     assert service._next_publish_id == original_next_publish_id + 1
+
+
+def _mongo_asset_payload(*, asset_id: int, client_id: int = 55) -> dict[str, object]:
+    return {
+        "id": asset_id,
+        "creative_id": asset_id,
+        "client_id": client_id,
+        "name": f"Mongo Asset {asset_id}",
+        "metadata": {
+            "format": "image",
+            "dimensions": "1080x1080",
+            "objective_fit": "traffic",
+            "platform_fit": ["meta"],
+            "language": "ro",
+            "brand_tags": ["mongo"],
+            "legal_status": "pending",
+            "approval_status": "draft",
+        },
+        "creative_variants": [{"id": 200, "headline": "H", "body": "B", "cta": "CTA", "media": "m"}],
+        "performance_scores": {"meta": 10.0},
+        "campaign_links": [{"id": 300, "campaign_id": 1, "ad_set_id": 2}],
+    }
+
+
+def test_read_through_off_does_not_call_mongo_repository(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, read_through_enabled=False)
+    calls = {"get": 0}
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "get_by_creative_id", lambda _asset_id: calls.__setitem__("get", calls["get"] + 1))
+
+    with pytest.raises(ValueError):
+        service.get_asset(999)
+
+    assert calls["get"] == 0
+
+
+def test_get_asset_read_through_hydrates_from_mongo_and_reuses_local(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, read_through_enabled=True)
+    calls = {"get": 0}
+
+    def _get_from_mongo(asset_id: int):
+        calls["get"] += 1
+        return _mongo_asset_payload(asset_id=asset_id)
+
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "get_by_creative_id", _get_from_mongo)
+    first = service.get_asset(123)
+    second = service.get_asset(123)
+
+    assert first["id"] == 123
+    assert second["id"] == 123
+    assert calls["get"] == 1
+
+
+def test_local_asset_has_priority_over_mongo(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, read_through_enabled=True)
+    local = _create_asset(service)
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "get_by_creative_id", lambda _asset_id: _mongo_asset_payload(asset_id=int(local["id"]), client_id=999))
+
+    resolved = service.get_asset(int(local["id"]))
+
+    assert resolved["client_id"] == 12
+    assert resolved["name"] == "Creative 1"
+
+
+def test_mutations_continue_on_hydrated_asset(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=True, read_through_enabled=True)
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "get_by_creative_id", lambda asset_id: _mongo_asset_payload(asset_id=asset_id))
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "upsert_asset", lambda payload: payload)
+    monkeypatch.setattr(workflow_module.creative_counters_repository, "next_variant_id", lambda: 901)
+    monkeypatch.setattr(workflow_module.creative_counters_repository, "next_link_id", lambda: 902)
+
+    variant = service.add_variant(321, "H2", "B2", "CTA2", "media2")
+    generated = service.generate_variants(321, count=1)
+    updated = service.update_approval(321, legal_status="approved", approval_status="approved")
+    link = service.link_to_campaign(321, campaign_id=10, ad_set_id=20)
+    perf = service.set_performance_scores(321, {"meta": 22.2})
+
+    assert variant["id"] == 901
+    assert len(generated) == 1
+    assert updated["metadata"]["approval_status"] == "approved"
+    assert link["id"] == 902
+    assert perf["performance_scores"]["meta"] == 22.2
+
+
+def test_list_assets_merges_mongo_without_overwriting_or_duplicates(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, read_through_enabled=True)
+    local = _create_asset(service)
+
+    mongo_payloads = [
+        _mongo_asset_payload(asset_id=int(local["id"]), client_id=999),
+        _mongo_asset_payload(asset_id=444, client_id=12),
+    ]
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "list_assets", lambda **kwargs: mongo_payloads)
+
+    items = service.list_assets(client_id=12)
+    ids = sorted(int(item["id"]) for item in items)
+
+    assert ids == [int(local["id"]), 444]
+    local_item = next(item for item in items if int(item["id"]) == int(local["id"]))
+    assert local_item["name"] == "Creative 1"
+
+
+def test_hydration_syncs_local_counters(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, read_through_enabled=True)
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "get_by_creative_id", lambda asset_id: _mongo_asset_payload(asset_id=asset_id))
+    hydrated = service.get_asset(700)
+    next_local = _create_asset(service)
+
+    assert hydrated["id"] == 700
+    assert next_local["id"] >= 701
+
+
+def test_list_assets_continues_when_mongo_read_fails(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, read_through_enabled=True)
+    local = _create_asset(service)
+    monkeypatch.setattr(
+        workflow_module.creative_assets_repository,
+        "list_assets",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("mongo down")),
+    )
+
+    items = service.list_assets(client_id=12)
+
+    assert len(items) == 1
+    assert items[0]["id"] == local["id"]
+
+
+def test_get_asset_on_missing_local_with_mongo_error_remains_predictable(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, read_through_enabled=True)
+    monkeypatch.setattr(
+        workflow_module.creative_assets_repository,
+        "get_by_creative_id",
+        lambda _asset_id: (_ for _ in ()).throw(RuntimeError("mongo down")),
+    )
+
+    with pytest.raises(ValueError):
+        service.get_asset(888)

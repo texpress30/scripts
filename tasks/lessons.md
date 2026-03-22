@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-22: Pentru read-through incremental în creative workflow, implementează helper local-first + lazy hydration din Mongo doar pentru lipsuri, fără overwrite local și cu fallback predictibil pe erori (`not found`/list local).
+
 - 2026-03-22: Pentru wiring incremental la Mongo în creative workflow, păstrează in-memory ca source of truth și aplică shadow-write best-effort doar pe mutații, cu flag OFF by default și fără mutarea read path-ului/publish flow în același task.
 
 - 2026-03-22: Pentru ID-uri persistente cerute pe creative workflow, livrează întâi un repository Mongo separat de counters (atomic `find_one_and_update + $inc + upsert`), fără modificări în `creative_workflow.py` sau `/creative` până la taskul de wiring.
