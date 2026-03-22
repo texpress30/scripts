@@ -1,3 +1,15 @@
+# TODO — Internal backend ingest helper (upload_bytes) for media storage (2026-03-22)
+
+- [x] Refresh repo state and re-audit storage init/complete/repository/providers/cleanup runner/tests before coding.
+- [x] Add dedicated `StorageMediaIngestService` with public `upload_bytes(...)` for backend internal sources only.
+- [x] Reuse existing key/filename sanitization pattern (`clients/{client_id}/{kind}/{media_id}/{sanitized_filename}`) without changing HTTP contracts.
+- [x] Implement draft -> put_object -> mark_ready flow with clear runtime errors and no rollback complexity.
+- [x] Add focused unit tests for success path, metadata persistence, source validation, and failure ordering (no S3 on draft fail / no mark_ready on put fail).
+- [x] Run targeted backend tests and update review + lessons.
+
+## Review
+- [x] Confirm no new endpoint, no integration into existing jobs, no URL-download, no creative/frontend changes.
+
 # TODO — Storage media cleanup batch for delete_requested records (2026-03-22)
 
 - [x] Refresh workspace state and re-audit storage repository/models/providers/delete/read/access plus tests.
