@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -13,6 +14,7 @@ from app.services.storage_media_access import StorageMediaAccessError, storage_m
 from app.services.storage_media_delete import StorageMediaDeleteError, storage_media_delete_service
 
 router = APIRouter(prefix="/storage", tags=["storage"])
+logger = logging.getLogger(__name__)
 
 
 class StorageUsageItem(BaseModel):
@@ -160,10 +162,29 @@ def init_direct_upload(
             metadata=payload.metadata,
         )
     except StorageUploadInitError as exc:
+        logger.warning(
+            "storage_upload_init_error client_id=%s kind=%s original_filename=%s detail=%s",
+            payload.client_id,
+            payload.kind,
+            payload.original_filename,
+            str(exc),
+        )
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except RuntimeError as exc:
+        logger.exception(
+            "storage_upload_init_runtime_error client_id=%s kind=%s original_filename=%s",
+            payload.client_id,
+            payload.kind,
+            payload.original_filename,
+        )
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
+        logger.exception(
+            "storage_upload_init_unexpected_error client_id=%s kind=%s original_filename=%s",
+            payload.client_id,
+            payload.kind,
+            payload.original_filename,
+        )
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to initialize upload") from exc
     return StorageUploadInitResponse(**response_payload)
 

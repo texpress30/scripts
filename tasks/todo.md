@@ -6604,14 +6604,19 @@ Plan verificat: modificări strict în profile/settings + helper storage shared 
 
 # TODO — Root-cause fix pentru POST /storage/uploads/init generic 500 (2026-03-22)
 
-- [ ] Reîncarc workspace-ul și inspectez explicit: `api/storage.py`, `storage_upload_init.py`, `media_metadata_repository.py`, `mongo_provider.py`, `s3_provider.py`, `core/config.py`, teste storage/profile.
-- [ ] Reproduc local flow-ul `POST /storage/uploads/init` și identific excepția exactă care ajunge în catch-all „Failed to initialize upload”.
-- [ ] Repar cauza reală în path-ul storage init (fără workaround superficial) și păstrez patch-ul minim.
-- [ ] Îmbunătățesc observabilitatea în `api/storage.py` pentru init upload (log exception reală + context util).
-- [ ] Clarific mapping-ul excepțiilor previzibile către `StorageUploadInitError` / `RuntimeError`, reducând generic 500 netransparent.
-- [ ] Adaug/actualizez teste focused pentru success și scenariul fost generic 500.
-- [ ] Rulez teste țintite și completez review.
-- [ ] Commit + make_pr în același turn.
+- [x] Reîncarc workspace-ul și inspectez explicit: `api/storage.py`, `storage_upload_init.py`, `media_metadata_repository.py`, `mongo_provider.py`, `s3_provider.py`, `core/config.py`, teste storage/profile.
+- [x] Reproduc local flow-ul `POST /storage/uploads/init` și identific excepția exactă care ajunge în catch-all „Failed to initialize upload”.
+- [x] Repar cauza reală în path-ul storage init (fără workaround superficial) și păstrez patch-ul minim.
+- [x] Îmbunătățesc observabilitatea în `api/storage.py` pentru init upload (log exception reală + context util).
+- [x] Clarific mapping-ul excepțiilor previzibile către `StorageUploadInitError` / `RuntimeError`, reducând generic 500 netransparent.
+- [x] Adaug/actualizez teste focused pentru success și scenariul fost generic 500.
+- [x] Rulez teste țintite și completez review.
+- [x] Commit + make_pr în același turn.
 
 ## Check-in before execution
 Plan verificat: focus strict pe backend storage init + logging/error mapping, fără schimbări în Creative UI/publish/refactor mare.
+
+## Review
+- [x] Root cause confirmat: excepții ne-mapate din `initialize_indexes()`/`create_draft()` (ex. erori Mongo runtime) ajungeau în catch-all API și produceau 500 generic fără context util în logs.
+- [x] Fix minim: mapare explicită în `storage_upload_init_service` la `RuntimeError` + logging contextual în router pentru init upload.
+- [x] Scope păstrat: fără modificări Creative UI/publish flow/refactor mare storage.

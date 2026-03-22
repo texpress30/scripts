@@ -88,3 +88,47 @@ def test_init_upload_missing_s3_config_returns_runtime_error(monkeypatch):
 def test_sanitize_filename_fallback():
     assert service_module.sanitize_filename("  ") == "file"
     assert service_module.sanitize_filename("invoice 2026#.pdf") == "invoice_2026_.pdf"
+
+
+def test_init_upload_maps_index_initialization_failure_to_runtime_error(monkeypatch):
+    class FakeRepository:
+        def initialize_indexes(self):
+            raise Exception("mongo timeout")
+
+    monkeypatch.setattr(service_module, "load_settings", lambda: SimpleNamespace(storage_s3_bucket="media-bucket", storage_s3_region="eu-central-1"))
+    monkeypatch.setattr(service_module, "media_metadata_repository", FakeRepository())
+
+    service = service_module.StorageUploadInitService()
+    with pytest.raises(RuntimeError) as exc:
+        service.init_upload(
+            client_id=1,
+            kind="image",
+            original_filename="logo.png",
+            mime_type="image/png",
+        )
+
+    assert "Storage metadata repository is unavailable" in str(exc.value)
+
+
+def test_init_upload_maps_create_draft_failure_to_runtime_error(monkeypatch):
+    class FakeRepository:
+        def initialize_indexes(self):
+            return None
+
+        def create_draft(self, **_kwargs):
+            raise Exception("insert failed")
+
+    monkeypatch.setattr(service_module, "load_settings", lambda: SimpleNamespace(storage_s3_bucket="media-bucket", storage_s3_region="eu-central-1"))
+    monkeypatch.setattr(service_module, "media_metadata_repository", FakeRepository())
+    monkeypatch.setattr(service_module, "new_media_id", lambda: "media123")
+
+    service = service_module.StorageUploadInitService()
+    with pytest.raises(RuntimeError) as exc:
+        service.init_upload(
+            client_id=1,
+            kind="image",
+            original_filename="logo.png",
+            mime_type="image/png",
+        )
+
+    assert "Storage metadata draft creation failed" in str(exc.value)

@@ -76,7 +76,12 @@ class StorageUploadInitService:
     ) -> dict[str, Any]:
         self._validate(kind=kind, original_filename=original_filename, mime_type=mime_type)
         bucket, region = self._require_storage_config()
-        self._ensure_indexes()
+        try:
+            self._ensure_indexes()
+        except (StorageUploadInitError, RuntimeError):
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError("Storage metadata repository is unavailable for upload initialization.") from exc
 
         media_id = new_media_id()
         storage_key = self.build_storage_key(
@@ -86,18 +91,23 @@ class StorageUploadInitService:
             original_filename=original_filename,
         )
 
-        draft = media_metadata_repository.create_draft(
-            media_id=media_id,
-            client_id=int(client_id),
-            kind=kind,
-            source="user_upload",
-            original_filename=original_filename,
-            mime_type=mime_type,
-            size_bytes=size_bytes,
-            metadata=metadata,
-            storage_key=storage_key,
-            storage_bucket=bucket,
-        )
+        try:
+            draft = media_metadata_repository.create_draft(
+                media_id=media_id,
+                client_id=int(client_id),
+                kind=kind,
+                source="user_upload",
+                original_filename=original_filename,
+                mime_type=mime_type,
+                size_bytes=size_bytes,
+                metadata=metadata,
+                storage_key=storage_key,
+                storage_bucket=bucket,
+            )
+        except (StorageUploadInitError, RuntimeError):
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError("Storage metadata draft creation failed for upload initialization.") from exc
 
         try:
             s3_client = get_s3_client()

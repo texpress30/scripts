@@ -542,3 +542,4 @@
 - 2026-03-22: Pentru migrare incrementală logo profile la storage, înlocuiesc strict fluxul FileReader/dataURL cu helper reutilizabil init->upload->complete și persist `logo_media_id` + fallback preview robust în backend, fără delete storage/backfill sau extinderi Creative UI.
 
 - 2026-03-22: După orice corecție de proces din partea userului, verific imediat AGENTS.md, aliniez workflow-ul (plan/check-in/track/review) și actualizez `tasks/lessons.md` în același turn.
+- 2026-03-22: Pentru buguri storage `/uploads/init` cu 500 generic, investighez mai întâi excepția reală din path-ul `initialize_indexes/create_draft`, mapez predictibil la RuntimeError/StorageUploadInitError și adaug logging contextual în router (client_id/kind/original_filename) înainte de a atinge UI.

@@ -140,6 +140,48 @@ def test_storage_upload_init_endpoint_maps_runtime_unavailable(monkeypatch):
     assert getattr(exc.value, "status_code", None) == 503
 
 
+def test_storage_upload_init_endpoint_logs_and_maps_runtime_error(monkeypatch):
+    _install_fake_fastapi_module()
+    _install_fake_pydantic_module()
+    from app.api import storage as storage_api
+
+    monkeypatch.setattr(storage_api, "enforce_action_scope", lambda **_kwargs: None)
+    monkeypatch.setattr(storage_api, "enforce_agency_navigation_access", lambda **_kwargs: None)
+
+    logged: list[tuple[str, tuple[object, ...]]] = []
+
+    class _FakeLogger:
+        def warning(self, *_args, **_kwargs):
+            return None
+
+        def exception(self, message, *args, **_kwargs):
+            logged.append((message, args))
+
+    monkeypatch.setattr(storage_api, "logger", _FakeLogger())
+    monkeypatch.setattr(
+        storage_api.storage_upload_init_service,
+        "init_upload",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("Storage metadata repository is unavailable for upload initialization.")),
+    )
+
+    with pytest.raises(Exception) as exc:
+        storage_api.init_direct_upload(
+            payload=storage_api.StorageUploadInitRequest(
+                client_id=123,
+                kind="image",
+                original_filename="logo.png",
+                mime_type="image/png",
+            ),
+            user=_admin_user(),
+        )
+
+    assert getattr(exc.value, "status_code", None) == 503
+    assert "Storage metadata repository is unavailable for upload initialization." in str(getattr(exc.value, "detail", ""))
+    assert logged
+    assert logged[0][0] == "storage_upload_init_runtime_error client_id=%s kind=%s original_filename=%s"
+    assert logged[0][1] == (123, "image", "logo.png")
+
+
 def test_storage_upload_complete_endpoint_returns_payload(monkeypatch):
     _install_fake_fastapi_module()
     _install_fake_pydantic_module()
