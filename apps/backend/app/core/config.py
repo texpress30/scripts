@@ -41,6 +41,12 @@ class Settings:
     bigquery_project_id: str
     database_url: str
     redis_url: str
+    storage_s3_bucket: str
+    storage_s3_region: str
+    storage_s3_endpoint_url: str
+    storage_s3_presigned_ttl_seconds: int
+    mongo_uri: str
+    mongo_database: str
     cors_origins: tuple[str, ...]
     cors_origin_regex: str | None
     ff_tiktok_integration: bool
@@ -167,6 +173,12 @@ def load_settings() -> Settings:
         bigquery_project_id=_get_env("BIGQUERY_PROJECT_ID", default=""),
         database_url=_get_env("DATABASE_URL", default="postgresql://postgres:postgres@localhost:5432/mcc"),
         redis_url=_get_env("REDIS_URL", default="redis://localhost:6379/0"),
+        storage_s3_bucket=_get_env("STORAGE_S3_BUCKET", default=""),
+        storage_s3_region=_get_env("STORAGE_S3_REGION", default=""),
+        storage_s3_endpoint_url=_get_env("STORAGE_S3_ENDPOINT_URL", default=""),
+        storage_s3_presigned_ttl_seconds=_parse_positive_int_env("STORAGE_S3_PRESIGNED_TTL_SECONDS", default=900),
+        mongo_uri=_get_env("MONGO_URI", default=""),
+        mongo_database=_get_env("MONGO_DATABASE", default=""),
         cors_origins=_parse_csv_env("APP_CORS_ORIGINS", default="http://localhost:3000,http://127.0.0.1:3000"),
         cors_origin_regex=_safe_regex_env("APP_CORS_ORIGIN_REGEX", default=r"https://.*\.vercel\.app"),
         ff_tiktok_integration=_parse_bool_env_alias(("TIKTOK_SYNC_ENABLED", "FF_TIKTOK_INTEGRATION"), default=False),
