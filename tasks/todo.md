@@ -1,3 +1,35 @@
+# TODO — Storage upload init backend flow: draft + presigned URL (2026-03-22)
+
+- [x] Re-sync workspace and re-read AGENTS + storage/media/provider/config files before implementation.
+- [x] Audit current storage router and media metadata repository/provider integration points.
+- [x] Add dedicated upload-init service (separate from router) to validate input, build S3 key, create Mongo draft, and generate presigned PUT URL.
+- [x] Add `POST /storage/uploads/init` endpoint with explicit request/response models and runtime error mapping.
+- [x] Ensure media indexes are initialized safely before first real upload-init use.
+- [x] Handle missing S3/Mongo config/providers with clear runtime 503 errors (no import/startup crash).
+- [x] Add focused tests for service + endpoint payloads, key format, sanitization, presigned params, and missing-config errors.
+- [x] Run targeted backend tests and update task docs/lessons.
+
+## Review
+- [x] Confirm no upload completion endpoint implemented.
+- [x] Confirm no S3 object verification (`head_object`) implemented.
+- [x] Confirm no list/delete/download endpoints and no creative/frontend integration changes.
+
+# TODO — Mongo media metadata foundation: model + repository + indexes (2026-03-22)
+
+- [x] Re-sync workspace and re-read AGENTS + target backend files before coding.
+- [x] Audit current provider/config/storage structure and choose coherent placement for media metadata model/repository.
+- [x] Add media metadata document model + statuses for Mongo collection foundation (no API wiring).
+- [x] Add Mongo repository methods: create draft, get by id, get by storage, mark ready, soft delete, normalization helpers.
+- [x] Add index initializer for unique storage key + list/filter + cleanup indexes.
+- [x] Ensure repository fails clearly at runtime when Mongo config is missing, without import-time crashes.
+- [x] Add focused unit tests (fakes/mocks, no real Mongo) for repository operations and index creation.
+- [x] Run targeted backend tests and update task docs/lessons.
+
+## Review
+- [x] Confirm no new endpoints/presigned/upload flow/UI changes.
+- [x] Confirm no creative workflow integration yet.
+- [x] Confirm implementation remains isolated and extensible for next tasks.
+
 # TODO — Backend foundation minimal: S3 + Mongo providers/config only (2026-03-22)
 
 - [x] Update workspace state and re-read AGENTS + backend files listed in task scope before coding.

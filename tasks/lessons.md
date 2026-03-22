@@ -507,3 +507,5 @@
 - 2026-03-21: Pentru dropdown-uri cerute explicit cu "sortare alfabetică", verific ordinea tuturor opțiunilor (nu doar cele noi) și acopăr ordinea exactă într-un test de UI pe lista de `<option>`.
 - 2026-03-21: După feedback pe persistența TikTok names/IDs, verific explicit atât payloadurile fact (`extra_metrics` + foreign keys), cât și clauzele SQL `ON CONFLICT DO UPDATE` care trebuie să suprascrie valorile NULL existente cu `EXCLUDED`, apoi acopăr prin teste țintite.
 - 2026-03-22: După feedback "unsatisfied", la task-uri de infrastructură minimală păstrez strict fundația cerută (deps + config + providers + teste) și evit explicit endpoint-uri noi sau schimbări de contract API.
+- 2026-03-22: După feedback pe foundation storage, păstrez strict stratul de metadata (model + repository + indexuri + teste) fără a atinge endpoint-uri, upload/presigned flow sau creative workflow.
+- 2026-03-22: Pentru upload-init direct în S3, separ logică în service dedicat (validare + key + draft + presign), las router-ul subțire și mappez explicit erorile de config/provider la 503 runtime, fără side effects la startup.
