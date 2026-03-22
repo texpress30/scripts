@@ -48,6 +48,7 @@ class Settings:
     storage_media_cleanup_batch_limit: int
     storage_media_remote_fetch_timeout_seconds: int
     storage_media_remote_fetch_max_bytes: int
+    storage_media_sync_worker_remote_ingest_enabled: bool
     mongo_uri: str
     mongo_database: str
     cors_origins: tuple[str, ...]
@@ -183,6 +184,7 @@ def load_settings() -> Settings:
         storage_media_cleanup_batch_limit=_parse_positive_int_env("STORAGE_MEDIA_CLEANUP_BATCH_LIMIT", default=100),
         storage_media_remote_fetch_timeout_seconds=_parse_positive_int_env("STORAGE_MEDIA_REMOTE_FETCH_TIMEOUT_SECONDS", default=15),
         storage_media_remote_fetch_max_bytes=_parse_positive_int_env("STORAGE_MEDIA_REMOTE_FETCH_MAX_BYTES", default=10485760),
+        storage_media_sync_worker_remote_ingest_enabled=_parse_bool_env("STORAGE_MEDIA_SYNC_WORKER_REMOTE_INGEST_ENABLED", default=False),
         mongo_uri=_get_env("MONGO_URI", default=""),
         mongo_database=_get_env("MONGO_DATABASE", default=""),
         cors_origins=_parse_csv_env("APP_CORS_ORIGINS", default="http://localhost:3000,http://127.0.0.1:3000"),

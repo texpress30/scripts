@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-22: După feedback „unsatisfied” pe un PR foundation mare, următorul pas trebuie să fie strict un singur punct real de integrare în worker (feature-flag OFF by default, best-effort, reversibil), fără extinderi în mai multe flow-uri sau endpoint-uri noi.
+
 - 2026-03-21: Pentru TikTok ad-group facts, păstrez explicit ambele chei în `extra_metrics` (`adgroup_name` și `ad_group_name`) și propag `campaign_id`/`campaign_name` în upsert payload; altfel dashboard queries pe alias pot returna `NULL` deși numele sunt parse-uite.
 
 - 2026-03-21: În metadata resolve TikTok, nu fac upsert fallback pentru entity rows fără semnal real (name/status/raw_payload toate goale); altfel pot suprascrie `platform_campaigns`/`platform_ad_groups` cu `NULL` și `{}` chiar când fetch-ul management API eșuează.

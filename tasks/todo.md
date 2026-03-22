@@ -1,3 +1,16 @@
+# TODO — First controlled worker integration for remote media archival (2026-03-22)
+
+- [x] Refresh workspace state and inspect exact target files (`sync_worker`, schedulers/sweepers, storage ingest services) before implementation.
+- [x] Choose exactly one real integration point in a processing worker and keep integration feature-flagged + default OFF.
+- [x] Add a flow-specific settings flag and wire a best-effort call to `StorageMediaRemoteIngestService.upload_from_url(...)` with minimal context only.
+- [x] Keep behavior unchanged with flag OFF; skip safely on missing context; log concise success/skip/failure without crashing main flow.
+- [x] Add focused tests for off/on/skip/error/success paths and settings defaults.
+- [x] Run targeted tests and document review boundaries.
+
+## Review
+- [x] Confirmed integration was added in a single worker location only (`sync_worker.py`, TikTok branch).
+- [x] Confirmed no new endpoint, no frontend changes, no creative workflow integration, no retry logic, no schema migrations.
+
 # TODO — Internal remote URL fetch + ingest helper (2026-03-22)
 
 - [x] Refresh repo state and re-audit storage ingest/init/providers/config/runner/tests before coding.
