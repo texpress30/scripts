@@ -506,3 +506,4 @@
 - 2026-03-21: Când utilizatorul reamintește explicit AGENTS workflow, încep imediat cu plan documentat în `tasks/todo.md`, marchez progresul în același task și includ obligatoriu commit + `make_pr` în același turn de livrare.
 - 2026-03-21: Pentru dropdown-uri cerute explicit cu "sortare alfabetică", verific ordinea tuturor opțiunilor (nu doar cele noi) și acopăr ordinea exactă într-un test de UI pe lista de `<option>`.
 - 2026-03-21: După feedback pe persistența TikTok names/IDs, verific explicit atât payloadurile fact (`extra_metrics` + foreign keys), cât și clauzele SQL `ON CONFLICT DO UPDATE` care trebuie să suprascrie valorile NULL existente cu `EXCLUDED`, apoi acopăr prin teste țintite.
+- 2026-03-22: După feedback "unsatisfied", la task-uri de infrastructură minimală păstrez strict fundația cerută (deps + config + providers + teste) și evit explicit endpoint-uri noi sau schimbări de contract API.

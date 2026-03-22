@@ -1,3 +1,19 @@
+# TODO — Backend foundation minimal: S3 + Mongo providers/config only (2026-03-22)
+
+- [x] Update workspace state and re-read AGENTS + backend files listed in task scope before coding.
+- [x] Audit existing settings/config style and service module patterns for reusable providers.
+- [x] Add minimal backend dependencies for AWS S3 client + synchronous MongoDB client.
+- [x] Extend backend settings with S3/Mongo env vars using safe defaults that do not break startup when unset.
+- [x] Add reusable provider modules for S3 client and Mongo client/database access (no business logic, no endpoint changes).
+- [x] Update `.env.example`/config documentation for new S3 and Mongo variables.
+- [x] Add focused tests for settings loading and provider factories (mocked, no real network).
+- [x] Run targeted backend tests and confirm existing API contracts remain unchanged.
+
+## Review
+- [x] Confirm no new endpoints/routes and no creative workflow/API contract changes.
+- [x] Confirm no upload/presigned flow implementation and no media repository/collections added.
+- [x] Confirm Postgres path remains intact and startup remains resilient when S3/Mongo env vars are absent.
+
 # TODO — TikTok campaign/ad-group persistence follow-up: campaign_name JSON + upsert overwrite guarantees (2026-03-21)
 
 - [x] Re-sync workspace and re-read AGENTS instructions before implementation.
