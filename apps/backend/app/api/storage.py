@@ -10,6 +10,7 @@ from app.services.storage_upload_complete import StorageUploadCompleteError, sto
 from app.services.storage_upload_init import StorageUploadInitError, storage_upload_init_service
 from app.services.storage_media_read import StorageMediaReadError, storage_media_read_service
 from app.services.storage_media_access import StorageMediaAccessError, storage_media_access_service
+from app.services.storage_media_delete import StorageMediaDeleteError, storage_media_delete_service
 
 router = APIRouter(prefix="/storage", tags=["storage"])
 
@@ -117,6 +118,16 @@ class StorageMediaAccessResponse(BaseModel):
     expires_in: int
     disposition: Literal["inline", "attachment"]
     filename: str
+
+
+class StorageMediaDeleteResponse(BaseModel):
+    media_id: str
+    status: str
+    client_id: int
+    kind: str
+    original_filename: str
+    deleted_at: Any | None = None
+    updated_at: Any | None = None
 
 
 @router.get("/media-usage", response_model=StorageUsageResponse)
@@ -247,3 +258,22 @@ def get_media_access_url(
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to generate media access URL") from exc
     return StorageMediaAccessResponse(**payload)
+
+
+@router.delete("/media/{media_id}", response_model=StorageMediaDeleteResponse)
+def soft_delete_media(
+    media_id: str,
+    client_id: int = Query(..., ge=1),
+    user: AuthUser = Depends(get_current_user),
+) -> StorageMediaDeleteResponse:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="settings_media_storage_usage")
+    try:
+        payload = storage_media_delete_service.soft_delete_media(client_id=client_id, media_id=media_id)
+    except StorageMediaDeleteError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to soft-delete media") from exc
+    return StorageMediaDeleteResponse(**payload)

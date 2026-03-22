@@ -1,3 +1,15 @@
+# TODO — Storage media soft delete endpoint + service (2026-03-22)
+
+- [x] Refresh repo state and re-audit storage router/repository/models/read/access/config/tests before coding.
+- [x] Add dedicated soft-delete service (Mongo fetch + ownership/status checks + repository soft_delete call + runtime-safe errors).
+- [x] Add `DELETE /storage/media/{media_id}` endpoint with `client_id` query param and focused response model.
+- [x] Keep behavior coherent: ready/draft deletable, delete_requested idempotent, purged/not-found/mismatch => 404, no S3 calls.
+- [x] Add focused unit tests for service and router, including runtime Mongo error and explicit no-S3 behavior.
+- [x] Run targeted backend tests and update review + lessons.
+
+## Review
+- [x] Confirm no cleanup/hard-delete/S3-delete/upload-cron/creative/frontend changes.
+
 # TODO — Storage media access URL endpoint (presigned GET) after unsatisfied review (2026-03-22)
 
 - [x] Refresh repo state and re-audit storage router/read/upload/provider/config modules plus existing tests.

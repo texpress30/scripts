@@ -35,6 +35,12 @@ class _FakeAPIRouter:
 
         return _decorator
 
+    def delete(self, *args, **kwargs):
+        def _decorator(fn):
+            return fn
+
+        return _decorator
+
 
 def _install_fake_fastapi_module() -> None:
     fake_fastapi = types.ModuleType("fastapi")
@@ -334,5 +340,50 @@ def test_storage_media_access_url_endpoint_maps_runtime_unavailable(monkeypatch)
 
     with pytest.raises(Exception) as exc:
         storage_api.get_media_access_url(media_id="m1", client_id=1, disposition="inline", user=_admin_user())
+
+    assert getattr(exc.value, "status_code", None) == 503
+
+
+def test_storage_media_delete_endpoint_returns_payload(monkeypatch):
+    _install_fake_fastapi_module()
+    _install_fake_pydantic_module()
+    from app.api import storage as storage_api
+
+    monkeypatch.setattr(storage_api, "enforce_action_scope", lambda **_kwargs: None)
+    monkeypatch.setattr(storage_api, "enforce_agency_navigation_access", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        storage_api.storage_media_delete_service,
+        "soft_delete_media",
+        lambda **_kwargs: {
+            "media_id": "m1",
+            "status": "delete_requested",
+            "client_id": 1,
+            "kind": "image",
+            "original_filename": "f.png",
+            "deleted_at": "2026-03-22T12:05:00Z",
+            "updated_at": "2026-03-22T12:05:00Z",
+        },
+    )
+
+    response = storage_api.soft_delete_media(media_id="m1", client_id=1, user=_admin_user())
+    assert response.media_id == "m1"
+    assert response.status == "delete_requested"
+
+
+def test_storage_media_delete_endpoint_maps_runtime_unavailable(monkeypatch):
+    _install_fake_fastapi_module()
+    _install_fake_pydantic_module()
+    from app.api import storage as storage_api
+
+    monkeypatch.setattr(storage_api, "enforce_action_scope", lambda **_kwargs: None)
+    monkeypatch.setattr(storage_api, "enforce_agency_navigation_access", lambda **_kwargs: None)
+
+    def _raise_error(**_kwargs):
+        raise storage_api.StorageMediaDeleteError("Mongo unavailable", status_code=503)
+
+    monkeypatch.setattr(storage_api.storage_media_delete_service, "soft_delete_media", _raise_error)
+
+    with pytest.raises(Exception) as exc:
+        storage_api.soft_delete_media(media_id="m1", client_id=1, user=_admin_user())
 
     assert getattr(exc.value, "status_code", None) == 503
