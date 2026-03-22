@@ -1,3 +1,16 @@
+# TODO — Creative workflow Mongo persistent counters foundation (2026-03-22)
+
+- [x] Refresh workspace state and inspect `creative_workflow.py`, `creative_assets_repository.py`, `mongo_provider.py`, `core/config.py`, and existing tests.
+- [x] Add a dedicated counters collection/repository with atomic `next_id(counter_name)` allocation using Mongo `find_one_and_update + $inc + upsert`.
+- [x] Add small helper methods for logical counter types used by current in-memory workflow IDs (`asset`, `variant`, `link`, `publish`).
+- [x] Keep repository runtime-safe when Mongo is missing (clear runtime error only on use).
+- [x] Add focused tests for start-at-1 behavior, increments, counter independence, helper delegation, timestamp updates, missing-config errors, and index init.
+- [x] Run targeted tests and document review boundaries.
+
+## Review
+- [x] Confirm no changes to `creative_workflow.py`.
+- [x] Confirm no `/creative` endpoint changes, no Mongo wiring in workflow, no backfill/migration, no frontend changes.
+
 # TODO — Creative workflow Mongo aggregate foundation (2026-03-22)
 
 - [x] Refresh workspace state and inspect `api/creative.py`, `services/creative_workflow.py`, `services/mongo_provider.py`, `core/config.py`, and existing repository/test patterns.

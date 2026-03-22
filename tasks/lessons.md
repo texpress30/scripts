@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-22: Pentru ID-uri persistente cerute pe creative workflow, livrează întâi un repository Mongo separat de counters (atomic `find_one_and_update + $inc + upsert`), fără modificări în `creative_workflow.py` sau `/creative` până la taskul de wiring.
+
 - 2026-03-22: Pentru fundamente de persistență cerute pe creative workflow, livrează întâi un repository Mongo pe agregat (colecție + indexuri + teste), fără wiring în `creative_workflow_service`/`/creative` până la taskul dedicat de integrare.
 
 - 2026-03-22: După feedback „unsatisfied” pe un PR foundation mare, următorul pas trebuie să fie strict un singur punct real de integrare în worker (feature-flag OFF by default, best-effort, reversibil), fără extinderi în mai multe flow-uri sau endpoint-uri noi.
