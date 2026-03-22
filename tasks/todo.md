@@ -6559,3 +6559,24 @@ Plan verificat: patch minim și izolat în backend creative/config/tests, fără
 - [x] Confirm patch-ul rămâne izolat pe backend creative/config/tests, fără frontend/rute noi/backfill.
 - [x] Confirm media rămâne compatibil legacy (nu devine sursă unică), iar media_id este opțional și feature-flagged.
 - [x] Verificări rulate: `cd apps/backend && pytest -q tests/test_storage_foundation_settings.py tests/test_creative_assets_repository.py tests/test_creative_api_media_id.py tests/test_creative_workflow_shadow_write.py`.
+
+# TODO — AI recommendations Mongo source-of-truth (feature-flagged) (2026-03-22)
+
+- [x] Reîncarc workspace-ul și inspectez explicit: `apps/backend/app/api/ai.py`, `apps/backend/app/services/recommendations.py`, `apps/backend/app/services/ai_assistant.py`, `apps/backend/app/services/mongo_provider.py`, `apps/backend/app/core/config.py`, plus testele backend relevante.
+- [x] Adaug setting nou `AI_RECOMMENDATIONS_MONGO_SOURCE_ENABLED` (default OFF) în config + `.env.example` + doc minim.
+- [x] Introduc repository Mongo dedicat recommendations history + counters (ID numeric stabil) cu indexuri minime și metodele cerute.
+- [x] Mențin cu flag OFF comportamentul existent (in-memory, fără apeluri Mongo, fără schimbare contract API).
+- [x] Când flag ON, mut `generate/list/get/review/list_actions` pe Mongo source-of-truth fără fallback in-memory la erori Mongo.
+- [x] Păstrez neschimbate `get_impact_report`, `ai_assistant_service` și endpoint-ul `/ai/legacy/{client_id}`.
+- [x] Acopăr teste focused OFF/ON, approve/dismiss/snooze, actions flattening, ID atomic, erori Mongo predictibile, setări/indexuri/normalizare.
+- [x] Rulez teste țintite și completez review.
+- [x] Commit + make_pr în același turn.
+
+## Check-in before execution
+Plan verificat: patch izolat doar în backend recommendations/config/tests, fără modificări frontend/rute /ai/legacy/backfill/outbox.
+
+## Review
+- [x] Confirm patch-ul rămâne izolat pe recommendations/backend/config/tests.
+- [x] Confirm rutele `/ai` și endpoint-ul legacy `/ai/legacy/{client_id}` au rămas neschimbate.
+- [x] Confirm fără backfill/migrare/outbox/retry/replay și fără modificări frontend.
+- [x] Verificări rulate: `cd apps/backend && pytest -q tests/test_ai_recommendations_repository.py tests/test_recommendations_mongo_source.py tests/test_storage_foundation_settings.py`.
