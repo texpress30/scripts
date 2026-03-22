@@ -1,3 +1,33 @@
+# TODO — Backend foundation minimal: S3 + Mongo providers/config only (2026-03-22)
+
+- [x] Update workspace state and re-read AGENTS + backend files listed in task scope before coding.
+- [x] Audit existing settings/config style and service module patterns for reusable providers.
+- [x] Add minimal backend dependencies for AWS S3 client + synchronous MongoDB client.
+- [x] Extend backend settings with S3/Mongo env vars using safe defaults that do not break startup when unset.
+- [x] Add reusable provider modules for S3 client and Mongo client/database access (no business logic, no endpoint changes).
+- [x] Update `.env.example`/config documentation for new S3 and Mongo variables.
+- [x] Add focused tests for settings loading and provider factories (mocked, no real network).
+- [x] Run targeted backend tests and confirm existing API contracts remain unchanged.
+
+## Review
+- [x] Confirm no new endpoints/routes and no creative workflow/API contract changes.
+- [x] Confirm no upload/presigned flow implementation and no media repository/collections added.
+- [x] Confirm Postgres path remains intact and startup remains resilient when S3/Mongo env vars are absent.
+
+# TODO — TikTok campaign/ad-group persistence follow-up: campaign_name JSON + upsert overwrite guarantees (2026-03-21)
+
+- [x] Re-sync workspace and re-read AGENTS instructions before implementation.
+- [x] Audit `tiktok_ads.py` and `platform_entity_store.py` for campaign/ad-group JSON packing and ON CONFLICT overwrite behavior.
+- [x] Fix `_upsert_campaign_rows` to always include `campaign_name` in `extra_metrics.tiktok_ads` payloads (including test-mode persistence path).
+- [x] Fix ad-group fact payload mapping to always pass resolved `campaign_id` into `ad_group_performance_reports`.
+- [x] Verify `platform_entity_store.py` ON CONFLICT clauses overwrite `campaign_id`/`name`/`status` with `EXCLUDED` values (no COALESCE preference of stale NULLs).
+- [x] Run targeted backend tests for TikTok/entity upsert paths.
+
+## Review
+- [x] Confirm campaign facts now carry `extra_metrics.tiktok_ads.campaign_name` for persisted rows.
+- [x] Confirm ad-group facts map `campaign_id` into DB insert payloads with fallback from `extra_metrics` when needed.
+- [x] Confirm platform entity upsert SQL uses direct `EXCLUDED` assignments for name/status/campaign_id overwrite semantics.
+
 # TODO — TikTok metadata data-flow fix: propagate names/campaign_id into facts + entity upserts (2026-03-21)
 
 - [x] Audit current TikTok dataclasses/parsers/upsert payloads for campaign/ad-group name propagation and ad-group campaign_id mapping.
