@@ -42,6 +42,7 @@ class SubaccountBusinessProfilePayload(BaseModel):
     address: dict[str, object] = Field(default_factory=dict)
     representative: dict[str, object] = Field(default_factory=dict)
     logo_url: str = ""
+    logo_media_id: str | None = None
 
 
 class SubaccountBusinessProfileResponse(BaseModel):
@@ -53,6 +54,7 @@ class SubaccountBusinessProfileResponse(BaseModel):
     address: dict[str, object]
     representative: dict[str, object]
     logo_url: str
+    logo_media_id: str | None = None
 
 
 class BusinessInputsImportRequest(BaseModel):

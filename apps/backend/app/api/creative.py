@@ -10,6 +10,7 @@ from app.api.dependencies import (
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
 from app.services.creative_workflow import creative_workflow_service
+from app.services.creative_workflow import CreativeWorkflowValidationError
 from app.services.rate_limiter import RateLimitExceeded, rate_limiter_service
 
 router = APIRouter(prefix="/creative", tags=["creative-library", "ai-generation", "approvals", "publish"])
@@ -32,7 +33,8 @@ class AddVariantRequest(BaseModel):
     headline: str
     body: str
     cta: str
-    media: str
+    media: str = ""
+    media_id: str | None = None
 
 
 class GenerateVariantsRequest(BaseModel):
@@ -124,9 +126,18 @@ def add_variant(asset_id: int, payload: AddVariantRequest, user: AuthUser = Depe
         enforce_action_scope(user=user, action="creative:write", scope="subaccount")
         enforce_subaccount_module_access(user=user, subaccount_id=client_id, module_key="creative")
         rate_limiter_service.check(f"creative_variant_add:{user.email}", limit=45, window_seconds=60)
-        created = creative_workflow_service.add_variant(asset_id, payload.headline, payload.body, payload.cta, payload.media)
+        created = creative_workflow_service.add_variant(
+            asset_id,
+            payload.headline,
+            payload.body,
+            payload.cta,
+            payload.media,
+            media_id=payload.media_id,
+        )
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
+    except CreativeWorkflowValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 

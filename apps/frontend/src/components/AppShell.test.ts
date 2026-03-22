@@ -8,6 +8,8 @@ import {
   filterAgencySettingsItems,
   filterSubaccountNavItems,
   getNavItems,
+  resolveSubaccountBrandingLogoUrl,
+  shouldRenderBrandingLogo,
   resolveAgencyRouteRedirect,
   resolveSubaccountModuleRedirect,
   resolveSubaccountSettingsRedirect,
@@ -35,6 +37,20 @@ describe("AppShell sub-account access helpers", () => {
     expect(formatSubaccountBrandingLocation("Onești", "România")).toBe("Locație: Onești, România");
     expect(formatSubaccountBrandingLocation("Onești", "")).toBe("Locație: Onești");
     expect(formatSubaccountBrandingLocation("", "")).toBe("Locație: -");
+  });
+
+  it("prefers business-profile logo url for subaccount branding and falls back to client logo", () => {
+    expect(resolveSubaccountBrandingLogoUrl({ logo_url: "https://preview.example/logo.png" }, "https://legacy.example/logo.png")).toBe(
+      "https://preview.example/logo.png",
+    );
+    expect(resolveSubaccountBrandingLogoUrl({ logo_url: "   " }, "https://legacy.example/logo.png")).toBe("https://legacy.example/logo.png");
+    expect(resolveSubaccountBrandingLogoUrl(null, "")).toBe("");
+  });
+
+  it("falls back to initials when branding image fails to load", () => {
+    expect(shouldRenderBrandingLogo("https://preview.example/logo.png", false)).toBe(true);
+    expect(shouldRenderBrandingLogo("https://preview.example/logo.png", true)).toBe(false);
+    expect(shouldRenderBrandingLogo("", false)).toBe(false);
   });
 
   it("keeps settings pages out of agency main nav and in settings nav", () => {
