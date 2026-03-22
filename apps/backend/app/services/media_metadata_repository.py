@@ -112,6 +112,7 @@ class MediaMetadataRepository:
         *,
         media_id: str,
         size_bytes: int | None = None,
+        mime_type: str | None = None,
         checksum: str | None = None,
         etag: str | None = None,
         version_id: str | None = None,
@@ -129,6 +130,8 @@ class MediaMetadataRepository:
         }
         if size_bytes is not None:
             set_payload["size_bytes"] = int(size_bytes)
+        if mime_type is not None:
+            set_payload["mime_type"] = str(mime_type or "").strip() or None
         if checksum is not None:
             set_payload["checksum"] = str(checksum or "").strip() or None
         if etag is not None:

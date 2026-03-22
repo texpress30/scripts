@@ -509,3 +509,4 @@
 - 2026-03-22: După feedback "unsatisfied", la task-uri de infrastructură minimală păstrez strict fundația cerută (deps + config + providers + teste) și evit explicit endpoint-uri noi sau schimbări de contract API.
 - 2026-03-22: După feedback pe foundation storage, păstrez strict stratul de metadata (model + repository + indexuri + teste) fără a atinge endpoint-uri, upload/presigned flow sau creative workflow.
 - 2026-03-22: Pentru upload-init direct în S3, separ logică în service dedicat (validare + key + draft + presign), las router-ul subțire și mappez explicit erorile de config/provider la 503 runtime, fără side effects la startup.
+- 2026-03-22: Pentru upload-complete, tratez `media_id` ca sursă unică de adevăr (draft Mongo + storage intern), verific obiectul prin `head_object`, fac `mark_ready` doar după succes și păstrez endpointul idempotent pentru status `ready`.

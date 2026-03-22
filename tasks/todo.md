@@ -1,3 +1,19 @@
+# TODO — Storage upload complete backend flow: verify S3 object and mark ready (2026-03-22)
+
+- [x] Re-sync workspace and re-read AGENTS + relevant storage/media/provider/config files before coding.
+- [x] Audit current upload-init service, storage router, and media repository to integrate complete flow with minimal changes.
+- [x] Add dedicated upload-complete service for draft fetch/validation, S3 `head_object`, and mark-ready persistence.
+- [x] Add `POST /storage/uploads/complete` endpoint with explicit request/response models and runtime-safe error mapping.
+- [x] Keep complete flow strict on `media_id` + draft storage info (ignore client-provided bucket/key).
+- [x] Add guardrails for missing record, client mismatch, invalid status, missing storage info, missing S3 object, and idempotent ready behavior.
+- [x] Add focused unit tests for service + endpoint behavior (no real AWS/Mongo calls).
+- [x] Run targeted backend tests and update tasks docs/lessons.
+
+## Review
+- [x] Confirm no list/delete/download/cleanup endpoints added.
+- [x] Confirm no creative workflow integration and no frontend changes.
+- [x] Confirm no refactor outside direct storage complete scope.
+
 # TODO — Storage upload init backend flow: draft + presigned URL (2026-03-22)
 
 - [x] Re-sync workspace and re-read AGENTS + storage/media/provider/config files before implementation.

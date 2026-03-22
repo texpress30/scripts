@@ -6,6 +6,7 @@ import types
 import pytest
 
 from app.services.auth import AuthUser
+from app.services.storage_upload_complete import StorageUploadCompleteError
 from app.services.storage_upload_init import StorageUploadInitError
 
 
@@ -125,6 +126,68 @@ def test_storage_upload_init_endpoint_maps_runtime_unavailable(monkeypatch):
                 kind="image",
                 original_filename="file.png",
                 mime_type="image/png",
+            ),
+            user=_admin_user(),
+        )
+
+    assert getattr(exc.value, "status_code", None) == 503
+
+
+def test_storage_upload_complete_endpoint_returns_payload(monkeypatch):
+    _install_fake_fastapi_module()
+    _install_fake_pydantic_module()
+    from app.api import storage as storage_api
+
+    monkeypatch.setattr(storage_api, "enforce_action_scope", lambda **_kwargs: None)
+    monkeypatch.setattr(storage_api, "enforce_agency_navigation_access", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        storage_api.storage_upload_complete_service,
+        "complete_upload",
+        lambda **_kwargs: {
+            "media_id": "m1",
+            "status": "ready",
+            "bucket": "media-bucket",
+            "key": "clients/1/image/m1/file.png",
+            "region": "eu-central-1",
+            "mime_type": "image/png",
+            "size_bytes": 111,
+            "uploaded_at": "2026-03-22T12:00:00Z",
+            "etag": '"abc"',
+            "version_id": "v1",
+        },
+    )
+
+    response = storage_api.complete_direct_upload(
+        payload=storage_api.StorageUploadCompleteRequest(
+            client_id=1,
+            media_id="m1",
+        ),
+        user=_admin_user(),
+    )
+
+    assert response.media_id == "m1"
+    assert response.status == "ready"
+    assert response.size_bytes == 111
+
+
+def test_storage_upload_complete_endpoint_maps_runtime_unavailable(monkeypatch):
+    _install_fake_fastapi_module()
+    _install_fake_pydantic_module()
+    from app.api import storage as storage_api
+
+    monkeypatch.setattr(storage_api, "enforce_action_scope", lambda **_kwargs: None)
+    monkeypatch.setattr(storage_api, "enforce_agency_navigation_access", lambda **_kwargs: None)
+
+    def _raise_error(**_kwargs):
+        raise StorageUploadCompleteError("Storage unavailable", status_code=503)
+
+    monkeypatch.setattr(storage_api.storage_upload_complete_service, "complete_upload", _raise_error)
+
+    with pytest.raises(Exception) as exc:
+        storage_api.complete_direct_upload(
+            payload=storage_api.StorageUploadCompleteRequest(
+                client_id=1,
+                media_id="m1",
             ),
             user=_admin_user(),
         )
