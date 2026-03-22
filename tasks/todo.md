@@ -1,3 +1,15 @@
+# TODO — Storage media access URL endpoint (presigned GET) after unsatisfied review (2026-03-22)
+
+- [x] Refresh repo state and re-audit storage router/read/upload/provider/config modules plus existing tests.
+- [x] Add a dedicated service for media access-url generation (Mongo lookup, ownership/status validation, S3 presign GET params).
+- [x] Add `GET /storage/media/{media_id}/access-url` endpoint + response model + `client_id`/`disposition` query handling.
+- [x] Keep behavior strict: only `ready`, 404 for missing/mismatch/purged, 409 for invalid state/storage incomplete, 503 for provider/config unavailable.
+- [x] Add focused unit tests for disposition/content headers, payload mapping, and error scenarios without real AWS/Mongo.
+- [x] Run targeted backend tests and update review + lessons.
+
+## Review
+- [x] Confirm no delete/cleanup/upload-cron/creative/frontend changes were implemented.
+
 # TODO — Rework storage media read APIs after unsatisfied review (2026-03-22)
 
 - [x] Refresh repo state and re-audit existing storage read/router/repository/tests against exact scope.

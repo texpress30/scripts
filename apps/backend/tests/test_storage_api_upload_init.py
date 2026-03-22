@@ -290,3 +290,49 @@ def test_storage_media_endpoint_maps_runtime_unavailable(monkeypatch):
         storage_api.list_media(client_id=1, kind=None, status_filter=None, limit=25, offset=0, user=_admin_user())
 
     assert getattr(exc.value, "status_code", None) == 503
+
+
+def test_storage_media_access_url_endpoint_returns_payload(monkeypatch):
+    _install_fake_fastapi_module()
+    _install_fake_pydantic_module()
+    from app.api import storage as storage_api
+
+    monkeypatch.setattr(storage_api, "enforce_action_scope", lambda **_kwargs: None)
+    monkeypatch.setattr(storage_api, "enforce_agency_navigation_access", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        storage_api.storage_media_access_service,
+        "build_access_url",
+        lambda **_kwargs: {
+            "media_id": "m1",
+            "status": "ready",
+            "mime_type": "image/png",
+            "method": "GET",
+            "url": "https://signed.example/access",
+            "expires_in": 900,
+            "disposition": "inline",
+            "filename": "f.png",
+        },
+    )
+
+    response = storage_api.get_media_access_url(media_id="m1", client_id=1, disposition="inline", user=_admin_user())
+    assert response.media_id == "m1"
+    assert response.method == "GET"
+
+
+def test_storage_media_access_url_endpoint_maps_runtime_unavailable(monkeypatch):
+    _install_fake_fastapi_module()
+    _install_fake_pydantic_module()
+    from app.api import storage as storage_api
+
+    monkeypatch.setattr(storage_api, "enforce_action_scope", lambda **_kwargs: None)
+    monkeypatch.setattr(storage_api, "enforce_agency_navigation_access", lambda **_kwargs: None)
+
+    def _raise_error(**_kwargs):
+        raise storage_api.StorageMediaAccessError("S3 unavailable", status_code=503)
+
+    monkeypatch.setattr(storage_api.storage_media_access_service, "build_access_url", _raise_error)
+
+    with pytest.raises(Exception) as exc:
+        storage_api.get_media_access_url(media_id="m1", client_id=1, disposition="inline", user=_admin_user())
+
+    assert getattr(exc.value, "status_code", None) == 503
