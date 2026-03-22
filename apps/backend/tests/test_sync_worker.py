@@ -1,5 +1,6 @@
 import unittest
 from datetime import date
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.workers import sync_worker
@@ -7878,6 +7879,252 @@ class SyncWorkerTests(unittest.TestCase):
         self.assertTrue(bool(run_metadata.get("no_data_success")))
         self.assertEqual(run_metadata.get("zero_row_marker"), "provider_returned_empty_list")
         self.assertEqual(cleanup_calls, [{"account_ids": ["3986597205"]}])
+
+    def test_process_next_chunk_tiktok_remote_ingest_flag_off_does_not_call_service(self):
+        state = self._build_state(platform="tiktok_ads")
+
+        def _claim_any(**kwargs):
+            if state["claimed"]:
+                return None
+            state["claimed"] = True
+            state["chunk"]["status"] = "running"
+            return dict(state["chunk"])
+
+        def _get_run(job_id):
+            return dict(state["run"]) if job_id == "job-1" else None
+
+        def _update_run_status(**kwargs):
+            if kwargs.get("status") is not None:
+                state["run"]["status"] = kwargs["status"]
+            return dict(state["run"])
+
+        def _update_chunk_status(**kwargs):
+            state["chunk"]["status"] = kwargs["status"]
+            state["chunk"]["metadata"] = kwargs.get("metadata") or {}
+            return dict(state["chunk"])
+
+        def _update_progress(**kwargs):
+            state["run"]["chunks_done"] = int(state["run"].get("chunks_done") or 0) + int(kwargs.get("chunks_done_delta") or 0)
+            state["run"]["rows_written"] = int(state["run"].get("rows_written") or 0) + int(kwargs.get("rows_written_delta") or 0)
+            return dict(state["run"])
+
+        def _counts(job_id):
+            return {"remaining": 0 if state["chunk"]["status"] in ("done", "error") else 1, "errors": 0}
+
+        with patch.object(sync_worker.sync_run_chunks_store, "claim_next_queued_chunk_any", side_effect=_claim_any), patch.object(
+            sync_worker.sync_runs_store, "get_sync_run", side_effect=_get_run
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_status", side_effect=_update_run_status), patch.object(
+            sync_worker.sync_run_chunks_store, "update_sync_run_chunk_status", side_effect=_update_chunk_status
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_progress", side_effect=_update_progress), patch.object(
+            sync_worker.sync_run_chunks_store, "get_sync_run_chunk_status_counts", side_effect=_counts
+        ), patch.object(
+            sync_worker.client_registry_service, "update_platform_account_operational_metadata", return_value=None
+        ), patch.object(
+            sync_worker.tiktok_ads_service,
+            "sync_client",
+            return_value={
+                "rows_written": 1,
+                "rows_downloaded": 1,
+                "provider_row_count": 1,
+                "rows_mapped": 1,
+                "remote_url": "https://cdn.example.com/a.png",
+                "remote_media_kind": "image",
+            },
+        ), patch.object(
+            sync_worker, "load_settings", return_value=SimpleNamespace(storage_media_sync_worker_remote_ingest_enabled=False)
+        ), patch.object(
+            sync_worker.storage_media_remote_ingest_service, "upload_from_url"
+        ) as remote_ingest:
+            processed = sync_worker.process_next_chunk()
+
+        self.assertTrue(processed)
+        self.assertEqual(state["chunk"]["status"], "done")
+        self.assertEqual(remote_ingest.call_count, 0)
+        self.assertNotIn("storage_media_id", state["chunk"]["metadata"])
+
+    def test_process_next_chunk_tiktok_remote_ingest_flag_on_calls_service(self):
+        state = self._build_state(platform="tiktok_ads")
+
+        def _claim_any(**kwargs):
+            if state["claimed"]:
+                return None
+            state["claimed"] = True
+            state["chunk"]["status"] = "running"
+            return dict(state["chunk"])
+
+        def _get_run(job_id):
+            return dict(state["run"]) if job_id == "job-1" else None
+
+        def _update_run_status(**kwargs):
+            if kwargs.get("status") is not None:
+                state["run"]["status"] = kwargs["status"]
+            return dict(state["run"])
+
+        def _update_chunk_status(**kwargs):
+            state["chunk"]["status"] = kwargs["status"]
+            state["chunk"]["metadata"] = kwargs.get("metadata") or {}
+            return dict(state["chunk"])
+
+        def _update_progress(**kwargs):
+            state["run"]["chunks_done"] = int(state["run"].get("chunks_done") or 0) + int(kwargs.get("chunks_done_delta") or 0)
+            state["run"]["rows_written"] = int(state["run"].get("rows_written") or 0) + int(kwargs.get("rows_written_delta") or 0)
+            return dict(state["run"])
+
+        def _counts(job_id):
+            return {"remaining": 0 if state["chunk"]["status"] in ("done", "error") else 1, "errors": 0}
+
+        snapshot = {
+            "rows_written": 2,
+            "rows_downloaded": 2,
+            "provider_row_count": 2,
+            "rows_mapped": 2,
+            "remote_url": "https://cdn.example.com/media/banner.png",
+            "remote_media_kind": "image",
+            "remote_original_filename": "banner.png",
+            "remote_mime_type": "image/png",
+        }
+
+        with patch.object(sync_worker.sync_run_chunks_store, "claim_next_queued_chunk_any", side_effect=_claim_any), patch.object(
+            sync_worker.sync_runs_store, "get_sync_run", side_effect=_get_run
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_status", side_effect=_update_run_status), patch.object(
+            sync_worker.sync_run_chunks_store, "update_sync_run_chunk_status", side_effect=_update_chunk_status
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_progress", side_effect=_update_progress), patch.object(
+            sync_worker.sync_run_chunks_store, "get_sync_run_chunk_status_counts", side_effect=_counts
+        ), patch.object(
+            sync_worker.client_registry_service, "update_platform_account_operational_metadata", return_value=None
+        ), patch.object(sync_worker.tiktok_ads_service, "sync_client", return_value=snapshot), patch.object(
+            sync_worker, "load_settings", return_value=SimpleNamespace(storage_media_sync_worker_remote_ingest_enabled=True)
+        ), patch.object(
+            sync_worker.storage_media_remote_ingest_service, "upload_from_url"
+        ) as remote_ingest:
+            remote_ingest.return_value = SimpleNamespace(media_id="m_123", bucket="assets-bucket", key="clients/101/image/m_123/banner.png")
+            processed = sync_worker.process_next_chunk()
+
+        self.assertTrue(processed)
+        self.assertEqual(state["chunk"]["status"], "done")
+        self.assertEqual(remote_ingest.call_count, 1)
+        _, kwargs = remote_ingest.call_args
+        self.assertEqual(kwargs["client_id"], 101)
+        self.assertEqual(kwargs["kind"], "image")
+        self.assertEqual(kwargs["source"], "platform_sync")
+        self.assertEqual(kwargs["remote_url"], "https://cdn.example.com/media/banner.png")
+        self.assertEqual(kwargs["original_filename"], "banner.png")
+        self.assertEqual(kwargs["mime_type"], "image/png")
+        self.assertEqual((kwargs.get("metadata") or {}).get("job_id"), "job-1")
+        self.assertEqual((state["chunk"]["metadata"] or {}).get("storage_media_id"), "m_123")
+
+    def test_process_next_chunk_tiktok_remote_ingest_skips_without_required_context(self):
+        state = self._build_state(platform="tiktok_ads")
+
+        def _claim_any(**kwargs):
+            if state["claimed"]:
+                return None
+            state["claimed"] = True
+            state["chunk"]["status"] = "running"
+            return dict(state["chunk"])
+
+        def _get_run(job_id):
+            return dict(state["run"]) if job_id == "job-1" else None
+
+        def _update_run_status(**kwargs):
+            if kwargs.get("status") is not None:
+                state["run"]["status"] = kwargs["status"]
+            return dict(state["run"])
+
+        def _update_chunk_status(**kwargs):
+            state["chunk"]["status"] = kwargs["status"]
+            state["chunk"]["metadata"] = kwargs.get("metadata") or {}
+            return dict(state["chunk"])
+
+        def _update_progress(**kwargs):
+            state["run"]["chunks_done"] = int(state["run"].get("chunks_done") or 0) + int(kwargs.get("chunks_done_delta") or 0)
+            return dict(state["run"])
+
+        def _counts(job_id):
+            return {"remaining": 0 if state["chunk"]["status"] in ("done", "error") else 1, "errors": 0}
+
+        with patch.object(sync_worker.sync_run_chunks_store, "claim_next_queued_chunk_any", side_effect=_claim_any), patch.object(
+            sync_worker.sync_runs_store, "get_sync_run", side_effect=_get_run
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_status", side_effect=_update_run_status), patch.object(
+            sync_worker.sync_run_chunks_store, "update_sync_run_chunk_status", side_effect=_update_chunk_status
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_progress", side_effect=_update_progress), patch.object(
+            sync_worker.sync_run_chunks_store, "get_sync_run_chunk_status_counts", side_effect=_counts
+        ), patch.object(
+            sync_worker.client_registry_service, "update_platform_account_operational_metadata", return_value=None
+        ), patch.object(
+            sync_worker.tiktok_ads_service,
+            "sync_client",
+            return_value={"rows_written": 1, "rows_downloaded": 1, "provider_row_count": 1, "rows_mapped": 1, "remote_url": "https://cdn.example.com/a.png"},
+        ), patch.object(
+            sync_worker, "load_settings", return_value=SimpleNamespace(storage_media_sync_worker_remote_ingest_enabled=True)
+        ), patch.object(
+            sync_worker.storage_media_remote_ingest_service, "upload_from_url"
+        ) as remote_ingest:
+            processed = sync_worker.process_next_chunk()
+
+        self.assertTrue(processed)
+        self.assertEqual(state["chunk"]["status"], "done")
+        self.assertEqual(remote_ingest.call_count, 0)
+
+    def test_process_next_chunk_tiktok_remote_ingest_error_is_non_blocking(self):
+        state = self._build_state(platform="tiktok_ads")
+
+        def _claim_any(**kwargs):
+            if state["claimed"]:
+                return None
+            state["claimed"] = True
+            state["chunk"]["status"] = "running"
+            return dict(state["chunk"])
+
+        def _get_run(job_id):
+            return dict(state["run"]) if job_id == "job-1" else None
+
+        def _update_run_status(**kwargs):
+            if kwargs.get("status") is not None:
+                state["run"]["status"] = kwargs["status"]
+            return dict(state["run"])
+
+        def _update_chunk_status(**kwargs):
+            state["chunk"]["status"] = kwargs["status"]
+            state["chunk"]["metadata"] = kwargs.get("metadata") or {}
+            return dict(state["chunk"])
+
+        def _update_progress(**kwargs):
+            state["run"]["chunks_done"] = int(state["run"].get("chunks_done") or 0) + int(kwargs.get("chunks_done_delta") or 0)
+            return dict(state["run"])
+
+        def _counts(job_id):
+            return {"remaining": 0 if state["chunk"]["status"] in ("done", "error") else 1, "errors": 0}
+
+        with patch.object(sync_worker.sync_run_chunks_store, "claim_next_queued_chunk_any", side_effect=_claim_any), patch.object(
+            sync_worker.sync_runs_store, "get_sync_run", side_effect=_get_run
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_status", side_effect=_update_run_status), patch.object(
+            sync_worker.sync_run_chunks_store, "update_sync_run_chunk_status", side_effect=_update_chunk_status
+        ), patch.object(sync_worker.sync_runs_store, "update_sync_run_progress", side_effect=_update_progress), patch.object(
+            sync_worker.sync_run_chunks_store, "get_sync_run_chunk_status_counts", side_effect=_counts
+        ), patch.object(
+            sync_worker.client_registry_service, "update_platform_account_operational_metadata", return_value=None
+        ), patch.object(
+            sync_worker.tiktok_ads_service,
+            "sync_client",
+            return_value={
+                "rows_written": 4,
+                "rows_downloaded": 4,
+                "provider_row_count": 4,
+                "rows_mapped": 4,
+                "remote_url": "https://cdn.example.com/a.png",
+                "remote_media_kind": "image",
+            },
+        ), patch.object(
+            sync_worker, "load_settings", return_value=SimpleNamespace(storage_media_sync_worker_remote_ingest_enabled=True)
+        ), patch.object(
+            sync_worker.storage_media_remote_ingest_service, "upload_from_url", side_effect=RuntimeError("ingest boom")
+        ):
+            processed = sync_worker.process_next_chunk()
+
+        self.assertTrue(processed)
+        self.assertEqual(state["chunk"]["status"], "done")
+        self.assertNotIn("storage_media_id", state["chunk"]["metadata"])
 
 
 
