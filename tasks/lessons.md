@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-22: Pentru fundamente de persistență cerute pe creative workflow, livrează întâi un repository Mongo pe agregat (colecție + indexuri + teste), fără wiring în `creative_workflow_service`/`/creative` până la taskul dedicat de integrare.
+
 - 2026-03-22: După feedback „unsatisfied” pe un PR foundation mare, următorul pas trebuie să fie strict un singur punct real de integrare în worker (feature-flag OFF by default, best-effort, reversibil), fără extinderi în mai multe flow-uri sau endpoint-uri noi.
 
 - 2026-03-21: Pentru TikTok ad-group facts, păstrez explicit ambele chei în `extra_metrics` (`adgroup_name` și `ad_group_name`) și propag `campaign_id`/`campaign_name` în upsert payload; altfel dashboard queries pe alias pot returna `NULL` deși numele sunt parse-uite.

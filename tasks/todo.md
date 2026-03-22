@@ -1,3 +1,16 @@
+# TODO — Creative workflow Mongo aggregate foundation (2026-03-22)
+
+- [x] Refresh workspace state and inspect `api/creative.py`, `services/creative_workflow.py`, `services/mongo_provider.py`, `core/config.py`, and existing repository/test patterns.
+- [x] Add a dedicated Mongo collection/repository for creative asset aggregates without changing creative service/API behavior.
+- [x] Implement minimal aggregate repository methods (`upsert_asset`, `get_by_creative_id`, `list_assets`) with predictable created/updated timestamp behavior.
+- [x] Add minimal indexes (unique creative id + client/updated list helper index) and runtime-safe missing Mongo error behavior.
+- [x] Add focused repository tests (no real Mongo) for create/get/update/list/filter/indexes/missing-config runtime errors.
+- [x] Run targeted tests and document review boundaries.
+
+## Review
+- [x] Confirm no changes to `creative_workflow_service` behavior and no `/creative` endpoint contract changes.
+- [x] Confirm no backfill/migration, no frontend changes, and no switch to `media_id` as creative primary reference.
+
 # TODO — First controlled worker integration for remote media archival (2026-03-22)
 
 - [x] Refresh workspace state and inspect exact target files (`sync_worker`, schedulers/sweepers, storage ingest services) before implementation.
