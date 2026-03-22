@@ -136,6 +136,21 @@ class CreativeWorkflowService:
             return False
         return bool(getattr(settings, "creative_workflow_mongo_core_writes_source_enabled", False))
 
+    def _mongo_derived_writes_requested_enabled(self) -> bool:
+        try:
+            settings = load_settings()
+        except Exception:  # noqa: BLE001
+            return False
+        return bool(getattr(settings, "creative_workflow_mongo_derived_writes_source_enabled", False))
+
+    def _mongo_derived_writes_source_enabled(self) -> bool:
+        if not self._mongo_derived_writes_requested_enabled():
+            return False
+        if not self._mongo_core_writes_source_enabled():
+            logger.info("creative_workflow.derived_write_ignored_missing_core_writes")
+            return False
+        return True
+
     def _sync_local_counter(self, *, counter_name: str, allocated_id: int) -> None:
         next_value = max(1, int(allocated_id) + 1)
         if counter_name == "asset":
@@ -291,6 +306,27 @@ class CreativeWorkflowService:
         local_asset = self._assets.get(int(asset_id))
         if local_asset is None:
             return None
+        return copy.deepcopy(self._asset_payload_from_local(asset_id=int(asset_id)))
+
+    def _resolve_asset_snapshot_for_derived_write(self, *, asset_id: int, operation: str) -> dict[str, object] | None:
+        try:
+            payload = creative_assets_repository.get_by_creative_id(int(asset_id))
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "creative_workflow.derived_write_mongo_read_failed operation=%s asset_id=%s error=%s",
+                operation,
+                asset_id,
+                exc.__class__.__name__,
+            )
+            raise
+
+        if isinstance(payload, dict):
+            return copy.deepcopy(payload)
+
+        local_asset = self._assets.get(int(asset_id))
+        if local_asset is None:
+            return None
+        logger.info("creative_workflow.derived_write_mongo_miss_fallback_local operation=%s asset_id=%s", operation, asset_id)
         return copy.deepcopy(self._asset_payload_from_local(asset_id=int(asset_id)))
 
     def _hydrate_local_cache_after_persist(self, *, persisted_snapshot: dict[str, object], operation: str) -> CreativeAsset:
@@ -651,6 +687,59 @@ class CreativeWorkflowService:
         return payload
 
     def generate_variants(self, asset_id: int, count: int = 3) -> list[dict[str, object]]:
+        if self._mongo_derived_writes_source_enabled():
+            with self._lock:
+                snapshot = self._resolve_asset_snapshot_for_derived_write(asset_id=asset_id, operation="generate_variants")
+                if snapshot is None:
+                    raise ValueError("Asset not found")
+                resolved_asset_id = int(snapshot.get("id") or snapshot.get("creative_id") or snapshot.get("asset_id") or asset_id)
+                metadata = snapshot.get("metadata") if isinstance(snapshot.get("metadata"), dict) else {}
+                name = str(snapshot.get("name") or "")
+                objective_fit = str(metadata.get("objective_fit") or "")
+                platform_fit = [str(item) for item in list(metadata.get("platform_fit") or [])]
+                format_value = str(metadata.get("format") or "")
+                variants = [dict(item) for item in list(snapshot.get("creative_variants") or []) if isinstance(item, dict)]
+                generated: list[dict[str, object]] = []
+                for index in range(1, count + 1):
+                    variant_id = self._next_id_for_core_write(counter_name="variant")
+                    variant_payload = {
+                        "id": variant_id,
+                        "headline": f"{name} — Hook {index}",
+                        "body": f"Variante AI pentru {objective_fit} pe {', '.join(platform_fit)}.",
+                        "cta": "Afla mai mult",
+                        "media": f"{format_value}_variant_{index}",
+                    }
+                    variants.append(variant_payload)
+                    generated.append(
+                        {
+                            "id": variant_id,
+                            "asset_id": resolved_asset_id,
+                            "headline": str(variant_payload["headline"]),
+                            "body": str(variant_payload["body"]),
+                            "cta": str(variant_payload["cta"]),
+                            "media": str(variant_payload["media"]),
+                        }
+                    )
+                snapshot["creative_variants"] = variants
+                snapshot["id"] = resolved_asset_id
+                snapshot["creative_id"] = resolved_asset_id
+                snapshot["asset_id"] = resolved_asset_id
+                try:
+                    persisted = creative_assets_repository.upsert_asset(snapshot)
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception(
+                        "creative_workflow.derived_write_failed operation=generate_variants asset_id=%s error=%s",
+                        resolved_asset_id,
+                        exc.__class__.__name__,
+                    )
+                    raise
+                persisted_snapshot = dict(persisted) if isinstance(persisted, dict) and len(persisted) > 0 else snapshot
+                self._hydrate_local_cache_after_persist(
+                    persisted_snapshot=persisted_snapshot,
+                    operation="generate_variants",
+                )
+                return generated
+
         asset = self._resolve_asset_local_or_mongo(asset_id=asset_id, operation="generate_variants")
         if asset is None:
             raise ValueError("Asset not found")
@@ -672,6 +761,35 @@ class CreativeWorkflowService:
         return generated
 
     def update_approval(self, asset_id: int, legal_status: str, approval_status: str) -> dict[str, object]:
+        if self._mongo_derived_writes_source_enabled():
+            with self._lock:
+                snapshot = self._resolve_asset_snapshot_for_derived_write(asset_id=asset_id, operation="update_approval")
+                if snapshot is None:
+                    raise ValueError("Asset not found")
+                resolved_asset_id = int(snapshot.get("id") or snapshot.get("creative_id") or snapshot.get("asset_id") or asset_id)
+                metadata = dict(snapshot.get("metadata") or {})
+                metadata["legal_status"] = legal_status
+                metadata["approval_status"] = approval_status
+                snapshot["metadata"] = metadata
+                snapshot["id"] = resolved_asset_id
+                snapshot["creative_id"] = resolved_asset_id
+                snapshot["asset_id"] = resolved_asset_id
+                try:
+                    persisted = creative_assets_repository.upsert_asset(snapshot)
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception(
+                        "creative_workflow.derived_write_failed operation=update_approval asset_id=%s error=%s",
+                        resolved_asset_id,
+                        exc.__class__.__name__,
+                    )
+                    raise
+                persisted_snapshot = dict(persisted) if isinstance(persisted, dict) and len(persisted) > 0 else snapshot
+                hydrated = self._hydrate_local_cache_after_persist(
+                    persisted_snapshot=persisted_snapshot,
+                    operation="update_approval",
+                )
+                return self._asset_payload_from_local(asset_id=hydrated.id)
+
         asset = self._resolve_asset_local_or_mongo(asset_id=asset_id, operation="update_approval")
         if asset is None:
             raise ValueError("Asset not found")
@@ -750,6 +868,32 @@ class CreativeWorkflowService:
         return payload
 
     def set_performance_scores(self, asset_id: int, scores: dict[str, float]) -> dict[str, object]:
+        if self._mongo_derived_writes_source_enabled():
+            with self._lock:
+                snapshot = self._resolve_asset_snapshot_for_derived_write(asset_id=asset_id, operation="set_performance_scores")
+                if snapshot is None:
+                    raise ValueError("Asset not found")
+                resolved_asset_id = int(snapshot.get("id") or snapshot.get("creative_id") or snapshot.get("asset_id") or asset_id)
+                snapshot["performance_scores"] = dict(scores)
+                snapshot["id"] = resolved_asset_id
+                snapshot["creative_id"] = resolved_asset_id
+                snapshot["asset_id"] = resolved_asset_id
+                try:
+                    persisted = creative_assets_repository.upsert_asset(snapshot)
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception(
+                        "creative_workflow.derived_write_failed operation=set_performance_scores asset_id=%s error=%s",
+                        resolved_asset_id,
+                        exc.__class__.__name__,
+                    )
+                    raise
+                persisted_snapshot = dict(persisted) if isinstance(persisted, dict) and len(persisted) > 0 else snapshot
+                hydrated = self._hydrate_local_cache_after_persist(
+                    persisted_snapshot=persisted_snapshot,
+                    operation="set_performance_scores",
+                )
+                return self._asset_payload_from_local(asset_id=hydrated.id)
+
         asset = self._resolve_asset_local_or_mongo(asset_id=asset_id, operation="set_performance_scores")
         if asset is None:
             raise ValueError("Asset not found")

@@ -1,3 +1,20 @@
+# TODO — Creative workflow Mongo source-of-truth pentru mutații non-publish derivate (2026-03-22)
+
+- [x] Refresh workspace state și inspect explicit: `creative_workflow.py`, repository-urile creative, `api/creative.py`, `core/config.py`, și testele backend.
+- [x] Adaugă flag nou `CREATIVE_WORKFLOW_MONGO_DERIVED_WRITES_SOURCE_ENABLED` cu default OFF în settings + `.env.example` + doc minim.
+- [x] Activează write path derived doar când sunt ON ambele: `CREATIVE_WORKFLOW_MONGO_DERIVED_WRITES_SOURCE_ENABLED` și `CREATIVE_WORKFLOW_MONGO_CORE_WRITES_SOURCE_ENABLED`; dacă derived ON și core OFF, păstrează comportamentul actual + log scurt.
+- [x] Mută source-of-truth pe Mongo (feature-flagged) pentru `generate_variants`, `update_approval`, `set_performance_scores` cu snapshot de lucru (Mongo-first + fallback local doar la miss) și persist-before-local-hydrate.
+- [x] Menține fallback strict: NU fallback local la erori Mongo runtime/config/provider pentru write snapshot pe metodele derivate.
+- [x] Menține counter compatibility pentru variante alocate din Mongo (`next_variant_id`) și evită coliziuni locale.
+- [x] Evită persistențe repetate în `generate_variants` (un singur `upsert_asset` pe snapshot-ul final).
+- [x] Nu modifica design-ul deja introdus pentru `create_asset`/`add_variant`/`link_to_campaign`, nici `publish_to_channel`, `/creative`, S3/media, frontend, backfill/migrare.
+- [x] Adaugă teste focused pentru OFF/ON, gating derived+core, Mongo-first/fallback strict, erori read/upsert fără local-only success, counters, și non-duplicare shadow-write.
+- [x] Rulează testele țintite și completează review-ul.
+
+## Review
+- [x] Confirm metodele derivate folosesc Mongo source-of-truth doar când sunt active ambele flag-uri (derived + core).
+- [x] Confirm `create_asset`/`add_variant`/`link_to_campaign`, `publish_to_channel` și endpoint-urile `/creative` au rămas neschimbate ca design în acest task.
+
 # TODO — Creative workflow Mongo core writes source-of-truth for create/add_variant/link (2026-03-22)
 
 - [x] Refresh workspace state and inspect explicitly: `creative_workflow.py`, creative repositories, `/api/creative.py`, `core/config.py`, and existing backend tests.

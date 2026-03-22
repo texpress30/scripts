@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-22: Pentru mutații derivate migrate pe Mongo source-of-truth, activez flag-ul derivat doar împreună cu core-writes și tratez erorile Mongo read/upsert ca hard-fail (fără fallback local), cu local hydrate doar după persist reușit.
+
 - 2026-03-22: Când feedback-ul cere Mongo source-of-truth doar pentru mutații specifice, adaugă un flag dedicat de core writes și separă explicit write snapshot (Mongo-first/fallback) de local mirror/cache; nu lăsa mutații locale înainte de succesul `upsert_asset`.
 
 - 2026-03-22: Pentru rollout Mongo-first pe citiri, aplică flag separat doar pe `get_asset`/`list_assets`, prioritizează snapshot-ul Mongo când există și păstrează fallback local predictibil pe erori sau miss-uri.
