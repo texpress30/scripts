@@ -1,3 +1,146 @@
+# TODO — Storage media cleanup batch for delete_requested records (2026-03-22)
+
+- [x] Refresh workspace state and re-audit storage repository/models/providers/delete/read/access plus tests.
+- [x] Add minimal repository methods for cleanup batch selection and mark_purged persistence.
+- [x] Implement `StorageMediaCleanupService.run_batch(limit=...)` with S3 delete_object + per-item outcomes.
+- [x] Enforce cleanup scope: process only `delete_requested`, deterministic ordering, no endpoint/scheduler wiring, no hard delete.
+- [x] Add focused tests for ordering, S3 delete params (incl version_id), missing-object idempotency, skips/failures, and runtime errors.
+- [x] Run targeted backend tests and update review + lessons.
+
+## Review
+- [x] Confirm no new cleanup endpoint, no scheduler wiring, no hard delete, no creative/frontend changes.
+
+# TODO — Storage media soft delete endpoint + service (2026-03-22)
+
+- [x] Refresh repo state and re-audit storage router/repository/models/read/access/config/tests before coding.
+- [x] Add dedicated soft-delete service (Mongo fetch + ownership/status checks + repository soft_delete call + runtime-safe errors).
+- [x] Add `DELETE /storage/media/{media_id}` endpoint with `client_id` query param and focused response model.
+- [x] Keep behavior coherent: ready/draft deletable, delete_requested idempotent, purged/not-found/mismatch => 404, no S3 calls.
+- [x] Add focused unit tests for service and router, including runtime Mongo error and explicit no-S3 behavior.
+- [x] Run targeted backend tests and update review + lessons.
+
+## Review
+- [x] Confirm no cleanup/hard-delete/S3-delete/upload-cron/creative/frontend changes.
+
+# TODO — Storage media access URL endpoint (presigned GET) after unsatisfied review (2026-03-22)
+
+- [x] Refresh repo state and re-audit storage router/read/upload/provider/config modules plus existing tests.
+- [x] Add a dedicated service for media access-url generation (Mongo lookup, ownership/status validation, S3 presign GET params).
+- [x] Add `GET /storage/media/{media_id}/access-url` endpoint + response model + `client_id`/`disposition` query handling.
+- [x] Keep behavior strict: only `ready`, 404 for missing/mismatch/purged, 409 for invalid state/storage incomplete, 503 for provider/config unavailable.
+- [x] Add focused unit tests for disposition/content headers, payload mapping, and error scenarios without real AWS/Mongo.
+- [x] Run targeted backend tests and update review + lessons.
+
+## Review
+- [x] Confirm no delete/cleanup/upload-cron/creative/frontend changes were implemented.
+
+# TODO — Rework storage media read APIs after unsatisfied review (2026-03-22)
+
+- [x] Refresh repo state and re-audit existing storage read/router/repository/tests against exact scope.
+- [x] Apply minimal fixes so list/detail contracts, status defaults, and error mapping are explicit and predictable.
+- [x] Add/adjust focused tests for ordering, filters, pagination, detail ownership/not-found, purged handling, and runtime Mongo unavailability.
+- [x] Run targeted backend tests for storage read flow and related storage foundation suites.
+- [x] Update review notes + lessons with this correction pattern.
+
+## Review
+- [x] Confirm no download/view URL, delete, or cleanup job was implemented.
+- [x] Confirm no creative workflow integration and no frontend changes.
+
+# TODO — Storage media read APIs: list + detail from Mongo metadata (2026-03-22)
+
+- [x] Re-sync workspace and re-audit storage router/repository/services before implementation.
+- [x] Confirm scope boundaries (read-only APIs, no download/delete/cleanup/creative/frontend changes).
+- [x] Extend media metadata repository minimally for list + count with client/kind/status filters and limit/offset.
+- [x] Add dedicated media-read service (separate from router) for list/detail ownership checks and runtime-safe error mapping.
+- [x] Add GET endpoints `/storage/media` and `/storage/media/{media_id}` with clear response models.
+- [x] Enforce deterministic list ordering (created_at desc), limit defaults/max, and strict client scoping.
+- [x] Implement default status rule for list (exclude purged and delete_requested when status filter is omitted).
+- [x] Add focused tests for repository/service/endpoint list+detail behavior and error cases.
+- [x] Run targeted backend tests and update tasks docs/lessons.
+
+## Review
+- [x] Confirm no download/view URL, delete, or cleanup job added.
+- [x] Confirm no creative workflow integration and no frontend changes.
+- [x] Confirm patch remains isolated to storage read flow.
+
+# TODO — Storage upload complete backend flow: verify S3 object and mark ready (2026-03-22)
+
+- [x] Re-sync workspace and re-read AGENTS + relevant storage/media/provider/config files before coding.
+- [x] Audit current upload-init service, storage router, and media repository to integrate complete flow with minimal changes.
+- [x] Add dedicated upload-complete service for draft fetch/validation, S3 `head_object`, and mark-ready persistence.
+- [x] Add `POST /storage/uploads/complete` endpoint with explicit request/response models and runtime-safe error mapping.
+- [x] Keep complete flow strict on `media_id` + draft storage info (ignore client-provided bucket/key).
+- [x] Add guardrails for missing record, client mismatch, invalid status, missing storage info, missing S3 object, and idempotent ready behavior.
+- [x] Add focused unit tests for service + endpoint behavior (no real AWS/Mongo calls).
+- [x] Run targeted backend tests and update tasks docs/lessons.
+
+## Review
+- [x] Confirm no list/delete/download/cleanup endpoints added.
+- [x] Confirm no creative workflow integration and no frontend changes.
+- [x] Confirm no refactor outside direct storage complete scope.
+
+# TODO — Storage upload init backend flow: draft + presigned URL (2026-03-22)
+
+- [x] Re-sync workspace and re-read AGENTS + storage/media/provider/config files before implementation.
+- [x] Audit current storage router and media metadata repository/provider integration points.
+- [x] Add dedicated upload-init service (separate from router) to validate input, build S3 key, create Mongo draft, and generate presigned PUT URL.
+- [x] Add `POST /storage/uploads/init` endpoint with explicit request/response models and runtime error mapping.
+- [x] Ensure media indexes are initialized safely before first real upload-init use.
+- [x] Handle missing S3/Mongo config/providers with clear runtime 503 errors (no import/startup crash).
+- [x] Add focused tests for service + endpoint payloads, key format, sanitization, presigned params, and missing-config errors.
+- [x] Run targeted backend tests and update task docs/lessons.
+
+## Review
+- [x] Confirm no upload completion endpoint implemented.
+- [x] Confirm no S3 object verification (`head_object`) implemented.
+- [x] Confirm no list/delete/download endpoints and no creative/frontend integration changes.
+
+# TODO — Mongo media metadata foundation: model + repository + indexes (2026-03-22)
+
+- [x] Re-sync workspace and re-read AGENTS + target backend files before coding.
+- [x] Audit current provider/config/storage structure and choose coherent placement for media metadata model/repository.
+- [x] Add media metadata document model + statuses for Mongo collection foundation (no API wiring).
+- [x] Add Mongo repository methods: create draft, get by id, get by storage, mark ready, soft delete, normalization helpers.
+- [x] Add index initializer for unique storage key + list/filter + cleanup indexes.
+- [x] Ensure repository fails clearly at runtime when Mongo config is missing, without import-time crashes.
+- [x] Add focused unit tests (fakes/mocks, no real Mongo) for repository operations and index creation.
+- [x] Run targeted backend tests and update task docs/lessons.
+
+## Review
+- [x] Confirm no new endpoints/presigned/upload flow/UI changes.
+- [x] Confirm no creative workflow integration yet.
+- [x] Confirm implementation remains isolated and extensible for next tasks.
+
+# TODO — Backend foundation minimal: S3 + Mongo providers/config only (2026-03-22)
+
+- [x] Update workspace state and re-read AGENTS + backend files listed in task scope before coding.
+- [x] Audit existing settings/config style and service module patterns for reusable providers.
+- [x] Add minimal backend dependencies for AWS S3 client + synchronous MongoDB client.
+- [x] Extend backend settings with S3/Mongo env vars using safe defaults that do not break startup when unset.
+- [x] Add reusable provider modules for S3 client and Mongo client/database access (no business logic, no endpoint changes).
+- [x] Update `.env.example`/config documentation for new S3 and Mongo variables.
+- [x] Add focused tests for settings loading and provider factories (mocked, no real network).
+- [x] Run targeted backend tests and confirm existing API contracts remain unchanged.
+
+## Review
+- [x] Confirm no new endpoints/routes and no creative workflow/API contract changes.
+- [x] Confirm no upload/presigned flow implementation and no media repository/collections added.
+- [x] Confirm Postgres path remains intact and startup remains resilient when S3/Mongo env vars are absent.
+
+# TODO — TikTok campaign/ad-group persistence follow-up: campaign_name JSON + upsert overwrite guarantees (2026-03-21)
+
+- [x] Re-sync workspace and re-read AGENTS instructions before implementation.
+- [x] Audit `tiktok_ads.py` and `platform_entity_store.py` for campaign/ad-group JSON packing and ON CONFLICT overwrite behavior.
+- [x] Fix `_upsert_campaign_rows` to always include `campaign_name` in `extra_metrics.tiktok_ads` payloads (including test-mode persistence path).
+- [x] Fix ad-group fact payload mapping to always pass resolved `campaign_id` into `ad_group_performance_reports`.
+- [x] Verify `platform_entity_store.py` ON CONFLICT clauses overwrite `campaign_id`/`name`/`status` with `EXCLUDED` values (no COALESCE preference of stale NULLs).
+- [x] Run targeted backend tests for TikTok/entity upsert paths.
+
+## Review
+- [x] Confirm campaign facts now carry `extra_metrics.tiktok_ads.campaign_name` for persisted rows.
+- [x] Confirm ad-group facts map `campaign_id` into DB insert payloads with fallback from `extra_metrics` when needed.
+- [x] Confirm platform entity upsert SQL uses direct `EXCLUDED` assignments for name/status/campaign_id overwrite semantics.
+
 # TODO — TikTok metadata data-flow fix: propagate names/campaign_id into facts + entity upserts (2026-03-21)
 
 - [x] Audit current TikTok dataclasses/parsers/upsert payloads for campaign/ad-group name propagation and ad-group campaign_id mapping.
