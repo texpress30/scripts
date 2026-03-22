@@ -80,6 +80,7 @@ class Settings:
     mailgun_enabled: bool
     creative_workflow_mongo_shadow_write_enabled: bool
     creative_workflow_mongo_read_through_enabled: bool
+    creative_workflow_mongo_reads_source_enabled: bool
 
 
 def _get_env(name: str, default: str | None = None, required: bool = False) -> str:
@@ -218,4 +219,5 @@ def load_settings() -> Settings:
         mailgun_enabled=_parse_bool_env("MAILGUN_ENABLED", default=True),
         creative_workflow_mongo_shadow_write_enabled=_parse_bool_env("CREATIVE_WORKFLOW_MONGO_SHADOW_WRITE_ENABLED", default=False),
         creative_workflow_mongo_read_through_enabled=_parse_bool_env("CREATIVE_WORKFLOW_MONGO_READ_THROUGH_ENABLED", default=False),
+        creative_workflow_mongo_reads_source_enabled=_parse_bool_env("CREATIVE_WORKFLOW_MONGO_READS_SOURCE_ENABLED", default=False),
     )

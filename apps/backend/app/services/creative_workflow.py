@@ -121,6 +121,13 @@ class CreativeWorkflowService:
             return False
         return bool(getattr(settings, "creative_workflow_mongo_read_through_enabled", False))
 
+    def _mongo_reads_source_enabled(self) -> bool:
+        try:
+            settings = load_settings()
+        except Exception:  # noqa: BLE001
+            return False
+        return bool(getattr(settings, "creative_workflow_mongo_reads_source_enabled", False))
+
     def _sync_local_counter(self, *, counter_name: str, allocated_id: int) -> None:
         next_value = max(1, int(allocated_id) + 1)
         if counter_name == "asset":
@@ -176,12 +183,54 @@ class CreativeWorkflowService:
             self._next_link_id += 1
             return value
 
+    def _asset_payload_from_local(self, *, asset_id: int) -> dict[str, object]:
+        asset = self._assets.get(int(asset_id))
+        if asset is None:
+            raise ValueError("Asset not found")
+        variants = self._variants.get(int(asset_id), [])
+        links = self._links.get(int(asset_id), [])
+        performance_scores = self._performance_scores.get(int(asset_id), {})
+        return {
+            "id": asset.id,
+            "client_id": asset.client_id,
+            "name": asset.name,
+            "metadata": {
+                "format": asset.format,
+                "dimensions": asset.dimensions,
+                "objective_fit": asset.objective_fit,
+                "platform_fit": asset.platform_fit,
+                "language": asset.language,
+                "brand_tags": asset.brand_tags,
+                "legal_status": asset.legal_status,
+                "approval_status": asset.approval_status,
+            },
+            "creative_variants": [
+                {
+                    "id": variant.id,
+                    "headline": variant.headline,
+                    "body": variant.body,
+                    "cta": variant.cta,
+                    "media": variant.media,
+                }
+                for variant in variants
+            ],
+            "performance_scores": performance_scores,
+            "campaign_links": [
+                {
+                    "id": link.id,
+                    "campaign_id": link.campaign_id,
+                    "ad_set_id": link.ad_set_id,
+                }
+                for link in links
+            ],
+        }
+
     def _shadow_upsert_asset(self, *, asset_id: int, operation: str) -> None:
         if not self._mongo_shadow_write_enabled():
             logger.info("creative_workflow.shadow_write_disabled operation=%s asset_id=%s", operation, asset_id)
             return
         try:
-            snapshot = self.get_asset(int(asset_id))
+            snapshot = self._asset_payload_from_local(asset_id=int(asset_id))
             creative_assets_repository.upsert_asset(snapshot)
             logger.info("creative_workflow.shadow_write_success operation=%s asset_id=%s", operation, asset_id)
         except Exception as exc:  # noqa: BLE001
@@ -192,14 +241,14 @@ class CreativeWorkflowService:
                 exc.__class__.__name__,
             )
 
-    def _hydrate_asset_from_document(self, payload: dict[str, object]) -> CreativeAsset | None:
+    def _hydrate_asset_from_document(self, payload: dict[str, object], *, overwrite_existing: bool = False) -> CreativeAsset | None:
         try:
             asset_id = int(payload.get("id") or payload.get("creative_id") or payload.get("asset_id") or 0)
         except Exception:  # noqa: BLE001
             asset_id = 0
         if asset_id <= 0:
             return None
-        if asset_id in self._assets:
+        if asset_id in self._assets and not overwrite_existing:
             return self._assets.get(asset_id)
 
         metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
@@ -294,6 +343,23 @@ class CreativeWorkflowService:
             logger.info("creative_workflow.read_through_hydrated operation=%s asset_id=%s", operation, asset_id)
         return hydrated
 
+    def _resolve_asset_mongo_first(self, *, asset_id: int, operation: str) -> CreativeAsset | None:
+        try:
+            payload = creative_assets_repository.get_by_creative_id(int(asset_id))
+            if isinstance(payload, dict):
+                hydrated = self._hydrate_asset_from_document(payload, overwrite_existing=True)
+                if hydrated is not None:
+                    logger.info("creative_workflow.mongo_first_hit operation=%s asset_id=%s", operation, asset_id)
+                    return hydrated
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "creative_workflow.mongo_first_failed operation=%s asset_id=%s error=%s",
+                operation,
+                asset_id,
+                exc.__class__.__name__,
+            )
+        return self._assets.get(int(asset_id))
+
     def create_asset(
         self,
         client_id: int,
@@ -327,11 +393,35 @@ class CreativeWorkflowService:
             self._performance_scores.setdefault(asset.id, {})
             self._links.setdefault(asset.id, [])
 
-        payload = self.get_asset(asset.id)
+        payload = self._asset_payload_from_local(asset_id=asset.id)
         self._shadow_upsert_asset(asset_id=asset.id, operation="create_asset")
         return payload
 
     def list_assets(self, client_id: int | None = None) -> list[dict[str, object]]:
+        if self._mongo_reads_source_enabled():
+            mongo_ids_seen: set[int] = set()
+            mongo_ids_ordered: list[int] = []
+            try:
+                mongo_items = creative_assets_repository.list_assets(limit=1000, client_id=client_id)
+                for payload in mongo_items:
+                    if not isinstance(payload, dict):
+                        continue
+                    hydrated = self._hydrate_asset_from_document(payload, overwrite_existing=True)
+                    if hydrated is not None:
+                        hydrated_id = int(hydrated.id)
+                        if hydrated_id not in mongo_ids_seen:
+                            mongo_ids_seen.add(hydrated_id)
+                            mongo_ids_ordered.append(hydrated_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("creative_workflow.mongo_first_list_failed error=%s", exc.__class__.__name__)
+                items = [asset for asset in self._assets.values() if client_id is None or asset.client_id == client_id]
+                return [self._asset_payload_from_local(asset_id=asset.id) for asset in items]
+
+            local_items = [asset for asset in self._assets.values() if client_id is None or asset.client_id == client_id]
+            ordered_ids: list[int] = list(mongo_ids_ordered)
+            ordered_ids.extend(int(asset.id) for asset in local_items if int(asset.id) not in mongo_ids_seen)
+            return [self._asset_payload_from_local(asset_id=asset_id) for asset_id in ordered_ids]
+
         if self._mongo_read_through_enabled():
             try:
                 mongo_items = creative_assets_repository.list_assets(limit=1000, client_id=client_id)
@@ -348,48 +438,14 @@ class CreativeWorkflowService:
         return [self.get_asset(asset.id) for asset in items]
 
     def get_asset(self, asset_id: int) -> dict[str, object]:
-        asset = self._resolve_asset_local_or_mongo(asset_id=asset_id, operation="get_asset")
+        asset = (
+            self._resolve_asset_mongo_first(asset_id=asset_id, operation="get_asset")
+            if self._mongo_reads_source_enabled()
+            else self._resolve_asset_local_or_mongo(asset_id=asset_id, operation="get_asset")
+        )
         if asset is None:
             raise ValueError("Asset not found")
-
-        variants = self._variants.get(asset_id, [])
-        links = self._links.get(asset_id, [])
-        performance_scores = self._performance_scores.get(asset_id, {})
-
-        return {
-            "id": asset.id,
-            "client_id": asset.client_id,
-            "name": asset.name,
-            "metadata": {
-                "format": asset.format,
-                "dimensions": asset.dimensions,
-                "objective_fit": asset.objective_fit,
-                "platform_fit": asset.platform_fit,
-                "language": asset.language,
-                "brand_tags": asset.brand_tags,
-                "legal_status": asset.legal_status,
-                "approval_status": asset.approval_status,
-            },
-            "creative_variants": [
-                {
-                    "id": variant.id,
-                    "headline": variant.headline,
-                    "body": variant.body,
-                    "cta": variant.cta,
-                    "media": variant.media,
-                }
-                for variant in variants
-            ],
-            "performance_scores": performance_scores,
-            "campaign_links": [
-                {
-                    "id": link.id,
-                    "campaign_id": link.campaign_id,
-                    "ad_set_id": link.ad_set_id,
-                }
-                for link in links
-            ],
-        }
+        return self._asset_payload_from_local(asset_id=asset.id)
 
     def add_variant(self, asset_id: int, headline: str, body: str, cta: str, media: str, *, _shadow_persist: bool = True) -> dict[str, object]:
         asset = self._resolve_asset_local_or_mongo(asset_id=asset_id, operation="add_variant")
@@ -446,7 +502,7 @@ class CreativeWorkflowService:
 
         asset.legal_status = legal_status
         asset.approval_status = approval_status
-        payload = self.get_asset(asset_id)
+        payload = self._asset_payload_from_local(asset_id=asset_id)
         self._shadow_upsert_asset(asset_id=asset_id, operation="update_approval")
         return payload
 
@@ -479,7 +535,7 @@ class CreativeWorkflowService:
             raise ValueError("Asset not found")
 
         self._performance_scores[asset.id] = scores
-        payload = self.get_asset(asset.id)
+        payload = self._asset_payload_from_local(asset_id=asset.id)
         self._shadow_upsert_asset(asset_id=asset.id, operation="set_performance_scores")
         return payload
 

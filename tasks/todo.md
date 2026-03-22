@@ -1,3 +1,19 @@
+# TODO — Creative workflow Mongo-first reads for get/list (feature-flagged) (2026-03-22)
+
+- [x] Refresh workspace state and inspect creative workflow/repositories/config/API/tests.
+- [x] Add feature flag `CREATIVE_WORKFLOW_MONGO_READS_SOURCE_ENABLED` with default OFF in settings and env example.
+- [x] Implement Mongo-first `get_asset(...)` read path with local fallback and cache update.
+- [x] Implement Mongo-first `list_assets(...)` baseline + local-missing merge without duplicates/overwrite of Mongo entries.
+- [x] Keep non-publish mutations source-of-truth model unchanged (in-memory + optional shadow-write).
+- [x] Keep publish flow and `/creative` API contracts unchanged.
+- [x] Sync local counters after Mongo hydration to avoid lower-ID generation.
+- [x] Add focused tests for OFF/ON Mongo-first behavior, fallback/error cases, dedupe/priorities, and counter sync.
+- [x] Run targeted tests and document review boundaries.
+
+## Review
+- [x] Confirmed Mongo-first mode applies only to `get_asset`/`list_assets` when flag ON.
+- [x] Confirmed no mutation source-of-truth migration, no publish changes, no endpoint/frontend/backfill changes.
+
 # TODO — Creative workflow Mongo read-through / lazy hydration (feature-flagged) (2026-03-22)
 
 - [x] Refresh workspace state and inspect `creative_workflow.py`, creative repositories, `api/creative.py`, config and tests.

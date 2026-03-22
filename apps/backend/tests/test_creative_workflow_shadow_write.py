@@ -12,6 +12,7 @@ def _new_service_with_flag(
     *,
     enabled: bool,
     read_through_enabled: bool = False,
+    reads_source_enabled: bool = False,
 ) -> workflow_module.CreativeWorkflowService:
     monkeypatch.setattr(
         workflow_module,
@@ -19,6 +20,7 @@ def _new_service_with_flag(
         lambda: SimpleNamespace(
             creative_workflow_mongo_shadow_write_enabled=enabled,
             creative_workflow_mongo_read_through_enabled=read_through_enabled,
+            creative_workflow_mongo_reads_source_enabled=reads_source_enabled,
         ),
     )
     return workflow_module.CreativeWorkflowService()
@@ -314,3 +316,94 @@ def test_get_asset_on_missing_local_with_mongo_error_remains_predictable(monkeyp
 
     with pytest.raises(ValueError):
         service.get_asset(888)
+
+
+def test_mongo_reads_source_flag_off_keeps_current_get_and_list_behavior(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, read_through_enabled=False, reads_source_enabled=False)
+    calls = {"get": 0, "list": 0}
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "get_by_creative_id", lambda _asset_id: calls.__setitem__("get", calls["get"] + 1))
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "list_assets", lambda **kwargs: calls.__setitem__("list", calls["list"] + 1) or [])
+
+    local = _create_asset(service)
+    assert service.get_asset(int(local["id"]))["id"] == int(local["id"])
+    assert len(service.list_assets(client_id=12)) == 1
+    assert calls == {"get": 0, "list": 0}
+
+
+def test_get_asset_mongo_first_reads_and_overrides_local_when_flag_on(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, reads_source_enabled=True)
+    local = _create_asset(service)
+    monkeypatch.setattr(
+        workflow_module.creative_assets_repository,
+        "get_by_creative_id",
+        lambda _asset_id: _mongo_asset_payload(asset_id=int(local["id"]), client_id=999),
+    )
+
+    resolved = service.get_asset(int(local["id"]))
+
+    assert resolved["client_id"] == 999
+    assert service._assets[int(local["id"])].client_id == 999
+
+
+def test_get_asset_mongo_first_falls_back_to_local_when_missing_in_mongo(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, reads_source_enabled=True)
+    local = _create_asset(service)
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "get_by_creative_id", lambda _asset_id: None)
+
+    resolved = service.get_asset(int(local["id"]))
+
+    assert resolved["id"] == int(local["id"])
+    assert resolved["name"] == "Creative 1"
+
+
+def test_get_asset_mongo_first_error_falls_back_to_local(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, reads_source_enabled=True)
+    local = _create_asset(service)
+    monkeypatch.setattr(
+        workflow_module.creative_assets_repository,
+        "get_by_creative_id",
+        lambda _asset_id: (_ for _ in ()).throw(RuntimeError("mongo read failed")),
+    )
+
+    resolved = service.get_asset(int(local["id"]))
+    assert resolved["id"] == int(local["id"])
+
+
+def test_list_assets_mongo_first_as_base_with_local_fallback_and_no_duplicates(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, reads_source_enabled=True)
+    local = _create_asset(service)
+    mongo_item_same = _mongo_asset_payload(asset_id=int(local["id"]), client_id=999)
+    mongo_item_new = _mongo_asset_payload(asset_id=901, client_id=12)
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "list_assets", lambda **kwargs: [mongo_item_same, mongo_item_new])
+
+    listed = service.list_assets(client_id=12)
+    ids = [int(item["id"]) for item in listed]
+
+    assert ids.count(int(local["id"])) == 1
+    assert 901 in ids
+    same_item = next(item for item in listed if int(item["id"]) == int(local["id"]))
+    assert same_item["client_id"] == 999
+
+
+def test_list_assets_mongo_first_error_returns_local_list(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, reads_source_enabled=True)
+    local = _create_asset(service)
+    monkeypatch.setattr(
+        workflow_module.creative_assets_repository,
+        "list_assets",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("mongo list failed")),
+    )
+
+    listed = service.list_assets(client_id=12)
+    assert [int(item["id"]) for item in listed] == [int(local["id"])]
+
+
+def test_mongo_first_reads_sync_local_counters_after_get_and_list(monkeypatch):
+    service = _new_service_with_flag(monkeypatch, enabled=False, reads_source_enabled=True)
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "get_by_creative_id", lambda _asset_id: _mongo_asset_payload(asset_id=700))
+    service.get_asset(700)
+    monkeypatch.setattr(workflow_module.creative_assets_repository, "list_assets", lambda **kwargs: [_mongo_asset_payload(asset_id=900)])
+    service.list_assets()
+    next_local = _create_asset(service)
+
+    assert int(next_local["id"]) >= 901

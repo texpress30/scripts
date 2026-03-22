@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-22: Pentru rollout Mongo-first pe citiri, aplică flag separat doar pe `get_asset`/`list_assets`, prioritizează snapshot-ul Mongo când există și păstrează fallback local predictibil pe erori sau miss-uri.
+
 - 2026-03-22: Pentru read-through incremental în creative workflow, implementează helper local-first + lazy hydration din Mongo doar pentru lipsuri, fără overwrite local și cu fallback predictibil pe erori (`not found`/list local).
 
 - 2026-03-22: Pentru wiring incremental la Mongo în creative workflow, păstrează in-memory ca source of truth și aplică shadow-write best-effort doar pe mutații, cu flag OFF by default și fără mutarea read path-ului/publish flow în același task.
