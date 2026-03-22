@@ -6521,3 +6521,20 @@ Plan confirmed: backend-first TikTok metadata + tests, minimal frontend test-onl
 - [x] Confirmed both dropdown lists include the requested values and are alphabetically ordered.
 - [x] Confirmed verification command(s) passed.
 - [ ] Confirmed commit + PR metadata creation completed.
+
+# TODO — Process alignment follow-through after AGENTS reminder (2026-03-22)
+
+- [x] Re-read AGENTS instructions and confirm mandatory workflow order for this turn.
+- [x] Record plan-first/check-in/review notes in `tasks/todo.md` before implementation.
+- [x] Update `tasks/lessons.md` with this correction pattern from user reminder.
+- [x] Run at least one verification command before finalization.
+- [x] Commit changes on current branch.
+- [x] Create PR metadata with `make_pr` immediately after commit.
+
+## Check-in before execution
+Plan verified: keep this turn minimal and process-focused, touching only `tasks/todo.md` and `tasks/lessons.md` to align with AGENTS workflow reminder.
+
+## Review
+- [x] Confirmed only process-tracking docs were updated.
+- [x] Confirmed verification command(s) ran before commit.
+- [x] Confirmed commit and PR metadata were completed in the same turn.
