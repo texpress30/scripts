@@ -540,3 +540,5 @@
 - 2026-03-22: După feedback „unsatisfied” pe un foundation PR mare, următorul increment trebuie livrat strict pe cerința punctuală (aici `media_id` feature-flagged în creative variants), cu validări centralizate, compatibilitate legacy explicită și teste focused pentru OFF/ON + persistență/hidratare.
 - 2026-03-22: Pentru recommendations history source-of-truth incremental, migrez strict metodele service cerute pe repository Mongo feature-flagged (generate/list/get/review/actions), păstrez `get_impact_report` + `/ai/legacy` intacte și evit orice fallback in-memory când flag-ul ON.
 - 2026-03-22: Pentru migrare incrementală logo profile la storage, înlocuiesc strict fluxul FileReader/dataURL cu helper reutilizabil init->upload->complete și persist `logo_media_id` + fallback preview robust în backend, fără delete storage/backfill sau extinderi Creative UI.
+
+- 2026-03-22: După orice corecție de proces din partea userului, verific imediat AGENTS.md, aliniez workflow-ul (plan/check-in/track/review) și actualizez `tasks/lessons.md` în același turn.
