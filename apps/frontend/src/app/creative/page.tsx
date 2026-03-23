@@ -63,6 +63,7 @@ type CreativeAsset = {
   updated_at: string;
 };
 
+type CreateAssetResponse = CreativeAssetApiItem;
 type AddVariantResponse = { id: number; asset_id: number; media_id?: string | null; media?: string };
 type PublishResponse = {
   id: number;
@@ -143,182 +144,6 @@ export default function CreativePage() {
   const [variantPreviewLoading, setVariantPreviewLoading] = useState(false);
   const [variantPreviewError, setVariantPreviewError] = useState("");
 
-  const [addVariantLoading, setAddVariantLoading] = useState(false);
-  const [addVariantError, setAddVariantError] = useState("");
-  const [addVariantSuccess, setAddVariantSuccess] = useState("");
-
-  useEffect(() => {
-    let ignore = false;
-    async function loadClients() {
-      try {
-        const payload = await apiRequest<{ items: CreativeClient[] }>("/clients");
-        const items = Array.isArray(payload.items)
-          ? payload.items.map((i) => ({ id: Number(i.id || 0), name: String(i.name || "").trim() })).filter((i) => i.id > 0 && i.name !== "")
-          : [];
-        if (!ignore) {
-          setCreativeClients(items);
-          setSelectedClientId((prev) => (prev && items.some((item) => item.id === prev) ? prev : items[0]?.id ?? null));
-        }
-      } catch {
-        if (!ignore) {
-          setCreativeClients([]);
-          setSelectedClientId(null);
-        }
-      }
-    }
-    void loadClients();
-    return () => {
-      ignore = true;
-    };
-  }, []);
-
-  const loadAssets = useCallback(async () => {
-    if (!selectedClientId) {
-      setAssets(placeholderAssets);
-      setAssetDetails([]);
-      setSelectedAssetId(null);
-      return;
-    }
-
-    setAssetsLoading(true);
-    setAssetsError("");
-    try {
-      const payload = await apiRequest<{ items: CreativeAssetApiItem[] }>(`/creative/library/assets?client_id=${selectedClientId}`);
-      const details = Array.isArray(payload.items) ? payload.items : [];
-      const clientName = creativeClients.find((c) => c.id === selectedClientId)?.name ?? `Client #${selectedClientId}`;
-      const mapped = details.map((item) => toCreativeAsset(item, clientName)).filter((item) => item.id > 0);
-      setAssetDetails(details);
-      setAssets(mapped.length > 0 ? mapped : []);
-      setSelectedAssetId((prev) => {
-        if (prev && mapped.some((item) => item.id === prev)) return prev;
-        return mapped[0]?.id ?? null;
-      });
-    } catch (err) {
-      setAssetsError(err instanceof Error ? err.message : "Nu am putut încărca asset-urile creative.");
-    } finally {
-      setAssetsLoading(false);
-    }
-  }, [creativeClients, selectedClientId]);
-
-  useEffect(() => {
-    void loadAssets();
-  }, [loadAssets]);
-
-  const selectedAssetDetail = useMemo(
-    () => assetDetails.find((item) => Number(item.id || 0) === Number(selectedAssetId || 0)) ?? null,
-    [assetDetails, selectedAssetId],
-  );
-
-  const variants = useMemo(() => {
-    if (!selectedAssetDetail || !Array.isArray(selectedAssetDetail.creative_variants)) return [];
-    return selectedAssetDetail.creative_variants;
-  }, [selectedAssetDetail]);
-
-  useEffect(() => {
-    setSelectedVariantId((prev) => {
-      if (prev && variants.some((v) => v.id === prev)) return prev;
-      return variants[0]?.id ?? null;
-    });
-  }, [variants]);
-
-  const selectedVariant = useMemo(() => variants.find((item) => item.id === selectedVariantId) ?? null, [variants, selectedVariantId]);
-
-  useEffect(() => {
-    if (!selectedVariant || !selectedVariant.media_id || !selectedClientId) {
-      setVariantPreviewUrl("");
-      setVariantPreviewMimeType("");
-      setVariantPreviewError(selectedVariant && !selectedVariant.media_id ? "Varianta are doar media legacy (fără media_id)." : "");
-      setVariantPreviewLoading(false);
-      return;
-    }
-
-    const validClientId = selectedClientId;
-    const mediaIdToLoad = selectedVariant.media_id as string;
-    let ignore = false;
-    setVariantPreviewLoading(true);
-    setVariantPreviewError("");
-    async function loadVariantPreview() {
-      try {
-        const access = await getMediaAccessUrl({ clientId: validClientId, mediaId: mediaIdToLoad, disposition: "inline" });
-        if (!ignore) {
-          setVariantPreviewUrl(String(access.url || "").trim());
-          setVariantPreviewMimeType(String(access.mime_type || "").trim());
-        }
-      } catch (err) {
-        if (!ignore) {
-          setVariantPreviewUrl("");
-          setVariantPreviewMimeType("");
-          setVariantPreviewError(err instanceof Error ? err.message : "Preview indisponibil pentru această variantă.");
-        }
-      } finally {
-        if (!ignore) setVariantPreviewLoading(false);
-      }
-    }
-
-    void loadVariantPreview();
-    return () => {
-      ignore = true;
-    };
-  }, [selectedClientId, selectedVariant]);
-
-  async function onCreateAssetWithFirstVariant() {
-    setCreateError("");
-    setCreateSuccess("");
-
-    if (!selectedClientId) {
-      setCreateError("Selectează un client înainte să creezi asset-ul.");
-      return;
-    }
-    if (!selectedMedia) {
-      setCreateError("Selectează mai întâi un media item din Media Library pentru prima variantă.");
-      return;
-    }
-    if (assetName.trim() === "") {
-      setCreateError("Numele asset-ului este obligatoriu.");
-      return;
-    }
-
-    setCreateLoading(true);
-    let createdAsset: CreateAssetResponse | null = null;
-    try {
-      createdAsset = await apiRequest<CreateAssetResponse>("/creative/library/assets", {
-        method: "POST",
-        body: JSON.stringify({
-          client_id: selectedClientId,
-          name: assetName.trim(),
-          format: assetFormat,
-          dimensions: "1080x1080",
-          objective_fit: "awareness",
-          platform_fit: ["meta"],
-          language: "ro",
-          brand_tags: [],
-          legal_status: "pending",
-          approval_status: "draft",
-        }),
-      });
-
-      const variantPayload = {
-        headline: variantHeadline.trim() || assetName.trim(),
-        body: variantBody.trim() || "Prima variantă creată din Creative Media Library.",
-        cta: variantCta.trim() || "Afla mai mult",
-        media_id: selectedMedia.media_id,
-        media: resolveLegacyMedia(selectedMedia),
-      };
-
-  const [creativeClients, setCreativeClients] = useState<CreativeClient[]>([]);
-  const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
-  const [selectedMedia, setSelectedMedia] = useState<CreativeMediaItem | null>(null);
-
-  const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null);
-  const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null);
-  const [variantPreviewUrl, setVariantPreviewUrl] = useState("");
-  const [variantPreviewMimeType, setVariantPreviewMimeType] = useState("");
-  const [variantPreviewLoading, setVariantPreviewLoading] = useState(false);
-  const [variantPreviewError, setVariantPreviewError] = useState("");
-
-  const [variantHeadline, setVariantHeadline] = useState("Primary headline");
-  const [variantBody, setVariantBody] = useState("Descriere scurtă pentru variantă.");
-  const [variantCta, setVariantCta] = useState("Afla mai mult");
   const [addVariantLoading, setAddVariantLoading] = useState(false);
   const [addVariantError, setAddVariantError] = useState("");
   const [addVariantSuccess, setAddVariantSuccess] = useState("");
@@ -418,12 +243,14 @@ export default function CreativePage() {
       return;
     }
 
+    const validClientId = selectedClientId;
+    const mediaIdToLoad = selectedVariant.media_id as string;
     let ignore = false;
     setVariantPreviewLoading(true);
     setVariantPreviewError("");
     async function loadVariantPreview() {
       try {
-        const access = await getMediaAccessUrl({ clientId: selectedClientId, mediaId: selectedVariant.media_id as string, disposition: "inline" });
+        const access = await getMediaAccessUrl({ clientId: validClientId, mediaId: mediaIdToLoad, disposition: "inline" });
         if (!ignore) {
           setVariantPreviewUrl(String(access.url || "").trim());
           setVariantPreviewMimeType(String(access.mime_type || "").trim());
@@ -445,39 +272,67 @@ export default function CreativePage() {
     };
   }, [selectedClientId, selectedVariant]);
 
-  async function onAddVariantToSelectedAsset() {
-    setAddVariantError("");
-    setAddVariantSuccess("");
+  async function onCreateAssetWithFirstVariant() {
+    setCreateError("");
+    setCreateSuccess("");
 
-    if (!selectedAssetId) {
-      setAddVariantError("Selectează mai întâi un asset din listă.");
+    if (!selectedClientId) {
+      setCreateError("Selectează un client înainte să creezi asset-ul.");
       return;
     }
     if (!selectedMedia) {
-      setAddVariantError("Selectează media din Creative Media Library înainte să adaugi varianta.");
+      setCreateError("Selectează mai întâi un media item din Media Library pentru prima variantă.");
+      return;
+    }
+    if (assetName.trim() === "") {
+      setCreateError("Numele asset-ului este obligatoriu.");
       return;
     }
 
-    setAddVariantLoading(true);
+    setCreateLoading(true);
+    let createdAsset: CreateAssetResponse | null = null;
     try {
-      const payload = {
-        headline: variantHeadline.trim() || "Headline",
-        body: variantBody.trim() || "Body",
+      createdAsset = await apiRequest<CreateAssetResponse>("/creative/library/assets", {
+        method: "POST",
+        body: JSON.stringify({
+          client_id: selectedClientId,
+          name: assetName.trim(),
+          format: assetFormat,
+          dimensions: "1080x1080",
+          objective_fit: "awareness",
+          platform_fit: ["meta"],
+          language: "ro",
+          brand_tags: [],
+          legal_status: "pending",
+          approval_status: "draft",
+        }),
+      });
+
+      const variantPayload = {
+        headline: variantHeadline.trim() || assetName.trim(),
+        body: variantBody.trim() || "Prima variantă creată din Creative Media Library.",
         cta: variantCta.trim() || "Afla mai mult",
         media_id: selectedMedia.media_id,
         media: resolveLegacyMedia(selectedMedia),
       };
-      const result = await apiRequest<AddVariantResponse>(`/creative/library/assets/${selectedAssetId}/variants`, {
+
+      await apiRequest<AddVariantResponse>(`/creative/library/assets/${createdAsset.id}/variants`, {
         method: "POST",
-        body: JSON.stringify(payload),
+        body: JSON.stringify(variantPayload),
       });
-      setAddVariantSuccess(`Varianta #${result.id} a fost adăugată pe asset #${selectedAssetId}.`);
+
+      setCreateSuccess(`Asset #${createdAsset.id} și prima variantă au fost create cu media ${selectedMedia.media_id}.`);
       await loadAssets();
-      setSelectedVariantId(result.id);
     } catch (err) {
-      setAddVariantError(err instanceof Error ? err.message : "Nu am putut adăuga varianta.");
+      const message = err instanceof Error ? err.message : "Nu am putut finaliza flow-ul create asset + first variant.";
+      if (createdAsset) {
+        setCreateError(`Asset #${createdAsset.id} a fost creat, dar add variant a eșuat: ${message}`);
+        await loadAssets();
+      } else {
+        setCreateError(message);
+      }
     } finally {
-      setAddVariantLoading(false);
+      setCreateLoading(false);
     }
   }
 
@@ -510,57 +365,6 @@ export default function CreativePage() {
       setPublishError(err instanceof Error ? err.message : "Nu am putut publica asset-ul selectat.");
     } finally {
       setIsPublishing(false);
-    }
-  }
-
-      setCreateSuccess(`Asset #${createdAsset.id} și prima variantă au fost create cu media ${selectedMedia.media_id}.`);
-      await loadAssets();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Nu am putut finaliza flow-ul create asset + first variant.";
-      if (createdAsset) {
-        setCreateError(`Asset #${createdAsset.id} a fost creat, dar add variant a eșuat: ${message}`);
-        await loadAssets();
-      } else {
-        setCreateError(message);
-      }
-    } finally {
-      setCreateLoading(false);
-    }
-  }
-
-  async function onAddVariantToSelectedAsset() {
-    setAddVariantError("");
-    setAddVariantSuccess("");
-
-    if (!selectedAssetId) {
-      setAddVariantError("Selectează mai întâi un asset din listă.");
-      return;
-    }
-    if (!selectedMedia) {
-      setAddVariantError("Selectează media din Creative Media Library înainte să adaugi varianta.");
-      return;
-    }
-
-    setAddVariantLoading(true);
-    try {
-      const payload = {
-        headline: variantHeadline.trim() || "Headline",
-        body: variantBody.trim() || "Body",
-        cta: variantCta.trim() || "Afla mai mult",
-        media_id: selectedMedia.media_id,
-        media: resolveLegacyMedia(selectedMedia),
-      };
-      const result = await apiRequest<AddVariantResponse>(`/creative/library/assets/${selectedAssetId}/variants`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-      setAddVariantSuccess(`Varianta #${result.id} a fost adăugată pe asset #${selectedAssetId}.`);
-      await loadAssets();
-      setSelectedVariantId(result.id);
-    } catch (err) {
-      setAddVariantError(err instanceof Error ? err.message : "Nu am putut adăuga varianta.");
-    } finally {
-      setAddVariantLoading(false);
     }
   }
   const filtered = assets.filter((a) => {
