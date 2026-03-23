@@ -48,8 +48,8 @@ function listPayloadWithVariants() {
         name: "Asset nou",
         metadata: { format: "image", platform_fit: ["meta"], approval_status: "draft" },
         creative_variants: [
-          { id: 901, headline: "Image variant", body: "Body", cta: "CTA", media: "image.png", media_id: "m_img" },
-          { id: 902, headline: "Video variant", body: "Body", cta: "CTA", media: "clip.mp4", media_id: "m_vid" },
+          { id: 901, headline: "Image variant", body: "Body", cta: "CTA", media: "image.png", media_id: "m_img", approval_status: "approved" },
+          { id: 902, headline: "Video variant", body: "Body", cta: "CTA", media: "clip.mp4", media_id: "m_vid", approval_status: "in_review" },
           { id: 903, headline: "Legacy only", body: "Body", cta: "CTA", media: "legacy-only", media_id: null },
         ],
       },
@@ -87,6 +87,7 @@ describe("CreativePage asset detail + existing asset add variant", () => {
     expect(await screen.findByText(/Asset selectat:/i)).toBeInTheDocument();
     expect(screen.getByTestId("asset-variants-list")).toBeInTheDocument();
     expect(screen.getByTestId("asset-variant-901")).toBeInTheDocument();
+    expect(screen.getByText(/Approval: approved/i)).toBeInTheDocument();
   });
 
   it("renders image preview for variant with media_id", async () => {
@@ -135,7 +136,7 @@ describe("CreativePage asset detail + existing asset add variant", () => {
     expect(await screen.findByText(/Varianta are doar media legacy/i)).toBeInTheDocument();
   });
 
-  it("blocks add variant when no asset is selected", async () => {
+  it("blocks add variant action when no asset is selected", async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === "/clients") return { items: [{ id: 10, name: "Client 10" }] };
       if (path.startsWith("/creative/library/assets?client_id=10")) return { items: [] };
@@ -144,21 +145,18 @@ describe("CreativePage asset detail + existing asset add variant", () => {
 
     render(<CreativePage />);
 
-    await screen.findByTestId("add-variant-button");
-    fireEvent.click(screen.getByTestId("add-variant-button"));
-
-    expect(await screen.findByText(/Selectează mai întâi un asset/i)).toBeInTheDocument();
+    const button = await screen.findByTestId("add-variant-button");
+    expect(button).toBeDisabled();
   });
 
-  it("blocks add variant when no media is selected", async () => {
+  it("blocks add variant action when no media is selected", async () => {
     setupBaseApi();
     render(<CreativePage />);
 
     fireEvent.click(await screen.findByTestId("select-asset-201"));
     fireEvent.click(screen.getByText("clear-media"));
-    fireEvent.click(screen.getByTestId("add-variant-button"));
 
-    expect(await screen.findByText(/Selectează media din Creative Media Library/i)).toBeInTheDocument();
+    expect(screen.getByTestId("add-variant-button")).toBeDisabled();
   });
 
   it("sends media_id and media legacy when adding variant on selected asset", async () => {

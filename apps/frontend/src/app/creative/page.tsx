@@ -9,9 +9,6 @@ import {
   Video,
   Plus,
   Search,
-  Eye,
-  Download,
-  MoreHorizontal,
   CheckCircle2,
   Clock,
   AlertCircle,
@@ -33,6 +30,7 @@ type CreativeVariant = {
   cta: string;
   media?: string;
   media_id?: string | null;
+  approval_status?: string;
 };
 
 type CreativeAssetApiItem = {
@@ -58,7 +56,8 @@ type CreativeAsset = {
 };
 
 type AddVariantResponse = { id: number; asset_id: number; media_id?: string | null; media?: string };
-type CreateAssetResponse = { id: number; [key: string]: any };
+
+export interface CreateAssetResponse { id: number; }
 
 const statusConfig = {
   approved: { label: "Aprobat", icon: CheckCircle2, className: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
@@ -104,6 +103,7 @@ export default function CreativePage() {
   const [assets, setAssets] = useState<CreativeAsset[]>(placeholderAssets);
   const [assetDetails, setAssetDetails] = useState<CreativeAssetApiItem[]>([]);
   const [assetsLoading, setAssetsLoading] = useState(false);
+  const [assetsError, setAssetsError] = useState("");
 
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
@@ -125,8 +125,10 @@ export default function CreativePage() {
   const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null);
   const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null);
   const [variantPreviewUrl, setVariantPreviewUrl] = useState("");
+  const [variantPreviewMimeType, setVariantPreviewMimeType] = useState("");
   const [variantPreviewLoading, setVariantPreviewLoading] = useState(false);
   const [variantPreviewError, setVariantPreviewError] = useState("");
+
   const [addVariantLoading, setAddVariantLoading] = useState(false);
   const [addVariantError, setAddVariantError] = useState("");
   const [addVariantSuccess, setAddVariantSuccess] = useState("");
@@ -165,6 +167,7 @@ export default function CreativePage() {
     }
 
     setAssetsLoading(true);
+    setAssetsError("");
     try {
       const payload = await apiRequest<{ items: CreativeAssetApiItem[] }>(`/creative/library/assets?client_id=${selectedClientId}`);
       const details = Array.isArray(payload.items) ? payload.items : [];
@@ -176,10 +179,8 @@ export default function CreativePage() {
         if (prev && mapped.some((item) => item.id === prev)) return prev;
         return mapped[0]?.id ?? null;
       });
-    } catch {
-      setAssets(placeholderAssets);
-      setAssetDetails([]);
-      setSelectedAssetId(null);
+    } catch (err) {
+      setAssetsError(err instanceof Error ? err.message : "Nu am putut încărca asset-urile creative.");
     } finally {
       setAssetsLoading(false);
     }
@@ -211,6 +212,7 @@ export default function CreativePage() {
   useEffect(() => {
     if (!selectedVariant || !selectedVariant.media_id || !selectedClientId) {
       setVariantPreviewUrl("");
+      setVariantPreviewMimeType("");
       setVariantPreviewError(selectedVariant && !selectedVariant.media_id ? "Varianta are doar media legacy (fără media_id)." : "");
       setVariantPreviewLoading(false);
       return;
@@ -224,10 +226,14 @@ export default function CreativePage() {
     async function loadVariantPreview() {
       try {
         const access = await getMediaAccessUrl({ clientId: validClientId, mediaId: mediaIdToLoad, disposition: "inline" });
-        if (!ignore) setVariantPreviewUrl(String(access.url || "").trim());
+        if (!ignore) {
+          setVariantPreviewUrl(String(access.url || "").trim());
+          setVariantPreviewMimeType(String(access.mime_type || "").trim());
+        }
       } catch (err) {
         if (!ignore) {
           setVariantPreviewUrl("");
+          setVariantPreviewMimeType("");
           setVariantPreviewError(err instanceof Error ? err.message : "Preview indisponibil pentru această variantă.");
         }
       } finally {
@@ -340,7 +346,6 @@ export default function CreativePage() {
       setAddVariantLoading(false);
     }
   }
-
   const filtered = assets.filter((a) => {
     const matchesSearch = a.name.toLowerCase().includes(searchQuery.toLowerCase()) || a.client_name.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesType = filterType === "all" || a.type === filterType;
@@ -471,6 +476,8 @@ export default function CreativePage() {
           <h2 className="text-base font-semibold text-foreground">Asset detail + variants</h2>
           {!selectedAssetId ? (
             <p className="text-sm text-muted-foreground">Selectează un asset din listă pentru a vedea variantele și preview-ul.</p>
+          ) : assetsError ? (
+            <p className="text-sm text-red-700">Nu am putut încărca detaliile asset-ului selectat: {assetsError}</p>
           ) : selectedAssetDetail === null ? (
             <p className="text-sm text-muted-foreground">Se încarcă detaliile asset-ului...</p>
           ) : (
@@ -495,6 +502,7 @@ export default function CreativePage() {
                             >
                               <p className="text-sm font-medium">Variant #{variant.id} — {variant.headline || "(fără headline)"}</p>
                               <p className="mt-1 text-xs text-muted-foreground">CTA: {variant.cta || "-"}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">Approval: {variant.approval_status ? variant.approval_status : "-"}</p>
                               <p className="mt-1 text-xs text-muted-foreground">media_id: {variant.media_id ? variant.media_id : "lipsă"}</p>
                             </button>
                           </li>
@@ -514,7 +522,7 @@ export default function CreativePage() {
                     <p className="mt-3 text-sm text-amber-700">{variantPreviewError}</p>
                   ) : variantPreviewUrl === "" ? (
                     <p className="mt-3 text-sm text-muted-foreground">Preview indisponibil.</p>
-                  ) : looksLikeVideo(variantPreviewUrl) || looksLikeVideo(String(selectedVariant.media || "")) ? (
+                  ) : variantPreviewMimeType.startsWith("video/") || looksLikeVideo(variantPreviewUrl) || looksLikeVideo(String(selectedVariant.media || "")) ? (
                     <video controls src={variantPreviewUrl} className="mt-3 max-h-60 w-full rounded" data-testid="variant-preview-video" />
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -571,7 +579,13 @@ export default function CreativePage() {
             </label>
           </div>
 
-          <button type="button" className="mcc-btn-primary gap-2" onClick={() => void onAddVariantToSelectedAsset()} disabled={addVariantLoading} data-testid="add-variant-button">
+          <button
+            type="button"
+            className="mcc-btn-primary gap-2"
+            onClick={() => void onAddVariantToSelectedAsset()}
+            disabled={addVariantLoading || !selectedAssetId || !selectedMedia}
+            data-testid="add-variant-button"
+          >
             {addVariantLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             Add variant with selected media
           </button>
