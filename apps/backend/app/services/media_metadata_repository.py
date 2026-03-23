@@ -56,8 +56,8 @@ class MediaMetadataRepository:
             unique=True,
             name="ux_media_files_storage_bucket_key",
             partialFilterExpression={
-                "storage.bucket": {"$exists": True, "$type": "string", "$ne": ""},
-                "storage.key": {"$exists": True, "$type": "string", "$ne": ""},
+                "storage.bucket": {"$type": "string", "$gt": ""},
+                "storage.key": {"$type": "string", "$gt": ""},
             },
         )
         collection.create_index(
