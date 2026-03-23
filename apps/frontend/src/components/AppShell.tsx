@@ -328,6 +328,10 @@ function isAgencyScopedRole(role: AppRole): boolean {
   return !isSubaccountScopedRole(role);
 }
 
+export function resolveGlobalFaviconLogoUrl(companySettings: { logo_url?: string | null } | null | undefined): string {
+  return String(companySettings?.logo_url ?? "").trim();
+}
+
 export function filterAgencyNavItems(params: {
   navItems: NavItem[];
   role: AppRole;
@@ -651,7 +655,7 @@ export function AppShell({
     if (!isSubContext) return `Locație: ${companySettings?.city || "-"}, ${companySettings?.country || "-"}`;
     return formatSubaccountBrandingLocation(subaccountBusinessProfile?.city, subaccountBusinessProfile?.country);
   }, [isSubContext, companySettings?.city, companySettings?.country, subaccountBusinessProfile?.city, subaccountBusinessProfile?.country]);
-  const agencyLogoUrl = companySettings?.logo_url?.trim() || "";
+  const agencyLogoUrl = resolveGlobalFaviconLogoUrl(companySettings);
   const subLogoUrl = subaccountBusinessProfile?.logoUrl?.trim() || "";
   const brandingLogoUrl = isSubContext ? subLogoUrl : agencyLogoUrl;
   const brandingInitials = useMemo(() => initials(brandingTitle), [brandingTitle]);
@@ -1026,7 +1030,7 @@ export function AppShell({
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-      <GlobalFavicon agencyLogoUrl={companySettings?.logo_url} refreshKey={companySettingsRefreshKey} />
+      <GlobalFavicon agencyLogoUrl={agencyLogoUrl} refreshKey={companySettingsRefreshKey} />
       {mobileOpen && <div className="fixed inset-0 z-40 bg-black/40 md:hidden" onClick={() => setMobileOpen(false)} />}
 
       <aside
