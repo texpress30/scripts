@@ -8,8 +8,8 @@ const MANAGED_ATTR = "data-global-favicon-managed";
 function withVersion(href: string, refreshKey: number): string {
   const value = String(href || "").trim();
   if (!value) return DEFAULT_FAVICON_HREF;
-  const separator = value.includes("?") ? "&" : "?";
-  return `${value}${separator}v=${refreshKey}`;
+  const hashSeparator = value.includes("#") ? "&" : "#";
+  return `${value}${hashSeparator}v=${refreshKey}`;
 }
 
 export function resolveAgencyFaviconHref(agencyLogoUrl: string | null | undefined, refreshKey: number): string {

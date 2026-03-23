@@ -58,7 +58,7 @@ export default function LoginPage() {
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/30">
             <Activity className="h-6 w-6" />
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">MCC Command Center</h1>
+          <h1 className="text-2xl font-bold text-slate-900">VOXEL MCC</h1>
           <p className="mt-1 text-sm text-slate-600">Intră în platformă</p>
         </div>
 
