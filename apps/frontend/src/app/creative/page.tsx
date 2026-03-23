@@ -336,6 +336,42 @@ export default function CreativePage() {
     }
   }
 
+  async function onAddVariantToSelectedAsset() {
+    setAddVariantError("");
+    setAddVariantSuccess("");
+
+    if (!selectedAssetId) {
+      setAddVariantError("Selectează mai întâi un asset din listă.");
+      return;
+    }
+    if (!selectedMedia) {
+      setAddVariantError("Selectează media din Creative Media Library înainte să adaugi varianta.");
+      return;
+    }
+
+    setAddVariantLoading(true);
+    try {
+      const payload = {
+        headline: variantHeadline.trim() || "Headline",
+        body: variantBody.trim() || "Body",
+        cta: variantCta.trim() || "Afla mai mult",
+        media_id: selectedMedia.media_id,
+        media: resolveLegacyMedia(selectedMedia),
+      };
+      const result = await apiRequest<AddVariantResponse>(`/creative/library/assets/${selectedAssetId}/variants`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      setAddVariantSuccess(`Varianta #${result.id} a fost adăugată pe asset #${selectedAssetId}.`);
+      await loadAssets();
+      setSelectedVariantId(result.id);
+    } catch (err) {
+      setAddVariantError(err instanceof Error ? err.message : "Nu am putut adăuga varianta.");
+    } finally {
+      setAddVariantLoading(false);
+    }
+  }
+
   async function onPublishSelectedAsset() {
     setPublishError("");
     setPublishSuccess("");
