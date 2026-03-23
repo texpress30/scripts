@@ -6654,3 +6654,30 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, f�
 - [x] Frontend modificat strict în `apps/frontend/src/app/settings/company/page.tsx` și refresh minim în `apps/frontend/src/components/AppShell.tsx`.
 - [x] Backend modificat strict pe contractul/serviciul company settings pentru `logo_media_id` + preview fallback (`apps/backend/app/schemas/company.py`, `apps/backend/app/api/company.py`, `apps/backend/app/services/company_settings.py`).
 - [x] Fără favicon global nou, fără Creative UI/media library/publish/storage-delete, fără backfill/migrare.
+
+# TODO — Global agency favicon in AppShell (2026-03-23)
+
+- [x] Refresh workspace (`git fetch` + `git pull`) and inspect explicit files: `AppShell.tsx`, global layout, `settings/company/page.tsx`, branding/favicon utilities, and static frontend favicon assets.
+- [x] Identify current gap (favicon logic local/non-global) and move favicon handling into a global shell-level component.
+- [x] Implement minimal reusable global favicon manager sourced strictly from agency company logo (`logo_url`) with fallback to app default favicon.
+- [x] Ensure runtime updates without hard refresh via existing `company-settings-updated` event + shell refetch, including logo removal fallback.
+- [x] Keep sub-account branding out of global favicon logic.
+- [x] Add focused frontend tests for default fallback, agency logo set/update/remove, navigation persistence, event refresh behavior, and invalid URL fallback.
+- [x] Run targeted frontend tests and finalize review notes.
+
+## Review
+- [x] Confirm no changes to upload/storage flow, Creative UI, media library, or publish flow.
+- [x] Confirm global favicon source is agency logo only (never sub-account logo).
+
+# TODO — Favicon source priority fix (agency authoritative) (2026-03-23)
+
+- [x] Refresh workspace and inspect explicit favicon/head sources: `GlobalFavicon.tsx`, `AppShell.tsx`, root `layout.tsx`, `app/icon.*`, manifest/webmanifest candidates, and `settings/company` refresh event usage.
+- [x] Identify root cause for wrong tab icon (multiple competing icon links and non-authoritative update path).
+- [x] Implement minimal centralized fix so agency favicon updates effective browser icon links (`rel=icon` + `rel=shortcut icon`) instead of adding a secondary link only.
+- [x] Preserve fallback default icon and runtime update flow after save/remove logo with no sub-account favicon usage.
+- [x] Add focused frontend tests for existing-link replacement, shortcut icon handling, no duplicate stale links, update/remove/fallback/error flows.
+- [x] Run targeted frontend tests and complete review notes.
+
+## Review
+- [x] Confirm no upload/storage flow changes, no Company Settings UX changes, no Creative/media/publish changes.
+- [x] Confirm agency logo remains the only source for global favicon override.
