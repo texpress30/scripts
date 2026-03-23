@@ -107,6 +107,70 @@ export default function CreativePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [creativeClients, setCreativeClients] = useState<CreativeClient[]>([]);
+  const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
+  const [selectedMedia, setSelectedMedia] = useState<CreativeMediaItem | null>(null);
+
+  const [assetName, setAssetName] = useState("");
+  const [assetFormat, setAssetFormat] = useState<"image" | "video" | "banner" | "copy">("image");
+  const [variantHeadline, setVariantHeadline] = useState("Primary headline");
+  const [variantBody, setVariantBody] = useState("Descriere scurtă pentru prima variantă.");
+  const [variantCta, setVariantCta] = useState("Afla mai mult");
+
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const [createSuccess, setCreateSuccess] = useState("");
+
+  useEffect(() => {
+    let ignore = false;
+    async function loadClientsForCreative() {
+      try {
+        const payload = await apiRequest<{ items: CreativeClient[] }>("/clients");
+        const items = Array.isArray(payload.items)
+          ? payload.items
+              .map((item) => ({ id: Number(item.id || 0), name: String(item.name || "").trim() }))
+              .filter((item) => item.id > 0 && item.name !== "")
+          : [];
+        if (!ignore) {
+          setCreativeClients(items);
+          setSelectedClientId((prev) => (prev && items.some((item) => item.id === prev) ? prev : items[0]?.id ?? null));
+        }
+      } catch {
+        if (!ignore) {
+          setCreativeClients([]);
+          setSelectedClientId(null);
+        }
+      }
+    }
+
+    void loadClientsForCreative();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  const loadAssets = useCallback(async () => {
+    if (!selectedClientId) {
+      setAssets(placeholderAssets);
+      return;
+    }
+
+    setAssetsLoading(true);
+    try {
+      const payload = await apiRequest<{ items: CreativeAssetApiItem[] }>(`/creative/library/assets?client_id=${selectedClientId}`);
+      const clientName = creativeClients.find((item) => item.id === selectedClientId)?.name ?? `Client #${selectedClientId}`;
+      const mapped = Array.isArray(payload.items) ? payload.items.map((item) => toCreativeAsset(item, clientName)).filter((item) => item.id > 0) : [];
+      setAssets(mapped.length > 0 ? mapped : []);
+    } catch {
+      setAssets(placeholderAssets);
+    } finally {
+      setAssetsLoading(false);
+    }
+  }, [creativeClients, selectedClientId]);
+
+  useEffect(() => {
+    void loadAssets();
+  }, [loadAssets]);
 
   const [creativeClients, setCreativeClients] = useState<CreativeClient[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
@@ -504,6 +568,86 @@ export default function CreativePage() {
             Add variant with selected media
           </button>
         </div>
+
+        <div className="mt-6 space-y-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="text-lg font-semibold text-foreground">Creative Media Library</h2>
+            <div className="flex items-center gap-2">
+              <span className="text-xs uppercase tracking-wide text-muted-foreground">Client</span>
+              <select
+                className="mcc-input h-9 text-sm"
+                value={selectedClientId ?? ""}
+                onChange={(event) => setSelectedClientId(event.target.value ? Number(event.target.value) : null)}
+                data-testid="creative-media-client-select"
+              >
+                {creativeClients.length === 0 ? <option value="">Niciun client</option> : null}
+                {creativeClients.map((client) => (
+                  <option key={client.id} value={client.id}>
+                    {client.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <CreativeMediaLibrary clientId={selectedClientId} onSelectMedia={setSelectedMedia} />
+          {selectedMedia ? (
+            <p className="text-sm text-muted-foreground" data-testid="creative-selected-media-hint">
+              Media selectată local pentru pasul următor: <span className="font-mono">{selectedMedia.media_id}</span> ({selectedMedia.kind})
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground" data-testid="creative-selected-media-hint">Nu ai selectat încă media pentru pasul următor.</p>
+          )}
+        </div>
+
+        <div className="mt-6 space-y-3 rounded-md border border-border bg-muted/20 p-4" data-testid="creative-create-first-variant-flow">
+          <h2 className="text-base font-semibold text-foreground">Create asset + first variant</h2>
+          <p className="text-sm text-muted-foreground">Flow compact care folosește media selectată din Creative Media Library.</p>
+
+          {createError ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{createError}</div> : null}
+          {createSuccess ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{createSuccess}</div> : null}
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="text-sm text-slate-700">
+              Asset name
+              <input value={assetName} onChange={(event) => setAssetName(event.target.value)} className="mcc-input mt-1" data-testid="creative-create-name" />
+            </label>
+            <label className="text-sm text-slate-700">
+              Format
+              <select value={assetFormat} onChange={(event) => setAssetFormat(event.target.value as "image" | "video" | "banner" | "copy")} className="mcc-input mt-1" data-testid="creative-create-format">
+                <option value="image">image</option>
+                <option value="video">video</option>
+                <option value="banner">banner</option>
+                <option value="copy">copy</option>
+              </select>
+            </label>
+            <label className="text-sm text-slate-700 md:col-span-2">
+              Headline
+              <input value={variantHeadline} onChange={(event) => setVariantHeadline(event.target.value)} className="mcc-input mt-1" data-testid="creative-variant-headline" />
+            </label>
+            <label className="text-sm text-slate-700 md:col-span-2">
+              Body
+              <textarea value={variantBody} onChange={(event) => setVariantBody(event.target.value)} className="mcc-input mt-1 min-h-20" data-testid="creative-variant-body" />
+            </label>
+            <label className="text-sm text-slate-700 md:col-span-2">
+              CTA
+              <input value={variantCta} onChange={(event) => setVariantCta(event.target.value)} className="mcc-input mt-1" data-testid="creative-variant-cta" />
+            </label>
+          </div>
+
+          <button
+            type="button"
+            className="mcc-btn-primary gap-2"
+            onClick={() => void onCreateAssetWithFirstVariant()}
+            disabled={createLoading}
+            data-testid="creative-create-with-media-button"
+          >
+            {createLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            Create asset + first variant with selected media
+          </button>
+        </div>
+
+
       </AppShell>
     </ProtectedPage>
   );
