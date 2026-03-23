@@ -6833,3 +6833,16 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, fÄ
 ## Review
 - [x] Confirm module remains importable and scope is pure helpers only.
 - [x] Confirm targeted tests/checks passed.
+
+# TODO â€” Client data custom fields CRUD slice 1 (2026-03-23)
+
+- [x] Sync workspace and verify clean status/diff.
+- [x] Extend `client_data_store.py` only with `list_custom_fields`, `create_custom_field`, `validate_custom_field_belongs_to_client` plus minimal private helpers.
+- [x] Keep out-of-scope functions unimplemented (no update/archive/daily inputs/sales/custom values CRUD).
+- [x] Add targeted tests for custom-field CRUD slice behaviors.
+- [x] Run only targeted client_data_store tests + compile check.
+- [x] Review diff for strict scope.
+
+## Review
+- [x] Confirm scope is only `client_data_store.py` + related tests/docs.
+- [x] Confirm targeted tests/checks passed.
