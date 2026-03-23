@@ -57,6 +57,8 @@ type CreativeAsset = {
 
 type AddVariantResponse = { id: number; asset_id: number; media_id?: string | null; media?: string };
 
+export interface CreateAssetResponse { id: number; }
+
 const statusConfig = {
   approved: { label: "Aprobat", icon: CheckCircle2, className: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
   in_review: { label: "In Review", icon: Clock, className: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
