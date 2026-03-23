@@ -6681,3 +6681,34 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, f�
 ## Review
 - [x] Confirm no upload/storage flow changes, no Company Settings UX changes, no Creative/media/publish changes.
 - [x] Confirm agency logo remains the only source for global favicon override.
+
+# TODO — Global favicon agency logo source + branding rename VOXEL MCC (2026-03-23)
+
+- [x] Refresh workspace state and inspect explicit files: `GlobalFavicon.tsx`, `AppShell.tsx`, root `layout.tsx`, global metadata/icon assets, company settings page, and all `MCC Command Center` occurrences.
+- [x] Identify exact favicon fallback root cause and apply minimal fix in global branding path (no new favicon upload flow, no Creative/storage-flow changes).
+- [x] Ensure AppShell global branding source for favicon remains agency company settings logo (`logo_url`) and not sub-account logo.
+- [x] Update global branding title/metadata from `MCC Command Center` to `VOXEL MCC` where globally relevant.
+- [x] Add focused frontend tests for favicon source/fallback/update/remove + global title/metadata assertions.
+- [x] Run targeted tests and document review findings.
+
+## Review
+- [x] Root cause confirmed: favicon helper appended `?v=` to agency logo URLs; when `logo_url` was a signed storage preview URL, query mutation invalidated signature and forced `Image.onerror` fallback to `/icon.svg`.
+- [x] Fix applied minimally in `GlobalFavicon` by appending refresh key in URL fragment (`#v=`) instead of query string, preserving signed query params while still forcing browser refresh semantics.
+- [x] Global source kept agency-only: `AppShell` now resolves favicon input via `resolveGlobalFaviconLogoUrl(companySettings)` and continues passing only agency `companySettings.logo_url` to `GlobalFavicon`.
+- [x] Branding updated to `VOXEL MCC` in root metadata and major entry headings.
+- [x] Focused tests pass for favicon behavior, AppShell source helper, company save/remove event flow, and global title metadata assertion.
+
+# TODO — Landing page și app shell folosesc același favicon global agency (2026-03-23)
+
+- [x] Refresh workspace state și inspect explicit: `GlobalFavicon.tsx`, `AppShell.tsx`, `app/layout.tsx`, landing `app/page.tsx`, metadata/layout public.
+- [x] Identific root cause pentru mismatch landing vs interior și centralizez montarea favicon-ului global într-un loc comun.
+- [x] Asigur sursa agency-only (`/company/settings` -> `logo_url`) pentru favicon global în context public + interior, cu fallback default robust.
+- [x] Mențin update flow pe evenimentul `company-settings-updated` astfel încât landing + interior rămân coerente fără hard refresh obligatoriu.
+- [x] Adaug teste frontend focused pentru mecanismul comun (landing + interior) și fallback-uri.
+- [x] Rulez testele țintite și documentez review.
+
+## Review
+- [x] Root cause confirmat: `GlobalFavicon` era montat exclusiv în `AppShell`, iar landing-ul public (`/`) nu folosește `AppShell`; de aceea rămânea pe favicon static metadata (`/icon.svg`).
+- [x] Fix global minim: montare comună în `app/layout.tsx` prin componenta client `GlobalAgencyFavicon`, astfel aceeași logică acoperă landing + interior + navigarea între ele.
+- [x] Sursa agency-only păstrată: `GlobalAgencyFavicon` citește `logo_url` din `/company/settings`; fallback la default când lipsește/e invalid/eșuează load.
+- [x] Event refresh păstrat: listener `company-settings-updated` refetch + `refreshKey` pentru actualizare favicon fără hard refresh obligatoriu.

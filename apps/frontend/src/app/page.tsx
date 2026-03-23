@@ -27,7 +27,7 @@ export default function HomePage() {
           <Activity className="h-8 w-8 text-white" />
         </div>
 
-        <h1 className="text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl">MCC Command Center</h1>
+        <h1 className="text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl">VOXEL MCC</h1>
         <p className="mx-auto mt-4 max-w-xl text-xl text-slate-600">
           Platforma enterprise de monitorizare si optimizare pentru agentii de marketing digital.
         </p>
