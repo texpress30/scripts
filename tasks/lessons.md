@@ -558,3 +558,4 @@
 
 - 2026-03-23: Dacă backend-ul nu oferă endpoint detail separat, folosesc list endpoint-ul canonical pentru a deriva detail-ul selectat și evit inventarea de API nou; completez cu stări locale explicite pentru selecție/preview/add-variant.
 - 2026-03-23: După feedback "unsatisfied" pe Creative UI incremental, păstrez patch-ul strict local și verific explicit cerințele UX minime (blocare acțiune fără context, metadate vizibile pentru variante, loading/error robust) înainte de commit, fără extinderi backend inutile.
+- 2026-03-23: După feedback "unsatisfied" pe Creative, adaug incremental doar secțiunea UI cerută (ex. publish) în cardul existent al asset-ului selectat, mapând strict contractul endpointului real (`required + optional`) și acoperind explicit loading/success/error + refresh/context în teste.

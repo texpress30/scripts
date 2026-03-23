@@ -43,6 +43,14 @@ type CreativeAssetApiItem = {
     approval_status?: string;
   };
   creative_variants?: CreativeVariant[];
+  publish_history?: {
+    id?: number;
+    asset_id?: number;
+    channel?: string;
+    native_object_type?: string;
+    native_id?: string;
+    status?: string;
+  }[];
 };
 
 type CreativeAsset = {
@@ -55,9 +63,16 @@ type CreativeAsset = {
   updated_at: string;
 };
 
+type CreateAssetResponse = CreativeAssetApiItem;
 type AddVariantResponse = { id: number; asset_id: number; media_id?: string | null; media?: string };
-
-export interface CreateAssetResponse { id: number; }
+type PublishResponse = {
+  id: number;
+  asset_id: number;
+  channel: string;
+  native_object_type?: string;
+  native_id?: string;
+  status?: string;
+};
 
 const statusConfig = {
   approved: { label: "Aprobat", icon: CheckCircle2, className: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
@@ -132,6 +147,11 @@ export default function CreativePage() {
   const [addVariantLoading, setAddVariantLoading] = useState(false);
   const [addVariantError, setAddVariantError] = useState("");
   const [addVariantSuccess, setAddVariantSuccess] = useState("");
+
+  const [selectedChannel, setSelectedChannel] = useState<"meta" | "google" | "tiktok">("meta");
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishError, setPublishError] = useState("");
+  const [publishSuccess, setPublishSuccess] = useState("");
 
   useEffect(() => {
     let ignore = false;
@@ -208,6 +228,11 @@ export default function CreativePage() {
   }, [variants]);
 
   const selectedVariant = useMemo(() => variants.find((item) => item.id === selectedVariantId) ?? null, [variants, selectedVariantId]);
+  const selectedAssetLastPublish = useMemo(() => {
+    const history = Array.isArray(selectedAssetDetail?.publish_history) ? selectedAssetDetail.publish_history : [];
+    if (history.length === 0) return null;
+    return history[history.length - 1] ?? null;
+  }, [selectedAssetDetail]);
 
   useEffect(() => {
     if (!selectedVariant || !selectedVariant.media_id || !selectedClientId) {
@@ -344,6 +369,38 @@ export default function CreativePage() {
       setAddVariantError(err instanceof Error ? err.message : "Nu am putut adăuga varianta.");
     } finally {
       setAddVariantLoading(false);
+    }
+  }
+
+  async function onPublishSelectedAsset() {
+    setPublishError("");
+    setPublishSuccess("");
+
+    if (!selectedAssetId) {
+      setPublishError("Selectează mai întâi un asset pentru publish.");
+      return;
+    }
+
+    setIsPublishing(true);
+    const assetId = selectedAssetId;
+    const variantId = selectedVariantId;
+    try {
+      const payload: { channel: string; variant_id?: number } = { channel: selectedChannel };
+      if (variantId) payload.variant_id = variantId;
+      const result = await apiRequest<PublishResponse>(`/creative/publish/assets/${assetId}/to-channel`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      setPublishSuccess(
+        `Publish reușit (#${result.id}) pe ${result.channel}${result.native_id ? `, native_id=${result.native_id}` : ""}.`,
+      );
+      await loadAssets();
+      setSelectedAssetId(assetId);
+      if (variantId) setSelectedVariantId(variantId);
+    } catch (err) {
+      setPublishError(err instanceof Error ? err.message : "Nu am putut publica asset-ul selectat.");
+    } finally {
+      setIsPublishing(false);
     }
   }
   const filtered = assets.filter((a) => {
@@ -588,6 +645,53 @@ export default function CreativePage() {
           >
             {addVariantLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             Add variant with selected media
+          </button>
+        </div>
+
+        <div className="mt-6 space-y-3 rounded-md border border-border bg-muted/20 p-4" data-testid="creative-publish-flow">
+          <h2 className="text-base font-semibold text-foreground">Publish asset/variantă</h2>
+          {!selectedAssetId ? <p className="text-sm text-muted-foreground">Alege mai întâi un asset din listă pentru publish.</p> : null}
+          {selectedAssetId ? (
+            <p className="text-sm text-muted-foreground">
+              Asset în focus: <span className="font-medium text-foreground">#{selectedAssetId}</span>
+              {selectedVariantId ? (
+                <>
+                  {" "}
+                  · variantă în focus: <span className="font-medium text-foreground">#{selectedVariantId}</span>
+                </>
+              ) : (
+                " · fără variantă selectată explicit"
+              )}
+            </p>
+          ) : null}
+          {selectedAssetLastPublish ? (
+            <p className="text-xs text-muted-foreground" data-testid="publish-last-summary">
+              Ultimul publish: #{selectedAssetLastPublish.id || "-"} · {selectedAssetLastPublish.channel || "-"} · {selectedAssetLastPublish.status || "-"}
+            </p>
+          ) : null}
+          {publishError ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{publishError}</div> : null}
+          {publishSuccess ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{publishSuccess}</div> : null}
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="text-sm text-slate-700 md:col-span-2">
+              Channel
+              <select value={selectedChannel} onChange={(e) => setSelectedChannel(e.target.value as "meta" | "google" | "tiktok")} className="mcc-input mt-1" data-testid="publish-channel-select">
+                <option value="meta">Meta</option>
+                <option value="google">Google</option>
+                <option value="tiktok">TikTok</option>
+              </select>
+            </label>
+          </div>
+
+          <button
+            type="button"
+            className="mcc-btn-primary gap-2"
+            onClick={() => void onPublishSelectedAsset()}
+            disabled={isPublishing || !selectedAssetId}
+            data-testid="publish-button"
+          >
+            {isPublishing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+            {isPublishing ? "Publishing..." : "Publish"}
           </button>
         </div>
 

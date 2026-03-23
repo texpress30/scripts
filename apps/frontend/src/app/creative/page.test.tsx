@@ -52,6 +52,7 @@ function listPayloadWithVariants() {
           { id: 902, headline: "Video variant", body: "Body", cta: "CTA", media: "clip.mp4", media_id: "m_vid", approval_status: "in_review" },
           { id: 903, headline: "Legacy only", body: "Body", cta: "CTA", media: "legacy-only", media_id: null },
         ],
+        publish_history: [{ id: 77, asset_id: 201, channel: "meta", native_object_type: "ad_creative", native_id: "meta_ad_77", status: "published" }],
       },
     ],
   };
@@ -73,6 +74,9 @@ describe("CreativePage asset detail + existing asset add variant", () => {
       }
       if (path === "/creative/library/assets/201/variants" && options?.method === "POST") {
         return { id: 999, asset_id: 201, media_id: "m_selected", media: "picked.png" };
+      }
+      if (path === "/creative/publish/assets/201/to-channel" && options?.method === "POST") {
+        return { id: 1001, asset_id: 201, channel: "meta", native_object_type: "ad_creative", native_id: "meta_pub_1001", status: "published" };
       }
       throw new Error(`Unexpected ${path}`);
     });
@@ -204,6 +208,87 @@ describe("CreativePage asset detail + existing asset add variant", () => {
 
     expect(await screen.findByText(/media_id client mismatch/i)).toBeInTheDocument();
     expect(screen.getByTestId("creative-asset-detail")).toBeInTheDocument();
+    expect(screen.getByTestId("creative-media-library-mock")).toBeInTheDocument();
+  });
+
+  it("blocks publish action when no asset is selected", async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === "/clients") return { items: [{ id: 10, name: "Client 10" }] };
+      if (path.startsWith("/creative/library/assets?client_id=10")) return { items: [] };
+      throw new Error(`Unexpected ${path}`);
+    });
+
+    render(<CreativePage />);
+    expect(await screen.findByTestId("publish-button")).toBeDisabled();
+  });
+
+  it("shows publish form for selected asset and sends publish payload with selected variant", async () => {
+    setupBaseApi();
+    render(<CreativePage />);
+
+    fireEvent.click(await screen.findByTestId("select-asset-201"));
+    fireEvent.click(screen.getByTestId("asset-variant-902"));
+    fireEvent.change(screen.getByTestId("publish-channel-select"), { target: { value: "google" } });
+    fireEvent.click(screen.getByTestId("publish-button"));
+
+    await waitFor(() => {
+      const call = vi.mocked(apiRequest).mock.calls.find(
+        (entry) => entry[0] === "/creative/publish/assets/201/to-channel" && entry[1]?.method === "POST",
+      );
+      expect(call).toBeTruthy();
+      const body = JSON.parse(String(call?.[1]?.body ?? "{}"));
+      expect(body.channel).toBe("google");
+      expect(body.variant_id).toBe(902);
+    });
+  });
+
+  it("shows loading state during publish", async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
+      if (path === "/clients") return { items: [{ id: 10, name: "Client 10" }] };
+      if (path.startsWith("/creative/library/assets?client_id=10")) return listPayloadWithVariants();
+      if (path === "/creative/publish/assets/201/to-channel" && options?.method === "POST") {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return { id: 1001, asset_id: 201, channel: "meta", native_object_type: "ad_creative", native_id: "meta_pub_1001", status: "published" };
+      }
+      throw new Error(`Unexpected ${path}`);
+    });
+
+    render(<CreativePage />);
+    fireEvent.click(await screen.findByTestId("select-asset-201"));
+    fireEvent.click(screen.getByTestId("publish-button"));
+
+    expect(await screen.findByText("Publishing...")).toBeInTheDocument();
+  });
+
+  it("reloads detail and shows success message after publish", async () => {
+    const tracker = setupBaseApi();
+    render(<CreativePage />);
+
+    fireEvent.click(await screen.findByTestId("select-asset-201"));
+    fireEvent.click(screen.getByTestId("publish-button"));
+
+    expect(await screen.findByText(/Publish reușit/i)).toBeInTheDocument();
+    expect(tracker.getListCalls()).toBeGreaterThan(1);
+    expect(screen.getByText(/Asset selectat:/i)).toBeInTheDocument();
+    expect(screen.getByTestId("publish-last-summary")).toBeInTheDocument();
+  });
+
+  it("shows publish backend error and keeps selected asset context stable", async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
+      if (path === "/clients") return { items: [{ id: 10, name: "Client 10" }] };
+      if (path.startsWith("/creative/library/assets?client_id=10")) return listPayloadWithVariants();
+      if (path === "/creative/publish/assets/201/to-channel" && options?.method === "POST") {
+        throw new Error("publish failed");
+      }
+      throw new Error(`Unexpected ${path}`);
+    });
+
+    render(<CreativePage />);
+    fireEvent.click(await screen.findByTestId("select-asset-201"));
+    fireEvent.click(screen.getByTestId("publish-button"));
+
+    expect(await screen.findByText(/publish failed/i)).toBeInTheDocument();
+    expect(screen.getByText(/Asset selectat:/i)).toBeInTheDocument();
     expect(screen.getByTestId("creative-media-library-mock")).toBeInTheDocument();
   });
 });
