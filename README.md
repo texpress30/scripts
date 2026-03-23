@@ -28,6 +28,13 @@ npm run dev
 Variabile importante:
 - `APP_AUTH_SECRET` (obligatoriu)
 - `DATABASE_URL` (pentru persistență non-test)
+- `STORAGE_MEDIA_REMOTE_FETCH_TIMEOUT_SECONDS` (timeout fetch remote ingest, default 15)
+- `STORAGE_MEDIA_REMOTE_FETCH_MAX_BYTES` (limită bytes fetch remote ingest, default 10485760)
+- `CREATIVE_WORKFLOW_MONGO_CORE_WRITES_SOURCE_ENABLED` (default `false`; când e `true`, `create_asset` / `add_variant` / `link_to_campaign` folosesc Mongo ca source-of-truth pentru write path)
+- `CREATIVE_WORKFLOW_MONGO_DERIVED_WRITES_SOURCE_ENABLED` (default `false`; devine activ doar împreună cu `CREATIVE_WORKFLOW_MONGO_CORE_WRITES_SOURCE_ENABLED` pentru `generate_variants` / `update_approval` / `set_performance_scores`)
+- `CREATIVE_WORKFLOW_MONGO_PUBLISH_PERSIST_ENABLED` (default `false`; persistă `publish_to_channel` în Mongo doar când sunt active și `CORE_WRITES` + `DERIVED_WRITES`)
+- `CREATIVE_WORKFLOW_MEDIA_ID_LINKING_ENABLED` (default `false`; permite `media_id` opțional în `add_variant`, cu validare minimă prin media metadata repository)
+- `AI_RECOMMENDATIONS_MONGO_SOURCE_ENABLED` (default `false`; mută recommendations history pe Mongo source-of-truth pentru generate/list/get/review/actions)
 - `APP_ENV=test` trebuie folosit doar în teste automate (pytest), altfel aplicația poate porni în mod de test și pierde persistența la restart.
 - Google Ads production flow:
   - `GOOGLE_ADS_MODE=production`
@@ -261,3 +268,14 @@ cd apps/frontend && npm run build
 - `POST /auth/reset-password/confirm` acceptă acum tokenuri `password_reset` și `invite_user`.
 - UI „Trimite invitație” este disponibil în Agency Team și apelează backend-ul `POST /team/members/{membership_id}/invite`.
 - Invite UI în Sub-account Team rămâne pentru taskul următor.
+
+
+## Storage media cleanup batch runner (manual + Railway Scheduled Job)
+- **Manual run (default limit from config):** `cd apps/backend && PYTHONPATH=. python -m app.workers.storage_media_cleanup_runner`
+- **Manual run (explicit limit):** `cd apps/backend && PYTHONPATH=. python -m app.workers.storage_media_cleanup_runner --limit 200`
+- **Railway Scheduled Job command (recommended):** `cd apps/backend && PYTHONPATH=. python -m app.workers.storage_media_cleanup_runner`
+- Batch size env: `STORAGE_MEDIA_CLEANUP_BATCH_LIMIT` (default `100`).
+- Runner output: JSON summary cu `limit`, `processed`, `purged`, `skipped`, `failed` (plus `status`).
+- Exit code semantics:
+  - `0` când batch-ul rulează (inclusiv dacă are item-uri `failed`/`skipped`)
+  - non-zero doar la eroare globală (ex: provider/config indisponibil, excepție neprevăzută înainte/în jurul run-ului).

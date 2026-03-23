@@ -1,5 +1,23 @@
 # Lessons
 
+- 2026-03-22: Pentru publish persistence feature-flagged pe Mongo, tratez strict ordinea `next_publish_id -> external publish (single call) -> upsert`; dacă upsert-ul cade după publish extern reușit, nu retry/replay în același apel și returnez succesul extern cu mirror local compatibil.
+
+- 2026-03-22: Pentru mutații derivate migrate pe Mongo source-of-truth, activez flag-ul derivat doar împreună cu core-writes și tratez erorile Mongo read/upsert ca hard-fail (fără fallback local), cu local hydrate doar după persist reușit.
+
+- 2026-03-22: Când feedback-ul cere Mongo source-of-truth doar pentru mutații specifice, adaugă un flag dedicat de core writes și separă explicit write snapshot (Mongo-first/fallback) de local mirror/cache; nu lăsa mutații locale înainte de succesul `upsert_asset`.
+
+- 2026-03-22: Pentru rollout Mongo-first pe citiri, aplică flag separat doar pe `get_asset`/`list_assets`, prioritizează snapshot-ul Mongo când există și păstrează fallback local predictibil pe erori sau miss-uri.
+
+- 2026-03-22: Pentru read-through incremental în creative workflow, implementează helper local-first + lazy hydration din Mongo doar pentru lipsuri, fără overwrite local și cu fallback predictibil pe erori (`not found`/list local).
+
+- 2026-03-22: Pentru wiring incremental la Mongo în creative workflow, păstrează in-memory ca source of truth și aplică shadow-write best-effort doar pe mutații, cu flag OFF by default și fără mutarea read path-ului/publish flow în același task.
+
+- 2026-03-22: Pentru ID-uri persistente cerute pe creative workflow, livrează întâi un repository Mongo separat de counters (atomic `find_one_and_update + $inc + upsert`), fără modificări în `creative_workflow.py` sau `/creative` până la taskul de wiring.
+
+- 2026-03-22: Pentru fundamente de persistență cerute pe creative workflow, livrează întâi un repository Mongo pe agregat (colecție + indexuri + teste), fără wiring în `creative_workflow_service`/`/creative` până la taskul dedicat de integrare.
+
+- 2026-03-22: După feedback „unsatisfied” pe un PR foundation mare, următorul pas trebuie să fie strict un singur punct real de integrare în worker (feature-flag OFF by default, best-effort, reversibil), fără extinderi în mai multe flow-uri sau endpoint-uri noi.
+
 - 2026-03-21: Pentru TikTok ad-group facts, păstrez explicit ambele chei în `extra_metrics` (`adgroup_name` și `ad_group_name`) și propag `campaign_id`/`campaign_name` în upsert payload; altfel dashboard queries pe alias pot returna `NULL` deși numele sunt parse-uite.
 
 - 2026-03-21: În metadata resolve TikTok, nu fac upsert fallback pentru entity rows fără semnal real (name/status/raw_payload toate goale); altfel pot suprascrie `platform_campaigns`/`platform_ad_groups` cu `NULL` și `{}` chiar când fetch-ul management API eșuează.
@@ -505,3 +523,25 @@
 - 2026-03-21: Pentru cerințe UI de navigație repetate pe mai multe pagini similare, auditează mai întâi componenta shared (dacă există) și implementează linkul o singură dată acolo, cu teste per pagină pentru href corect.
 - 2026-03-21: Când utilizatorul reamintește explicit AGENTS workflow, încep imediat cu plan documentat în `tasks/todo.md`, marchez progresul în același task și includ obligatoriu commit + `make_pr` în același turn de livrare.
 - 2026-03-21: Pentru dropdown-uri cerute explicit cu "sortare alfabetică", verific ordinea tuturor opțiunilor (nu doar cele noi) și acopăr ordinea exactă într-un test de UI pe lista de `<option>`.
+- 2026-03-21: După feedback pe persistența TikTok names/IDs, verific explicit atât payloadurile fact (`extra_metrics` + foreign keys), cât și clauzele SQL `ON CONFLICT DO UPDATE` care trebuie să suprascrie valorile NULL existente cu `EXCLUDED`, apoi acopăr prin teste țintite.
+- 2026-03-22: După feedback "unsatisfied", la task-uri de infrastructură minimală păstrez strict fundația cerută (deps + config + providers + teste) și evit explicit endpoint-uri noi sau schimbări de contract API.
+- 2026-03-22: După feedback pe foundation storage, păstrez strict stratul de metadata (model + repository + indexuri + teste) fără a atinge endpoint-uri, upload/presigned flow sau creative workflow.
+- 2026-03-22: Pentru upload-init direct în S3, separ logică în service dedicat (validare + key + draft + presign), las router-ul subțire și mappez explicit erorile de config/provider la 503 runtime, fără side effects la startup.
+- 2026-03-22: Pentru upload-complete, tratez `media_id` ca sursă unică de adevăr (draft Mongo + storage intern), verific obiectul prin `head_object`, fac `mark_ready` doar după succes și păstrez endpointul idempotent pentru status `ready`.
+- 2026-03-22: Pentru API-urile read media, păstrez service separat de router, filtrez strict pe client_id, aplic default status safe (`exclude purged/delete_requested`) și folosesc 404 pentru inexistent/mismatch fără leak.
+- 2026-03-22: După un review "unsatisfied" pe storage read, refac auditul pe codul deja introdus și aplic un patch minim, focalizat pe contractul endpointurilor + predictibilitate (sort deterministic, validări explicite client_id) cu teste țintite înainte de commit/PR.
+- 2026-03-22: Pentru presigned access URL task, păstrez flow-ul izolat într-un service dedicat (record Mongo -> ownership/status/storage validation -> presign get_object) și evit explicit head_object/delete/creative/frontend; acopăr fiecare stare cerută cu teste mici și clare.
+- 2026-03-22: Pentru soft delete media, aplic service separat strict Mongo-only (fără S3 calls), cu reguli explicite pe statusuri (ready/draft delete, delete_requested idempotent, purged/not-found/mismatch => 404) și teste dedicate pe fiecare caz.
+- 2026-03-22: Pentru cleanup batch peste `delete_requested`, tratez `NoSuchKey` ca succes logic idempotent, continui batch-ul la erori per-item și marchez `purged` doar după delete_object reușit (sau obiect deja lipsă), păstrând datele storage în Mongo.
+- 2026-03-22: Pentru rulare operațională Railway fără endpoint public, adaug un runner non-HTTP minim (`python -m ...`) care parsează limit opțional, face fallback la config, emite summary JSON în stdout și întoarce exit code 0 pentru per-item failures/skips, non-zero doar la eroare globală.
+- 2026-03-22: Pentru helper intern ingest bytes, păstrez fluxul simplu și paralel cu user upload (draft -> put_object -> mark_ready), restricționez `source` la backend intern, reutilizez sanitize/key format existent și evit endpoint/job wiring în același task.
+- 2026-03-22: Pentru remote fetch ingest, păstrez helper separat care validează URL minim (scheme + host local block), aplică timeout/max-bytes din config și deleagă strict upload/persist către `StorageMediaIngestService`, fără endpoint/retry/SSRF hardening complet în același pas.
+- 2026-03-22: După un reminder AGENTS explicit în mesajul userului, opresc orice execuție implicită și fac imediat alinierea de proces în ordine: note plan/check-in în `tasks/todo.md`, rulez verificare minimă, apoi finalizez obligatoriu cu commit + `make_pr` în același turn.
+- 2026-03-22: După feedback „unsatisfied” pe un foundation PR mare, următorul increment trebuie livrat strict pe cerința punctuală (aici `media_id` feature-flagged în creative variants), cu validări centralizate, compatibilitate legacy explicită și teste focused pentru OFF/ON + persistență/hidratare.
+- 2026-03-22: Pentru recommendations history source-of-truth incremental, migrez strict metodele service cerute pe repository Mongo feature-flagged (generate/list/get/review/actions), păstrez `get_impact_report` + `/ai/legacy` intacte și evit orice fallback in-memory când flag-ul ON.
+- 2026-03-22: Pentru migrare incrementală logo profile la storage, înlocuiesc strict fluxul FileReader/dataURL cu helper reutilizabil init->upload->complete și persist `logo_media_id` + fallback preview robust în backend, fără delete storage/backfill sau extinderi Creative UI.
+
+- 2026-03-22: După orice corecție de proces din partea userului, verific imediat AGENTS.md, aliniez workflow-ul (plan/check-in/track/review) și actualizez `tasks/lessons.md` în același turn.
+- 2026-03-22: Pentru buguri storage `/uploads/init` cu 500 generic, investighez mai întâi excepția reală din path-ul `initialize_indexes/create_draft`, mapez predictibil la RuntimeError/StorageUploadInitError și adaug logging contextual în router (client_id/kind/original_filename) înainte de a atinge UI.
+- 2026-03-22: Pentru cerințe de branding sidebar după profil business update, prefer sursa canonicală deja disponibilă (`/clients/{id}/business-profile` cu `logo_url`) și reutilizez evenimentul existent de refresh; evit extinderi backend inutile când payloadul deja conține logo preview.
+- 2026-03-23: Pentru company logo migration la storage, extind minim contractul existent cu `logo_media_id` opțional și mențin `logo_url` ca fallback preview; evit dependențe noi de UI prin eveniment simplu `company-settings-updated` pentru refresh de branding în AppShell.

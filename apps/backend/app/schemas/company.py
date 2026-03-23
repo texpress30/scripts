@@ -17,6 +17,8 @@ class CompanySettingsResponse(BaseModel):
     country: str
     timezone: str
     logo_url: str
+    logo_media_id: str | None = None
+    logo_storage_client_id: int | None = None
 
 
 class UpdateCompanySettingsRequest(BaseModel):
@@ -35,3 +37,4 @@ class UpdateCompanySettingsRequest(BaseModel):
     country: str
     timezone: str
     logo_url: str = ""
+    logo_media_id: str | None = None
