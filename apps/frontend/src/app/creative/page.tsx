@@ -58,6 +58,7 @@ type CreativeAsset = {
 };
 
 type AddVariantResponse = { id: number; asset_id: number; media_id?: string | null; media?: string };
+type CreateAssetResponse = { id: number; [key: string]: any };
 
 const statusConfig = {
   approved: { label: "Aprobat", icon: CheckCircle2, className: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
@@ -114,77 +115,18 @@ export default function CreativePage() {
   const [assetName, setAssetName] = useState("");
   const [assetFormat, setAssetFormat] = useState<"image" | "video" | "banner" | "copy">("image");
   const [variantHeadline, setVariantHeadline] = useState("Primary headline");
-  const [variantBody, setVariantBody] = useState("Descriere scurtă pentru prima variantă.");
+  const [variantBody, setVariantBody] = useState("Descriere scurtă pentru variantă.");
   const [variantCta, setVariantCta] = useState("Afla mai mult");
 
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState("");
   const [createSuccess, setCreateSuccess] = useState("");
 
-  useEffect(() => {
-    let ignore = false;
-    async function loadClientsForCreative() {
-      try {
-        const payload = await apiRequest<{ items: CreativeClient[] }>("/clients");
-        const items = Array.isArray(payload.items)
-          ? payload.items
-              .map((item) => ({ id: Number(item.id || 0), name: String(item.name || "").trim() }))
-              .filter((item) => item.id > 0 && item.name !== "")
-          : [];
-        if (!ignore) {
-          setCreativeClients(items);
-          setSelectedClientId((prev) => (prev && items.some((item) => item.id === prev) ? prev : items[0]?.id ?? null));
-        }
-      } catch {
-        if (!ignore) {
-          setCreativeClients([]);
-          setSelectedClientId(null);
-        }
-      }
-    }
-
-    void loadClientsForCreative();
-    return () => {
-      ignore = true;
-    };
-  }, []);
-
-  const loadAssets = useCallback(async () => {
-    if (!selectedClientId) {
-      setAssets(placeholderAssets);
-      return;
-    }
-
-    setAssetsLoading(true);
-    try {
-      const payload = await apiRequest<{ items: CreativeAssetApiItem[] }>(`/creative/library/assets?client_id=${selectedClientId}`);
-      const clientName = creativeClients.find((item) => item.id === selectedClientId)?.name ?? `Client #${selectedClientId}`;
-      const mapped = Array.isArray(payload.items) ? payload.items.map((item) => toCreativeAsset(item, clientName)).filter((item) => item.id > 0) : [];
-      setAssets(mapped.length > 0 ? mapped : []);
-    } catch {
-      setAssets(placeholderAssets);
-    } finally {
-      setAssetsLoading(false);
-    }
-  }, [creativeClients, selectedClientId]);
-
-  useEffect(() => {
-    void loadAssets();
-  }, [loadAssets]);
-
-  const [creativeClients, setCreativeClients] = useState<CreativeClient[]>([]);
-  const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
-  const [selectedMedia, setSelectedMedia] = useState<CreativeMediaItem | null>(null);
-
   const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null);
   const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null);
   const [variantPreviewUrl, setVariantPreviewUrl] = useState("");
   const [variantPreviewLoading, setVariantPreviewLoading] = useState(false);
   const [variantPreviewError, setVariantPreviewError] = useState("");
-
-  const [variantHeadline, setVariantHeadline] = useState("Primary headline");
-  const [variantBody, setVariantBody] = useState("Descriere scurtă pentru variantă.");
-  const [variantCta, setVariantCta] = useState("Afla mai mult");
   const [addVariantLoading, setAddVariantLoading] = useState(false);
   const [addVariantError, setAddVariantError] = useState("");
   const [addVariantSuccess, setAddVariantSuccess] = useState("");
@@ -296,6 +238,70 @@ export default function CreativePage() {
       ignore = true;
     };
   }, [selectedClientId, selectedVariant]);
+
+  async function onCreateAssetWithFirstVariant() {
+    setCreateError("");
+    setCreateSuccess("");
+
+    if (!selectedClientId) {
+      setCreateError("Selectează un client înainte să creezi asset-ul.");
+      return;
+    }
+    if (!selectedMedia) {
+      setCreateError("Selectează mai întâi un media item din Media Library pentru prima variantă.");
+      return;
+    }
+    if (assetName.trim() === "") {
+      setCreateError("Numele asset-ului este obligatoriu.");
+      return;
+    }
+
+    setCreateLoading(true);
+    let createdAsset: CreateAssetResponse | null = null;
+    try {
+      createdAsset = await apiRequest<CreateAssetResponse>("/creative/library/assets", {
+        method: "POST",
+        body: JSON.stringify({
+          client_id: selectedClientId,
+          name: assetName.trim(),
+          format: assetFormat,
+          dimensions: "1080x1080",
+          objective_fit: "awareness",
+          platform_fit: ["meta"],
+          language: "ro",
+          brand_tags: [],
+          legal_status: "pending",
+          approval_status: "draft",
+        }),
+      });
+
+      const variantPayload = {
+        headline: variantHeadline.trim() || assetName.trim(),
+        body: variantBody.trim() || "Prima variantă creată din Creative Media Library.",
+        cta: variantCta.trim() || "Afla mai mult",
+        media_id: selectedMedia.media_id,
+        media: resolveLegacyMedia(selectedMedia),
+      };
+
+      await apiRequest<AddVariantResponse>(`/creative/library/assets/${createdAsset.id}/variants`, {
+        method: "POST",
+        body: JSON.stringify(variantPayload),
+      });
+
+      setCreateSuccess(`Asset #${createdAsset.id} și prima variantă au fost create cu media ${selectedMedia.media_id}.`);
+      await loadAssets();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Nu am putut finaliza flow-ul create asset + first variant.";
+      if (createdAsset) {
+        setCreateError(`Asset #${createdAsset.id} a fost creat, dar add variant a eșuat: ${message}`);
+        await loadAssets();
+      } else {
+        setCreateError(message);
+      }
+    } finally {
+      setCreateLoading(false);
+    }
+  }
 
   async function onAddVariantToSelectedAsset() {
     setAddVariantError("");
@@ -569,36 +575,7 @@ export default function CreativePage() {
           </button>
         </div>
 
-        <div className="mt-6 space-y-3">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-lg font-semibold text-foreground">Creative Media Library</h2>
-            <div className="flex items-center gap-2">
-              <span className="text-xs uppercase tracking-wide text-muted-foreground">Client</span>
-              <select
-                className="mcc-input h-9 text-sm"
-                value={selectedClientId ?? ""}
-                onChange={(event) => setSelectedClientId(event.target.value ? Number(event.target.value) : null)}
-                data-testid="creative-media-client-select"
-              >
-                {creativeClients.length === 0 ? <option value="">Niciun client</option> : null}
-                {creativeClients.map((client) => (
-                  <option key={client.id} value={client.id}>
-                    {client.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
 
-          <CreativeMediaLibrary clientId={selectedClientId} onSelectMedia={setSelectedMedia} />
-          {selectedMedia ? (
-            <p className="text-sm text-muted-foreground" data-testid="creative-selected-media-hint">
-              Media selectată local pentru pasul următor: <span className="font-mono">{selectedMedia.media_id}</span> ({selectedMedia.kind})
-            </p>
-          ) : (
-            <p className="text-sm text-muted-foreground" data-testid="creative-selected-media-hint">Nu ai selectat încă media pentru pasul următor.</p>
-          )}
-        </div>
 
         <div className="mt-6 space-y-3 rounded-md border border-border bg-muted/20 p-4" data-testid="creative-create-first-variant-flow">
           <h2 className="text-base font-semibold text-foreground">Create asset + first variant</h2>
