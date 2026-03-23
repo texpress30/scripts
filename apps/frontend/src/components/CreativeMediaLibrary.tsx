@@ -131,13 +131,14 @@ export function CreativeMediaLibrary({
       return;
     }
 
+    const validClientId = clientId;
     let ignore = false;
     setPreviewLoading(true);
     setPreviewError("");
 
     async function loadPreview() {
       try {
-        const access = await getMediaAccessUrl({ clientId, mediaId: selectedMedia.media_id, disposition: "inline" });
+        const access = await getMediaAccessUrl({ clientId: validClientId, mediaId: selectedMedia.media_id, disposition: "inline" });
         if (!ignore) setPreviewUrl(String(access.url || "").trim());
       } catch (err) {
         if (!ignore) {
