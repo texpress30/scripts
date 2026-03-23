@@ -6636,3 +6636,21 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, f�
 - [x] Componenta sidebar modificată: `apps/frontend/src/components/AppShell.tsx` (branding avatar subaccount).
 - [x] Sursa de date pentru logo în sidebar: `GET /clients/{id}/business-profile` (`logo_url` preview/fallback), cu fallback secundar la `client_logo_url` din `/clients`.
 - [x] Fără modificări pe Creative UI, publish flow, storage delete/cleanup sau refactor mare shell.
+
+# TODO — Agency Settings Company logo pe storage flow + logo_media_id (2026-03-23)
+
+- [x] Reîncarc workspace-ul și inspectez explicit company settings frontend/backend/store, storage helper, AppShell branding agency și testele relevante.
+- [x] Adaug suport backend pentru `logo_media_id` opțional în schema/payload/response company settings.
+- [x] Păstrez compatibilitate backward cu `logo_url` legacy și fallback predictibil dacă preview-ul din storage eșuează.
+- [x] Leag pagina frontend `/settings/company` la flow-ul storage `init -> upload -> complete` reutilizând helper-ul existent.
+- [x] Elimin flow-ul principal FileReader/dataURL pentru company logo; persist `logo_media_id` stabil și `logo_url` fallback compat.
+- [x] Implementez remove ca detach-only (`logo_media_id=null`, `logo_url=''`) fără delete storage.
+- [x] Actualizez branding-ul agency din AppShell după save/remove prin eveniment `company-settings-updated` (fără hard refresh manual).
+- [x] Adaug teste focused backend + frontend pentru logo_media_id, compat fallback, storage flow, remove, erori validare, refresh trigger.
+- [x] Rulez testele țintite și completez review.
+- [x] Commit + make_pr în același turn.
+
+## Review
+- [x] Frontend modificat strict în `apps/frontend/src/app/settings/company/page.tsx` și refresh minim în `apps/frontend/src/components/AppShell.tsx`.
+- [x] Backend modificat strict pe contractul/serviciul company settings pentru `logo_media_id` + preview fallback (`apps/backend/app/schemas/company.py`, `apps/backend/app/api/company.py`, `apps/backend/app/services/company_settings.py`).
+- [x] Fără favicon global nou, fără Creative UI/media library/publish/storage-delete, fără backfill/migrare.

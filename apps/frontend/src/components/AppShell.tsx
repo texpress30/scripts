@@ -559,9 +559,14 @@ export function AppShell({
         if (!ignore) setCompanySettings(null);
       }
     }
+    function onCompanySettingsUpdated() {
+      void loadCompanySettings();
+    }
     void loadCompanySettings();
+    window.addEventListener("company-settings-updated", onCompanySettingsUpdated);
     return () => {
       ignore = true;
+      window.removeEventListener("company-settings-updated", onCompanySettingsUpdated);
     };
   }, []);
 

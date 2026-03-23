@@ -1,11 +1,13 @@
 "use client";
 
+import React from "react";
 import { FormEvent, useEffect, useState } from "react";
 import { Loader2, Trash2, Upload } from "lucide-react";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
+import { completeDirectUpload, getMediaAccessUrl, initDirectUpload, uploadFileToPresignedUrl } from "@/lib/storage-client";
 
 type CompanySettings = {
   company_name: string;
@@ -23,6 +25,8 @@ type CompanySettings = {
   country: string;
   timezone: string;
   logo_url: string;
+  logo_media_id?: string | null;
+  logo_storage_client_id?: number | null;
 };
 
 const DEFAULT_FORM: CompanySettings = {
@@ -41,6 +45,8 @@ const DEFAULT_FORM: CompanySettings = {
   country: "România",
   timezone: "Europe/Bucharest",
   logo_url: "",
+  logo_media_id: null,
+  logo_storage_client_id: null,
 };
 
 export default function SettingsCompanyPage() {
@@ -48,21 +54,9 @@ export default function SettingsCompanyPage() {
   const [initialForm, setInitialForm] = useState<CompanySettings>(DEFAULT_FORM);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [toastMessage, setToastMessage] = useState("");
-
-  useEffect(() => {
-    const faviconHref = form.logo_url.trim();
-    if (!faviconHref) return;
-
-    let link = document.querySelector("link[rel='icon']") as HTMLLinkElement | null;
-    if (!link) {
-      link = document.createElement("link");
-      link.rel = "icon";
-      document.head.appendChild(link);
-    }
-    link.href = faviconHref;
-  }, [form.logo_url]);
 
   function showToast(message: string) {
     setToastMessage(message);
@@ -91,13 +85,63 @@ export default function SettingsCompanyPage() {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  function onLogoPick(file: File) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = typeof reader.result === "string" ? reader.result : "";
-      updateField("logo_url", result);
-    };
-    reader.readAsDataURL(file);
+  async function onLogoPick(file: File) {
+    const allowedTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/svg+xml"];
+    if (!allowedTypes.includes(file.type)) {
+      setErrorMessage("Tip de fișier invalid. Acceptăm PNG, JPG, WEBP sau SVG.");
+      return;
+    }
+    if (file.size > 2.5 * 1024 * 1024) {
+      setErrorMessage("Fișierul depășește limita de 2.5 MB.");
+      return;
+    }
+    const storageClientId = Number(form.logo_storage_client_id ?? 0);
+    if (!Number.isFinite(storageClientId) || storageClientId <= 0) {
+      setErrorMessage("Nu am putut identifica clientul storage pentru logo.");
+      return;
+    }
+    setLogoUploading(true);
+    setErrorMessage("");
+    try {
+      const initPayload = await initDirectUpload({
+        clientId: storageClientId,
+        kind: "image",
+        fileName: file.name,
+        mimeType: file.type,
+        sizeBytes: file.size,
+        metadata: { source: "agency_company_logo" },
+      });
+      await uploadFileToPresignedUrl({
+        url: initPayload.upload.url,
+        method: initPayload.upload.method,
+        headers: initPayload.upload.headers,
+        file,
+      });
+      await completeDirectUpload({
+        clientId: storageClientId,
+        mediaId: initPayload.media_id,
+      });
+      let previewUrl = "";
+      try {
+        const accessPayload = await getMediaAccessUrl({
+          clientId: storageClientId,
+          mediaId: initPayload.media_id,
+          disposition: "inline",
+        });
+        previewUrl = String(accessPayload.url || "").trim();
+      } catch {
+        previewUrl = URL.createObjectURL(file);
+      }
+      setForm((prev) => ({
+        ...prev,
+        logo_media_id: initPayload.media_id,
+        logo_url: previewUrl,
+      }));
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Upload logo eșuat.");
+    } finally {
+      setLogoUploading(false);
+    }
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -107,10 +151,17 @@ export default function SettingsCompanyPage() {
     try {
       const updated = await apiRequest<CompanySettings>("/company/settings", {
         method: "PATCH",
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form,
+          logo_media_id: form.logo_media_id ?? null,
+          logo_url: form.logo_media_id ? "" : form.logo_url,
+        }),
       });
       setForm(updated);
       setInitialForm(updated);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("company-settings-updated"));
+      }
       showToast("Setările companiei au fost salvate cu succes.");
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : "Nu am putut salva setările companiei.");
@@ -157,14 +208,20 @@ export default function SettingsCompanyPage() {
                       <input
                         type="file"
                         className="hidden"
+                        data-testid="company-logo-input"
                         accept="image/png,image/jpeg,image/webp,image/svg+xml"
                         onChange={(e) => {
                           const file = e.target.files?.[0];
-                          if (file) onLogoPick(file);
+                          if (file) void onLogoPick(file);
                         }}
                       />
                     </label>
-                    <button type="button" className="rounded-md border border-red-200 p-2 text-red-600 hover:bg-red-50" onClick={() => updateField("logo_url", "")}>
+                    <button
+                      type="button"
+                      data-testid="company-logo-remove"
+                      className="rounded-md border border-red-200 p-2 text-red-600 hover:bg-red-50"
+                      onClick={() => setForm((prev) => ({ ...prev, logo_url: "", logo_media_id: null }))}
+                    >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
@@ -292,8 +349,8 @@ export default function SettingsCompanyPage() {
               <button type="button" className="wm-btn-secondary" onClick={onCancel} disabled={saving || loading}>
                 Anulează
               </button>
-              <button type="submit" className="wm-btn-primary" disabled={saving || loading}>
-                {saving ? (
+              <button type="submit" className="wm-btn-primary" disabled={saving || loading || logoUploading}>
+                {saving || logoUploading ? (
                   <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Se salvează...</span>
                 ) : (
                   "Salvează Modificările"
