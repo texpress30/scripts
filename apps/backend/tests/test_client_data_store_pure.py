@@ -1,0 +1,258 @@
+from __future__ import annotations
+
+from decimal import Decimal
+import unittest
+from unittest import mock
+
+from app.services import client_data_store
+
+
+class _FakeDbState:
+    def __init__(self):
+        self.rows: list[dict[str, object]] = []
+        self.next_id = 1
+
+
+class _FakeCursor:
+    def __init__(self, state: _FakeDbState):
+        self._state = state
+        self._fetchone: tuple[object, ...] | None = None
+        self._fetchall: list[tuple[object, ...]] = []
+
+    def execute(self, query: str, params=None):
+        q = " ".join(str(query).split()).lower()
+        self._fetchone = None
+        self._fetchall = []
+
+        if "select 1 from client_data_custom_fields" in q:
+            client_id, field_key = int(params[0]), str(params[1])
+            exists = any(r["client_id"] == client_id and r["field_key"] == field_key for r in self._state.rows)
+            self._fetchone = (1,) if exists else None
+            return
+
+        if "select coalesce(max(sort_order), -1) + 1" in q:
+            client_id = int(params[0])
+            values = [int(r["sort_order"]) for r in self._state.rows if r["client_id"] == client_id]
+            self._fetchone = ((max(values) + 1) if values else 0,)
+            return
+
+        if "from client_data_custom_fields where client_id = %s and is_active = true" in q:
+            client_id = int(params[0])
+            selected = [r for r in self._state.rows if r["client_id"] == client_id and bool(r["is_active"])]
+            selected.sort(key=lambda r: (int(r["sort_order"]), int(r["id"])))
+            self._fetchall = [_row_tuple(r) for r in selected]
+            return
+
+        if "from client_data_custom_fields where client_id = %s" in q and "is_active = true" not in q:
+            client_id = int(params[0])
+            selected = [r for r in self._state.rows if r["client_id"] == client_id]
+            selected.sort(key=lambda r: (int(r["sort_order"]), int(r["id"])))
+            self._fetchall = [_row_tuple(r) for r in selected]
+            return
+
+        if "from client_data_custom_fields where id = %s and client_id = %s" in q:
+            field_id, client_id = int(params[0]), int(params[1])
+            row = next((r for r in self._state.rows if r["id"] == field_id and r["client_id"] == client_id), None)
+            self._fetchone = _row_tuple(row) if row else None
+            return
+
+        if "insert into client_data_custom_fields" in q:
+            client_id, field_key, label, value_kind, sort_order = params
+            row = {
+                "id": self._state.next_id,
+                "client_id": int(client_id),
+                "field_key": str(field_key),
+                "label": str(label),
+                "value_kind": str(value_kind),
+                "sort_order": int(sort_order),
+                "is_active": True,
+                "archived_at": None,
+            }
+            self._state.rows.append(row)
+            self._state.next_id += 1
+            self._fetchone = _row_tuple(row)
+            return
+
+        raise AssertionError(f"Unexpected query: {query}")
+
+    def fetchone(self):
+        return self._fetchone
+
+    def fetchall(self):
+        return list(self._fetchall)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class _FakeConnection:
+    def __init__(self, state: _FakeDbState):
+        self._state = state
+
+    def cursor(self):
+        return _FakeCursor(self._state)
+
+    def commit(self):
+        return None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+def _row_tuple(row: dict[str, object] | None) -> tuple[object, ...] | None:
+    if row is None:
+        return None
+    return (
+        row["id"],
+        row["client_id"],
+        row["field_key"],
+        row["label"],
+        row["value_kind"],
+        row["sort_order"],
+        row["is_active"],
+        row["archived_at"],
+    )
+
+
+class ClientDataStorePureTests(unittest.TestCase):
+    def test_list_supported_sources_returns_exact_catalog_in_label_order(self):
+        expected = [
+            {"key": "call_center", "label": "Call Center"},
+            {"key": "direct", "label": "Direct"},
+            {"key": "google_ads", "label": "Google"},
+            {"key": "linkedin_ads", "label": "LinkedIn"},
+            {"key": "meta_ads", "label": "Meta"},
+            {"key": "organic", "label": "Organic"},
+            {"key": "pinterest_ads", "label": "Pinterest"},
+            {"key": "quora_ads", "label": "Quora"},
+            {"key": "reddit_ads", "label": "Reddit"},
+            {"key": "referral", "label": "Referral"},
+            {"key": "snapchat_ads", "label": "Snapchat"},
+            {"key": "taboola_ads", "label": "Taboola"},
+            {"key": "tiktok_ads", "label": "TikTok"},
+            {"key": "unknown", "label": "Unknown"},
+        ]
+        self.assertEqual(client_data_store.list_supported_sources(), expected)
+
+    def test_is_supported_source(self):
+        self.assertTrue(client_data_store.is_supported_source("meta_ads"))
+        self.assertTrue(client_data_store.is_supported_source("  TIKTOK_ADS  "))
+        self.assertFalse(client_data_store.is_supported_source("facebook_ads"))
+        self.assertFalse(client_data_store.is_supported_source(None))
+
+    def test_get_source_label(self):
+        self.assertEqual(client_data_store.get_source_label("google_ads"), "Google")
+        self.assertEqual(client_data_store.get_source_label("  REDDIT_ADS "), "Reddit")
+        self.assertIsNone(client_data_store.get_source_label("invalid"))
+        self.assertIsNone(client_data_store.get_source_label(None))
+
+    def test_formula_helpers_empty(self):
+        entries: list[dict[str, object]] = []
+        self.assertEqual(client_data_store.compute_sales_count(entries), 0)
+        self.assertEqual(client_data_store.compute_revenue(entries), Decimal("0"))
+        self.assertEqual(client_data_store.compute_cogs(entries), Decimal("0"))
+        self.assertEqual(client_data_store.compute_custom_value_4(entries), Decimal("0"))
+        self.assertEqual(client_data_store.compute_gross_profit(entries), Decimal("0"))
+
+    def test_formula_helpers_simple_example(self):
+        entries = [
+            {"sale_price_amount": Decimal("100.50"), "actual_price_amount": Decimal("60.25")},
+            {"sale_price_amount": 99, "actual_price_amount": "40.75"},
+        ]
+        self.assertEqual(client_data_store.compute_sales_count(entries), 2)
+        self.assertEqual(client_data_store.compute_revenue(entries), Decimal("199.50"))
+        self.assertEqual(client_data_store.compute_cogs(entries), Decimal("101.00"))
+        self.assertEqual(client_data_store.compute_custom_value_4(entries), Decimal("199.50"))
+        self.assertEqual(client_data_store.compute_gross_profit(entries), Decimal("98.50"))
+
+
+class ClientDataStoreCustomFieldCrudSliceTests(unittest.TestCase):
+    def setUp(self):
+        self.state = _FakeDbState()
+        self.connect_patch = mock.patch(
+            "app.services.client_data_store._connect",
+            side_effect=lambda: _FakeConnection(self.state),
+        )
+        self.connect_patch.start()
+
+    def tearDown(self):
+        self.connect_patch.stop()
+
+    def test_list_custom_fields_excludes_inactive_by_default(self):
+        self.state.rows.extend(
+            [
+                {"id": 2, "client_id": 7, "field_key": "b", "label": "B", "value_kind": "count", "sort_order": 1, "is_active": False, "archived_at": "2026-01-01"},
+                {"id": 1, "client_id": 7, "field_key": "a", "label": "A", "value_kind": "count", "sort_order": 1, "is_active": True, "archived_at": None},
+                {"id": 3, "client_id": 8, "field_key": "c", "label": "C", "value_kind": "amount", "sort_order": 0, "is_active": True, "archived_at": None},
+            ]
+        )
+        rows = client_data_store.list_custom_fields(client_id=7)
+        self.assertEqual([row["id"] for row in rows], [1])
+
+    def test_list_custom_fields_include_inactive_and_sorted(self):
+        self.state.rows.extend(
+            [
+                {"id": 5, "client_id": 7, "field_key": "z", "label": "Z", "value_kind": "count", "sort_order": 2, "is_active": True, "archived_at": None},
+                {"id": 3, "client_id": 7, "field_key": "x", "label": "X", "value_kind": "amount", "sort_order": 1, "is_active": False, "archived_at": "2026-01-01"},
+                {"id": 4, "client_id": 7, "field_key": "y", "label": "Y", "value_kind": "amount", "sort_order": 1, "is_active": True, "archived_at": None},
+            ]
+        )
+        rows = client_data_store.list_custom_fields(client_id=7, include_inactive=True)
+        self.assertEqual([row["id"] for row in rows], [3, 4, 5])
+
+    def test_create_custom_field_auto_generates_key(self):
+        row = client_data_store.create_custom_field(client_id=12, label="  Appointments  ", value_kind="count")
+        self.assertEqual(row["field_key"], "appointments")
+        self.assertEqual(row["sort_order"], 0)
+        self.assertEqual(row["is_active"], True)
+        self.assertIsNone(row["archived_at"])
+
+    def test_create_custom_field_normalizes_explicit_key(self):
+        row = client_data_store.create_custom_field(
+            client_id=12,
+            label="Revenue",
+            value_kind="amount",
+            field_key="  Revenue Total !! ",
+            sort_order=7,
+        )
+        self.assertEqual(row["field_key"], "revenue_total")
+        self.assertEqual(row["sort_order"], 7)
+
+    def test_create_custom_field_resolves_key_conflicts_for_same_client(self):
+        first = client_data_store.create_custom_field(client_id=99, label="Appointments", value_kind="count")
+        second = client_data_store.create_custom_field(client_id=99, label="Appointments", value_kind="count")
+        third = client_data_store.create_custom_field(client_id=99, label="Appointments", value_kind="count")
+        self.assertEqual(first["field_key"], "appointments")
+        self.assertEqual(second["field_key"], "appointments_2")
+        self.assertEqual(third["field_key"], "appointments_3")
+
+    def test_create_custom_field_accepts_both_value_kinds(self):
+        row_count = client_data_store.create_custom_field(client_id=1, label="Leads", value_kind="count")
+        row_amount = client_data_store.create_custom_field(client_id=1, label="Cost", value_kind="amount")
+        self.assertEqual(row_count["value_kind"], "count")
+        self.assertEqual(row_amount["value_kind"], "amount")
+
+    def test_create_custom_field_rejects_invalid_value_kind(self):
+        with self.assertRaises(ValueError):
+            client_data_store.create_custom_field(client_id=1, label="Leads", value_kind="text")
+
+    def test_validate_custom_field_belongs_to_client_valid(self):
+        created = client_data_store.create_custom_field(client_id=5, label="Leads", value_kind="count")
+        found = client_data_store.validate_custom_field_belongs_to_client(custom_field_id=created["id"], client_id=5)
+        self.assertEqual(found["id"], created["id"])
+        self.assertEqual(found["client_id"], 5)
+
+    def test_validate_custom_field_belongs_to_client_invalid(self):
+        created = client_data_store.create_custom_field(client_id=5, label="Leads", value_kind="count")
+        with self.assertRaises(LookupError):
+            client_data_store.validate_custom_field_belongs_to_client(custom_field_id=created["id"], client_id=6)
+
+
+if __name__ == "__main__":
+    unittest.main()
