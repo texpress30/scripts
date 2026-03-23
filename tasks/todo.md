@@ -6729,3 +6729,21 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, f�
 - [x] Upload flow păstrat strict prin helper storage existent: `initDirectUpload -> uploadFileToPresignedUrl -> completeDirectUpload`, apoi refresh list + auto-select media nouă.
 - [x] Integrare minimală în pagina Creative: tabelul existent a rămas, componenta e adăugată sub tabel + selector client pentru contextul library.
 - [x] Teste focused adăugate pentru loading/empty/success/select/preview/upload/error și verificare că asset list existent rămâne vizibil.
+
+# TODO — Creative selected media integrated into first real create/edit flow (2026-03-23)
+
+- [x] Refresh workspace and inspect explicit: Creative page, CreativeMediaLibrary, creative API endpoints, existing create/add-variant UI (if any), and Creative/storage tests.
+- [x] Choose minimal real integration point (existing add-variant flow if present; otherwise compact create asset + first variant flow).
+- [x] Wire selected media from CreativeMediaLibrary into variant request with both `media_id` and legacy `media` value.
+- [x] Add compact UX states: no-media validation, success feedback, partial failure (asset created / variant failed), backend media_id error handling without UI break.
+- [x] Ensure asset list refresh after successful create+variant and preserve CreativeMediaLibrary/upload functionality.
+- [x] Add focused frontend tests with mocked `/creative/library/assets` and `/creative/library/assets/{id}/variants`.
+- [x] Run targeted tests and record review.
+
+## Review
+- [x] Nu exista un add-variant UI existent în pagina Creative; am implementat fallback-ul cerut: flow compact `create asset + first variant` în aceeași pagină, fără wizard mare.
+- [x] Fluxul folosește `selectedMedia` din `CreativeMediaLibrary`; request-ul către variant trimite atât `media_id`, cât și `media` legacy.
+- [x] Regula `media` legacy: `original_filename` dacă există, altfel fallback predictibil `media:{media_id}`.
+- [x] UX states adăugate: blocare fără media selectată, mesaj de succes complet, eroare explicită pentru caz parțial (asset creat / variant failed), afișare clară erori backend `media_id`.
+- [x] După succes (sau succes parțial) se face refresh la lista asset-urilor; CreativeMediaLibrary și upload flow rămân funcționale.
+- [x] Teste frontend focused acoperă payload media_id+media, blocare fără media, refresh list, succes complet, eșec add-variant după create, și erori media_id fără UI break.
