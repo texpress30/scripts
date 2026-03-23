@@ -27,7 +27,6 @@ import { apiRequest, getAgencyMyAccess, getSubaccountMyAccess, type TeamAgencyMy
 import { isPinterestIntegrationEnabled, isSnapchatIntegrationEnabled, isTikTokIntegrationEnabled } from "@/lib/featureFlags";
 import { AppRole, SessionAccessContext, getSessionAccessContext, isSubaccountScopedContext } from "@/lib/session";
 import { cn } from "@/lib/utils";
-import { GlobalFavicon } from "./GlobalFavicon";
 
 type ClientItem = { id: number; name: string; owner_email: string; client_logo_url?: string | null };
 type CompanySettings = { logo_url: string; city: string; country: string; company_name: string };
@@ -447,7 +446,6 @@ export function AppShell({
   const [search, setSearch] = useState("");
   const [clients, setClients] = useState<ClientItem[]>([]);
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
-  const [companySettingsRefreshKey, setCompanySettingsRefreshKey] = useState(0);
   const [subaccountBusinessProfile, setSubaccountBusinessProfile] = useState<{ city: string; country: string; logoUrl: string } | null>(null);
   const [brandingImageLoadFailed, setBrandingImageLoadFailed] = useState(false);
 
@@ -562,12 +560,10 @@ export function AppShell({
         const result = await apiRequest<CompanySettings>("/company/settings");
         if (!ignore) {
           setCompanySettings(result);
-          setCompanySettingsRefreshKey((prev) => prev + 1);
         }
       } catch {
         if (!ignore) {
           setCompanySettings(null);
-          setCompanySettingsRefreshKey((prev) => prev + 1);
         }
       }
     }
@@ -1030,7 +1026,6 @@ export function AppShell({
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-      <GlobalFavicon agencyLogoUrl={agencyLogoUrl} refreshKey={companySettingsRefreshKey} />
       {mobileOpen && <div className="fixed inset-0 z-40 bg-black/40 md:hidden" onClick={() => setMobileOpen(false)} />}
 
       <aside

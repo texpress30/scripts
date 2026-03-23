@@ -549,3 +549,5 @@
 - 2026-03-23: Pentru favicon global, nu este suficient să adaug un link nou în head; trebuie actualizate/sincronizate explicit toate link-urile icon relevante (`rel=icon` și `rel=shortcut icon`) ca să devină autoritare față de metadata statică.
 
 - 2026-03-23: Pentru favicon bazat pe URL-uri de preview storage semnate, nu adăuga cache-busting în query string (`?v=`) deoarece poate invalida semnătura; folosește fragment (`#v=`) sau alt mecanism care nu modifică request query.
+
+- 2026-03-23: Când brandingul global (favicon/title) trebuie să fie coerent pe landing + zone autentificate, nu monta logica doar în shell-ul intern; montează componenta globală în root layout comun și acoperă explicit navigarea între contexte.
