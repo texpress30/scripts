@@ -6681,3 +6681,86 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, f�
 ## Review
 - [x] Confirm no upload/storage flow changes, no Company Settings UX changes, no Creative/media/publish changes.
 - [x] Confirm agency logo remains the only source for global favicon override.
+
+# TODO — Global favicon agency logo source + branding rename VOXEL MCC (2026-03-23)
+
+- [x] Refresh workspace state and inspect explicit files: `GlobalFavicon.tsx`, `AppShell.tsx`, root `layout.tsx`, global metadata/icon assets, company settings page, and all `MCC Command Center` occurrences.
+- [x] Identify exact favicon fallback root cause and apply minimal fix in global branding path (no new favicon upload flow, no Creative/storage-flow changes).
+- [x] Ensure AppShell global branding source for favicon remains agency company settings logo (`logo_url`) and not sub-account logo.
+- [x] Update global branding title/metadata from `MCC Command Center` to `VOXEL MCC` where globally relevant.
+- [x] Add focused frontend tests for favicon source/fallback/update/remove + global title/metadata assertions.
+- [x] Run targeted tests and document review findings.
+
+## Review
+- [x] Root cause confirmed: favicon helper appended `?v=` to agency logo URLs; when `logo_url` was a signed storage preview URL, query mutation invalidated signature and forced `Image.onerror` fallback to `/icon.svg`.
+- [x] Fix applied minimally in `GlobalFavicon` by appending refresh key in URL fragment (`#v=`) instead of query string, preserving signed query params while still forcing browser refresh semantics.
+- [x] Global source kept agency-only: `AppShell` now resolves favicon input via `resolveGlobalFaviconLogoUrl(companySettings)` and continues passing only agency `companySettings.logo_url` to `GlobalFavicon`.
+- [x] Branding updated to `VOXEL MCC` in root metadata and major entry headings.
+- [x] Focused tests pass for favicon behavior, AppShell source helper, company save/remove event flow, and global title metadata assertion.
+
+# TODO — Landing page și app shell folosesc același favicon global agency (2026-03-23)
+
+- [x] Refresh workspace state și inspect explicit: `GlobalFavicon.tsx`, `AppShell.tsx`, `app/layout.tsx`, landing `app/page.tsx`, metadata/layout public.
+- [x] Identific root cause pentru mismatch landing vs interior și centralizez montarea favicon-ului global într-un loc comun.
+- [x] Asigur sursa agency-only (`/company/settings` -> `logo_url`) pentru favicon global în context public + interior, cu fallback default robust.
+- [x] Mențin update flow pe evenimentul `company-settings-updated` astfel încât landing + interior rămân coerente fără hard refresh obligatoriu.
+- [x] Adaug teste frontend focused pentru mecanismul comun (landing + interior) și fallback-uri.
+- [x] Rulez testele țintite și documentez review.
+
+## Review
+- [x] Root cause confirmat: `GlobalFavicon` era montat exclusiv în `AppShell`, iar landing-ul public (`/`) nu folosește `AppShell`; de aceea rămânea pe favicon static metadata (`/icon.svg`).
+- [x] Fix global minim: montare comună în `app/layout.tsx` prin componenta client `GlobalAgencyFavicon`, astfel aceeași logică acoperă landing + interior + navigarea între ele.
+- [x] Sursa agency-only păstrată: `GlobalAgencyFavicon` citește `logo_url` din `/company/settings`; fallback la default când lipsește/e invalid/eșuează load.
+- [x] Event refresh păstrat: listener `company-settings-updated` refetch + `refreshKey` pentru actualizare favicon fără hard refresh obligatoriu.
+
+# TODO — Creative Media Library UI foundation (browse + upload + preview + select) (2026-03-23)
+
+- [x] Inspect explicit: Creative route/page reale, helper storage client, API client folosit în Creative, componente asset list existente, endpoint-uri storage reutilizabile și testele Creative/storage UI.
+- [x] Introduc componentă reutilizabilă `CreativeMediaLibrary` cu responsabilitate strictă: listare media, upload storage flow, preview, selecție locală media_id.
+- [x] Integrez minimal componenta în pagina Creative fără redesign mare și fără a rupe lista existentă de asset-uri.
+- [x] Mențin upload flow strict prin helper storage (`init -> upload presigned -> complete`) + refresh list + auto-select media nouă.
+- [x] Adaug filtre minime utile (kind) și fallback-uri robuste pentru preview/access URL errors.
+- [x] Adaug teste frontend focused pentru loading/empty/success/select/preview/upload/error și verific că asset list existent rămâne funcțional.
+- [x] Rulez testele țintite și documentez review.
+
+## Review
+- [x] Pagina Creative reală inspectată: `apps/frontend/src/app/creative/page.tsx` avea asset table placeholder și nu avea media library storage.
+- [x] Componentă nouă `CreativeMediaLibrary` implementată cu listare `/storage/media`, filtru kind (all/image/video), preview via `/storage/media/{id}/access-url`, selecție locală și callback opțional `onSelectMedia`.
+- [x] Upload flow păstrat strict prin helper storage existent: `initDirectUpload -> uploadFileToPresignedUrl -> completeDirectUpload`, apoi refresh list + auto-select media nouă.
+- [x] Integrare minimală în pagina Creative: tabelul existent a rămas, componenta e adăugată sub tabel + selector client pentru contextul library.
+- [x] Teste focused adăugate pentru loading/empty/success/select/preview/upload/error și verificare că asset list existent rămâne vizibil.
+
+# TODO — Creative selected media integrated into first real create/edit flow (2026-03-23)
+
+- [x] Refresh workspace and inspect explicit: Creative page, CreativeMediaLibrary, creative API endpoints, existing create/add-variant UI (if any), and Creative/storage tests.
+- [x] Choose minimal real integration point (existing add-variant flow if present; otherwise compact create asset + first variant flow).
+- [x] Wire selected media from CreativeMediaLibrary into variant request with both `media_id` and legacy `media` value.
+- [x] Add compact UX states: no-media validation, success feedback, partial failure (asset created / variant failed), backend media_id error handling without UI break.
+- [x] Ensure asset list refresh after successful create+variant and preserve CreativeMediaLibrary/upload functionality.
+- [x] Add focused frontend tests with mocked `/creative/library/assets` and `/creative/library/assets/{id}/variants`.
+- [x] Run targeted tests and record review.
+
+## Review
+- [x] Nu exista un add-variant UI existent în pagina Creative; am implementat fallback-ul cerut: flow compact `create asset + first variant` în aceeași pagină, fără wizard mare.
+- [x] Fluxul folosește `selectedMedia` din `CreativeMediaLibrary`; request-ul către variant trimite atât `media_id`, cât și `media` legacy.
+- [x] Regula `media` legacy: `original_filename` dacă există, altfel fallback predictibil `media:{media_id}`.
+- [x] UX states adăugate: blocare fără media selectată, mesaj de succes complet, eroare explicită pentru caz parțial (asset creat / variant failed), afișare clară erori backend `media_id`.
+- [x] După succes (sau succes parțial) se face refresh la lista asset-urilor; CreativeMediaLibrary și upload flow rămân funcționale.
+- [x] Teste frontend focused acoperă payload media_id+media, blocare fără media, refresh list, succes complet, eșec add-variant după create, și erori media_id fără UI break.
+
+# TODO — Creative asset detail + variant preview + add variant on existing asset (2026-03-23)
+
+- [x] Refresh workspace and inspect explicit: creative page, CreativeMediaLibrary, creative API endpoints (list/detail/add variant), and existing Creative/media tests.
+- [x] Add selected asset state and robust detail loading path from real backend payloads.
+- [x] Render existing variants for selected asset with compact list and selection state.
+- [x] Implement variant media preview via storage access URL for media_id variants (image/video) + fallback for legacy-only variants.
+- [x] Add compact add-variant form for selected asset using selected media from CreativeMediaLibrary and send `media_id` + legacy `media`.
+- [x] Add focused tests for selection/detail/preview/add-variant success+error and ensure asset list + media library remain functional.
+- [x] Run targeted tests and document review.
+
+## Review
+- [x] Endpoint de detail dedicat nu există în workspace (`/creative/library/assets/{id}` absent); am folosit list endpoint-ul real (`/creative/library/assets?client_id=...`) ca sursă pentru detail-ul asset-ului selectat + variante.
+- [x] Am introdus stări locale clare: `selectedAssetId`, `selectedVariantId`, detail derivat din payloadul listă, preview URL/error/loading, plus integrare cu `selectedMedia` din `CreativeMediaLibrary`.
+- [x] Varianta selectată cu `media_id` primește preview via `getMediaAccessUrl`; pentru variante fără `media_id` afișez fallback clar (`media legacy only`) fără crash.
+- [x] Add variant pe asset existent trimite `media_id` + `media` legacy (filename sau fallback `media:{id}`), validează lipsa asset/media, afișează feedback success/error și reîncarcă detail/list după succes.
+- [x] Testele noi acoperă selecție asset, afișare variante, preview image/video, fallback fără media_id, blocări fără asset/media, payload `media_id+media`, reload după succes și stabilitate UI la erori backend.
