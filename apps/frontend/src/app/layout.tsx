@@ -5,7 +5,7 @@ import { GeistMono } from "geist/font/mono";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
 export const metadata: Metadata = {
-  title: "MCC Command Center",
+  title: "VOXEL MCC",
   description: "Marketing Agency Command Center - Management platform",
 };
 

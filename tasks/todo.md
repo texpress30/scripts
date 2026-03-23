@@ -6681,3 +6681,19 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, fÄ
 ## Review
 - [x] Confirm no upload/storage flow changes, no Company Settings UX changes, no Creative/media/publish changes.
 - [x] Confirm agency logo remains the only source for global favicon override.
+
+# TODO â€” Global favicon agency logo source + branding rename VOXEL MCC (2026-03-23)
+
+- [x] Refresh workspace state and inspect explicit files: `GlobalFavicon.tsx`, `AppShell.tsx`, root `layout.tsx`, global metadata/icon assets, company settings page, and all `MCC Command Center` occurrences.
+- [x] Identify exact favicon fallback root cause and apply minimal fix in global branding path (no new favicon upload flow, no Creative/storage-flow changes).
+- [x] Ensure AppShell global branding source for favicon remains agency company settings logo (`logo_url`) and not sub-account logo.
+- [x] Update global branding title/metadata from `MCC Command Center` to `VOXEL MCC` where globally relevant.
+- [x] Add focused frontend tests for favicon source/fallback/update/remove + global title/metadata assertions.
+- [x] Run targeted tests and document review findings.
+
+## Review
+- [x] Root cause confirmed: favicon helper appended `?v=` to agency logo URLs; when `logo_url` was a signed storage preview URL, query mutation invalidated signature and forced `Image.onerror` fallback to `/icon.svg`.
+- [x] Fix applied minimally in `GlobalFavicon` by appending refresh key in URL fragment (`#v=`) instead of query string, preserving signed query params while still forcing browser refresh semantics.
+- [x] Global source kept agency-only: `AppShell` now resolves favicon input via `resolveGlobalFaviconLogoUrl(companySettings)` and continues passing only agency `companySettings.logo_url` to `GlobalFavicon`.
+- [x] Branding updated to `VOXEL MCC` in root metadata and major entry headings.
+- [x] Focused tests pass for favicon behavior, AppShell source helper, company save/remove event flow, and global title metadata assertion.
