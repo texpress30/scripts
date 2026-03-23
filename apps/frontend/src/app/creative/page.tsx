@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Palette,
   Image,
@@ -14,10 +15,14 @@ import {
   CheckCircle2,
   Clock,
   AlertCircle,
+  Loader2,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
+import { CreativeMediaLibrary, type CreativeMediaItem } from "@/components/CreativeMediaLibrary";
+
+type CreativeClient = { id: number; name: string };
 
 type CreativeAsset = {
   id: number;
@@ -28,6 +33,21 @@ type CreativeAsset = {
   platform: string;
   updated_at: string;
 };
+
+type CreativeAssetApiItem = {
+  id?: number;
+  client_id?: number;
+  name?: string;
+  metadata?: {
+    format?: string;
+    platform_fit?: string[];
+  };
+  legal_status?: string;
+  approval_status?: string;
+};
+
+type CreateAssetResponse = { id: number; client_id: number; name: string };
+type AddVariantResponse = { id: number; asset_id: number; media_id?: string | null; media?: string };
 
 const statusConfig = {
   approved: {
@@ -54,7 +74,7 @@ const typeIcons = {
   banner: Palette,
 };
 
-// Placeholder data — replace with apiRequest calls to your FastAPI backend
+// Placeholder fallback data
 const placeholderAssets: CreativeAsset[] = [
   {
     id: 1,
@@ -83,44 +103,168 @@ const placeholderAssets: CreativeAsset[] = [
     platform: "Google Ads",
     updated_at: "2025-06-09",
   },
-  {
-    id: 4,
-    name: "Story Instagram — testimonial",
-    type: "image",
-    status: "approved",
-    client_name: "FreshBite",
-    platform: "Meta",
-    updated_at: "2025-06-08",
-  },
-  {
-    id: 5,
-    name: "Carousel Facebook — features",
-    type: "image",
-    status: "in_review",
-    client_name: "TechStart SRL",
-    platform: "Meta",
-    updated_at: "2025-06-07",
-  },
 ];
+
+function toCreativeAsset(item: CreativeAssetApiItem, clientName: string): CreativeAsset {
+  const format = String(item.metadata?.format || "").toLowerCase();
+  const type: CreativeAsset["type"] = format === "video" || format === "copy" || format === "banner" ? (format as CreativeAsset["type"]) : "image";
+  const statusRaw = String(item.approval_status || "draft").toLowerCase();
+  const status: CreativeAsset["status"] = statusRaw === "approved" ? "approved" : statusRaw === "in_review" ? "in_review" : "draft";
+  return {
+    id: Number(item.id || 0),
+    name: String(item.name || "Asset"),
+    type,
+    status,
+    client_name: clientName,
+    platform: (item.metadata?.platform_fit || ["-"])[0] || "-",
+    updated_at: "-",
+  };
+}
+
+function resolveLegacyMedia(selectedMedia: CreativeMediaItem): string {
+  const filename = String(selectedMedia.original_filename || "").trim();
+  if (filename !== "") return filename;
+  return `media:${selectedMedia.media_id}`;
+}
 
 export default function CreativePage() {
   const [assets, setAssets] = useState<CreativeAsset[]>(placeholderAssets);
+  const [assetsLoading, setAssetsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
 
-  // TODO: Replace with real API call
-  // useEffect(() => {
-  //   async function load() {
-  //     const result = await apiRequest<{ items: CreativeAsset[] }>("/creatives");
-  //     setAssets(result.items);
-  //   }
-  //   void load();
-  // }, []);
+  const [creativeClients, setCreativeClients] = useState<CreativeClient[]>([]);
+  const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
+  const [selectedMedia, setSelectedMedia] = useState<CreativeMediaItem | null>(null);
+
+  const [assetName, setAssetName] = useState("");
+  const [assetFormat, setAssetFormat] = useState<"image" | "video" | "banner" | "copy">("image");
+  const [variantHeadline, setVariantHeadline] = useState("Primary headline");
+  const [variantBody, setVariantBody] = useState("Descriere scurtă pentru prima variantă.");
+  const [variantCta, setVariantCta] = useState("Afla mai mult");
+
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const [createSuccess, setCreateSuccess] = useState("");
+
+  useEffect(() => {
+    let ignore = false;
+    async function loadClientsForCreative() {
+      try {
+        const payload = await apiRequest<{ items: CreativeClient[] }>("/clients");
+        const items = Array.isArray(payload.items)
+          ? payload.items
+              .map((item) => ({ id: Number(item.id || 0), name: String(item.name || "").trim() }))
+              .filter((item) => item.id > 0 && item.name !== "")
+          : [];
+        if (!ignore) {
+          setCreativeClients(items);
+          setSelectedClientId((prev) => (prev && items.some((item) => item.id === prev) ? prev : items[0]?.id ?? null));
+        }
+      } catch {
+        if (!ignore) {
+          setCreativeClients([]);
+          setSelectedClientId(null);
+        }
+      }
+    }
+
+    void loadClientsForCreative();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  const loadAssets = useCallback(async () => {
+    if (!selectedClientId) {
+      setAssets(placeholderAssets);
+      return;
+    }
+
+    setAssetsLoading(true);
+    try {
+      const payload = await apiRequest<{ items: CreativeAssetApiItem[] }>(`/creative/library/assets?client_id=${selectedClientId}`);
+      const clientName = creativeClients.find((item) => item.id === selectedClientId)?.name ?? `Client #${selectedClientId}`;
+      const mapped = Array.isArray(payload.items) ? payload.items.map((item) => toCreativeAsset(item, clientName)).filter((item) => item.id > 0) : [];
+      setAssets(mapped.length > 0 ? mapped : []);
+    } catch {
+      setAssets(placeholderAssets);
+    } finally {
+      setAssetsLoading(false);
+    }
+  }, [creativeClients, selectedClientId]);
+
+  useEffect(() => {
+    void loadAssets();
+  }, [loadAssets]);
+
+  async function onCreateAssetWithFirstVariant() {
+    setCreateError("");
+    setCreateSuccess("");
+
+    if (!selectedClientId) {
+      setCreateError("Selectează un client înainte să creezi asset-ul.");
+      return;
+    }
+    if (!selectedMedia) {
+      setCreateError("Selectează mai întâi un media item din Media Library pentru prima variantă.");
+      return;
+    }
+    if (assetName.trim() === "") {
+      setCreateError("Numele asset-ului este obligatoriu.");
+      return;
+    }
+
+    setCreateLoading(true);
+    let createdAsset: CreateAssetResponse | null = null;
+    try {
+      createdAsset = await apiRequest<CreateAssetResponse>("/creative/library/assets", {
+        method: "POST",
+        body: JSON.stringify({
+          client_id: selectedClientId,
+          name: assetName.trim(),
+          format: assetFormat,
+          dimensions: "1080x1080",
+          objective_fit: "awareness",
+          platform_fit: ["meta"],
+          language: "ro",
+          brand_tags: [],
+          legal_status: "pending",
+          approval_status: "draft",
+        }),
+      });
+
+      const variantPayload = {
+        headline: variantHeadline.trim() || assetName.trim(),
+        body: variantBody.trim() || "Prima variantă creată din Creative Media Library.",
+        cta: variantCta.trim() || "Afla mai mult",
+        media_id: selectedMedia.media_id,
+        media: resolveLegacyMedia(selectedMedia),
+      };
+
+      await apiRequest<AddVariantResponse>(`/creative/library/assets/${createdAsset.id}/variants`, {
+        method: "POST",
+        body: JSON.stringify(variantPayload),
+      });
+
+      setCreateSuccess(`Asset #${createdAsset.id} și prima variantă au fost create cu media ${selectedMedia.media_id}.`);
+      await loadAssets();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Nu am putut finaliza flow-ul create asset + first variant.";
+      if (createdAsset) {
+        setCreateError(`Asset #${createdAsset.id} a fost creat, dar add variant a eșuat: ${message}`);
+        await loadAssets();
+      } else {
+        setCreateError(message);
+      }
+    } finally {
+      setCreateLoading(false);
+    }
+  }
 
   const filtered = assets.filter((a) => {
-    const matchesSearch = a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      a.client_name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = a.name.toLowerCase().includes(searchQuery.toLowerCase()) || a.client_name.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesType = filterType === "all" || a.type === filterType;
     const matchesStatus = filterStatus === "all" || a.status === filterStatus;
     return matchesSearch && matchesType && matchesStatus;
@@ -137,12 +281,9 @@ export default function CreativePage() {
     <ProtectedPage>
       <AppShell title="Creative">
         <div className="mb-6">
-          <p className="text-sm text-muted-foreground">
-            Gestioneaza asset-urile creative pentru campaniile tale — bannere, video-uri, copy si altele.
-          </p>
+          <p className="text-sm text-muted-foreground">Gestioneaza asset-urile creative pentru campaniile tale — bannere, video-uri, copy si altele.</p>
         </div>
 
-        {/* Stats row */}
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
           {[
             { label: "Total Assets", value: counts.total, color: "text-foreground" },
@@ -151,142 +292,186 @@ export default function CreativePage() {
             { label: "Draft", value: counts.draft, color: "text-muted-foreground" },
           ].map((stat) => (
             <div key={stat.label} className="mcc-card flex flex-col gap-1 p-4">
-              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                {stat.label}
-              </span>
+              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{stat.label}</span>
               <span className={`text-2xl font-semibold ${stat.color}`}>{stat.value}</span>
             </div>
           ))}
         </div>
 
-        {/* Toolbar */}
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cauta asset-uri..."
-              className="mcc-input pl-10"
-            />
+            <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Cauta asset-uri..." className="mcc-input pl-10" />
           </div>
           <div className="flex items-center gap-2">
-            <select
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value)}
-              className="mcc-input h-9 text-sm"
-            >
+            <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="mcc-input h-9 text-sm">
               <option value="all">Toate tipurile</option>
               <option value="image">Imagini</option>
               <option value="video">Video</option>
               <option value="copy">Copy</option>
               <option value="banner">Bannere</option>
             </select>
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="mcc-input h-9 text-sm"
-            >
+            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="mcc-input h-9 text-sm">
               <option value="all">Toate statusurile</option>
               <option value="approved">Aprobat</option>
               <option value="in_review">In Review</option>
               <option value="draft">Draft</option>
             </select>
-            <button className="mcc-btn-primary gap-2">
+            <button className="mcc-btn-primary gap-2" type="button">
               <Plus className="h-4 w-4" />
               <span className="hidden sm:inline">Adauga</span>
             </button>
           </div>
         </div>
 
-        {/* Assets table */}
-        <div className="mcc-card overflow-hidden">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted/50">
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Asset
-                </th>
-                <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground sm:table-cell">
-                  Tip
-                </th>
-                <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground md:table-cell">
-                  Client
-                </th>
-                <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground lg:table-cell">
-                  Platforma
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Status
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Actiuni
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((asset) => {
-                const TypeIcon = typeIcons[asset.type];
-                const status = statusConfig[asset.status];
-                const StatusIcon = status.icon;
-                return (
-                  <tr
-                    key={asset.id}
-                    className="border-b border-border transition-colors hover:bg-muted/30"
-                  >
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
-                          <TypeIcon className="h-4 w-4 text-primary" />
+        <div className="mcc-card overflow-hidden" data-testid="creative-assets-table">
+          {assetsLoading ? (
+            <div className="flex items-center gap-2 px-4 py-5 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Se încarcă asset-urile...
+            </div>
+          ) : (
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/50">
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Asset</th>
+                  <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground sm:table-cell">Tip</th>
+                  <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground md:table-cell">Client</th>
+                  <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground lg:table-cell">Platforma</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Actiuni</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((asset) => {
+                  const TypeIcon = typeIcons[asset.type];
+                  const status = statusConfig[asset.status];
+                  const StatusIcon = status.icon;
+                  return (
+                    <tr key={asset.id} className="border-b border-border transition-colors hover:bg-muted/30">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
+                            <TypeIcon className="h-4 w-4 text-primary" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-foreground">{asset.name}</p>
+                            <p className="text-xs text-muted-foreground sm:hidden">{asset.client_name}</p>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="truncate font-medium text-foreground">{asset.name}</p>
-                          <p className="text-xs text-muted-foreground sm:hidden">{asset.client_name}</p>
+                      </td>
+                      <td className="hidden px-4 py-3 capitalize text-muted-foreground sm:table-cell">{asset.type}</td>
+                      <td className="hidden px-4 py-3 text-foreground md:table-cell">{asset.client_name}</td>
+                      <td className="hidden px-4 py-3 text-muted-foreground lg:table-cell">{asset.platform}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${status.className}`}>
+                          <StatusIcon className="h-3 w-3" />
+                          {status.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" type="button">
+                            <Eye className="h-4 w-4" />
+                          </button>
+                          <button className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" type="button">
+                            <Download className="h-4 w-4" />
+                          </button>
+                          <button className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" type="button">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </button>
                         </div>
-                      </div>
-                    </td>
-                    <td className="hidden px-4 py-3 capitalize text-muted-foreground sm:table-cell">
-                      {asset.type}
-                    </td>
-                    <td className="hidden px-4 py-3 text-foreground md:table-cell">
-                      {asset.client_name}
-                    </td>
-                    <td className="hidden px-4 py-3 text-muted-foreground lg:table-cell">
-                      {asset.platform}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${status.className}`}>
-                        <StatusIcon className="h-3 w-3" />
-                        {status.label}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
-                          <Eye className="h-4 w-4" />
-                        </button>
-                        <button className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
-                          <Download className="h-4 w-4" />
-                        </button>
-                        <button className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </button>
-                      </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filtered.length === 0 && (
+                  <tr>
+                    <td className="px-4 py-8 text-center text-muted-foreground" colSpan={6}>
+                      {searchQuery ? "Niciun asset gasit pentru cautarea ta." : "Nu exista asset-uri creative inca."}
                     </td>
                   </tr>
-                );
-              })}
-              {filtered.length === 0 && (
-                <tr>
-                  <td className="px-4 py-8 text-center text-muted-foreground" colSpan={6}>
-                    {searchQuery
-                      ? "Niciun asset gasit pentru cautarea ta."
-                      : "Nu exista asset-uri creative inca."}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="mt-6 space-y-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="text-lg font-semibold text-foreground">Creative Media Library</h2>
+            <div className="flex items-center gap-2">
+              <span className="text-xs uppercase tracking-wide text-muted-foreground">Client</span>
+              <select
+                className="mcc-input h-9 text-sm"
+                value={selectedClientId ?? ""}
+                onChange={(event) => setSelectedClientId(event.target.value ? Number(event.target.value) : null)}
+                data-testid="creative-media-client-select"
+              >
+                {creativeClients.length === 0 ? <option value="">Niciun client</option> : null}
+                {creativeClients.map((client) => (
+                  <option key={client.id} value={client.id}>
+                    {client.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <CreativeMediaLibrary clientId={selectedClientId} onSelectMedia={setSelectedMedia} />
+          {selectedMedia ? (
+            <p className="text-sm text-muted-foreground" data-testid="creative-selected-media-hint">
+              Media selectată local pentru pasul următor: <span className="font-mono">{selectedMedia.media_id}</span> ({selectedMedia.kind})
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground" data-testid="creative-selected-media-hint">Nu ai selectat încă media pentru pasul următor.</p>
+          )}
+        </div>
+
+        <div className="mt-6 space-y-3 rounded-md border border-border bg-muted/20 p-4" data-testid="creative-create-first-variant-flow">
+          <h2 className="text-base font-semibold text-foreground">Create asset + first variant</h2>
+          <p className="text-sm text-muted-foreground">Flow compact care folosește media selectată din Creative Media Library.</p>
+
+          {createError ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{createError}</div> : null}
+          {createSuccess ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{createSuccess}</div> : null}
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="text-sm text-slate-700">
+              Asset name
+              <input value={assetName} onChange={(event) => setAssetName(event.target.value)} className="mcc-input mt-1" data-testid="creative-create-name" />
+            </label>
+            <label className="text-sm text-slate-700">
+              Format
+              <select value={assetFormat} onChange={(event) => setAssetFormat(event.target.value as "image" | "video" | "banner" | "copy")} className="mcc-input mt-1" data-testid="creative-create-format">
+                <option value="image">image</option>
+                <option value="video">video</option>
+                <option value="banner">banner</option>
+                <option value="copy">copy</option>
+              </select>
+            </label>
+            <label className="text-sm text-slate-700 md:col-span-2">
+              Headline
+              <input value={variantHeadline} onChange={(event) => setVariantHeadline(event.target.value)} className="mcc-input mt-1" data-testid="creative-variant-headline" />
+            </label>
+            <label className="text-sm text-slate-700 md:col-span-2">
+              Body
+              <textarea value={variantBody} onChange={(event) => setVariantBody(event.target.value)} className="mcc-input mt-1 min-h-20" data-testid="creative-variant-body" />
+            </label>
+            <label className="text-sm text-slate-700 md:col-span-2">
+              CTA
+              <input value={variantCta} onChange={(event) => setVariantCta(event.target.value)} className="mcc-input mt-1" data-testid="creative-variant-cta" />
+            </label>
+          </div>
+
+          <button
+            type="button"
+            className="mcc-btn-primary gap-2"
+            onClick={() => void onCreateAssetWithFirstVariant()}
+            disabled={createLoading}
+            data-testid="creative-create-with-media-button"
+          >
+            {createLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            Create asset + first variant with selected media
+          </button>
         </div>
       </AppShell>
     </ProtectedPage>

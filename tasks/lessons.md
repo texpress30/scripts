@@ -547,3 +547,11 @@
 - 2026-03-23: Pentru company logo migration la storage, extind minim contractul existent cu `logo_media_id` opțional și mențin `logo_url` ca fallback preview; evit dependențe noi de UI prin eveniment simplu `company-settings-updated` pentru refresh de branding în AppShell.
 - 2026-03-23: După un request explicit de branding global (favicon), verific întotdeauna dacă side-effect-ul există doar într-o pagină locală și îl mut în shell/layout global reutilizabil, păstrând sursa de date agency-only și fallback default testat.
 - 2026-03-23: Pentru favicon global, nu este suficient să adaug un link nou în head; trebuie actualizate/sincronizate explicit toate link-urile icon relevante (`rel=icon` și `rel=shortcut icon`) ca să devină autoritare față de metadata statică.
+
+- 2026-03-23: Pentru favicon bazat pe URL-uri de preview storage semnate, nu adăuga cache-busting în query string (`?v=`) deoarece poate invalida semnătura; folosește fragment (`#v=`) sau alt mecanism care nu modifică request query.
+
+- 2026-03-23: Când brandingul global (favicon/title) trebuie să fie coerent pe landing + zone autentificate, nu monta logica doar în shell-ul intern; montează componenta globală în root layout comun și acoperă explicit navigarea între contexte.
+
+- 2026-03-23: Când un task cere UI foundation pentru un modul existent, păstrez componentele curente intacte și adaug extensia într-un card/panou separat, cu callback simplu pentru integrarea viitoare, fără a conecta încă payload-urile backend sensibile.
+
+- 2026-03-23: Pentru integrarea incrementală a media în Creative, dacă nu există UI real de add-variant, implementez fallback compact `create asset + first variant` în aceeași pagină și trimit simultan `media_id` + `media` legacy predictibil.

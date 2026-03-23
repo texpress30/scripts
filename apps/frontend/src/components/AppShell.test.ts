@@ -9,6 +9,7 @@ import {
   filterSubaccountNavItems,
   getNavItems,
   resolveSubaccountBrandingLogoUrl,
+  resolveGlobalFaviconLogoUrl,
   shouldRenderBrandingLogo,
   resolveAgencyRouteRedirect,
   resolveSubaccountModuleRedirect,
@@ -45,6 +46,12 @@ describe("AppShell sub-account access helpers", () => {
     );
     expect(resolveSubaccountBrandingLogoUrl({ logo_url: "   " }, "https://legacy.example/logo.png")).toBe("https://legacy.example/logo.png");
     expect(resolveSubaccountBrandingLogoUrl(null, "")).toBe("");
+  });
+
+  it("resolves global favicon logo strictly from agency company settings", () => {
+    expect(resolveGlobalFaviconLogoUrl({ logo_url: "https://agency.example/logo.png" })).toBe("https://agency.example/logo.png");
+    expect(resolveGlobalFaviconLogoUrl({ logo_url: "   " })).toBe("");
+    expect(resolveGlobalFaviconLogoUrl(null)).toBe("");
   });
 
   it("falls back to initials when branding image fails to load", () => {
