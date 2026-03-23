@@ -122,6 +122,188 @@ export default function CreativePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [creativeClients, setCreativeClients] = useState<CreativeClient[]>([]);
+  const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
+  const [selectedMedia, setSelectedMedia] = useState<CreativeMediaItem | null>(null);
+
+  const [assetName, setAssetName] = useState("");
+  const [assetFormat, setAssetFormat] = useState<"image" | "video" | "banner" | "copy">("image");
+  const [variantHeadline, setVariantHeadline] = useState("Primary headline");
+  const [variantBody, setVariantBody] = useState("Descriere scurtă pentru variantă.");
+  const [variantCta, setVariantCta] = useState("Afla mai mult");
+
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const [createSuccess, setCreateSuccess] = useState("");
+
+  const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null);
+  const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null);
+  const [variantPreviewUrl, setVariantPreviewUrl] = useState("");
+  const [variantPreviewMimeType, setVariantPreviewMimeType] = useState("");
+  const [variantPreviewLoading, setVariantPreviewLoading] = useState(false);
+  const [variantPreviewError, setVariantPreviewError] = useState("");
+
+  const [addVariantLoading, setAddVariantLoading] = useState(false);
+  const [addVariantError, setAddVariantError] = useState("");
+  const [addVariantSuccess, setAddVariantSuccess] = useState("");
+
+  useEffect(() => {
+    let ignore = false;
+    async function loadClients() {
+      try {
+        const payload = await apiRequest<{ items: CreativeClient[] }>("/clients");
+        const items = Array.isArray(payload.items)
+          ? payload.items.map((i) => ({ id: Number(i.id || 0), name: String(i.name || "").trim() })).filter((i) => i.id > 0 && i.name !== "")
+          : [];
+        if (!ignore) {
+          setCreativeClients(items);
+          setSelectedClientId((prev) => (prev && items.some((item) => item.id === prev) ? prev : items[0]?.id ?? null));
+        }
+      } catch {
+        if (!ignore) {
+          setCreativeClients([]);
+          setSelectedClientId(null);
+        }
+      }
+    }
+    void loadClients();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  const loadAssets = useCallback(async () => {
+    if (!selectedClientId) {
+      setAssets(placeholderAssets);
+      setAssetDetails([]);
+      setSelectedAssetId(null);
+      return;
+    }
+
+    setAssetsLoading(true);
+    setAssetsError("");
+    try {
+      const payload = await apiRequest<{ items: CreativeAssetApiItem[] }>(`/creative/library/assets?client_id=${selectedClientId}`);
+      const details = Array.isArray(payload.items) ? payload.items : [];
+      const clientName = creativeClients.find((c) => c.id === selectedClientId)?.name ?? `Client #${selectedClientId}`;
+      const mapped = details.map((item) => toCreativeAsset(item, clientName)).filter((item) => item.id > 0);
+      setAssetDetails(details);
+      setAssets(mapped.length > 0 ? mapped : []);
+      setSelectedAssetId((prev) => {
+        if (prev && mapped.some((item) => item.id === prev)) return prev;
+        return mapped[0]?.id ?? null;
+      });
+    } catch (err) {
+      setAssetsError(err instanceof Error ? err.message : "Nu am putut încărca asset-urile creative.");
+    } finally {
+      setAssetsLoading(false);
+    }
+  }, [creativeClients, selectedClientId]);
+
+  useEffect(() => {
+    void loadAssets();
+  }, [loadAssets]);
+
+  const selectedAssetDetail = useMemo(
+    () => assetDetails.find((item) => Number(item.id || 0) === Number(selectedAssetId || 0)) ?? null,
+    [assetDetails, selectedAssetId],
+  );
+
+  const variants = useMemo(() => {
+    if (!selectedAssetDetail || !Array.isArray(selectedAssetDetail.creative_variants)) return [];
+    return selectedAssetDetail.creative_variants;
+  }, [selectedAssetDetail]);
+
+  useEffect(() => {
+    setSelectedVariantId((prev) => {
+      if (prev && variants.some((v) => v.id === prev)) return prev;
+      return variants[0]?.id ?? null;
+    });
+  }, [variants]);
+
+  const selectedVariant = useMemo(() => variants.find((item) => item.id === selectedVariantId) ?? null, [variants, selectedVariantId]);
+
+  useEffect(() => {
+    if (!selectedVariant || !selectedVariant.media_id || !selectedClientId) {
+      setVariantPreviewUrl("");
+      setVariantPreviewMimeType("");
+      setVariantPreviewError(selectedVariant && !selectedVariant.media_id ? "Varianta are doar media legacy (fără media_id)." : "");
+      setVariantPreviewLoading(false);
+      return;
+    }
+
+    const validClientId = selectedClientId;
+    const mediaIdToLoad = selectedVariant.media_id as string;
+    let ignore = false;
+    setVariantPreviewLoading(true);
+    setVariantPreviewError("");
+    async function loadVariantPreview() {
+      try {
+        const access = await getMediaAccessUrl({ clientId: validClientId, mediaId: mediaIdToLoad, disposition: "inline" });
+        if (!ignore) {
+          setVariantPreviewUrl(String(access.url || "").trim());
+          setVariantPreviewMimeType(String(access.mime_type || "").trim());
+        }
+      } catch (err) {
+        if (!ignore) {
+          setVariantPreviewUrl("");
+          setVariantPreviewMimeType("");
+          setVariantPreviewError(err instanceof Error ? err.message : "Preview indisponibil pentru această variantă.");
+        }
+      } finally {
+        if (!ignore) setVariantPreviewLoading(false);
+      }
+    }
+
+    void loadVariantPreview();
+    return () => {
+      ignore = true;
+    };
+  }, [selectedClientId, selectedVariant]);
+
+  async function onCreateAssetWithFirstVariant() {
+    setCreateError("");
+    setCreateSuccess("");
+
+    if (!selectedClientId) {
+      setCreateError("Selectează un client înainte să creezi asset-ul.");
+      return;
+    }
+    if (!selectedMedia) {
+      setCreateError("Selectează mai întâi un media item din Media Library pentru prima variantă.");
+      return;
+    }
+    if (assetName.trim() === "") {
+      setCreateError("Numele asset-ului este obligatoriu.");
+      return;
+    }
+
+    setCreateLoading(true);
+    let createdAsset: CreateAssetResponse | null = null;
+    try {
+      createdAsset = await apiRequest<CreateAssetResponse>("/creative/library/assets", {
+        method: "POST",
+        body: JSON.stringify({
+          client_id: selectedClientId,
+          name: assetName.trim(),
+          format: assetFormat,
+          dimensions: "1080x1080",
+          objective_fit: "awareness",
+          platform_fit: ["meta"],
+          language: "ro",
+          brand_tags: [],
+          legal_status: "pending",
+          approval_status: "draft",
+        }),
+      });
+
+      const variantPayload = {
+        headline: variantHeadline.trim() || assetName.trim(),
+        body: variantBody.trim() || "Prima variantă creată din Creative Media Library.",
+        cta: variantCta.trim() || "Afla mai mult",
+        media_id: selectedMedia.media_id,
+        media: resolveLegacyMedia(selectedMedia),
+      };
 
   const [creativeClients, setCreativeClients] = useState<CreativeClient[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
@@ -331,6 +513,56 @@ export default function CreativePage() {
     }
   }
 
+      setCreateSuccess(`Asset #${createdAsset.id} și prima variantă au fost create cu media ${selectedMedia.media_id}.`);
+      await loadAssets();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Nu am putut finaliza flow-ul create asset + first variant.";
+      if (createdAsset) {
+        setCreateError(`Asset #${createdAsset.id} a fost creat, dar add variant a eșuat: ${message}`);
+        await loadAssets();
+      } else {
+        setCreateError(message);
+      }
+    } finally {
+      setCreateLoading(false);
+    }
+  }
+
+  async function onAddVariantToSelectedAsset() {
+    setAddVariantError("");
+    setAddVariantSuccess("");
+
+    if (!selectedAssetId) {
+      setAddVariantError("Selectează mai întâi un asset din listă.");
+      return;
+    }
+    if (!selectedMedia) {
+      setAddVariantError("Selectează media din Creative Media Library înainte să adaugi varianta.");
+      return;
+    }
+
+    setAddVariantLoading(true);
+    try {
+      const payload = {
+        headline: variantHeadline.trim() || "Headline",
+        body: variantBody.trim() || "Body",
+        cta: variantCta.trim() || "Afla mai mult",
+        media_id: selectedMedia.media_id,
+        media: resolveLegacyMedia(selectedMedia),
+      };
+      const result = await apiRequest<AddVariantResponse>(`/creative/library/assets/${selectedAssetId}/variants`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      setAddVariantSuccess(`Varianta #${result.id} a fost adăugată pe asset #${selectedAssetId}.`);
+      await loadAssets();
+      setSelectedVariantId(result.id);
+    } catch (err) {
+      setAddVariantError(err instanceof Error ? err.message : "Nu am putut adăuga varianta.");
+    } finally {
+      setAddVariantLoading(false);
+    }
+  }
   const filtered = assets.filter((a) => {
     const matchesSearch = a.name.toLowerCase().includes(searchQuery.toLowerCase()) || a.client_name.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesType = filterType === "all" || a.type === filterType;
@@ -622,6 +854,57 @@ export default function CreativePage() {
             {isPublishing ? "Publishing..." : "Publish"}
           </button>
         </div>
+
+
+
+        <div className="mt-6 space-y-3 rounded-md border border-border bg-muted/20 p-4" data-testid="creative-create-first-variant-flow">
+          <h2 className="text-base font-semibold text-foreground">Create asset + first variant</h2>
+          <p className="text-sm text-muted-foreground">Flow compact care folosește media selectată din Creative Media Library.</p>
+
+          {createError ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{createError}</div> : null}
+          {createSuccess ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{createSuccess}</div> : null}
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="text-sm text-slate-700">
+              Asset name
+              <input value={assetName} onChange={(event) => setAssetName(event.target.value)} className="mcc-input mt-1" data-testid="creative-create-name" />
+            </label>
+            <label className="text-sm text-slate-700">
+              Format
+              <select value={assetFormat} onChange={(event) => setAssetFormat(event.target.value as "image" | "video" | "banner" | "copy")} className="mcc-input mt-1" data-testid="creative-create-format">
+                <option value="image">image</option>
+                <option value="video">video</option>
+                <option value="banner">banner</option>
+                <option value="copy">copy</option>
+              </select>
+            </label>
+            <label className="text-sm text-slate-700 md:col-span-2">
+              Headline
+              <input value={variantHeadline} onChange={(event) => setVariantHeadline(event.target.value)} className="mcc-input mt-1" data-testid="creative-variant-headline" />
+            </label>
+            <label className="text-sm text-slate-700 md:col-span-2">
+              Body
+              <textarea value={variantBody} onChange={(event) => setVariantBody(event.target.value)} className="mcc-input mt-1 min-h-20" data-testid="creative-variant-body" />
+            </label>
+            <label className="text-sm text-slate-700 md:col-span-2">
+              CTA
+              <input value={variantCta} onChange={(event) => setVariantCta(event.target.value)} className="mcc-input mt-1" data-testid="creative-variant-cta" />
+            </label>
+          </div>
+
+          <button
+            type="button"
+            className="mcc-btn-primary gap-2"
+            onClick={() => void onCreateAssetWithFirstVariant()}
+            disabled={createLoading}
+            data-testid="creative-create-with-media-button"
+          >
+            {createLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            Create asset + first variant with selected media
+          </button>
+        </div>
+
+
       </AppShell>
     </ProtectedPage>
   );
