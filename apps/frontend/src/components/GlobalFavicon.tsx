@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 export const DEFAULT_FAVICON_HREF = "/icon.svg";
-const FAVICON_LINK_ID = "global-agency-favicon";
+const MANAGED_ATTR = "data-global-favicon-managed";
 
 function withVersion(href: string, refreshKey: number): string {
   const value = String(href || "").trim();
@@ -16,6 +16,47 @@ export function resolveAgencyFaviconHref(agencyLogoUrl: string | null | undefine
   const logoUrl = String(agencyLogoUrl || "").trim();
   if (!logoUrl) return DEFAULT_FAVICON_HREF;
   return withVersion(logoUrl, refreshKey);
+}
+
+function isShortcutIconLink(link: HTMLLinkElement): boolean {
+  return link.rel.toLowerCase().trim() === "shortcut icon";
+}
+
+function isIconLink(link: HTMLLinkElement): boolean {
+  const rel = link.rel.toLowerCase();
+  if (isShortcutIconLink(link)) return true;
+  return rel.split(/\s+/).includes("icon");
+}
+
+function ensureManagedLink(head: HTMLHeadElement, rel: "icon" | "shortcut icon"): HTMLLinkElement {
+  const existing = head.querySelector(`link[${MANAGED_ATTR}=\"true\"][rel=\"${rel}\"]`) as HTMLLinkElement | null;
+  if (existing) return existing;
+  const existingUnmanaged = head.querySelector(`link[rel=\"${rel}\"]`) as HTMLLinkElement | null;
+  if (existingUnmanaged) {
+    existingUnmanaged.setAttribute(MANAGED_ATTR, "true");
+    return existingUnmanaged;
+  }
+  const link = document.createElement("link");
+  link.setAttribute(MANAGED_ATTR, "true");
+  link.rel = rel;
+  head.appendChild(link);
+  return link;
+}
+
+export function applyGlobalFavicon(href: string): void {
+  const head = document.head;
+  const links = Array.from(head.querySelectorAll("link")).filter((node): node is HTMLLinkElement => node instanceof HTMLLinkElement && isIconLink(node));
+
+  for (const link of links) {
+    link.href = href;
+    link.setAttribute(MANAGED_ATTR, "true");
+  }
+
+  const iconLink = ensureManagedLink(head, "icon");
+  iconLink.href = href;
+
+  const shortcutLink = ensureManagedLink(head, "shortcut icon");
+  shortcutLink.href = href;
 }
 
 export function GlobalFavicon({ agencyLogoUrl, refreshKey = 0 }: { agencyLogoUrl?: string | null; refreshKey?: number }) {
@@ -44,15 +85,7 @@ export function GlobalFavicon({ agencyLogoUrl, refreshKey = 0 }: { agencyLogoUrl
   }, [resolvedLogoHref]);
 
   useEffect(() => {
-    const head = document.head;
-    let link = document.getElementById(FAVICON_LINK_ID) as HTMLLinkElement | null;
-    if (!link) {
-      link = document.createElement("link");
-      link.id = FAVICON_LINK_ID;
-      link.rel = "icon";
-      head.appendChild(link);
-    }
-    link.href = faviconHref;
+    applyGlobalFavicon(faviconHref);
   }, [faviconHref]);
 
   return null;

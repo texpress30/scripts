@@ -2,7 +2,7 @@ import React from "react";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render, waitFor } from "@testing-library/react";
 
-import { DEFAULT_FAVICON_HREF, GlobalFavicon, resolveAgencyFaviconHref } from "./GlobalFavicon";
+import { applyGlobalFavicon, DEFAULT_FAVICON_HREF, GlobalFavicon, resolveAgencyFaviconHref } from "./GlobalFavicon";
 
 class SuccessfulImageMock {
   onload: (() => void) | null = null;
@@ -26,30 +26,38 @@ describe("GlobalFavicon", () => {
   const originalImage = global.Image;
 
   beforeEach(() => {
-    document.head.querySelector("#global-agency-favicon")?.remove();
+    document.head.querySelectorAll("link[data-global-favicon-managed=\"true\"]").forEach((node) => node.remove());
     vi.stubGlobal("Image", SuccessfulImageMock);
   });
 
   afterEach(() => {
     vi.stubGlobal("Image", originalImage);
-    document.head.querySelector("#global-agency-favicon")?.remove();
+    document.head.querySelectorAll("link[data-global-favicon-managed=\"true\"]").forEach((node) => node.remove());
   });
+
+  function iconLinks() {
+    return Array.from(document.head.querySelectorAll("link")).filter((node) => {
+      const rel = (node.getAttribute("rel") || "").toLowerCase();
+      return rel.split(/\s+/).includes("icon") || rel === "shortcut icon";
+    }) as HTMLLinkElement[];
+  }
 
   it("keeps default favicon when agency logo is missing", async () => {
     render(<GlobalFavicon agencyLogoUrl="" refreshKey={1} />);
 
     await waitFor(() => {
-      const icon = document.head.querySelector("#global-agency-favicon") as HTMLLinkElement | null;
-      expect(icon?.href).toContain(DEFAULT_FAVICON_HREF);
+      const hrefs = iconLinks().map((link) => link.href);
+      expect(hrefs.every((href) => href.includes(DEFAULT_FAVICON_HREF))).toBe(true);
     });
   });
 
-  it("sets global favicon from agency logo url", async () => {
+  it("sets global favicon from agency logo url on effective icon links", async () => {
     render(<GlobalFavicon agencyLogoUrl="https://cdn.example/logo.png" refreshKey={3} />);
 
     await waitFor(() => {
-      const icon = document.head.querySelector("#global-agency-favicon") as HTMLLinkElement | null;
-      expect(icon?.href).toBe("https://cdn.example/logo.png?v=3");
+      const hrefs = iconLinks().map((link) => link.href);
+      expect(hrefs.length).toBeGreaterThanOrEqual(2);
+      expect(hrefs.every((href) => href === "https://cdn.example/logo.png?v=3")).toBe(true);
     });
   });
 
@@ -57,14 +65,14 @@ describe("GlobalFavicon", () => {
     const { rerender } = render(<GlobalFavicon agencyLogoUrl="https://cdn.example/old.png" refreshKey={1} />);
 
     await waitFor(() => {
-      const icon = document.head.querySelector("#global-agency-favicon") as HTMLLinkElement | null;
-      expect(icon?.href).toBe("https://cdn.example/old.png?v=1");
+      const hrefs = iconLinks().map((link) => link.href);
+      expect(hrefs.every((href) => href === "https://cdn.example/old.png?v=1")).toBe(true);
     });
 
     rerender(<GlobalFavicon agencyLogoUrl="https://cdn.example/new.png" refreshKey={2} />);
     await waitFor(() => {
-      const icon = document.head.querySelector("#global-agency-favicon") as HTMLLinkElement | null;
-      expect(icon?.href).toBe("https://cdn.example/new.png?v=2");
+      const hrefs = iconLinks().map((link) => link.href);
+      expect(hrefs.every((href) => href === "https://cdn.example/new.png?v=2")).toBe(true);
     });
   });
 
@@ -73,8 +81,8 @@ describe("GlobalFavicon", () => {
     rerender(<GlobalFavicon agencyLogoUrl="" refreshKey={2} />);
 
     await waitFor(() => {
-      const icon = document.head.querySelector("#global-agency-favicon") as HTMLLinkElement | null;
-      expect(icon?.href).toContain(DEFAULT_FAVICON_HREF);
+      const hrefs = iconLinks().map((link) => link.href);
+      expect(hrefs.every((href) => href.includes(DEFAULT_FAVICON_HREF))).toBe(true);
     });
   });
 
@@ -92,8 +100,8 @@ describe("GlobalFavicon", () => {
     );
 
     await waitFor(() => {
-      const icon = document.head.querySelector("#global-agency-favicon") as HTMLLinkElement | null;
-      expect(icon?.href).toBe("https://cdn.example/logo.png?v=5");
+      const hrefs = iconLinks().map((link) => link.href);
+      expect(hrefs.every((href) => href === "https://cdn.example/logo.png?v=5")).toBe(true);
     });
   });
 
@@ -102,8 +110,8 @@ describe("GlobalFavicon", () => {
 
     rerender(<GlobalFavicon agencyLogoUrl="https://cdn.example/logo.png" refreshKey={11} />);
     await waitFor(() => {
-      const icon = document.head.querySelector("#global-agency-favicon") as HTMLLinkElement | null;
-      expect(icon?.href).toBe("https://cdn.example/logo.png?v=11");
+      const hrefs = iconLinks().map((link) => link.href);
+      expect(hrefs.every((href) => href === "https://cdn.example/logo.png?v=11")).toBe(true);
     });
   });
 
@@ -112,8 +120,8 @@ describe("GlobalFavicon", () => {
     render(<GlobalFavicon agencyLogoUrl="https://cdn.example/bad.png" refreshKey={1} />);
 
     await waitFor(() => {
-      const icon = document.head.querySelector("#global-agency-favicon") as HTMLLinkElement | null;
-      expect(icon?.href).toContain(DEFAULT_FAVICON_HREF);
+      const hrefs = iconLinks().map((link) => link.href);
+      expect(hrefs.every((href) => href.includes(DEFAULT_FAVICON_HREF))).toBe(true);
     });
   });
 });
@@ -122,5 +130,25 @@ describe("resolveAgencyFaviconHref", () => {
   it("supports legacy/logo_media based logo_url and default fallback", () => {
     expect(resolveAgencyFaviconHref("https://cdn.example/logo.png", 7)).toBe("https://cdn.example/logo.png?v=7");
     expect(resolveAgencyFaviconHref("   ", 7)).toBe(DEFAULT_FAVICON_HREF);
+  });
+});
+
+describe("applyGlobalFavicon", () => {
+  it("updates existing rel=icon and rel=shortcut icon links instead of leaving stale values", () => {
+    const icon = document.createElement("link");
+    icon.rel = "icon";
+    icon.href = "/old-icon.ico";
+    const shortcutIcon = document.createElement("link");
+    shortcutIcon.rel = "shortcut icon";
+    shortcutIcon.href = "/old-shortcut.ico";
+    document.head.appendChild(icon);
+    document.head.appendChild(shortcutIcon);
+
+    applyGlobalFavicon("https://cdn.example/new-favicon.png?v=4");
+
+    expect(icon.href).toBe("https://cdn.example/new-favicon.png?v=4");
+    expect(shortcutIcon.href).toBe("https://cdn.example/new-favicon.png?v=4");
+    expect(icon.getAttribute("data-global-favicon-managed")).toBe("true");
+    expect(shortcutIcon.getAttribute("data-global-favicon-managed")).toBe("true");
   });
 });

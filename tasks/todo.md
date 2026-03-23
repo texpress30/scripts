@@ -6668,3 +6668,16 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, fÄ
 ## Review
 - [x] Confirm no changes to upload/storage flow, Creative UI, media library, or publish flow.
 - [x] Confirm global favicon source is agency logo only (never sub-account logo).
+
+# TODO â€” Favicon source priority fix (agency authoritative) (2026-03-23)
+
+- [x] Refresh workspace and inspect explicit favicon/head sources: `GlobalFavicon.tsx`, `AppShell.tsx`, root `layout.tsx`, `app/icon.*`, manifest/webmanifest candidates, and `settings/company` refresh event usage.
+- [x] Identify root cause for wrong tab icon (multiple competing icon links and non-authoritative update path).
+- [x] Implement minimal centralized fix so agency favicon updates effective browser icon links (`rel=icon` + `rel=shortcut icon`) instead of adding a secondary link only.
+- [x] Preserve fallback default icon and runtime update flow after save/remove logo with no sub-account favicon usage.
+- [x] Add focused frontend tests for existing-link replacement, shortcut icon handling, no duplicate stale links, update/remove/fallback/error flows.
+- [x] Run targeted frontend tests and complete review notes.
+
+## Review
+- [x] Confirm no upload/storage flow changes, no Company Settings UX changes, no Creative/media/publish changes.
+- [x] Confirm agency logo remains the only source for global favicon override.
