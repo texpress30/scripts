@@ -137,10 +137,6 @@ export default function CreativePage() {
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
   const [selectedMedia, setSelectedMedia] = useState<CreativeMediaItem | null>(null);
 
-  const [creativeClients, setCreativeClients] = useState<CreativeClient[]>([]);
-  const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
-  const [selectedMedia, setSelectedMedia] = useState<CreativeMediaItem | null>(null);
-
   const [assetName, setAssetName] = useState("");
   const [assetFormat, setAssetFormat] = useState<"image" | "video" | "banner" | "copy">("image");
   const [variantHeadline, setVariantHeadline] = useState("Primary headline");
@@ -265,34 +261,6 @@ export default function CreativePage() {
       setCreateLoading(false);
     }
   }
-
-  useEffect(() => {
-    let ignore = false;
-    async function loadClientsForMediaLibrary() {
-      try {
-        const payload = await apiRequest<{ items: CreativeClient[] }>("/clients");
-        const items = Array.isArray(payload.items)
-          ? payload.items
-              .map((item) => ({ id: Number(item.id || 0), name: String(item.name || "").trim() }))
-              .filter((item) => item.id > 0 && item.name !== "")
-          : [];
-        if (!ignore) {
-          setCreativeClients(items);
-          setSelectedClientId((prev) => (prev && items.some((item) => item.id === prev) ? prev : items[0]?.id ?? null));
-        }
-      } catch {
-        if (!ignore) {
-          setCreativeClients([]);
-          setSelectedClientId(null);
-        }
-      }
-    }
-
-    void loadClientsForMediaLibrary();
-    return () => {
-      ignore = true;
-    };
-  }, []);
 
   const filtered = assets.filter((a) => {
     const matchesSearch = a.name.toLowerCase().includes(searchQuery.toLowerCase()) || a.client_name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -505,36 +473,7 @@ export default function CreativePage() {
           </button>
         </div>
 
-        <div className="mt-6 space-y-3">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-lg font-semibold text-foreground">Creative Media Library</h2>
-            <div className="flex items-center gap-2">
-              <span className="text-xs uppercase tracking-wide text-muted-foreground">Client</span>
-              <select
-                className="mcc-input h-9 text-sm"
-                value={selectedClientId ?? ""}
-                onChange={(event) => setSelectedClientId(event.target.value ? Number(event.target.value) : null)}
-                data-testid="creative-media-client-select"
-              >
-                {creativeClients.length === 0 ? <option value="">Niciun client</option> : null}
-                {creativeClients.map((client) => (
-                  <option key={client.id} value={client.id}>
-                    {client.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
 
-          <CreativeMediaLibrary clientId={selectedClientId} onSelectMedia={setSelectedMedia} />
-          {selectedMedia ? (
-            <p className="text-sm text-muted-foreground" data-testid="creative-selected-media-hint">
-              Media selectată local pentru pasul următor: <span className="font-mono">{selectedMedia.media_id}</span>
-            </p>
-          ) : (
-            <p className="text-sm text-muted-foreground" data-testid="creative-selected-media-hint">Nu ai selectat încă media pentru pasul următor.</p>
-          )}
-        </div>
       </AppShell>
     </ProtectedPage>
   );
