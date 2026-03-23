@@ -17,12 +17,35 @@ import {
   AlertCircle,
   Loader2,
 } from "lucide-react";
+
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
-import { apiRequest } from "@/lib/api";
 import { CreativeMediaLibrary, type CreativeMediaItem } from "@/components/CreativeMediaLibrary";
+import { apiRequest } from "@/lib/api";
+import { getMediaAccessUrl } from "@/lib/storage-client";
 
 type CreativeClient = { id: number; name: string };
+
+type CreativeVariant = {
+  id: number;
+  headline: string;
+  body: string;
+  cta: string;
+  media?: string;
+  media_id?: string | null;
+};
+
+type CreativeAssetApiItem = {
+  id?: number;
+  client_id?: number;
+  name?: string;
+  metadata?: {
+    format?: string;
+    platform_fit?: string[];
+    approval_status?: string;
+  };
+  creative_variants?: CreativeVariant[];
+};
 
 type CreativeAsset = {
   id: number;
@@ -34,81 +57,27 @@ type CreativeAsset = {
   updated_at: string;
 };
 
-type CreativeAssetApiItem = {
-  id?: number;
-  client_id?: number;
-  name?: string;
-  metadata?: {
-    format?: string;
-    platform_fit?: string[];
-  };
-  legal_status?: string;
-  approval_status?: string;
-};
-
-type CreateAssetResponse = { id: number; client_id: number; name: string };
 type AddVariantResponse = { id: number; asset_id: number; media_id?: string | null; media?: string };
+type CreateAssetResponse = { id: number; [key: string]: any };
 
 const statusConfig = {
-  approved: {
-    label: "Aprobat",
-    icon: CheckCircle2,
-    className: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-  },
-  in_review: {
-    label: "In Review",
-    icon: Clock,
-    className: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  },
-  draft: {
-    label: "Draft",
-    icon: AlertCircle,
-    className: "bg-muted text-muted-foreground",
-  },
+  approved: { label: "Aprobat", icon: CheckCircle2, className: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+  in_review: { label: "In Review", icon: Clock, className: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
+  draft: { label: "Draft", icon: AlertCircle, className: "bg-muted text-muted-foreground" },
 };
 
-const typeIcons = {
-  image: Image,
-  video: Video,
-  copy: FileText,
-  banner: Palette,
-};
+const typeIcons = { image: Image, video: Video, copy: FileText, banner: Palette };
 
-// Placeholder fallback data
 const placeholderAssets: CreativeAsset[] = [
-  {
-    id: 1,
-    name: "Banner campanie vara 2025",
-    type: "banner",
-    status: "approved",
-    client_name: "Acme Corp",
-    platform: "Google Ads",
-    updated_at: "2025-06-12",
-  },
-  {
-    id: 2,
-    name: "Video promo produs nou",
-    type: "video",
-    status: "in_review",
-    client_name: "TechStart SRL",
-    platform: "Meta",
-    updated_at: "2025-06-10",
-  },
-  {
-    id: 3,
-    name: "Ad copy — oferta speciala",
-    type: "copy",
-    status: "draft",
-    client_name: "Acme Corp",
-    platform: "Google Ads",
-    updated_at: "2025-06-09",
-  },
+  { id: 1, name: "Banner campanie vara 2025", type: "banner", status: "approved", client_name: "Acme Corp", platform: "Google Ads", updated_at: "2025-06-12" },
+  { id: 2, name: "Video promo produs nou", type: "video", status: "in_review", client_name: "TechStart SRL", platform: "Meta", updated_at: "2025-06-10" },
+  { id: 3, name: "Ad copy — oferta speciala", type: "copy", status: "draft", client_name: "Acme Corp", platform: "Google Ads", updated_at: "2025-06-09" },
 ];
 
 function toCreativeAsset(item: CreativeAssetApiItem, clientName: string): CreativeAsset {
   const format = String(item.metadata?.format || "").toLowerCase();
   const type: CreativeAsset["type"] = format === "video" || format === "copy" || format === "banner" ? (format as CreativeAsset["type"]) : "image";
-  const statusRaw = String(item.approval_status || "draft").toLowerCase();
+  const statusRaw = String(item.metadata?.approval_status || "draft").toLowerCase();
   const status: CreativeAsset["status"] = statusRaw === "approved" ? "approved" : statusRaw === "in_review" ? "in_review" : "draft";
   return {
     id: Number(item.id || 0),
@@ -127,9 +96,15 @@ function resolveLegacyMedia(selectedMedia: CreativeMediaItem): string {
   return `media:${selectedMedia.media_id}`;
 }
 
+function looksLikeVideo(value: string): boolean {
+  return /\.(mp4|webm|mov|m4v)(\?.*)?$/i.test(value);
+}
+
 export default function CreativePage() {
   const [assets, setAssets] = useState<CreativeAsset[]>(placeholderAssets);
+  const [assetDetails, setAssetDetails] = useState<CreativeAssetApiItem[]>([]);
   const [assetsLoading, setAssetsLoading] = useState(false);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -140,22 +115,29 @@ export default function CreativePage() {
   const [assetName, setAssetName] = useState("");
   const [assetFormat, setAssetFormat] = useState<"image" | "video" | "banner" | "copy">("image");
   const [variantHeadline, setVariantHeadline] = useState("Primary headline");
-  const [variantBody, setVariantBody] = useState("Descriere scurtă pentru prima variantă.");
+  const [variantBody, setVariantBody] = useState("Descriere scurtă pentru variantă.");
   const [variantCta, setVariantCta] = useState("Afla mai mult");
 
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState("");
   const [createSuccess, setCreateSuccess] = useState("");
 
+  const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null);
+  const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null);
+  const [variantPreviewUrl, setVariantPreviewUrl] = useState("");
+  const [variantPreviewLoading, setVariantPreviewLoading] = useState(false);
+  const [variantPreviewError, setVariantPreviewError] = useState("");
+  const [addVariantLoading, setAddVariantLoading] = useState(false);
+  const [addVariantError, setAddVariantError] = useState("");
+  const [addVariantSuccess, setAddVariantSuccess] = useState("");
+
   useEffect(() => {
     let ignore = false;
-    async function loadClientsForCreative() {
+    async function loadClients() {
       try {
         const payload = await apiRequest<{ items: CreativeClient[] }>("/clients");
         const items = Array.isArray(payload.items)
-          ? payload.items
-              .map((item) => ({ id: Number(item.id || 0), name: String(item.name || "").trim() }))
-              .filter((item) => item.id > 0 && item.name !== "")
+          ? payload.items.map((i) => ({ id: Number(i.id || 0), name: String(i.name || "").trim() })).filter((i) => i.id > 0 && i.name !== "")
           : [];
         if (!ignore) {
           setCreativeClients(items);
@@ -168,8 +150,7 @@ export default function CreativePage() {
         }
       }
     }
-
-    void loadClientsForCreative();
+    void loadClients();
     return () => {
       ignore = true;
     };
@@ -178,17 +159,27 @@ export default function CreativePage() {
   const loadAssets = useCallback(async () => {
     if (!selectedClientId) {
       setAssets(placeholderAssets);
+      setAssetDetails([]);
+      setSelectedAssetId(null);
       return;
     }
 
     setAssetsLoading(true);
     try {
       const payload = await apiRequest<{ items: CreativeAssetApiItem[] }>(`/creative/library/assets?client_id=${selectedClientId}`);
-      const clientName = creativeClients.find((item) => item.id === selectedClientId)?.name ?? `Client #${selectedClientId}`;
-      const mapped = Array.isArray(payload.items) ? payload.items.map((item) => toCreativeAsset(item, clientName)).filter((item) => item.id > 0) : [];
+      const details = Array.isArray(payload.items) ? payload.items : [];
+      const clientName = creativeClients.find((c) => c.id === selectedClientId)?.name ?? `Client #${selectedClientId}`;
+      const mapped = details.map((item) => toCreativeAsset(item, clientName)).filter((item) => item.id > 0);
+      setAssetDetails(details);
       setAssets(mapped.length > 0 ? mapped : []);
+      setSelectedAssetId((prev) => {
+        if (prev && mapped.some((item) => item.id === prev)) return prev;
+        return mapped[0]?.id ?? null;
+      });
     } catch {
       setAssets(placeholderAssets);
+      setAssetDetails([]);
+      setSelectedAssetId(null);
     } finally {
       setAssetsLoading(false);
     }
@@ -197,6 +188,58 @@ export default function CreativePage() {
   useEffect(() => {
     void loadAssets();
   }, [loadAssets]);
+
+  const selectedAssetDetail = useMemo(
+    () => assetDetails.find((item) => Number(item.id || 0) === Number(selectedAssetId || 0)) ?? null,
+    [assetDetails, selectedAssetId],
+  );
+
+  const variants = useMemo(() => {
+    if (!selectedAssetDetail || !Array.isArray(selectedAssetDetail.creative_variants)) return [];
+    return selectedAssetDetail.creative_variants;
+  }, [selectedAssetDetail]);
+
+  useEffect(() => {
+    setSelectedVariantId((prev) => {
+      if (prev && variants.some((v) => v.id === prev)) return prev;
+      return variants[0]?.id ?? null;
+    });
+  }, [variants]);
+
+  const selectedVariant = useMemo(() => variants.find((item) => item.id === selectedVariantId) ?? null, [variants, selectedVariantId]);
+
+  useEffect(() => {
+    if (!selectedVariant || !selectedVariant.media_id || !selectedClientId) {
+      setVariantPreviewUrl("");
+      setVariantPreviewError(selectedVariant && !selectedVariant.media_id ? "Varianta are doar media legacy (fără media_id)." : "");
+      setVariantPreviewLoading(false);
+      return;
+    }
+
+    const validClientId = selectedClientId;
+    const mediaIdToLoad = selectedVariant.media_id as string;
+    let ignore = false;
+    setVariantPreviewLoading(true);
+    setVariantPreviewError("");
+    async function loadVariantPreview() {
+      try {
+        const access = await getMediaAccessUrl({ clientId: validClientId, mediaId: mediaIdToLoad, disposition: "inline" });
+        if (!ignore) setVariantPreviewUrl(String(access.url || "").trim());
+      } catch (err) {
+        if (!ignore) {
+          setVariantPreviewUrl("");
+          setVariantPreviewError(err instanceof Error ? err.message : "Preview indisponibil pentru această variantă.");
+        }
+      } finally {
+        if (!ignore) setVariantPreviewLoading(false);
+      }
+    }
+
+    void loadVariantPreview();
+    return () => {
+      ignore = true;
+    };
+  }, [selectedClientId, selectedVariant]);
 
   async function onCreateAssetWithFirstVariant() {
     setCreateError("");
@@ -259,6 +302,42 @@ export default function CreativePage() {
       }
     } finally {
       setCreateLoading(false);
+    }
+  }
+
+  async function onAddVariantToSelectedAsset() {
+    setAddVariantError("");
+    setAddVariantSuccess("");
+
+    if (!selectedAssetId) {
+      setAddVariantError("Selectează mai întâi un asset din listă.");
+      return;
+    }
+    if (!selectedMedia) {
+      setAddVariantError("Selectează media din Creative Media Library înainte să adaugi varianta.");
+      return;
+    }
+
+    setAddVariantLoading(true);
+    try {
+      const payload = {
+        headline: variantHeadline.trim() || "Headline",
+        body: variantBody.trim() || "Body",
+        cta: variantCta.trim() || "Afla mai mult",
+        media_id: selectedMedia.media_id,
+        media: resolveLegacyMedia(selectedMedia),
+      };
+      const result = await apiRequest<AddVariantResponse>(`/creative/library/assets/${selectedAssetId}/variants`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      setAddVariantSuccess(`Varianta #${result.id} a fost adăugată pe asset #${selectedAssetId}.`);
+      await loadAssets();
+      setSelectedVariantId(result.id);
+    } catch (err) {
+      setAddVariantError(err instanceof Error ? err.message : "Nu am putut adăuga varianta.");
+    } finally {
+      setAddVariantLoading(false);
     }
   }
 
@@ -345,8 +424,9 @@ export default function CreativePage() {
                   const TypeIcon = typeIcons[asset.type];
                   const status = statusConfig[asset.status];
                   const StatusIcon = status.icon;
+                  const selected = selectedAssetId === asset.id;
                   return (
-                    <tr key={asset.id} className="border-b border-border transition-colors hover:bg-muted/30">
+                    <tr key={asset.id} className={`border-b border-border transition-colors hover:bg-muted/30 ${selected ? "bg-indigo-50/50" : ""}`}>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
@@ -368,17 +448,9 @@ export default function CreativePage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <button className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" type="button">
-                            <Eye className="h-4 w-4" />
-                          </button>
-                          <button className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" type="button">
-                            <Download className="h-4 w-4" />
-                          </button>
-                          <button className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" type="button">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </button>
-                        </div>
+                        <button type="button" className="rounded-md border px-2 py-1 text-xs" onClick={() => setSelectedAssetId(asset.id)} data-testid={`select-asset-${asset.id}`}>
+                          Selectează
+                        </button>
                       </td>
                     </tr>
                   );
@@ -395,22 +467,74 @@ export default function CreativePage() {
           )}
         </div>
 
+        <div className="mt-6 space-y-3 rounded-md border border-border bg-muted/20 p-4" data-testid="creative-asset-detail">
+          <h2 className="text-base font-semibold text-foreground">Asset detail + variants</h2>
+          {!selectedAssetId ? (
+            <p className="text-sm text-muted-foreground">Selectează un asset din listă pentru a vedea variantele și preview-ul.</p>
+          ) : selectedAssetDetail === null ? (
+            <p className="text-sm text-muted-foreground">Se încarcă detaliile asset-ului...</p>
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground">Asset selectat: <span className="font-medium text-foreground">#{selectedAssetId} {selectedAssetDetail.name || "Asset"}</span></p>
+
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+                <div className="space-y-2">
+                  {variants.length === 0 ? (
+                    <p className="rounded-md border border-border px-3 py-3 text-sm text-muted-foreground">Asset-ul selectat nu are variante încă.</p>
+                  ) : (
+                    <ul className="space-y-2" data-testid="asset-variants-list">
+                      {variants.map((variant) => {
+                        const selected = variant.id === selectedVariantId;
+                        return (
+                          <li key={variant.id}>
+                            <button
+                              type="button"
+                              className={`w-full rounded-md border px-3 py-2 text-left ${selected ? "border-indigo-500 bg-indigo-50" : "border-border hover:bg-muted/40"}`}
+                              onClick={() => setSelectedVariantId(variant.id)}
+                              data-testid={`asset-variant-${variant.id}`}
+                            >
+                              <p className="text-sm font-medium">Variant #{variant.id} — {variant.headline || "(fără headline)"}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">CTA: {variant.cta || "-"}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">media_id: {variant.media_id ? variant.media_id : "lipsă"}</p>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+
+                <aside className="rounded-md border border-border bg-background p-3" data-testid="asset-variant-preview">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Preview variantă</p>
+                  {!selectedVariant ? (
+                    <p className="mt-3 text-sm text-muted-foreground">Selectează o variantă.</p>
+                  ) : variantPreviewLoading ? (
+                    <p className="mt-3 text-sm text-muted-foreground">Se încarcă preview...</p>
+                  ) : variantPreviewError ? (
+                    <p className="mt-3 text-sm text-amber-700">{variantPreviewError}</p>
+                  ) : variantPreviewUrl === "" ? (
+                    <p className="mt-3 text-sm text-muted-foreground">Preview indisponibil.</p>
+                  ) : looksLikeVideo(variantPreviewUrl) || looksLikeVideo(String(selectedVariant.media || "")) ? (
+                    <video controls src={variantPreviewUrl} className="mt-3 max-h-60 w-full rounded" data-testid="variant-preview-video" />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={variantPreviewUrl} alt="variant preview" className="mt-3 max-h-60 w-full rounded object-contain" data-testid="variant-preview-image" />
+                  )}
+                </aside>
+              </div>
+            </>
+          )}
+        </div>
+
         <div className="mt-6 space-y-3">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-lg font-semibold text-foreground">Creative Media Library</h2>
             <div className="flex items-center gap-2">
               <span className="text-xs uppercase tracking-wide text-muted-foreground">Client</span>
-              <select
-                className="mcc-input h-9 text-sm"
-                value={selectedClientId ?? ""}
-                onChange={(event) => setSelectedClientId(event.target.value ? Number(event.target.value) : null)}
-                data-testid="creative-media-client-select"
-              >
+              <select className="mcc-input h-9 text-sm" value={selectedClientId ?? ""} onChange={(e) => setSelectedClientId(e.target.value ? Number(e.target.value) : null)} data-testid="creative-media-client-select">
                 {creativeClients.length === 0 ? <option value="">Niciun client</option> : null}
                 {creativeClients.map((client) => (
-                  <option key={client.id} value={client.id}>
-                    {client.name}
-                  </option>
+                  <option key={client.id} value={client.id}>{client.name}</option>
                 ))}
               </select>
             </div>
@@ -425,6 +549,35 @@ export default function CreativePage() {
             <p className="text-sm text-muted-foreground" data-testid="creative-selected-media-hint">Nu ai selectat încă media pentru pasul următor.</p>
           )}
         </div>
+
+        <div className="mt-6 space-y-3 rounded-md border border-border bg-muted/20 p-4" data-testid="creative-add-variant-flow">
+          <h2 className="text-base font-semibold text-foreground">Add variant pe asset existent</h2>
+          {!selectedAssetId ? <p className="text-sm text-muted-foreground">Alege mai întâi un asset din listă.</p> : null}
+          {addVariantError ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{addVariantError}</div> : null}
+          {addVariantSuccess ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{addVariantSuccess}</div> : null}
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="text-sm text-slate-700 md:col-span-2">
+              Headline
+              <input value={variantHeadline} onChange={(e) => setVariantHeadline(e.target.value)} className="mcc-input mt-1" data-testid="add-variant-headline" />
+            </label>
+            <label className="text-sm text-slate-700 md:col-span-2">
+              Body
+              <textarea value={variantBody} onChange={(e) => setVariantBody(e.target.value)} className="mcc-input mt-1 min-h-20" data-testid="add-variant-body" />
+            </label>
+            <label className="text-sm text-slate-700 md:col-span-2">
+              CTA
+              <input value={variantCta} onChange={(e) => setVariantCta(e.target.value)} className="mcc-input mt-1" data-testid="add-variant-cta" />
+            </label>
+          </div>
+
+          <button type="button" className="mcc-btn-primary gap-2" onClick={() => void onAddVariantToSelectedAsset()} disabled={addVariantLoading} data-testid="add-variant-button">
+            {addVariantLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            Add variant with selected media
+          </button>
+        </div>
+
+
 
         <div className="mt-6 space-y-3 rounded-md border border-border bg-muted/20 p-4" data-testid="creative-create-first-variant-flow">
           <h2 className="text-base font-semibold text-foreground">Create asset + first variant</h2>

@@ -555,3 +555,5 @@
 - 2026-03-23: Când un task cere UI foundation pentru un modul existent, păstrez componentele curente intacte și adaug extensia într-un card/panou separat, cu callback simplu pentru integrarea viitoare, fără a conecta încă payload-urile backend sensibile.
 
 - 2026-03-23: Pentru integrarea incrementală a media în Creative, dacă nu există UI real de add-variant, implementez fallback compact `create asset + first variant` în aceeași pagină și trimit simultan `media_id` + `media` legacy predictibil.
+
+- 2026-03-23: Dacă backend-ul nu oferă endpoint detail separat, folosesc list endpoint-ul canonical pentru a deriva detail-ul selectat și evit inventarea de API nou; completez cu stări locale explicite pentru selecție/preview/add-variant.

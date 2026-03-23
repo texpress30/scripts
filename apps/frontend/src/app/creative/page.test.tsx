@@ -4,8 +4,10 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import CreativePage from "./page";
 import { apiRequest } from "@/lib/api";
+import { getMediaAccessUrl } from "@/lib/storage-client";
 
 vi.mock("@/lib/api", () => ({ apiRequest: vi.fn() }));
+vi.mock("@/lib/storage-client", () => ({ getMediaAccessUrl: vi.fn() }));
 vi.mock("@/components/ProtectedPage", () => ({ ProtectedPage: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
 vi.mock("@/components/AppShell", () => ({ AppShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 vi.mock("@/components/CreativeMediaLibrary", () => ({
@@ -37,136 +39,173 @@ vi.mock("@/components/CreativeMediaLibrary", () => ({
   ),
 }));
 
-describe("CreativePage create asset + first variant integration", () => {
+function listPayloadWithVariants() {
+  return {
+    items: [
+      {
+        id: 201,
+        client_id: 10,
+        name: "Asset nou",
+        metadata: { format: "image", platform_fit: ["meta"], approval_status: "draft" },
+        creative_variants: [
+          { id: 901, headline: "Image variant", body: "Body", cta: "CTA", media: "image.png", media_id: "m_img" },
+          { id: 902, headline: "Video variant", body: "Body", cta: "CTA", media: "clip.mp4", media_id: "m_vid" },
+          { id: 903, headline: "Legacy only", body: "Body", cta: "CTA", media: "legacy-only", media_id: null },
+        ],
+      },
+    ],
+  };
+}
+
+describe("CreativePage asset detail + existing asset add variant", () => {
   beforeEach(() => {
     vi.mocked(apiRequest).mockReset();
+    vi.mocked(getMediaAccessUrl).mockReset();
   });
 
-  function setupApiSuccess() {
-    let assetsListCalls = 0;
+  function setupBaseApi() {
+    let listCalls = 0;
     vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
       if (path === "/clients") return { items: [{ id: 10, name: "Client 10" }] };
       if (path.startsWith("/creative/library/assets?client_id=10")) {
-        assetsListCalls += 1;
-        return {
-          items:
-            assetsListCalls > 1
-              ? [
-                  {
-                    id: 201,
-                    client_id: 10,
-                    name: "Asset nou",
-                    metadata: { format: "image", platform_fit: ["meta"] },
-                    approval_status: "draft",
-                  },
-                ]
-              : [],
-        };
-      }
-      if (path === "/creative/library/assets" && options?.method === "POST") {
-        return { id: 201, client_id: 10, name: "Asset nou" };
+        listCalls += 1;
+        return listPayloadWithVariants();
       }
       if (path === "/creative/library/assets/201/variants" && options?.method === "POST") {
-        return { id: 301, asset_id: 201, media_id: "m_selected", media: "picked.png" };
+        return { id: 999, asset_id: 201, media_id: "m_selected", media: "picked.png" };
       }
       throw new Error(`Unexpected ${path}`);
     });
-    return { getAssetsListCalls: () => assetsListCalls };
+    return { getListCalls: () => listCalls };
   }
 
-  it("keeps existing asset list + library visible", async () => {
+  it("selecting an asset loads detail and variants list", async () => {
+    setupBaseApi();
+    render(<CreativePage />);
+
+    fireEvent.click(await screen.findByTestId("select-asset-201"));
+    expect(await screen.findByText(/Asset selectat:/i)).toBeInTheDocument();
+    expect(screen.getByTestId("asset-variants-list")).toBeInTheDocument();
+    expect(screen.getByTestId("asset-variant-901")).toBeInTheDocument();
+  });
+
+  it("renders image preview for variant with media_id", async () => {
+    setupBaseApi();
+    vi.mocked(getMediaAccessUrl).mockResolvedValue({
+      media_id: "m_img",
+      status: "ready",
+      mime_type: "image/png",
+      method: "GET",
+      url: "https://cdn.example/preview.png",
+      expires_in: 900,
+      disposition: "inline",
+      filename: "preview.png",
+    });
+
+    render(<CreativePage />);
+    fireEvent.click(await screen.findByTestId("asset-variant-901"));
+
+    expect(await screen.findByTestId("variant-preview-image")).toHaveAttribute("src", "https://cdn.example/preview.png");
+  });
+
+  it("renders video preview for variant with media_id", async () => {
+    setupBaseApi();
+    vi.mocked(getMediaAccessUrl).mockResolvedValue({
+      media_id: "m_vid",
+      status: "ready",
+      mime_type: "video/mp4",
+      method: "GET",
+      url: "https://cdn.example/preview.mp4",
+      expires_in: 900,
+      disposition: "inline",
+      filename: "preview.mp4",
+    });
+
+    render(<CreativePage />);
+    fireEvent.click(await screen.findByTestId("asset-variant-902"));
+
+    expect(await screen.findByTestId("variant-preview-video")).toHaveAttribute("src", "https://cdn.example/preview.mp4");
+  });
+
+  it("shows fallback for variant without media_id without crashing", async () => {
+    setupBaseApi();
+    render(<CreativePage />);
+
+    fireEvent.click(await screen.findByTestId("asset-variant-903"));
+    expect(await screen.findByText(/Varianta are doar media legacy/i)).toBeInTheDocument();
+  });
+
+  it("blocks add variant when no asset is selected", async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === "/clients") return { items: [{ id: 10, name: "Client 10" }] };
       if (path.startsWith("/creative/library/assets?client_id=10")) return { items: [] };
-      throw new Error("Unexpected path");
+      throw new Error(`Unexpected ${path}`);
     });
 
     render(<CreativePage />);
 
-    expect(screen.getByText(/Banner campanie vara 2025/i)).toBeInTheDocument();
-    expect(await screen.findByTestId("creative-media-library-mock")).toBeInTheDocument();
-    expect(screen.getByTestId("creative-assets-table")).toBeInTheDocument();
+    await screen.findByTestId("add-variant-button");
+    fireEvent.click(screen.getByTestId("add-variant-button"));
+
+    expect(await screen.findByText(/Selectează mai întâi un asset/i)).toBeInTheDocument();
   });
 
-  it("blocks create+variant action when media is not selected", async () => {
-    setupApiSuccess();
+  it("blocks add variant when no media is selected", async () => {
+    setupBaseApi();
     render(<CreativePage />);
 
-    await screen.findByRole("option", { name: "Client 10" });
+    fireEvent.click(await screen.findByTestId("select-asset-201"));
     fireEvent.click(screen.getByText("clear-media"));
-    fireEvent.change(screen.getByTestId("creative-create-name"), { target: { value: "Asset nou" } });
-    fireEvent.click(screen.getByTestId("creative-create-with-media-button"));
+    fireEvent.click(screen.getByTestId("add-variant-button"));
 
-    expect(await screen.findByText(/Selectează mai întâi un media item/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Selectează media din Creative Media Library/i)).toBeInTheDocument();
   });
 
-  it("uses selected media in real flow and sends media_id + legacy media", async () => {
-    setupApiSuccess();
+  it("sends media_id and media legacy when adding variant on selected asset", async () => {
+    setupBaseApi();
     render(<CreativePage />);
 
-    fireEvent.click(await screen.findByText("select-media"));
-    fireEvent.change(screen.getByTestId("creative-create-name"), { target: { value: "Asset nou" } });
-    fireEvent.click(screen.getByTestId("creative-create-with-media-button"));
+    fireEvent.click(await screen.findByTestId("select-asset-201"));
+    fireEvent.click(screen.getByText("select-media"));
+    fireEvent.click(screen.getByTestId("add-variant-button"));
 
     await waitFor(() => {
-      const variantCall = vi.mocked(apiRequest).mock.calls.find(
-        (call) => call[0] === "/creative/library/assets/201/variants" && call[1]?.method === "POST",
-      );
-      expect(variantCall).toBeTruthy();
-      const body = JSON.parse(String(variantCall?.[1]?.body ?? "{}"));
+      const call = vi.mocked(apiRequest).mock.calls.find((entry) => entry[0] === "/creative/library/assets/201/variants" && entry[1]?.method === "POST");
+      expect(call).toBeTruthy();
+      const body = JSON.parse(String(call?.[1]?.body ?? "{}"));
       expect(body.media_id).toBe("m_selected");
       expect(body.media).toBe("picked.png");
     });
-
-    expect(await screen.findByText(/prima variantă au fost create/i)).toBeInTheDocument();
   });
 
-  it("reloads assets list after successful create+variant", async () => {
-    const tracker = setupApiSuccess();
+  it("reloads selected asset detail after successful add variant and keeps context stable", async () => {
+    const tracker = setupBaseApi();
     render(<CreativePage />);
 
-    fireEvent.click(await screen.findByText("select-media"));
-    fireEvent.change(screen.getByTestId("creative-create-name"), { target: { value: "Asset nou" } });
-    fireEvent.click(screen.getByTestId("creative-create-with-media-button"));
+    fireEvent.click(await screen.findByTestId("select-asset-201"));
+    fireEvent.click(screen.getByText("select-media"));
+    fireEvent.click(screen.getByTestId("add-variant-button"));
 
-    await screen.findByText(/prima variantă au fost create/i);
-    expect(tracker.getAssetsListCalls()).toBeGreaterThan(1);
+    expect(await screen.findByText(/Varianta #999 a fost adăugată/i)).toBeInTheDocument();
+    expect(tracker.getListCalls()).toBeGreaterThan(1);
+    expect(screen.getByText(/Asset selectat:/i)).toBeInTheDocument();
   });
 
-  it("shows clear error when asset is created but add variant fails", async () => {
+  it("keeps UI stable when backend add-variant fails", async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
       if (path === "/clients") return { items: [{ id: 10, name: "Client 10" }] };
-      if (path.startsWith("/creative/library/assets?client_id=10")) return { items: [] };
-      if (path === "/creative/library/assets" && options?.method === "POST") return { id: 444, client_id: 10, name: "Asset nou" };
-      if (path === "/creative/library/assets/444/variants" && options?.method === "POST") throw new Error("media_id is not ready");
+      if (path.startsWith("/creative/library/assets?client_id=10")) return listPayloadWithVariants();
+      if (path === "/creative/library/assets/201/variants" && options?.method === "POST") throw new Error("media_id client mismatch");
       throw new Error(`Unexpected ${path}`);
     });
 
     render(<CreativePage />);
-    fireEvent.click(await screen.findByText("select-media"));
-    fireEvent.change(screen.getByTestId("creative-create-name"), { target: { value: "Asset nou" } });
-    fireEvent.click(screen.getByTestId("creative-create-with-media-button"));
-
-    expect(await screen.findByText(/Asset #444 a fost creat, dar add variant a eșuat/i)).toBeInTheDocument();
-    expect(screen.getByText(/media_id is not ready/i)).toBeInTheDocument();
-  });
-
-  it("handles backend media_id validation error without breaking UI", async () => {
-    vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
-      if (path === "/clients") return { items: [{ id: 10, name: "Client 10" }] };
-      if (path.startsWith("/creative/library/assets?client_id=10")) return { items: [] };
-      if (path === "/creative/library/assets" && options?.method === "POST") return { id: 333, client_id: 10, name: "Asset nou" };
-      if (path === "/creative/library/assets/333/variants" && options?.method === "POST") throw new Error("media_id client mismatch");
-      throw new Error(`Unexpected ${path}`);
-    });
-
-    render(<CreativePage />);
-    fireEvent.click(await screen.findByText("select-media"));
-    fireEvent.change(screen.getByTestId("creative-create-name"), { target: { value: "Asset nou" } });
-    fireEvent.click(screen.getByTestId("creative-create-with-media-button"));
+    fireEvent.click(await screen.findByTestId("select-asset-201"));
+    fireEvent.click(screen.getByText("select-media"));
+    fireEvent.click(screen.getByTestId("add-variant-button"));
 
     expect(await screen.findByText(/media_id client mismatch/i)).toBeInTheDocument();
-    expect(screen.getByTestId("creative-create-first-variant-flow")).toBeInTheDocument();
+    expect(screen.getByTestId("creative-asset-detail")).toBeInTheDocument();
     expect(screen.getByTestId("creative-media-library-mock")).toBeInTheDocument();
   });
 });
