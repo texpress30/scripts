@@ -6796,3 +6796,15 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, f�
 - [x] Publish UI este local și compact în pagina Creative (fără wizard/restructurare mare).
 - [x] Flow-urile existente (media library, add variant, preview) au rămas funcționale în testele țintite.
 - [x] Nicio modificare backend majoră pentru publish/storage/branding.
+
+# TODO — Data layer migration (daily inputs + sale entries) (2026-03-23)
+
+- [x] Refresh workspace to latest current-branch state and inspect git status/diff for prior partial attempts.
+- [x] Audit existing migration files and migration-loading tests for naming/ordering patterns.
+- [x] Reuse or create migration for `client_data_daily_inputs` and `client_data_sale_entries` only, keeping scope strict.
+- [x] Run targeted migration-related tests/checks.
+- [x] Review diff for scope safety (no API/UI/service changes) and document outcomes.
+
+## Review
+- [x] Confirm only migration scope was changed.
+- [x] Confirm targeted checks/tests passed.
