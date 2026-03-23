@@ -57,7 +57,7 @@ describe("GlobalFavicon", () => {
     await waitFor(() => {
       const hrefs = iconLinks().map((link) => link.href);
       expect(hrefs.length).toBeGreaterThanOrEqual(2);
-      expect(hrefs.every((href) => href === "https://cdn.example/logo.png?v=3")).toBe(true);
+      expect(hrefs.every((href) => href === "https://cdn.example/logo.png#v=3")).toBe(true);
     });
   });
 
@@ -66,13 +66,13 @@ describe("GlobalFavicon", () => {
 
     await waitFor(() => {
       const hrefs = iconLinks().map((link) => link.href);
-      expect(hrefs.every((href) => href === "https://cdn.example/old.png?v=1")).toBe(true);
+      expect(hrefs.every((href) => href === "https://cdn.example/old.png#v=1")).toBe(true);
     });
 
     rerender(<GlobalFavicon agencyLogoUrl="https://cdn.example/new.png" refreshKey={2} />);
     await waitFor(() => {
       const hrefs = iconLinks().map((link) => link.href);
-      expect(hrefs.every((href) => href === "https://cdn.example/new.png?v=2")).toBe(true);
+      expect(hrefs.every((href) => href === "https://cdn.example/new.png#v=2")).toBe(true);
     });
   });
 
@@ -101,7 +101,7 @@ describe("GlobalFavicon", () => {
 
     await waitFor(() => {
       const hrefs = iconLinks().map((link) => link.href);
-      expect(hrefs.every((href) => href === "https://cdn.example/logo.png?v=5")).toBe(true);
+      expect(hrefs.every((href) => href === "https://cdn.example/logo.png#v=5")).toBe(true);
     });
   });
 
@@ -111,7 +111,7 @@ describe("GlobalFavicon", () => {
     rerender(<GlobalFavicon agencyLogoUrl="https://cdn.example/logo.png" refreshKey={11} />);
     await waitFor(() => {
       const hrefs = iconLinks().map((link) => link.href);
-      expect(hrefs.every((href) => href === "https://cdn.example/logo.png?v=11")).toBe(true);
+      expect(hrefs.every((href) => href === "https://cdn.example/logo.png#v=11")).toBe(true);
     });
   });
 
@@ -128,8 +128,14 @@ describe("GlobalFavicon", () => {
 
 describe("resolveAgencyFaviconHref", () => {
   it("supports legacy/logo_media based logo_url and default fallback", () => {
-    expect(resolveAgencyFaviconHref("https://cdn.example/logo.png", 7)).toBe("https://cdn.example/logo.png?v=7");
+    expect(resolveAgencyFaviconHref("https://cdn.example/logo.png", 7)).toBe("https://cdn.example/logo.png#v=7");
     expect(resolveAgencyFaviconHref("   ", 7)).toBe(DEFAULT_FAVICON_HREF);
+  });
+
+  it("does not mutate signed query params when adding refresh key", () => {
+    expect(resolveAgencyFaviconHref("https://cdn.example/logo.png?X-Amz-Signature=abc", 9)).toBe(
+      "https://cdn.example/logo.png?X-Amz-Signature=abc#v=9",
+    );
   });
 });
 
@@ -144,10 +150,10 @@ describe("applyGlobalFavicon", () => {
     document.head.appendChild(icon);
     document.head.appendChild(shortcutIcon);
 
-    applyGlobalFavicon("https://cdn.example/new-favicon.png?v=4");
+    applyGlobalFavicon("https://cdn.example/new-favicon.png#v=4");
 
-    expect(icon.href).toBe("https://cdn.example/new-favicon.png?v=4");
-    expect(shortcutIcon.href).toBe("https://cdn.example/new-favicon.png?v=4");
+    expect(icon.href).toBe("https://cdn.example/new-favicon.png#v=4");
+    expect(shortcutIcon.href).toBe("https://cdn.example/new-favicon.png#v=4");
     expect(icon.getAttribute("data-global-favicon-managed")).toBe("true");
     expect(shortcutIcon.getAttribute("data-global-favicon-managed")).toBe("true");
   });
