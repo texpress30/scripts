@@ -6820,3 +6820,16 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, fÄ
 ## Review
 - [x] Confirm only migration scope changed (plus required task tracking docs).
 - [x] Confirm targeted checks/tests passed.
+
+# TODO â€” Client data store pure helpers only (2026-03-23)
+
+- [x] Sync workspace on current branch and verify clean `git status` / `git diff`.
+- [x] Inspect only `client_data_store` and related tests to confirm current state / partial leftovers.
+- [x] Implement `client_data_store.py` with canonical source catalog and pure formula helpers only.
+- [x] Add focused pure tests for source catalog and formula helpers.
+- [x] Run only targeted pure tests + import/compile check.
+- [x] Review diff to ensure no migrations/API/frontend/DB CRUD changes.
+
+## Review
+- [x] Confirm module remains importable and scope is pure helpers only.
+- [x] Confirm targeted tests/checks passed.
