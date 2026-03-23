@@ -6779,3 +6779,18 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, f�
 - [x] Confirmat: flow-ul de publish nu a fost modificat.
 - [x] Confirmat: nu am introdus backend nou major pentru update/edit variant.
 - [x] Confirmat: UI change mic și local (carduri existente), fără redesign major al paginii Creative.
+
+# TODO — Remote + fetch sync in fresh terminal session (2026-03-23)
+
+- [x] Write a minimal execution plan before running git sync commands.
+- [x] Execute the exact remote add/set-url command in a fresh terminal invocation.
+- [x] Run fetch from origin and pull main with unrelated histories allowed.
+- [x] Verify remote configuration and fetched refs.
+
+## Check-in before execution
+Plan verified: run only requested git remote/fetch/pull commands, then verify with `git remote -v` and `git branch -r`.
+
+## Review
+- [x] Remote `origin` points to `github.com/texpress30/scripts.git` (PAT URL) for fetch/push.
+- [x] `git fetch origin` succeeded and remote branches are visible locally.
+- [x] `git pull origin main --allow-unrelated-histories` completed with `Already up to date.`
