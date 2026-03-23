@@ -216,12 +216,13 @@ export default function CreativePage() {
       return;
     }
 
+    const validClientId = selectedClientId;
     let ignore = false;
     setVariantPreviewLoading(true);
     setVariantPreviewError("");
     async function loadVariantPreview() {
       try {
-        const access = await getMediaAccessUrl({ clientId: selectedClientId, mediaId: selectedVariant.media_id as string, disposition: "inline" });
+        const access = await getMediaAccessUrl({ clientId: validClientId, mediaId: selectedVariant.media_id as string, disposition: "inline" });
         if (!ignore) setVariantPreviewUrl(String(access.url || "").trim());
       } catch (err) {
         if (!ignore) {
