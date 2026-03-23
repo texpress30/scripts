@@ -6808,3 +6808,15 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, fÄ
 ## Review
 - [x] Confirm only migration scope was changed.
 - [x] Confirm targeted checks/tests passed.
+
+# TODO â€” Data layer migration custom fields + daily custom values (2026-03-23)
+
+- [x] Sync workspace state on current branch and inspect `git status`/`git diff`.
+- [x] Audit existing migrations and migration tests; verify Task 1A migration FK compatibility.
+- [x] Reuse existing partial migration if present, otherwise create next migration for only `client_data_custom_fields` and `client_data_daily_custom_values`.
+- [x] Run targeted migration resolver/loading tests and a quick relevant check.
+- [x] Review final diff for strict scope (migration-only).
+
+## Review
+- [x] Confirm only migration scope changed (plus required task tracking docs).
+- [x] Confirm targeted checks/tests passed.
