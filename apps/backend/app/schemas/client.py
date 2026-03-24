@@ -115,3 +115,67 @@ class MediaTrackerWorksheetEurRonRateUpsertRequest(BaseModel):
     granularity: Literal["month", "quarter", "year"]
     anchor_date: date
     value: float | None = None
+
+
+class ClientDataDerivedField(BaseModel):
+    key: str
+    label: str
+    value_kind: Literal["count", "amount"]
+
+
+class ClientDataSourceItem(BaseModel):
+    key: str
+    label: str
+
+
+class ClientDataCustomFieldItem(BaseModel):
+    id: int
+    field_key: str
+    label: str
+    value_kind: Literal["count", "amount"]
+    sort_order: int
+    is_active: bool
+
+
+class ClientDataConfigResponse(BaseModel):
+    client_id: int
+    sources: list[ClientDataSourceItem]
+    custom_fields: list[ClientDataCustomFieldItem]
+    derived_fields: list[ClientDataDerivedField]
+
+
+class ClientDataRowCustomValue(BaseModel):
+    custom_field_id: int
+    field_key: str
+    label: str
+    value_kind: Literal["count", "amount"]
+    sort_order: int
+    numeric_value: str
+
+
+class ClientDataTableRow(BaseModel):
+    daily_input_id: int
+    metric_date: str
+    source: str
+    source_label: str
+    leads: int
+    phones: int
+    custom_value_1_count: int
+    custom_value_2_count: int
+    custom_value_3_amount: str
+    custom_value_5_amount: str
+    notes: str | None = None
+    sales_count: int
+    revenue_amount: str
+    cogs_amount: str
+    custom_value_4_amount: str
+    gross_profit_amount: str
+    custom_values: list[ClientDataRowCustomValue]
+
+
+class ClientDataTableResponse(BaseModel):
+    client_id: int
+    date_from: str
+    date_to: str
+    count: int
+    rows: list[ClientDataTableRow]

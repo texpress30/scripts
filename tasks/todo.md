@@ -6979,3 +6979,15 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, fÄ
 ## Review
 - [x] Confirm only daily-custom-value delete/consistency + tests/docs changed.
 - [x] Confirm checks/tests passed.
+
+# TODO â€” Client data API endpoints: config + table (2026-03-24)
+
+- [x] Sync workspace state and inspect existing `clients.py`, `client.py` schemas, and `client_data_store.py` helper/store contracts.
+- [x] Add response schemas for client data config/table payloads (including source labels, fallback labels, and derived field descriptors).
+- [x] Implement `GET /clients/{client_id}/data/config` and `GET /clients/{client_id}/data/table` in `apps/backend/app/api/clients.py` using only `client_data_store` reads.
+- [x] Add focused backend tests for endpoint behavior: sorting, source label resolution, custom label fallback, and derived field calculations.
+- [x] Run targeted tests and document review outcomes.
+
+## Review
+- [x] Confirm scope is strict to API schema/router + focused tests/docs.
+- [x] Confirm targeted checks/tests passed.

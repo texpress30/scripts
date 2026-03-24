@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-24: La primul răspuns după corecții AGENTS, pornesc imediat cu workflow complet (plan în `tasks/todo.md` + execuție + verificare), nu trimit doar promisiuni de implementare.
+
 - 2026-03-22: Pentru publish persistence feature-flagged pe Mongo, tratez strict ordinea `next_publish_id -> external publish (single call) -> upsert`; dacă upsert-ul cade după publish extern reușit, nu retry/replay în același apel și returnez succesul extern cu mirror local compatibil.
 
 - 2026-03-22: Pentru mutații derivate migrate pe Mongo source-of-truth, activez flag-ul derivat doar împreună cu core-writes și tratez erorile Mongo read/upsert ca hard-fail (fără fallback local), cu local hydrate doar după persist reușit.
