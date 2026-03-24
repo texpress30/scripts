@@ -95,6 +95,20 @@ class _FakeCursor:
             self._fetchone = _daily_row_tuple(row) if row else None
             return
 
+        if "from client_data_daily_inputs" in q and "metric_date >= %s" in q and "metric_date <= %s" in q:
+            client_id, date_from, date_to = int(params[0]), str(params[1]), str(params[2])
+            selected = [
+                r for r in self._state.daily_rows
+                if r["client_id"] == client_id and date_from <= str(r["metric_date"]) <= date_to
+            ]
+            selected.sort(key=lambda r: (str(r["metric_date"]), str(r["source"]), int(r["id"])))
+            selected.reverse()
+            # reverse makes source/id order reverse too, so apply exact key via two-step stable sorts
+            selected.sort(key=lambda r: (str(r["source"]), int(r["id"])))
+            selected.sort(key=lambda r: str(r["metric_date"]), reverse=True)
+            self._fetchall = [_daily_row_tuple(r) for r in selected]
+            return
+
         if "insert into client_data_daily_inputs" in q:
             client_id, metric_date, source = int(params[0]), str(params[1]), str(params[2])
             row = {
@@ -112,6 +126,39 @@ class _FakeCursor:
             }
             self._state.daily_rows.append(row)
             self._state.next_daily_id += 1
+            self._fetchone = _daily_row_tuple(row)
+            return
+
+        if "update client_data_daily_inputs set" in q:
+            daily_id = int(params[-1])
+            row = next((r for r in self._state.daily_rows if r["id"] == daily_id), None)
+            if row is None:
+                self._fetchone = None
+                return
+
+            param_index = 0
+            if "notes = %s" in q:
+                row["notes"] = params[param_index]
+                param_index += 1
+            if "leads = %s" in q:
+                row["leads"] = int(params[param_index])
+                param_index += 1
+            if "phones = %s" in q:
+                row["phones"] = int(params[param_index])
+                param_index += 1
+            if "custom_value_1_count = %s" in q:
+                row["custom_value_1_count"] = int(params[param_index])
+                param_index += 1
+            if "custom_value_2_count = %s" in q:
+                row["custom_value_2_count"] = int(params[param_index])
+                param_index += 1
+            if "custom_value_3_amount = %s" in q:
+                row["custom_value_3_amount"] = str(params[param_index])
+                param_index += 1
+            if "custom_value_5_amount = %s" in q:
+                row["custom_value_5_amount"] = str(params[param_index])
+                param_index += 1
+
             self._fetchone = _daily_row_tuple(row)
             return
 
@@ -465,6 +512,200 @@ class ClientDataStoreCustomFieldCrudSliceTests(unittest.TestCase):
     def test_get_or_create_daily_input_rejects_invalid_client_id(self):
         with self.assertRaises(ValueError):
             client_data_store.get_or_create_daily_input(client_id=0, metric_date="2026-03-24", source="meta_ads")
+
+
+    def test_upsert_daily_input_creates_and_updates_single_field(self):
+        row = client_data_store.upsert_daily_input(client_id=11, metric_date="2026-03-24", source="meta_ads", leads=5)
+        self.assertEqual(row["leads"], 5)
+        self.assertEqual(row["phones"], 0)
+        self.assertEqual(len(self.state.daily_rows), 1)
+
+    def test_upsert_daily_input_partial_update_existing_preserves_others(self):
+        first = client_data_store.upsert_daily_input(client_id=11, metric_date="2026-03-24", source="meta_ads", leads=5)
+        second = client_data_store.upsert_daily_input(client_id=11, metric_date="2026-03-24", source="meta_ads", phones=3)
+        self.assertEqual(first["id"], second["id"])
+        self.assertEqual(second["leads"], 5)
+        self.assertEqual(second["phones"], 3)
+
+    def test_upsert_daily_input_updates_all_numeric_fields(self):
+        row = client_data_store.upsert_daily_input(
+            client_id=11,
+            metric_date="2026-03-24",
+            source="meta_ads",
+            leads=1,
+            phones=2,
+            custom_value_1_count=3,
+            custom_value_2_count=4,
+            custom_value_3_amount="5.50",
+            custom_value_5_amount="6.75",
+        )
+        self.assertEqual(row["leads"], 1)
+        self.assertEqual(row["phones"], 2)
+        self.assertEqual(row["custom_value_1_count"], 3)
+        self.assertEqual(row["custom_value_2_count"], 4)
+        self.assertEqual(str(row["custom_value_3_amount"]), "5.50")
+        self.assertEqual(str(row["custom_value_5_amount"]), "6.75")
+
+    def test_upsert_daily_input_custom_value_5_accepts_negative(self):
+        row = client_data_store.upsert_daily_input(
+            client_id=11,
+            metric_date="2026-03-24",
+            source="meta_ads",
+            custom_value_5_amount="-10.25",
+        )
+        self.assertEqual(str(row["custom_value_5_amount"]), "-10.25")
+
+    def test_upsert_daily_input_rejects_no_fields(self):
+        with self.assertRaises(ValueError):
+            client_data_store.upsert_daily_input(client_id=11, metric_date="2026-03-24", source="meta_ads")
+
+    def test_upsert_daily_input_rejects_invalid_leads(self):
+        with self.assertRaises(ValueError):
+            client_data_store.upsert_daily_input(client_id=11, metric_date="2026-03-24", source="meta_ads", leads=-1)
+
+    def test_upsert_daily_input_rejects_invalid_phones(self):
+        with self.assertRaises(ValueError):
+            client_data_store.upsert_daily_input(client_id=11, metric_date="2026-03-24", source="meta_ads", phones="a")
+
+    def test_upsert_daily_input_rejects_invalid_custom_value_1_count(self):
+        with self.assertRaises(ValueError):
+            client_data_store.upsert_daily_input(client_id=11, metric_date="2026-03-24", source="meta_ads", custom_value_1_count=-2)
+
+    def test_upsert_daily_input_rejects_invalid_custom_value_2_count(self):
+        with self.assertRaises(ValueError):
+            client_data_store.upsert_daily_input(client_id=11, metric_date="2026-03-24", source="meta_ads", custom_value_2_count="x")
+
+    def test_upsert_daily_input_rejects_negative_custom_value_3_amount(self):
+        with self.assertRaises(ValueError):
+            client_data_store.upsert_daily_input(client_id=11, metric_date="2026-03-24", source="meta_ads", custom_value_3_amount="-0.01")
+
+    def test_upsert_daily_input_rejects_non_numeric_custom_value_5_amount(self):
+        with self.assertRaises(ValueError):
+            client_data_store.upsert_daily_input(client_id=11, metric_date="2026-03-24", source="meta_ads", custom_value_5_amount="abc")
+
+    def test_upsert_daily_input_keeps_notes_unchanged(self):
+        created = client_data_store.get_or_create_daily_input(client_id=11, metric_date="2026-03-24", source="meta_ads")
+        self.state.daily_rows[0]["notes"] = "keep me"
+        updated = client_data_store.upsert_daily_input(client_id=11, metric_date="2026-03-24", source="meta_ads", leads=9)
+        self.assertEqual(updated["id"], created["id"])
+        self.assertEqual(updated["notes"], "keep me")
+
+    def test_upsert_daily_input_keeps_source_canonical(self):
+        row = client_data_store.upsert_daily_input(client_id=11, metric_date="2026-03-24", source=" META_ADS ", leads=2)
+        self.assertEqual(row["source"], "meta_ads")
+
+
+    def test_set_daily_input_notes_creates_row_and_sets_notes(self):
+        row = client_data_store.set_daily_input_notes(client_id=21, metric_date="2026-03-24", source="META_ADS", notes="abc")
+        self.assertEqual(row["source"], "meta_ads")
+        self.assertEqual(row["notes"], "abc")
+        self.assertEqual(row["leads"], 0)
+
+    def test_set_daily_input_notes_updates_existing_and_preserves_numeric_fields(self):
+        base = client_data_store.upsert_daily_input(
+            client_id=21,
+            metric_date="2026-03-24",
+            source="meta_ads",
+            leads=7,
+            phones=3,
+            custom_value_1_count=1,
+            custom_value_2_count=2,
+            custom_value_3_amount="5.25",
+            custom_value_5_amount="-1.50",
+        )
+        updated = client_data_store.set_daily_input_notes(client_id=21, metric_date="2026-03-24", source="meta_ads", notes="new note")
+        self.assertEqual(updated["id"], base["id"])
+        self.assertEqual(updated["notes"], "new note")
+        self.assertEqual(updated["leads"], 7)
+        self.assertEqual(updated["phones"], 3)
+        self.assertEqual(updated["custom_value_1_count"], 1)
+        self.assertEqual(updated["custom_value_2_count"], 2)
+        self.assertEqual(str(updated["custom_value_3_amount"]), "5.25")
+        self.assertEqual(str(updated["custom_value_5_amount"]), "-1.50")
+
+    def test_set_daily_input_notes_none_clears_notes(self):
+        client_data_store.set_daily_input_notes(client_id=21, metric_date="2026-03-24", source="meta_ads", notes="a")
+        updated = client_data_store.set_daily_input_notes(client_id=21, metric_date="2026-03-24", source="meta_ads", notes=None)
+        self.assertIsNone(updated["notes"])
+
+    def test_set_daily_input_notes_empty_string_clears_notes(self):
+        updated = client_data_store.set_daily_input_notes(client_id=21, metric_date="2026-03-24", source="meta_ads", notes="")
+        self.assertIsNone(updated["notes"])
+
+    def test_set_daily_input_notes_trims_notes(self):
+        updated = client_data_store.set_daily_input_notes(client_id=21, metric_date="2026-03-24", source="meta_ads", notes="   text   ")
+        self.assertEqual(updated["notes"], "text")
+
+    def test_set_daily_input_notes_rejects_invalid_type(self):
+        with self.assertRaises(ValueError):
+            client_data_store.set_daily_input_notes(client_id=21, metric_date="2026-03-24", source="meta_ads", notes=123)
+
+    def test_set_daily_input_notes_keeps_source_canonical(self):
+        updated = client_data_store.set_daily_input_notes(client_id=21, metric_date="2026-03-24", source=" META_ADS ", notes="ok")
+        self.assertEqual(updated["source"], "meta_ads")
+
+    def test_set_daily_input_notes_accepts_and_rejects_metric_date(self):
+        from datetime import date
+        ok = client_data_store.set_daily_input_notes(client_id=21, metric_date=date(2026, 3, 24), source="meta_ads", notes="x")
+        self.assertEqual(ok["metric_date"], "2026-03-24")
+        with self.assertRaises(ValueError):
+            client_data_store.set_daily_input_notes(client_id=21, metric_date="2026-99-99", source="meta_ads", notes="x")
+
+    def test_set_daily_input_notes_rejects_invalid_client_id(self):
+        with self.assertRaises(ValueError):
+            client_data_store.set_daily_input_notes(client_id=0, metric_date="2026-03-24", source="meta_ads", notes="x")
+
+    def test_set_daily_input_notes_rejects_invalid_source(self):
+        with self.assertRaises(ValueError):
+            client_data_store.set_daily_input_notes(client_id=21, metric_date="2026-03-24", source="facebook_ads", notes="x")
+
+
+    def test_list_daily_inputs_returns_empty_when_no_data(self):
+        rows = client_data_store.list_daily_inputs(client_id=44, date_from="2026-03-01", date_to="2026-03-31")
+        self.assertEqual(rows, [])
+
+    def test_list_daily_inputs_filters_by_client_and_range_and_sort(self):
+        client_data_store.upsert_daily_input(client_id=44, metric_date="2026-03-20", source="tiktok_ads", leads=1)
+        client_data_store.upsert_daily_input(client_id=44, metric_date="2026-03-21", source="meta_ads", leads=2)
+        client_data_store.upsert_daily_input(client_id=44, metric_date="2026-03-21", source="google_ads", leads=3)
+        client_data_store.upsert_daily_input(client_id=44, metric_date="2026-03-22", source="meta_ads", leads=4)
+        client_data_store.upsert_daily_input(client_id=99, metric_date="2026-03-21", source="meta_ads", leads=5)
+
+        rows = client_data_store.list_daily_inputs(client_id=44, date_from="2026-03-21", date_to="2026-03-22")
+        self.assertEqual([r["metric_date"] for r in rows], ["2026-03-22", "2026-03-21", "2026-03-21"])
+        self.assertEqual([r["source"] for r in rows], ["meta_ads", "google_ads", "meta_ads"])
+        self.assertTrue(all(r["client_id"] == 44 for r in rows))
+
+    def test_list_daily_inputs_returns_stable_shape(self):
+        row = client_data_store.upsert_daily_input(client_id=44, metric_date="2026-03-21", source="meta_ads", leads=8)
+        rows = client_data_store.list_daily_inputs(client_id=44, date_from="2026-03-21", date_to="2026-03-21")
+        self.assertEqual(len(rows), 1)
+        item = rows[0]
+        self.assertEqual(item["id"], row["id"])
+        self.assertIn("custom_value_5_amount", item)
+        self.assertIn("notes", item)
+
+    def test_list_daily_inputs_accepts_date_objects(self):
+        from datetime import date
+        client_data_store.upsert_daily_input(client_id=44, metric_date=date(2026, 3, 21), source="meta_ads", leads=1)
+        rows = client_data_store.list_daily_inputs(client_id=44, date_from=date(2026, 3, 21), date_to=date(2026, 3, 21))
+        self.assertEqual(len(rows), 1)
+
+    def test_list_daily_inputs_rejects_invalid_date_from(self):
+        with self.assertRaises(ValueError):
+            client_data_store.list_daily_inputs(client_id=44, date_from="bad", date_to="2026-03-21")
+
+    def test_list_daily_inputs_rejects_invalid_date_to(self):
+        with self.assertRaises(ValueError):
+            client_data_store.list_daily_inputs(client_id=44, date_from="2026-03-21", date_to="bad")
+
+    def test_list_daily_inputs_rejects_invalid_date_range(self):
+        with self.assertRaises(ValueError):
+            client_data_store.list_daily_inputs(client_id=44, date_from="2026-03-22", date_to="2026-03-21")
+
+    def test_list_daily_inputs_rejects_invalid_client_id(self):
+        with self.assertRaises(ValueError):
+            client_data_store.list_daily_inputs(client_id=0, date_from="2026-03-21", date_to="2026-03-21")
 
 
 if __name__ == "__main__":

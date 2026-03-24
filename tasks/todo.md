@@ -6882,3 +6882,39 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, f�
 ## Review
 - [x] Confirm only requested daily-input function and tests were changed.
 - [x] Confirm checks/tests passed.
+
+# TODO — Daily input CRUD slice 2 (upsert only) (2026-03-24)
+
+- [x] Sync workspace attempted and continue locally when origin unavailable.
+- [x] Implement only `upsert_daily_input(...)` reusing `get_or_create_daily_input(...)`.
+- [x] Add targeted tests for partial upsert/update validations and notes/source invariants.
+- [x] Run targeted client_data_store tests + compile check.
+- [x] Review diff for strict scope.
+
+## Review
+- [x] Confirm only requested upsert function + tests/docs changed.
+- [x] Confirm checks/tests passed.
+
+# TODO — Daily input CRUD slice 3 (set notes only) (2026-03-24)
+
+- [x] Sync attempted; continue local when origin unavailable.
+- [x] Implement only `set_daily_input_notes(...)` using `get_or_create_daily_input(...)`.
+- [x] Add targeted tests for notes normalization/validation and invariants.
+- [x] Run targeted tests + compile check.
+- [x] Review strict scope.
+
+## Review
+- [x] Confirm only notes function + tests/docs changed.
+- [x] Confirm checks/tests passed.
+
+# TODO — Daily input CRUD slice 4 (list only) (2026-03-24)
+
+- [x] Sync attempted; proceed local if origin unavailable.
+- [x] Implement only `list_daily_inputs(client_id, date_from, date_to)` with strict validation and sorting.
+- [x] Add targeted list-daily-input tests for range/filter/order/shape/validation.
+- [x] Run targeted tests + compile check.
+- [x] Review strict scope.
+
+## Review
+- [x] Confirm only list function + tests/docs changed.
+- [x] Confirm checks/tests passed.
