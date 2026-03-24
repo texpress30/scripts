@@ -11,6 +11,8 @@ class _FakeDbState:
     def __init__(self):
         self.rows: list[dict[str, object]] = []
         self.next_id = 1
+        self.daily_rows: list[dict[str, object]] = []
+        self.next_daily_id = 1
 
 
 class _FakeCursor:
@@ -78,6 +80,39 @@ class _FakeCursor:
             self._state.rows.append(row)
             self._state.next_id += 1
             self._fetchone = _row_tuple(row)
+            return
+
+        if "from client_data_daily_inputs where client_id = %s and metric_date = %s and source = %s" in q:
+            client_id, metric_date, source = int(params[0]), str(params[1]), str(params[2])
+            row = next(
+                (
+                    r
+                    for r in self._state.daily_rows
+                    if r["client_id"] == client_id and str(r["metric_date"]) == metric_date and r["source"] == source
+                ),
+                None,
+            )
+            self._fetchone = _daily_row_tuple(row) if row else None
+            return
+
+        if "insert into client_data_daily_inputs" in q:
+            client_id, metric_date, source = int(params[0]), str(params[1]), str(params[2])
+            row = {
+                "id": self._state.next_daily_id,
+                "client_id": client_id,
+                "metric_date": metric_date,
+                "source": source,
+                "leads": 0,
+                "phones": 0,
+                "custom_value_1_count": 0,
+                "custom_value_2_count": 0,
+                "custom_value_3_amount": "0",
+                "custom_value_5_amount": "0",
+                "notes": None,
+            }
+            self._state.daily_rows.append(row)
+            self._state.next_daily_id += 1
+            self._fetchone = _daily_row_tuple(row)
             return
 
         if "update client_data_custom_fields set" in q:
@@ -157,6 +192,24 @@ def _row_tuple(row: dict[str, object] | None) -> tuple[object, ...] | None:
         row["sort_order"],
         row["is_active"],
         row["archived_at"],
+    )
+
+
+def _daily_row_tuple(row: dict[str, object] | None) -> tuple[object, ...] | None:
+    if row is None:
+        return None
+    return (
+        row["id"],
+        row["client_id"],
+        row["metric_date"],
+        row["source"],
+        row["leads"],
+        row["phones"],
+        row["custom_value_1_count"],
+        row["custom_value_2_count"],
+        row["custom_value_3_amount"],
+        row["custom_value_5_amount"],
+        row["notes"],
     )
 
 
@@ -375,6 +428,43 @@ class ClientDataStoreCustomFieldCrudSliceTests(unittest.TestCase):
     def test_archive_custom_field_missing_id_raises_clear_error(self):
         with self.assertRaises(LookupError):
             client_data_store.archive_custom_field(custom_field_id=404)
+
+
+    def test_get_or_create_daily_input_creates_new_row_with_defaults(self):
+        row = client_data_store.get_or_create_daily_input(client_id=10, metric_date="2026-03-24", source="META_ADS")
+        self.assertEqual(row["client_id"], 10)
+        self.assertEqual(row["metric_date"], "2026-03-24")
+        self.assertEqual(row["source"], "meta_ads")
+        self.assertEqual(row["leads"], 0)
+        self.assertEqual(row["phones"], 0)
+        self.assertEqual(row["custom_value_1_count"], 0)
+        self.assertEqual(row["custom_value_2_count"], 0)
+        self.assertEqual(str(row["custom_value_3_amount"]), "0")
+        self.assertEqual(str(row["custom_value_5_amount"]), "0")
+        self.assertIsNone(row["notes"])
+
+    def test_get_or_create_daily_input_returns_existing_without_duplicates(self):
+        first = client_data_store.get_or_create_daily_input(client_id=10, metric_date="2026-03-24", source="meta_ads")
+        second = client_data_store.get_or_create_daily_input(client_id=10, metric_date="2026-03-24", source="meta_ads")
+        self.assertEqual(first["id"], second["id"])
+        self.assertEqual(len(self.state.daily_rows), 1)
+
+    def test_get_or_create_daily_input_accepts_date_object(self):
+        from datetime import date
+        row = client_data_store.get_or_create_daily_input(client_id=10, metric_date=date(2026, 3, 24), source="google_ads")
+        self.assertEqual(row["metric_date"], "2026-03-24")
+
+    def test_get_or_create_daily_input_rejects_invalid_metric_date(self):
+        with self.assertRaises(ValueError):
+            client_data_store.get_or_create_daily_input(client_id=10, metric_date="2026-15-99", source="google_ads")
+
+    def test_get_or_create_daily_input_rejects_invalid_source(self):
+        with self.assertRaises(ValueError):
+            client_data_store.get_or_create_daily_input(client_id=10, metric_date="2026-03-24", source="facebook_ads")
+
+    def test_get_or_create_daily_input_rejects_invalid_client_id(self):
+        with self.assertRaises(ValueError):
+            client_data_store.get_or_create_daily_input(client_id=0, metric_date="2026-03-24", source="meta_ads")
 
 
 if __name__ == "__main__":

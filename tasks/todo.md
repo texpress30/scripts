@@ -6870,3 +6870,15 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, fÄ
 ## Review
 - [x] Confirm only archive slice + tests/docs were changed.
 - [x] Confirm tests/checks passed.
+
+# TODO â€” Daily input CRUD slice 1 (get_or_create only) (2026-03-24)
+
+- [x] Sync workspace attempted and continue with local state if `origin` unavailable.
+- [x] Implement only `get_or_create_daily_input(...)` with validation + idempotent lookup/create.
+- [x] Add targeted tests for get/create/idempotency/validation.
+- [x] Run targeted client_data_store tests + compile check.
+- [x] Review diff for strict scope.
+
+## Review
+- [x] Confirm only requested daily-input function and tests were changed.
+- [x] Confirm checks/tests passed.

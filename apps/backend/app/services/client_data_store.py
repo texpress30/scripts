@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal, InvalidOperation
 import re
 from typing import Any, Mapping
@@ -424,4 +425,125 @@ def archive_custom_field(*, custom_field_id: int) -> dict[str, object]:
     payload = _row_to_custom_field_payload(row)
     if payload is None:
         raise RuntimeError(f"Failed to archive custom field {custom_field_id}")
+    return payload
+
+
+def _normalize_client_id(client_id: int) -> int:
+    try:
+        normalized = int(client_id)
+    except (TypeError, ValueError):
+        raise ValueError("client_id must be a positive integer") from None
+    if normalized <= 0:
+        raise ValueError("client_id must be a positive integer")
+    return normalized
+
+
+def _normalize_metric_date(metric_date: date | str) -> date:
+    if isinstance(metric_date, date):
+        return metric_date
+
+    if isinstance(metric_date, str):
+        value = metric_date.strip()
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            raise ValueError("metric_date must be a valid ISO date (YYYY-MM-DD)") from None
+
+    raise ValueError("metric_date must be a date or ISO string")
+
+
+def _normalize_supported_source(source: str) -> str:
+    normalized = _normalize_source_key(source)
+    if not is_supported_source(normalized):
+        raise ValueError(f"Unsupported source: {source}")
+    return normalized
+
+
+def _row_to_daily_input_payload(row: tuple[object, ...] | None) -> dict[str, object] | None:
+    if row is None:
+        return None
+    return {
+        "id": int(row[0]),
+        "client_id": int(row[1]),
+        "metric_date": str(row[2]),
+        "source": str(row[3]),
+        "leads": int(row[4]),
+        "phones": int(row[5]),
+        "custom_value_1_count": int(row[6]),
+        "custom_value_2_count": int(row[7]),
+        "custom_value_3_amount": _to_decimal(row[8]),
+        "custom_value_5_amount": _to_decimal(row[9]),
+        "notes": str(row[10]) if row[10] is not None else None,
+    }
+
+
+def get_or_create_daily_input(*, client_id: int, metric_date: date | str, source: str) -> dict[str, object]:
+    normalized_client_id = _normalize_client_id(client_id)
+    normalized_metric_date = _normalize_metric_date(metric_date)
+    normalized_source = _normalize_supported_source(source)
+
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    client_id,
+                    metric_date,
+                    source,
+                    leads,
+                    phones,
+                    custom_value_1_count,
+                    custom_value_2_count,
+                    custom_value_3_amount,
+                    custom_value_5_amount,
+                    notes
+                FROM client_data_daily_inputs
+                WHERE client_id = %s AND metric_date = %s AND source = %s
+                LIMIT 1
+                """,
+                (normalized_client_id, normalized_metric_date, normalized_source),
+            )
+            existing_row = cur.fetchone()
+            if existing_row is not None:
+                payload = _row_to_daily_input_payload(existing_row)
+                if payload is None:
+                    raise RuntimeError("Failed to load existing daily input")
+                return payload
+
+            cur.execute(
+                """
+                INSERT INTO client_data_daily_inputs (
+                    client_id,
+                    metric_date,
+                    source,
+                    leads,
+                    phones,
+                    custom_value_1_count,
+                    custom_value_2_count,
+                    custom_value_3_amount,
+                    custom_value_5_amount,
+                    notes
+                ) VALUES (%s, %s, %s, 0, 0, 0, 0, 0, 0, NULL)
+                RETURNING
+                    id,
+                    client_id,
+                    metric_date,
+                    source,
+                    leads,
+                    phones,
+                    custom_value_1_count,
+                    custom_value_2_count,
+                    custom_value_3_amount,
+                    custom_value_5_amount,
+                    notes
+                """,
+                (normalized_client_id, normalized_metric_date, normalized_source),
+            )
+            created_row = cur.fetchone()
+        conn.commit()
+
+    payload = _row_to_daily_input_payload(created_row)
+    if payload is None:
+        raise RuntimeError("Failed to create daily input")
     return payload
