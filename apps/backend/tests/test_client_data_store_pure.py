@@ -15,6 +15,8 @@ class _FakeDbState:
         self.next_daily_id = 1
         self.sale_rows: list[dict[str, object]] = []
         self.next_sale_id = 1
+        self.custom_value_rows: list[dict[str, object]] = []
+        self.next_custom_value_id = 1
 
 
 class _FakeCursor:
@@ -128,6 +130,71 @@ class _FakeCursor:
             selected = [r for r in self._state.sale_rows if r["daily_input_id"] == daily_input_id]
             selected.sort(key=lambda r: (int(r["sort_order"]), int(r["id"])))
             self._fetchall = [_sale_row_tuple(r) for r in selected]
+            return
+
+        if "from client_data_daily_custom_values dcv" in q and "where di.client_id = %s" in q:
+            client_id, date_from, date_to = int(params[0]), str(params[1]), str(params[2])
+            selected = []
+            for cv in self._state.custom_value_rows:
+                di = next((d for d in self._state.daily_rows if d["id"] == cv["daily_input_id"]), None)
+                cf = next((f for f in self._state.rows if f["id"] == cv["custom_field_id"]), None)
+                if di is None or cf is None:
+                    continue
+                if di["client_id"] != client_id:
+                    continue
+                if not (date_from <= str(di["metric_date"]) <= date_to):
+                    continue
+                selected.append((cv, di, cf))
+
+            selected.sort(
+                key=lambda t: (
+                    str(t[1]["metric_date"]),
+                    str(t[1]["source"]),
+                    int(t[2]["sort_order"]),
+                    int(t[0]["custom_field_id"]),
+                    int(t[0]["id"]),
+                )
+            )
+            selected.reverse()
+            selected.sort(key=lambda t: (int(t[2]["sort_order"]), int(t[0]["custom_field_id"]), int(t[0]["id"])))
+            selected.sort(key=lambda t: str(t[1]["source"]))
+            selected.sort(key=lambda t: str(t[1]["metric_date"]), reverse=True)
+            self._fetchall = [_custom_value_join_tuple(cv, di, cf) for cv, di, cf in selected]
+            return
+
+        if "insert into client_data_daily_custom_values" in q:
+            daily_input_id, custom_field_id, numeric_value = int(params[0]), int(params[1]), str(params[2])
+            existing = next(
+                (r for r in self._state.custom_value_rows if r["daily_input_id"] == daily_input_id and r["custom_field_id"] == custom_field_id),
+                None,
+            )
+            if existing is None:
+                row = {
+                    "id": self._state.next_custom_value_id,
+                    "daily_input_id": daily_input_id,
+                    "custom_field_id": custom_field_id,
+                    "numeric_value": numeric_value,
+                }
+                self._state.custom_value_rows.append(row)
+                self._state.next_custom_value_id += 1
+                self._fetchone = (row["id"],)
+            else:
+                existing["numeric_value"] = numeric_value
+                self._fetchone = (existing["id"],)
+            return
+
+        if "from client_data_daily_custom_values dcv" in q and "where dcv.id = %s" in q:
+            custom_value_id = int(params[0])
+            cv = next((r for r in self._state.custom_value_rows if r["id"] == custom_value_id), None)
+            if cv is None:
+                self._fetchone = None
+                return
+            di = next((d for d in self._state.daily_rows if d["id"] == cv["daily_input_id"]), None)
+            cf = next((f for f in self._state.rows if f["id"] == cv["custom_field_id"]), None)
+            if di is None or cf is None:
+                self._fetchone = None
+                return
+            self._fetchone = _custom_value_join_tuple(cv, di, cf)
             return
 
         if "insert into client_data_sale_entries" in q:
@@ -352,6 +419,22 @@ def _sale_row_tuple(row: dict[str, object] | None) -> tuple[object, ...] | None:
         row["actual_price_amount"],
         row["notes"],
         row["sort_order"],
+    )
+
+
+def _custom_value_join_tuple(cv: dict[str, object], di: dict[str, object], cf: dict[str, object]) -> tuple[object, ...]:
+    return (
+        cv["id"],
+        cv["daily_input_id"],
+        di["metric_date"],
+        di["source"],
+        cv["custom_field_id"],
+        cf["field_key"],
+        cf["label"],
+        cf["value_kind"],
+        cf["sort_order"],
+        cf["is_active"],
+        cv["numeric_value"],
     )
 
 
@@ -1038,6 +1121,94 @@ class ClientDataStoreCustomFieldCrudSliceTests(unittest.TestCase):
             client_data_store.delete_sale_entry(sale_entry_id=0)
         with self.assertRaises(LookupError):
             client_data_store.delete_sale_entry(sale_entry_id=999)
+
+
+    def test_list_daily_custom_values_empty(self):
+        rows = client_data_store.list_daily_custom_values(client_id=90, date_from="2026-03-01", date_to="2026-03-31")
+        self.assertEqual(rows, [])
+
+    def test_list_daily_custom_values_filters_sorts_and_includes_metadata(self):
+        d1 = client_data_store.get_or_create_daily_input(client_id=90, metric_date="2026-03-20", source="meta_ads")
+        d2 = client_data_store.get_or_create_daily_input(client_id=90, metric_date="2026-03-21", source="google_ads")
+        other = client_data_store.get_or_create_daily_input(client_id=91, metric_date="2026-03-21", source="meta_ads")
+        cf1 = client_data_store.create_custom_field(client_id=90, label="A", value_kind="amount", sort_order=2)
+        cf2 = client_data_store.create_custom_field(client_id=90, label="B", value_kind="count", sort_order=1)
+        client_data_store.archive_custom_field(custom_field_id=cf1["id"])
+        client_data_store.upsert_daily_custom_value(daily_input_id=d1["id"], custom_field_id=cf1["id"], numeric_value="10.5")
+        client_data_store.upsert_daily_custom_value(daily_input_id=d2["id"], custom_field_id=cf2["id"], numeric_value=3)
+        # out-of-client should not appear
+        cf_other = client_data_store.create_custom_field(client_id=91, label="X", value_kind="count")
+        client_data_store.upsert_daily_custom_value(daily_input_id=other["id"], custom_field_id=cf_other["id"], numeric_value=1)
+
+        rows = client_data_store.list_daily_custom_values(client_id=90, date_from="2026-03-20", date_to="2026-03-21")
+        self.assertEqual([r["metric_date"] for r in rows], ["2026-03-21", "2026-03-20"])
+        self.assertEqual(rows[0]["source"], "google_ads")
+        self.assertEqual(rows[0]["value_kind"], "count")
+        self.assertIn("custom_field_id", rows[0])
+        self.assertIn("field_key", rows[0])
+        self.assertIn("label", rows[0])
+        self.assertIn("sort_order", rows[0])
+        # archived field still included when value exists
+        self.assertFalse(rows[1]["is_active"])
+
+    def test_list_daily_custom_values_validates_inputs(self):
+        with self.assertRaises(ValueError):
+            client_data_store.list_daily_custom_values(client_id=0, date_from="2026-03-01", date_to="2026-03-31")
+        with self.assertRaises(ValueError):
+            client_data_store.list_daily_custom_values(client_id=1, date_from="bad", date_to="2026-03-31")
+        with self.assertRaises(ValueError):
+            client_data_store.list_daily_custom_values(client_id=1, date_from="2026-03-01", date_to="bad")
+        with self.assertRaises(ValueError):
+            client_data_store.list_daily_custom_values(client_id=1, date_from="2026-03-31", date_to="2026-03-01")
+
+    def test_upsert_daily_custom_value_count_and_amount(self):
+        daily = client_data_store.get_or_create_daily_input(client_id=90, metric_date="2026-03-20", source="meta_ads")
+        cf_count = client_data_store.create_custom_field(client_id=90, label="C", value_kind="count")
+        cf_amount = client_data_store.create_custom_field(client_id=90, label="A", value_kind="amount")
+        count_row = client_data_store.upsert_daily_custom_value(daily_input_id=daily["id"], custom_field_id=cf_count["id"], numeric_value=5)
+        amount_row = client_data_store.upsert_daily_custom_value(daily_input_id=daily["id"], custom_field_id=cf_amount["id"], numeric_value="-10.25")
+        self.assertEqual(str(count_row["numeric_value"]), "5")
+        self.assertEqual(str(amount_row["numeric_value"]), "-10.25")
+
+    def test_upsert_daily_custom_value_updates_existing_no_duplicate(self):
+        daily = client_data_store.get_or_create_daily_input(client_id=90, metric_date="2026-03-20", source="meta_ads")
+        cf = client_data_store.create_custom_field(client_id=90, label="C", value_kind="count")
+        first = client_data_store.upsert_daily_custom_value(daily_input_id=daily["id"], custom_field_id=cf["id"], numeric_value=2)
+        second = client_data_store.upsert_daily_custom_value(daily_input_id=daily["id"], custom_field_id=cf["id"], numeric_value=3)
+        self.assertEqual(first["id"], second["id"])
+        self.assertEqual(str(second["numeric_value"]), "3")
+
+    def test_upsert_daily_custom_value_count_validation(self):
+        daily = client_data_store.get_or_create_daily_input(client_id=90, metric_date="2026-03-20", source="meta_ads")
+        cf = client_data_store.create_custom_field(client_id=90, label="C", value_kind="count")
+        with self.assertRaises(ValueError):
+            client_data_store.upsert_daily_custom_value(daily_input_id=daily["id"], custom_field_id=cf["id"], numeric_value=1.5)
+        with self.assertRaises(ValueError):
+            client_data_store.upsert_daily_custom_value(daily_input_id=daily["id"], custom_field_id=cf["id"], numeric_value=-1)
+
+    def test_upsert_daily_custom_value_validates_ids_and_ownership(self):
+        daily = client_data_store.get_or_create_daily_input(client_id=90, metric_date="2026-03-20", source="meta_ads")
+        cf = client_data_store.create_custom_field(client_id=90, label="C", value_kind="count")
+        other_cf = client_data_store.create_custom_field(client_id=91, label="O", value_kind="count")
+        with self.assertRaises(ValueError):
+            client_data_store.upsert_daily_custom_value(daily_input_id=0, custom_field_id=cf["id"], numeric_value=1)
+        with self.assertRaises(ValueError):
+            client_data_store.upsert_daily_custom_value(daily_input_id=daily["id"], custom_field_id=0, numeric_value=1)
+        with self.assertRaises(LookupError):
+            client_data_store.upsert_daily_custom_value(daily_input_id=999, custom_field_id=cf["id"], numeric_value=1)
+        with self.assertRaises(LookupError):
+            client_data_store.upsert_daily_custom_value(daily_input_id=daily["id"], custom_field_id=999, numeric_value=1)
+        with self.assertRaises(LookupError):
+            client_data_store.upsert_daily_custom_value(daily_input_id=daily["id"], custom_field_id=other_cf["id"], numeric_value=1)
+
+    def test_upsert_daily_custom_value_list_roundtrip(self):
+        daily = client_data_store.get_or_create_daily_input(client_id=90, metric_date="2026-03-20", source="meta_ads")
+        cf = client_data_store.create_custom_field(client_id=90, label="Amount", value_kind="amount")
+        saved = client_data_store.upsert_daily_custom_value(daily_input_id=daily["id"], custom_field_id=cf["id"], numeric_value="0")
+        rows = client_data_store.list_daily_custom_values(client_id=90, date_from="2026-03-20", date_to="2026-03-20")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["id"], saved["id"])
+        self.assertEqual(rows[0]["source"], "meta_ads")
 
 
 if __name__ == "__main__":

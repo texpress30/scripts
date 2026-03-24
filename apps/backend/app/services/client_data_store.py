@@ -1074,3 +1074,160 @@ def delete_sale_entry(*, sale_entry_id: int) -> dict[str, object]:
         conn.commit()
 
     return existing
+
+
+def _row_to_daily_custom_value_payload(row: tuple[object, ...] | None) -> dict[str, object] | None:
+    if row is None:
+        return None
+    return {
+        "id": int(row[0]),
+        "daily_input_id": int(row[1]),
+        "metric_date": str(row[2]),
+        "source": str(row[3]),
+        "custom_field_id": int(row[4]),
+        "field_key": str(row[5]),
+        "label": str(row[6]),
+        "value_kind": str(row[7]),
+        "sort_order": int(row[8]),
+        "is_active": bool(row[9]),
+        "numeric_value": _to_decimal(row[10]),
+    }
+
+
+def _normalize_custom_value_by_kind(numeric_value: object, *, value_kind: str) -> Decimal:
+    if value_kind == "count":
+        if isinstance(numeric_value, bool):
+            raise ValueError("numeric_value must be an integer >= 0 for count fields")
+        try:
+            parsed = Decimal(str(numeric_value))
+        except (InvalidOperation, TypeError, ValueError):
+            raise ValueError("numeric_value must be an integer >= 0 for count fields") from None
+        if parsed < 0 or parsed != parsed.to_integral_value():
+            raise ValueError("numeric_value must be an integer >= 0 for count fields")
+        return parsed
+
+    if value_kind == "amount":
+        return _parse_decimal_strict(numeric_value, field_name="numeric_value")
+
+    raise ValueError(f"Unsupported custom field value_kind: {value_kind}")
+
+
+def list_daily_custom_values(
+    *,
+    client_id: int,
+    date_from: date | str,
+    date_to: date | str,
+) -> list[dict[str, object]]:
+    normalized_client_id = _normalize_client_id(client_id)
+    normalized_date_from = _normalize_metric_date(date_from)
+    normalized_date_to = _normalize_metric_date(date_to)
+    if normalized_date_from > normalized_date_to:
+        raise ValueError("date_from must be <= date_to")
+
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    dcv.id,
+                    dcv.daily_input_id,
+                    di.metric_date,
+                    di.source,
+                    dcv.custom_field_id,
+                    cf.field_key,
+                    cf.label,
+                    cf.value_kind,
+                    cf.sort_order,
+                    cf.is_active,
+                    dcv.numeric_value
+                FROM client_data_daily_custom_values dcv
+                JOIN client_data_daily_inputs di ON di.id = dcv.daily_input_id
+                JOIN client_data_custom_fields cf ON cf.id = dcv.custom_field_id
+                WHERE di.client_id = %s
+                  AND di.metric_date >= %s
+                  AND di.metric_date <= %s
+                ORDER BY di.metric_date DESC, di.source ASC, cf.sort_order ASC, dcv.custom_field_id ASC, dcv.id ASC
+                """,
+                (normalized_client_id, normalized_date_from, normalized_date_to),
+            )
+            rows = cur.fetchall() or []
+
+    return [payload for payload in (_row_to_daily_custom_value_payload(row) for row in rows) if payload is not None]
+
+
+def upsert_daily_custom_value(
+    *,
+    daily_input_id: int,
+    custom_field_id: int,
+    numeric_value: object,
+) -> dict[str, object]:
+    normalized_daily_input_id = _normalize_positive_int(daily_input_id, field_name="daily_input_id")
+    normalized_custom_field_id = _normalize_positive_int(custom_field_id, field_name="custom_field_id")
+
+    with _connect() as conn:
+        daily_input = _get_daily_input_row_by_id(conn=conn, daily_input_id=normalized_daily_input_id)
+        if daily_input is None:
+            raise LookupError(f"Daily input {daily_input_id} not found")
+
+        custom_field = _get_custom_field_by_id(conn=conn, custom_field_id=normalized_custom_field_id)
+        if custom_field is None:
+            raise LookupError(f"Custom field {custom_field_id} not found")
+
+        if int(daily_input["client_id"]) != int(custom_field["client_id"]):
+            raise LookupError(
+                f"Custom field {custom_field_id} does not belong to client {daily_input['client_id']}"
+            )
+
+        normalized_numeric_value = _normalize_custom_value_by_kind(
+            numeric_value,
+            value_kind=str(custom_field["value_kind"]),
+        )
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO client_data_daily_custom_values (
+                    daily_input_id,
+                    custom_field_id,
+                    numeric_value
+                ) VALUES (%s, %s, %s)
+                ON CONFLICT (daily_input_id, custom_field_id)
+                DO UPDATE SET
+                    numeric_value = EXCLUDED.numeric_value,
+                    updated_at = NOW()
+                RETURNING id
+                """,
+                (normalized_daily_input_id, normalized_custom_field_id, normalized_numeric_value),
+            )
+            row = cur.fetchone() or (None,)
+            custom_value_id = row[0]
+
+            cur.execute(
+                """
+                SELECT
+                    dcv.id,
+                    dcv.daily_input_id,
+                    di.metric_date,
+                    di.source,
+                    dcv.custom_field_id,
+                    cf.field_key,
+                    cf.label,
+                    cf.value_kind,
+                    cf.sort_order,
+                    cf.is_active,
+                    dcv.numeric_value
+                FROM client_data_daily_custom_values dcv
+                JOIN client_data_daily_inputs di ON di.id = dcv.daily_input_id
+                JOIN client_data_custom_fields cf ON cf.id = dcv.custom_field_id
+                WHERE dcv.id = %s
+                LIMIT 1
+                """,
+                (custom_value_id,),
+            )
+            full_row = cur.fetchone()
+        conn.commit()
+
+    payload = _row_to_daily_custom_value_payload(full_row)
+    if payload is None:
+        raise RuntimeError("Failed to upsert daily custom value")
+    return payload

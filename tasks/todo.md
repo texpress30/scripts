@@ -6954,3 +6954,15 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, fÄ
 ## Review
 - [x] Confirm only sale-entry update/delete + tests/docs changed.
 - [x] Confirm checks/tests passed.
+
+# TODO â€” Daily custom values CRUD slice 1 (list/upsert only) (2026-03-24)
+
+- [x] Sync attempted; continue local if origin unavailable.
+- [x] Implement only `list_daily_custom_values(...)` and `upsert_daily_custom_value(...)`.
+- [x] Add targeted tests for listing/upsert behavior, validation, and ownership rules.
+- [x] Run targeted tests + compile check.
+- [x] Review strict scope.
+
+## Review
+- [x] Confirm only daily-custom-values list/upsert + tests/docs changed.
+- [x] Confirm checks/tests passed.
