@@ -162,6 +162,16 @@ function formatWeekLabel(metricDate: string): string {
   }
 }
 
+function getWeekNumberValue(metricDate: string): string {
+  try {
+    const parsed = parse(metricDate, "yyyy-MM-dd", new Date());
+    if (Number.isNaN(parsed.getTime())) return "";
+    return String(getISOWeek(parsed));
+  } catch {
+    return "";
+  }
+}
+
 function normalizeFixedLabels(config: DataConfigResponse | null): Record<string, string> {
   const mapped: Record<string, string> = { ...FIXED_FIELD_FALLBACK_LABELS };
   for (const field of config?.fixed_fields ?? []) {
@@ -265,20 +275,23 @@ export default function SubDataPage() {
   const supportedSources = useMemo(() => (config?.sources?.length ? config.sources : SOURCE_FALLBACKS), [config?.sources]);
 
   const rowKeyOf = (row: DataTableRow) => `${row.metric_date}:${row.source ?? "unknown"}:${row.daily_input_id ?? ""}`;
-  const newRowWeekLabel = useMemo(() => formatWeekLabel(newRowDraft.metric_date), [newRowDraft.metric_date]);
-  const newRowSalePriceNumber = Number(newRowSaleDraft.sale_price_amount || 0);
-  const newRowActualPriceNumber = Number(newRowSaleDraft.actual_price_amount || 0);
+  const newRowWeekValue = useMemo(() => getWeekNumberValue(newRowDraft.metric_date), [newRowDraft.metric_date]);
+  const newRowSalePriceRaw = newRowSaleDraft.sale_price_amount.trim();
+  const newRowActualPriceRaw = newRowSaleDraft.actual_price_amount.trim();
+  const newRowSalePriceNumber = Number(newRowSalePriceRaw);
+  const newRowActualPriceNumber = Number(newRowActualPriceRaw);
+  const newRowHasValidSalePrice = newRowSalePriceRaw !== "" && Number.isFinite(newRowSalePriceNumber);
+  const newRowHasValidActualPrice = newRowActualPriceRaw !== "" && Number.isFinite(newRowActualPriceNumber);
   const newRowHasAnySaleInput = Boolean(
     newRowSaleDraft.brand.trim()
       || newRowSaleDraft.model.trim()
-      || newRowSaleDraft.sale_price_amount.trim()
-      || newRowSaleDraft.actual_price_amount.trim(),
+      || newRowSalePriceRaw
+      || newRowActualPriceRaw,
   );
-  const newRowHasCompleteSaleInput = newRowSaleDraft.sale_price_amount.trim() !== "" && newRowSaleDraft.actual_price_amount.trim() !== "";
-  const newRowSalesCount = newRowHasCompleteSaleInput ? 1 : 0;
-  const newRowDerivedCustomValue4 = Number.isFinite(newRowSalePriceNumber) ? newRowSalePriceNumber : 0;
-  const newRowDerivedGrossProfit = (Number.isFinite(newRowSalePriceNumber) ? newRowSalePriceNumber : 0)
-    - (Number.isFinite(newRowActualPriceNumber) ? newRowActualPriceNumber : 0);
+  const newRowHasCompleteSaleInput = newRowHasValidSalePrice && newRowHasValidActualPrice;
+  const newRowSalesCountValue = newRowHasCompleteSaleInput ? "1" : "";
+  const newRowDerivedCustomValue4Display = newRowHasValidSalePrice ? formatAmount(newRowSalePriceNumber, currencyCode) : "";
+  const newRowDerivedGrossProfitDisplay = newRowHasCompleteSaleInput ? formatAmount(newRowSalePriceNumber - newRowActualPriceNumber, currencyCode) : "";
 
   async function loadClientName() {
     const result = await apiRequest<{ items: ClientItem[] }>("/clients");
@@ -638,27 +651,27 @@ export default function SubDataPage() {
             <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
               <h3 className="mb-2 font-semibold text-slate-900">Adaugă rând</h3>
               <div className="grid gap-2 md:grid-cols-4">
-                <input aria-label="Data rând nou" type="date" className="rounded border border-slate-300 px-2 py-1" value={newRowDraft.metric_date} onChange={(e) => setNewRowDraft((p) => ({ ...p, metric_date: e.target.value }))} />
-                <select aria-label="Sursa rând nou" className="rounded border border-slate-300 px-2 py-1" value={newRowDraft.source} onChange={(e) => setNewRowDraft((p) => ({ ...p, source: e.target.value }))}>
-                  <option value="">Selectează sursa</option>
-                  {supportedSources.map((source) => <option key={source.key} value={source.key}>{source.label}</option>)}
-                </select>
-                <input aria-label="Lead-uri rând nou" className="rounded border border-slate-300 px-2 py-1" value={newRowDraft.leads} onChange={(e) => setNewRowDraft((p) => ({ ...p, leads: e.target.value }))} placeholder={fixedLabels.leads} />
-                <input aria-label="New row phones" className="rounded border border-slate-300 px-2 py-1" value={newRowDraft.phones} onChange={(e) => setNewRowDraft((p) => ({ ...p, phones: e.target.value }))} placeholder={fixedLabels.phones} />
-                <input aria-label="New row cv1" className="rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_1_count} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_1_count: e.target.value }))} placeholder={fixedLabels.custom_value_1_count} />
-                <input aria-label="New row cv2" className="rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_2_count} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_2_count: e.target.value }))} placeholder={fixedLabels.custom_value_2_count} />
-                <input aria-label="New row cv3" className="rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_3_amount} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_3_amount: e.target.value }))} placeholder={fixedLabels.custom_value_3_amount} />
-                <input aria-label="Săptămâna rând nou" className="rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowWeekLabel} readOnly />
-                <input aria-label="Custom Value 4 rând nou" className="rounded border border-slate-300 bg-slate-100 px-2 py-1" value={formatAmount(newRowDerivedCustomValue4, currencyCode)} placeholder={fixedLabels.custom_value_4_amount} readOnly />
-                <input aria-label="New row cv5" className="rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_5_amount} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_5_amount: e.target.value }))} placeholder={fixedLabels.custom_value_5_amount} />
-                <input aria-label="Vânzări rând nou" className="rounded border border-slate-300 bg-slate-100 px-2 py-1" value={String(newRowSalesCount)} readOnly />
-                <input aria-label="Marcă rând nou" className="rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.brand} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, brand: e.target.value }))} placeholder="Marcă" />
-                <input aria-label="Model rând nou" className="rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.model} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, model: e.target.value }))} placeholder="Model" />
-                <input aria-label="Preț vânzare rând nou" className="rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.sale_price_amount} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, sale_price_amount: e.target.value }))} placeholder="Preț vânzare" />
-                <input aria-label="Preț actual rând nou" className="rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.actual_price_amount} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, actual_price_amount: e.target.value }))} placeholder="Preț actual" />
-                <input aria-label="P/L brut rând nou" className="rounded border border-slate-300 bg-slate-100 px-2 py-1" value={formatAmount(newRowDerivedGrossProfit, currencyCode)} readOnly />
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Săptămâna</label><input aria-label="Săptămâna rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowWeekValue} readOnly /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Data vânzare</label><input aria-label="Data rând nou" type="date" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.metric_date} onChange={(e) => setNewRowDraft((p) => ({ ...p, metric_date: e.target.value }))} /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Sursa</label><select aria-label="Sursa rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.source} onChange={(e) => setNewRowDraft((p) => ({ ...p, source: e.target.value }))}><option value=""> </option>{supportedSources.map((source) => <option key={source.key} value={source.key}>{source.label}</option>)}</select></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Lead-uri</label><input aria-label="Lead-uri rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.leads} onChange={(e) => setNewRowDraft((p) => ({ ...p, leads: e.target.value }))} /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Telefoane</label><input aria-label="New row phones" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.phones} onChange={(e) => setNewRowDraft((p) => ({ ...p, phones: e.target.value }))} /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_1_count}</label><input aria-label="New row cv1" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_1_count} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_1_count: e.target.value }))} /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_2_count}</label><input aria-label="New row cv2" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_2_count} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_2_count: e.target.value }))} /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_3_amount}</label><input aria-label="New row cv3" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_3_amount} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_3_amount: e.target.value }))} /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_4_amount}</label><input aria-label="Custom Value 4 rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowDerivedCustomValue4Display} readOnly /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_5_amount}</label><input aria-label="New row cv5" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_5_amount} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_5_amount: e.target.value }))} /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Vânzări</label><input aria-label="Vânzări rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowSalesCountValue} readOnly /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Marcă</label><input aria-label="Marcă rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.brand} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, brand: e.target.value }))} /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Model</label><input aria-label="Model rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.model} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, model: e.target.value }))} /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Preț vânzare</label><input aria-label="Preț vânzare rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.sale_price_amount} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, sale_price_amount: e.target.value }))} /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Preț actual</label><input aria-label="Preț actual rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.actual_price_amount} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, actual_price_amount: e.target.value }))} /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">P/L brut</label><input aria-label="P/L brut rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowDerivedGrossProfitDisplay} readOnly /></div>
               </div>
-              <textarea aria-label="New row notes" className="mt-2 w-full rounded border border-slate-300 px-2 py-1" rows={2} value={newRowDraft.notes} onChange={(e) => setNewRowDraft((p) => ({ ...p, notes: e.target.value }))} placeholder="Mențiuni" />
+              <div className="mt-2 space-y-1">
+                <label className="text-xs font-medium text-slate-700">Mențiuni</label>
+                <textarea aria-label="New row notes" className="w-full rounded border border-slate-300 px-2 py-1" rows={2} value={newRowDraft.notes} onChange={(e) => setNewRowDraft((p) => ({ ...p, notes: e.target.value }))} />
+              </div>
               <div className="mt-2 flex gap-2">
                 <button type="button" className="rounded border border-indigo-400 px-3 py-1 text-indigo-700" disabled={mutationLoadingKey === "save-new-row"} onClick={() => void saveRowDraft(null, newRowDraft, true)}>Salvează rând</button>
                 <button type="button" className="rounded border border-slate-300 px-3 py-1" onClick={() => setAddingRow(false)}>Anulează</button>

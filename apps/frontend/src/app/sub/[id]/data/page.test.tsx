@@ -106,17 +106,17 @@ describe("SubDataPage editable flows", () => {
     await screen.findByRole("heading", { name: "Data - Active Life Therapy" });
 
     fireEvent.click(screen.getByRole("button", { name: "Adaugă rând" }));
-    expect(screen.getByLabelText("Săptămâna rând nou")).toHaveValue("Săpt. 9");
-    expect(screen.getByLabelText("Custom Value 4 rând nou")).toHaveValue("0,00 RON");
-    expect(screen.getByLabelText("Vânzări rând nou")).toHaveValue("0");
-    expect(screen.getByLabelText("P/L brut rând nou")).toHaveValue("0,00 RON");
+    expect(screen.getByLabelText("Săptămâna rând nou")).toHaveValue("9");
+    expect(screen.getByLabelText("Custom Value 4 rând nou")).toHaveValue("");
+    expect(screen.getByLabelText("Vânzări rând nou")).toHaveValue("");
+    expect(screen.getByLabelText("P/L brut rând nou")).toHaveValue("");
     fireEvent.change(screen.getByLabelText("Data rând nou"), { target: { value: "2026-03-12" } });
-    expect(screen.getByLabelText("Săptămâna rând nou")).toHaveValue("Săpt. 11");
+    expect(screen.getByLabelText("Săptămâna rând nou")).toHaveValue("11");
     fireEvent.change(screen.getByLabelText("Sursa rând nou"), { target: { value: "meta_ads" } });
     fireEvent.change(screen.getByLabelText("Lead-uri rând nou"), { target: { value: "10" } });
     fireEvent.change(screen.getByLabelText("Preț vânzare rând nou"), { target: { value: "250" } });
     expect(screen.getByLabelText("Custom Value 4 rând nou")).toHaveValue("250,00 RON");
-    expect(screen.getByLabelText("Vânzări rând nou")).toHaveValue("0");
+    expect(screen.getByLabelText("Vânzări rând nou")).toHaveValue("");
     fireEvent.change(screen.getByLabelText("Preț actual rând nou"), { target: { value: "150" } });
     expect(screen.getByLabelText("P/L brut rând nou")).toHaveValue("100,00 RON");
     expect(screen.getByLabelText("Vânzări rând nou")).toHaveValue("1");
@@ -137,10 +137,18 @@ describe("SubDataPage editable flows", () => {
     });
   });
 
-  it("keeps existing add-row fields and saves daily row only when sale section is empty", async () => {
+  it("keeps add-row fields labeled, week first, no placeholders, and saves daily row only when sale section is empty", async () => {
     render(<SubDataPage />);
     await screen.findByRole("heading", { name: "Data - Active Life Therapy" });
     fireEvent.click(screen.getByRole("button", { name: "Adaugă rând" }));
+
+    const addRowTitle = screen.getByRole("heading", { name: "Adaugă rând" });
+    const addRowSection = addRowTitle.parentElement as HTMLElement;
+    const addRowGrid = addRowTitle.parentElement?.querySelector(".grid");
+    expect(addRowGrid).toBeTruthy();
+    const fieldLabels = Array.from(addRowGrid?.querySelectorAll("label") ?? []).map((node) => node.textContent?.trim());
+    expect(fieldLabels[0]).toBe("Săptămâna");
+    expect(fieldLabels.slice(0, 5)).toEqual(["Săptămâna", "Data vânzare", "Sursa", "Lead-uri", "Telefoane"]);
 
     expect(screen.getByLabelText("Data rând nou")).toBeInTheDocument();
     expect(screen.getByLabelText("Sursa rând nou")).toBeInTheDocument();
@@ -157,6 +165,23 @@ describe("SubDataPage editable flows", () => {
     expect(screen.getByLabelText("Preț vânzare rând nou")).toBeInTheDocument();
     expect(screen.getByLabelText("Preț actual rând nou")).toBeInTheDocument();
     expect(screen.getByLabelText("P/L brut rând nou")).toBeInTheDocument();
+
+    expect(within(addRowSection).getByText("Mențiuni")).toBeInTheDocument();
+    expect(within(addRowSection).getByText("Lead-uri")).toBeInTheDocument();
+    expect(within(addRowSection).getByText("Telefoane")).toBeInTheDocument();
+    expect(within(addRowSection).getByText("CV1")).toBeInTheDocument();
+    expect(within(addRowSection).getByText("CV2")).toBeInTheDocument();
+    expect(within(addRowSection).getByText("CV3")).toBeInTheDocument();
+    expect(within(addRowSection).getByText("CV4")).toBeInTheDocument();
+    expect(within(addRowSection).getByText("CV5")).toBeInTheDocument();
+
+    expect(screen.getByLabelText("Lead-uri rând nou")).not.toHaveAttribute("placeholder");
+    expect(screen.getByLabelText("New row phones")).not.toHaveAttribute("placeholder");
+    expect(screen.getByLabelText("New row cv1")).not.toHaveAttribute("placeholder");
+    expect(screen.getByLabelText("Preț vânzare rând nou")).not.toHaveAttribute("placeholder");
+    expect(screen.getByLabelText("P/L brut rând nou")).toHaveValue("");
+    expect(screen.getByLabelText("Custom Value 4 rând nou")).toHaveValue("");
+    expect(screen.getByLabelText("Vânzări rând nou")).toHaveValue("");
 
     fireEvent.change(screen.getByLabelText("Data rând nou"), { target: { value: "2026-03-12" } });
     fireEvent.change(screen.getByLabelText("Sursa rând nou"), { target: { value: "meta_ads" } });
