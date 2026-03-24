@@ -11,6 +11,11 @@ from app.schemas.client import (
     ClientDataConfigResponse,
     ClientDataDailyInputUpsertRequest,
     ClientDataDailyInputWriteResponse,
+    ClientDataDailyCustomValueUpsertRequest,
+    ClientDataDailyCustomValueWriteResponse,
+    ClientDataCustomFieldCreateRequest,
+    ClientDataCustomFieldUpdateRequest,
+    ClientDataCustomFieldWriteResponse,
     ClientDataSaleEntryCreateRequest,
     ClientDataSaleEntryUpdateRequest,
     ClientDataSaleEntryWriteResponse,
@@ -566,6 +571,35 @@ def _map_sale_entry_write_payload(row: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _map_custom_field_write_payload(row: dict[str, object]) -> dict[str, object]:
+    return {
+        "id": int(row["id"]),
+        "client_id": int(row["client_id"]),
+        "field_key": str(row["field_key"]),
+        "label": str(row["label"]),
+        "value_kind": str(row["value_kind"]),
+        "sort_order": int(row["sort_order"]),
+        "is_active": bool(row["is_active"]),
+        "archived_at": row.get("archived_at"),
+    }
+
+
+def _map_daily_custom_value_write_payload(row: dict[str, object]) -> dict[str, object]:
+    return {
+        "id": int(row["id"]),
+        "daily_input_id": int(row["daily_input_id"]),
+        "metric_date": str(row["metric_date"]),
+        "source": str(row["source"]),
+        "custom_field_id": int(row["custom_field_id"]),
+        "field_key": str(row["field_key"]),
+        "label": str(row["label"]),
+        "value_kind": str(row["value_kind"]),
+        "sort_order": int(row["sort_order"]),
+        "is_active": bool(row["is_active"]),
+        "numeric_value": _decimal_to_string(row["numeric_value"]),
+    }
+
+
 _CLIENT_DATA_DERIVED_FIELDS: list[dict[str, str]] = [
     {"key": "sales_count", "label": "Sales Count", "value_kind": "count"},
     {"key": "revenue_amount", "label": "Revenue", "value_kind": "amount"},
@@ -811,6 +845,146 @@ def delete_client_data_sale_entry(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     return _map_sale_entry_write_payload(deleted)
+
+
+@router.post("/{client_id}/data/custom-fields", response_model=ClientDataCustomFieldWriteResponse)
+def create_client_data_custom_field(
+    client_id: int,
+    payload: ClientDataCustomFieldCreateRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    try:
+        created = client_data_store.create_custom_field(
+            client_id=client_id,
+            label=payload.label,
+            value_kind=payload.value_kind,
+            field_key=payload.field_key,
+            sort_order=payload.sort_order,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return _map_custom_field_write_payload(created)
+
+
+@router.patch("/{client_id}/data/custom-fields/{custom_field_id}", response_model=ClientDataCustomFieldWriteResponse)
+def update_client_data_custom_field(
+    client_id: int,
+    custom_field_id: int,
+    payload: ClientDataCustomFieldUpdateRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    allowed_fields = {"label", "value_kind", "sort_order"}
+    provided_fields = set(payload.model_fields_set).intersection(allowed_fields)
+    if not provided_fields:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="At least one custom field value is required for update",
+        )
+
+    kwargs = {field: getattr(payload, field) for field in provided_fields}
+    try:
+        client_data_store.validate_custom_field_belongs_to_client(custom_field_id=custom_field_id, client_id=client_id)
+        updated = client_data_store.update_custom_field(custom_field_id=custom_field_id, **kwargs)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return _map_custom_field_write_payload(updated)
+
+
+@router.delete("/{client_id}/data/custom-fields/{custom_field_id}", response_model=ClientDataCustomFieldWriteResponse)
+def archive_client_data_custom_field(
+    client_id: int,
+    custom_field_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    try:
+        client_data_store.validate_custom_field_belongs_to_client(custom_field_id=custom_field_id, client_id=client_id)
+        archived = client_data_store.archive_custom_field(custom_field_id=custom_field_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return _map_custom_field_write_payload(archived)
+
+
+@router.put(
+    "/{client_id}/data/daily-inputs/{daily_input_id}/custom-values/{custom_field_id}",
+    response_model=ClientDataDailyCustomValueWriteResponse,
+)
+def upsert_client_data_daily_custom_value(
+    client_id: int,
+    daily_input_id: int,
+    custom_field_id: int,
+    payload: ClientDataDailyCustomValueUpsertRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    try:
+        client_data_store.validate_daily_input_belongs_to_client(daily_input_id=daily_input_id, client_id=client_id)
+        custom_field = client_data_store.validate_custom_field_belongs_to_client(custom_field_id=custom_field_id, client_id=client_id)
+        if not bool(custom_field.get("is_active")):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Cannot write daily custom value for archived custom field",
+            )
+        upserted = client_data_store.upsert_daily_custom_value(
+            daily_input_id=daily_input_id,
+            custom_field_id=custom_field_id,
+            numeric_value=payload.numeric_value,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return _map_daily_custom_value_write_payload(upserted)
+
+
+@router.delete(
+    "/{client_id}/data/daily-inputs/{daily_input_id}/custom-values/{custom_field_id}",
+    response_model=ClientDataDailyCustomValueWriteResponse,
+)
+def delete_client_data_daily_custom_value(
+    client_id: int,
+    daily_input_id: int,
+    custom_field_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    try:
+        client_data_store.validate_daily_input_belongs_to_client(daily_input_id=daily_input_id, client_id=client_id)
+        client_data_store.validate_custom_field_belongs_to_client(custom_field_id=custom_field_id, client_id=client_id)
+        deleted = client_data_store.delete_daily_custom_value(daily_input_id=daily_input_id, custom_field_id=custom_field_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return _map_daily_custom_value_write_payload(deleted)
 
 
 @router.get("/{client_id}/media-buying/config")

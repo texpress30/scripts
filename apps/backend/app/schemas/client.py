@@ -236,3 +236,45 @@ class ClientDataSaleEntryWriteResponse(BaseModel):
     notes: str | None = None
     sort_order: int
     gross_profit_amount: str
+
+
+class ClientDataCustomFieldCreateRequest(BaseModel):
+    label: str
+    value_kind: str
+    field_key: str | None = None
+    sort_order: int | None = None
+
+
+class ClientDataCustomFieldUpdateRequest(BaseModel):
+    label: str | None = None
+    value_kind: str | None = None
+    sort_order: int | None = None
+
+
+class ClientDataCustomFieldWriteResponse(BaseModel):
+    id: int
+    client_id: int
+    field_key: str
+    label: str
+    value_kind: str
+    sort_order: int
+    is_active: bool
+    archived_at: str | None = None
+
+
+class ClientDataDailyCustomValueUpsertRequest(BaseModel):
+    numeric_value: float | int | str
+
+
+class ClientDataDailyCustomValueWriteResponse(BaseModel):
+    id: int
+    daily_input_id: int
+    metric_date: str
+    source: str
+    custom_field_id: int
+    field_key: str
+    label: str
+    value_kind: str
+    sort_order: int
+    is_active: bool
+    numeric_value: str

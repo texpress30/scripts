@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-24: Pentru roadmap Data în pași, livrez incremental strict pe slice-ul cerut (custom fields + daily custom values în acest task), fără să ating frontend sau alte write/read slices deja livrate.
+
 - 2026-03-24: După feedback negativ pe un patch mixt, următorul task trebuie livrat strict pe scope-ul cerut (aici backend write API Data), fără atingeri frontend sau endpointuri adiacente.
 
 - 2026-03-24: Când taskul cere explicit scope frontend-only după un PR nesatisfăcător, nu modific backend-ul deloc și tratez endpointurile existente ca contract fix; schimb doar paginile/tab-urile și testele UI relevante.

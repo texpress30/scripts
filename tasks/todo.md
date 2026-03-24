@@ -7024,3 +7024,19 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, fÄ
 - [x] Confirm backend-only scope respected.
 - [x] Confirm no write API added for custom fields/daily custom values.
 - [x] Confirm targeted checks passed or documented.
+
+# TODO â€” Client Data write API (custom field definitions + daily custom values) backend only (2026-03-24)
+
+- [x] Mandatory workspace refresh check completed and local-state fallback confirmed when remote unavailable.
+- [x] Inspect relevant backend files only (`clients.py`, `schemas/client.py`, `client_data_store.py`, data endpoint tests).
+- [x] Add Pydantic write schemas for custom-field create/update + daily-custom-value upsert.
+- [x] Add endpoints for custom-field create/update/archive with stable payload and client ownership checks.
+- [x] Add endpoints for daily-custom-value upsert/delete with strict client ownership checks and inactive-field write guard.
+- [x] Keep changes minimal; no frontend/media-buying/media-tracker/DB schema modifications.
+- [x] Add focused backend tests for all requested success/error/scoping cases.
+- [x] Run targeted backend test suite + compile/import checks.
+
+## Review
+- [x] Confirm backend-only scope respected.
+- [x] Confirm no restore/unarchive endpoint added.
+- [x] Confirm targeted checks passed or clearly documented.
