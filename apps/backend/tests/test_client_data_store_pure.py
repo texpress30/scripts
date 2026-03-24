@@ -1274,6 +1274,21 @@ class ClientDataStoreCustomFieldCrudSliceTests(unittest.TestCase):
         self.assertEqual(set(upserted.keys()), set(listed.keys()))
         self.assertEqual(set(upserted.keys()), set(deleted.keys()))
 
+    def test_validate_daily_input_belongs_to_client(self):
+        daily = client_data_store.get_or_create_daily_input(client_id=111, metric_date="2026-03-20", source="meta_ads")
+        found = client_data_store.validate_daily_input_belongs_to_client(daily_input_id=daily["id"], client_id=111)
+        self.assertEqual(found["id"], daily["id"])
+        with self.assertRaises(LookupError):
+            client_data_store.validate_daily_input_belongs_to_client(daily_input_id=daily["id"], client_id=112)
+
+    def test_validate_sale_entry_belongs_to_client(self):
+        daily = client_data_store.get_or_create_daily_input(client_id=121, metric_date="2026-03-20", source="meta_ads")
+        entry = client_data_store.create_sale_entry(daily_input_id=daily["id"], sale_price_amount=10, actual_price_amount=5)
+        found = client_data_store.validate_sale_entry_belongs_to_client(sale_entry_id=entry["id"], client_id=121)
+        self.assertEqual(found["id"], entry["id"])
+        with self.assertRaises(LookupError):
+            client_data_store.validate_sale_entry_belongs_to_client(sale_entry_id=entry["id"], client_id=122)
+
 
 if __name__ == "__main__":
     unittest.main()

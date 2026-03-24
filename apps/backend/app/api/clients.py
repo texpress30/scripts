@@ -9,6 +9,11 @@ from app.schemas.client import (
     BusinessInputsImportRequest,
     BusinessInputsImportResponse,
     ClientDataConfigResponse,
+    ClientDataDailyInputUpsertRequest,
+    ClientDataDailyInputWriteResponse,
+    ClientDataSaleEntryCreateRequest,
+    ClientDataSaleEntryUpdateRequest,
+    ClientDataSaleEntryWriteResponse,
     ClientDataTableResponse,
     CreateClientRequest,
     DetachGoogleAccountRequest,
@@ -531,6 +536,36 @@ def _fallback_field_label(*, label: object, custom_field_id: object) -> str:
     return f"Custom Field {int(custom_field_id)}"
 
 
+def _map_daily_input_write_payload(row: dict[str, object]) -> dict[str, object]:
+    return {
+        "id": int(row["id"]),
+        "client_id": int(row["client_id"]),
+        "metric_date": str(row["metric_date"]),
+        "source": str(row["source"]),
+        "leads": int(row["leads"]),
+        "phones": int(row["phones"]),
+        "custom_value_1_count": int(row["custom_value_1_count"]),
+        "custom_value_2_count": int(row["custom_value_2_count"]),
+        "custom_value_3_amount": _decimal_to_string(row["custom_value_3_amount"]),
+        "custom_value_5_amount": _decimal_to_string(row["custom_value_5_amount"]),
+        "notes": row.get("notes"),
+    }
+
+
+def _map_sale_entry_write_payload(row: dict[str, object]) -> dict[str, object]:
+    return {
+        "id": int(row["id"]),
+        "daily_input_id": int(row["daily_input_id"]),
+        "brand": row.get("brand"),
+        "model": row.get("model"),
+        "sale_price_amount": _decimal_to_string(row["sale_price_amount"]),
+        "actual_price_amount": _decimal_to_string(row["actual_price_amount"]),
+        "notes": row.get("notes"),
+        "sort_order": int(row["sort_order"]),
+        "gross_profit_amount": _decimal_to_string(row["gross_profit_amount"]),
+    }
+
+
 _CLIENT_DATA_DERIVED_FIELDS: list[dict[str, str]] = [
     {"key": "sales_count", "label": "Sales Count", "value_kind": "count"},
     {"key": "revenue_amount", "label": "Revenue", "value_kind": "amount"},
@@ -639,6 +674,143 @@ def get_client_data_table(
         "count": len(rows),
         "rows": rows,
     }
+
+
+@router.put("/{client_id}/data/daily-input", response_model=ClientDataDailyInputWriteResponse)
+def upsert_client_data_daily_input(
+    client_id: int,
+    payload: ClientDataDailyInputUpsertRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    numeric_updates: dict[str, object] = {}
+    for key in (
+        "leads",
+        "phones",
+        "custom_value_1_count",
+        "custom_value_2_count",
+        "custom_value_3_amount",
+        "custom_value_5_amount",
+    ):
+        value = getattr(payload, key)
+        if value is not None:
+            numeric_updates[key] = value
+
+    notes_provided = "notes" in payload.model_fields_set
+    if not numeric_updates and not notes_provided:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="At least one field is required: numeric daily values and/or notes",
+        )
+
+    try:
+        latest_row: dict[str, object] | None = None
+        if numeric_updates:
+            latest_row = client_data_store.upsert_daily_input(
+                client_id=client_id,
+                metric_date=payload.metric_date,
+                source=payload.source,
+                **numeric_updates,
+            )
+        if notes_provided:
+            latest_row = client_data_store.set_daily_input_notes(
+                client_id=client_id,
+                metric_date=payload.metric_date,
+                source=payload.source,
+                notes=payload.notes,
+            )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    if latest_row is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to write daily input")
+    return _map_daily_input_write_payload(latest_row)
+
+
+@router.post("/{client_id}/data/sale-entries", response_model=ClientDataSaleEntryWriteResponse)
+def create_client_data_sale_entry(
+    client_id: int,
+    payload: ClientDataSaleEntryCreateRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    try:
+        client_data_store.validate_daily_input_belongs_to_client(daily_input_id=payload.daily_input_id, client_id=client_id)
+        created = client_data_store.create_sale_entry(
+            daily_input_id=payload.daily_input_id,
+            sale_price_amount=payload.sale_price_amount,
+            actual_price_amount=payload.actual_price_amount,
+            brand=payload.brand,
+            model=payload.model,
+            notes=payload.notes,
+            sort_order=payload.sort_order,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return _map_sale_entry_write_payload(created)
+
+
+@router.patch("/{client_id}/data/sale-entries/{sale_entry_id}", response_model=ClientDataSaleEntryWriteResponse)
+def update_client_data_sale_entry(
+    client_id: int,
+    sale_entry_id: int,
+    payload: ClientDataSaleEntryUpdateRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    allowed_fields = {"sale_price_amount", "actual_price_amount", "brand", "model", "notes", "sort_order"}
+    provided_fields = set(payload.model_fields_set).intersection(allowed_fields)
+    if not provided_fields:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="At least one sale entry field is required for update",
+        )
+
+    kwargs = {field: getattr(payload, field) for field in provided_fields}
+    try:
+        client_data_store.validate_sale_entry_belongs_to_client(sale_entry_id=sale_entry_id, client_id=client_id)
+        updated = client_data_store.update_sale_entry(sale_entry_id=sale_entry_id, **kwargs)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return _map_sale_entry_write_payload(updated)
+
+
+@router.delete("/{client_id}/data/sale-entries/{sale_entry_id}", response_model=ClientDataSaleEntryWriteResponse)
+def delete_client_data_sale_entry(
+    client_id: int,
+    sale_entry_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    try:
+        client_data_store.validate_sale_entry_belongs_to_client(sale_entry_id=sale_entry_id, client_id=client_id)
+        deleted = client_data_store.delete_sale_entry(sale_entry_id=sale_entry_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return _map_sale_entry_write_payload(deleted)
 
 
 @router.get("/{client_id}/media-buying/config")

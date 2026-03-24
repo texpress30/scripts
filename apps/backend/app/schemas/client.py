@@ -179,3 +179,60 @@ class ClientDataTableResponse(BaseModel):
     date_to: str
     count: int
     rows: list[ClientDataTableRow]
+
+
+class ClientDataDailyInputUpsertRequest(BaseModel):
+    metric_date: date
+    source: str
+    leads: int | None = None
+    phones: int | None = None
+    custom_value_1_count: int | None = None
+    custom_value_2_count: int | None = None
+    custom_value_3_amount: float | int | str | None = None
+    custom_value_5_amount: float | int | str | None = None
+    notes: str | None = None
+
+
+class ClientDataDailyInputWriteResponse(BaseModel):
+    id: int
+    client_id: int
+    metric_date: str
+    source: str
+    leads: int
+    phones: int
+    custom_value_1_count: int
+    custom_value_2_count: int
+    custom_value_3_amount: str
+    custom_value_5_amount: str
+    notes: str | None = None
+
+
+class ClientDataSaleEntryCreateRequest(BaseModel):
+    daily_input_id: int
+    sale_price_amount: float | int | str
+    actual_price_amount: float | int | str
+    brand: str | None = None
+    model: str | None = None
+    notes: str | None = None
+    sort_order: int | None = None
+
+
+class ClientDataSaleEntryUpdateRequest(BaseModel):
+    sale_price_amount: float | int | str | None = None
+    actual_price_amount: float | int | str | None = None
+    brand: str | None = None
+    model: str | None = None
+    notes: str | None = None
+    sort_order: int | None = None
+
+
+class ClientDataSaleEntryWriteResponse(BaseModel):
+    id: int
+    daily_input_id: int
+    brand: str | None = None
+    model: str | None = None
+    sale_price_amount: str
+    actual_price_amount: str
+    notes: str | None = None
+    sort_order: int
+    gross_profit_amount: str

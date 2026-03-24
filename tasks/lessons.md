@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-24: După feedback negativ pe un patch mixt, următorul task trebuie livrat strict pe scope-ul cerut (aici backend write API Data), fără atingeri frontend sau endpointuri adiacente.
+
 - 2026-03-24: Când taskul cere explicit scope frontend-only după un PR nesatisfăcător, nu modific backend-ul deloc și tratez endpointurile existente ca contract fix; schimb doar paginile/tab-urile și testele UI relevante.
 
 - 2026-03-24: La primul răspuns după corecții AGENTS, pornesc imediat cu workflow complet (plan în `tasks/todo.md` + execuție + verificare), nu trimit doar promisiuni de implementare.

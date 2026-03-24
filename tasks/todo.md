@@ -7008,3 +7008,19 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, fÄ
 - [x] Confirm no backend files changed.
 - [x] Confirm no edit/mutation UI added.
 - [x] Confirm checks/tests passed (or clearly documented failures outside scope).
+
+# TODO â€” Client Data write API (daily fixed fields + sale entries) backend only (2026-03-24)
+
+- [x] Mandatory workspace refresh check completed (`git fetch` + `git status`/`git diff`) and continue local if no remote.
+- [x] Inspect only relevant backend files (`clients.py`, data schemas, `client_data_store.py`, related backend tests).
+- [x] Add/extend Pydantic models for daily-input write and sale-entry write requests/responses.
+- [x] Add `PUT /clients/{client_id}/data/daily-input` (numbers + notes combinations, clear empty-request error).
+- [x] Add `POST/PATCH/DELETE /clients/{client_id}/data/sale-entries...` with strict client ownership checks.
+- [x] Keep store changes minimal (small ownership helpers only if needed), no DB schema/frontend/media-buying/media-tracker changes.
+- [x] Add focused backend tests for all required success/error/scoping scenarios.
+- [x] Run targeted tests (`clients data write` + relevant `client_data_store`) and compile/import checks.
+
+## Review
+- [x] Confirm backend-only scope respected.
+- [x] Confirm no write API added for custom fields/daily custom values.
+- [x] Confirm targeted checks passed or documented.

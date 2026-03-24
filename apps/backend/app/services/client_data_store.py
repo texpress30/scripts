@@ -818,6 +818,18 @@ def _get_daily_input_row_by_id(*, conn, daily_input_id: int) -> dict[str, object
     return _row_to_daily_input_payload(row)
 
 
+def validate_daily_input_belongs_to_client(*, daily_input_id: int, client_id: int) -> dict[str, object]:
+    normalized_daily_input_id = _normalize_positive_int(daily_input_id, field_name="daily_input_id")
+    normalized_client_id = _normalize_client_id(client_id)
+
+    with _connect() as conn:
+        payload = _get_daily_input_row_by_id(conn=conn, daily_input_id=normalized_daily_input_id)
+
+    if payload is None or int(payload["client_id"]) != normalized_client_id:
+        raise LookupError(f"Daily input {daily_input_id} not found for client {client_id}")
+    return payload
+
+
 def _resolve_sale_entry_sort_order(*, conn, daily_input_id: int, sort_order: int | None) -> int:
     if sort_order is not None:
         return _validate_non_negative_int(sort_order, field_name="sort_order")
@@ -975,6 +987,22 @@ def _get_sale_entry_row_by_id(*, conn, sale_entry_id: int) -> dict[str, object] 
         )
         row = cur.fetchone()
     return _row_to_sale_entry_payload(row)
+
+
+def validate_sale_entry_belongs_to_client(*, sale_entry_id: int, client_id: int) -> dict[str, object]:
+    normalized_sale_entry_id = _normalize_positive_int(sale_entry_id, field_name="sale_entry_id")
+    normalized_client_id = _normalize_client_id(client_id)
+
+    with _connect() as conn:
+        sale_entry_payload = _get_sale_entry_row_by_id(conn=conn, sale_entry_id=normalized_sale_entry_id)
+        if sale_entry_payload is None:
+            raise LookupError(f"Sale entry {sale_entry_id} not found for client {client_id}")
+
+        daily_input_payload = _get_daily_input_row_by_id(conn=conn, daily_input_id=int(sale_entry_payload["daily_input_id"]))
+        if daily_input_payload is None or int(daily_input_payload["client_id"]) != normalized_client_id:
+            raise LookupError(f"Sale entry {sale_entry_id} not found for client {client_id}")
+
+    return sale_entry_payload
 
 
 def update_sale_entry(
