@@ -7057,3 +7057,21 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, fÄ
 - [x] Confirm no Media Buying/Media Tracker edits in this task.
 - [x] Confirm no backend contract changes unless strictly required.
 - [x] Confirm targeted checks passed or clearly documented.
+
+# TODO â€” Rewire Media Buying + Media Tracker la Client Data layer read-only (2026-03-24)
+
+- [x] Mandatory workspace update check (`git fetch` + status/diff) done; continue local if `origin` missing.
+- [x] Audit only relevant backend/frontend files and existing tests for media buying/tracker + client data layer helpers.
+- [x] Rewire Media Buying backend read path to source business/manual metrics from `client_data_*` aggregations while preserving automated ad metrics and payload shape.
+- [x] Ensure Media Buying source/platform breakdown uses canonical source union (ads + data-layer business-only sources).
+- [x] Rewire Media Tracker worksheet read path to use data-layer business inputs (weekly leads/sales/revenue/cogs/custom values) while preserving week bucket logic + derived formulas.
+- [x] Keep legacy manual-write endpoints available for compatibility, but remove manual-edit usage from Media Buying / Media Tracker frontend pages.
+- [x] Convert Media Buying UI to read-only business values and add clear CTA link to `/sub/[id]/data?month=YYYY-MM` using current month context.
+- [x] Convert Media Tracker UI to read-only worksheet values and add clear CTA link to `/sub/[id]/data?month=YYYY-MM` using current scope context.
+- [x] Add/adjust targeted backend tests for rewiring correctness and frontend tests for read-only/CTA behavior.
+- [x] Run targeted backend/frontend tests + minimal compile/import checks and document outcomes.
+
+## Review
+- [x] Confirm no DB migrations or destructive cleanup.
+- [x] Confirm scope limited to Media Buying + Media Tracker rewiring/read-only.
+- [x] Confirm key targeted tests passed (or documented preexisting unrelated failures).

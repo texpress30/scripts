@@ -1,6 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
@@ -132,27 +133,6 @@ export default function SubMediaTrackerPage() {
     void loadWorksheet();
   }, [activeView, loadWorksheet]);
 
-
-  const saveManualCell = useCallback(async ({ fieldKey, weekStart, value }: { fieldKey: string; weekStart: string; value: number | null }) => {
-    if (!Number.isFinite(clientId)) throw new Error("Client invalid");
-    const payload = await apiRequest<WorksheetPayload>(
-      `/clients/${clientId}/media-tracker/worksheet/manual-values`,
-      {
-        method: "PUT",
-        body: JSON.stringify({
-          granularity: worksheetGranularity,
-          anchor_date: worksheetAnchorDate,
-          entries: [{ week_start: weekStart, field_key: fieldKey, value }],
-        }),
-      }
-    );
-    if (!isWorksheetPayload(payload)) throw new Error("Răspuns worksheet invalid");
-    setWorksheetData(payload);
-    setWorksheetError("");
-  }, [clientId, worksheetAnchorDate, worksheetGranularity]);
-
-
-
   const saveScopeRate = useCallback(async () => {
     const normalized = rateDraft.trim();
     const parsed = normalized === "" ? null : Number(normalized);
@@ -188,6 +168,7 @@ export default function SubMediaTrackerPage() {
 
   const composedTitle = useMemo(() => `Media Tracker - ${clientName}`, [clientName]);
   const scopeLabel = useMemo(() => formatScopeLabel(worksheetAnchorDate, worksheetGranularity), [worksheetAnchorDate, worksheetGranularity]);
+  const dataMonthKey = useMemo(() => worksheetAnchorDate.slice(0, 7), [worksheetAnchorDate]);
 
   const hasRows = !!worksheetData?.sections?.some((section) => section.rows.length > 0);
   const worksheetDisplayCurrency = normalizeCurrencyCode(worksheetData?.display_currency, "USD");
@@ -205,6 +186,11 @@ export default function SubMediaTrackerPage() {
 
         <section className="wm-card p-6">
           <h1 className="text-xl font-semibold text-slate-900">{composedTitle}</h1>
+          <div className="mt-2">
+            <Link href={`/sub/${clientId}/data?month=${dataMonthKey}`} className="text-sm font-medium text-indigo-700 hover:text-indigo-800 hover:underline">
+              Edit in Data
+            </Link>
+          </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <button
@@ -313,7 +299,7 @@ export default function SubMediaTrackerPage() {
               {!worksheetLoading && !worksheetError && worksheetData && !hasRows ? <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">No worksheet rows for selected scope.</div> : null}
 
               {!worksheetLoading && !worksheetError && worksheetData && hasRows ? (
-                <WeeklyWorksheetTable weeks={worksheetData.weeks} sections={worksheetData.sections} displayCurrency={worksheetDisplayCurrency} onManualCellCommit={saveManualCell} />
+                <WeeklyWorksheetTable weeks={worksheetData.weeks} sections={worksheetData.sections} displayCurrency={worksheetDisplayCurrency} />
               ) : null}
             </div>
           )}

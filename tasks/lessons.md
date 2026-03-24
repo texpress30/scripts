@@ -583,3 +583,4 @@
 - 2026-03-24: Pentru delete pe cheie compusă la daily custom values, fac lookup strict pe `(daily_input_id, custom_field_id)` și returnez payloadul rândului șters în același contract folosit de list/upsert.
 - 2026-03-24: După un feedback de corecție pe livrare incompletă, finalizez în același turn fixul până la teste verzi și închid obligatoriu cu commit + make_pr, fără mesaje intermediare de "continui după confirmare".
 
+- 2026-03-24: Când userul cere rewiring Media Buying/Media Tracker pe Data layer, aplic strict source-of-truth swap + UI read-only cu CTA către /data, fără extindere în migrații/cleanup sau refactoruri laterale.
