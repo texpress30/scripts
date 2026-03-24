@@ -86,6 +86,13 @@ class TikTokSyncRequest(BaseModel):
 
 
 
+class TikTokSyncRequest(BaseModel):
+    start_date: date | None = None
+    end_date: date | None = None
+    grain: Literal["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"] | None = None
+
+
+
 def _log_best_effort_warning(
     *,
     operation: str,

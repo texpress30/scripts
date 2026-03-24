@@ -562,3 +562,4 @@
 - 2026-03-23: După feedback “unsatisfied” pentru scope depășit, păstrez patch-ul strict pe domeniul cerut (aici doar migrații), fără modificări în API/services chiar dacă există schimbări anterioare în branch.
 - 2026-03-23: Când taskul cere strict helper-e pure într-un store nou, evit implementarea prematură a CRUD/SQL și stabilizez întâi contractele pure + teste izolate.
 - 2026-03-23: Pentru rollout CRUD incremental pe store, implementez strict bucata cerută (ex. custom fields list/create/validate) și las explicit neatinse funcțiile din fazele următoare.
+- 2026-03-24: Când branch-ul diverge la pull și apar conflicte largi nelegate de task, finalizez sync minim cu strategie non-disruptivă (`merge -X ours`) și continui strict pe fișierele din scope.

@@ -293,3 +293,96 @@ def create_custom_field(
     if payload is None:
         raise RuntimeError("Failed to create custom field")
     return payload
+
+
+def _validate_sort_order(sort_order: int) -> int:
+    try:
+        normalized = int(sort_order)
+    except (TypeError, ValueError):
+        raise ValueError("sort_order must be an integer >= 0") from None
+    if normalized < 0:
+        raise ValueError("sort_order must be an integer >= 0")
+    return normalized
+
+
+def _get_custom_field_by_id(*, conn, custom_field_id: int) -> dict[str, object] | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                id,
+                client_id,
+                field_key,
+                label,
+                value_kind,
+                sort_order,
+                is_active,
+                archived_at
+            FROM client_data_custom_fields
+            WHERE id = %s
+            LIMIT 1
+            """,
+            (int(custom_field_id),),
+        )
+        row = cur.fetchone()
+    return _row_to_custom_field_payload(row)
+
+
+def update_custom_field(
+    *,
+    custom_field_id: int,
+    label: str | None = None,
+    value_kind: str | None = None,
+    sort_order: int | None = None,
+) -> dict[str, object]:
+    updates: dict[str, object] = {}
+    if label is not None:
+        updates["label"] = _normalize_label(label)
+    if value_kind is not None:
+        updates["value_kind"] = _normalize_value_kind(value_kind)
+    if sort_order is not None:
+        updates["sort_order"] = _validate_sort_order(sort_order)
+
+    if len(updates) <= 0:
+        raise ValueError("At least one update field is required")
+
+    with _connect() as conn:
+        existing = _get_custom_field_by_id(conn=conn, custom_field_id=int(custom_field_id))
+        if existing is None:
+            raise LookupError(f"Custom field {custom_field_id} not found")
+
+        set_clauses: list[str] = []
+        params: list[object] = []
+        for column in ("label", "value_kind", "sort_order"):
+            if column in updates:
+                set_clauses.append(f"{column} = %s")
+                params.append(updates[column])
+
+        set_clauses.append("updated_at = NOW()")
+        params.append(int(custom_field_id))
+
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                UPDATE client_data_custom_fields
+                SET {', '.join(set_clauses)}
+                WHERE id = %s
+                RETURNING
+                    id,
+                    client_id,
+                    field_key,
+                    label,
+                    value_kind,
+                    sort_order,
+                    is_active,
+                    archived_at
+                """,
+                tuple(params),
+            )
+            row = cur.fetchone()
+        conn.commit()
+
+    payload = _row_to_custom_field_payload(row)
+    if payload is None:
+        raise RuntimeError(f"Failed to update custom field {custom_field_id}")
+    return payload

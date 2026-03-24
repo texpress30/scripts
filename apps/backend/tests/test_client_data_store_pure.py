@@ -20,7 +20,8 @@ class _FakeCursor:
         self._fetchall: list[tuple[object, ...]] = []
 
     def execute(self, query: str, params=None):
-        q = " ".join(str(query).split()).lower()
+        query_str = str(query)
+        q = " ".join(query_str.split()).lower()
         self._fetchone = None
         self._fetchall = []
 
@@ -56,6 +57,12 @@ class _FakeCursor:
             self._fetchone = _row_tuple(row) if row else None
             return
 
+        if "from client_data_custom_fields where id = %s" in q and "client_id = %s" not in q:
+            field_id = int(params[0])
+            row = next((r for r in self._state.rows if r["id"] == field_id), None)
+            self._fetchone = _row_tuple(row) if row else None
+            return
+
         if "insert into client_data_custom_fields" in q:
             client_id, field_key, label, value_kind, sort_order = params
             row = {
@@ -70,6 +77,27 @@ class _FakeCursor:
             }
             self._state.rows.append(row)
             self._state.next_id += 1
+            self._fetchone = _row_tuple(row)
+            return
+
+        if "update client_data_custom_fields set" in q:
+            field_id = int(params[-1])
+            row = next((r for r in self._state.rows if r["id"] == field_id), None)
+            if row is None:
+                self._fetchone = None
+                return
+
+            param_index = 0
+            if "label = %s" in q:
+                row["label"] = str(params[param_index])
+                param_index += 1
+            if "value_kind = %s" in q:
+                row["value_kind"] = str(params[param_index])
+                param_index += 1
+            if "sort_order = %s" in q:
+                row["sort_order"] = int(params[param_index])
+                param_index += 1
+
             self._fetchone = _row_tuple(row)
             return
 
@@ -252,6 +280,60 @@ class ClientDataStoreCustomFieldCrudSliceTests(unittest.TestCase):
         created = client_data_store.create_custom_field(client_id=5, label="Leads", value_kind="count")
         with self.assertRaises(LookupError):
             client_data_store.validate_custom_field_belongs_to_client(custom_field_id=created["id"], client_id=6)
+
+    def test_update_custom_field_label_only(self):
+        created = client_data_store.create_custom_field(client_id=12, label="Appointments", value_kind="count")
+        updated = client_data_store.update_custom_field(custom_field_id=created["id"], label="  New Label  ")
+        self.assertEqual(updated["label"], "New Label")
+        self.assertEqual(updated["field_key"], "appointments")
+
+    def test_update_custom_field_value_kind_only(self):
+        created = client_data_store.create_custom_field(client_id=12, label="Appointments", value_kind="count")
+        updated = client_data_store.update_custom_field(custom_field_id=created["id"], value_kind="amount")
+        self.assertEqual(updated["value_kind"], "amount")
+
+    def test_update_custom_field_sort_order_only(self):
+        created = client_data_store.create_custom_field(client_id=12, label="Appointments", value_kind="count")
+        updated = client_data_store.update_custom_field(custom_field_id=created["id"], sort_order=9)
+        self.assertEqual(updated["sort_order"], 9)
+
+    def test_update_custom_field_all_fields(self):
+        created = client_data_store.create_custom_field(client_id=12, label="Appointments", value_kind="count")
+        updated = client_data_store.update_custom_field(
+            custom_field_id=created["id"],
+            label=" Qualified Leads ",
+            value_kind="amount",
+            sort_order=5,
+        )
+        self.assertEqual(updated["label"], "Qualified Leads")
+        self.assertEqual(updated["value_kind"], "amount")
+        self.assertEqual(updated["sort_order"], 5)
+        self.assertEqual(updated["field_key"], "appointments")
+        self.assertEqual(updated["client_id"], 12)
+
+    def test_update_custom_field_rejects_no_fields(self):
+        created = client_data_store.create_custom_field(client_id=12, label="Appointments", value_kind="count")
+        with self.assertRaises(ValueError):
+            client_data_store.update_custom_field(custom_field_id=created["id"])
+
+    def test_update_custom_field_rejects_empty_label(self):
+        created = client_data_store.create_custom_field(client_id=12, label="Appointments", value_kind="count")
+        with self.assertRaises(ValueError):
+            client_data_store.update_custom_field(custom_field_id=created["id"], label="   ")
+
+    def test_update_custom_field_rejects_invalid_value_kind(self):
+        created = client_data_store.create_custom_field(client_id=12, label="Appointments", value_kind="count")
+        with self.assertRaises(ValueError):
+            client_data_store.update_custom_field(custom_field_id=created["id"], value_kind="invalid")
+
+    def test_update_custom_field_rejects_invalid_sort_order(self):
+        created = client_data_store.create_custom_field(client_id=12, label="Appointments", value_kind="count")
+        with self.assertRaises(ValueError):
+            client_data_store.update_custom_field(custom_field_id=created["id"], sort_order=-1)
+
+    def test_update_custom_field_missing_id_raises_clear_error(self):
+        with self.assertRaises(LookupError):
+            client_data_store.update_custom_field(custom_field_id=999, label="Anything")
 
 
 if __name__ == "__main__":

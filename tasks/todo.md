@@ -6846,3 +6846,15 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, fÄ
 ## Review
 - [x] Confirm scope is only `client_data_store.py` + related tests/docs.
 - [x] Confirm targeted tests/checks passed.
+
+# TODO â€” Client data custom fields CRUD slice 2 (update only) (2026-03-24)
+
+- [x] Sync workspace and verify status/diff.
+- [x] Implement only `update_custom_field(...)` in `client_data_store.py` with scoped validation rules.
+- [x] Add targeted tests for `update_custom_field` behavior and validation errors.
+- [x] Run only `client_data_store` tests + compile check.
+- [x] Review diff for strict scope (no archive/no other CRUD/API/UI changes).
+
+## Review
+- [x] Confirm only requested function and tests were changed.
+- [x] Confirm targeted checks/tests passed.
