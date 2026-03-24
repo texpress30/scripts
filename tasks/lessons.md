@@ -568,3 +568,4 @@
 - 2026-03-24: Pentru `upsert` incremental pe rânduri daily, folosesc `get_or_create` ca sursă unică de canonical lookup/create și limitez update-ul strict la câmpurile numerice permise în task.
 - 2026-03-24: Pentru note text pe entități daily, normalizez la trim + blank->NULL și păstrez update strict pe coloana `notes`, fără side-effects pe câmpurile numerice.
 - 2026-03-24: Pentru listări daily filtrate pe interval, aplic validare strictă a capetelor și ordonare deterministică explicită în query (`metric_date DESC`, `source ASC`, `id ASC`).
+- 2026-03-24: Pentru mapări derivate din list endpoint intern, refolosesc lista canonicală existentă și construiesc cheia compusă deterministic `(metric_date, source)` pentru a evita duplicarea logicii de query/validare.

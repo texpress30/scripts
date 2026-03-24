@@ -708,5 +708,75 @@ class ClientDataStoreCustomFieldCrudSliceTests(unittest.TestCase):
             client_data_store.list_daily_inputs(client_id=0, date_from="2026-03-21", date_to="2026-03-21")
 
 
+    def test_get_daily_input_map_returns_empty_dict_when_no_rows(self):
+        result = client_data_store.get_daily_input_map(client_id=55, date_from="2026-03-01", date_to="2026-03-31")
+        self.assertEqual(result, {})
+
+    def test_get_daily_input_map_single_row(self):
+        row = client_data_store.upsert_daily_input(client_id=55, metric_date="2026-03-14", source="tiktok_ads", leads=13)
+        result = client_data_store.get_daily_input_map(client_id=55, date_from="2026-03-14", date_to="2026-03-14")
+        key = ("2026-03-14", "tiktok_ads")
+        self.assertIn(key, result)
+        self.assertEqual(result[key]["id"], row["id"])
+
+    def test_get_daily_input_map_multiple_rows_and_keys_shape(self):
+        client_data_store.upsert_daily_input(client_id=55, metric_date="2026-03-14", source="tiktok_ads", leads=1)
+        client_data_store.upsert_daily_input(client_id=55, metric_date="2026-03-15", source="meta_ads", leads=2)
+        client_data_store.upsert_daily_input(client_id=55, metric_date="2026-03-15", source="google_ads", leads=3)
+
+        result = client_data_store.get_daily_input_map(client_id=55, date_from="2026-03-14", date_to="2026-03-15")
+        self.assertEqual(set(result.keys()), {
+            ("2026-03-14", "tiktok_ads"),
+            ("2026-03-15", "meta_ads"),
+            ("2026-03-15", "google_ads"),
+        })
+        for key, payload in result.items():
+            self.assertIsInstance(key, tuple)
+            self.assertEqual(len(key), 2)
+            self.assertIn("id", payload)
+            self.assertIn("client_id", payload)
+            self.assertIn("metric_date", payload)
+            self.assertIn("source", payload)
+            self.assertIn("leads", payload)
+            self.assertIn("phones", payload)
+            self.assertIn("custom_value_1_count", payload)
+            self.assertIn("custom_value_2_count", payload)
+            self.assertIn("custom_value_3_amount", payload)
+            self.assertIn("custom_value_5_amount", payload)
+            self.assertIn("notes", payload)
+
+    def test_get_daily_input_map_includes_only_range_rows(self):
+        client_data_store.upsert_daily_input(client_id=55, metric_date="2026-03-13", source="meta_ads", leads=1)
+        client_data_store.upsert_daily_input(client_id=55, metric_date="2026-03-14", source="meta_ads", leads=2)
+        client_data_store.upsert_daily_input(client_id=55, metric_date="2026-03-16", source="meta_ads", leads=3)
+
+        result = client_data_store.get_daily_input_map(client_id=55, date_from="2026-03-14", date_to="2026-03-15")
+        self.assertEqual(set(result.keys()), {("2026-03-14", "meta_ads")})
+
+    def test_get_daily_input_map_accepts_iso_and_date_objects(self):
+        from datetime import date
+        client_data_store.upsert_daily_input(client_id=55, metric_date=date(2026, 3, 20), source="meta_ads", leads=1)
+
+        as_iso = client_data_store.get_daily_input_map(client_id=55, date_from="2026-03-20", date_to="2026-03-20")
+        as_date = client_data_store.get_daily_input_map(client_id=55, date_from=date(2026, 3, 20), date_to=date(2026, 3, 20))
+        self.assertEqual(as_iso.keys(), as_date.keys())
+
+    def test_get_daily_input_map_rejects_invalid_date_from(self):
+        with self.assertRaises(ValueError):
+            client_data_store.get_daily_input_map(client_id=55, date_from="bad", date_to="2026-03-20")
+
+    def test_get_daily_input_map_rejects_invalid_date_to(self):
+        with self.assertRaises(ValueError):
+            client_data_store.get_daily_input_map(client_id=55, date_from="2026-03-20", date_to="bad")
+
+    def test_get_daily_input_map_rejects_invalid_range(self):
+        with self.assertRaises(ValueError):
+            client_data_store.get_daily_input_map(client_id=55, date_from="2026-03-21", date_to="2026-03-20")
+
+    def test_get_daily_input_map_rejects_invalid_client_id(self):
+        with self.assertRaises(ValueError):
+            client_data_store.get_daily_input_map(client_id=0, date_from="2026-03-20", date_to="2026-03-20")
+
+
 if __name__ == "__main__":
     unittest.main()

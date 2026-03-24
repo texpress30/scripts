@@ -755,3 +755,17 @@ def list_daily_inputs(
             rows = cur.fetchall() or []
 
     return [payload for payload in (_row_to_daily_input_payload(row) for row in rows) if payload is not None]
+
+
+def get_daily_input_map(
+    *,
+    client_id: int,
+    date_from: date | str,
+    date_to: date | str,
+) -> dict[tuple[str, str], dict[str, object]]:
+    rows = list_daily_inputs(client_id=client_id, date_from=date_from, date_to=date_to)
+    mapped: dict[tuple[str, str], dict[str, object]] = {}
+    for row in rows:
+        key = (str(row["metric_date"]), str(row["source"]))
+        mapped[key] = row
+    return mapped
