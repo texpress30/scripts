@@ -662,3 +662,55 @@ def upsert_daily_input(
     if payload is None:
         raise RuntimeError(f"Failed to upsert daily input {base_row['id']}")
     return payload
+
+
+def _normalize_notes(notes: str | None) -> str | None:
+    if notes is None:
+        return None
+    if not isinstance(notes, str):
+        raise ValueError("notes must be a string or None")
+    cleaned = notes.strip()
+    return cleaned if cleaned else None
+
+
+def set_daily_input_notes(
+    *,
+    client_id: int,
+    metric_date: date | str,
+    source: str,
+    notes: str | None,
+) -> dict[str, object]:
+    normalized_notes = _normalize_notes(notes)
+    base_row = get_or_create_daily_input(client_id=client_id, metric_date=metric_date, source=source)
+
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE client_data_daily_inputs
+                SET
+                    notes = %s,
+                    updated_at = NOW()
+                WHERE id = %s
+                RETURNING
+                    id,
+                    client_id,
+                    metric_date,
+                    source,
+                    leads,
+                    phones,
+                    custom_value_1_count,
+                    custom_value_2_count,
+                    custom_value_3_amount,
+                    custom_value_5_amount,
+                    notes
+                """,
+                (normalized_notes, int(base_row["id"])),
+            )
+            row = cur.fetchone()
+        conn.commit()
+
+    payload = _row_to_daily_input_payload(row)
+    if payload is None:
+        raise RuntimeError(f"Failed to set notes for daily input {base_row['id']}")
+    return payload

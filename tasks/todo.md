@@ -6894,3 +6894,15 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, fÄ
 ## Review
 - [x] Confirm only requested upsert function + tests/docs changed.
 - [x] Confirm checks/tests passed.
+
+# TODO â€” Daily input CRUD slice 3 (set notes only) (2026-03-24)
+
+- [x] Sync attempted; continue local when origin unavailable.
+- [x] Implement only `set_daily_input_notes(...)` using `get_or_create_daily_input(...)`.
+- [x] Add targeted tests for notes normalization/validation and invariants.
+- [x] Run targeted tests + compile check.
+- [x] Review strict scope.
+
+## Review
+- [x] Confirm only notes function + tests/docs changed.
+- [x] Confirm checks/tests passed.

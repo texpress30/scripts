@@ -123,6 +123,9 @@ class _FakeCursor:
                 return
 
             param_index = 0
+            if "notes = %s" in q:
+                row["notes"] = params[param_index]
+                param_index += 1
             if "leads = %s" in q:
                 row["leads"] = int(params[param_index])
                 param_index += 1
@@ -576,6 +579,71 @@ class ClientDataStoreCustomFieldCrudSliceTests(unittest.TestCase):
     def test_upsert_daily_input_keeps_source_canonical(self):
         row = client_data_store.upsert_daily_input(client_id=11, metric_date="2026-03-24", source=" META_ADS ", leads=2)
         self.assertEqual(row["source"], "meta_ads")
+
+
+    def test_set_daily_input_notes_creates_row_and_sets_notes(self):
+        row = client_data_store.set_daily_input_notes(client_id=21, metric_date="2026-03-24", source="META_ADS", notes="abc")
+        self.assertEqual(row["source"], "meta_ads")
+        self.assertEqual(row["notes"], "abc")
+        self.assertEqual(row["leads"], 0)
+
+    def test_set_daily_input_notes_updates_existing_and_preserves_numeric_fields(self):
+        base = client_data_store.upsert_daily_input(
+            client_id=21,
+            metric_date="2026-03-24",
+            source="meta_ads",
+            leads=7,
+            phones=3,
+            custom_value_1_count=1,
+            custom_value_2_count=2,
+            custom_value_3_amount="5.25",
+            custom_value_5_amount="-1.50",
+        )
+        updated = client_data_store.set_daily_input_notes(client_id=21, metric_date="2026-03-24", source="meta_ads", notes="new note")
+        self.assertEqual(updated["id"], base["id"])
+        self.assertEqual(updated["notes"], "new note")
+        self.assertEqual(updated["leads"], 7)
+        self.assertEqual(updated["phones"], 3)
+        self.assertEqual(updated["custom_value_1_count"], 1)
+        self.assertEqual(updated["custom_value_2_count"], 2)
+        self.assertEqual(str(updated["custom_value_3_amount"]), "5.25")
+        self.assertEqual(str(updated["custom_value_5_amount"]), "-1.50")
+
+    def test_set_daily_input_notes_none_clears_notes(self):
+        client_data_store.set_daily_input_notes(client_id=21, metric_date="2026-03-24", source="meta_ads", notes="a")
+        updated = client_data_store.set_daily_input_notes(client_id=21, metric_date="2026-03-24", source="meta_ads", notes=None)
+        self.assertIsNone(updated["notes"])
+
+    def test_set_daily_input_notes_empty_string_clears_notes(self):
+        updated = client_data_store.set_daily_input_notes(client_id=21, metric_date="2026-03-24", source="meta_ads", notes="")
+        self.assertIsNone(updated["notes"])
+
+    def test_set_daily_input_notes_trims_notes(self):
+        updated = client_data_store.set_daily_input_notes(client_id=21, metric_date="2026-03-24", source="meta_ads", notes="   text   ")
+        self.assertEqual(updated["notes"], "text")
+
+    def test_set_daily_input_notes_rejects_invalid_type(self):
+        with self.assertRaises(ValueError):
+            client_data_store.set_daily_input_notes(client_id=21, metric_date="2026-03-24", source="meta_ads", notes=123)
+
+    def test_set_daily_input_notes_keeps_source_canonical(self):
+        updated = client_data_store.set_daily_input_notes(client_id=21, metric_date="2026-03-24", source=" META_ADS ", notes="ok")
+        self.assertEqual(updated["source"], "meta_ads")
+
+    def test_set_daily_input_notes_accepts_and_rejects_metric_date(self):
+        from datetime import date
+        ok = client_data_store.set_daily_input_notes(client_id=21, metric_date=date(2026, 3, 24), source="meta_ads", notes="x")
+        self.assertEqual(ok["metric_date"], "2026-03-24")
+        with self.assertRaises(ValueError):
+            client_data_store.set_daily_input_notes(client_id=21, metric_date="2026-99-99", source="meta_ads", notes="x")
+
+    def test_set_daily_input_notes_rejects_invalid_client_id(self):
+        with self.assertRaises(ValueError):
+            client_data_store.set_daily_input_notes(client_id=0, metric_date="2026-03-24", source="meta_ads", notes="x")
+
+    def test_set_daily_input_notes_rejects_invalid_source(self):
+        with self.assertRaises(ValueError):
+            client_data_store.set_daily_input_notes(client_id=21, metric_date="2026-03-24", source="facebook_ads", notes="x")
 
 
 if __name__ == "__main__":
