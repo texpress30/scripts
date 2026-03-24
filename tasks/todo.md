@@ -7040,3 +7040,20 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, fÄ
 - [x] Confirm backend-only scope respected.
 - [x] Confirm no restore/unarchive endpoint added.
 - [x] Confirm targeted checks passed or clearly documented.
+
+# TODO â€” Sub Data page editable UI (daily rows + sales + custom fields/values) (2026-03-24)
+
+- [x] Mandatory workspace refresh check done and local fallback confirmed if remote unavailable.
+- [x] Inspect only Data page related frontend files (page, sub-nav helper, existing tests, formatting/fetch helpers).
+- [x] Add daily row editing/create flows (fixed fields + notes) wired to daily-input PUT endpoint.
+- [x] Add active dynamic custom field editing in row edit mode with upsert/delete custom-value calls.
+- [x] Add sale entry add/edit/delete flows in row details with proper API calls and confirms.
+- [x] Add custom field manager UI for create/update/archive with config+table refresh.
+- [x] Keep month navigation/query/loading/empty/error/table/details structure intact.
+- [x] Add focused frontend tests for the requested critical edit flows.
+- [x] Run relevant frontend tests/checks and document outcomes.
+
+## Review
+- [x] Confirm no Media Buying/Media Tracker edits in this task.
+- [x] Confirm no backend contract changes unless strictly required.
+- [x] Confirm targeted checks passed or clearly documented.

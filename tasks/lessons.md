@@ -581,3 +581,5 @@
 - 2026-03-24: Pentru update/delete incremental pe sale entries, folosesc lookup explicit pe `sale_entry_id`, update parțial doar pe câmpurile primite și delete hard fără reordonarea automată a sort_order-urilor rămase.
 - 2026-03-24: Pentru daily custom values, validez obligatoriu ownership-ul `daily_input.client_id == custom_field.client_id` înainte de upsert și aplic validarea `count` vs `amount` pe `numeric_value` la nivel de store.
 - 2026-03-24: Pentru delete pe cheie compusă la daily custom values, fac lookup strict pe `(daily_input_id, custom_field_id)` și returnez payloadul rândului șters în același contract folosit de list/upsert.
+- 2026-03-24: După un feedback de corecție pe livrare incompletă, finalizez în același turn fixul până la teste verzi și închid obligatoriu cu commit + make_pr, fără mesaje intermediare de "continui după confirmare".
+
