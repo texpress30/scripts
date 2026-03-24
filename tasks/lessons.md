@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-24: La primul răspuns după corecții AGENTS, pornesc imediat cu workflow complet (plan în `tasks/todo.md` + execuție + verificare), nu trimit doar promisiuni de implementare.
+
 - 2026-03-22: Pentru publish persistence feature-flagged pe Mongo, tratez strict ordinea `next_publish_id -> external publish (single call) -> upsert`; dacă upsert-ul cade după publish extern reușit, nu retry/replay în același apel și returnez succesul extern cu mirror local compatibil.
 
 - 2026-03-22: Pentru mutații derivate migrate pe Mongo source-of-truth, activez flag-ul derivat doar împreună cu core-writes și tratez erorile Mongo read/upsert ca hard-fail (fără fallback local), cu local hydrate doar după persist reușit.
@@ -559,3 +561,17 @@
 - 2026-03-23: Dacă backend-ul nu oferă endpoint detail separat, folosesc list endpoint-ul canonical pentru a deriva detail-ul selectat și evit inventarea de API nou; completez cu stări locale explicite pentru selecție/preview/add-variant.
 - 2026-03-23: După feedback "unsatisfied" pe Creative UI incremental, păstrez patch-ul strict local și verific explicit cerințele UX minime (blocare acțiune fără context, metadate vizibile pentru variante, loading/error robust) înainte de commit, fără extinderi backend inutile.
 - 2026-03-23: După feedback "unsatisfied" pe Creative, adaug incremental doar secțiunea UI cerută (ex. publish) în cardul existent al asset-ului selectat, mapând strict contractul endpointului real (`required + optional`) și acoperind explicit loading/success/error + refresh/context în teste.
+- 2026-03-23: După feedback “unsatisfied” pentru scope depășit, păstrez patch-ul strict pe domeniul cerut (aici doar migrații), fără modificări în API/services chiar dacă există schimbări anterioare în branch.
+- 2026-03-23: Când taskul cere strict helper-e pure într-un store nou, evit implementarea prematură a CRUD/SQL și stabilizez întâi contractele pure + teste izolate.
+- 2026-03-23: Pentru rollout CRUD incremental pe store, implementez strict bucata cerută (ex. custom fields list/create/validate) și las explicit neatinse funcțiile din fazele următoare.
+- 2026-03-24: Când branch-ul diverge la pull și apar conflicte largi nelegate de task, finalizez sync minim cu strategie non-disruptivă (`merge -X ours`) și continui strict pe fișierele din scope.
+- 2026-03-24: Pentru taskuri de archive soft-delete incremental, implementez comportament idempotent (nu rescriu `archived_at` la re-apel) și verific explicit efectul asupra listărilor active/inactive în teste.
+- 2026-03-24: Pentru `get_or_create` incremental pe cheie unică, păstrez fluxul simplu lookup-first + insert defaulturi canonice, cu validări stricte de input și teste explicite de idempotency.
+- 2026-03-24: Pentru `upsert` incremental pe rânduri daily, folosesc `get_or_create` ca sursă unică de canonical lookup/create și limitez update-ul strict la câmpurile numerice permise în task.
+- 2026-03-24: Pentru note text pe entități daily, normalizez la trim + blank->NULL și păstrez update strict pe coloana `notes`, fără side-effects pe câmpurile numerice.
+- 2026-03-24: Pentru listări daily filtrate pe interval, aplic validare strictă a capetelor și ordonare deterministică explicită în query (`metric_date DESC`, `source ASC`, `id ASC`).
+- 2026-03-24: Pentru mapări derivate din list endpoint intern, refolosesc lista canonicală existentă și construiesc cheia compusă deterministic `(metric_date, source)` pentru a evita duplicarea logicii de query/validare.
+- 2026-03-24: Pentru sale entries incrementale, separ explicit validarea părintelui daily input de validarea amount/text/sort și calculez `gross_profit_amount` strict derivat în payload, fără coloană stocată.
+- 2026-03-24: Pentru update/delete incremental pe sale entries, folosesc lookup explicit pe `sale_entry_id`, update parțial doar pe câmpurile primite și delete hard fără reordonarea automată a sort_order-urilor rămase.
+- 2026-03-24: Pentru daily custom values, validez obligatoriu ownership-ul `daily_input.client_id == custom_field.client_id` înainte de upsert și aplic validarea `count` vs `amount` pe `numeric_value` la nivel de store.
+- 2026-03-24: Pentru delete pe cheie compusă la daily custom values, fac lookup strict pe `(daily_input_id, custom_field_id)` și returnez payloadul rândului șters în același contract folosit de list/upsert.

@@ -8,6 +8,8 @@ from app.schemas.client import (
     AttachPlatformAccountRequest,
     BusinessInputsImportRequest,
     BusinessInputsImportResponse,
+    ClientDataConfigResponse,
+    ClientDataTableResponse,
     CreateClientRequest,
     DetachGoogleAccountRequest,
     DetachPlatformAccountRequest,
@@ -21,6 +23,7 @@ from app.schemas.client import (
 )
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
+from app.services import client_data_store
 from app.services.client_registry import PlatformAccountAlreadyAttachedError, client_registry_service
 from app.services.client_business_inputs_import_service import client_business_inputs_import_service
 from app.services.media_buying_store import media_buying_store
@@ -515,6 +518,127 @@ def _ensure_client_exists_or_404(*, client_id: int) -> None:
     details = client_registry_service.get_client_details(client_id=int(client_id))
     if details is None:
         raise HTTPException(status_code=404, detail="Client not found")
+
+
+def _decimal_to_string(value: object) -> str:
+    return str(value)
+
+
+def _fallback_field_label(*, label: object, custom_field_id: object) -> str:
+    normalized_label = str(label or "").strip()
+    if normalized_label:
+        return normalized_label
+    return f"Custom Field {int(custom_field_id)}"
+
+
+_CLIENT_DATA_DERIVED_FIELDS: list[dict[str, str]] = [
+    {"key": "sales_count", "label": "Sales Count", "value_kind": "count"},
+    {"key": "revenue_amount", "label": "Revenue", "value_kind": "amount"},
+    {"key": "cogs_amount", "label": "COGS", "value_kind": "amount"},
+    {"key": "custom_value_4_amount", "label": "Custom Value 4", "value_kind": "amount"},
+    {"key": "gross_profit_amount", "label": "Gross Profit", "value_kind": "amount"},
+]
+
+
+@router.get("/{client_id}/data/config", response_model=ClientDataConfigResponse)
+def get_client_data_config(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    custom_fields = client_data_store.list_custom_fields(client_id=client_id, include_inactive=True)
+    mapped_custom_fields: list[dict[str, object]] = []
+    for field in custom_fields:
+        mapped_custom_fields.append(
+            {
+                "id": int(field["id"]),
+                "field_key": str(field["field_key"]),
+                "label": _fallback_field_label(label=field.get("label"), custom_field_id=field["id"]),
+                "value_kind": str(field["value_kind"]),
+                "sort_order": int(field["sort_order"]),
+                "is_active": bool(field["is_active"]),
+            }
+        )
+    return {
+        "client_id": client_id,
+        "sources": client_data_store.list_supported_sources(),
+        "custom_fields": mapped_custom_fields,
+        "derived_fields": list(_CLIENT_DATA_DERIVED_FIELDS),
+    }
+
+
+@router.get("/{client_id}/data/table", response_model=ClientDataTableResponse)
+def get_client_data_table(
+    client_id: int,
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+    try:
+        daily_inputs = client_data_store.list_daily_inputs(client_id=client_id, date_from=date_from, date_to=date_to)
+        daily_custom_values = client_data_store.list_daily_custom_values(client_id=client_id, date_from=date_from, date_to=date_to)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+    custom_values_by_daily_input_id: dict[int, list[dict[str, object]]] = {}
+    for row in daily_custom_values:
+        daily_input_id = int(row["daily_input_id"])
+        custom_values_by_daily_input_id.setdefault(daily_input_id, []).append(
+            {
+                "custom_field_id": int(row["custom_field_id"]),
+                "field_key": str(row["field_key"]),
+                "label": _fallback_field_label(label=row.get("label"), custom_field_id=row["custom_field_id"]),
+                "value_kind": str(row["value_kind"]),
+                "sort_order": int(row["sort_order"]),
+                "numeric_value": _decimal_to_string(row["numeric_value"]),
+            }
+        )
+
+    rows: list[dict[str, object]] = []
+    for daily_input in daily_inputs:
+        daily_input_id = int(daily_input["id"])
+        try:
+            sale_entries = client_data_store.list_sale_entries_for_daily_input(daily_input_id=daily_input_id)
+        except LookupError:
+            sale_entries = []
+
+        source_key = str(daily_input["source"])
+        source_label = client_data_store.get_source_label(source_key) or "Unknown"
+        rows.append(
+            {
+                "daily_input_id": daily_input_id,
+                "metric_date": str(daily_input["metric_date"]),
+                "source": source_key,
+                "source_label": source_label,
+                "leads": int(daily_input["leads"]),
+                "phones": int(daily_input["phones"]),
+                "custom_value_1_count": int(daily_input["custom_value_1_count"]),
+                "custom_value_2_count": int(daily_input["custom_value_2_count"]),
+                "custom_value_3_amount": _decimal_to_string(daily_input["custom_value_3_amount"]),
+                "custom_value_5_amount": _decimal_to_string(daily_input["custom_value_5_amount"]),
+                "notes": daily_input.get("notes"),
+                "sales_count": client_data_store.compute_sales_count(sale_entries),
+                "revenue_amount": _decimal_to_string(client_data_store.compute_revenue(sale_entries)),
+                "cogs_amount": _decimal_to_string(client_data_store.compute_cogs(sale_entries)),
+                "custom_value_4_amount": _decimal_to_string(client_data_store.compute_custom_value_4(sale_entries)),
+                "gross_profit_amount": _decimal_to_string(client_data_store.compute_gross_profit(sale_entries)),
+                "custom_values": sorted(
+                    custom_values_by_daily_input_id.get(daily_input_id, []),
+                    key=lambda item: (int(item["sort_order"]), int(item["custom_field_id"])),
+                ),
+            }
+        )
+
+    return {
+        "client_id": int(client_id),
+        "date_from": str(date_from),
+        "date_to": str(date_to),
+        "count": len(rows),
+        "rows": rows,
+    }
 
 
 @router.get("/{client_id}/media-buying/config")
