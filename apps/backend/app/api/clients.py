@@ -601,11 +601,11 @@ def _map_daily_custom_value_write_payload(row: dict[str, object]) -> dict[str, o
 
 
 _CLIENT_DATA_DERIVED_FIELDS: list[dict[str, str]] = [
-    {"key": "sales_count", "label": "Sales Count", "value_kind": "count"},
-    {"key": "revenue_amount", "label": "Revenue", "value_kind": "amount"},
+    {"key": "sales_count", "label": "Vânzări", "value_kind": "count"},
+    {"key": "revenue_amount", "label": "Venit", "value_kind": "amount"},
     {"key": "cogs_amount", "label": "COGS", "value_kind": "amount"},
     {"key": "custom_value_4_amount", "label": "Custom Value 4", "value_kind": "amount"},
-    {"key": "gross_profit_amount", "label": "Gross Profit", "value_kind": "amount"},
+    {"key": "gross_profit_amount", "label": "Profit Brut", "value_kind": "amount"},
 ]
 
 
@@ -614,6 +614,18 @@ def get_client_data_config(client_id: int, user: AuthUser = Depends(get_current_
     enforce_action_scope(user=user, action="clients:list", scope="agency")
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
+
+    media_buying_config = media_buying_store.get_config(client_id=client_id)
+    display_currency = str(media_buying_config.get("display_currency") or "").strip().upper() or None
+    fixed_fields = [
+        {"key": "leads", "label": "Lead-uri"},
+        {"key": "phones", "label": "Telefoane"},
+        {"key": "custom_value_1_count", "label": str(media_buying_config.get("custom_label_1") or "Custom Value 1")},
+        {"key": "custom_value_2_count", "label": str(media_buying_config.get("custom_label_2") or "Custom Value 2")},
+        {"key": "custom_value_3_amount", "label": str(media_buying_config.get("custom_label_3") or "Custom Value 3")},
+        {"key": "custom_value_4_amount", "label": str(media_buying_config.get("custom_label_4") or "Custom Value 4")},
+        {"key": "custom_value_5_amount", "label": str(media_buying_config.get("custom_label_5") or "Custom Value 5")},
+    ]
 
     custom_fields = client_data_store.list_custom_fields(client_id=client_id, include_inactive=True)
     mapped_custom_fields: list[dict[str, object]] = []
@@ -630,6 +642,9 @@ def get_client_data_config(client_id: int, user: AuthUser = Depends(get_current_
         )
     return {
         "client_id": client_id,
+        "currency_code": display_currency,
+        "display_currency": display_currency,
+        "fixed_fields": fixed_fields,
         "sources": client_data_store.list_supported_sources(),
         "custom_fields": mapped_custom_fields,
         "derived_fields": list(_CLIENT_DATA_DERIVED_FIELDS),

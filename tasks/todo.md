@@ -7075,3 +7075,38 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, f�
 - [x] Confirm no DB migrations or destructive cleanup.
 - [x] Confirm scope limited to Media Buying + Media Tracker rewiring/read-only.
 - [x] Confirm key targeted tests passed (or documented preexisting unrelated failures).
+
+# TODO — Corecții Data/Media copy+currency+labels+coloane (2026-03-24)
+
+- [ ] Mandatory workspace update check executat; continui local dacă origin lipsește.
+- [ ] Audit strict pe fișierele relevante: clients API/schema/client_data_store/media_buying_store + Data page + Media Buying page + testele lor.
+- [ ] Corectez `data/config` pentru currency_code din moneda clientului (Agency View source), fără schimbare de contract.
+- [ ] Sincronizez fixed labels Custom Value 1..5 în `data/config` cu config-ul Media Buying și mă asigur că CV4 este prezent.
+- [ ] Aliniez copy-ul nou introdus în Data la română (fără i18n refactor).
+- [ ] Ajustez tabelul principal Data să afișeze coloanele cerute (incl. CV4 read-only, vânzări/sale-entry câmpuri) în view principal.
+- [ ] Elimin textul `Edit values in Data page` din Media Buying fără alte modificări de layout/date.
+- [ ] Ajustez testele backend/frontend țintite pentru currency/labels/CV4/copy/coloane + Media Buying text removal.
+- [ ] Rulez testele relevante + compile/import checks și documentez limitările de mediu dacă există.
+
+## Review
+- [ ] Confirm fără migrații noi / endpoint-uri noi.
+- [ ] Confirm scope strict pe corecțiile cerute.
+- [ ] Confirm testele țintite verzi sau limitările preexistente documentate.
+
+# TODO — Data/Media Buying alignment + RO copy fix (2026-03-24)
+
+- [x] Re-check workspace state and inspect current partial diffs for backend config and Data/Media Buying pages.
+- [x] Stabilize backend `client-data/config` payload for currency + fixed fields labels and keep schema aligned.
+- [x] Stabilize `Data` page structure/copy changes without breaking editable flows or tests.
+- [x] Keep `Media Buying` daily-row helper text removed as requested (no extra UI scope).
+- [x] Run targeted backend/frontend tests for touched areas and fix regressions.
+- [x] Commit changes and create PR via `make_pr`.
+
+## Check-in
+- Plan confirmed. Starting implementation now on the exact files already touched in current diff.
+
+## Review — Data/Media Buying alignment + RO copy fix (2026-03-24)
+- [x] Backend config now returns currency aliases and fixed_fields labels derived from media-buying config while preserving existing sources/custom_fields/derived_fields contract.
+- [x] Data page copy + headers are stabilized in Romanian and the table structure matches the requested sales-centric columns.
+- [x] Media Buying day-row helper text was removed; page remains read-only with the top-level "Edit in Data" CTA.
+- [x] Targeted frontend/backend tests for touched flows pass.

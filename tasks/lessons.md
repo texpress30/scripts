@@ -584,3 +584,4 @@
 - 2026-03-24: După un feedback de corecție pe livrare incompletă, finalizez în același turn fixul până la teste verzi și închid obligatoriu cu commit + make_pr, fără mesaje intermediare de "continui după confirmare".
 
 - 2026-03-24: Când userul cere rewiring Media Buying/Media Tracker pe Data layer, aplic strict source-of-truth swap + UI read-only cu CTA către /data, fără extindere în migrații/cleanup sau refactoruri laterale.
+- 2026-03-24: După un feedback de tip „nu opri la jumătate”, nu trimit status intermediar; închid taskul end-to-end în același turn (fix + teste + commit + make_pr) sau nu livrez deloc ca final.

@@ -844,7 +844,6 @@ export default function SubMediaBuyingPage() {
                                 <tr key={day.date} className="border-t border-slate-200 bg-white text-slate-800">
                                   <td {...visibilityProps("date")} className={`${classFor("date")} ${stickyDateCellClass("day")} pl-8 align-top`}>
                                     <div>{shortDayLabel(day.date)}</div>
-                                    <p className="mt-1 text-xs text-slate-500">Edit values in Data page</p>
                                   </td>
                                   <td {...visibilityProps("cost_google")} className={classFor("cost_google")}>{formatMoney(day.cost_google, displayCurrency)}</td>
                                   <td {...visibilityProps("cost_meta")} className={classFor("cost_meta")}>{formatMoney(day.cost_meta, displayCurrency)}</td>

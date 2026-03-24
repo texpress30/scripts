@@ -39,6 +39,18 @@ class ClientsDataApiTests(unittest.TestCase):
         self.client_id = int(created["id"])
 
         self.original_store = clients_api.client_data_store
+        self.original_media_buying_store = clients_api.media_buying_store
+
+        class _MediaBuyingStoreStub:
+            def get_config(self, client_id: int):
+                return {
+                    "display_currency": "ron",
+                    "custom_label_1": "CV1",
+                    "custom_label_2": "CV2",
+                    "custom_label_3": "CV3",
+                    "custom_label_4": "CV4",
+                    "custom_label_5": "CV5",
+                }
 
         class _StoreStub:
             def __init__(self):
@@ -512,9 +524,11 @@ class ClientsDataApiTests(unittest.TestCase):
                 return dict(payload)
 
         clients_api.client_data_store = _StoreStub()
+        clients_api.media_buying_store = _MediaBuyingStoreStub()
 
     def tearDown(self):
         clients_api.client_data_store = self.original_store
+        clients_api.media_buying_store = self.original_media_buying_store
         clients_api.enforce_action_scope = self.original_enforce_action_scope
         clients_api.enforce_agency_navigation_access = self.original_enforce_nav
         client_registry_service._is_test_mode = self.original_is_test_mode
@@ -525,10 +539,15 @@ class ClientsDataApiTests(unittest.TestCase):
         payload = clients_api.get_client_data_config(client_id=self.client_id, user=self.user)
 
         self.assertEqual(payload["client_id"], self.client_id)
+        self.assertEqual(payload["currency_code"], "RON")
+        self.assertEqual(payload["display_currency"], "RON")
+        self.assertEqual(payload["fixed_fields"][0], {"key": "leads", "label": "Lead-uri"})
+        self.assertEqual(payload["fixed_fields"][1], {"key": "phones", "label": "Telefoane"})
+        self.assertEqual(payload["fixed_fields"][2], {"key": "custom_value_1_count", "label": "CV1"})
         self.assertEqual(payload["sources"][0]["key"], "meta_ads")
         self.assertEqual(payload["custom_fields"][0]["label"], "Appointments")
         self.assertEqual(payload["custom_fields"][1]["label"], "Custom Field 12")
-        self.assertEqual(payload["derived_fields"][0], {"key": "sales_count", "label": "Sales Count", "value_kind": "count"})
+        self.assertEqual(payload["derived_fields"][0], {"key": "sales_count", "label": "Vânzări", "value_kind": "count"})
 
     def test_get_client_data_table_resolves_source_labels_custom_value_sort_and_derived_metrics(self):
         payload = clients_api.get_client_data_table(

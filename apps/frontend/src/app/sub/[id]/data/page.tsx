@@ -1,6 +1,6 @@
 "use client";
 
-import { addMonths, endOfMonth, format, parse, startOfMonth } from "date-fns";
+import { addMonths, endOfMonth, format, getISOWeek, parse, startOfMonth } from "date-fns";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import React, { useEffect, useMemo, useState } from "react";
 
@@ -145,6 +145,14 @@ function formatCount(value: number | string | null | undefined): string {
 
 function formatMonthLabel(value: Date): string {
   return new Intl.DateTimeFormat("ro-RO", { month: "long", year: "numeric" }).format(value);
+}
+
+function formatWeekLabel(metricDate: string): string {
+  try {
+    return `Săpt. ${getISOWeek(parse(metricDate, "yyyy-MM-dd", new Date()))}`;
+  } catch {
+    return "—";
+  }
 }
 
 function normalizeFixedLabels(config: DataConfigResponse | null): Record<string, string> {
@@ -357,7 +365,7 @@ export default function SubDataPage() {
       }
 
       await refreshTable();
-      setMutationSuccess("Saved");
+      setMutationSuccess("Salvat");
       if (isNew) {
         setAddingRow(false);
         setNewRowDraft(emptyDailyDraft(dateFrom));
@@ -405,7 +413,7 @@ export default function SubDataPage() {
 
       await refreshTable();
       setOpenDetailsKeys((prev) => ({ ...prev, [rowKey]: true }));
-      setMutationSuccess("Saved");
+      setMutationSuccess("Salvat");
       setAddSaleForRowKey("");
       setAddSaleDraft(emptySaleDraft());
       setEditingSaleId(null);
@@ -418,7 +426,7 @@ export default function SubDataPage() {
   }
 
   async function deleteSale(rowKey: string, saleId: number) {
-    if (typeof window !== "undefined" && !window.confirm("Delete sale entry?")) return;
+    if (typeof window !== "undefined" && !window.confirm("Ștergi această vânzare?")) return;
     setMutationLoadingKey(`delete-sale:${saleId}`);
     setMutationError("");
     setMutationSuccess("");
@@ -426,7 +434,7 @@ export default function SubDataPage() {
       await apiRequest(`/clients/${clientId}/data/sale-entries/${saleId}`, { method: "DELETE" });
       await refreshTable();
       setOpenDetailsKeys((prev) => ({ ...prev, [rowKey]: true }));
-      setMutationSuccess("Deleted");
+      setMutationSuccess("Șters");
     } catch (err) {
       setMutationError(err instanceof Error ? err.message : "Nu am putut șterge vânzarea.");
     } finally {
@@ -449,7 +457,7 @@ export default function SubDataPage() {
       });
       await refreshConfigAndTable();
       setCreateFieldDraft({ label: "", value_kind: "count", sort_order: "" });
-      setMutationSuccess("Custom field created");
+      setMutationSuccess("Câmpul custom a fost creat");
     } catch (err) {
       setMutationError(err instanceof Error ? err.message : "Nu am putut crea câmpul.");
     } finally {
@@ -472,7 +480,7 @@ export default function SubDataPage() {
       });
       await refreshConfigAndTable();
       setEditingFieldId(null);
-      setMutationSuccess("Custom field updated");
+      setMutationSuccess("Câmpul custom a fost actualizat");
     } catch (err) {
       setMutationError(err instanceof Error ? err.message : "Nu am putut actualiza câmpul.");
     } finally {
@@ -481,14 +489,14 @@ export default function SubDataPage() {
   }
 
   async function archiveCustomField(fieldId: number) {
-    if (typeof window !== "undefined" && !window.confirm("Archive custom field?")) return;
+    if (typeof window !== "undefined" && !window.confirm("Arhivezi acest câmp custom?")) return;
     setMutationLoadingKey(`archive-custom-field:${fieldId}`);
     setMutationError("");
     setMutationSuccess("");
     try {
       await apiRequest(`/clients/${clientId}/data/custom-fields/${fieldId}`, { method: "DELETE" });
       await refreshConfigAndTable();
-      setMutationSuccess("Custom field archived");
+      setMutationSuccess("Câmpul custom a fost arhivat");
     } catch (err) {
       setMutationError(err instanceof Error ? err.message : "Nu am putut arhiva câmpul.");
     } finally {
@@ -507,21 +515,21 @@ export default function SubDataPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
-              <p className="mt-1 text-sm text-slate-600">{dateFrom} - {dateTo} · Currency: {currencyCode}</p>
+              <p className="mt-1 text-sm text-slate-600">{dateFrom} - {dateTo} · Monedă: {currencyCode}</p>
             </div>
             <div className="flex items-center gap-2">
-              <button type="button" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700" onClick={() => updateMonth(addMonths(monthDate, -1))}>Previous</button>
+              <button type="button" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700" onClick={() => updateMonth(addMonths(monthDate, -1))}>Luna anterioară</button>
               <span className="min-w-44 text-center text-sm font-medium text-slate-800">{formatMonthLabel(monthDate)}</span>
-              <button type="button" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700" onClick={() => updateMonth(addMonths(monthDate, 1))}>Next</button>
+              <button type="button" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700" onClick={() => updateMonth(addMonths(monthDate, 1))}>Luna următoare</button>
             </div>
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" className="rounded-md border border-indigo-300 px-3 py-1.5 text-sm text-indigo-700" onClick={() => { setAddingRow((v) => !v); setNewRowDraft(emptyDailyDraft(dateFrom)); }}>
-              Add row
+              Adaugă rând
             </button>
             <button type="button" className="rounded-md border border-indigo-300 px-3 py-1.5 text-sm text-indigo-700" onClick={() => setManageFieldsOpen((v) => !v)}>
-              Manage custom fields
+              Gestionează câmpuri custom
             </button>
           </div>
 
@@ -530,7 +538,7 @@ export default function SubDataPage() {
 
           {manageFieldsOpen ? (
             <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
-              <h2 className="text-sm font-semibold text-slate-900">Manage custom fields</h2>
+              <h2 className="text-sm font-semibold text-slate-900">Gestionează câmpuri custom</h2>
               <div className="mt-2 grid gap-2 md:grid-cols-4">
                 <input aria-label="New field label" className="rounded border border-slate-300 px-2 py-1 text-sm" value={createFieldDraft.label} onChange={(e) => setCreateFieldDraft((p) => ({ ...p, label: e.target.value }))} placeholder="Label" />
                 <select aria-label="New field type" className="rounded border border-slate-300 px-2 py-1 text-sm" value={createFieldDraft.value_kind} onChange={(e) => setCreateFieldDraft((p) => ({ ...p, value_kind: e.target.value }))}>
@@ -538,7 +546,7 @@ export default function SubDataPage() {
                   <option value="amount">amount</option>
                 </select>
                 <input aria-label="New field sort" className="rounded border border-slate-300 px-2 py-1 text-sm" value={createFieldDraft.sort_order} onChange={(e) => setCreateFieldDraft((p) => ({ ...p, sort_order: e.target.value }))} placeholder="Sort order" />
-                <button type="button" className="rounded border border-indigo-400 px-2 py-1 text-sm text-indigo-700" onClick={() => void createCustomField()} disabled={mutationLoadingKey === "create-custom-field"}>Create field</button>
+                <button type="button" className="rounded border border-indigo-400 px-2 py-1 text-sm text-indigo-700" onClick={() => void createCustomField()} disabled={mutationLoadingKey === "create-custom-field"}>Creează câmp</button>
               </div>
 
               <div className="mt-3 space-y-2">
@@ -546,15 +554,15 @@ export default function SubDataPage() {
                   <div key={field.id} className="rounded border border-slate-200 p-2 text-sm">
                     {editingFieldId === field.id ? (
                       <div className="grid gap-2 md:grid-cols-4">
-                        <input aria-label={`Edit label ${field.id}`} className="rounded border border-slate-300 px-2 py-1" value={editingFieldDraft.label} onChange={(e) => setEditingFieldDraft((p) => ({ ...p, label: e.target.value }))} />
-                        <select aria-label={`Edit type ${field.id}`} className="rounded border border-slate-300 px-2 py-1" value={editingFieldDraft.value_kind} onChange={(e) => setEditingFieldDraft((p) => ({ ...p, value_kind: e.target.value }))}>
+                        <input aria-label={`Editează label ${field.id}`} className="rounded border border-slate-300 px-2 py-1" value={editingFieldDraft.label} onChange={(e) => setEditingFieldDraft((p) => ({ ...p, label: e.target.value }))} />
+                        <select aria-label={`Editează type ${field.id}`} className="rounded border border-slate-300 px-2 py-1" value={editingFieldDraft.value_kind} onChange={(e) => setEditingFieldDraft((p) => ({ ...p, value_kind: e.target.value }))}>
                           <option value="count">count</option>
                           <option value="amount">amount</option>
                         </select>
-                        <input aria-label={`Edit sort ${field.id}`} className="rounded border border-slate-300 px-2 py-1" value={editingFieldDraft.sort_order} onChange={(e) => setEditingFieldDraft((p) => ({ ...p, sort_order: e.target.value }))} />
+                        <input aria-label={`Editează sort ${field.id}`} className="rounded border border-slate-300 px-2 py-1" value={editingFieldDraft.sort_order} onChange={(e) => setEditingFieldDraft((p) => ({ ...p, sort_order: e.target.value }))} />
                         <div className="flex gap-2">
                           <button type="button" className="rounded border border-indigo-400 px-2 py-1 text-indigo-700" onClick={() => void updateCustomField(field.id)}>Save</button>
-                          <button type="button" className="rounded border border-slate-300 px-2 py-1" onClick={() => setEditingFieldId(null)}>Cancel</button>
+                          <button type="button" className="rounded border border-slate-300 px-2 py-1" onClick={() => setEditingFieldId(null)}>Anulează</button>
                         </div>
                       </div>
                     ) : (
@@ -569,7 +577,7 @@ export default function SubDataPage() {
                               setEditingFieldDraft({ label: field.label, value_kind: field.value_kind || "count", sort_order: String(field.sort_order ?? "") });
                             }}
                           >
-                            Edit
+                            Editează
                           </button>
                           <button type="button" className="rounded border border-rose-300 px-2 py-1 text-rose-700" onClick={() => void archiveCustomField(field.id)}>Archive</button>
                         </div>
@@ -583,14 +591,14 @@ export default function SubDataPage() {
 
           {addingRow ? (
             <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-              <h3 className="mb-2 font-semibold text-slate-900">Add row</h3>
+              <h3 className="mb-2 font-semibold text-slate-900">Adaugă rând</h3>
               <div className="grid gap-2 md:grid-cols-4">
-                <input aria-label="New row date" type="date" className="rounded border border-slate-300 px-2 py-1" value={newRowDraft.metric_date} onChange={(e) => setNewRowDraft((p) => ({ ...p, metric_date: e.target.value }))} />
-                <select aria-label="New row source" className="rounded border border-slate-300 px-2 py-1" value={newRowDraft.source} onChange={(e) => setNewRowDraft((p) => ({ ...p, source: e.target.value }))}>
-                  <option value="">Select source</option>
+                <input aria-label="Data rând nou" type="date" className="rounded border border-slate-300 px-2 py-1" value={newRowDraft.metric_date} onChange={(e) => setNewRowDraft((p) => ({ ...p, metric_date: e.target.value }))} />
+                <select aria-label="Sursa rând nou" className="rounded border border-slate-300 px-2 py-1" value={newRowDraft.source} onChange={(e) => setNewRowDraft((p) => ({ ...p, source: e.target.value }))}>
+                  <option value="">Selectează sursa</option>
                   {supportedSources.map((source) => <option key={source.key} value={source.key}>{source.label}</option>)}
                 </select>
-                <input aria-label="New row leads" className="rounded border border-slate-300 px-2 py-1" value={newRowDraft.leads} onChange={(e) => setNewRowDraft((p) => ({ ...p, leads: e.target.value }))} placeholder={fixedLabels.leads} />
+                <input aria-label="Lead-uri rând nou" className="rounded border border-slate-300 px-2 py-1" value={newRowDraft.leads} onChange={(e) => setNewRowDraft((p) => ({ ...p, leads: e.target.value }))} placeholder={fixedLabels.leads} />
                 <input aria-label="New row phones" className="rounded border border-slate-300 px-2 py-1" value={newRowDraft.phones} onChange={(e) => setNewRowDraft((p) => ({ ...p, phones: e.target.value }))} placeholder={fixedLabels.phones} />
                 <input aria-label="New row cv1" className="rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_1_count} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_1_count: e.target.value }))} placeholder={fixedLabels.custom_value_1_count} />
                 <input aria-label="New row cv2" className="rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_2_count} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_2_count: e.target.value }))} placeholder={fixedLabels.custom_value_2_count} />
@@ -599,13 +607,13 @@ export default function SubDataPage() {
               </div>
               <textarea aria-label="New row notes" className="mt-2 w-full rounded border border-slate-300 px-2 py-1" rows={2} value={newRowDraft.notes} onChange={(e) => setNewRowDraft((p) => ({ ...p, notes: e.target.value }))} placeholder="Mențiuni" />
               <div className="mt-2 flex gap-2">
-                <button type="button" className="rounded border border-indigo-400 px-3 py-1 text-indigo-700" disabled={mutationLoadingKey === "save-new-row"} onClick={() => void saveRowDraft(null, newRowDraft, true)}>Save row</button>
-                <button type="button" className="rounded border border-slate-300 px-3 py-1" onClick={() => setAddingRow(false)}>Cancel</button>
+                <button type="button" className="rounded border border-indigo-400 px-3 py-1 text-indigo-700" disabled={mutationLoadingKey === "save-new-row"} onClick={() => void saveRowDraft(null, newRowDraft, true)}>Salvează rând</button>
+                <button type="button" className="rounded border border-slate-300 px-3 py-1" onClick={() => setAddingRow(false)}>Anulează</button>
               </div>
             </div>
           ) : null}
 
-          {loading ? <p className="mt-4 text-sm text-slate-600">Loading data table...</p> : null}
+          {loading ? <p className="mt-4 text-sm text-slate-600">Se încarcă tabelul de date...</p> : null}
           {!loading && error ? <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
           {!loading && !error && rows.length === 0 ? <p className="mt-4 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">Nu există date pentru perioada selectată.</p> : null}
 
@@ -614,8 +622,8 @@ export default function SubDataPage() {
               <table className="min-w-full border-collapse text-sm">
                 <thead>
                   <tr className="bg-slate-50 text-left text-slate-700">
-                    <th className="border border-slate-200 px-3 py-2">Data</th>
-                    <th className="border border-slate-200 px-3 py-2">Sursa</th>
+                    <th className="border border-slate-200 px-3 py-2">Săptămâna</th>
+                    <th className="border border-slate-200 px-3 py-2">Data vânzare</th>
                     <th className="border border-slate-200 px-3 py-2">{fixedLabels.leads}</th>
                     <th className="border border-slate-200 px-3 py-2">{fixedLabels.phones}</th>
                     <th className="border border-slate-200 px-3 py-2">{fixedLabels.custom_value_1_count}</th>
@@ -623,12 +631,13 @@ export default function SubDataPage() {
                     <th className="border border-slate-200 px-3 py-2">{fixedLabels.custom_value_3_amount}</th>
                     <th className="border border-slate-200 px-3 py-2">{fixedLabels.custom_value_4_amount}</th>
                     <th className="border border-slate-200 px-3 py-2">{fixedLabels.custom_value_5_amount}</th>
-                    {activeDynamicFields.map((field) => <th key={field.id} className="border border-slate-200 px-3 py-2">{field.label}</th>)}
                     <th className="border border-slate-200 px-3 py-2">Vânzări</th>
-                    <th className="border border-slate-200 px-3 py-2">Venit</th>
-                    <th className="border border-slate-200 px-3 py-2">COGS</th>
-                    <th className="border border-slate-200 px-3 py-2">Profit Brut</th>
-                    <th className="border border-slate-200 px-3 py-2">Mențiuni</th>
+                    <th className="border border-slate-200 px-3 py-2">Marcă</th>
+                    <th className="border border-slate-200 px-3 py-2">Model</th>
+                    <th className="border border-slate-200 px-3 py-2">Preț vânzare</th>
+                    <th className="border border-slate-200 px-3 py-2">Preț actual</th>
+                    <th className="border border-slate-200 px-3 py-2">P/L brut</th>
+                    <th className="border border-slate-200 px-3 py-2">Sursa</th>
                     <th className="border border-slate-200 px-3 py-2">Acțiuni</th>
                     <th className="border border-slate-200 px-3 py-2">Detalii</th>
                   </tr>
@@ -646,42 +655,30 @@ export default function SubDataPage() {
                     return (
                       <React.Fragment key={rowKey}>
                         <tr className="align-top">
+                          <td className="border border-slate-200 px-3 py-2">{formatWeekLabel(row.metric_date)}</td>
                           <td className="border border-slate-200 px-3 py-2">{row.metric_date}</td>
-                          <td className="border border-slate-200 px-3 py-2">{row.source_label || "—"}</td>
-                          <td className="border border-slate-200 px-3 py-2">{isEditing ? <input aria-label={`Edit leads ${rowKey}`} className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.leads} onChange={(e) => setEditingRowDraft((p) => (p ? { ...p, leads: e.target.value } : p))} /> : formatCount(row.leads)}</td>
-                          <td className="border border-slate-200 px-3 py-2">{isEditing ? <input aria-label={`Edit phones ${rowKey}`} className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.phones} onChange={(e) => setEditingRowDraft((p) => (p ? { ...p, phones: e.target.value } : p))} /> : formatCount(row.phones)}</td>
+                          <td className="border border-slate-200 px-3 py-2">{isEditing ? <input aria-label={`Editează leads ${rowKey}`} className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.leads} onChange={(e) => setEditingRowDraft((p) => (p ? { ...p, leads: e.target.value } : p))} /> : formatCount(row.leads)}</td>
+                          <td className="border border-slate-200 px-3 py-2">{isEditing ? <input aria-label={`Editează phones ${rowKey}`} className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.phones} onChange={(e) => setEditingRowDraft((p) => (p ? { ...p, phones: e.target.value } : p))} /> : formatCount(row.phones)}</td>
                           <td className="border border-slate-200 px-3 py-2">{isEditing ? <input className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_1_count} onChange={(e) => setEditingRowDraft((p) => (p ? { ...p, custom_value_1_count: e.target.value } : p))} /> : formatCount(row.custom_value_1_count)}</td>
                           <td className="border border-slate-200 px-3 py-2">{isEditing ? <input className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_2_count} onChange={(e) => setEditingRowDraft((p) => (p ? { ...p, custom_value_2_count: e.target.value } : p))} /> : formatCount(row.custom_value_2_count)}</td>
                           <td className="border border-slate-200 px-3 py-2">{isEditing ? <input className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_3_amount} onChange={(e) => setEditingRowDraft((p) => (p ? { ...p, custom_value_3_amount: e.target.value } : p))} /> : formatAmount(row.custom_value_3_amount, currencyCode)}</td>
                           <td className="border border-slate-200 px-3 py-2">{formatAmount(derived.custom_value_4_amount ?? row.custom_value_4_amount, currencyCode)}</td>
                           <td className="border border-slate-200 px-3 py-2">{isEditing ? <input className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_5_amount} onChange={(e) => setEditingRowDraft((p) => (p ? { ...p, custom_value_5_amount: e.target.value } : p))} /> : formatAmount(row.custom_value_5_amount, currencyCode)}</td>
-                          {activeDynamicFields.map((field) => (
-                            <td key={field.id} className="border border-slate-200 px-3 py-2">
-                              {isEditing ? (
-                                <input
-                                  aria-label={`Edit dynamic ${field.id} ${rowKey}`}
-                                  className="w-24 rounded border border-slate-300 px-2 py-1"
-                                  value={draft.dynamicValues[field.id] ?? ""}
-                                  onChange={(e) => setEditingRowDraft((p) => (p ? { ...p, dynamicValues: { ...p.dynamicValues, [field.id]: e.target.value } } : p))}
-                                />
-                              ) : (
-                                byField.get(field.id) ? (byField.get(field.id)?.value_kind === "amount" ? formatAmount(byField.get(field.id)?.numeric_value, currencyCode) : formatCount(byField.get(field.id)?.numeric_value)) : "—"
-                              )}
-                            </td>
-                          ))}
                           <td className="border border-slate-200 px-3 py-2">{formatCount(derived.sales_count ?? row.sales_count)}</td>
-                          <td className="border border-slate-200 px-3 py-2">{formatAmount(derived.revenue_amount ?? row.revenue_amount, currencyCode)}</td>
-                          <td className="border border-slate-200 px-3 py-2">{formatAmount(derived.cogs_amount ?? row.cogs_amount, currencyCode)}</td>
-                          <td className="border border-slate-200 px-3 py-2">{formatAmount(derived.gross_profit_amount ?? row.gross_profit_amount, currencyCode)}</td>
-                          <td className="border border-slate-200 px-3 py-2">{isEditing ? <textarea aria-label={`Edit notes ${rowKey}`} className="w-40 rounded border border-slate-300 px-2 py-1" rows={2} value={draft.notes} onChange={(e) => setEditingRowDraft((p) => (p ? { ...p, notes: e.target.value } : p))} /> : String(row.notes || "").trim() || "—"}</td>
+                          <td className="border border-slate-200 px-3 py-2">{String(saleEntries[0]?.brand || "").trim() || "—"}</td>
+                          <td className="border border-slate-200 px-3 py-2">{String(saleEntries[0]?.model || "").trim() || "—"}</td>
+                          <td className="border border-slate-200 px-3 py-2">{formatAmount(saleEntries[0]?.sale_price_amount, currencyCode)}</td>
+                          <td className="border border-slate-200 px-3 py-2">{formatAmount(saleEntries[0]?.actual_price_amount, currencyCode)}</td>
+                          <td className="border border-slate-200 px-3 py-2">{formatAmount(saleEntries[0]?.gross_profit_amount, currencyCode)}</td>
+                          <td className="border border-slate-200 px-3 py-2">{row.source_label || "—"}</td>
                           <td className="border border-slate-200 px-3 py-2">
                             {isEditing ? (
                               <div className="flex gap-2">
                                 <button type="button" className="rounded border border-indigo-400 px-2 py-1 text-xs text-indigo-700" disabled={mutationLoadingKey.startsWith("save-row") || mutationLoadingKey === "save-new-row"} onClick={() => void saveRowDraft(row, draft, false)}>Save</button>
-                                <button type="button" className="rounded border border-slate-300 px-2 py-1 text-xs" onClick={() => { setEditingRowKey(""); setEditingRowDraft(null); }}>Cancel</button>
+                                <button type="button" className="rounded border border-slate-300 px-2 py-1 text-xs" onClick={() => { setEditingRowKey(""); setEditingRowDraft(null); }}>Anulează</button>
                               </div>
                             ) : (
-                              <button type="button" className="rounded border border-slate-300 px-2 py-1 text-xs" onClick={() => beginEditRow(row)}>Edit</button>
+                              <button type="button" className="rounded border border-slate-300 px-2 py-1 text-xs" onClick={() => beginEditRow(row)}>Editează</button>
                             )}
                           </td>
                           <td className="border border-slate-200 px-3 py-2">
@@ -693,23 +690,23 @@ export default function SubDataPage() {
                                 setOpenDetailsKeys((prev) => ({ ...prev, [rowKey]: isOpen }));
                               }}
                             >
-                              <summary className="cursor-pointer text-indigo-700">View</summary>
+                              <summary className="cursor-pointer text-indigo-700">Vezi</summary>
                               <div className="mt-2 space-y-3">
                                 <div>
                                   <div className="mb-1 flex items-center justify-between gap-2">
-                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sale entries</p>
-                                    <button type="button" className="rounded border border-indigo-300 px-2 py-0.5 text-xs text-indigo-700" onClick={() => { setAddSaleForRowKey(rowKey); setAddSaleDraft(emptySaleDraft()); }}>Add sale</button>
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Vânzări</p>
+                                    <button type="button" className="rounded border border-indigo-300 px-2 py-0.5 text-xs text-indigo-700" onClick={() => { setAddSaleForRowKey(rowKey); setAddSaleDraft(emptySaleDraft()); }}>Adaugă vânzare</button>
                                   </div>
                                   {addSaleForRowKey === rowKey ? (
                                     <div className="mb-2 grid gap-1 text-xs">
-                                      <input aria-label={`Add sale brand ${rowKey}`} className="rounded border border-slate-300 px-2 py-1" value={addSaleDraft.brand} onChange={(e) => setAddSaleDraft((p) => ({ ...p, brand: e.target.value }))} placeholder="Brand" />
+                                      <input aria-label={`Adaugă vânzare brand ${rowKey}`} className="rounded border border-slate-300 px-2 py-1" value={addSaleDraft.brand} onChange={(e) => setAddSaleDraft((p) => ({ ...p, brand: e.target.value }))} placeholder="Marcă" />
                                       <input className="rounded border border-slate-300 px-2 py-1" value={addSaleDraft.model} onChange={(e) => setAddSaleDraft((p) => ({ ...p, model: e.target.value }))} placeholder="Model" />
-                                      <input aria-label={`Add sale price ${rowKey}`} className="rounded border border-slate-300 px-2 py-1" value={addSaleDraft.sale_price_amount} onChange={(e) => setAddSaleDraft((p) => ({ ...p, sale_price_amount: e.target.value }))} placeholder="Preț Vânzare" />
-                                      <input className="rounded border border-slate-300 px-2 py-1" value={addSaleDraft.actual_price_amount} onChange={(e) => setAddSaleDraft((p) => ({ ...p, actual_price_amount: e.target.value }))} placeholder="Preț Actual" />
+                                      <input aria-label={`Adaugă vânzare price ${rowKey}`} className="rounded border border-slate-300 px-2 py-1" value={addSaleDraft.sale_price_amount} onChange={(e) => setAddSaleDraft((p) => ({ ...p, sale_price_amount: e.target.value }))} placeholder="Preț vânzare" />
+                                      <input className="rounded border border-slate-300 px-2 py-1" value={addSaleDraft.actual_price_amount} onChange={(e) => setAddSaleDraft((p) => ({ ...p, actual_price_amount: e.target.value }))} placeholder="Preț actual" />
                                       <input className="rounded border border-slate-300 px-2 py-1" value={addSaleDraft.notes} onChange={(e) => setAddSaleDraft((p) => ({ ...p, notes: e.target.value }))} placeholder="Mențiuni" />
                                       <div className="flex gap-1">
-                                        <button type="button" className="rounded border border-indigo-300 px-2 py-0.5 text-indigo-700" onClick={() => void saveSale(row)}>Save sale</button>
-                                        <button type="button" className="rounded border border-slate-300 px-2 py-0.5" onClick={() => setAddSaleForRowKey("")}>Cancel</button>
+                                        <button type="button" className="rounded border border-indigo-300 px-2 py-0.5 text-indigo-700" onClick={() => void saveSale(row)}>Salvează vânzarea</button>
+                                        <button type="button" className="rounded border border-slate-300 px-2 py-0.5" onClick={() => setAddSaleForRowKey("")}>Anulează</button>
                                       </div>
                                     </div>
                                   ) : null}
@@ -718,11 +715,11 @@ export default function SubDataPage() {
                                     <table className="min-w-full border-collapse text-xs">
                                       <thead>
                                         <tr className="bg-slate-50 text-left">
-                                          <th className="border border-slate-200 px-2 py-1">Brand</th>
+                                          <th className="border border-slate-200 px-2 py-1">Marcă</th>
                                           <th className="border border-slate-200 px-2 py-1">Model</th>
-                                          <th className="border border-slate-200 px-2 py-1">Preț Vânzare</th>
-                                          <th className="border border-slate-200 px-2 py-1">Preț Actual</th>
-                                          <th className="border border-slate-200 px-2 py-1">Profit Brut</th>
+                                          <th className="border border-slate-200 px-2 py-1">Preț vânzare</th>
+                                          <th className="border border-slate-200 px-2 py-1">Preț actual</th>
+                                          <th className="border border-slate-200 px-2 py-1">P/L brut</th>
                                           <th className="border border-slate-200 px-2 py-1">Mențiuni</th>
                                           <th className="border border-slate-200 px-2 py-1">Acțiuni</th>
                                         </tr>
@@ -735,7 +732,7 @@ export default function SubDataPage() {
                                             <tr key={`${rowKey}:sale:${saleId || idx}`}>
                                               <td className="border border-slate-200 px-2 py-1">{isEditingSale ? <input value={editingSaleDraft.brand} onChange={(e) => setEditingSaleDraft((p) => ({ ...p, brand: e.target.value }))} className="w-20 rounded border border-slate-300 px-1 py-0.5" /> : String(entry.brand || "").trim() || "—"}</td>
                                               <td className="border border-slate-200 px-2 py-1">{isEditingSale ? <input value={editingSaleDraft.model} onChange={(e) => setEditingSaleDraft((p) => ({ ...p, model: e.target.value }))} className="w-20 rounded border border-slate-300 px-1 py-0.5" /> : String(entry.model || "").trim() || "—"}</td>
-                                              <td className="border border-slate-200 px-2 py-1">{isEditingSale ? <input aria-label={`Edit sale price ${saleId}`} value={editingSaleDraft.sale_price_amount} onChange={(e) => setEditingSaleDraft((p) => ({ ...p, sale_price_amount: e.target.value }))} className="w-20 rounded border border-slate-300 px-1 py-0.5" /> : formatAmount(entry.sale_price_amount, currencyCode)}</td>
+                                              <td className="border border-slate-200 px-2 py-1">{isEditingSale ? <input aria-label={`Editează sale price ${saleId}`} value={editingSaleDraft.sale_price_amount} onChange={(e) => setEditingSaleDraft((p) => ({ ...p, sale_price_amount: e.target.value }))} className="w-20 rounded border border-slate-300 px-1 py-0.5" /> : formatAmount(entry.sale_price_amount, currencyCode)}</td>
                                               <td className="border border-slate-200 px-2 py-1">{isEditingSale ? <input value={editingSaleDraft.actual_price_amount} onChange={(e) => setEditingSaleDraft((p) => ({ ...p, actual_price_amount: e.target.value }))} className="w-20 rounded border border-slate-300 px-1 py-0.5" /> : formatAmount(entry.actual_price_amount, currencyCode)}</td>
                                               <td className="border border-slate-200 px-2 py-1">{formatAmount(entry.gross_profit_amount, currencyCode)}</td>
                                               <td className="border border-slate-200 px-2 py-1">{isEditingSale ? <input value={editingSaleDraft.notes} onChange={(e) => setEditingSaleDraft((p) => ({ ...p, notes: e.target.value }))} className="w-24 rounded border border-slate-300 px-1 py-0.5" /> : String(entry.notes || "").trim() || "—"}</td>
@@ -743,7 +740,7 @@ export default function SubDataPage() {
                                                 {isEditingSale ? (
                                                   <div className="flex gap-1">
                                                     <button type="button" className="rounded border border-indigo-300 px-1 py-0.5 text-indigo-700" onClick={() => void saveSale(row, saleId)}>Save</button>
-                                                    <button type="button" className="rounded border border-slate-300 px-1 py-0.5" onClick={() => setEditingSaleId(null)}>Cancel</button>
+                                                    <button type="button" className="rounded border border-slate-300 px-1 py-0.5" onClick={() => setEditingSaleId(null)}>Anulează</button>
                                                   </div>
                                                 ) : (
                                                   <div className="flex gap-1">
@@ -762,9 +759,9 @@ export default function SubDataPage() {
                                                         });
                                                       }}
                                                     >
-                                                      Edit
+                                                      Editează
                                                     </button>
-                                                    <button type="button" className="rounded border border-rose-300 px-1 py-0.5 text-rose-700" onClick={() => void deleteSale(rowKey, saleId)}>Delete</button>
+                                                    <button type="button" className="rounded border border-rose-300 px-1 py-0.5 text-rose-700" onClick={() => void deleteSale(rowKey, saleId)}>Șterge</button>
                                                   </div>
                                                 )}
                                               </td>
@@ -777,7 +774,7 @@ export default function SubDataPage() {
                                 </div>
 
                                 <div>
-                                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Dynamic custom values (historical)</p>
+                                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Valori custom dinamice (istoric)</p>
                                   {rowCustomValues.length === 0 ? <p className="text-xs text-slate-500">—</p> : (
                                     <ul className="space-y-1 text-xs text-slate-700">
                                       {rowCustomValues.map((item, idx) => (

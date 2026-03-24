@@ -139,6 +139,9 @@ class ClientDataCustomFieldItem(BaseModel):
 
 class ClientDataConfigResponse(BaseModel):
     client_id: int
+    currency_code: str | None = None
+    display_currency: str | None = None
+    fixed_fields: list[dict[str, str]] = Field(default_factory=list)
     sources: list[ClientDataSourceItem]
     custom_fields: list[ClientDataCustomFieldItem]
     derived_fields: list[ClientDataDerivedField]

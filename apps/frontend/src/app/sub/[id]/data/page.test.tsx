@@ -105,11 +105,11 @@ describe("SubDataPage editable flows", () => {
     render(<SubDataPage />);
     await screen.findByRole("heading", { name: "Data - Active Life Therapy" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Add row" }));
-    fireEvent.change(screen.getByLabelText("New row date"), { target: { value: "2026-03-12" } });
-    fireEvent.change(screen.getByLabelText("New row source"), { target: { value: "meta_ads" } });
-    fireEvent.change(screen.getByLabelText("New row leads"), { target: { value: "10" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save row" }));
+    fireEvent.click(screen.getByRole("button", { name: "Adaugă rând" }));
+    fireEvent.change(screen.getByLabelText("Data rând nou"), { target: { value: "2026-03-12" } });
+    fireEvent.change(screen.getByLabelText("Sursa rând nou"), { target: { value: "meta_ads" } });
+    fireEvent.change(screen.getByLabelText("Lead-uri rând nou"), { target: { value: "10" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvează rând" }));
 
     await waitFor(() => {
       expect(apiMock.apiRequest).toHaveBeenCalledWith(
@@ -119,15 +119,14 @@ describe("SubDataPage editable flows", () => {
     });
   });
 
-  it("edits existing row and writes dynamic custom value", async () => {
+  it("edits existing row and persists existing dynamic custom value payload", async () => {
     render(<SubDataPage />);
     await screen.findByText("Meta");
 
     const row = screen.getByText("Meta").closest("tr");
     expect(row).toBeTruthy();
-    fireEvent.click(within(row as HTMLTableRowElement).getAllByRole("button", { name: "Edit" })[0]);
-    fireEvent.change(screen.getByLabelText(/Edit leads/), { target: { value: "14" } });
-    fireEvent.change(screen.getByLabelText(/Edit dynamic 11/), { target: { value: "8" } });
+    fireEvent.click(within(row as HTMLTableRowElement).getAllByRole("button", { name: "Editează" })[0]);
+    fireEvent.change(screen.getByLabelText(/Editează leads/), { target: { value: "14" } });
     fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
 
     await waitFor(() => {
@@ -147,21 +146,21 @@ describe("SubDataPage editable flows", () => {
 
   it("adds, edits and deletes sale entries through POST/PATCH/DELETE", async () => {
     render(<SubDataPage />);
-    await screen.findByText("View");
-    fireEvent.click(screen.getByText("View"));
+    await screen.findByText("Vezi");
+    fireEvent.click(screen.getByText("Vezi"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Add sale" }));
-    fireEvent.change(screen.getByLabelText(/Add sale brand/), { target: { value: "Opel" } });
-    fireEvent.change(screen.getByLabelText(/Add sale price/), { target: { value: "200" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save sale" }));
+    fireEvent.click(screen.getByRole("button", { name: "Adaugă vânzare" }));
+    fireEvent.change(screen.getByLabelText(/Adaugă vânzare brand/), { target: { value: "Opel" } });
+    fireEvent.change(screen.getByLabelText(/Adaugă vânzare price/), { target: { value: "200" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvează vânzarea" }));
 
     await waitFor(() => expect(apiMock.apiRequest).toHaveBeenCalledWith(
       "/clients/96/data/sale-entries",
       expect.objectContaining({ method: "POST" }),
     ));
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[1]);
-    fireEvent.change(screen.getByLabelText(/Edit sale price 901/), { target: { value: "300" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Editează" })[1]);
+    fireEvent.change(screen.getByLabelText(/Editează sale price 901/), { target: { value: "300" } });
     fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
 
     await waitFor(() => expect(apiMock.apiRequest).toHaveBeenCalledWith(
@@ -169,7 +168,7 @@ describe("SubDataPage editable flows", () => {
       expect.objectContaining({ method: "PATCH" }),
     ));
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Șterge" }));
     await waitFor(() => expect(apiMock.apiRequest).toHaveBeenCalledWith(
       "/clients/96/data/sale-entries/901",
       expect.objectContaining({ method: "DELETE" }),
@@ -178,20 +177,20 @@ describe("SubDataPage editable flows", () => {
 
   it("creates, updates and archives custom fields and refreshes config/table", async () => {
     render(<SubDataPage />);
-    await screen.findByText("Manage custom fields");
-    fireEvent.click(screen.getByRole("button", { name: "Manage custom fields" }));
+    await screen.findByText("Gestionează câmpuri custom");
+    fireEvent.click(screen.getByRole("button", { name: "Gestionează câmpuri custom" }));
 
     fireEvent.change(screen.getByLabelText("New field label"), { target: { value: "Followups" } });
     fireEvent.change(screen.getByLabelText("New field type"), { target: { value: "count" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create field" }));
+    fireEvent.click(screen.getByRole("button", { name: "Creează câmp" }));
 
     await waitFor(() => expect(apiMock.apiRequest).toHaveBeenCalledWith(
       "/clients/96/data/custom-fields",
       expect.objectContaining({ method: "POST" }),
     ));
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
-    fireEvent.change(screen.getByLabelText("Edit label 11"), { target: { value: "Appointments Updated" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Editează" })[0]);
+    fireEvent.change(screen.getByLabelText("Editează label 11"), { target: { value: "Appointments Updated" } });
     fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
 
     await waitFor(() => expect(apiMock.apiRequest).toHaveBeenCalledWith(

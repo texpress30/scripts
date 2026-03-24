@@ -252,7 +252,7 @@ describe("SubMediaBuyingPage", () => {
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
     expect(screen.queryByLabelText(/Leads 2026-03-11/)).toBeNull();
-    expect(screen.getByText("Edit values in Data page")).toBeInTheDocument();
+    expect(screen.queryByText("Edit values in Data page")).toBeNull();
   });
 
   it("does not expose inline label editing controls", async () => {
