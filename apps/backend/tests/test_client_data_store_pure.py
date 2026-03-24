@@ -147,6 +147,48 @@ class _FakeCursor:
             self._fetchone = _sale_row_tuple(row)
             return
 
+        if q.startswith("select") and "from client_data_sale_entries where id = %s" in q:
+            sale_entry_id = int(params[0])
+            row = next((r for r in self._state.sale_rows if r["id"] == sale_entry_id), None)
+            self._fetchone = _sale_row_tuple(row) if row else None
+            return
+
+        if "update client_data_sale_entries set" in q:
+            sale_entry_id = int(params[-1])
+            row = next((r for r in self._state.sale_rows if r["id"] == sale_entry_id), None)
+            if row is None:
+                self._fetchone = None
+                return
+
+            param_index = 0
+            if "sale_price_amount = %s" in q:
+                row["sale_price_amount"] = str(params[param_index])
+                param_index += 1
+            if "actual_price_amount = %s" in q:
+                row["actual_price_amount"] = str(params[param_index])
+                param_index += 1
+            if "brand = %s" in q:
+                row["brand"] = params[param_index]
+                param_index += 1
+            if "model = %s" in q:
+                row["model"] = params[param_index]
+                param_index += 1
+            if "notes = %s" in q:
+                row["notes"] = params[param_index]
+                param_index += 1
+            if "sort_order = %s" in q:
+                row["sort_order"] = int(params[param_index])
+                param_index += 1
+
+            self._fetchone = _sale_row_tuple(row)
+            return
+
+        if "delete from client_data_sale_entries" in q:
+            sale_entry_id = int(params[0])
+            self._state.sale_rows = [r for r in self._state.sale_rows if r["id"] != sale_entry_id]
+            self._fetchone = None
+            return
+
         if "insert into client_data_daily_inputs" in q:
             client_id, metric_date, source = int(params[0]), str(params[1]), str(params[2])
             row = {
@@ -913,6 +955,89 @@ class ClientDataStoreCustomFieldCrudSliceTests(unittest.TestCase):
     def test_create_sale_entry_missing_daily_input_errors(self):
         with self.assertRaises(LookupError):
             client_data_store.create_sale_entry(daily_input_id=999, sale_price_amount=1, actual_price_amount=1)
+
+
+    def test_update_sale_entry_individual_fields(self):
+        base = client_data_store.get_or_create_daily_input(client_id=80, metric_date="2026-03-24", source="meta_ads")
+        row = client_data_store.create_sale_entry(daily_input_id=base["id"], sale_price_amount=100, actual_price_amount=60, brand="A", model="B", notes="C", sort_order=0)
+        updated_price = client_data_store.update_sale_entry(sale_entry_id=row["id"], sale_price_amount=120)
+        self.assertEqual(str(updated_price["sale_price_amount"]), "120")
+        updated_actual = client_data_store.update_sale_entry(sale_entry_id=row["id"], actual_price_amount=70)
+        self.assertEqual(str(updated_actual["actual_price_amount"]), "70")
+        updated_brand = client_data_store.update_sale_entry(sale_entry_id=row["id"], brand="  NewBrand ")
+        self.assertEqual(updated_brand["brand"], "NewBrand")
+        updated_model = client_data_store.update_sale_entry(sale_entry_id=row["id"], model="  NewModel ")
+        self.assertEqual(updated_model["model"], "NewModel")
+        updated_notes = client_data_store.update_sale_entry(sale_entry_id=row["id"], notes="  NewNote ")
+        self.assertEqual(updated_notes["notes"], "NewNote")
+        updated_sort = client_data_store.update_sale_entry(sale_entry_id=row["id"], sort_order=5)
+        self.assertEqual(updated_sort["sort_order"], 5)
+
+    def test_update_sale_entry_all_fields_and_gross_profit(self):
+        base = client_data_store.get_or_create_daily_input(client_id=80, metric_date="2026-03-24", source="meta_ads")
+        row = client_data_store.create_sale_entry(daily_input_id=base["id"], sale_price_amount=100, actual_price_amount=60)
+        updated = client_data_store.update_sale_entry(
+            sale_entry_id=row["id"],
+            sale_price_amount="200",
+            actual_price_amount="150",
+            brand="  B ",
+            model="  M ",
+            notes="  N ",
+            sort_order=7,
+        )
+        self.assertEqual(str(updated["gross_profit_amount"]), "50")
+        self.assertEqual(updated["brand"], "B")
+        self.assertEqual(updated["model"], "M")
+        self.assertEqual(updated["notes"], "N")
+        self.assertEqual(updated["sort_order"], 7)
+
+    def test_update_sale_entry_blank_text_becomes_null(self):
+        base = client_data_store.get_or_create_daily_input(client_id=80, metric_date="2026-03-24", source="meta_ads")
+        row = client_data_store.create_sale_entry(daily_input_id=base["id"], sale_price_amount=100, actual_price_amount=60, brand="A", model="B", notes="C")
+        updated = client_data_store.update_sale_entry(sale_entry_id=row["id"], brand=" ", model="", notes="   ")
+        self.assertIsNone(updated["brand"])
+        self.assertIsNone(updated["model"])
+        self.assertIsNone(updated["notes"])
+
+    def test_update_sale_entry_validation_and_missing(self):
+        base = client_data_store.get_or_create_daily_input(client_id=80, metric_date="2026-03-24", source="meta_ads")
+        row = client_data_store.create_sale_entry(daily_input_id=base["id"], sale_price_amount=100, actual_price_amount=60)
+        with self.assertRaises(ValueError):
+            client_data_store.update_sale_entry(sale_entry_id=row["id"])
+        with self.assertRaises(ValueError):
+            client_data_store.update_sale_entry(sale_entry_id=row["id"], sale_price_amount="x")
+        with self.assertRaises(ValueError):
+            client_data_store.update_sale_entry(sale_entry_id=row["id"], sale_price_amount=-1)
+        with self.assertRaises(ValueError):
+            client_data_store.update_sale_entry(sale_entry_id=row["id"], actual_price_amount="x")
+        with self.assertRaises(ValueError):
+            client_data_store.update_sale_entry(sale_entry_id=row["id"], actual_price_amount=-1)
+        with self.assertRaises(ValueError):
+            client_data_store.update_sale_entry(sale_entry_id=row["id"], brand=1)
+        with self.assertRaises(ValueError):
+            client_data_store.update_sale_entry(sale_entry_id=row["id"], model=1)
+        with self.assertRaises(ValueError):
+            client_data_store.update_sale_entry(sale_entry_id=row["id"], notes=1)
+        with self.assertRaises(ValueError):
+            client_data_store.update_sale_entry(sale_entry_id=row["id"], sort_order=-1)
+        with self.assertRaises(LookupError):
+            client_data_store.update_sale_entry(sale_entry_id=999, sale_price_amount=1)
+
+    def test_delete_sale_entry_success_payload_and_no_reorder(self):
+        base = client_data_store.get_or_create_daily_input(client_id=80, metric_date="2026-03-24", source="meta_ads")
+        first = client_data_store.create_sale_entry(daily_input_id=base["id"], sale_price_amount=10, actual_price_amount=5, sort_order=0)
+        second = client_data_store.create_sale_entry(daily_input_id=base["id"], sale_price_amount=20, actual_price_amount=7, sort_order=2)
+        deleted = client_data_store.delete_sale_entry(sale_entry_id=first["id"])
+        self.assertEqual(deleted["id"], first["id"])
+        remaining = client_data_store.list_sale_entries_for_daily_input(daily_input_id=base["id"])
+        self.assertEqual([r["id"] for r in remaining], [second["id"]])
+        self.assertEqual(remaining[0]["sort_order"], 2)
+
+    def test_delete_sale_entry_validation_and_missing(self):
+        with self.assertRaises(ValueError):
+            client_data_store.delete_sale_entry(sale_entry_id=0)
+        with self.assertRaises(LookupError):
+            client_data_store.delete_sale_entry(sale_entry_id=999)
 
 
 if __name__ == "__main__":

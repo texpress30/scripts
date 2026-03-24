@@ -6942,3 +6942,15 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, fÄ
 ## Review
 - [x] Confirm only sale-entry list/create + tests/docs changed.
 - [x] Confirm checks/tests passed.
+
+# TODO â€” Sale entries CRUD slice 2 (update/delete only) (2026-03-24)
+
+- [x] Sync attempted; proceed local if origin unavailable.
+- [x] Implement only `update_sale_entry(...)` and `delete_sale_entry(...)`.
+- [x] Add targeted tests for update/delete behavior and validations.
+- [x] Run targeted tests + compile check.
+- [x] Review strict scope.
+
+## Review
+- [x] Confirm only sale-entry update/delete + tests/docs changed.
+- [x] Confirm checks/tests passed.

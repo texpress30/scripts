@@ -952,3 +952,125 @@ def create_sale_entry(
     if payload is None:
         raise RuntimeError("Failed to create sale entry")
     return payload
+
+
+def _get_sale_entry_row_by_id(*, conn, sale_entry_id: int) -> dict[str, object] | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                id,
+                daily_input_id,
+                brand,
+                model,
+                sale_price_amount,
+                actual_price_amount,
+                notes,
+                sort_order
+            FROM client_data_sale_entries
+            WHERE id = %s
+            LIMIT 1
+            """,
+            (int(sale_entry_id),),
+        )
+        row = cur.fetchone()
+    return _row_to_sale_entry_payload(row)
+
+
+def update_sale_entry(
+    *,
+    sale_entry_id: int,
+    sale_price_amount: object | None = None,
+    actual_price_amount: object | None = None,
+    brand: str | None = None,
+    model: str | None = None,
+    notes: str | None = None,
+    sort_order: int | None = None,
+) -> dict[str, object]:
+    normalized_sale_entry_id = _normalize_positive_int(sale_entry_id, field_name="sale_entry_id")
+
+    updates: dict[str, object] = {}
+    if sale_price_amount is not None:
+        updates["sale_price_amount"] = _validate_decimal_amount(
+            sale_price_amount,
+            field_name="sale_price_amount",
+            allow_negative=False,
+        )
+    if actual_price_amount is not None:
+        updates["actual_price_amount"] = _validate_decimal_amount(
+            actual_price_amount,
+            field_name="actual_price_amount",
+            allow_negative=False,
+        )
+    if brand is not None:
+        updates["brand"] = _normalize_optional_text(brand, field_name="brand")
+    if model is not None:
+        updates["model"] = _normalize_optional_text(model, field_name="model")
+    if notes is not None:
+        updates["notes"] = _normalize_optional_text(notes, field_name="notes")
+    if sort_order is not None:
+        updates["sort_order"] = _validate_non_negative_int(sort_order, field_name="sort_order")
+
+    if len(updates) <= 0:
+        raise ValueError("At least one sale entry update field must be provided")
+
+    with _connect() as conn:
+        existing = _get_sale_entry_row_by_id(conn=conn, sale_entry_id=normalized_sale_entry_id)
+        if existing is None:
+            raise LookupError(f"Sale entry {sale_entry_id} not found")
+
+        set_clauses: list[str] = []
+        params: list[object] = []
+        for column in ("sale_price_amount", "actual_price_amount", "brand", "model", "notes", "sort_order"):
+            if column in updates:
+                set_clauses.append(f"{column} = %s")
+                params.append(updates[column])
+        set_clauses.append("updated_at = NOW()")
+        params.append(normalized_sale_entry_id)
+
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                UPDATE client_data_sale_entries
+                SET {', '.join(set_clauses)}
+                WHERE id = %s
+                RETURNING
+                    id,
+                    daily_input_id,
+                    brand,
+                    model,
+                    sale_price_amount,
+                    actual_price_amount,
+                    notes,
+                    sort_order
+                """,
+                tuple(params),
+            )
+            row = cur.fetchone()
+        conn.commit()
+
+    payload = _row_to_sale_entry_payload(row)
+    if payload is None:
+        raise RuntimeError(f"Failed to update sale entry {sale_entry_id}")
+    return payload
+
+
+def delete_sale_entry(*, sale_entry_id: int) -> dict[str, object]:
+    normalized_sale_entry_id = _normalize_positive_int(sale_entry_id, field_name="sale_entry_id")
+
+    with _connect() as conn:
+        existing = _get_sale_entry_row_by_id(conn=conn, sale_entry_id=normalized_sale_entry_id)
+        if existing is None:
+            raise LookupError(f"Sale entry {sale_entry_id} not found")
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM client_data_sale_entries
+                WHERE id = %s
+                """,
+                (normalized_sale_entry_id,),
+            )
+        conn.commit()
+
+    return existing
