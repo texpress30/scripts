@@ -386,3 +386,42 @@ def update_custom_field(
     if payload is None:
         raise RuntimeError(f"Failed to update custom field {custom_field_id}")
     return payload
+
+
+def archive_custom_field(*, custom_field_id: int) -> dict[str, object]:
+    with _connect() as conn:
+        existing = _get_custom_field_by_id(conn=conn, custom_field_id=int(custom_field_id))
+        if existing is None:
+            raise LookupError(f"Custom field {custom_field_id} not found")
+
+        if not bool(existing.get("is_active", True)):
+            return existing
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE client_data_custom_fields
+                SET
+                    is_active = FALSE,
+                    archived_at = COALESCE(archived_at, NOW()),
+                    updated_at = NOW()
+                WHERE id = %s
+                RETURNING
+                    id,
+                    client_id,
+                    field_key,
+                    label,
+                    value_kind,
+                    sort_order,
+                    is_active,
+                    archived_at
+                """,
+                (int(custom_field_id),),
+            )
+            row = cur.fetchone()
+        conn.commit()
+
+    payload = _row_to_custom_field_payload(row)
+    if payload is None:
+        raise RuntimeError(f"Failed to archive custom field {custom_field_id}")
+    return payload

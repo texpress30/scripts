@@ -6858,3 +6858,15 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, fÄ
 ## Review
 - [x] Confirm only requested function and tests were changed.
 - [x] Confirm targeted checks/tests passed.
+
+# TODO â€” Client data custom fields CRUD slice 3 (archive only) (2026-03-24)
+
+- [x] Sync workspace check done; continue from local branch state when origin unavailable.
+- [x] Implement only `archive_custom_field(...)` in `client_data_store.py` with idempotent soft-archive semantics.
+- [x] Add targeted archive tests (including listing visibility and idempotency).
+- [x] Run `client_data_store` test file + compile check.
+- [x] Review diff for strict scope.
+
+## Review
+- [x] Confirm only archive slice + tests/docs were changed.
+- [x] Confirm tests/checks passed.

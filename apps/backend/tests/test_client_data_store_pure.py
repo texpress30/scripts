@@ -81,6 +81,18 @@ class _FakeCursor:
             return
 
         if "update client_data_custom_fields set" in q:
+            if "is_active = false" in q:
+                field_id = int(params[0])
+                row = next((r for r in self._state.rows if r["id"] == field_id), None)
+                if row is None:
+                    self._fetchone = None
+                    return
+                row["is_active"] = False
+                if row["archived_at"] is None:
+                    row["archived_at"] = "2026-03-24T00:00:00Z"
+                self._fetchone = _row_tuple(row)
+                return
+
             field_id = int(params[-1])
             row = next((r for r in self._state.rows if r["id"] == field_id), None)
             if row is None:
@@ -334,6 +346,35 @@ class ClientDataStoreCustomFieldCrudSliceTests(unittest.TestCase):
     def test_update_custom_field_missing_id_raises_clear_error(self):
         with self.assertRaises(LookupError):
             client_data_store.update_custom_field(custom_field_id=999, label="Anything")
+
+    def test_archive_custom_field_success(self):
+        created = client_data_store.create_custom_field(client_id=30, label="Appointments", value_kind="count")
+        archived = client_data_store.archive_custom_field(custom_field_id=created["id"])
+        self.assertEqual(archived["id"], created["id"])
+        self.assertFalse(archived["is_active"])
+        self.assertIsNotNone(archived["archived_at"])
+
+    def test_archive_custom_field_affects_list_visibility(self):
+        created = client_data_store.create_custom_field(client_id=30, label="Appointments", value_kind="count")
+        client_data_store.archive_custom_field(custom_field_id=created["id"])
+
+        active_rows = client_data_store.list_custom_fields(client_id=30, include_inactive=False)
+        all_rows = client_data_store.list_custom_fields(client_id=30, include_inactive=True)
+
+        self.assertEqual(active_rows, [])
+        self.assertEqual([row["id"] for row in all_rows], [created["id"]])
+        self.assertFalse(all_rows[0]["is_active"])
+
+    def test_archive_custom_field_is_idempotent(self):
+        created = client_data_store.create_custom_field(client_id=30, label="Appointments", value_kind="count")
+        first = client_data_store.archive_custom_field(custom_field_id=created["id"])
+        second = client_data_store.archive_custom_field(custom_field_id=created["id"])
+        self.assertFalse(second["is_active"])
+        self.assertEqual(second["archived_at"], first["archived_at"])
+
+    def test_archive_custom_field_missing_id_raises_clear_error(self):
+        with self.assertRaises(LookupError):
+            client_data_store.archive_custom_field(custom_field_id=404)
 
 
 if __name__ == "__main__":

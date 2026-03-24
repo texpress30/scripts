@@ -563,3 +563,4 @@
 - 2026-03-23: Când taskul cere strict helper-e pure într-un store nou, evit implementarea prematură a CRUD/SQL și stabilizez întâi contractele pure + teste izolate.
 - 2026-03-23: Pentru rollout CRUD incremental pe store, implementez strict bucata cerută (ex. custom fields list/create/validate) și las explicit neatinse funcțiile din fazele următoare.
 - 2026-03-24: Când branch-ul diverge la pull și apar conflicte largi nelegate de task, finalizez sync minim cu strategie non-disruptivă (`merge -X ours`) și continui strict pe fișierele din scope.
+- 2026-03-24: Pentru taskuri de archive soft-delete incremental, implementez comportament idempotent (nu rescriu `archived_at` la re-apel) și verific explicit efectul asupra listărilor active/inactive în teste.
