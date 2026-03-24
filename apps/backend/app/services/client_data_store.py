@@ -1231,3 +1231,59 @@ def upsert_daily_custom_value(
     if payload is None:
         raise RuntimeError("Failed to upsert daily custom value")
     return payload
+
+
+def _fetch_daily_custom_value_join_by_pair(*, conn, daily_input_id: int, custom_field_id: int):
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                dcv.id,
+                dcv.daily_input_id,
+                di.metric_date,
+                di.source,
+                dcv.custom_field_id,
+                cf.field_key,
+                cf.label,
+                cf.value_kind,
+                cf.sort_order,
+                cf.is_active,
+                dcv.numeric_value
+            FROM client_data_daily_custom_values dcv
+            JOIN client_data_daily_inputs di ON di.id = dcv.daily_input_id
+            JOIN client_data_custom_fields cf ON cf.id = dcv.custom_field_id
+            WHERE dcv.daily_input_id = %s AND dcv.custom_field_id = %s
+            LIMIT 1
+            """,
+            (int(daily_input_id), int(custom_field_id)),
+        )
+        return cur.fetchone()
+
+
+def delete_daily_custom_value(*, daily_input_id: int, custom_field_id: int) -> dict[str, object]:
+    normalized_daily_input_id = _normalize_positive_int(daily_input_id, field_name="daily_input_id")
+    normalized_custom_field_id = _normalize_positive_int(custom_field_id, field_name="custom_field_id")
+
+    with _connect() as conn:
+        row = _fetch_daily_custom_value_join_by_pair(
+            conn=conn,
+            daily_input_id=normalized_daily_input_id,
+            custom_field_id=normalized_custom_field_id,
+        )
+        payload = _row_to_daily_custom_value_payload(row)
+        if payload is None:
+            raise LookupError(
+                f"Daily custom value not found for daily_input_id={daily_input_id}, custom_field_id={custom_field_id}"
+            )
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM client_data_daily_custom_values
+                WHERE daily_input_id = %s AND custom_field_id = %s
+                """,
+                (normalized_daily_input_id, normalized_custom_field_id),
+            )
+        conn.commit()
+
+    return payload

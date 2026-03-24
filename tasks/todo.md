@@ -6966,3 +6966,16 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, fÄ
 ## Review
 - [x] Confirm only daily-custom-values list/upsert + tests/docs changed.
 - [x] Confirm checks/tests passed.
+
+# TODO â€” Daily custom values CRUD slice 2 (delete only + payload consistency) (2026-03-24)
+
+- [x] Sync attempted; continue local if origin unavailable.
+- [x] Implement only `delete_daily_custom_value(daily_input_id, custom_field_id)`.
+- [x] Ensure daily custom value payload consistency across list/upsert/delete.
+- [x] Add targeted tests for delete + payload consistency.
+- [x] Run targeted tests + compile check.
+- [x] Review strict scope.
+
+## Review
+- [x] Confirm only daily-custom-value delete/consistency + tests/docs changed.
+- [x] Confirm checks/tests passed.

@@ -197,6 +197,26 @@ class _FakeCursor:
             self._fetchone = _custom_value_join_tuple(cv, di, cf)
             return
 
+        if "from client_data_daily_custom_values dcv" in q and "where dcv.daily_input_id = %s and dcv.custom_field_id = %s" in q:
+            daily_input_id, custom_field_id = int(params[0]), int(params[1])
+            cv = next((r for r in self._state.custom_value_rows if r["daily_input_id"] == daily_input_id and r["custom_field_id"] == custom_field_id), None)
+            if cv is None:
+                self._fetchone = None
+                return
+            di = next((d for d in self._state.daily_rows if d["id"] == cv["daily_input_id"]), None)
+            cf = next((f for f in self._state.rows if f["id"] == cv["custom_field_id"]), None)
+            self._fetchone = _custom_value_join_tuple(cv, di, cf) if di is not None and cf is not None else None
+            return
+
+        if "delete from client_data_daily_custom_values" in q and "daily_input_id = %s and custom_field_id = %s" in q:
+            daily_input_id, custom_field_id = int(params[0]), int(params[1])
+            self._state.custom_value_rows = [
+                r for r in self._state.custom_value_rows
+                if not (r["daily_input_id"] == daily_input_id and r["custom_field_id"] == custom_field_id)
+            ]
+            self._fetchone = None
+            return
+
         if "insert into client_data_sale_entries" in q:
             daily_input_id, brand, model, sale_price_amount, actual_price_amount, notes, sort_order = params
             row = {
@@ -1209,6 +1229,50 @@ class ClientDataStoreCustomFieldCrudSliceTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["id"], saved["id"])
         self.assertEqual(rows[0]["source"], "meta_ads")
+
+
+    def test_delete_daily_custom_value_success_and_list_effect(self):
+        daily = client_data_store.get_or_create_daily_input(client_id=95, metric_date="2026-03-20", source="meta_ads")
+        cf1 = client_data_store.create_custom_field(client_id=95, label="C1", value_kind="count")
+        cf2 = client_data_store.create_custom_field(client_id=95, label="C2", value_kind="amount")
+        other_daily = client_data_store.get_or_create_daily_input(client_id=95, metric_date="2026-03-21", source="meta_ads")
+        one = client_data_store.upsert_daily_custom_value(daily_input_id=daily["id"], custom_field_id=cf1["id"], numeric_value=1)
+        two = client_data_store.upsert_daily_custom_value(daily_input_id=daily["id"], custom_field_id=cf2["id"], numeric_value=2)
+        other = client_data_store.upsert_daily_custom_value(daily_input_id=other_daily["id"], custom_field_id=cf1["id"], numeric_value=3)
+
+        deleted = client_data_store.delete_daily_custom_value(daily_input_id=daily["id"], custom_field_id=cf1["id"])
+        self.assertEqual(deleted["id"], one["id"])
+
+        rows = client_data_store.list_daily_custom_values(client_id=95, date_from="2026-03-20", date_to="2026-03-21")
+        ids = {r["id"] for r in rows}
+        self.assertNotIn(one["id"], ids)
+        self.assertIn(two["id"], ids)
+        self.assertIn(other["id"], ids)
+
+    def test_delete_daily_custom_value_works_for_archived_field(self):
+        daily = client_data_store.get_or_create_daily_input(client_id=95, metric_date="2026-03-20", source="meta_ads")
+        cf = client_data_store.create_custom_field(client_id=95, label="C1", value_kind="count")
+        saved = client_data_store.upsert_daily_custom_value(daily_input_id=daily["id"], custom_field_id=cf["id"], numeric_value=1)
+        client_data_store.archive_custom_field(custom_field_id=cf["id"])
+        deleted = client_data_store.delete_daily_custom_value(daily_input_id=daily["id"], custom_field_id=cf["id"])
+        self.assertEqual(deleted["id"], saved["id"])
+
+    def test_delete_daily_custom_value_validation_and_missing_pair(self):
+        with self.assertRaises(ValueError):
+            client_data_store.delete_daily_custom_value(daily_input_id=0, custom_field_id=1)
+        with self.assertRaises(ValueError):
+            client_data_store.delete_daily_custom_value(daily_input_id=1, custom_field_id=0)
+        with self.assertRaises(LookupError):
+            client_data_store.delete_daily_custom_value(daily_input_id=999, custom_field_id=999)
+
+    def test_daily_custom_value_payload_keys_consistent_across_upsert_list_delete(self):
+        daily = client_data_store.get_or_create_daily_input(client_id=95, metric_date="2026-03-20", source="meta_ads")
+        cf = client_data_store.create_custom_field(client_id=95, label="C1", value_kind="count")
+        upserted = client_data_store.upsert_daily_custom_value(daily_input_id=daily["id"], custom_field_id=cf["id"], numeric_value=7)
+        listed = client_data_store.list_daily_custom_values(client_id=95, date_from="2026-03-20", date_to="2026-03-20")[0]
+        deleted = client_data_store.delete_daily_custom_value(daily_input_id=daily["id"], custom_field_id=cf["id"])
+        self.assertEqual(set(upserted.keys()), set(listed.keys()))
+        self.assertEqual(set(upserted.keys()), set(deleted.keys()))
 
 
 if __name__ == "__main__":
