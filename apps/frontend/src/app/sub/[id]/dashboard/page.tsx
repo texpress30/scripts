@@ -14,6 +14,7 @@ import { ProtectedPage } from "@/components/ProtectedPage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiRequest, getSubaccountMyAccess } from "@/lib/api";
 import { derivePlatformSyncStatus } from "@/lib/accountSyncStatus";
+import { SubReportingNav } from "@/app/sub/[id]/_components/SubReportingNav";
 
 type DashboardResponse = {
   client_id: number;
@@ -295,10 +296,7 @@ export default function SubDashboardPage() {
   return (
     <ProtectedPage>
       <AppShell title={null}>
-        <div className="mb-4 flex items-center gap-4 text-sm">
-          <Link href={`/sub/${clientId}/media-buying`} className="text-indigo-600 transition-colors hover:text-indigo-700 hover:underline">Media Buying</Link>
-          <Link href={`/sub/${clientId}/media-tracker`} className="text-indigo-600 transition-colors hover:text-indigo-700 hover:underline">Media Tracker</Link>
-        </div>
+        <SubReportingNav clientId={clientId} />
 
         <section className="relative mb-4 flex justify-end">
           <button
