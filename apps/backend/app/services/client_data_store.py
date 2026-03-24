@@ -769,3 +769,186 @@ def get_daily_input_map(
         key = (str(row["metric_date"]), str(row["source"]))
         mapped[key] = row
     return mapped
+
+
+def _normalize_positive_int(value: object, *, field_name: str) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be a positive integer")
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field_name} must be a positive integer") from None
+    if normalized <= 0:
+        raise ValueError(f"{field_name} must be a positive integer")
+    return normalized
+
+
+def _normalize_optional_text(value: str | None, *, field_name: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string or None")
+    cleaned = value.strip()
+    return cleaned if cleaned else None
+
+
+def _get_daily_input_row_by_id(*, conn, daily_input_id: int) -> dict[str, object] | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                id,
+                client_id,
+                metric_date,
+                source,
+                leads,
+                phones,
+                custom_value_1_count,
+                custom_value_2_count,
+                custom_value_3_amount,
+                custom_value_5_amount,
+                notes
+            FROM client_data_daily_inputs
+            WHERE id = %s
+            LIMIT 1
+            """,
+            (int(daily_input_id),),
+        )
+        row = cur.fetchone()
+    return _row_to_daily_input_payload(row)
+
+
+def _resolve_sale_entry_sort_order(*, conn, daily_input_id: int, sort_order: int | None) -> int:
+    if sort_order is not None:
+        return _validate_non_negative_int(sort_order, field_name="sort_order")
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT COALESCE(MAX(sort_order), -1) + 1
+            FROM client_data_sale_entries
+            WHERE daily_input_id = %s
+            """,
+            (int(daily_input_id),),
+        )
+        row = cur.fetchone() or (0,)
+    return int(row[0])
+
+
+def _row_to_sale_entry_payload(row: tuple[object, ...] | None) -> dict[str, object] | None:
+    if row is None:
+        return None
+
+    sale_price = _to_decimal(row[4])
+    actual_price = _to_decimal(row[5])
+    return {
+        "id": int(row[0]),
+        "daily_input_id": int(row[1]),
+        "brand": str(row[2]) if row[2] is not None else None,
+        "model": str(row[3]) if row[3] is not None else None,
+        "sale_price_amount": sale_price,
+        "actual_price_amount": actual_price,
+        "notes": str(row[6]) if row[6] is not None else None,
+        "sort_order": int(row[7]),
+        "gross_profit_amount": sale_price - actual_price,
+    }
+
+
+def list_sale_entries_for_daily_input(*, daily_input_id: int) -> list[dict[str, object]]:
+    normalized_daily_input_id = _normalize_positive_int(daily_input_id, field_name="daily_input_id")
+
+    with _connect() as conn:
+        daily_input = _get_daily_input_row_by_id(conn=conn, daily_input_id=normalized_daily_input_id)
+        if daily_input is None:
+            raise LookupError(f"Daily input {daily_input_id} not found")
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    daily_input_id,
+                    brand,
+                    model,
+                    sale_price_amount,
+                    actual_price_amount,
+                    notes,
+                    sort_order
+                FROM client_data_sale_entries
+                WHERE daily_input_id = %s
+                ORDER BY sort_order ASC, id ASC
+                """,
+                (normalized_daily_input_id,),
+            )
+            rows = cur.fetchall() or []
+
+    return [payload for payload in (_row_to_sale_entry_payload(row) for row in rows) if payload is not None]
+
+
+def create_sale_entry(
+    *,
+    daily_input_id: int,
+    sale_price_amount: object,
+    actual_price_amount: object,
+    brand: str | None = None,
+    model: str | None = None,
+    notes: str | None = None,
+    sort_order: int | None = None,
+) -> dict[str, object]:
+    normalized_daily_input_id = _normalize_positive_int(daily_input_id, field_name="daily_input_id")
+    normalized_sale_price = _validate_decimal_amount(sale_price_amount, field_name="sale_price_amount", allow_negative=False)
+    normalized_actual_price = _validate_decimal_amount(actual_price_amount, field_name="actual_price_amount", allow_negative=False)
+    normalized_brand = _normalize_optional_text(brand, field_name="brand")
+    normalized_model = _normalize_optional_text(model, field_name="model")
+    normalized_notes = _normalize_optional_text(notes, field_name="notes")
+
+    with _connect() as conn:
+        daily_input = _get_daily_input_row_by_id(conn=conn, daily_input_id=normalized_daily_input_id)
+        if daily_input is None:
+            raise LookupError(f"Daily input {daily_input_id} not found")
+
+        resolved_sort_order = _resolve_sale_entry_sort_order(
+            conn=conn,
+            daily_input_id=normalized_daily_input_id,
+            sort_order=sort_order,
+        )
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO client_data_sale_entries (
+                    daily_input_id,
+                    brand,
+                    model,
+                    sale_price_amount,
+                    actual_price_amount,
+                    notes,
+                    sort_order
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING
+                    id,
+                    daily_input_id,
+                    brand,
+                    model,
+                    sale_price_amount,
+                    actual_price_amount,
+                    notes,
+                    sort_order
+                """,
+                (
+                    normalized_daily_input_id,
+                    normalized_brand,
+                    normalized_model,
+                    normalized_sale_price,
+                    normalized_actual_price,
+                    normalized_notes,
+                    resolved_sort_order,
+                ),
+            )
+            row = cur.fetchone()
+        conn.commit()
+
+    payload = _row_to_sale_entry_payload(row)
+    if payload is None:
+        raise RuntimeError("Failed to create sale entry")
+    return payload

@@ -13,6 +13,8 @@ class _FakeDbState:
         self.next_id = 1
         self.daily_rows: list[dict[str, object]] = []
         self.next_daily_id = 1
+        self.sale_rows: list[dict[str, object]] = []
+        self.next_sale_id = 1
 
 
 class _FakeCursor:
@@ -33,7 +35,7 @@ class _FakeCursor:
             self._fetchone = (1,) if exists else None
             return
 
-        if "select coalesce(max(sort_order), -1) + 1" in q:
+        if "select coalesce(max(sort_order), -1) + 1" in q and "from client_data_custom_fields" in q:
             client_id = int(params[0])
             values = [int(r["sort_order"]) for r in self._state.rows if r["client_id"] == client_id]
             self._fetchone = ((max(values) + 1) if values else 0,)
@@ -107,6 +109,42 @@ class _FakeCursor:
             selected.sort(key=lambda r: (str(r["source"]), int(r["id"])))
             selected.sort(key=lambda r: str(r["metric_date"]), reverse=True)
             self._fetchall = [_daily_row_tuple(r) for r in selected]
+            return
+
+        if "from client_data_daily_inputs where id = %s" in q:
+            daily_input_id = int(params[0])
+            row = next((r for r in self._state.daily_rows if r["id"] == daily_input_id), None)
+            self._fetchone = _daily_row_tuple(row) if row else None
+            return
+
+        if "select coalesce(max(sort_order), -1) + 1" in q and "from client_data_sale_entries" in q:
+            daily_input_id = int(params[0])
+            values = [int(r["sort_order"]) for r in self._state.sale_rows if r["daily_input_id"] == daily_input_id]
+            self._fetchone = ((max(values) + 1) if values else 0,)
+            return
+
+        if "from client_data_sale_entries" in q and "order by sort_order asc, id asc" in q:
+            daily_input_id = int(params[0])
+            selected = [r for r in self._state.sale_rows if r["daily_input_id"] == daily_input_id]
+            selected.sort(key=lambda r: (int(r["sort_order"]), int(r["id"])))
+            self._fetchall = [_sale_row_tuple(r) for r in selected]
+            return
+
+        if "insert into client_data_sale_entries" in q:
+            daily_input_id, brand, model, sale_price_amount, actual_price_amount, notes, sort_order = params
+            row = {
+                "id": self._state.next_sale_id,
+                "daily_input_id": int(daily_input_id),
+                "brand": brand,
+                "model": model,
+                "sale_price_amount": str(sale_price_amount),
+                "actual_price_amount": str(actual_price_amount),
+                "notes": notes,
+                "sort_order": int(sort_order),
+            }
+            self._state.sale_rows.append(row)
+            self._state.next_sale_id += 1
+            self._fetchone = _sale_row_tuple(row)
             return
 
         if "insert into client_data_daily_inputs" in q:
@@ -257,6 +295,21 @@ def _daily_row_tuple(row: dict[str, object] | None) -> tuple[object, ...] | None
         row["custom_value_3_amount"],
         row["custom_value_5_amount"],
         row["notes"],
+    )
+
+
+def _sale_row_tuple(row: dict[str, object] | None) -> tuple[object, ...] | None:
+    if row is None:
+        return None
+    return (
+        row["id"],
+        row["daily_input_id"],
+        row["brand"],
+        row["model"],
+        row["sale_price_amount"],
+        row["actual_price_amount"],
+        row["notes"],
+        row["sort_order"],
     )
 
 
@@ -776,6 +829,90 @@ class ClientDataStoreCustomFieldCrudSliceTests(unittest.TestCase):
     def test_get_daily_input_map_rejects_invalid_client_id(self):
         with self.assertRaises(ValueError):
             client_data_store.get_daily_input_map(client_id=0, date_from="2026-03-20", date_to="2026-03-20")
+
+
+    def test_list_sale_entries_returns_empty_for_existing_daily_input_without_rows(self):
+        base = client_data_store.get_or_create_daily_input(client_id=70, metric_date="2026-03-24", source="meta_ads")
+        rows = client_data_store.list_sale_entries_for_daily_input(daily_input_id=base["id"])
+        self.assertEqual(rows, [])
+
+    def test_list_sale_entries_filters_and_orders_and_computes_gross_profit(self):
+        base = client_data_store.get_or_create_daily_input(client_id=70, metric_date="2026-03-24", source="meta_ads")
+        other = client_data_store.get_or_create_daily_input(client_id=70, metric_date="2026-03-25", source="meta_ads")
+        client_data_store.create_sale_entry(daily_input_id=base["id"], sale_price_amount="100", actual_price_amount="60", sort_order=2)
+        second = client_data_store.create_sale_entry(daily_input_id=base["id"], sale_price_amount="120", actual_price_amount="70", sort_order=1)
+        client_data_store.create_sale_entry(daily_input_id=other["id"], sale_price_amount="50", actual_price_amount="20")
+
+        rows = client_data_store.list_sale_entries_for_daily_input(daily_input_id=base["id"])
+        self.assertEqual([r["sort_order"] for r in rows], [1, 2])
+        self.assertEqual(rows[0]["id"], second["id"])
+        self.assertEqual(str(rows[0]["gross_profit_amount"]), "50")
+
+    def test_list_sale_entries_rejects_invalid_daily_input_id(self):
+        with self.assertRaises(ValueError):
+            client_data_store.list_sale_entries_for_daily_input(daily_input_id=0)
+
+    def test_list_sale_entries_errors_for_missing_daily_input(self):
+        with self.assertRaises(LookupError):
+            client_data_store.list_sale_entries_for_daily_input(daily_input_id=999)
+
+    def test_create_sale_entry_valid_shape_and_gross_profit(self):
+        base = client_data_store.get_or_create_daily_input(client_id=70, metric_date="2026-03-24", source="meta_ads")
+        row = client_data_store.create_sale_entry(
+            daily_input_id=base["id"],
+            sale_price_amount="150.00",
+            actual_price_amount="120.50",
+            brand="  BMW  ",
+            model=" X5 ",
+            notes=" sold ",
+        )
+        self.assertEqual(row["daily_input_id"], base["id"])
+        self.assertEqual(row["brand"], "BMW")
+        self.assertEqual(row["model"], "X5")
+        self.assertEqual(row["notes"], "sold")
+        self.assertEqual(str(row["gross_profit_amount"]), "29.50")
+
+    def test_create_sale_entry_auto_sort_order_increments(self):
+        base = client_data_store.get_or_create_daily_input(client_id=70, metric_date="2026-03-24", source="meta_ads")
+        first = client_data_store.create_sale_entry(daily_input_id=base["id"], sale_price_amount=10, actual_price_amount=5)
+        second = client_data_store.create_sale_entry(daily_input_id=base["id"], sale_price_amount=10, actual_price_amount=5)
+        self.assertEqual(first["sort_order"], 0)
+        self.assertEqual(second["sort_order"], 1)
+
+    def test_create_sale_entry_explicit_sort_order_preserved(self):
+        base = client_data_store.get_or_create_daily_input(client_id=70, metric_date="2026-03-24", source="meta_ads")
+        row = client_data_store.create_sale_entry(daily_input_id=base["id"], sale_price_amount=10, actual_price_amount=5, sort_order=9)
+        self.assertEqual(row["sort_order"], 9)
+
+    def test_create_sale_entry_blank_text_fields_become_null(self):
+        base = client_data_store.get_or_create_daily_input(client_id=70, metric_date="2026-03-24", source="meta_ads")
+        row = client_data_store.create_sale_entry(daily_input_id=base["id"], sale_price_amount=10, actual_price_amount=5, brand=" ", model="", notes="   ")
+        self.assertIsNone(row["brand"])
+        self.assertIsNone(row["model"])
+        self.assertIsNone(row["notes"])
+
+    def test_create_sale_entry_invalid_amounts_and_fields(self):
+        base = client_data_store.get_or_create_daily_input(client_id=70, metric_date="2026-03-24", source="meta_ads")
+        with self.assertRaises(ValueError):
+            client_data_store.create_sale_entry(daily_input_id=base["id"], sale_price_amount="x", actual_price_amount=1)
+        with self.assertRaises(ValueError):
+            client_data_store.create_sale_entry(daily_input_id=base["id"], sale_price_amount=-1, actual_price_amount=1)
+        with self.assertRaises(ValueError):
+            client_data_store.create_sale_entry(daily_input_id=base["id"], sale_price_amount=1, actual_price_amount="x")
+        with self.assertRaises(ValueError):
+            client_data_store.create_sale_entry(daily_input_id=base["id"], sale_price_amount=1, actual_price_amount=-1)
+        with self.assertRaises(ValueError):
+            client_data_store.create_sale_entry(daily_input_id=base["id"], sale_price_amount=1, actual_price_amount=1, brand=123)
+        with self.assertRaises(ValueError):
+            client_data_store.create_sale_entry(daily_input_id=base["id"], sale_price_amount=1, actual_price_amount=1, model=123)
+        with self.assertRaises(ValueError):
+            client_data_store.create_sale_entry(daily_input_id=base["id"], sale_price_amount=1, actual_price_amount=1, notes=123)
+        with self.assertRaises(ValueError):
+            client_data_store.create_sale_entry(daily_input_id=base["id"], sale_price_amount=1, actual_price_amount=1, sort_order=-1)
+
+    def test_create_sale_entry_missing_daily_input_errors(self):
+        with self.assertRaises(LookupError):
+            client_data_store.create_sale_entry(daily_input_id=999, sale_price_amount=1, actual_price_amount=1)
 
 
 if __name__ == "__main__":

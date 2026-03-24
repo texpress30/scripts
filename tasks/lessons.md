@@ -569,3 +569,4 @@
 - 2026-03-24: Pentru note text pe entități daily, normalizez la trim + blank->NULL și păstrez update strict pe coloana `notes`, fără side-effects pe câmpurile numerice.
 - 2026-03-24: Pentru listări daily filtrate pe interval, aplic validare strictă a capetelor și ordonare deterministică explicită în query (`metric_date DESC`, `source ASC`, `id ASC`).
 - 2026-03-24: Pentru mapări derivate din list endpoint intern, refolosesc lista canonicală existentă și construiesc cheia compusă deterministic `(metric_date, source)` pentru a evita duplicarea logicii de query/validare.
+- 2026-03-24: Pentru sale entries incrementale, separ explicit validarea părintelui daily input de validarea amount/text/sort și calculez `gross_profit_amount` strict derivat în payload, fără coloană stocată.
