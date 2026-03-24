@@ -193,33 +193,20 @@ describe("SubMediaTrackerPage", () => {
     await screen.findByRole("button", { name: "—" });
   });
 
-  it("manual weekly editing remains intact", async () => {
-    apiMock.apiRequest.mockImplementation(async (path: string, options?: RequestInit) => {
+  it("worksheet business cells are read-only and page links to Data month context", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
       if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy" }] };
       if (path.includes("/clients/96/media-tracker/worksheet-foundation")) return worksheetPayload(monthWeeks);
-      if (path === "/clients/96/media-tracker/worksheet/manual-values") {
-        const parsed = JSON.parse(String(options?.body || "{}"));
-        expect(parsed.entries).toEqual([{ week_start: "2026-03-02", field_key: "weekly_cogs_taxes", value: 15.5 }]);
-        return worksheetPayload(monthWeeks);
-      }
       throw new Error(`Unexpected path ${path}`);
     });
 
     render(<SubMediaTrackerPage />);
+    expect(screen.getByRole("link", { name: "Edit in Data" })).toHaveAttribute("href", "/sub/96/data?month=2026-03");
     fireEvent.click(screen.getByRole("button", { name: "Weekly Worksheet" }));
     await screen.findByRole("columnheader", { name: "Săpt. 10" });
-
-    fireEvent.click(screen.getByTestId("cell-summary-weekly_cogs_taxes-2026-03-02").querySelector("button")!);
-    const input = screen.getByDisplayValue("10");
-    fireEvent.change(input, { target: { value: "15.5" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-
-    await waitFor(() => {
-      expect(apiMock.apiRequest).toHaveBeenCalledWith(
-        "/clients/96/media-tracker/worksheet/manual-values",
-        expect.objectContaining({ method: "PUT" })
-      );
-    });
+    expect(screen.getByTestId("cell-summary-weekly_cogs_taxes-2026-03-02").querySelector("button")).toBeNull();
+    const manualCalls = apiMock.apiRequest.mock.calls.filter(([path]) => path === "/clients/96/media-tracker/worksheet/manual-values");
+    expect(manualCalls.length).toBe(0);
   });
 
 
