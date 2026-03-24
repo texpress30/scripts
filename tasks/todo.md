@@ -6796,3 +6796,186 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, f�
 - [x] Publish UI este local și compact în pagina Creative (fără wizard/restructurare mare).
 - [x] Flow-urile existente (media library, add variant, preview) au rămas funcționale în testele țintite.
 - [x] Nicio modificare backend majoră pentru publish/storage/branding.
+
+# TODO — Data layer migration (daily inputs + sale entries) (2026-03-23)
+
+- [x] Refresh workspace to latest current-branch state and inspect git status/diff for prior partial attempts.
+- [x] Audit existing migration files and migration-loading tests for naming/ordering patterns.
+- [x] Reuse or create migration for `client_data_daily_inputs` and `client_data_sale_entries` only, keeping scope strict.
+- [x] Run targeted migration-related tests/checks.
+- [x] Review diff for scope safety (no API/UI/service changes) and document outcomes.
+
+## Review
+- [x] Confirm only migration scope was changed.
+- [x] Confirm targeted checks/tests passed.
+
+# TODO — Data layer migration custom fields + daily custom values (2026-03-23)
+
+- [x] Sync workspace state on current branch and inspect `git status`/`git diff`.
+- [x] Audit existing migrations and migration tests; verify Task 1A migration FK compatibility.
+- [x] Reuse existing partial migration if present, otherwise create next migration for only `client_data_custom_fields` and `client_data_daily_custom_values`.
+- [x] Run targeted migration resolver/loading tests and a quick relevant check.
+- [x] Review final diff for strict scope (migration-only).
+
+## Review
+- [x] Confirm only migration scope changed (plus required task tracking docs).
+- [x] Confirm targeted checks/tests passed.
+
+# TODO — Client data store pure helpers only (2026-03-23)
+
+- [x] Sync workspace on current branch and verify clean `git status` / `git diff`.
+- [x] Inspect only `client_data_store` and related tests to confirm current state / partial leftovers.
+- [x] Implement `client_data_store.py` with canonical source catalog and pure formula helpers only.
+- [x] Add focused pure tests for source catalog and formula helpers.
+- [x] Run only targeted pure tests + import/compile check.
+- [x] Review diff to ensure no migrations/API/frontend/DB CRUD changes.
+
+## Review
+- [x] Confirm module remains importable and scope is pure helpers only.
+- [x] Confirm targeted tests/checks passed.
+
+# TODO — Client data custom fields CRUD slice 1 (2026-03-23)
+
+- [x] Sync workspace and verify clean status/diff.
+- [x] Extend `client_data_store.py` only with `list_custom_fields`, `create_custom_field`, `validate_custom_field_belongs_to_client` plus minimal private helpers.
+- [x] Keep out-of-scope functions unimplemented (no update/archive/daily inputs/sales/custom values CRUD).
+- [x] Add targeted tests for custom-field CRUD slice behaviors.
+- [x] Run only targeted client_data_store tests + compile check.
+- [x] Review diff for strict scope.
+
+## Review
+- [x] Confirm scope is only `client_data_store.py` + related tests/docs.
+- [x] Confirm targeted tests/checks passed.
+
+# TODO — Client data custom fields CRUD slice 2 (update only) (2026-03-24)
+
+- [x] Sync workspace and verify status/diff.
+- [x] Implement only `update_custom_field(...)` in `client_data_store.py` with scoped validation rules.
+- [x] Add targeted tests for `update_custom_field` behavior and validation errors.
+- [x] Run only `client_data_store` tests + compile check.
+- [x] Review diff for strict scope (no archive/no other CRUD/API/UI changes).
+
+## Review
+- [x] Confirm only requested function and tests were changed.
+- [x] Confirm targeted checks/tests passed.
+
+# TODO — Client data custom fields CRUD slice 3 (archive only) (2026-03-24)
+
+- [x] Sync workspace check done; continue from local branch state when origin unavailable.
+- [x] Implement only `archive_custom_field(...)` in `client_data_store.py` with idempotent soft-archive semantics.
+- [x] Add targeted archive tests (including listing visibility and idempotency).
+- [x] Run `client_data_store` test file + compile check.
+- [x] Review diff for strict scope.
+
+## Review
+- [x] Confirm only archive slice + tests/docs were changed.
+- [x] Confirm tests/checks passed.
+
+# TODO — Daily input CRUD slice 1 (get_or_create only) (2026-03-24)
+
+- [x] Sync workspace attempted and continue with local state if `origin` unavailable.
+- [x] Implement only `get_or_create_daily_input(...)` with validation + idempotent lookup/create.
+- [x] Add targeted tests for get/create/idempotency/validation.
+- [x] Run targeted client_data_store tests + compile check.
+- [x] Review diff for strict scope.
+
+## Review
+- [x] Confirm only requested daily-input function and tests were changed.
+- [x] Confirm checks/tests passed.
+
+# TODO — Daily input CRUD slice 2 (upsert only) (2026-03-24)
+
+- [x] Sync workspace attempted and continue locally when origin unavailable.
+- [x] Implement only `upsert_daily_input(...)` reusing `get_or_create_daily_input(...)`.
+- [x] Add targeted tests for partial upsert/update validations and notes/source invariants.
+- [x] Run targeted client_data_store tests + compile check.
+- [x] Review diff for strict scope.
+
+## Review
+- [x] Confirm only requested upsert function + tests/docs changed.
+- [x] Confirm checks/tests passed.
+
+# TODO — Daily input CRUD slice 3 (set notes only) (2026-03-24)
+
+- [x] Sync attempted; continue local when origin unavailable.
+- [x] Implement only `set_daily_input_notes(...)` using `get_or_create_daily_input(...)`.
+- [x] Add targeted tests for notes normalization/validation and invariants.
+- [x] Run targeted tests + compile check.
+- [x] Review strict scope.
+
+## Review
+- [x] Confirm only notes function + tests/docs changed.
+- [x] Confirm checks/tests passed.
+
+# TODO — Daily input CRUD slice 4 (list only) (2026-03-24)
+
+- [x] Sync attempted; proceed local if origin unavailable.
+- [x] Implement only `list_daily_inputs(client_id, date_from, date_to)` with strict validation and sorting.
+- [x] Add targeted list-daily-input tests for range/filter/order/shape/validation.
+- [x] Run targeted tests + compile check.
+- [x] Review strict scope.
+
+## Review
+- [x] Confirm only list function + tests/docs changed.
+- [x] Confirm checks/tests passed.
+
+# TODO — Daily input CRUD slice 5 (map only) (2026-03-24)
+
+- [x] Sync attempted; proceed local if origin unavailable.
+- [x] Implement only `get_daily_input_map(client_id, date_from, date_to)` reusing list logic.
+- [x] Add targeted tests for map behavior/keys/shape/range/validation.
+- [x] Run targeted tests + compile check.
+- [x] Review strict scope.
+
+## Review
+- [x] Confirm only map function + tests/docs changed.
+- [x] Confirm checks/tests passed.
+
+# TODO — Sale entries CRUD slice 1 (list/create only) (2026-03-24)
+
+- [x] Sync attempted; proceed local when origin unavailable.
+- [x] Implement only `list_sale_entries_for_daily_input(...)` and `create_sale_entry(...)`.
+- [x] Add targeted tests for sale-entry listing/creation/validation/sorting/gross-profit.
+- [x] Run targeted tests + compile check.
+- [x] Review strict scope.
+
+## Review
+- [x] Confirm only sale-entry list/create + tests/docs changed.
+- [x] Confirm checks/tests passed.
+
+# TODO — Sale entries CRUD slice 2 (update/delete only) (2026-03-24)
+
+- [x] Sync attempted; proceed local if origin unavailable.
+- [x] Implement only `update_sale_entry(...)` and `delete_sale_entry(...)`.
+- [x] Add targeted tests for update/delete behavior and validations.
+- [x] Run targeted tests + compile check.
+- [x] Review strict scope.
+
+## Review
+- [x] Confirm only sale-entry update/delete + tests/docs changed.
+- [x] Confirm checks/tests passed.
+
+# TODO — Daily custom values CRUD slice 1 (list/upsert only) (2026-03-24)
+
+- [x] Sync attempted; continue local if origin unavailable.
+- [x] Implement only `list_daily_custom_values(...)` and `upsert_daily_custom_value(...)`.
+- [x] Add targeted tests for listing/upsert behavior, validation, and ownership rules.
+- [x] Run targeted tests + compile check.
+- [x] Review strict scope.
+
+## Review
+- [x] Confirm only daily-custom-values list/upsert + tests/docs changed.
+- [x] Confirm checks/tests passed.
+
+# TODO — Daily custom values CRUD slice 2 (delete only + payload consistency) (2026-03-24)
+
+- [x] Sync attempted; continue local if origin unavailable.
+- [x] Implement only `delete_daily_custom_value(daily_input_id, custom_field_id)`.
+- [x] Ensure daily custom value payload consistency across list/upsert/delete.
+- [x] Add targeted tests for delete + payload consistency.
+- [x] Run targeted tests + compile check.
+- [x] Review strict scope.
+
+## Review
+- [x] Confirm only daily-custom-value delete/consistency + tests/docs changed.
+- [x] Confirm checks/tests passed.
