@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import { format } from "date-fns";
@@ -10,6 +10,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
 import { formatCurrencyValue, normalizeCurrencyCode } from "@/lib/subAccountCurrency";
+import { SubReportingNav } from "@/app/sub/[id]/_components/SubReportingNav";
 
 type ClientItem = { id: number; name: string; client_type?: string; currency?: string | null };
 
@@ -448,6 +449,7 @@ export default function SubMediaBuyingPage() {
     () => (tableData ? [...tableData.months].sort((a, b) => b.month.localeCompare(a.month)) : []),
     [tableData]
   );
+  const dataMonthKey = useMemo(() => sortedMonths[0]?.month ?? format(new Date(), "yyyy-MM"), [sortedMonths]);
   const monthsByKey = useMemo(() => Object.fromEntries(sortedMonths.map((item) => [item.month, item])), [sortedMonths]);
 
   const ensureMonthDays = useCallback(async (month: LeadTableMonth, force: boolean = false) => {
@@ -670,13 +672,15 @@ export default function SubMediaBuyingPage() {
   return (
     <ProtectedPage>
       <AppShell title={null}>
-        <div className="mb-4 flex items-center gap-4 text-sm">
-          <Link href={`/sub/${clientId}/media-buying`} className="text-indigo-600 transition-colors hover:text-indigo-700 hover:underline">Media Buying</Link>
-          <Link href={`/sub/${clientId}/media-tracker`} className="text-indigo-600 transition-colors hover:text-indigo-700 hover:underline">Media Tracker</Link>
-        </div>
+        <SubReportingNav clientId={clientId} />
 
         <section className="wm-card p-6">
           <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
+          <div className="mt-2">
+            <Link href={`/sub/${clientId}/data?month=${dataMonthKey}`} className="text-sm font-medium text-indigo-700 hover:text-indigo-800 hover:underline">
+              Edit in Data
+            </Link>
+          </div>
           <p className="mt-2 text-sm text-slate-600">
             Range: {tableData?.meta.effective_date_from ?? tableData?.meta.date_from ?? "—"} - {tableData?.meta.effective_date_to ?? tableData?.meta.date_to ?? "—"}
           </p>
@@ -745,17 +749,17 @@ export default function SubMediaBuyingPage() {
                     <th {...visibilityProps("leads")} className={`${classFor("leads")} ${stickyHeaderClass("leads")}`}>Lead-uri</th>
                     <th {...visibilityProps("phones")} className={`${classFor("phones")} ${stickyHeaderClass("phones")}`}>Telefoane</th>
                     <th {...visibilityProps("total_leads")} className={`${classFor("total_leads")} ${stickyHeaderClass("total_leads")}`}>Total Lead-uri</th>
-                    <th {...visibilityProps("custom_value_1_count")} className={`${classFor("custom_value_1_count")} ${stickyHeaderClass("custom_value_1_count")}`}>{renderEditableHeader("custom_label_1")}</th>
-                    <th {...visibilityProps("custom_value_2_count")} className={`${classFor("custom_value_2_count")} ${stickyHeaderClass("custom_value_2_count")}`}>{renderEditableHeader("custom_label_2")}</th>
-                    <th {...visibilityProps("custom_value_3_amount_ron")} className={`${classFor("custom_value_3_amount_ron")} ${stickyHeaderClass("custom_value_3_amount_ron")}`}>{renderEditableHeader("custom_label_3")}</th>
-                    <th {...visibilityProps("custom_value_4_amount_ron")} className={`${classFor("custom_value_4_amount_ron")} ${stickyHeaderClass("custom_value_4_amount_ron")}`}>{renderEditableHeader("custom_label_4")}</th>
-                    <th {...visibilityProps("custom_value_5_amount_ron")} className={`${classFor("custom_value_5_amount_ron")} ${stickyHeaderClass("custom_value_5_amount_ron")}`}>{renderEditableHeader("custom_label_5")}</th>
+                    <th {...visibilityProps("custom_value_1_count")} className={`${classFor("custom_value_1_count")} ${stickyHeaderClass("custom_value_1_count")}`}>{labelMap.custom_label_1}</th>
+                    <th {...visibilityProps("custom_value_2_count")} className={`${classFor("custom_value_2_count")} ${stickyHeaderClass("custom_value_2_count")}`}>{labelMap.custom_label_2}</th>
+                    <th {...visibilityProps("custom_value_3_amount_ron")} className={`${classFor("custom_value_3_amount_ron")} ${stickyHeaderClass("custom_value_3_amount_ron")}`}>{labelMap.custom_label_3}</th>
+                    <th {...visibilityProps("custom_value_4_amount_ron")} className={`${classFor("custom_value_4_amount_ron")} ${stickyHeaderClass("custom_value_4_amount_ron")}`}>{labelMap.custom_label_4}</th>
+                    <th {...visibilityProps("custom_value_5_amount_ron")} className={`${classFor("custom_value_5_amount_ron")} ${stickyHeaderClass("custom_value_5_amount_ron")}`}>{labelMap.custom_label_5}</th>
                     <th {...visibilityProps("sales_count")} className={`${classFor("sales_count")} ${stickyHeaderClass("sales_count")}`}>Vânzări</th>
-                    <th {...visibilityProps("custom_value_rate_1")} className={`${classFor("custom_value_rate_1")} ${stickyHeaderClass("custom_value_rate_1")}`}>{renderEditableHeader("custom_rate_label_1")}</th>
-                    <th {...visibilityProps("custom_value_rate_2")} className={`${classFor("custom_value_rate_2")} ${stickyHeaderClass("custom_value_rate_2")}`}>{renderEditableHeader("custom_rate_label_2")}</th>
+                    <th {...visibilityProps("custom_value_rate_1")} className={`${classFor("custom_value_rate_1")} ${stickyHeaderClass("custom_value_rate_1")}`}>{labelMap.custom_rate_label_1}</th>
+                    <th {...visibilityProps("custom_value_rate_2")} className={`${classFor("custom_value_rate_2")} ${stickyHeaderClass("custom_value_rate_2")}`}>{labelMap.custom_rate_label_2}</th>
                     <th {...visibilityProps("cost_per_lead")} className={`${classFor("cost_per_lead")} ${stickyHeaderClass("cost_per_lead")}`}>Cost per Lead</th>
-                    <th {...visibilityProps("cost_custom_value_1")} className={`${classFor("cost_custom_value_1")} ${stickyHeaderClass("cost_custom_value_1")}`}>{renderEditableHeader("custom_cost_label_1")}</th>
-                    <th {...visibilityProps("cost_custom_value_2")} className={`${classFor("cost_custom_value_2")} ${stickyHeaderClass("cost_custom_value_2")}`}>{renderEditableHeader("custom_cost_label_2")}</th>
+                    <th {...visibilityProps("cost_custom_value_1")} className={`${classFor("cost_custom_value_1")} ${stickyHeaderClass("cost_custom_value_1")}`}>{labelMap.custom_cost_label_1}</th>
+                    <th {...visibilityProps("cost_custom_value_2")} className={`${classFor("cost_custom_value_2")} ${stickyHeaderClass("cost_custom_value_2")}`}>{labelMap.custom_cost_label_2}</th>
                     <th {...visibilityProps("cost_per_sale")} className={`${classFor("cost_per_sale")} ${stickyHeaderClass("cost_per_sale")}`}>Cost per Sale</th>
                   </tr>
                 </thead>
@@ -836,93 +840,26 @@ export default function SubMediaBuyingPage() {
 
                         {open
                           ? monthDays.map((day) => {
-                              const draft = editingByDate[day.date];
-                              const errors = draft ? validateDraft(draft) : {};
-                              const changed = draft ? hasChanges(draft, day) : false;
-                              const invalid = draft ? Object.keys(errors).length > 0 : false;
-                              const saving = Boolean(savingByDate[day.date]);
-                              const feedback = rowFeedback[day.date];
-
                               return (
                                 <tr key={day.date} className="border-t border-slate-200 bg-white text-slate-800">
                                   <td {...visibilityProps("date")} className={`${classFor("date")} ${stickyDateCellClass("day")} pl-8 align-top`}>
                                     <div>{shortDayLabel(day.date)}</div>
-                                    <div className="mt-1 flex gap-2">
-                                      {draft ? (
-                                        <>
-                                          <button
-                                            type="button"
-                                            className="rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-50 disabled:opacity-50"
-                                            onClick={() => void saveRow(day)}
-                                            disabled={!changed || invalid || saving}
-                                          >
-                                            {saving ? "Saving..." : "Save"}
-                                          </button>
-                                          <button
-                                            type="button"
-                                            className="rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-50 disabled:opacity-50"
-                                            onClick={() => setEditingByDate((prev) => {
-                                              const next = { ...prev };
-                                              delete next[day.date];
-                                              return next;
-                                            })}
-                                            disabled={saving}
-                                          >
-                                            Cancel
-                                          </button>
-                                        </>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          className="rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-50"
-                                          onClick={() => setEditingByDate((prev) => ({ ...prev, [day.date]: makeDraft(day) }))}
-                                        >
-                                          Edit
-                                        </button>
-                                      )}
-                                    </div>
-                                    {feedback?.message ? (
-                                      <p className={`mt-1 text-xs ${feedback.kind === "error" ? "text-red-600" : "text-emerald-600"}`}>{feedback.message}</p>
-                                    ) : null}
+                                    <p className="mt-1 text-xs text-slate-500">Edit values in Data page</p>
                                   </td>
                                   <td {...visibilityProps("cost_google")} className={classFor("cost_google")}>{formatMoney(day.cost_google, displayCurrency)}</td>
                                   <td {...visibilityProps("cost_meta")} className={classFor("cost_meta")}>{formatMoney(day.cost_meta, displayCurrency)}</td>
                                   <td {...visibilityProps("cost_tiktok")} className={classFor("cost_tiktok")}>{formatMoney(day.cost_tiktok, displayCurrency)}</td>
                                   <td {...visibilityProps("cost_total")} className={classFor("cost_total")}>{formatMoney(day.cost_total, displayCurrency)}</td>
                                   <td {...visibilityProps("percent_change")} className={classFor("percent_change")}>{formatRate(day.percent_change)}</td>
-                                  <td {...visibilityProps("leads")} className={classFor("leads")}>
-                                    {draft ? <input aria-label={`Leads ${day.date}`} className="w-20 rounded border border-slate-300 px-2 py-1" value={draft.leads} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, leads: e.target.value } }))} /> : formatCount(day.leads)}
-                                    {errors.leads ? <p className="text-xs text-red-600">{errors.leads}</p> : null}
-                                  </td>
-                                  <td {...visibilityProps("phones")} className={classFor("phones")}>
-                                    {draft ? <input aria-label={`Phones ${day.date}`} className="w-20 rounded border border-slate-300 px-2 py-1" value={draft.phones} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, phones: e.target.value } }))} /> : formatCount(day.phones)}
-                                    {errors.phones ? <p className="text-xs text-red-600">{errors.phones}</p> : null}
-                                  </td>
+                                  <td {...visibilityProps("leads")} className={classFor("leads")}>{formatCount(day.leads)}</td>
+                                  <td {...visibilityProps("phones")} className={classFor("phones")}>{formatCount(day.phones)}</td>
                                   <td {...visibilityProps("total_leads")} className={classFor("total_leads")}>{formatCount(day.total_leads)}</td>
-                                  <td {...visibilityProps("custom_value_1_count")} className={classFor("custom_value_1_count")}>
-                                    {draft ? <input aria-label={`Custom Value 1 ${day.date}`} className="w-20 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_1_count} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, custom_value_1_count: e.target.value } }))} /> : formatCount(day.custom_value_1_count)}
-                                    {errors.custom_value_1_count ? <p className="text-xs text-red-600">{errors.custom_value_1_count}</p> : null}
-                                  </td>
-                                  <td {...visibilityProps("custom_value_2_count")} className={classFor("custom_value_2_count")}>
-                                    {draft ? <input aria-label={`Custom Value 2 ${day.date}`} className="w-20 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_2_count} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, custom_value_2_count: e.target.value } }))} /> : formatCount(day.custom_value_2_count)}
-                                    {errors.custom_value_2_count ? <p className="text-xs text-red-600">{errors.custom_value_2_count}</p> : null}
-                                  </td>
-                                  <td {...visibilityProps("custom_value_3_amount_ron")} className={classFor("custom_value_3_amount_ron")}>
-                                    {draft ? <input aria-label={`Custom Value 3 ${day.date}`} className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_3_amount_ron} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, custom_value_3_amount_ron: e.target.value } }))} /> : formatMoney(day.custom_value_3_amount_ron, displayCurrency)}
-                                    {errors.custom_value_3_amount_ron ? <p className="text-xs text-red-600">{errors.custom_value_3_amount_ron}</p> : null}
-                                  </td>
-                                  <td {...visibilityProps("custom_value_4_amount_ron")} className={classFor("custom_value_4_amount_ron")}>
-                                    {draft ? <input aria-label={`Custom Value 4 ${day.date}`} className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_4_amount_ron} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, custom_value_4_amount_ron: e.target.value } }))} /> : <span className="text-slate-900">{formatUnrealizedMoney(day.custom_value_4_amount_ron, displayCurrency)}</span>}
-                                    {errors.custom_value_4_amount_ron ? <p className="text-xs text-red-600">{errors.custom_value_4_amount_ron}</p> : null}
-                                  </td>
-                                  <td {...visibilityProps("custom_value_5_amount_ron")} className={classFor("custom_value_5_amount_ron")}>
-                                    {draft ? <input aria-label={`Custom Value 5 ${day.date}`} className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_5_amount_ron} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, custom_value_5_amount_ron: e.target.value } }))} /> : <span className="text-slate-900">{formatMoney(day.custom_value_5_amount_ron, displayCurrency)}</span>}
-                                    {errors.custom_value_5_amount_ron ? <p className="text-xs text-red-600">{errors.custom_value_5_amount_ron}</p> : null}
-                                  </td>
-                                  <td {...visibilityProps("sales_count")} className={classFor("sales_count")}>
-                                    {draft ? <input aria-label={`Sales ${day.date}`} className="w-20 rounded border border-slate-300 px-2 py-1" value={draft.sales_count} onChange={(e) => setEditingByDate((prev) => ({ ...prev, [day.date]: { ...draft, sales_count: e.target.value } }))} /> : formatCount(day.sales_count)}
-                                    {errors.sales_count ? <p className="text-xs text-red-600">{errors.sales_count}</p> : null}
-                                  </td>
+                                  <td {...visibilityProps("custom_value_1_count")} className={classFor("custom_value_1_count")}>{formatCount(day.custom_value_1_count)}</td>
+                                  <td {...visibilityProps("custom_value_2_count")} className={classFor("custom_value_2_count")}>{formatCount(day.custom_value_2_count)}</td>
+                                  <td {...visibilityProps("custom_value_3_amount_ron")} className={classFor("custom_value_3_amount_ron")}>{formatMoney(day.custom_value_3_amount_ron, displayCurrency)}</td>
+                                  <td {...visibilityProps("custom_value_4_amount_ron")} className={classFor("custom_value_4_amount_ron")}><span className="text-slate-900">{formatUnrealizedMoney(day.custom_value_4_amount_ron, displayCurrency)}</span></td>
+                                  <td {...visibilityProps("custom_value_5_amount_ron")} className={classFor("custom_value_5_amount_ron")}><span className="text-slate-900">{formatMoney(day.custom_value_5_amount_ron, displayCurrency)}</span></td>
+                                  <td {...visibilityProps("sales_count")} className={classFor("sales_count")}>{formatCount(day.sales_count)}</td>
                                   <td {...visibilityProps("custom_value_rate_1")} className={classFor("custom_value_rate_1")}>{formatRate(day.custom_value_rate_1)}</td>
                                   <td {...visibilityProps("custom_value_rate_2")} className={classFor("custom_value_rate_2")}>{formatRate(day.custom_value_rate_2)}</td>
                                   <td {...visibilityProps("cost_per_lead")} className={classFor("cost_per_lead")}>{formatMoney(day.cost_per_lead, displayCurrency)}</td>

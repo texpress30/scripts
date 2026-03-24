@@ -165,6 +165,130 @@ class TikTokAdDailyMetric:
     extra_metrics: dict[str, object]
 
 
+TikTokSyncGrain = Literal["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"]
+
+
+@dataclass(frozen=True)
+class TikTokDailyMetric:
+    report_date: date
+    account_id: str
+    spend: float
+    impressions: int
+    clicks: int
+    conversions: float
+    conversion_value: float
+    extra_metrics: dict[str, object]
+
+
+@dataclass(frozen=True)
+class TikTokCampaignDailyMetric:
+    report_date: date
+    account_id: str
+    campaign_id: str
+    campaign_name: str
+    spend: float
+    impressions: int
+    clicks: int
+    conversions: float
+    conversion_value: float
+    extra_metrics: dict[str, object]
+
+@dataclass(frozen=True)
+class TikTokAdGroupDailyMetric:
+    report_date: date
+    account_id: str
+    ad_group_id: str
+    ad_group_name: str
+    campaign_id: str
+    campaign_name: str
+    spend: float
+    impressions: int
+    clicks: int
+    conversions: float
+    conversion_value: float
+    extra_metrics: dict[str, object]
+
+
+@dataclass(frozen=True)
+class TikTokAdDailyMetric:
+    report_date: date
+    account_id: str
+    ad_id: str
+    ad_name: str
+    ad_group_id: str
+    ad_group_name: str
+    campaign_id: str
+    campaign_name: str
+    spend: float
+    impressions: int
+    clicks: int
+    conversions: float
+    conversion_value: float
+    extra_metrics: dict[str, object]
+
+
+TikTokSyncGrain = Literal["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"]
+
+
+@dataclass(frozen=True)
+class TikTokDailyMetric:
+    report_date: date
+    account_id: str
+    spend: float
+    impressions: int
+    clicks: int
+    conversions: float
+    conversion_value: float
+    extra_metrics: dict[str, object]
+
+
+@dataclass(frozen=True)
+class TikTokCampaignDailyMetric:
+    report_date: date
+    account_id: str
+    campaign_id: str
+    campaign_name: str
+    spend: float
+    impressions: int
+    clicks: int
+    conversions: float
+    conversion_value: float
+    extra_metrics: dict[str, object]
+
+@dataclass(frozen=True)
+class TikTokAdGroupDailyMetric:
+    report_date: date
+    account_id: str
+    ad_group_id: str
+    ad_group_name: str
+    campaign_id: str
+    campaign_name: str
+    spend: float
+    impressions: int
+    clicks: int
+    conversions: float
+    conversion_value: float
+    extra_metrics: dict[str, object]
+
+
+@dataclass(frozen=True)
+class TikTokAdDailyMetric:
+    report_date: date
+    account_id: str
+    ad_id: str
+    ad_name: str
+    ad_group_id: str
+    ad_group_name: str
+    campaign_id: str
+    campaign_name: str
+    spend: float
+    impressions: int
+    clicks: int
+    conversions: float
+    conversion_value: float
+    extra_metrics: dict[str, object]
+
+
 class TikTokAdsService:
     _oauth_state_cache: set[str]
 
