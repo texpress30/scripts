@@ -7110,3 +7110,24 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, f�
 - [x] Data page copy + headers are stabilized in Romanian and the table structure matches the requested sales-centric columns.
 - [x] Media Buying day-row helper text was removed; page remains read-only with the top-level "Edit in Data" CTA.
 - [x] Targeted frontend/backend tests for touched flows pass.
+
+# TODO — Data Add Row: complete missing fields only (2026-03-24)
+
+- [x] Mandatory workspace sync attempt (`git fetch --all --prune`, `git pull --ff-only`) + inspect `git status`/`git diff`.
+- [x] Audit only relevant frontend files: `data/page.tsx` + `data/page.test.tsx`.
+- [x] Extend existing `Adaugă rând` form with missing fields only (no layout redesign, no table/main-page refactor).
+- [x] Implement calculated read-only values in add-row draft: `Săptămâna` (ISO), `Custom Value 4` (from `Preț vânzare`), `Vânzări` (0/1), `P/L brut` (`Preț vânzare - Preț actual`).
+- [x] Extend save flow: keep daily-row save as-is, and create one sale entry only when sale section is meaningfully filled with required prices.
+- [x] Add/adjust targeted frontend tests for new add-row fields, calculations, and save behavior.
+- [x] Run relevant frontend tests + minimal frontend compile/import check.
+- [x] Commit and create PR with `make_pr`.
+
+## Check-in
+- Scope confirmed: strict Add Row form completion only, no backend changes unless strictly needed.
+
+
+## Review — Data Add Row: complete missing fields only (2026-03-24)
+- [x] Add Row păstrează layout/styling/poziționare existente; au fost adăugate doar câmpurile lipsă în aceeași zonă.
+- [x] Câmpurile calculate (`Săptămâna`, `Custom Value 4`, `Vânzări`, `P/L brut`) sunt read-only și se actualizează automat din draft.
+- [x] Salvarea păstrează daily-row flow existent și creează un singur sale entry doar când secțiunea de vânzare este completată minim.
+- [x] Testele țintite pentru Data page sunt verzi; TypeScript full-check are erori preexistente unrelated documentate.

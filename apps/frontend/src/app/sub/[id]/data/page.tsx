@@ -96,6 +96,13 @@ type SaleDraft = {
   sort_order: string;
 };
 
+type NewRowSaleDraft = {
+  brand: string;
+  model: string;
+  sale_price_amount: string;
+  actual_price_amount: string;
+};
+
 const FIXED_FIELD_FALLBACK_LABELS: Record<string, string> = {
   leads: "Lead-uri",
   phones: "Telefoane",
@@ -212,6 +219,10 @@ function emptySaleDraft(): SaleDraft {
   return { brand: "", model: "", sale_price_amount: "", actual_price_amount: "", notes: "", sort_order: "" };
 }
 
+function emptyNewRowSaleDraft(): NewRowSaleDraft {
+  return { brand: "", model: "", sale_price_amount: "", actual_price_amount: "" };
+}
+
 export default function SubDataPage() {
   const params = useParams<{ id: string }>();
   const clientId = Number(params.id);
@@ -235,6 +246,7 @@ export default function SubDataPage() {
   const [editingRowDraft, setEditingRowDraft] = useState<DailyRowDraft | null>(null);
   const [addingRow, setAddingRow] = useState(false);
   const [newRowDraft, setNewRowDraft] = useState<DailyRowDraft>(() => emptyDailyDraft(format(startOfMonth(new Date()), "yyyy-MM-dd")));
+  const [newRowSaleDraft, setNewRowSaleDraft] = useState<NewRowSaleDraft>(emptyNewRowSaleDraft);
 
   const [openDetailsKeys, setOpenDetailsKeys] = useState<Record<string, boolean>>({});
   const [addSaleForRowKey, setAddSaleForRowKey] = useState("");
@@ -253,6 +265,20 @@ export default function SubDataPage() {
   const supportedSources = useMemo(() => (config?.sources?.length ? config.sources : SOURCE_FALLBACKS), [config?.sources]);
 
   const rowKeyOf = (row: DataTableRow) => `${row.metric_date}:${row.source ?? "unknown"}:${row.daily_input_id ?? ""}`;
+  const newRowWeekLabel = useMemo(() => formatWeekLabel(newRowDraft.metric_date), [newRowDraft.metric_date]);
+  const newRowSalePriceNumber = Number(newRowSaleDraft.sale_price_amount || 0);
+  const newRowActualPriceNumber = Number(newRowSaleDraft.actual_price_amount || 0);
+  const newRowHasAnySaleInput = Boolean(
+    newRowSaleDraft.brand.trim()
+      || newRowSaleDraft.model.trim()
+      || newRowSaleDraft.sale_price_amount.trim()
+      || newRowSaleDraft.actual_price_amount.trim(),
+  );
+  const newRowHasCompleteSaleInput = newRowSaleDraft.sale_price_amount.trim() !== "" && newRowSaleDraft.actual_price_amount.trim() !== "";
+  const newRowSalesCount = newRowHasCompleteSaleInput ? 1 : 0;
+  const newRowDerivedCustomValue4 = Number.isFinite(newRowSalePriceNumber) ? newRowSalePriceNumber : 0;
+  const newRowDerivedGrossProfit = (Number.isFinite(newRowSalePriceNumber) ? newRowSalePriceNumber : 0)
+    - (Number.isFinite(newRowActualPriceNumber) ? newRowActualPriceNumber : 0);
 
   async function loadClientName() {
     const result = await apiRequest<{ items: ClientItem[] }>("/clients");
@@ -362,6 +388,24 @@ export default function SubDataPage() {
             body: JSON.stringify({ numeric_value: parseNumericInput(draftValue) ?? draftValue }),
           });
         }
+
+        if (isNew && newRowHasAnySaleInput) {
+          const parsedSalePrice = parseNumericInput(newRowSaleDraft.sale_price_amount);
+          const parsedActualPrice = parseNumericInput(newRowSaleDraft.actual_price_amount);
+          if (parsedSalePrice == null || parsedActualPrice == null) {
+            throw new Error("Completează cel puțin Preț vânzare și Preț actual pentru a salva vânzarea.");
+          }
+          await apiRequest(`/clients/${clientId}/data/sale-entries`, {
+            method: "POST",
+            body: JSON.stringify({
+              daily_input_id: dailyInputId,
+              brand: newRowSaleDraft.brand.trim() || null,
+              model: newRowSaleDraft.model.trim() || null,
+              sale_price_amount: parsedSalePrice,
+              actual_price_amount: parsedActualPrice,
+            }),
+          });
+        }
       }
 
       await refreshTable();
@@ -369,6 +413,7 @@ export default function SubDataPage() {
       if (isNew) {
         setAddingRow(false);
         setNewRowDraft(emptyDailyDraft(dateFrom));
+        setNewRowSaleDraft(emptyNewRowSaleDraft());
       } else {
         setEditingRowKey("");
         setEditingRowDraft(null);
@@ -525,7 +570,7 @@ export default function SubDataPage() {
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
-            <button type="button" className="rounded-md border border-indigo-300 px-3 py-1.5 text-sm text-indigo-700" onClick={() => { setAddingRow((v) => !v); setNewRowDraft(emptyDailyDraft(dateFrom)); }}>
+            <button type="button" className="rounded-md border border-indigo-300 px-3 py-1.5 text-sm text-indigo-700" onClick={() => { setAddingRow((v) => !v); setNewRowDraft(emptyDailyDraft(dateFrom)); setNewRowSaleDraft(emptyNewRowSaleDraft()); }}>
               Adaugă rând
             </button>
             <button type="button" className="rounded-md border border-indigo-300 px-3 py-1.5 text-sm text-indigo-700" onClick={() => setManageFieldsOpen((v) => !v)}>
@@ -603,7 +648,15 @@ export default function SubDataPage() {
                 <input aria-label="New row cv1" className="rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_1_count} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_1_count: e.target.value }))} placeholder={fixedLabels.custom_value_1_count} />
                 <input aria-label="New row cv2" className="rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_2_count} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_2_count: e.target.value }))} placeholder={fixedLabels.custom_value_2_count} />
                 <input aria-label="New row cv3" className="rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_3_amount} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_3_amount: e.target.value }))} placeholder={fixedLabels.custom_value_3_amount} />
+                <input aria-label="Săptămâna rând nou" className="rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowWeekLabel} readOnly />
+                <input aria-label="Custom Value 4 rând nou" className="rounded border border-slate-300 bg-slate-100 px-2 py-1" value={formatAmount(newRowDerivedCustomValue4, currencyCode)} placeholder={fixedLabels.custom_value_4_amount} readOnly />
                 <input aria-label="New row cv5" className="rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_5_amount} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_5_amount: e.target.value }))} placeholder={fixedLabels.custom_value_5_amount} />
+                <input aria-label="Vânzări rând nou" className="rounded border border-slate-300 bg-slate-100 px-2 py-1" value={String(newRowSalesCount)} readOnly />
+                <input aria-label="Marcă rând nou" className="rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.brand} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, brand: e.target.value }))} placeholder="Marcă" />
+                <input aria-label="Model rând nou" className="rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.model} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, model: e.target.value }))} placeholder="Model" />
+                <input aria-label="Preț vânzare rând nou" className="rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.sale_price_amount} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, sale_price_amount: e.target.value }))} placeholder="Preț vânzare" />
+                <input aria-label="Preț actual rând nou" className="rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.actual_price_amount} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, actual_price_amount: e.target.value }))} placeholder="Preț actual" />
+                <input aria-label="P/L brut rând nou" className="rounded border border-slate-300 bg-slate-100 px-2 py-1" value={formatAmount(newRowDerivedGrossProfit, currencyCode)} readOnly />
               </div>
               <textarea aria-label="New row notes" className="mt-2 w-full rounded border border-slate-300 px-2 py-1" rows={2} value={newRowDraft.notes} onChange={(e) => setNewRowDraft((p) => ({ ...p, notes: e.target.value }))} placeholder="Mențiuni" />
               <div className="mt-2 flex gap-2">

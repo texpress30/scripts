@@ -106,9 +106,20 @@ describe("SubDataPage editable flows", () => {
     await screen.findByRole("heading", { name: "Data - Active Life Therapy" });
 
     fireEvent.click(screen.getByRole("button", { name: "Adaugă rând" }));
+    expect(screen.getByLabelText("Săptămâna rând nou")).toHaveValue("Săpt. 9");
+    expect(screen.getByLabelText("Custom Value 4 rând nou")).toHaveValue("0,00 RON");
+    expect(screen.getByLabelText("Vânzări rând nou")).toHaveValue("0");
+    expect(screen.getByLabelText("P/L brut rând nou")).toHaveValue("0,00 RON");
     fireEvent.change(screen.getByLabelText("Data rând nou"), { target: { value: "2026-03-12" } });
+    expect(screen.getByLabelText("Săptămâna rând nou")).toHaveValue("Săpt. 11");
     fireEvent.change(screen.getByLabelText("Sursa rând nou"), { target: { value: "meta_ads" } });
     fireEvent.change(screen.getByLabelText("Lead-uri rând nou"), { target: { value: "10" } });
+    fireEvent.change(screen.getByLabelText("Preț vânzare rând nou"), { target: { value: "250" } });
+    expect(screen.getByLabelText("Custom Value 4 rând nou")).toHaveValue("250,00 RON");
+    expect(screen.getByLabelText("Vânzări rând nou")).toHaveValue("0");
+    fireEvent.change(screen.getByLabelText("Preț actual rând nou"), { target: { value: "150" } });
+    expect(screen.getByLabelText("P/L brut rând nou")).toHaveValue("100,00 RON");
+    expect(screen.getByLabelText("Vânzări rând nou")).toHaveValue("1");
     fireEvent.click(screen.getByRole("button", { name: "Salvează rând" }));
 
     await waitFor(() => {
@@ -117,6 +128,50 @@ describe("SubDataPage editable flows", () => {
         expect.objectContaining({ method: "PUT", body: expect.stringContaining('"metric_date":"2026-03-12"') }),
       );
     });
+
+    await waitFor(() => {
+      expect(apiMock.apiRequest).toHaveBeenCalledWith(
+        "/clients/96/data/sale-entries",
+        expect.objectContaining({ method: "POST", body: expect.stringContaining('"daily_input_id":101') }),
+      );
+    });
+  });
+
+  it("keeps existing add-row fields and saves daily row only when sale section is empty", async () => {
+    render(<SubDataPage />);
+    await screen.findByRole("heading", { name: "Data - Active Life Therapy" });
+    fireEvent.click(screen.getByRole("button", { name: "Adaugă rând" }));
+
+    expect(screen.getByLabelText("Data rând nou")).toBeInTheDocument();
+    expect(screen.getByLabelText("Sursa rând nou")).toBeInTheDocument();
+    expect(screen.getByLabelText("Lead-uri rând nou")).toBeInTheDocument();
+    expect(screen.getByLabelText("New row phones")).toBeInTheDocument();
+    expect(screen.getByLabelText("New row cv1")).toBeInTheDocument();
+    expect(screen.getByLabelText("New row cv2")).toBeInTheDocument();
+    expect(screen.getByLabelText("New row cv3")).toBeInTheDocument();
+    expect(screen.getByLabelText("Custom Value 4 rând nou")).toBeInTheDocument();
+    expect(screen.getByLabelText("New row cv5")).toBeInTheDocument();
+    expect(screen.getByLabelText("New row notes")).toBeInTheDocument();
+    expect(screen.getByLabelText("Marcă rând nou")).toBeInTheDocument();
+    expect(screen.getByLabelText("Model rând nou")).toBeInTheDocument();
+    expect(screen.getByLabelText("Preț vânzare rând nou")).toBeInTheDocument();
+    expect(screen.getByLabelText("Preț actual rând nou")).toBeInTheDocument();
+    expect(screen.getByLabelText("P/L brut rând nou")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Data rând nou"), { target: { value: "2026-03-12" } });
+    fireEvent.change(screen.getByLabelText("Sursa rând nou"), { target: { value: "meta_ads" } });
+    fireEvent.change(screen.getByLabelText("Lead-uri rând nou"), { target: { value: "9" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvează rând" }));
+
+    await waitFor(() => {
+      expect(apiMock.apiRequest).toHaveBeenCalledWith(
+        "/clients/96/data/daily-input",
+        expect.objectContaining({ method: "PUT", body: expect.stringContaining('"leads":9') }),
+      );
+    });
+    expect(
+      apiMock.apiRequest.mock.calls.some((call: any[]) => call[0] === "/clients/96/data/sale-entries"),
+    ).toBe(false);
   });
 
   it("edits existing row and persists existing dynamic custom value payload", async () => {
@@ -205,8 +260,8 @@ describe("SubDataPage editable flows", () => {
     ));
 
     await waitFor(() => {
-      const configCalls = apiMock.apiRequest.mock.calls.filter((call: [string]) => call[0] === "/clients/96/data/config");
-      const tableCalls = apiMock.apiRequest.mock.calls.filter((call: [string]) => String(call[0]).includes("/clients/96/data/table"));
+      const configCalls = apiMock.apiRequest.mock.calls.filter((call: any[]) => call[0] === "/clients/96/data/config");
+      const tableCalls = apiMock.apiRequest.mock.calls.filter((call: any[]) => String(call[0]).includes("/clients/96/data/table"));
       expect(configCalls.length).toBeGreaterThan(1);
       expect(tableCalls.length).toBeGreaterThan(1);
     });

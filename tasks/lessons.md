@@ -585,3 +585,4 @@
 
 - 2026-03-24: Când userul cere rewiring Media Buying/Media Tracker pe Data layer, aplic strict source-of-truth swap + UI read-only cu CTA către /data, fără extindere în migrații/cleanup sau refactoruri laterale.
 - 2026-03-24: După un feedback de tip „nu opri la jumătate”, nu trimit status intermediar; închid taskul end-to-end în același turn (fix + teste + commit + make_pr) sau nu livrez deloc ca final.
+- 2026-03-24: Când userul limitează explicit taskul la un sub-form (`Adaugă rând`), nu ating alte zone (tabel principal, Media Buying/Tracker, backend) și implementez strict câmpurile/calculul/salvarea cerute.
