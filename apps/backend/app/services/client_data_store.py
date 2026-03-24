@@ -714,3 +714,44 @@ def set_daily_input_notes(
     if payload is None:
         raise RuntimeError(f"Failed to set notes for daily input {base_row['id']}")
     return payload
+
+
+def list_daily_inputs(
+    *,
+    client_id: int,
+    date_from: date | str,
+    date_to: date | str,
+) -> list[dict[str, object]]:
+    normalized_client_id = _normalize_client_id(client_id)
+    normalized_date_from = _normalize_metric_date(date_from)
+    normalized_date_to = _normalize_metric_date(date_to)
+    if normalized_date_from > normalized_date_to:
+        raise ValueError("date_from must be <= date_to")
+
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    client_id,
+                    metric_date,
+                    source,
+                    leads,
+                    phones,
+                    custom_value_1_count,
+                    custom_value_2_count,
+                    custom_value_3_amount,
+                    custom_value_5_amount,
+                    notes
+                FROM client_data_daily_inputs
+                WHERE client_id = %s
+                  AND metric_date >= %s
+                  AND metric_date <= %s
+                ORDER BY metric_date DESC, source ASC, id ASC
+                """,
+                (normalized_client_id, normalized_date_from, normalized_date_to),
+            )
+            rows = cur.fetchall() or []
+
+    return [payload for payload in (_row_to_daily_input_payload(row) for row in rows) if payload is not None]

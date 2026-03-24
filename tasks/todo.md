@@ -6906,3 +6906,15 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, fÄ
 ## Review
 - [x] Confirm only notes function + tests/docs changed.
 - [x] Confirm checks/tests passed.
+
+# TODO â€” Daily input CRUD slice 4 (list only) (2026-03-24)
+
+- [x] Sync attempted; proceed local if origin unavailable.
+- [x] Implement only `list_daily_inputs(client_id, date_from, date_to)` with strict validation and sorting.
+- [x] Add targeted list-daily-input tests for range/filter/order/shape/validation.
+- [x] Run targeted tests + compile check.
+- [x] Review strict scope.
+
+## Review
+- [x] Confirm only list function + tests/docs changed.
+- [x] Confirm checks/tests passed.

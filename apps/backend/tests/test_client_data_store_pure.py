@@ -95,6 +95,20 @@ class _FakeCursor:
             self._fetchone = _daily_row_tuple(row) if row else None
             return
 
+        if "from client_data_daily_inputs" in q and "metric_date >= %s" in q and "metric_date <= %s" in q:
+            client_id, date_from, date_to = int(params[0]), str(params[1]), str(params[2])
+            selected = [
+                r for r in self._state.daily_rows
+                if r["client_id"] == client_id and date_from <= str(r["metric_date"]) <= date_to
+            ]
+            selected.sort(key=lambda r: (str(r["metric_date"]), str(r["source"]), int(r["id"])))
+            selected.reverse()
+            # reverse makes source/id order reverse too, so apply exact key via two-step stable sorts
+            selected.sort(key=lambda r: (str(r["source"]), int(r["id"])))
+            selected.sort(key=lambda r: str(r["metric_date"]), reverse=True)
+            self._fetchall = [_daily_row_tuple(r) for r in selected]
+            return
+
         if "insert into client_data_daily_inputs" in q:
             client_id, metric_date, source = int(params[0]), str(params[1]), str(params[2])
             row = {
@@ -644,6 +658,54 @@ class ClientDataStoreCustomFieldCrudSliceTests(unittest.TestCase):
     def test_set_daily_input_notes_rejects_invalid_source(self):
         with self.assertRaises(ValueError):
             client_data_store.set_daily_input_notes(client_id=21, metric_date="2026-03-24", source="facebook_ads", notes="x")
+
+
+    def test_list_daily_inputs_returns_empty_when_no_data(self):
+        rows = client_data_store.list_daily_inputs(client_id=44, date_from="2026-03-01", date_to="2026-03-31")
+        self.assertEqual(rows, [])
+
+    def test_list_daily_inputs_filters_by_client_and_range_and_sort(self):
+        client_data_store.upsert_daily_input(client_id=44, metric_date="2026-03-20", source="tiktok_ads", leads=1)
+        client_data_store.upsert_daily_input(client_id=44, metric_date="2026-03-21", source="meta_ads", leads=2)
+        client_data_store.upsert_daily_input(client_id=44, metric_date="2026-03-21", source="google_ads", leads=3)
+        client_data_store.upsert_daily_input(client_id=44, metric_date="2026-03-22", source="meta_ads", leads=4)
+        client_data_store.upsert_daily_input(client_id=99, metric_date="2026-03-21", source="meta_ads", leads=5)
+
+        rows = client_data_store.list_daily_inputs(client_id=44, date_from="2026-03-21", date_to="2026-03-22")
+        self.assertEqual([r["metric_date"] for r in rows], ["2026-03-22", "2026-03-21", "2026-03-21"])
+        self.assertEqual([r["source"] for r in rows], ["meta_ads", "google_ads", "meta_ads"])
+        self.assertTrue(all(r["client_id"] == 44 for r in rows))
+
+    def test_list_daily_inputs_returns_stable_shape(self):
+        row = client_data_store.upsert_daily_input(client_id=44, metric_date="2026-03-21", source="meta_ads", leads=8)
+        rows = client_data_store.list_daily_inputs(client_id=44, date_from="2026-03-21", date_to="2026-03-21")
+        self.assertEqual(len(rows), 1)
+        item = rows[0]
+        self.assertEqual(item["id"], row["id"])
+        self.assertIn("custom_value_5_amount", item)
+        self.assertIn("notes", item)
+
+    def test_list_daily_inputs_accepts_date_objects(self):
+        from datetime import date
+        client_data_store.upsert_daily_input(client_id=44, metric_date=date(2026, 3, 21), source="meta_ads", leads=1)
+        rows = client_data_store.list_daily_inputs(client_id=44, date_from=date(2026, 3, 21), date_to=date(2026, 3, 21))
+        self.assertEqual(len(rows), 1)
+
+    def test_list_daily_inputs_rejects_invalid_date_from(self):
+        with self.assertRaises(ValueError):
+            client_data_store.list_daily_inputs(client_id=44, date_from="bad", date_to="2026-03-21")
+
+    def test_list_daily_inputs_rejects_invalid_date_to(self):
+        with self.assertRaises(ValueError):
+            client_data_store.list_daily_inputs(client_id=44, date_from="2026-03-21", date_to="bad")
+
+    def test_list_daily_inputs_rejects_invalid_date_range(self):
+        with self.assertRaises(ValueError):
+            client_data_store.list_daily_inputs(client_id=44, date_from="2026-03-22", date_to="2026-03-21")
+
+    def test_list_daily_inputs_rejects_invalid_client_id(self):
+        with self.assertRaises(ValueError):
+            client_data_store.list_daily_inputs(client_id=0, date_from="2026-03-21", date_to="2026-03-21")
 
 
 if __name__ == "__main__":
