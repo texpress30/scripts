@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-24: Când taskul cere explicit scope frontend-only după un PR nesatisfăcător, nu modific backend-ul deloc și tratez endpointurile existente ca contract fix; schimb doar paginile/tab-urile și testele UI relevante.
+
 - 2026-03-24: La primul răspuns după corecții AGENTS, pornesc imediat cu workflow complet (plan în `tasks/todo.md` + execuție + verificare), nu trimit doar promisiuni de implementare.
 
 - 2026-03-22: Pentru publish persistence feature-flagged pe Mongo, tratez strict ordinea `next_publish_id -> external publish (single call) -> upsert`; dacă upsert-ul cade după publish extern reușit, nu retry/replay în același apel și returnez succesul extern cu mirror local compatibil.

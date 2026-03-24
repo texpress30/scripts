@@ -6991,3 +6991,20 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, fÄ
 ## Review
 - [x] Confirm scope is strict to API schema/router + focused tests/docs.
 - [x] Confirm targeted checks/tests passed.
+
+# TODO â€” Sub reporting Data tab + read-only data page (frontend only) (2026-03-24)
+
+- [x] Mandatory workspace refresh check done (`git fetch`/local fallback), plus `git status`/`git diff` inspection.
+- [x] Inspect only relevant frontend files for sub reporting nav/layout/pages and existing fetch/format patterns.
+- [x] Add `Data` tab/link near `Media Buying` / `Media Tracker` with minimal visual impact.
+- [x] Create `apps/frontend/src/app/sub/[id]/data/page.tsx` read-only page that fetches `data/config` + `data/table`.
+- [x] Implement month search-param flow (`month=YYYY-MM`) with Previous/Next controls and URL updates.
+- [x] Render read-only table with fixed labels from config, active dynamic custom fields, derived metrics, and row details (sale entries + dynamic custom values including historical inactive values).
+- [x] Implement required loading / empty / error states.
+- [x] Add focused frontend tests/checks only for this scope.
+- [x] Run relevant frontend checks and document review.
+
+## Review
+- [x] Confirm no backend files changed.
+- [x] Confirm no edit/mutation UI added.
+- [x] Confirm checks/tests passed (or clearly documented failures outside scope).
