@@ -227,43 +227,7 @@ describe("SubMediaBuyingPage", () => {
     expect(screen.queryByRole("button", { name: /Mar 2026/i })).toBeNull();
   });
 
-  it("supports inline header edit for custom/rate/cost labels and persists through config endpoint", async () => {
-    apiMock.apiRequest.mockImplementation(async (path: string, options?: RequestInit) => {
-      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
-      if (path.startsWith("/clients/96/media-buying/lead/table")) return leadPayload();
-      if (path === "/clients/96/media-buying/config") {
-        expect(options?.method).toBe("PUT");
-        const payload = JSON.parse(String(options?.body || "{}"));
-        return { ...leadPayload().meta, ...payload };
-      }
-      throw new Error(`Unexpected path ${path}`);
-    });
-
-    render(<SubMediaBuyingPage />);
-    expect(await screen.findByRole("columnheader", { name: /Appointments/ })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByLabelText("Edit label custom_label_1"));
-    const editInput = screen.getByLabelText("Edit custom_label_1");
-    fireEvent.change(editInput, { target: { value: "New CV1" } });
-    fireEvent.keyDown(editInput, { key: "Enter" });
-
-    expect(await screen.findByText("Label saved")).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: /New CV1/ })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByLabelText("Edit label custom_rate_label_1"));
-    const rateInput = screen.getByLabelText("Edit custom_rate_label_1");
-    fireEvent.change(rateInput, { target: { value: "Rate Edited" } });
-    fireEvent.keyDown(rateInput, { key: "Enter" });
-    expect(await screen.findByRole("columnheader", { name: /Rate Edited/ })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByLabelText("Edit label custom_cost_label_1"));
-    const costInput = screen.getByLabelText("Edit custom_cost_label_1");
-    fireEvent.change(costInput, { target: { value: "Cost Edited" } });
-    fireEvent.keyDown(costInput, { key: "Enter" });
-    expect(await screen.findByRole("columnheader", { name: /Cost Edited/ })).toBeInTheDocument();
-  });
-
-  it("cancel inline label edit with Escape does not persist", async () => {
+  it("shows Edit in Data CTA and keeps current month context", async () => {
     apiMock.apiRequest.mockImplementation(async (path: string) => {
       if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
       if (path.startsWith("/clients/96/media-buying/lead/table")) return leadPayload();
@@ -272,47 +236,26 @@ describe("SubMediaBuyingPage", () => {
 
     render(<SubMediaBuyingPage />);
     expect(await screen.findByRole("columnheader", { name: /Appointments/ })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByLabelText("Edit label custom_label_1"));
-    const editInput = screen.getByLabelText("Edit custom_label_1");
-    fireEvent.change(editInput, { target: { value: "Will cancel" } });
-    fireEvent.keyDown(editInput, { key: "Escape" });
-
-    expect(screen.getByRole("columnheader", { name: /Appointments/ })).toBeInTheDocument();
-    expect(apiMock.apiRequest).not.toHaveBeenCalledWith("/clients/96/media-buying/config", expect.anything());
+    expect(screen.getByRole("link", { name: "Edit in Data" })).toHaveAttribute("href", "/sub/96/data?month=2026-03");
   });
 
-  it("daily row edit/save keeps month rows read-only and refreshes via table refetch", async () => {
-    apiMock.apiRequest.mockImplementation(async (path: string, options?: RequestInit) => {
+  it("is read-only for business values in daily rows", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
       if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
-      if (path.startsWith("/clients/96/media-buying/lead/table")) {
-        const callCount = apiMock.apiRequest.mock.calls.filter(([p]) => String(p).startsWith("/clients/96/media-buying/lead/table")).length;
-        if (callCount <= 1) return leadPayload();
-        const payload = leadPayload();
-        payload.months[0].totals.leads = 20;
-        payload.months[0].days[0].leads = 20;
-        return payload;
-      }
-      if (path === "/clients/96/media-buying/lead/daily-values") {
-        expect(options?.method).toBe("PUT");
-        return { status: "ok" };
-      }
+      if (path.startsWith("/clients/96/media-buying/lead/table")) return leadPayload();
       throw new Error(`Unexpected path ${path}`);
     });
 
     render(<SubMediaBuyingPage />);
-    expect(await screen.findByRole("button", { name: "Edit" })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByLabelText("Leads 2026-03-11"), { target: { value: "20" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await screen.findByText("Saved");
-    await waitFor(() => expect(screen.getAllByText("20").length).toBeGreaterThan(0));
     expect(await screen.findByRole("button", { name: /Mar 2026/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+    expect(screen.queryByLabelText(/Leads 2026-03-11/)).toBeNull();
+    expect(screen.queryByText("Edit values in Data page")).toBeNull();
   });
 
-  it("shows validation errors and disables save for invalid row values", async () => {
+  it("does not expose inline label editing controls", async () => {
     apiMock.apiRequest.mockImplementation(async (path: string) => {
       if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
       if (path.startsWith("/clients/96/media-buying/lead/table")) return leadPayload();
@@ -320,12 +263,10 @@ describe("SubMediaBuyingPage", () => {
     });
 
     render(<SubMediaBuyingPage />);
-    expect(await screen.findByRole("button", { name: "Edit" })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByLabelText("Leads 2026-03-11"), { target: { value: "-1" } });
-    expect(screen.getByText("Must be integer >= 0")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(await screen.findByRole("columnheader", { name: /Appointments/ })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Edit label custom_label_1")).toBeNull();
+    expect(screen.queryByLabelText("Edit custom_label_1")).toBeNull();
+    expect(apiMock.apiRequest).not.toHaveBeenCalledWith("/clients/96/media-buying/config", expect.objectContaining({ method: "PUT" }));
   });
 
   it("fallback labels remain coherent when optional fields are missing", async () => {
@@ -414,7 +355,7 @@ describe("SubMediaBuyingPage", () => {
     expect(screen.queryByText("1 Mar")).toBeNull();
   });
 
-  it("keeps first date column sticky for month/day rows and remains compatible with edit and column visibility", async () => {
+  it("keeps first date column sticky and remains compatible with column visibility", async () => {
     apiMock.apiRequest.mockImplementation(async (path: string, options?: RequestInit) => {
       if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
       if (path.startsWith("/clients/96/media-buying/lead/table")) return leadPayload();
@@ -439,7 +380,6 @@ describe("SubMediaBuyingPage", () => {
     expect(dayDateCell?.className || "").toContain("sticky");
     expect(dayDateCell?.className || "").toContain("left-0");
 
-    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Customize columns/i }));
     fireEvent.click(screen.getByLabelText(/Cost Google/i));
     expect(await screen.findByText("View saved")).toBeInTheDocument();
