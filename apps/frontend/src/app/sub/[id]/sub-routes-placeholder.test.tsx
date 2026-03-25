@@ -38,5 +38,6 @@ describe("Sub routes placeholder pages", () => {
     expect(screen.getByText("Coming Soon")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Media Buying" })).toHaveAttribute("href", "/sub/96/media-buying");
     expect(screen.getByRole("link", { name: "Media Tracker" })).toHaveAttribute("href", "/sub/96/media-tracker");
+    expect(screen.getByRole("link", { name: "Data" })).toHaveAttribute("href", "/sub/96/data");
   });
 });
