@@ -269,6 +269,10 @@ class ClientDataCustomFieldWriteResponse(BaseModel):
     archived_at: str | None = None
 
 
+class ClientDataCustomFieldListResponse(BaseModel):
+    items: list[ClientDataCustomFieldWriteResponse]
+
+
 class ClientDataDailyCustomValueUpsertRequest(BaseModel):
     numeric_value: float | int | str
 

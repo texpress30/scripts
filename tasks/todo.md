@@ -7191,3 +7191,21 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, f�
 - [x] Confirm no new endpoints or migrations.
 - [x] Confirm scope stayed backend-only and minimal.
 - [x] Confirm targeted backend test command is blocked only by missing environment dependencies (documented).
+
+# TODO — Data custom fields management end-to-end (backend endpoints + Data page manager) (2026-03-25)
+
+- [x] Mandatory workspace update check executed (`git fetch --all --prune`, `git pull --ff-only`, `git status`, `git diff`) and local continuation confirmed when no upstream/origin is available.
+- [x] Audit strict files only: clients API, client data store contracts, client schemas, Data page, and targeted tests.
+- [x] Backend: add `GET /clients/{client_id}/data/custom-fields` with `include_inactive` query + list response.
+- [x] Backend: keep/create `POST /clients/{client_id}/data/custom-fields` and `PATCH /clients/{client_id}/data/custom-fields/{custom_field_id}` wiring strictly via existing store methods.
+- [x] Backend: add `POST /clients/{client_id}/data/custom-fields/{custom_field_id}/archive` with ownership validation + archive mapping.
+- [x] Backend tests: cover list active/include_inactive, create/update/archive, wrong-client ownership and invalid payload patterns.
+- [x] Frontend: wire `Gestionează câmpuri custom` to custom-fields API list/create/update/archive with include-inactive toggle.
+- [x] Frontend: enforce loading/error/empty states and mark archived fields as non-editable.
+- [x] Keep scope strict: no sales CRUD changes, no daily custom values CRUD changes, no Media Buying/Tracker refactor, no business rule changes for fixed fields.
+- [x] Run relevant backend/frontend checks and capture environment limitations.
+
+## Review
+- [x] Confirmed custom field definitions are now manageable end-to-end from dedicated API + Data manager panel.
+- [x] Confirmed archived fields can be displayed (`include_inactive=true`) and are rendered read-only in UI.
+- [x] Confirmed no migrations and no scope creep into sales/daily custom values/media flows.

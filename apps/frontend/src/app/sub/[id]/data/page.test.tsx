@@ -86,8 +86,24 @@ function setupApiMock() {
     }
     if (path === "/clients/96/data/sale-entries") return { id: 990 };
     if (path === "/clients/96/data/sale-entries/901") return { id: 901 };
-    if (path === "/clients/96/data/custom-fields") return { id: 600 };
+    if (path === "/clients/96/data/custom-fields") {
+      if ((options?.method || "GET") === "POST") return { id: 600 };
+      return {
+        items: [
+          { id: 11, field_key: "appointments", label: "Appointments", value_kind: "count", sort_order: 1, is_active: true, archived_at: null },
+        ],
+      };
+    }
+    if (path === "/clients/96/data/custom-fields?include_inactive=true") {
+      return {
+        items: [
+          { id: 11, field_key: "appointments", label: "Appointments", value_kind: "count", sort_order: 1, is_active: true, archived_at: null },
+          { id: 12, field_key: "inactive", label: "Inactive", value_kind: "amount", sort_order: 2, is_active: false, archived_at: "2026-03-01T10:00:00Z" },
+        ],
+      };
+    }
     if (path === "/clients/96/data/custom-fields/11") return { id: 11 };
+    if (path === "/clients/96/data/custom-fields/11/archive") return { id: 11 };
     throw new Error(`Unhandled path ${path}`);
   });
 }
@@ -257,10 +273,11 @@ describe("SubDataPage editable flows", () => {
     ));
   });
 
-  it("creates, updates and archives custom fields and refreshes config/table", async () => {
+  it("opens manager, lists fields, creates, updates and archives custom fields", async () => {
     render(<SubDataPage />);
     await screen.findByText("Gestionează câmpuri custom");
     fireEvent.click(screen.getByRole("button", { name: "Gestionează câmpuri custom" }));
+    await screen.findByText("Appointments · appointments · count · sort: 1");
 
     fireEvent.change(screen.getByLabelText("New field label"), { target: { value: "Followups" } });
     fireEvent.change(screen.getByLabelText("New field type"), { target: { value: "count" } });
@@ -280,17 +297,37 @@ describe("SubDataPage editable flows", () => {
       expect.objectContaining({ method: "PATCH" }),
     ));
 
-    fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+    fireEvent.click(screen.getByRole("button", { name: "Arhivează" }));
     await waitFor(() => expect(apiMock.apiRequest).toHaveBeenCalledWith(
-      "/clients/96/data/custom-fields/11",
-      expect.objectContaining({ method: "DELETE" }),
+      "/clients/96/data/custom-fields/11/archive",
+      expect.objectContaining({ method: "POST" }),
     ));
+  });
 
-    await waitFor(() => {
-      const configCalls = apiMock.apiRequest.mock.calls.filter((call: any[]) => call[0] === "/clients/96/data/config");
-      const tableCalls = apiMock.apiRequest.mock.calls.filter((call: any[]) => String(call[0]).includes("/clients/96/data/table"));
-      expect(configCalls.length).toBeGreaterThan(1);
-      expect(tableCalls.length).toBeGreaterThan(1);
+  it("toggles include_inactive and renders archived field read-only", async () => {
+    render(<SubDataPage />);
+    await screen.findByRole("button", { name: "Gestionează câmpuri custom" });
+    fireEvent.click(screen.getByRole("button", { name: "Gestionează câmpuri custom" }));
+    await screen.findByText("Appointments · appointments · count · sort: 1");
+
+    fireEvent.click(screen.getByLabelText("Afișează și arhivate"));
+    await screen.findByText("Inactive · inactive · amount · sort: 2 · arhivat");
+    const editButtons = screen.getAllByRole("button", { name: "Editează" });
+    expect(editButtons[1]).toBeDisabled();
+  });
+
+  it("shows custom-fields API error state in manager", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string, options?: RequestInit) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy" }] };
+      if (path === "/clients/96/data/config") return { currency_code: "RON", sources: [] };
+      if (String(path).startsWith("/clients/96/data/table")) return { rows: [] };
+      if (path.startsWith("/clients/96/data/custom-fields")) throw new Error("boom custom fields");
+      throw new Error(`Unhandled path ${path}`);
     });
+
+    render(<SubDataPage />);
+    await screen.findByRole("button", { name: "Gestionează câmpuri custom" });
+    fireEvent.click(screen.getByRole("button", { name: "Gestionează câmpuri custom" }));
+    await screen.findByText("boom custom fields");
   });
 });

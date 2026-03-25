@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-25: După feedback de tip “scope prea larg/nesatisfăcător”, următorul patch trebuie blocat strict pe cerința explicită (aici doar management definiții custom fields), fără schimbări în flow-urile excluse.
+
 - 2026-03-25: După orice corecție/instrucțiune AGENTS de la user, pornesc execuția cu workflow complet în același turn (plan în `tasks/todo.md` + implementare + verificări), nu doar cu confirmări narative.
 
 - 2026-03-24: Pentru roadmap Data în pași, livrez incremental strict pe slice-ul cerut (custom fields + daily custom values în acest task), fără să ating frontend sau alte write/read slices deja livrate.

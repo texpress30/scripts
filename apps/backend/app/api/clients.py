@@ -16,6 +16,7 @@ from app.schemas.client import (
     ClientDataCustomFieldCreateRequest,
     ClientDataCustomFieldUpdateRequest,
     ClientDataCustomFieldWriteResponse,
+    ClientDataCustomFieldListResponse,
     ClientDataSaleEntryCreateRequest,
     ClientDataSaleEntryUpdateRequest,
     ClientDataSaleEntryWriteResponse,
@@ -896,6 +897,19 @@ def create_client_data_custom_field(
     return _map_custom_field_write_payload(created)
 
 
+@router.get("/{client_id}/data/custom-fields", response_model=ClientDataCustomFieldListResponse)
+def list_client_data_custom_fields(
+    client_id: int,
+    include_inactive: bool = Query(False),
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+    items = client_data_store.list_custom_fields(client_id=client_id, include_inactive=include_inactive)
+    return {"items": [_map_custom_field_write_payload(item) for item in items]}
+
+
 @router.patch("/{client_id}/data/custom-fields/{custom_field_id}", response_model=ClientDataCustomFieldWriteResponse)
 def update_client_data_custom_field(
     client_id: int,
@@ -946,6 +960,15 @@ def archive_client_data_custom_field(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     return _map_custom_field_write_payload(archived)
+
+
+@router.post("/{client_id}/data/custom-fields/{custom_field_id}/archive", response_model=ClientDataCustomFieldWriteResponse)
+def archive_client_data_custom_field_post(
+    client_id: int,
+    custom_field_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    return archive_client_data_custom_field(client_id=client_id, custom_field_id=custom_field_id, user=user)
 
 
 @router.put(

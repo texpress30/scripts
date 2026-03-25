@@ -73,6 +73,7 @@ type DataTableRow = {
 };
 
 type DataTableResponse = { rows: DataTableRow[] };
+type CustomFieldListResponse = { items?: DynamicCustomFieldConfig[] };
 
 type DailyRowDraft = {
   metric_date: string;
@@ -271,6 +272,10 @@ export default function SubDataPage() {
   const [editingSaleDraft, setEditingSaleDraft] = useState<SaleDraft>(emptySaleDraft);
 
   const [manageFieldsOpen, setManageFieldsOpen] = useState(false);
+  const [showArchivedFields, setShowArchivedFields] = useState(false);
+  const [managedCustomFields, setManagedCustomFields] = useState<DynamicCustomFieldConfig[]>([]);
+  const [manageFieldsLoading, setManageFieldsLoading] = useState(false);
+  const [manageFieldsError, setManageFieldsError] = useState("");
   const [createFieldDraft, setCreateFieldDraft] = useState({ label: "", value_kind: "count", sort_order: "" });
   const [editingFieldId, setEditingFieldId] = useState<number | null>(null);
   const [editingFieldDraft, setEditingFieldDraft] = useState({ label: "", value_kind: "count", sort_order: "" });
@@ -328,6 +333,23 @@ export default function SubDataPage() {
     await Promise.all([loadConfig(), loadTable()]);
   }
 
+  async function loadManagedCustomFields(includeInactive: boolean) {
+    setManageFieldsLoading(true);
+    setManageFieldsError("");
+    try {
+      const query = includeInactive ? "?include_inactive=true" : "";
+      const payload = await apiRequest<CustomFieldListResponse>(`/clients/${clientId}/data/custom-fields${query}`);
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      items.sort((a, b) => (Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0)) || (Number(a.id) - Number(b.id)));
+      setManagedCustomFields(items);
+    } catch (err) {
+      setManagedCustomFields([]);
+      setManageFieldsError(err instanceof Error ? err.message : "Nu am putut încărca câmpurile custom.");
+    } finally {
+      setManageFieldsLoading(false);
+    }
+  }
+
   useEffect(() => {
     let ignore = false;
     async function run() {
@@ -351,6 +373,11 @@ export default function SubDataPage() {
       ignore = true;
     };
   }, [clientId, dateFrom, dateTo]);
+
+  useEffect(() => {
+    if (!manageFieldsOpen) return;
+    void loadManagedCustomFields(showArchivedFields);
+  }, [manageFieldsOpen, showArchivedFields]);
 
   function updateMonth(next: Date) {
     const paramsCopy = new URLSearchParams(searchParams.toString());
@@ -526,7 +553,7 @@ export default function SubDataPage() {
           ...(createFieldDraft.sort_order.trim() ? { sort_order: Number(createFieldDraft.sort_order) } : {}),
         }),
       });
-      await refreshConfigAndTable();
+      await Promise.all([loadConfig(), loadManagedCustomFields(showArchivedFields)]);
       setCreateFieldDraft({ label: "", value_kind: "count", sort_order: "" });
       setMutationSuccess("Câmpul custom a fost creat");
     } catch (err) {
@@ -549,7 +576,7 @@ export default function SubDataPage() {
           ...(editingFieldDraft.sort_order.trim() ? { sort_order: Number(editingFieldDraft.sort_order) } : {}),
         }),
       });
-      await refreshConfigAndTable();
+      await Promise.all([loadConfig(), loadManagedCustomFields(showArchivedFields)]);
       setEditingFieldId(null);
       setMutationSuccess("Câmpul custom a fost actualizat");
     } catch (err) {
@@ -565,8 +592,8 @@ export default function SubDataPage() {
     setMutationError("");
     setMutationSuccess("");
     try {
-      await apiRequest(`/clients/${clientId}/data/custom-fields/${fieldId}`, { method: "DELETE" });
-      await refreshConfigAndTable();
+      await apiRequest(`/clients/${clientId}/data/custom-fields/${fieldId}/archive`, { method: "POST" });
+      await Promise.all([loadConfig(), loadManagedCustomFields(showArchivedFields)]);
       setMutationSuccess("Câmpul custom a fost arhivat");
     } catch (err) {
       setMutationError(err instanceof Error ? err.message : "Nu am putut arhiva câmpul.");
@@ -610,6 +637,15 @@ export default function SubDataPage() {
           {manageFieldsOpen ? (
             <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
               <h2 className="text-sm font-semibold text-slate-900">Gestionează câmpuri custom</h2>
+              <label className="mt-2 inline-flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  aria-label="Afișează și arhivate"
+                  type="checkbox"
+                  checked={showArchivedFields}
+                  onChange={(e) => setShowArchivedFields(e.target.checked)}
+                />
+                Afișează și arhivate
+              </label>
               <div className="mt-2 grid gap-2 md:grid-cols-4">
                 <input aria-label="New field label" className="rounded border border-slate-300 px-2 py-1 text-sm" value={createFieldDraft.label} onChange={(e) => setCreateFieldDraft((p) => ({ ...p, label: e.target.value }))} placeholder="Label" />
                 <select aria-label="New field type" className="rounded border border-slate-300 px-2 py-1 text-sm" value={createFieldDraft.value_kind} onChange={(e) => setCreateFieldDraft((p) => ({ ...p, value_kind: e.target.value }))}>
@@ -620,9 +656,13 @@ export default function SubDataPage() {
                 <button type="button" className="rounded border border-indigo-400 px-2 py-1 text-sm text-indigo-700" onClick={() => void createCustomField()} disabled={mutationLoadingKey === "create-custom-field"}>Creează câmp</button>
               </div>
 
+              {manageFieldsLoading ? <p className="mt-3 text-sm text-slate-600">Se încarcă câmpurile custom...</p> : null}
+              {!manageFieldsLoading && manageFieldsError ? <p className="mt-3 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-sm text-rose-700">{manageFieldsError}</p> : null}
+              {!manageFieldsLoading && !manageFieldsError && managedCustomFields.length === 0 ? <p className="mt-3 text-sm text-slate-600">Nu există câmpuri custom.</p> : null}
+
               <div className="mt-3 space-y-2">
-                {activeDynamicFields.map((field) => (
-                  <div key={field.id} className="rounded border border-slate-200 p-2 text-sm">
+                {managedCustomFields.map((field) => (
+                  <div key={field.id} className={`rounded border p-2 text-sm ${field.is_active ? "border-slate-200" : "border-slate-300 bg-slate-50 text-slate-500"}`}>
                     {editingFieldId === field.id ? (
                       <div className="grid gap-2 md:grid-cols-4">
                         <input aria-label={`Editează label ${field.id}`} className="rounded border border-slate-300 px-2 py-1" value={editingFieldDraft.label} onChange={(e) => setEditingFieldDraft((p) => ({ ...p, label: e.target.value }))} />
@@ -638,19 +678,21 @@ export default function SubDataPage() {
                       </div>
                     ) : (
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span>{field.label} ({field.value_kind})</span>
+                        <span>{field.label} · {field.field_key} · {field.value_kind} · sort: {field.sort_order}{field.is_active ? "" : " · arhivat"}</span>
                         <div className="flex gap-2">
                           <button
                             type="button"
                             className="rounded border border-slate-300 px-2 py-1"
+                            disabled={!field.is_active}
                             onClick={() => {
+                              if (!field.is_active) return;
                               setEditingFieldId(field.id);
                               setEditingFieldDraft({ label: field.label, value_kind: field.value_kind || "count", sort_order: String(field.sort_order ?? "") });
                             }}
                           >
                             Editează
                           </button>
-                          <button type="button" className="rounded border border-rose-300 px-2 py-1 text-rose-700" onClick={() => void archiveCustomField(field.id)}>Archive</button>
+                          <button type="button" className="rounded border border-rose-300 px-2 py-1 text-rose-700 disabled:opacity-60" disabled={!field.is_active} onClick={() => void archiveCustomField(field.id)}>Arhivează</button>
                         </div>
                       </div>
                     )}

@@ -778,6 +778,23 @@ class ClientsDataApiTests(unittest.TestCase):
             )
         self.assertEqual(invalid_label_ctx.exception.status_code, 422)
 
+    def test_get_custom_fields_list_active_and_include_inactive(self):
+        active_only = clients_api.list_client_data_custom_fields(
+            client_id=self.client_id,
+            include_inactive=False,
+            user=self.user,
+        )
+        self.assertEqual(len(active_only["items"]), 1)
+        self.assertTrue(active_only["items"][0]["is_active"])
+
+        with_inactive = clients_api.list_client_data_custom_fields(
+            client_id=self.client_id,
+            include_inactive=True,
+            user=self.user,
+        )
+        self.assertEqual(len(with_inactive["items"]), 2)
+        self.assertFalse(with_inactive["items"][1]["is_active"])
+
     def test_patch_custom_field_update_success_scoping_and_empty_payload(self):
         updated = clients_api.update_client_data_custom_field(
             client_id=self.client_id,
@@ -818,6 +835,23 @@ class ClientsDataApiTests(unittest.TestCase):
 
         with self.assertRaises(HTTPException) as wrong_client_ctx:
             clients_api.archive_client_data_custom_field(
+                client_id=self.client_id,
+                custom_field_id=21,
+                user=self.user,
+            )
+        self.assertEqual(wrong_client_ctx.exception.status_code, 404)
+
+    def test_post_custom_field_archive_success_and_scoping(self):
+        archived = clients_api.archive_client_data_custom_field_post(
+            client_id=self.client_id,
+            custom_field_id=11,
+            user=self.user,
+        )
+        self.assertFalse(archived["is_active"])
+        self.assertIsNotNone(archived["archived_at"])
+
+        with self.assertRaises(HTTPException) as wrong_client_ctx:
+            clients_api.archive_client_data_custom_field_post(
                 client_id=self.client_id,
                 custom_field_id=21,
                 user=self.user,
