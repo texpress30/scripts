@@ -121,17 +121,17 @@ describe("SubDataPage editable flows", () => {
     expect(screen.getByLabelText("Săptămâna rând nou")).toHaveValue("9");
     expect(screen.getByLabelText("Custom Value 4 rând nou")).toHaveValue("");
     expect(screen.getByLabelText("Vânzări rând nou")).toHaveValue("");
-    expect(screen.getByLabelText("P/L brut rând nou")).toHaveValue("");
+    expect(screen.getByLabelText("P/L brut rând nou 1")).toHaveValue("");
     fireEvent.change(screen.getByLabelText("Data rând nou"), { target: { value: "2026-03-12" } });
     expect(screen.getByLabelText("Săptămâna rând nou")).toHaveValue("11");
     fireEvent.change(screen.getByLabelText("Sursa rând nou"), { target: { value: "meta_ads" } });
     fireEvent.change(screen.getByLabelText("Lead-uri rând nou"), { target: { value: "10" } });
     fireEvent.change(screen.getByLabelText("Custom Value 4 rând nou"), { target: { value: "250" } });
     fireEvent.change(screen.getByLabelText("Vânzări rând nou"), { target: { value: "3" } });
-    fireEvent.change(screen.getByLabelText("Preț vânzare rând nou"), { target: { value: "250" } });
+    fireEvent.change(screen.getByLabelText("Preț vânzare rând nou 1"), { target: { value: "250" } });
     expect(screen.getByLabelText("Custom Value 4 rând nou")).toHaveValue("250");
     expect(screen.getByLabelText("Vânzări rând nou")).toHaveValue("3");
-    fireEvent.change(screen.getByLabelText("Preț actual rând nou"), { target: { value: "150" } });
+    fireEvent.change(screen.getByLabelText("Preț actual rând nou 1"), { target: { value: "150" } });
     fireEvent.change(screen.getByLabelText("New row cv3"), { target: { value: "500" } });
     fireEvent.change(screen.getByLabelText("Dynamic field Appointments rând nou"), { target: { value: "7" } });
     expect(screen.getByLabelText("New row cv5")).toHaveValue("250,00 RON");
@@ -178,11 +178,11 @@ describe("SubDataPage editable flows", () => {
     expect(screen.getByLabelText("Custom Value 4 rând nou")).toBeInTheDocument();
     expect(screen.getByLabelText("New row cv5")).toBeInTheDocument();
     expect(screen.getByLabelText("New row notes")).toBeInTheDocument();
-    expect(screen.getByLabelText("Marcă rând nou")).toBeInTheDocument();
-    expect(screen.getByLabelText("Model rând nou")).toBeInTheDocument();
-    expect(screen.getByLabelText("Preț vânzare rând nou")).toBeInTheDocument();
-    expect(screen.getByLabelText("Preț actual rând nou")).toBeInTheDocument();
-    expect(screen.getByLabelText("P/L brut rând nou")).toBeInTheDocument();
+    expect(screen.getByLabelText("Marcă rând nou 1")).toBeInTheDocument();
+    expect(screen.getByLabelText("Model rând nou 1")).toBeInTheDocument();
+    expect(screen.getByLabelText("Preț vânzare rând nou 1")).toBeInTheDocument();
+    expect(screen.getByLabelText("Preț actual rând nou 1")).toBeInTheDocument();
+    expect(screen.getByLabelText("P/L brut rând nou 1")).toBeInTheDocument();
 
     expect(within(addRowSection).getByText("Mențiuni")).toBeInTheDocument();
     expect(within(addRowSection).getByText("Lead-uri")).toBeInTheDocument();
@@ -196,8 +196,8 @@ describe("SubDataPage editable flows", () => {
     expect(screen.getByLabelText("Lead-uri rând nou")).not.toHaveAttribute("placeholder");
     expect(screen.getByLabelText("New row phones")).not.toHaveAttribute("placeholder");
     expect(screen.getByLabelText("New row cv1")).not.toHaveAttribute("placeholder");
-    expect(screen.getByLabelText("Preț vânzare rând nou")).not.toHaveAttribute("placeholder");
-    expect(screen.getByLabelText("P/L brut rând nou")).toHaveValue("");
+    expect(screen.getByLabelText("Preț vânzare rând nou 1")).not.toHaveAttribute("placeholder");
+    expect(screen.getByLabelText("P/L brut rând nou 1")).toHaveValue("");
     expect(screen.getByLabelText("Custom Value 4 rând nou")).toHaveValue("");
     expect(screen.getByLabelText("Vânzări rând nou")).toHaveValue("");
 
@@ -253,6 +253,33 @@ describe("SubDataPage editable flows", () => {
         "/clients/96/data/daily-input",
         expect.objectContaining({ method: "PUT", body: expect.stringContaining('"dynamic_custom_values":[]') }),
       );
+    });
+  });
+
+  it("saves multiple sale_entries from add-row main form", async () => {
+    render(<SubDataPage />);
+    await screen.findByRole("heading", { name: "Data - Active Life Therapy" });
+    fireEvent.click(screen.getByRole("button", { name: "Adaugă rând" }));
+
+    fireEvent.change(screen.getByLabelText("Data rând nou"), { target: { value: "2026-03-12" } });
+    fireEvent.change(screen.getByLabelText("Sursa rând nou"), { target: { value: "meta_ads" } });
+    fireEvent.change(screen.getByLabelText("Lead-uri rând nou"), { target: { value: "10" } });
+    fireEvent.change(screen.getByLabelText("Preț vânzare rând nou 1"), { target: { value: "200" } });
+    fireEvent.change(screen.getByLabelText("Preț actual rând nou 1"), { target: { value: "150" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Adaugă încă o vânzare" }));
+    fireEvent.change(screen.getByLabelText("Marcă rând nou 2"), { target: { value: "VW" } });
+    fireEvent.change(screen.getByLabelText("Model rând nou 2"), { target: { value: "Golf" } });
+    fireEvent.change(screen.getByLabelText("Preț vânzare rând nou 2"), { target: { value: "300" } });
+    fireEvent.change(screen.getByLabelText("Preț actual rând nou 2"), { target: { value: "210" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvează rând" }));
+
+    await waitFor(() => {
+      const saleCalls = apiMock.apiRequest.mock.calls.filter((call: any[]) => call[0] === "/clients/96/data/sale-entries" && call[1]?.method === "POST");
+      expect(saleCalls).toHaveLength(2);
+      expect(String(saleCalls[0][1].body)).toContain('"daily_input_id":101');
+      expect(String(saleCalls[1][1].body)).toContain('"brand":"VW"');
     });
   });
 

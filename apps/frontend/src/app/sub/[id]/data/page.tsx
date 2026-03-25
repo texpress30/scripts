@@ -240,6 +240,15 @@ function emptyNewRowSaleDraft(): NewRowSaleDraft {
   return { brand: "", model: "", sale_price_amount: "", actual_price_amount: "" };
 }
 
+function hasAnySaleDraftInput(draft: NewRowSaleDraft): boolean {
+  return Boolean(
+    draft.brand.trim()
+      || draft.model.trim()
+      || draft.sale_price_amount.trim()
+      || draft.actual_price_amount.trim(),
+  );
+}
+
 export default function SubDataPage() {
   const params = useParams<{ id: string }>();
   const clientId = Number(params.id);
@@ -263,7 +272,7 @@ export default function SubDataPage() {
   const [editingRowDraft, setEditingRowDraft] = useState<DailyRowDraft | null>(null);
   const [addingRow, setAddingRow] = useState(false);
   const [newRowDraft, setNewRowDraft] = useState<DailyRowDraft>(() => emptyDailyDraft(format(startOfMonth(new Date()), "yyyy-MM-dd")));
-  const [newRowSaleDraft, setNewRowSaleDraft] = useState<NewRowSaleDraft>(emptyNewRowSaleDraft);
+  const [newRowSaleDrafts, setNewRowSaleDrafts] = useState<NewRowSaleDraft[]>([emptyNewRowSaleDraft()]);
 
   const [openDetailsKeys, setOpenDetailsKeys] = useState<Record<string, boolean>>({});
   const [addSaleForRowKey, setAddSaleForRowKey] = useState("");
@@ -287,20 +296,7 @@ export default function SubDataPage() {
 
   const rowKeyOf = (row: DataTableRow) => `${row.metric_date}:${row.source ?? "unknown"}:${row.daily_input_id ?? ""}`;
   const newRowWeekValue = useMemo(() => getWeekNumberValue(newRowDraft.metric_date), [newRowDraft.metric_date]);
-  const newRowSalePriceRaw = newRowSaleDraft.sale_price_amount.trim();
-  const newRowActualPriceRaw = newRowSaleDraft.actual_price_amount.trim();
-  const newRowSalePriceNumber = Number(newRowSalePriceRaw);
-  const newRowActualPriceNumber = Number(newRowActualPriceRaw);
-  const newRowHasValidSalePrice = newRowSalePriceRaw !== "" && Number.isFinite(newRowSalePriceNumber);
-  const newRowHasValidActualPrice = newRowActualPriceRaw !== "" && Number.isFinite(newRowActualPriceNumber);
-  const newRowHasAnySaleInput = Boolean(
-    newRowSaleDraft.brand.trim()
-      || newRowSaleDraft.model.trim()
-      || newRowSalePriceRaw
-      || newRowActualPriceRaw,
-  );
-  const newRowHasCompleteSaleInput = newRowHasValidSalePrice && newRowHasValidActualPrice;
-  const newRowDerivedGrossProfitDisplay = newRowHasCompleteSaleInput ? formatAmount(newRowSalePriceNumber - newRowActualPriceNumber, currencyCode) : "";
+  const hasAnyNewRowSaleInput = newRowSaleDrafts.some((draft) => hasAnySaleDraftInput(draft));
   const newRowCv3Raw = newRowDraft.custom_value_3_amount.trim();
   const newRowCv4Raw = newRowDraft.custom_value_4_amount.trim();
   const newRowCv3Number = Number(newRowCv3Raw);
@@ -430,22 +426,31 @@ export default function SubDataPage() {
       });
 
       const dailyInputId = Number(savedDaily.id || currentRow?.daily_input_id || 0);
-      if (dailyInputId > 0 && isNew && newRowHasAnySaleInput) {
-        const parsedSalePrice = parseNumericInput(newRowSaleDraft.sale_price_amount);
-        const parsedActualPrice = parseNumericInput(newRowSaleDraft.actual_price_amount);
-        if (parsedSalePrice == null || parsedActualPrice == null) {
-          throw new Error("Completează cel puțin Preț vânzare și Preț actual pentru a salva vânzarea.");
+      if (dailyInputId > 0 && isNew && hasAnyNewRowSaleInput) {
+        const salePayloads = newRowSaleDrafts
+          .map((draft) => {
+            if (!hasAnySaleDraftInput(draft)) return null;
+            const parsedSalePrice = parseNumericInput(draft.sale_price_amount);
+            const parsedActualPrice = parseNumericInput(draft.actual_price_amount);
+            if (parsedSalePrice == null || parsedActualPrice == null) {
+              throw new Error("Completează cel puțin Preț vânzare și Preț actual pentru fiecare vânzare completată.");
+            }
+            return {
+              daily_input_id: dailyInputId,
+              brand: draft.brand.trim() || null,
+              model: draft.model.trim() || null,
+              sale_price_amount: parsedSalePrice,
+              actual_price_amount: parsedActualPrice,
+            };
+          })
+          .filter((entry): entry is { daily_input_id: number; brand: string | null; model: string | null; sale_price_amount: number | string; actual_price_amount: number | string } => entry !== null);
+
+        for (const salePayload of salePayloads) {
+          await apiRequest(`/clients/${clientId}/data/sale-entries`, {
+            method: "POST",
+            body: JSON.stringify(salePayload),
+          });
         }
-        await apiRequest(`/clients/${clientId}/data/sale-entries`, {
-          method: "POST",
-          body: JSON.stringify({
-            daily_input_id: dailyInputId,
-            brand: newRowSaleDraft.brand.trim() || null,
-            model: newRowSaleDraft.model.trim() || null,
-            sale_price_amount: parsedSalePrice,
-            actual_price_amount: parsedActualPrice,
-          }),
-        });
       }
 
       await refreshTable();
@@ -453,7 +458,7 @@ export default function SubDataPage() {
       if (isNew) {
         setAddingRow(false);
         setNewRowDraft(emptyDailyDraft(dateFrom));
-        setNewRowSaleDraft(emptyNewRowSaleDraft());
+        setNewRowSaleDrafts([emptyNewRowSaleDraft()]);
       } else {
         setEditingRowKey("");
         setEditingRowDraft(null);
@@ -610,7 +615,7 @@ export default function SubDataPage() {
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
-            <button type="button" className="rounded-md border border-indigo-300 px-3 py-1.5 text-sm text-indigo-700" onClick={() => { setAddingRow((v) => !v); setNewRowDraft(emptyDailyDraft(dateFrom)); setNewRowSaleDraft(emptyNewRowSaleDraft()); }}>
+            <button type="button" className="rounded-md border border-indigo-300 px-3 py-1.5 text-sm text-indigo-700" onClick={() => { setAddingRow((v) => !v); setNewRowDraft(emptyDailyDraft(dateFrom)); setNewRowSaleDrafts([emptyNewRowSaleDraft()]); }}>
               Adaugă rând
             </button>
             <button type="button" className="rounded-md border border-indigo-300 px-3 py-1.5 text-sm text-indigo-700" onClick={() => setManageFieldsOpen((v) => !v)}>
@@ -704,11 +709,37 @@ export default function SubDataPage() {
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_4_amount}</label><input aria-label="Custom Value 4 rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_4_amount} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_4_amount: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_5_amount}</label><input aria-label="New row cv5" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowDerivedUnrealizedDisplay} readOnly /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Vânzări</label><input aria-label="Vânzări rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.sales_count} onChange={(e) => setNewRowDraft((p) => ({ ...p, sales_count: e.target.value }))} /></div>
-                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Marcă</label><input aria-label="Marcă rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.brand} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, brand: e.target.value }))} /></div>
-                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Model</label><input aria-label="Model rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.model} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, model: e.target.value }))} /></div>
-                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Preț vânzare</label><input aria-label="Preț vânzare rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.sale_price_amount} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, sale_price_amount: e.target.value }))} /></div>
-                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Preț actual</label><input aria-label="Preț actual rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.actual_price_amount} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, actual_price_amount: e.target.value }))} /></div>
-                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">P/L brut</label><input aria-label="P/L brut rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowDerivedGrossProfitDisplay} readOnly /></div>
+                {newRowSaleDrafts.map((saleDraft, index) => {
+                  const salePriceRaw = saleDraft.sale_price_amount.trim();
+                  const actualPriceRaw = saleDraft.actual_price_amount.trim();
+                  const salePriceNumber = Number(salePriceRaw);
+                  const actualPriceNumber = Number(actualPriceRaw);
+                  const hasValidSalePrice = salePriceRaw !== "" && Number.isFinite(salePriceNumber);
+                  const hasValidActualPrice = actualPriceRaw !== "" && Number.isFinite(actualPriceNumber);
+                  const derivedGrossProfitDisplay = (hasValidSalePrice && hasValidActualPrice)
+                    ? formatAmount(salePriceNumber - actualPriceNumber, currencyCode)
+                    : "";
+                  const saleLabelSuffix = ` ${index + 1}`;
+                  return (
+                    <React.Fragment key={`new-row-sale-${index}`}>
+                      <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Marcă{saleLabelSuffix}</label><input aria-label={`Marcă rând nou${saleLabelSuffix}`} className="w-full rounded border border-slate-300 px-2 py-1" value={saleDraft.brand} onChange={(e) => setNewRowSaleDrafts((prev) => prev.map((item, itemIndex) => (itemIndex === index ? { ...item, brand: e.target.value } : item)))} /></div>
+                      <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Model{saleLabelSuffix}</label><input aria-label={`Model rând nou${saleLabelSuffix}`} className="w-full rounded border border-slate-300 px-2 py-1" value={saleDraft.model} onChange={(e) => setNewRowSaleDrafts((prev) => prev.map((item, itemIndex) => (itemIndex === index ? { ...item, model: e.target.value } : item)))} /></div>
+                      <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Preț vânzare{saleLabelSuffix}</label><input aria-label={`Preț vânzare rând nou${saleLabelSuffix}`} className="w-full rounded border border-slate-300 px-2 py-1" value={saleDraft.sale_price_amount} onChange={(e) => setNewRowSaleDrafts((prev) => prev.map((item, itemIndex) => (itemIndex === index ? { ...item, sale_price_amount: e.target.value } : item)))} /></div>
+                      <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Preț actual{saleLabelSuffix}</label><input aria-label={`Preț actual rând nou${saleLabelSuffix}`} className="w-full rounded border border-slate-300 px-2 py-1" value={saleDraft.actual_price_amount} onChange={(e) => setNewRowSaleDrafts((prev) => prev.map((item, itemIndex) => (itemIndex === index ? { ...item, actual_price_amount: e.target.value } : item)))} /></div>
+                      <div className="space-y-1"><label className="text-xs font-medium text-slate-700">P/L brut{saleLabelSuffix}</label><input aria-label={`P/L brut rând nou${saleLabelSuffix}`} className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={derivedGrossProfitDisplay} readOnly /></div>
+                      <div className="flex items-end">
+                        <button
+                          type="button"
+                          className="rounded border border-rose-300 px-2 py-1 text-rose-700 disabled:opacity-60"
+                          disabled={newRowSaleDrafts.length <= 1}
+                          onClick={() => setNewRowSaleDrafts((prev) => prev.filter((_, itemIndex) => itemIndex !== index))}
+                        >
+                          Șterge vânzarea {index + 1}
+                        </button>
+                      </div>
+                    </React.Fragment>
+                  );
+                })}
                 {activeDynamicFields.map((field) => (
                   <div key={`new-dynamic-${field.id}`} className="space-y-1">
                     <label className="text-xs font-medium text-slate-700">{field.label}</label>
@@ -722,6 +753,15 @@ export default function SubDataPage() {
                     />
                   </div>
                 ))}
+              </div>
+              <div className="mt-2">
+                <button
+                  type="button"
+                  className="rounded border border-indigo-300 px-3 py-1 text-indigo-700"
+                  onClick={() => setNewRowSaleDrafts((prev) => [...prev, emptyNewRowSaleDraft()])}
+                >
+                  Adaugă încă o vânzare
+                </button>
               </div>
               <div className="mt-2 space-y-1">
                 <label className="text-xs font-medium text-slate-700">Mențiuni</label>

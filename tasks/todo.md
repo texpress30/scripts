@@ -1,3 +1,15 @@
+# TODO — Sub Data page: main form sale_entries[] multiplu (frontend-only) (2026-03-25)
+
+- [x] Refresh workspace state și inspect explicit `apps/frontend/src/app/sub/[id]/data/page.tsx` + `page.test.tsx`.
+- [x] Ajustez formularul principal pentru payload multiplu `sale_entries[]` (fără schimbări backend/business logic).
+- [x] Actualizez testele din `page.test.tsx` pentru noul comportament.
+- [x] Rulez testele țintite frontend pentru pagina Data.
+- [x] Completez review section cu boundary checks.
+
+## Review
+- [x] Confirm schimbările sunt strict pe Data page frontend + teste.
+- [x] Confirm fără modificări backend/API contracts în acest task.
+
 # TODO — Creative workflow publish persistence în Mongo (feature-flagged, safe) (2026-03-22)
 
 - [x] Refresh workspace state și inspect explicit: `creative_workflow.py`, creative repositories/counters, `api/creative.py`, publish adapters/helpers, `core/config.py`, teste backend.
