@@ -1295,6 +1295,111 @@ def list_daily_custom_values(
     return [payload for payload in (_row_to_daily_custom_value_payload(row) for row in rows) if payload is not None]
 
 
+def list_daily_custom_values_for_daily_input(*, daily_input_id: int) -> list[dict[str, object]]:
+    normalized_daily_input_id = _normalize_positive_int(daily_input_id, field_name="daily_input_id")
+    with _connect() as conn:
+        daily_input = _get_daily_input_row_by_id(conn=conn, daily_input_id=normalized_daily_input_id)
+        if daily_input is None:
+            raise LookupError(f"Daily input {daily_input_id} not found")
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    dcv.id,
+                    dcv.daily_input_id,
+                    di.metric_date,
+                    di.source,
+                    dcv.custom_field_id,
+                    cf.field_key,
+                    cf.label,
+                    cf.value_kind,
+                    cf.sort_order,
+                    cf.is_active,
+                    dcv.numeric_value
+                FROM client_data_daily_custom_values dcv
+                JOIN client_data_daily_inputs di ON di.id = dcv.daily_input_id
+                JOIN client_data_custom_fields cf ON cf.id = dcv.custom_field_id
+                WHERE dcv.daily_input_id = %s
+                ORDER BY cf.sort_order ASC, cf.id ASC
+                """,
+                (normalized_daily_input_id,),
+            )
+            rows = cur.fetchall() or []
+
+    return [payload for payload in (_row_to_daily_custom_value_payload(row) for row in rows) if payload is not None]
+
+
+def replace_daily_custom_values_for_daily_input(
+    *,
+    client_id: int,
+    daily_input_id: int,
+    dynamic_custom_values: list[Mapping[str, Any]],
+) -> list[dict[str, object]]:
+    normalized_client_id = _normalize_client_id(client_id)
+    normalized_daily_input_id = _normalize_positive_int(daily_input_id, field_name="daily_input_id")
+    if not isinstance(dynamic_custom_values, list):
+        raise ValueError("dynamic_custom_values must be a list")
+
+    seen_field_ids: set[int] = set()
+    normalized_items: list[dict[str, object]] = []
+    for idx, item in enumerate(dynamic_custom_values):
+        if not isinstance(item, Mapping):
+            raise ValueError(f"dynamic_custom_values[{idx}] must be an object")
+        if "custom_field_id" not in item:
+            raise ValueError(f"dynamic_custom_values[{idx}].custom_field_id is required")
+        if "numeric_value" not in item:
+            raise ValueError(f"dynamic_custom_values[{idx}].numeric_value is required")
+
+        custom_field_id = _normalize_positive_int(item.get("custom_field_id"), field_name=f"dynamic_custom_values[{idx}].custom_field_id")
+        if custom_field_id in seen_field_ids:
+            raise ValueError(f"Duplicate custom_field_id in dynamic_custom_values: {custom_field_id}")
+        seen_field_ids.add(custom_field_id)
+
+        custom_field = validate_custom_field_belongs_to_client(custom_field_id=custom_field_id, client_id=normalized_client_id)
+        if not bool(custom_field.get("is_active")):
+            raise ValueError(f"Custom field {custom_field_id} is archived and cannot be written")
+
+        numeric_value = _normalize_custom_value_by_kind(item.get("numeric_value"), value_kind=str(custom_field["value_kind"]))
+        normalized_items.append(
+            {
+                "custom_field_id": custom_field_id,
+                "numeric_value": numeric_value,
+            }
+        )
+
+    with _connect() as conn:
+        daily_input = _get_daily_input_row_by_id(conn=conn, daily_input_id=normalized_daily_input_id)
+        if daily_input is None:
+            raise LookupError(f"Daily input {daily_input_id} not found")
+        if int(daily_input["client_id"]) != normalized_client_id:
+            raise LookupError(f"Daily input {daily_input_id} not found for client {client_id}")
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM client_data_daily_custom_values
+                WHERE daily_input_id = %s
+                """,
+                (normalized_daily_input_id,),
+            )
+
+            for item in normalized_items:
+                cur.execute(
+                    """
+                    INSERT INTO client_data_daily_custom_values (
+                        daily_input_id,
+                        custom_field_id,
+                        numeric_value
+                    ) VALUES (%s, %s, %s)
+                    """,
+                    (normalized_daily_input_id, item["custom_field_id"], item["numeric_value"]),
+                )
+        conn.commit()
+
+    return list_daily_custom_values_for_daily_input(daily_input_id=normalized_daily_input_id)
+
+
 def upsert_daily_custom_value(
     *,
     daily_input_id: int,

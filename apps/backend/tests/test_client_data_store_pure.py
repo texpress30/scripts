@@ -208,12 +208,33 @@ class _FakeCursor:
             self._fetchone = _custom_value_join_tuple(cv, di, cf) if di is not None and cf is not None else None
             return
 
+        if "from client_data_daily_custom_values dcv" in q and "where dcv.daily_input_id = %s" in q and "custom_field_id = %s" not in q:
+            daily_input_id = int(params[0])
+            selected = []
+            for cv in self._state.custom_value_rows:
+                if int(cv["daily_input_id"]) != daily_input_id:
+                    continue
+                di = next((d for d in self._state.daily_rows if d["id"] == cv["daily_input_id"]), None)
+                cf = next((f for f in self._state.rows if f["id"] == cv["custom_field_id"]), None)
+                if di is None or cf is None:
+                    continue
+                selected.append((cv, di, cf))
+            selected.sort(key=lambda t: (int(t[2]["sort_order"]), int(t[2]["id"])))
+            self._fetchall = [_custom_value_join_tuple(cv, di, cf) for cv, di, cf in selected]
+            return
+
         if "delete from client_data_daily_custom_values" in q and "daily_input_id = %s and custom_field_id = %s" in q:
             daily_input_id, custom_field_id = int(params[0]), int(params[1])
             self._state.custom_value_rows = [
                 r for r in self._state.custom_value_rows
                 if not (r["daily_input_id"] == daily_input_id and r["custom_field_id"] == custom_field_id)
             ]
+            self._fetchone = None
+            return
+
+        if "delete from client_data_daily_custom_values" in q and "where daily_input_id = %s" in q and "custom_field_id = %s" not in q:
+            daily_input_id = int(params[0])
+            self._state.custom_value_rows = [r for r in self._state.custom_value_rows if r["daily_input_id"] != daily_input_id]
             self._fetchone = None
             return
 
@@ -1236,6 +1257,79 @@ class ClientDataStoreCustomFieldCrudSliceTests(unittest.TestCase):
             client_data_store.list_daily_custom_values(client_id=1, date_from="2026-03-01", date_to="bad")
         with self.assertRaises(ValueError):
             client_data_store.list_daily_custom_values(client_id=1, date_from="2026-03-31", date_to="2026-03-01")
+
+    def test_list_daily_custom_values_for_daily_input_orders_by_field_sort(self):
+        cf1 = client_data_store.create_custom_field(client_id=90, label="Amount A", value_kind="amount", sort_order=2)
+        cf2 = client_data_store.create_custom_field(client_id=90, label="Count B", value_kind="count", sort_order=1)
+        daily = client_data_store.get_or_create_daily_input(client_id=90, metric_date="2026-03-24", source="meta_ads")
+        client_data_store.upsert_daily_custom_value(daily_input_id=daily["id"], custom_field_id=cf1["id"], numeric_value=10)
+        client_data_store.upsert_daily_custom_value(daily_input_id=daily["id"], custom_field_id=cf2["id"], numeric_value=3)
+
+        rows = client_data_store.list_daily_custom_values_for_daily_input(daily_input_id=daily["id"])
+        self.assertEqual([int(row["custom_field_id"]) for row in rows], [cf2["id"], cf1["id"]])
+
+    def test_replace_daily_custom_values_for_daily_input_replace_and_clear(self):
+        cf_count = client_data_store.create_custom_field(client_id=90, label="Count", value_kind="count", sort_order=1)
+        cf_amount = client_data_store.create_custom_field(client_id=90, label="Amount", value_kind="amount", sort_order=2)
+        daily = client_data_store.get_or_create_daily_input(client_id=90, metric_date="2026-03-24", source="meta_ads")
+
+        replaced = client_data_store.replace_daily_custom_values_for_daily_input(
+            client_id=90,
+            daily_input_id=daily["id"],
+            dynamic_custom_values=[
+                {"custom_field_id": cf_count["id"], "numeric_value": 2},
+                {"custom_field_id": cf_amount["id"], "numeric_value": "-4.5"},
+            ],
+        )
+        self.assertEqual(len(replaced), 2)
+
+        cleared = client_data_store.replace_daily_custom_values_for_daily_input(
+            client_id=90,
+            daily_input_id=daily["id"],
+            dynamic_custom_values=[],
+        )
+        self.assertEqual(cleared, [])
+
+    def test_replace_daily_custom_values_for_daily_input_validations(self):
+        cf_count = client_data_store.create_custom_field(client_id=90, label="Count", value_kind="count", sort_order=1)
+        cf_other_client = client_data_store.create_custom_field(client_id=91, label="Other", value_kind="amount", sort_order=1)
+        cf_archived = client_data_store.create_custom_field(client_id=90, label="Archived", value_kind="amount", sort_order=2)
+        _ = client_data_store.archive_custom_field(custom_field_id=cf_archived["id"])
+        daily = client_data_store.get_or_create_daily_input(client_id=90, metric_date="2026-03-24", source="meta_ads")
+
+        with self.assertRaises(ValueError):
+            client_data_store.replace_daily_custom_values_for_daily_input(
+                client_id=90,
+                daily_input_id=daily["id"],
+                dynamic_custom_values=[
+                    {"custom_field_id": cf_count["id"], "numeric_value": 1},
+                    {"custom_field_id": cf_count["id"], "numeric_value": 2},
+                ],
+            )
+        with self.assertRaises(ValueError):
+            client_data_store.replace_daily_custom_values_for_daily_input(
+                client_id=90,
+                daily_input_id=daily["id"],
+                dynamic_custom_values=[{"custom_field_id": cf_count["id"], "numeric_value": 1.5}],
+            )
+        with self.assertRaises(ValueError):
+            client_data_store.replace_daily_custom_values_for_daily_input(
+                client_id=90,
+                daily_input_id=daily["id"],
+                dynamic_custom_values=[{"custom_field_id": cf_count["id"], "numeric_value": -1}],
+            )
+        with self.assertRaises(LookupError):
+            client_data_store.replace_daily_custom_values_for_daily_input(
+                client_id=90,
+                daily_input_id=daily["id"],
+                dynamic_custom_values=[{"custom_field_id": cf_other_client["id"], "numeric_value": 1}],
+            )
+        with self.assertRaises(ValueError):
+            client_data_store.replace_daily_custom_values_for_daily_input(
+                client_id=90,
+                daily_input_id=daily["id"],
+                dynamic_custom_values=[{"custom_field_id": cf_archived["id"], "numeric_value": 1}],
+            )
 
     def test_upsert_daily_custom_value_count_and_amount(self):
         daily = client_data_store.get_or_create_daily_input(client_id=90, metric_date="2026-03-20", source="meta_ads")

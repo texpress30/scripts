@@ -235,6 +235,13 @@ class ClientsDataApiTests(unittest.TestCase):
                 rows.sort(key=lambda row: (int(row["sort_order"]), int(row["custom_field_id"])))
                 return rows
 
+            def list_daily_custom_values_for_daily_input(self, *, daily_input_id: int):
+                if daily_input_id not in self.daily_inputs:
+                    raise LookupError(f"Daily input {daily_input_id} not found")
+                rows = [dict(row) for row in self.daily_custom_values.values() if int(row["daily_input_id"]) == int(daily_input_id)]
+                rows.sort(key=lambda row: (int(row["sort_order"]), int(row["custom_field_id"])))
+                return rows
+
             def list_sale_entries_for_daily_input(self, *, daily_input_id: int):
                 if daily_input_id not in self.daily_inputs:
                     raise LookupError("Daily input not found")
@@ -503,6 +510,54 @@ class ClientsDataApiTests(unittest.TestCase):
                     self.next_sale_entry_id += 1
                 return self.list_sale_entries_for_daily_input(daily_input_id=daily_input_id)
 
+            def replace_daily_custom_values_for_daily_input(self, *, client_id: int, daily_input_id: int, dynamic_custom_values):
+                if daily_input_id not in self.daily_inputs:
+                    raise LookupError(f"Daily input {daily_input_id} not found")
+                if int(self.daily_inputs[daily_input_id]["client_id"]) != int(client_id):
+                    raise LookupError(f"Daily input {daily_input_id} not found for client {client_id}")
+
+                seen: set[int] = set()
+                rewritten: dict[tuple[int, int], dict[str, object]] = {}
+                for item in dynamic_custom_values:
+                    custom_field_id = int(item["custom_field_id"])
+                    if custom_field_id in seen:
+                        raise ValueError(f"Duplicate custom_field_id in dynamic_custom_values: {custom_field_id}")
+                    seen.add(custom_field_id)
+                    field = self.custom_fields.get(custom_field_id)
+                    if field is None or int(field["client_id"]) != int(client_id):
+                        raise LookupError(f"Custom field {custom_field_id} not found for client {client_id}")
+                    if not bool(field["is_active"]):
+                        raise ValueError(f"Custom field {custom_field_id} is archived and cannot be written")
+
+                    numeric = Decimal(str(item["numeric_value"]))
+                    if str(field["value_kind"]) == "count":
+                        if numeric < 0 or numeric != numeric.to_integral_value():
+                            raise ValueError("numeric_value must be an integer >= 0 for count fields")
+
+                    payload = {
+                        "id": self.next_daily_custom_value_id,
+                        "daily_input_id": int(daily_input_id),
+                        "metric_date": str(self.daily_inputs[daily_input_id]["metric_date"]),
+                        "source": str(self.daily_inputs[daily_input_id]["source"]),
+                        "custom_field_id": custom_field_id,
+                        "field_key": str(field["field_key"]),
+                        "label": str(field["label"]),
+                        "value_kind": str(field["value_kind"]),
+                        "sort_order": int(field["sort_order"]),
+                        "is_active": bool(field["is_active"]),
+                        "numeric_value": numeric,
+                    }
+                    self.next_daily_custom_value_id += 1
+                    rewritten[(int(daily_input_id), custom_field_id)] = payload
+
+                self.daily_custom_values = {
+                    key: value
+                    for key, value in self.daily_custom_values.items()
+                    if int(key[0]) != int(daily_input_id)
+                }
+                self.daily_custom_values.update(rewritten)
+                return self.list_daily_custom_values_for_daily_input(daily_input_id=daily_input_id)
+
             def validate_sale_entry_belongs_to_client(self, *, sale_entry_id: int, client_id: int):
                 row = self.sale_entries.get(int(sale_entry_id))
                 if row is None:
@@ -721,6 +776,68 @@ class ClientsDataApiTests(unittest.TestCase):
         self.assertEqual(updated["sales_count"], 0)
         self.assertEqual(updated["custom_value_4_amount"], "0")
         self.assertEqual(updated["custom_value_5_amount"], "10")
+
+    def test_put_daily_input_with_dynamic_custom_values_replaces_values(self):
+        _ = clients_api.upsert_client_data_daily_input(
+            client_id=self.client_id,
+            payload=ClientDataDailyInputUpsertRequest(
+                metric_date=date(2026, 3, 24),
+                source="meta_ads",
+                leads=1,
+                dynamic_custom_values=[
+                    {"custom_field_id": 11, "numeric_value": 5},
+                ],
+            ),
+            user=self.user,
+        )
+        table = clients_api.get_client_data_table(
+            client_id=self.client_id,
+            date_from=date(2026, 3, 1),
+            date_to=date(2026, 3, 31),
+            user=self.user,
+        )
+        target = next(row for row in table["rows"] if int(row["daily_input_id"]) == 101)
+        self.assertEqual(len(target["dynamic_custom_values"]), 1)
+        self.assertEqual(target["dynamic_custom_values"][0]["custom_field_id"], 11)
+        self.assertEqual(target["dynamic_custom_values"][0]["numeric_value"], "5")
+
+    def test_put_daily_input_dynamic_custom_values_empty_list_clears_existing(self):
+        _ = clients_api.upsert_client_data_daily_input(
+            client_id=self.client_id,
+            payload=ClientDataDailyInputUpsertRequest(
+                metric_date=date(2026, 3, 24),
+                source="meta_ads",
+                dynamic_custom_values=[],
+            ),
+            user=self.user,
+        )
+        table = clients_api.get_client_data_table(
+            client_id=self.client_id,
+            date_from=date(2026, 3, 1),
+            date_to=date(2026, 3, 31),
+            user=self.user,
+        )
+        target = next(row for row in table["rows"] if int(row["daily_input_id"]) == 101)
+        self.assertEqual(target["dynamic_custom_values"], [])
+
+    def test_put_daily_input_omitting_dynamic_custom_values_keeps_existing(self):
+        _ = clients_api.upsert_client_data_daily_input(
+            client_id=self.client_id,
+            payload=ClientDataDailyInputUpsertRequest(
+                metric_date=date(2026, 3, 24),
+                source="meta_ads",
+                leads=15,
+            ),
+            user=self.user,
+        )
+        table = clients_api.get_client_data_table(
+            client_id=self.client_id,
+            date_from=date(2026, 3, 1),
+            date_to=date(2026, 3, 31),
+            user=self.user,
+        )
+        target = next(row for row in table["rows"] if int(row["daily_input_id"]) == 101)
+        self.assertEqual(len(target["dynamic_custom_values"]), 2)
 
     def test_put_daily_input_validates_empty_payload_date_source_and_numeric_values(self):
         with self.assertRaises(HTTPException) as empty_ctx:

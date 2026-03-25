@@ -714,12 +714,14 @@ def get_client_data_config(client_id: int, user: AuthUser = Depends(get_current_
                 "is_active": bool(field["is_active"]),
             }
         )
+    dynamic_custom_fields = [item for item in mapped_custom_fields if bool(item.get("is_active"))]
     return {
         "client_id": client_id,
         "currency_code": display_currency,
         "display_currency": display_currency,
         "fixed_fields": fixed_fields,
         "sources": client_data_store.list_supported_sources(),
+        "dynamic_custom_fields": dynamic_custom_fields,
         "custom_fields": mapped_custom_fields,
         "derived_fields": list(_CLIENT_DATA_DERIVED_FIELDS),
     }
@@ -751,6 +753,7 @@ def get_client_data_table(
                 "label": _fallback_field_label(label=row.get("label"), custom_field_id=row["custom_field_id"]),
                 "value_kind": str(row["value_kind"]),
                 "sort_order": int(row["sort_order"]),
+                "is_active": bool(row["is_active"]),
                 "numeric_value": _decimal_to_string(row["numeric_value"]),
             }
         )
@@ -788,6 +791,10 @@ def get_client_data_table(
                 "cogs_amount": _decimal_to_string(client_data_store.compute_cogs(sale_entries)),
                 "gross_profit_amount": _decimal_to_string(client_data_store.compute_gross_profit(sale_entries)),
                 "sale_entries": [_map_sale_entry_write_payload(entry) for entry in sale_entries],
+                "dynamic_custom_values": sorted(
+                    custom_values_by_daily_input_id.get(daily_input_id, []),
+                    key=lambda item: (int(item["sort_order"]), int(item["custom_field_id"])),
+                ),
                 "custom_values": sorted(
                     custom_values_by_daily_input_id.get(daily_input_id, []),
                     key=lambda item: (int(item["sort_order"]), int(item["custom_field_id"])),
@@ -827,11 +834,18 @@ def upsert_client_data_daily_input(
             numeric_updates[key] = value
 
     sale_entries_payload, sales_payload_provided = _extract_sale_entries_from_daily_payload(payload)
+    dynamic_values_provided = "dynamic_custom_values" in payload.model_fields_set and payload.dynamic_custom_values is not None
+    dynamic_values_payload: list[dict[str, object]] = []
+    if dynamic_values_provided:
+        dynamic_values_payload = [
+            {"custom_field_id": int(item.custom_field_id), "numeric_value": item.numeric_value}
+            for item in payload.dynamic_custom_values or []
+        ]
     notes_provided = "notes" in payload.model_fields_set
-    if not numeric_updates and not notes_provided and not sales_payload_provided:
+    if not numeric_updates and not notes_provided and not sales_payload_provided and not dynamic_values_provided:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="At least one field is required: numeric daily values, notes and/or sales payload",
+            detail="At least one field is required: numeric daily values, notes and/or canonical payloads",
         )
 
     try:
@@ -861,6 +875,12 @@ def upsert_client_data_daily_input(
             daily_input_id=int(latest_row["id"]),
             sale_entries=sale_entries_payload,
         )
+        if dynamic_values_provided:
+            client_data_store.replace_daily_custom_values_for_daily_input(
+                client_id=client_id,
+                daily_input_id=int(latest_row["id"]),
+                dynamic_custom_values=dynamic_values_payload,
+            )
         latest_row = client_data_store.upsert_daily_input(
             client_id=client_id,
             metric_date=payload.metric_date,

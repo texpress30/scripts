@@ -399,6 +399,16 @@ export default function SubDataPage() {
     setMutationSuccess("");
 
     try {
+      const dynamicCustomValuesPayload = activeDynamicFields
+        .map((field) => {
+          const raw = String(draft.dynamicValues[field.id] ?? "").trim();
+          if (!raw) return null;
+          const numeric = Number(raw);
+          if (!Number.isFinite(numeric)) return null;
+          return { custom_field_id: field.id, numeric_value: numeric };
+        })
+        .filter((item): item is { custom_field_id: number; numeric_value: number } => item !== null);
+
       const dailyPayload = {
         metric_date: draft.metric_date,
         source: draft.source,
@@ -411,6 +421,7 @@ export default function SubDataPage() {
         custom_value_5_amount: Number((Number(draft.custom_value_3_amount || 0) - Number(draft.custom_value_4_amount || 0))),
         sales_count: Number(draft.sales_count || 0),
         notes: draft.notes.trim() || null,
+        dynamic_custom_values: dynamicCustomValuesPayload,
       };
 
       const savedDaily = await apiRequest<{ id: number }>(`/clients/${clientId}/data/daily-input`, {
@@ -419,46 +430,22 @@ export default function SubDataPage() {
       });
 
       const dailyInputId = Number(savedDaily.id || currentRow?.daily_input_id || 0);
-      if (dailyInputId > 0) {
-        const beforeByField = new Map<number, DynamicCustomValueRow>(
-          (currentRow ? normalizeRowCustomValues(currentRow) : []).map((item) => [Number(item.custom_field_id), item]),
-        );
-
-        for (const field of activeDynamicFields) {
-          const draftValue = String(draft.dynamicValues[field.id] ?? "").trim();
-          const existed = beforeByField.get(field.id);
-          if (draftValue === "") {
-            if (existed) {
-              await apiRequest(`/clients/${clientId}/data/daily-inputs/${dailyInputId}/custom-values/${field.id}`, {
-                method: "DELETE",
-              });
-            }
-            continue;
-          }
-
-          await apiRequest(`/clients/${clientId}/data/daily-inputs/${dailyInputId}/custom-values/${field.id}`, {
-            method: "PUT",
-            body: JSON.stringify({ numeric_value: parseNumericInput(draftValue) ?? draftValue }),
-          });
+      if (dailyInputId > 0 && isNew && newRowHasAnySaleInput) {
+        const parsedSalePrice = parseNumericInput(newRowSaleDraft.sale_price_amount);
+        const parsedActualPrice = parseNumericInput(newRowSaleDraft.actual_price_amount);
+        if (parsedSalePrice == null || parsedActualPrice == null) {
+          throw new Error("Completează cel puțin Preț vânzare și Preț actual pentru a salva vânzarea.");
         }
-
-        if (isNew && newRowHasAnySaleInput) {
-          const parsedSalePrice = parseNumericInput(newRowSaleDraft.sale_price_amount);
-          const parsedActualPrice = parseNumericInput(newRowSaleDraft.actual_price_amount);
-          if (parsedSalePrice == null || parsedActualPrice == null) {
-            throw new Error("Completează cel puțin Preț vânzare și Preț actual pentru a salva vânzarea.");
-          }
-          await apiRequest(`/clients/${clientId}/data/sale-entries`, {
-            method: "POST",
-            body: JSON.stringify({
-              daily_input_id: dailyInputId,
-              brand: newRowSaleDraft.brand.trim() || null,
-              model: newRowSaleDraft.model.trim() || null,
-              sale_price_amount: parsedSalePrice,
-              actual_price_amount: parsedActualPrice,
-            }),
-          });
-        }
+        await apiRequest(`/clients/${clientId}/data/sale-entries`, {
+          method: "POST",
+          body: JSON.stringify({
+            daily_input_id: dailyInputId,
+            brand: newRowSaleDraft.brand.trim() || null,
+            model: newRowSaleDraft.model.trim() || null,
+            sale_price_amount: parsedSalePrice,
+            actual_price_amount: parsedActualPrice,
+          }),
+        });
       }
 
       await refreshTable();
@@ -722,6 +709,19 @@ export default function SubDataPage() {
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Preț vânzare</label><input aria-label="Preț vânzare rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.sale_price_amount} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, sale_price_amount: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Preț actual</label><input aria-label="Preț actual rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.actual_price_amount} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, actual_price_amount: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">P/L brut</label><input aria-label="P/L brut rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowDerivedGrossProfitDisplay} readOnly /></div>
+                {activeDynamicFields.map((field) => (
+                  <div key={`new-dynamic-${field.id}`} className="space-y-1">
+                    <label className="text-xs font-medium text-slate-700">{field.label}</label>
+                    <input
+                      aria-label={`Dynamic field ${field.label} rând nou`}
+                      type="number"
+                      step={field.value_kind === "count" ? "1" : "any"}
+                      className="w-full rounded border border-slate-300 px-2 py-1"
+                      value={newRowDraft.dynamicValues[field.id] ?? ""}
+                      onChange={(e) => setNewRowDraft((p) => ({ ...p, dynamicValues: { ...p.dynamicValues, [field.id]: e.target.value } }))}
+                    />
+                  </div>
+                ))}
               </div>
               <div className="mt-2 space-y-1">
                 <label className="text-xs font-medium text-slate-700">Mențiuni</label>
@@ -813,6 +813,27 @@ export default function SubDataPage() {
                             >
                               <summary className="cursor-pointer text-indigo-700">Vezi</summary>
                               <div className="mt-2 space-y-3">
+                                {isEditing && activeDynamicFields.length > 0 ? (
+                                  <div>
+                                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Câmpuri custom dinamice</p>
+                                    <div className="grid gap-1 text-xs">
+                                      {activeDynamicFields.map((field) => (
+                                        <label key={`${rowKey}:edit-dynamic:${field.id}`} className="flex flex-col gap-1">
+                                          <span>{field.label}</span>
+                                          <input
+                                            aria-label={`Editează dinamic ${field.label} ${rowKey}`}
+                                            type="number"
+                                            step={field.value_kind === "count" ? "1" : "any"}
+                                            className="rounded border border-slate-300 px-2 py-1"
+                                            value={draft.dynamicValues[field.id] ?? ""}
+                                            onChange={(e) => setEditingRowDraft((p) => (p ? { ...p, dynamicValues: { ...p.dynamicValues, [field.id]: e.target.value } } : p))}
+                                          />
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ) : null}
+
                                 <div>
                                   <div className="mb-1 flex items-center justify-between gap-2">
                                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Vânzări</p>

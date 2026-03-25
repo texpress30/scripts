@@ -7226,3 +7226,21 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, fÄ
 - [x] Confirmed no frontend refactor, no Media Buying/Tracker changes, no daily custom value scope changes.
 - [x] Confirmed canonical sales derivation now flows through `client_data_sale_entries` and read payload includes `sale_entries`.
 - [x] Confirmed backend checks pass for store suite; API test module remains blocked in this container by missing `fastapi` dependency.
+
+# TODO â€” Canonical dynamic daily custom values + Data page main form wiring (2026-03-25)
+
+- [x] Mandatory workspace update attempt executed (`git fetch --all --prune`, `git pull --ff-only`, `git status`, `git diff`) and continued local when upstream/origin missing.
+- [x] Audit strict files only: `client_data_store.py`, `api/clients.py`, `schemas/client.py`, backend tests, `data/page.tsx`, `data/page.test.tsx`.
+- [x] Store: add `list_daily_custom_values_for_daily_input(...)` with join metadata and stable order (`sort_order`, `custom_field_id`).
+- [x] Store: add `replace_daily_custom_values_for_daily_input(...)` with replace-all semantics, duplicate detection, ownership/active checks, and value-kind validation.
+- [x] Schema/API save: add optional `dynamic_custom_values` request support and preserve backward compatibility when omitted.
+- [x] API save behavior: omitted `dynamic_custom_values` keeps existing values; explicit array triggers replace-all; explicit empty array clears all.
+- [x] API read behavior: `GET /data/table` returns canonical `dynamic_custom_values` per row (including inactive-field history metadata).
+- [x] Frontend Data page: render active dynamic fields in Add Row/Edit flow and submit deterministic `dynamic_custom_values` array.
+- [x] Frontend robustness: keep rendering stable for rows with `dynamic_custom_values` and preserve existing manager/sales/media scope.
+- [x] Run targeted backend/frontend checks and document environment limitations.
+
+## Review
+- [x] Confirmed `client_data_daily_custom_values` is now canonical for daily dynamic custom field values in save/read flow.
+- [x] Confirmed Data page main form now sends deterministic `dynamic_custom_values` and supports active dynamic fields UI.
+- [x] Confirmed no Media Buying/Media Tracker changes and no new daily-custom-values CRUD endpoints were added.

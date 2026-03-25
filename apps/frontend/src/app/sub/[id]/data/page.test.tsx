@@ -80,10 +80,6 @@ function setupApiMock() {
       };
     }
     if (path === "/clients/96/data/daily-input") return { id: 101 };
-    if (path.startsWith("/clients/96/data/daily-inputs/101/custom-values/")) {
-      if ((options?.method || "PUT") === "DELETE") return { ok: true };
-      return { id: 777 };
-    }
     if (path === "/clients/96/data/sale-entries") return { id: 990 };
     if (path === "/clients/96/data/sale-entries/901") return { id: 901 };
     if (path === "/clients/96/data/custom-fields") {
@@ -137,13 +133,17 @@ describe("SubDataPage editable flows", () => {
     expect(screen.getByLabelText("Vânzări rând nou")).toHaveValue("3");
     fireEvent.change(screen.getByLabelText("Preț actual rând nou"), { target: { value: "150" } });
     fireEvent.change(screen.getByLabelText("New row cv3"), { target: { value: "500" } });
+    fireEvent.change(screen.getByLabelText("Dynamic field Appointments rând nou"), { target: { value: "7" } });
     expect(screen.getByLabelText("New row cv5")).toHaveValue("250,00 RON");
     fireEvent.click(screen.getByRole("button", { name: "Salvează rând" }));
 
     await waitFor(() => {
       expect(apiMock.apiRequest).toHaveBeenCalledWith(
         "/clients/96/data/daily-input",
-        expect.objectContaining({ method: "PUT", body: expect.stringContaining('"custom_value_4_amount":250') }),
+        expect.objectContaining({
+          method: "PUT",
+          body: expect.stringContaining('"dynamic_custom_values":[{"custom_field_id":11,"numeric_value":7}]'),
+        }),
       );
     });
 
@@ -217,7 +217,7 @@ describe("SubDataPage editable flows", () => {
     ).toBe(false);
   });
 
-  it("edits existing row and persists existing dynamic custom value payload", async () => {
+  it("edits existing row and persists dynamic_custom_values via daily-input save", async () => {
     render(<SubDataPage />);
     await screen.findByText("Meta");
 
@@ -234,10 +234,24 @@ describe("SubDataPage editable flows", () => {
       );
     });
 
+    const dailyInputCall = apiMock.apiRequest.mock.calls.find((call: any[]) => call[0] === "/clients/96/data/daily-input");
+    expect(dailyInputCall).toBeTruthy();
+    expect(String(dailyInputCall?.[1]?.body || "")).toContain('"dynamic_custom_values":[{"custom_field_id":11,"numeric_value":7}]');
+  });
+
+  it("sends dynamic_custom_values as empty array when dynamic fields are blank", async () => {
+    render(<SubDataPage />);
+    await screen.findByRole("heading", { name: "Data - Active Life Therapy" });
+    fireEvent.click(screen.getByRole("button", { name: "Adaugă rând" }));
+    fireEvent.change(screen.getByLabelText("Data rând nou"), { target: { value: "2026-03-12" } });
+    fireEvent.change(screen.getByLabelText("Sursa rând nou"), { target: { value: "meta_ads" } });
+    fireEvent.change(screen.getByLabelText("Lead-uri rând nou"), { target: { value: "10" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvează rând" }));
+
     await waitFor(() => {
       expect(apiMock.apiRequest).toHaveBeenCalledWith(
-        "/clients/96/data/daily-inputs/101/custom-values/11",
-        expect.objectContaining({ method: "PUT" }),
+        "/clients/96/data/daily-input",
+        expect.objectContaining({ method: "PUT", body: expect.stringContaining('"dynamic_custom_values":[]') }),
       );
     });
   });

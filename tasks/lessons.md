@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-25: Când cerința impune compatibilitate backward pe payload opțional (`dynamic_custom_values`), tratez explicit diferența între „câmp omis” (păstrez existent) și „câmp prezent” (replace-all), pentru comportament determinist fără regresii.
+
 - 2026-03-25: Când taskul cere canonicitate pentru un sub-domeniu (aici sales), mut explicit derivările în API/store pe sursa canonică nouă și păstrez bridge backward-compatible în același endpoint existent, fără extindere de scope UI.
 
 - 2026-03-25: După feedback de tip “scope prea larg/nesatisfăcător”, următorul patch trebuie blocat strict pe cerința explicită (aici doar management definiții custom fields), fără schimbări în flow-urile excluse.

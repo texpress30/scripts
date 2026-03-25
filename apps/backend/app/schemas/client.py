@@ -143,6 +143,7 @@ class ClientDataConfigResponse(BaseModel):
     display_currency: str | None = None
     fixed_fields: list[dict[str, object]] = Field(default_factory=list)
     sources: list[ClientDataSourceItem]
+    dynamic_custom_fields: list[ClientDataCustomFieldItem] = Field(default_factory=list)
     custom_fields: list[ClientDataCustomFieldItem]
     derived_fields: list[ClientDataDerivedField]
 
@@ -153,7 +154,13 @@ class ClientDataRowCustomValue(BaseModel):
     label: str
     value_kind: Literal["count", "amount"]
     sort_order: int
+    is_active: bool
     numeric_value: str
+
+
+class ClientDataDynamicCustomValueUpsertItem(BaseModel):
+    custom_field_id: int
+    numeric_value: float | int | str
 
 
 class ClientDataTableSaleEntry(BaseModel):
@@ -208,6 +215,7 @@ class ClientDataDailyInputUpsertRequest(BaseModel):
     sales_count: int | None = None
     custom_value_5_amount: float | int | str | None = None
     notes: str | None = None
+    dynamic_custom_values: list[ClientDataDynamicCustomValueUpsertItem] | None = None
     sale_entries: list["ClientDataSaleEntryUpsertItem"] | None = None
     sale_brand: str | None = None
     sale_model: str | None = None
