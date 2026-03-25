@@ -30,7 +30,7 @@ describe("GlobalAgencyFavicon", () => {
     render(<GlobalAgencyFavicon />);
 
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith("/company/settings");
+      expect(apiRequest).toHaveBeenCalledWith("/company/settings", { requireAuth: true });
       expect(globalFaviconSpy).toHaveBeenLastCalledWith({ agencyLogoUrl: "https://cdn.example/agency.png", refreshKey: 1 });
     });
   });

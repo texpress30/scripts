@@ -7244,3 +7244,18 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, fÄ
 - [x] Confirmed `client_data_daily_custom_values` is now canonical for daily dynamic custom field values in save/read flow.
 - [x] Confirmed Data page main form now sends deterministic `dynamic_custom_values` and supports active dynamic fields UI.
 - [x] Confirmed no Media Buying/Media Tracker changes and no new daily-custom-values CRUD endpoints were added.
+
+# TODO â€” HOTFIX auth 401 on `GET /company/settings` (2026-03-25)
+
+- [x] Mandatory workspace update attempt executed (`git fetch --all --prune`, `git pull --ff-only`, `git status`, `git diff`); continue local when upstream/origin missing.
+- [x] Audit strict call sites for `/company/settings` in frontend (`GlobalAgencyFavicon`, `AppShell`, settings page) and API helper auth behavior.
+- [x] Identify root cause: global/layout-level company-settings requests were sent without guaranteed token availability, producing avoidable 401s.
+- [x] Add minimal API helper hardening for protected requests (`requireAuth`) so protected fetches are blocked locally when token is missing.
+- [x] Apply fix on `/company/settings` callers to use protected request mode and graceful fallback handling.
+- [x] Add targeted tests for auth helper behavior and company-settings caller path.
+- [x] Run relevant frontend tests + rapid compile/import check scope.
+
+## Review
+- [x] Confirmed protected `/company/settings` requests no longer leave browser without token (`requireAuth` short-circuit).
+- [x] Confirmed authenticated requests still include `Authorization` header and callers keep graceful fallback on 401/errors.
+- [x] Confirmed no Data layer / Media Buying / Media Tracker / DB schema changes in this hotfix.

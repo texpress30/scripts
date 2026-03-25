@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-25: Pentru endpoint-uri protejate apelate din layout/global effects (ex. favicon/branding), folosesc explicit guard de auth în helper (`requireAuth`) ca să evit requesturi 401 înainte de disponibilitatea tokenului.
+
 - 2026-03-25: Când cerința impune compatibilitate backward pe payload opțional (`dynamic_custom_values`), tratez explicit diferența între „câmp omis” (păstrez existent) și „câmp prezent” (replace-all), pentru comportament determinist fără regresii.
 
 - 2026-03-25: Când taskul cere canonicitate pentru un sub-domeniu (aici sales), mut explicit derivările în API/store pe sursa canonică nouă și păstrez bridge backward-compatible în același endpoint existent, fără extindere de scope UI.
