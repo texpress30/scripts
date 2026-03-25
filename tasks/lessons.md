@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-25: După orice corecție/instrucțiune AGENTS de la user, pornesc execuția cu workflow complet în același turn (plan în `tasks/todo.md` + implementare + verificări), nu doar cu confirmări narative.
+
 - 2026-03-24: Pentru roadmap Data în pași, livrez incremental strict pe slice-ul cerut (custom fields + daily custom values în acest task), fără să ating frontend sau alte write/read slices deja livrate.
 
 - 2026-03-24: După feedback negativ pe un patch mixt, următorul task trebuie livrat strict pe scope-ul cerut (aici backend write API Data), fără atingeri frontend sau endpointuri adiacente.

@@ -617,8 +617,11 @@ def get_client_data_config(client_id: int, user: AuthUser = Depends(get_current_
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
+    client_details = client_registry_service.get_client_details(client_id=int(client_id)) or {}
+    client_payload = client_details.get("client") if isinstance(client_details, dict) else {}
+    client_currency = str((client_payload or {}).get("currency") or "").strip().upper() or None
     media_buying_config = media_buying_store.get_config(client_id=client_id)
-    display_currency = str(media_buying_config.get("display_currency") or "").strip().upper() or None
+    display_currency = client_currency or (str(media_buying_config.get("display_currency") or "").strip().upper() or None)
     fixed_fields = [
         {"key": "leads", "label": "Lead-uri", "editable": True, "read_only": False},
         {"key": "phones", "label": "Telefoane", "editable": True, "read_only": False},
@@ -711,7 +714,6 @@ def get_client_data_table(
                 "sales_count": int(daily_input["sales_count"]),
                 "revenue_amount": _decimal_to_string(client_data_store.compute_revenue(sale_entries)),
                 "cogs_amount": _decimal_to_string(client_data_store.compute_cogs(sale_entries)),
-                "custom_value_4_amount": _decimal_to_string(daily_input["custom_value_4_amount"]),
                 "gross_profit_amount": _decimal_to_string(client_data_store.compute_gross_profit(sale_entries)),
                 "custom_values": sorted(
                     custom_values_by_daily_input_id.get(daily_input_id, []),

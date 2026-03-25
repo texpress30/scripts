@@ -554,8 +554,8 @@ class ClientsDataApiTests(unittest.TestCase):
         payload = clients_api.get_client_data_config(client_id=self.client_id, user=self.user)
 
         self.assertEqual(payload["client_id"], self.client_id)
-        self.assertEqual(payload["currency_code"], "RON")
-        self.assertEqual(payload["display_currency"], "RON")
+        self.assertEqual(payload["currency_code"], "USD")
+        self.assertEqual(payload["display_currency"], "USD")
         self.assertEqual(payload["fixed_fields"][0], {"key": "leads", "label": "Lead-uri", "editable": True, "read_only": False})
         self.assertEqual(payload["fixed_fields"][1], {"key": "phones", "label": "Telefoane", "editable": True, "read_only": False})
         self.assertEqual(payload["fixed_fields"][2], {"key": "custom_value_1_count", "label": "CV1", "editable": True, "read_only": False})
