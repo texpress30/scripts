@@ -557,7 +557,7 @@ export function AppShell({
     let ignore = false;
     async function loadCompanySettings() {
       try {
-        const result = await apiRequest<CompanySettings>("/company/settings");
+        const result = await apiRequest<CompanySettings>("/company/settings", { requireAuth: true });
         if (!ignore) {
           setCompanySettings(result);
         }
