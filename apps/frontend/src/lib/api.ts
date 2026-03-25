@@ -47,6 +47,10 @@ export class ApiRequestError extends Error {
   }
 }
 
+type ApiRequestOptions = RequestInit & {
+  requireAuth?: boolean;
+};
+
 function extractErrorMessage(detail: string, status: number, requestUrl: string): string {
   const raw = detail.trim();
   if (!raw) return `Request failed: ${status} (${requestUrl})`;
@@ -69,15 +73,19 @@ export function getAuthToken(): string | null {
   return localStorage.getItem("mcc_token");
 }
 
-export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
+  const { requireAuth = false, ...requestInit } = options;
   const token = getAuthToken();
-  const headers = new Headers(options.headers ?? {});
+  if (requireAuth && !token) {
+    throw new ApiRequestError("Authentication required", 401);
+  }
+  const headers = new Headers(requestInit.headers ?? {});
   headers.set("Content-Type", "application/json");
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
   const requestUrl = `${API_BASE_URL}${path}`;
   const response = await fetch(requestUrl, {
-    ...options,
+    ...requestInit,
     headers,
     cache: "no-store"
   });

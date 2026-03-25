@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.dependencies import enforce_action_scope, enforce_agency_navigation_access, get_current_user
@@ -8,6 +9,19 @@ from app.schemas.client import (
     AttachPlatformAccountRequest,
     BusinessInputsImportRequest,
     BusinessInputsImportResponse,
+    ClientDataConfigResponse,
+    ClientDataDailyInputUpsertRequest,
+    ClientDataDailyInputWriteResponse,
+    ClientDataDailyCustomValueUpsertRequest,
+    ClientDataDailyCustomValueWriteResponse,
+    ClientDataCustomFieldCreateRequest,
+    ClientDataCustomFieldUpdateRequest,
+    ClientDataCustomFieldWriteResponse,
+    ClientDataCustomFieldListResponse,
+    ClientDataSaleEntryCreateRequest,
+    ClientDataSaleEntryUpdateRequest,
+    ClientDataSaleEntryWriteResponse,
+    ClientDataTableResponse,
     CreateClientRequest,
     DetachGoogleAccountRequest,
     DetachPlatformAccountRequest,
@@ -21,6 +35,7 @@ from app.schemas.client import (
 )
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
+from app.services import client_data_store
 from app.services.client_registry import PlatformAccountAlreadyAttachedError, client_registry_service
 from app.services.client_business_inputs_import_service import client_business_inputs_import_service
 from app.services.media_buying_store import media_buying_store
@@ -515,6 +530,615 @@ def _ensure_client_exists_or_404(*, client_id: int) -> None:
     details = client_registry_service.get_client_details(client_id=int(client_id))
     if details is None:
         raise HTTPException(status_code=404, detail="Client not found")
+
+
+def _decimal_to_string(value: object) -> str:
+    return str(value)
+
+
+def _to_decimal(value: object) -> Decimal:
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal("0")
+
+
+def _fallback_field_label(*, label: object, custom_field_id: object) -> str:
+    normalized_label = str(label or "").strip()
+    if normalized_label:
+        return normalized_label
+    return f"Custom Field {int(custom_field_id)}"
+
+
+def _map_daily_input_write_payload(row: dict[str, object]) -> dict[str, object]:
+    return {
+        "id": int(row["id"]),
+        "client_id": int(row["client_id"]),
+        "metric_date": str(row["metric_date"]),
+        "source": str(row["source"]),
+        "leads": int(row["leads"]),
+        "phones": int(row["phones"]),
+        "custom_value_1_count": int(row["custom_value_1_count"]),
+        "custom_value_2_count": int(row["custom_value_2_count"]),
+        "custom_value_3_amount": _decimal_to_string(row["custom_value_3_amount"]),
+        "custom_value_4_amount": _decimal_to_string(row["custom_value_4_amount"]),
+        "custom_value_5_amount": _decimal_to_string(row["custom_value_5_amount"]),
+        "sales_count": int(row["sales_count"]),
+        "notes": row.get("notes"),
+    }
+
+
+def _map_sale_entry_write_payload(row: dict[str, object]) -> dict[str, object]:
+    return {
+        "id": int(row["id"]),
+        "daily_input_id": int(row["daily_input_id"]),
+        "brand": row.get("brand"),
+        "model": row.get("model"),
+        "sale_price_amount": _decimal_to_string(row["sale_price_amount"]),
+        "actual_price_amount": _decimal_to_string(row["actual_price_amount"]),
+        "notes": row.get("notes"),
+        "sort_order": int(row["sort_order"]),
+        "gross_profit_amount": _decimal_to_string(row["gross_profit_amount"]),
+    }
+
+
+def _extract_sale_entries_from_daily_payload(payload: ClientDataDailyInputUpsertRequest) -> tuple[list[dict[str, object]], bool]:
+    if "sale_entries" in payload.model_fields_set and payload.sale_entries is not None:
+        mapped: list[dict[str, object]] = []
+        for idx, entry in enumerate(payload.sale_entries):
+            sort_value = entry.sort_order if entry.sort_order is not None else idx
+            mapped.append(
+                {
+                    "brand": entry.brand,
+                    "model": entry.model,
+                    "sale_price_amount": entry.sale_price_amount,
+                    "actual_price_amount": entry.actual_price_amount,
+                    "notes": entry.notes,
+                    "sort_order": sort_value,
+                }
+            )
+        return mapped, True
+
+    legacy_fields = {
+        "sale_brand",
+        "sale_model",
+        "sale_price_amount",
+        "sale_actual_price_amount",
+        "sale_notes",
+        "sale_sort_order",
+    }
+    legacy_provided = len(legacy_fields.intersection(payload.model_fields_set)) > 0
+    if not legacy_provided:
+        return [], False
+
+    has_any_meaningful_value = any(
+        (
+            payload.sale_brand not in {None, ""},
+            payload.sale_model not in {None, ""},
+            payload.sale_price_amount is not None,
+            payload.sale_actual_price_amount is not None,
+            payload.sale_notes not in {None, ""},
+        )
+    )
+    if not has_any_meaningful_value:
+        return [], True
+
+    if payload.sale_price_amount is None or payload.sale_actual_price_amount is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Legacy sale payload requires sale_price_amount and sale_actual_price_amount",
+        )
+
+    return [
+        {
+            "brand": payload.sale_brand,
+            "model": payload.sale_model,
+            "sale_price_amount": payload.sale_price_amount,
+            "actual_price_amount": payload.sale_actual_price_amount,
+            "notes": payload.sale_notes,
+            "sort_order": payload.sale_sort_order if payload.sale_sort_order is not None else 0,
+        }
+    ], True
+
+
+def _map_custom_field_write_payload(row: dict[str, object]) -> dict[str, object]:
+    return {
+        "id": int(row["id"]),
+        "client_id": int(row["client_id"]),
+        "field_key": str(row["field_key"]),
+        "label": str(row["label"]),
+        "value_kind": str(row["value_kind"]),
+        "sort_order": int(row["sort_order"]),
+        "is_active": bool(row["is_active"]),
+        "archived_at": row.get("archived_at"),
+    }
+
+
+def _map_daily_custom_value_write_payload(row: dict[str, object]) -> dict[str, object]:
+    return {
+        "id": int(row["id"]),
+        "daily_input_id": int(row["daily_input_id"]),
+        "metric_date": str(row["metric_date"]),
+        "source": str(row["source"]),
+        "custom_field_id": int(row["custom_field_id"]),
+        "field_key": str(row["field_key"]),
+        "label": str(row["label"]),
+        "value_kind": str(row["value_kind"]),
+        "sort_order": int(row["sort_order"]),
+        "is_active": bool(row["is_active"]),
+        "numeric_value": _decimal_to_string(row["numeric_value"]),
+    }
+
+
+_CLIENT_DATA_DERIVED_FIELDS: list[dict[str, str]] = [
+    {"key": "sales_count", "label": "Vânzări", "value_kind": "count"},
+    {"key": "revenue_amount", "label": "Venit", "value_kind": "amount"},
+    {"key": "cogs_amount", "label": "COGS", "value_kind": "amount"},
+    {"key": "custom_value_4_amount", "label": "Custom Value 4", "value_kind": "amount"},
+    {"key": "gross_profit_amount", "label": "Profit Brut", "value_kind": "amount"},
+]
+
+
+@router.get("/{client_id}/data/config", response_model=ClientDataConfigResponse)
+def get_client_data_config(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    client_details = client_registry_service.get_client_details(client_id=int(client_id)) or {}
+    client_payload = client_details.get("client") if isinstance(client_details, dict) else {}
+    client_currency = str((client_payload or {}).get("currency") or "").strip().upper() or None
+    media_buying_config = media_buying_store.get_config(client_id=client_id)
+    display_currency = client_currency or (str(media_buying_config.get("display_currency") or "").strip().upper() or None)
+    fixed_fields = [
+        {"key": "leads", "label": "Lead-uri", "editable": True, "read_only": False},
+        {"key": "phones", "label": "Telefoane", "editable": True, "read_only": False},
+        {"key": "custom_value_1_count", "label": str(media_buying_config.get("custom_label_1") or "Custom Value 1"), "editable": True, "read_only": False},
+        {"key": "custom_value_2_count", "label": str(media_buying_config.get("custom_label_2") or "Custom Value 2"), "editable": True, "read_only": False},
+        {"key": "custom_value_3_amount", "label": str(media_buying_config.get("custom_label_3") or "Custom Value 3"), "editable": True, "read_only": False},
+        {"key": "custom_value_4_amount", "label": str(media_buying_config.get("custom_label_4") or "Custom Value 4"), "editable": True, "read_only": False},
+        {"key": "custom_value_5_amount", "label": str(media_buying_config.get("custom_label_5") or "Custom Value 5"), "editable": False, "read_only": True},
+        {"key": "sales_count", "label": "Vânzări", "editable": True, "read_only": False},
+    ]
+
+    custom_fields = client_data_store.list_custom_fields(client_id=client_id, include_inactive=True)
+    mapped_custom_fields: list[dict[str, object]] = []
+    for field in custom_fields:
+        mapped_custom_fields.append(
+            {
+                "id": int(field["id"]),
+                "field_key": str(field["field_key"]),
+                "label": _fallback_field_label(label=field.get("label"), custom_field_id=field["id"]),
+                "value_kind": str(field["value_kind"]),
+                "sort_order": int(field["sort_order"]),
+                "is_active": bool(field["is_active"]),
+            }
+        )
+    dynamic_custom_fields = [item for item in mapped_custom_fields if bool(item.get("is_active"))]
+    return {
+        "client_id": client_id,
+        "currency_code": display_currency,
+        "display_currency": display_currency,
+        "fixed_fields": fixed_fields,
+        "sources": client_data_store.list_supported_sources(),
+        "dynamic_custom_fields": dynamic_custom_fields,
+        "custom_fields": mapped_custom_fields,
+        "derived_fields": list(_CLIENT_DATA_DERIVED_FIELDS),
+    }
+
+
+@router.get("/{client_id}/data/table", response_model=ClientDataTableResponse)
+def get_client_data_table(
+    client_id: int,
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+    try:
+        daily_inputs = client_data_store.list_daily_inputs(client_id=client_id, date_from=date_from, date_to=date_to)
+        daily_custom_values = client_data_store.list_daily_custom_values(client_id=client_id, date_from=date_from, date_to=date_to)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+    custom_values_by_daily_input_id: dict[int, list[dict[str, object]]] = {}
+    for row in daily_custom_values:
+        daily_input_id = int(row["daily_input_id"])
+        custom_values_by_daily_input_id.setdefault(daily_input_id, []).append(
+            {
+                "custom_field_id": int(row["custom_field_id"]),
+                "field_key": str(row["field_key"]),
+                "label": _fallback_field_label(label=row.get("label"), custom_field_id=row["custom_field_id"]),
+                "value_kind": str(row["value_kind"]),
+                "sort_order": int(row["sort_order"]),
+                "is_active": bool(row["is_active"]),
+                "numeric_value": _decimal_to_string(row["numeric_value"]),
+            }
+        )
+
+    rows: list[dict[str, object]] = []
+    for daily_input in daily_inputs:
+        daily_input_id = int(daily_input["id"])
+        try:
+            sale_entries = client_data_store.list_sale_entries_for_daily_input(daily_input_id=daily_input_id)
+        except LookupError:
+            sale_entries = []
+
+        custom_value_3_amount = _to_decimal(daily_input["custom_value_3_amount"])
+        custom_value_4_amount = client_data_store.compute_custom_value_4(sale_entries)
+        custom_value_5_amount = custom_value_3_amount - custom_value_4_amount
+
+        source_key = str(daily_input["source"])
+        source_label = client_data_store.get_source_label(source_key) or "Unknown"
+        rows.append(
+            {
+                "daily_input_id": daily_input_id,
+                "metric_date": str(daily_input["metric_date"]),
+                "source": source_key,
+                "source_label": source_label,
+                "leads": int(daily_input["leads"]),
+                "phones": int(daily_input["phones"]),
+                "custom_value_1_count": int(daily_input["custom_value_1_count"]),
+                "custom_value_2_count": int(daily_input["custom_value_2_count"]),
+                "custom_value_3_amount": _decimal_to_string(custom_value_3_amount),
+                "custom_value_4_amount": _decimal_to_string(custom_value_4_amount),
+                "custom_value_5_amount": _decimal_to_string(custom_value_5_amount),
+                "notes": daily_input.get("notes"),
+                "sales_count": int(client_data_store.compute_sales_count(sale_entries)),
+                "revenue_amount": _decimal_to_string(client_data_store.compute_revenue(sale_entries)),
+                "cogs_amount": _decimal_to_string(client_data_store.compute_cogs(sale_entries)),
+                "gross_profit_amount": _decimal_to_string(client_data_store.compute_gross_profit(sale_entries)),
+                "sale_entries": [_map_sale_entry_write_payload(entry) for entry in sale_entries],
+                "dynamic_custom_values": sorted(
+                    custom_values_by_daily_input_id.get(daily_input_id, []),
+                    key=lambda item: (int(item["sort_order"]), int(item["custom_field_id"])),
+                ),
+                "custom_values": sorted(
+                    custom_values_by_daily_input_id.get(daily_input_id, []),
+                    key=lambda item: (int(item["sort_order"]), int(item["custom_field_id"])),
+                ),
+            }
+        )
+
+    return {
+        "client_id": int(client_id),
+        "date_from": str(date_from),
+        "date_to": str(date_to),
+        "count": len(rows),
+        "rows": rows,
+    }
+
+
+@router.put("/{client_id}/data/daily-input", response_model=ClientDataDailyInputWriteResponse)
+def upsert_client_data_daily_input(
+    client_id: int,
+    payload: ClientDataDailyInputUpsertRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    numeric_updates: dict[str, object] = {}
+    for key in (
+        "leads",
+        "phones",
+        "custom_value_1_count",
+        "custom_value_2_count",
+        "custom_value_3_amount",
+    ):
+        value = getattr(payload, key)
+        if value is not None:
+            numeric_updates[key] = value
+
+    sale_entries_payload, sales_payload_provided = _extract_sale_entries_from_daily_payload(payload)
+    dynamic_values_provided = "dynamic_custom_values" in payload.model_fields_set and payload.dynamic_custom_values is not None
+    dynamic_values_payload: list[dict[str, object]] = []
+    if dynamic_values_provided:
+        dynamic_values_payload = [
+            {"custom_field_id": int(item.custom_field_id), "numeric_value": item.numeric_value}
+            for item in payload.dynamic_custom_values or []
+        ]
+    notes_provided = "notes" in payload.model_fields_set
+    if not numeric_updates and not notes_provided and not sales_payload_provided and not dynamic_values_provided:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="At least one field is required: numeric daily values, notes and/or canonical payloads",
+        )
+
+    try:
+        latest_row = client_data_store.get_or_create_daily_input(
+            client_id=client_id,
+            metric_date=payload.metric_date,
+            source=payload.source,
+        )
+        if numeric_updates:
+            latest_row = client_data_store.upsert_daily_input(
+                client_id=client_id,
+                metric_date=payload.metric_date,
+                source=payload.source,
+                **numeric_updates,
+            )
+        if notes_provided:
+            latest_row = client_data_store.set_daily_input_notes(
+                client_id=client_id,
+                metric_date=payload.metric_date,
+                source=payload.source,
+                notes=payload.notes,
+            )
+        if latest_row is None:
+            raise RuntimeError("Failed to initialize daily input for sales write")
+
+        sale_entries = client_data_store.replace_sale_entries_for_daily_input(
+            daily_input_id=int(latest_row["id"]),
+            sale_entries=sale_entries_payload,
+        )
+        if dynamic_values_provided:
+            client_data_store.replace_daily_custom_values_for_daily_input(
+                client_id=client_id,
+                daily_input_id=int(latest_row["id"]),
+                dynamic_custom_values=dynamic_values_payload,
+            )
+        latest_row = client_data_store.upsert_daily_input(
+            client_id=client_id,
+            metric_date=payload.metric_date,
+            source=payload.source,
+            custom_value_4_amount=client_data_store.compute_custom_value_4(sale_entries),
+            sales_count=client_data_store.compute_sales_count(sale_entries),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    if latest_row is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to write daily input")
+    return _map_daily_input_write_payload(latest_row)
+
+
+@router.post("/{client_id}/data/sale-entries", response_model=ClientDataSaleEntryWriteResponse)
+def create_client_data_sale_entry(
+    client_id: int,
+    payload: ClientDataSaleEntryCreateRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    try:
+        client_data_store.validate_daily_input_belongs_to_client(daily_input_id=payload.daily_input_id, client_id=client_id)
+        created = client_data_store.create_sale_entry(
+            daily_input_id=payload.daily_input_id,
+            sale_price_amount=payload.sale_price_amount,
+            actual_price_amount=payload.actual_price_amount,
+            brand=payload.brand,
+            model=payload.model,
+            notes=payload.notes,
+            sort_order=payload.sort_order,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return _map_sale_entry_write_payload(created)
+
+
+@router.patch("/{client_id}/data/sale-entries/{sale_entry_id}", response_model=ClientDataSaleEntryWriteResponse)
+def update_client_data_sale_entry(
+    client_id: int,
+    sale_entry_id: int,
+    payload: ClientDataSaleEntryUpdateRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    allowed_fields = {"sale_price_amount", "actual_price_amount", "brand", "model", "notes", "sort_order"}
+    provided_fields = set(payload.model_fields_set).intersection(allowed_fields)
+    if not provided_fields:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="At least one sale entry field is required for update",
+        )
+
+    kwargs = {field: getattr(payload, field) for field in provided_fields}
+    try:
+        client_data_store.validate_sale_entry_belongs_to_client(sale_entry_id=sale_entry_id, client_id=client_id)
+        updated = client_data_store.update_sale_entry(sale_entry_id=sale_entry_id, **kwargs)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return _map_sale_entry_write_payload(updated)
+
+
+@router.delete("/{client_id}/data/sale-entries/{sale_entry_id}", response_model=ClientDataSaleEntryWriteResponse)
+def delete_client_data_sale_entry(
+    client_id: int,
+    sale_entry_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    try:
+        client_data_store.validate_sale_entry_belongs_to_client(sale_entry_id=sale_entry_id, client_id=client_id)
+        deleted = client_data_store.delete_sale_entry(sale_entry_id=sale_entry_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return _map_sale_entry_write_payload(deleted)
+
+
+@router.post("/{client_id}/data/custom-fields", response_model=ClientDataCustomFieldWriteResponse)
+def create_client_data_custom_field(
+    client_id: int,
+    payload: ClientDataCustomFieldCreateRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    try:
+        created = client_data_store.create_custom_field(
+            client_id=client_id,
+            label=payload.label,
+            value_kind=payload.value_kind,
+            field_key=payload.field_key,
+            sort_order=payload.sort_order,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return _map_custom_field_write_payload(created)
+
+
+@router.get("/{client_id}/data/custom-fields", response_model=ClientDataCustomFieldListResponse)
+def list_client_data_custom_fields(
+    client_id: int,
+    include_inactive: bool = Query(False),
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+    items = client_data_store.list_custom_fields(client_id=client_id, include_inactive=include_inactive)
+    return {"items": [_map_custom_field_write_payload(item) for item in items]}
+
+
+@router.patch("/{client_id}/data/custom-fields/{custom_field_id}", response_model=ClientDataCustomFieldWriteResponse)
+def update_client_data_custom_field(
+    client_id: int,
+    custom_field_id: int,
+    payload: ClientDataCustomFieldUpdateRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    allowed_fields = {"label", "value_kind", "sort_order"}
+    provided_fields = set(payload.model_fields_set).intersection(allowed_fields)
+    if not provided_fields:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="At least one custom field value is required for update",
+        )
+
+    kwargs = {field: getattr(payload, field) for field in provided_fields}
+    try:
+        client_data_store.validate_custom_field_belongs_to_client(custom_field_id=custom_field_id, client_id=client_id)
+        updated = client_data_store.update_custom_field(custom_field_id=custom_field_id, **kwargs)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return _map_custom_field_write_payload(updated)
+
+
+@router.delete("/{client_id}/data/custom-fields/{custom_field_id}", response_model=ClientDataCustomFieldWriteResponse)
+def archive_client_data_custom_field(
+    client_id: int,
+    custom_field_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    try:
+        client_data_store.validate_custom_field_belongs_to_client(custom_field_id=custom_field_id, client_id=client_id)
+        archived = client_data_store.archive_custom_field(custom_field_id=custom_field_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return _map_custom_field_write_payload(archived)
+
+
+@router.post("/{client_id}/data/custom-fields/{custom_field_id}/archive", response_model=ClientDataCustomFieldWriteResponse)
+def archive_client_data_custom_field_post(
+    client_id: int,
+    custom_field_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    return archive_client_data_custom_field(client_id=client_id, custom_field_id=custom_field_id, user=user)
+
+
+@router.put(
+    "/{client_id}/data/daily-inputs/{daily_input_id}/custom-values/{custom_field_id}",
+    response_model=ClientDataDailyCustomValueWriteResponse,
+)
+def upsert_client_data_daily_custom_value(
+    client_id: int,
+    daily_input_id: int,
+    custom_field_id: int,
+    payload: ClientDataDailyCustomValueUpsertRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    try:
+        client_data_store.validate_daily_input_belongs_to_client(daily_input_id=daily_input_id, client_id=client_id)
+        custom_field = client_data_store.validate_custom_field_belongs_to_client(custom_field_id=custom_field_id, client_id=client_id)
+        if not bool(custom_field.get("is_active")):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Cannot write daily custom value for archived custom field",
+            )
+        upserted = client_data_store.upsert_daily_custom_value(
+            daily_input_id=daily_input_id,
+            custom_field_id=custom_field_id,
+            numeric_value=payload.numeric_value,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return _map_daily_custom_value_write_payload(upserted)
+
+
+@router.delete(
+    "/{client_id}/data/daily-inputs/{daily_input_id}/custom-values/{custom_field_id}",
+    response_model=ClientDataDailyCustomValueWriteResponse,
+)
+def delete_client_data_daily_custom_value(
+    client_id: int,
+    daily_input_id: int,
+    custom_field_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    try:
+        client_data_store.validate_daily_input_belongs_to_client(daily_input_id=daily_input_id, client_id=client_id)
+        client_data_store.validate_custom_field_belongs_to_client(custom_field_id=custom_field_id, client_id=client_id)
+        deleted = client_data_store.delete_daily_custom_value(daily_input_id=daily_input_id, custom_field_id=custom_field_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return _map_daily_custom_value_write_payload(deleted)
 
 
 @router.get("/{client_id}/media-buying/config")
