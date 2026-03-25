@@ -7,6 +7,7 @@ from threading import Lock
 import time
 
 from app.core.config import load_settings
+from app.services import client_data_store
 from app.services.dashboard import unified_dashboard_service
 from app.services.client_registry import client_registry_service
 
@@ -325,6 +326,187 @@ class MediaBuyingStore:
                 return True
         return False
 
+    def _source_daily_row_has_data(self, row: dict[str, object]) -> bool:
+        fields = [
+            "cost_amount",
+            "leads",
+            "phones",
+            "custom_value_1_count",
+            "custom_value_2_count",
+            "custom_value_3_amount_ron",
+            "custom_value_4_amount_ron",
+            "custom_value_5_amount_ron",
+            "sales_count",
+            "cogs_amount_ron",
+            "gross_profit_amount_ron",
+        ]
+        for field in fields:
+            value = row.get(field)
+            if isinstance(value, (int, float, Decimal)) and float(value) != 0.0:
+                return True
+        return False
+
+    def _list_data_layer_source_daily_business_rows(
+        self,
+        *,
+        client_id: int,
+        date_from: date | None,
+        date_to: date | None,
+    ) -> list[dict[str, object]]:
+        self._ensure_schema()
+        where_clauses = ["di.client_id = %s"]
+        params: list[object] = [int(client_id)]
+        if date_from is not None:
+            where_clauses.append("di.metric_date >= %s")
+            params.append(date_from)
+        if date_to is not None:
+            where_clauses.append("di.metric_date <= %s")
+            params.append(date_to)
+        where_sql = " AND ".join(where_clauses)
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT
+                        di.metric_date,
+                        di.source,
+                        SUM(COALESCE(di.leads, 0))::bigint AS leads,
+                        SUM(COALESCE(di.phones, 0))::bigint AS phones,
+                        SUM(COALESCE(di.custom_value_1_count, 0))::bigint AS custom_value_1_count,
+                        SUM(COALESCE(di.custom_value_2_count, 0))::bigint AS custom_value_2_count,
+                        SUM(COALESCE(di.custom_value_3_amount, 0))::numeric(18, 4) AS custom_value_3_amount,
+                        SUM(COALESCE(di.custom_value_4_amount, 0))::numeric(18, 4) AS custom_value_4_amount,
+                        SUM(COALESCE(di.custom_value_5_amount, 0))::numeric(18, 4) AS custom_value_5_amount,
+                        SUM(COALESCE(di.sales_count, 0))::bigint AS sales_count,
+                        SUM(COALESCE(se.actual_price_amount, 0))::numeric(18, 4) AS cogs_amount
+                    FROM client_data_daily_inputs di
+                    LEFT JOIN client_data_sale_entries se ON se.daily_input_id = di.id
+                    WHERE {where_sql}
+                    GROUP BY di.metric_date, di.source
+                    ORDER BY di.metric_date ASC, di.source ASC
+                    """,
+                    tuple(params),
+                )
+                rows = cur.fetchall() or []
+
+        payload: list[dict[str, object]] = []
+        for row in rows:
+            def _at(idx: int, default: object = 0) -> object:
+                return row[idx] if len(row) > idx else default
+            metric_date = row[0] if isinstance(row[0], date) else None
+            if metric_date is None:
+                continue
+            source_key = str(row[1] or "").strip().lower()
+            if not source_key:
+                source_key = "unknown"
+            revenue = float(_at(7, 0.0) or 0.0)
+            cogs = float(_at(10, 0.0) or 0.0)
+            payload.append(
+                {
+                    "date": metric_date,
+                    "source": source_key,
+                    "source_label": client_data_store.get_source_label(source_key) or source_key,
+                    "leads": int(_at(2, 0) or 0),
+                    "phones": int(_at(3, 0) or 0),
+                    "custom_value_1_count": int(_at(4, 0) or 0),
+                    "custom_value_2_count": int(_at(5, 0) or 0),
+                    "custom_value_3_amount_ron": float(_at(6, 0.0) or 0.0),
+                    "custom_value_5_amount_ron": float(_at(8, 0.0) or 0.0),
+                    "sales_count": int(_at(9, 0) or 0),
+                    "custom_value_4_amount_ron": revenue,
+                    "cogs_amount_ron": cogs,
+                    "gross_profit_amount_ron": revenue - cogs,
+                }
+            )
+        return payload
+
+    def _merge_source_daily_rows(
+        self,
+        *,
+        automated_rows: list[dict[str, object]],
+        business_rows: list[dict[str, object]],
+        display_currency: str,
+    ) -> list[dict[str, object]]:
+        merged: dict[tuple[str, str], dict[str, object]] = {}
+        for item in automated_rows:
+            report_date = item.get("date")
+            if not isinstance(report_date, date):
+                continue
+            source_key = str(item.get("platform") or "").strip().lower()
+            if not source_key:
+                continue
+            spend = self._normalize_money_to_display_currency(
+                amount=float(item.get("spend") or 0.0),
+                from_currency=str(item.get("account_currency") or "USD"),
+                display_currency=display_currency,
+                rate_date=report_date,
+            )
+            key = (report_date.isoformat(), source_key)
+            row = merged.setdefault(
+                key,
+                {
+                    "date": report_date.isoformat(),
+                    "source": source_key,
+                    "source_label": client_data_store.get_source_label(source_key) or source_key,
+                    "cost_amount": 0.0,
+                    "leads": 0,
+                    "phones": 0,
+                    "custom_value_1_count": 0,
+                    "custom_value_2_count": 0,
+                    "custom_value_3_amount_ron": 0.0,
+                    "custom_value_4_amount_ron": 0.0,
+                    "custom_value_5_amount_ron": 0.0,
+                    "sales_count": 0,
+                    "cogs_amount_ron": 0.0,
+                    "gross_profit_amount_ron": 0.0,
+                },
+            )
+            row["cost_amount"] = float(row["cost_amount"]) + float(spend)
+
+        for item in business_rows:
+            report_date = item.get("date")
+            if not isinstance(report_date, date):
+                continue
+            source_key = str(item.get("source") or "").strip().lower() or "unknown"
+            key = (report_date.isoformat(), source_key)
+            row = merged.setdefault(
+                key,
+                {
+                    "date": report_date.isoformat(),
+                    "source": source_key,
+                    "source_label": client_data_store.get_source_label(source_key) or source_key,
+                    "cost_amount": 0.0,
+                    "leads": 0,
+                    "phones": 0,
+                    "custom_value_1_count": 0,
+                    "custom_value_2_count": 0,
+                    "custom_value_3_amount_ron": 0.0,
+                    "custom_value_4_amount_ron": 0.0,
+                    "custom_value_5_amount_ron": 0.0,
+                    "sales_count": 0,
+                    "cogs_amount_ron": 0.0,
+                    "gross_profit_amount_ron": 0.0,
+                },
+            )
+            for key_name in (
+                "leads",
+                "phones",
+                "custom_value_1_count",
+                "custom_value_2_count",
+                "sales_count",
+            ):
+                row[key_name] = int(row[key_name]) + int(item.get(key_name) or 0)
+            for key_name in (
+                "custom_value_3_amount_ron",
+                "custom_value_4_amount_ron",
+                "custom_value_5_amount_ron",
+                "cogs_amount_ron",
+                "gross_profit_amount_ron",
+            ):
+                row[key_name] = float(row[key_name]) + float(item.get(key_name) or 0.0)
+        return list(merged.values())
+
     def _build_percent_change(self, *, current_total: float | None, previous_total: float | None) -> float | None:
         if current_total is None or previous_total is None:
             return None
@@ -346,7 +528,8 @@ class MediaBuyingStore:
         cv2 = int(manual_row.get("custom_value_2_count", 0)) if isinstance(manual_row, dict) else 0
         cv3_ron = float(manual_row.get("custom_value_3_amount_ron", 0.0)) if isinstance(manual_row, dict) else 0.0
         cv5_ron = float(manual_row.get("custom_value_5_amount_ron", 0.0)) if isinstance(manual_row, dict) else 0.0
-        cv4_ron = max(round(cv3_ron, 2) - round(cv5_ron, 2), 0.0)
+        cv4_from_row = float(manual_row.get("custom_value_4_amount_ron", 0.0)) if isinstance(manual_row, dict) else 0.0
+        cv4_ron = cv4_from_row if cv4_from_row != 0.0 else max(round(cv3_ron, 2) - round(cv5_ron, 2), 0.0)
         sales_count = int(manual_row.get("sales_count", 0)) if isinstance(manual_row, dict) else 0
 
         cost_google = round(float(daily_costs.get("google_ads", 0.0)), 2)
@@ -412,7 +595,7 @@ class MediaBuyingStore:
                 "custom_value_1_count": int(sums["custom_value_1_count"]),
                 "custom_value_2_count": int(sums["custom_value_2_count"]),
                 "custom_value_3_amount_ron": round(sums["custom_value_3_amount_ron"], 2),
-                "custom_value_4_amount_ron": max(round(sums["custom_value_3_amount_ron"], 2) - round(sums["custom_value_5_amount_ron"], 2), 0.0),
+                "custom_value_4_amount_ron": round(sums["custom_value_4_amount_ron"], 2),
                 "custom_value_5_amount_ron": round(sums["custom_value_5_amount_ron"], 2),
                 "sales_count": int(sums["sales_count"]),
                 "custom_value_rate_1": self._safe_div(float(sums["sales_count"]), float(sums["custom_value_1_count"])),
@@ -495,13 +678,13 @@ class MediaBuyingStore:
         )
         automated_ms = (time.perf_counter() - automated_start) * 1000.0
 
-        manual_start = time.perf_counter()
-        manual_rows = self.list_lead_daily_manual_values(
+        business_start = time.perf_counter()
+        business_rows = self._list_data_layer_source_daily_business_rows(
             client_id=int(client_id),
             date_from=query_date_from,
             date_to=query_date_to,
         )
-        manual_ms = (time.perf_counter() - manual_start) * 1000.0
+        business_ms = (time.perf_counter() - business_start) * 1000.0
 
         if not has_explicit_range:
             automated_dates = [
@@ -509,13 +692,12 @@ class MediaBuyingStore:
                 for item in automated_rows
                 if isinstance(item.get("date"), date) and float(item.get("spend") or 0.0) != 0.0
             ]
-            manual_dates = [
-                date.fromisoformat(str(item.get("date")))
-                for item in manual_rows
-                if self._manual_row_has_data(item)
-                and isinstance(item.get("date"), str)
+            business_dates = [
+                item.get("date")
+                for item in business_rows
+                if isinstance(item.get("date"), date) and self._source_daily_row_has_data(item)
             ]
-            all_dates = automated_dates + manual_dates
+            all_dates = automated_dates + business_dates
             earliest_data_date = min(all_dates) if all_dates else None
             latest_data_date = max(all_dates) if all_dates else None
             date_from = earliest_data_date
@@ -531,10 +713,10 @@ class MediaBuyingStore:
                     "include_days": bool(include_days),
                     "bounds_ms": round(bounds_ms, 2),
                     "automated_query_ms": round(automated_ms, 2),
-                    "manual_query_ms": round(manual_ms, 2),
+                    "business_query_ms": round(business_ms, 2),
                     "total_ms": round(total_ms, 2),
                     "automated_rows": len(automated_rows),
-                    "manual_rows": len(manual_rows),
+                    "business_rows": len(business_rows),
                     "days": 0,
                     "months": 0,
                 },
@@ -573,39 +755,55 @@ class MediaBuyingStore:
                 for item in automated_rows
                 if isinstance(item.get("date"), date) and date_from <= item.get("date") <= date_to
             ]
-            manual_rows = [
+            business_rows = [
                 item
-                for item in manual_rows
-                if isinstance(item.get("date"), str)
-                and date_from <= date.fromisoformat(str(item.get("date"))) <= date_to
+                for item in business_rows
+                if isinstance(item.get("date"), date) and date_from <= item.get("date") <= date_to
             ]
 
-        manual_by_date = {str(item.get("date")): item for item in manual_rows}
+        source_daily_rows = self._merge_source_daily_rows(
+            automated_rows=automated_rows,
+            business_rows=business_rows,
+            display_currency=display_currency,
+        )
+
+        daily_business_totals: dict[str, dict[str, object]] = {}
+        for row in source_daily_rows:
+            day_key = str(row.get("date"))
+            bucket = daily_business_totals.setdefault(
+                day_key,
+                {
+                    "leads": 0,
+                    "phones": 0,
+                    "custom_value_1_count": 0,
+                    "custom_value_2_count": 0,
+                    "custom_value_3_amount_ron": 0.0,
+                    "custom_value_4_amount_ron": 0.0,
+                    "custom_value_5_amount_ron": 0.0,
+                    "sales_count": 0,
+                },
+            )
+            for key_name in ("leads", "phones", "custom_value_1_count", "custom_value_2_count", "sales_count"):
+                bucket[key_name] = int(bucket[key_name]) + int(row.get(key_name) or 0)
+            for key_name in ("custom_value_3_amount_ron", "custom_value_4_amount_ron", "custom_value_5_amount_ron"):
+                bucket[key_name] = float(bucket[key_name]) + float(row.get(key_name) or 0.0)
+
         costs_by_date: dict[str, dict[str, float]] = {}
-        for item in automated_rows:
-            report_date = item.get("date")
-            if not isinstance(report_date, date):
-                continue
-            day_key = report_date.isoformat()
-            platform = str(item.get("platform") or "")
+        for item in source_daily_rows:
+            day_key = str(item.get("date"))
+            platform = str(item.get("source") or "")
             if platform not in {"google_ads", "meta_ads", "tiktok_ads"}:
                 continue
-            spend = self._normalize_money_to_display_currency(
-                amount=float(item.get("spend") or 0.0),
-                from_currency=str(item.get("account_currency") or "USD"),
-                display_currency=display_currency,
-                rate_date=report_date,
-            )
             bucket = costs_by_date.setdefault(day_key, {"google_ads": 0.0, "meta_ads": 0.0, "tiktok_ads": 0.0})
-            bucket[platform] = float(bucket.get(platform, 0.0)) + float(spend)
+            bucket[platform] = float(bucket.get(platform, 0.0)) + float(item.get("cost_amount") or 0.0)
 
         active_dates: set[date] = set()
         for day_key, platforms in costs_by_date.items():
             if abs(float(platforms.get("google_ads", 0.0))) > 0.0 or abs(float(platforms.get("meta_ads", 0.0))) > 0.0 or abs(float(platforms.get("tiktok_ads", 0.0))) > 0.0:
                 active_dates.add(date.fromisoformat(day_key))
-        for item in manual_rows:
+        for item in source_daily_rows:
             raw_day = item.get("date")
-            if isinstance(raw_day, str) and self._manual_row_has_data(item):
+            if isinstance(raw_day, str) and self._source_daily_row_has_data(item):
                 active_dates.add(date.fromisoformat(raw_day))
 
         day_rows = [
@@ -613,7 +811,7 @@ class MediaBuyingStore:
                 row_date=row_date,
                 display_currency=display_currency,
                 daily_costs=costs_by_date.get(row_date.isoformat(), {}),
-                manual_row=manual_by_date.get(row_date.isoformat()),
+                manual_row=daily_business_totals.get(row_date.isoformat()),
             )
             for row_date in sorted(active_dates)
             if date_from <= row_date <= date_to
@@ -663,14 +861,41 @@ class MediaBuyingStore:
                 "include_days": bool(include_days),
                 "bounds_ms": round(bounds_ms, 2),
                 "automated_query_ms": round(automated_ms, 2),
-                "manual_query_ms": round(manual_ms, 2),
+                "business_query_ms": round(business_ms, 2),
                 "total_ms": round(total_ms, 2),
                 "automated_rows": len(automated_rows),
-                "manual_rows": len(manual_rows),
+                "business_rows": len(business_rows),
                 "days": len(day_rows) if include_days else 0,
                 "months": len(months),
             },
         )
+
+        source_summary: dict[str, dict[str, object]] = {}
+        for item in source_daily_rows:
+            source_key = str(item.get("source") or "unknown")
+            bucket = source_summary.setdefault(
+                source_key,
+                {
+                    "source": source_key,
+                    "source_label": client_data_store.get_source_label(source_key) or source_key,
+                    "cost_amount": 0.0,
+                    "leads": 0,
+                    "phones": 0,
+                    "custom_value_1_count": 0,
+                    "custom_value_2_count": 0,
+                    "custom_value_3_amount_ron": 0.0,
+                    "custom_value_4_amount_ron": 0.0,
+                    "custom_value_5_amount_ron": 0.0,
+                    "sales_count": 0,
+                    "cogs_amount_ron": 0.0,
+                    "gross_profit_amount_ron": 0.0,
+                },
+            )
+            bucket["cost_amount"] = round(float(bucket["cost_amount"]) + float(item.get("cost_amount") or 0.0), 2)
+            for key_name in ("leads", "phones", "custom_value_1_count", "custom_value_2_count", "sales_count"):
+                bucket[key_name] = int(bucket[key_name]) + int(item.get(key_name) or 0)
+            for key_name in ("custom_value_3_amount_ron", "custom_value_4_amount_ron", "custom_value_5_amount_ron", "cogs_amount_ron", "gross_profit_amount_ron"):
+                bucket[key_name] = round(float(bucket[key_name]) + float(item.get(key_name) or 0.0), 2)
 
         return {
             "meta": {
@@ -698,6 +923,7 @@ class MediaBuyingStore:
             },
             "days": day_rows if include_days else [],
             "months": months,
+            "source_breakdown": sorted(source_summary.values(), key=lambda item: str(item["source"])),
         }
 
     def get_lead_month_days(
@@ -740,6 +966,25 @@ class MediaBuyingStore:
             "month_start": month_start.isoformat(),
             "days": days if isinstance(days, list) else [],
         }
+
+    def get_source_daily_rows(
+        self,
+        *,
+        client_id: int,
+        date_from: date,
+        date_to: date,
+    ) -> list[dict[str, object]]:
+        if date_from > date_to:
+            raise ValueError("date_from must be <= date_to")
+        config = self.get_config(client_id=int(client_id))
+        display_currency = self._normalize_currency(str(config.get("display_currency") or "USD"))
+        automated_rows = self._list_automated_daily_costs(client_id=int(client_id), date_from=date_from, date_to=date_to)
+        business_rows = self._list_data_layer_source_daily_business_rows(client_id=int(client_id), date_from=date_from, date_to=date_to)
+        return self._merge_source_daily_rows(
+            automated_rows=automated_rows,
+            business_rows=business_rows,
+            display_currency=display_currency,
+        )
 
     def _lead_table_day_has_data(self, row: dict[str, object]) -> bool:
         fields = [
