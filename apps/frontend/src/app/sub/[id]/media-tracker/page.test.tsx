@@ -164,33 +164,20 @@ describe("SubMediaTrackerPage", () => {
     }
   });
 
-  it("EUR/RON editor still supports save and clear semantics", async () => {
-    apiMock.apiRequest.mockImplementation(async (path: string, options?: RequestInit) => {
+  it("shows EUR/RON as read-only value without edit controls", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
       if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy" }] };
       if (path.includes("/clients/96/media-tracker/worksheet-foundation")) return worksheetPayload(monthWeeks, 5.09);
-      if (path === "/clients/96/media-tracker/worksheet/eur-ron-rate") {
-        const parsed = JSON.parse(String(options?.body || "{}"));
-        if (parsed.value === null) return worksheetPayload(monthWeeks, null);
-        return worksheetPayload(monthWeeks, parsed.value);
-      }
       throw new Error(`Unexpected path ${path}`);
     });
 
     render(<SubMediaTrackerPage />);
     fireEvent.click(screen.getByRole("button", { name: "Weekly Worksheet" }));
     await screen.findByRole("columnheader", { name: "Săpt. 10" });
-
-    fireEvent.click(screen.getByRole("button", { name: "5.09" }));
-    const input = screen.getByDisplayValue("5.09");
-    fireEvent.change(input, { target: { value: "5.2" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-    await screen.findByRole("button", { name: "5.20" });
-
-    fireEvent.click(screen.getByRole("button", { name: "5.20" }));
-    const clearInput = screen.getByDisplayValue("5.2");
-    fireEvent.change(clearInput, { target: { value: " " } });
-    fireEvent.keyDown(clearInput, { key: "Enter" });
-    await screen.findByRole("button", { name: "—" });
+    expect(screen.getByText("5.09")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).toBeNull();
+    const rateCalls = apiMock.apiRequest.mock.calls.filter(([path]) => path === "/clients/96/media-tracker/worksheet/eur-ron-rate");
+    expect(rateCalls.length).toBe(0);
   });
 
   it("worksheet business cells are read-only and page links to Data month context", async () => {
@@ -201,7 +188,8 @@ describe("SubMediaTrackerPage", () => {
     });
 
     render(<SubMediaTrackerPage />);
-    expect(screen.getByRole("link", { name: "Edit in Data" })).toHaveAttribute("href", "/sub/96/data?month=2026-03");
+    expect(screen.getByText("Valorile manuale se editează acum din pagina Data.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Deschide pagina Data" })).toHaveAttribute("href", "/sub/96/data?month=2026-03");
     fireEvent.click(screen.getByRole("button", { name: "Weekly Worksheet" }));
     await screen.findByRole("columnheader", { name: "Săpt. 10" });
     expect(screen.getByTestId("cell-summary-weekly_cogs_taxes-2026-03-02").querySelector("button")).toBeNull();

@@ -85,10 +85,6 @@ export default function SubMediaTrackerPage() {
   const [worksheetData, setWorksheetData] = useState<WorksheetPayload | null>(null);
   const [worksheetLoading, setWorksheetLoading] = useState(false);
   const [worksheetError, setWorksheetError] = useState("");
-  const [rateEditing, setRateEditing] = useState(false);
-  const [rateDraft, setRateDraft] = useState("");
-  const [rateSaving, setRateSaving] = useState(false);
-  const [rateError, setRateError] = useState("");
 
   useEffect(() => {
     let ignore = false;
@@ -133,51 +129,12 @@ export default function SubMediaTrackerPage() {
     void loadWorksheet();
   }, [activeView, loadWorksheet]);
 
-  const saveScopeRate = useCallback(async () => {
-    const normalized = rateDraft.trim();
-    const parsed = normalized === "" ? null : Number(normalized);
-    if (normalized !== "" && !Number.isFinite(parsed)) {
-      setRateError("Valoare invalidă");
-      return;
-    }
-
-    setRateSaving(true);
-    setRateError("");
-    try {
-      const payload = await apiRequest<WorksheetPayload>(
-        `/clients/${clientId}/media-tracker/worksheet/eur-ron-rate`,
-        {
-          method: "PUT",
-          body: JSON.stringify({
-            granularity: worksheetGranularity,
-            anchor_date: worksheetAnchorDate,
-            value: parsed,
-          }),
-        }
-      );
-      if (!isWorksheetPayload(payload)) throw new Error("Răspuns worksheet invalid");
-      setWorksheetData(payload);
-      setWorksheetError("");
-      setRateEditing(false);
-    } catch (err) {
-      setRateError(err instanceof Error ? err.message : "Nu am putut salva rata");
-    } finally {
-      setRateSaving(false);
-    }
-  }, [clientId, rateDraft, worksheetAnchorDate, worksheetGranularity]);
-
   const composedTitle = useMemo(() => `Media Tracker - ${clientName}`, [clientName]);
   const scopeLabel = useMemo(() => formatScopeLabel(worksheetAnchorDate, worksheetGranularity), [worksheetAnchorDate, worksheetGranularity]);
   const dataMonthKey = useMemo(() => worksheetAnchorDate.slice(0, 7), [worksheetAnchorDate]);
 
   const hasRows = !!worksheetData?.sections?.some((section) => section.rows.length > 0);
   const worksheetDisplayCurrency = normalizeCurrencyCode(worksheetData?.display_currency, "USD");
-
-  useEffect(() => {
-    if (rateEditing) return;
-    setRateDraft(worksheetData?.eur_ron_rate == null ? "" : String(worksheetData.eur_ron_rate));
-  }, [worksheetData?.eur_ron_rate, rateEditing]);
-
 
   return (
     <ProtectedPage>
@@ -186,9 +143,10 @@ export default function SubMediaTrackerPage() {
 
         <section className="wm-card p-6">
           <h1 className="text-xl font-semibold text-slate-900">{composedTitle}</h1>
-          <div className="mt-2">
-            <Link href={`/sub/${clientId}/data?month=${dataMonthKey}`} className="text-sm font-medium text-indigo-700 hover:text-indigo-800 hover:underline">
-              Edit in Data
+          <div className="mt-2 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
+            <p>Valorile manuale se editează acum din pagina Data.</p>
+            <Link href={`/sub/${clientId}/data?month=${dataMonthKey}`} className="mt-1 inline-block font-medium text-indigo-700 hover:text-indigo-800 hover:underline">
+              Deschide pagina Data
             </Link>
           </div>
 
@@ -248,49 +206,8 @@ export default function SubMediaTrackerPage() {
                   <span className="font-medium text-slate-700">Currency: {worksheetDisplayCurrency}</span>
                   <span className="text-slate-300">|</span>
                   <span className="font-medium text-slate-700">EUR/RON</span>
-                  {!rateEditing ? (
-                    <button
-                      type="button"
-                      className="rounded border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50"
-                      onClick={() => {
-                        setRateDraft(worksheetData?.eur_ron_rate == null ? "" : String(worksheetData.eur_ron_rate));
-                        setRateError("");
-                        setRateEditing(true);
-                      }}
-                    >
-                      {formatRateDisplay(worksheetData?.eur_ron_rate)}
-                    </button>
-                  ) : (
-                    <input
-                      autoFocus
-                      inputMode="decimal"
-                      value={rateDraft}
-                      disabled={rateSaving}
-                      className="w-24 rounded border border-indigo-300 px-2 py-1 text-right"
-                      onChange={(event) => {
-                        setRateDraft(event.target.value);
-                        if (rateError) setRateError("");
-                      }}
-                      onBlur={() => {
-                        void saveScopeRate();
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          void saveScopeRate();
-                        }
-                        if (event.key === "Escape") {
-                          event.preventDefault();
-                          setRateDraft(worksheetData?.eur_ron_rate == null ? "" : String(worksheetData.eur_ron_rate));
-                          setRateError("");
-                          setRateEditing(false);
-                        }
-                      }}
-                    />
-                  )}
+                  <span className="rounded border border-slate-300 px-2 py-1 text-slate-700">{formatRateDisplay(worksheetData?.eur_ron_rate)}</span>
                   <span className="text-xs text-slate-500">pentru {scopeLabel}</span>
-                  {rateSaving ? <span className="text-xs text-slate-500">Saving...</span> : null}
-                  {rateError ? <span className="text-xs text-rose-600">{rateError}</span> : null}
                 </div>
               </div>
 

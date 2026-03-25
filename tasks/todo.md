@@ -1,3 +1,19 @@
+# TODO — Media Tracker read-only + Data-layer-first weekly business values (2026-03-25)
+
+- [x] Confirm workspace up-to-date local și verific `git status`/`git diff`.
+- [x] Inspect strict fișierele țintă backend/frontend + testele Media Tracker.
+- [x] Implement Data-layer-first pe săptămână în `media_tracker_worksheet` cu fallback legacy doar dacă săptămâna nu are rânduri Data layer.
+- [x] Mențin metricile automate/costuri din flow-ul actual Media Tracker.
+- [x] Transform UI Media Tracker în read-only (fără Edit/Save/Cancel/inputuri manuale) + mesaj/link către Data page.
+- [x] Ajustez teste backend/frontend strict pentru acest scope.
+- [x] Rulez testele țintite + check rapid de import/compilare pentru fișierele modificate.
+- [x] Completez review section.
+
+## Review
+- [x] Confirm fără schimbări Media Buying.
+- [x] Confirm fără endpoint-uri noi Data/refactor mare/migrații noi.
+- [x] Confirm write endpoints legacy rămân neatinse (sau notez minim dacă e cazul).
+
 # TODO — Media Buying read-only + Data-layer-first business values (2026-03-25)
 
 - [x] Confirm workspace up-to-date local și verific `git status`/`git diff`.

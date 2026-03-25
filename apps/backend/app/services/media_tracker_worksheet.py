@@ -821,6 +821,26 @@ class MediaTrackerWorksheetService:
             )
         else:
             source_daily_rows = []
+
+        if hasattr(media_buying_store, "_list_data_layer_source_daily_business_rows"):
+            data_layer_source_daily_rows = media_buying_store._list_data_layer_source_daily_business_rows(  # type: ignore[attr-defined]
+                client_id=int(client_id),
+                date_from=first_week_start,
+                date_to=last_week_end,
+            )
+        else:
+            data_layer_source_daily_rows = []
+
+        week_starts = [date.fromisoformat(str(week["week_start"])) for week in weeks]
+        manual_values_map = self._list_manual_values_for_weeks(client_id=int(client_id), week_starts=week_starts)
+        manual_metrics = self._build_manual_metrics(weeks=weeks, manual_values_map=manual_values_map)
+
+        week_ranges = [
+            (idx, date.fromisoformat(str(week["week_start"])), date.fromisoformat(str(week["week_end"])))
+            for idx, week in enumerate(weeks)
+        ]
+        week_has_data_layer_rows = [False for _ in weeks]
+
         source_weekly_metrics: dict[str, dict[str, object]] = {}
         for source_row in source_daily_rows:
             raw_date = source_row.get("date")
@@ -842,37 +862,78 @@ class MediaTrackerWorksheetService:
                     "cogs_values": [0.0 for _ in weeks],
                 },
             )
-            for idx, week in enumerate(weeks):
-                week_start = date.fromisoformat(str(week["week_start"]))
-                week_end = date.fromisoformat(str(week["week_end"]))
+            for idx, week_start, week_end in week_ranges:
                 if not (week_start <= row_date <= week_end):
                     continue
                 source_payload["cost_values"][idx] = float(source_payload["cost_values"][idx]) + float(source_row.get("cost_amount") or 0.0)
+
+        for source_row in data_layer_source_daily_rows:
+            raw_date = source_row.get("date")
+            if not isinstance(raw_date, date):
+                continue
+            source_key = str(source_row.get("source") or "unknown")
+            source_payload = source_weekly_metrics.setdefault(
+                source_key,
+                {
+                    "label": str(source_row.get("source_label") or source_key),
+                    "cost_values": [0.0 for _ in weeks],
+                    "leads_values": [0.0 for _ in weeks],
+                    "sales_values": [0.0 for _ in weeks],
+                    "revenue_values": [0.0 for _ in weeks],
+                    "cogs_values": [0.0 for _ in weeks],
+                },
+            )
+            for idx, week_start, week_end in week_ranges:
+                if not (week_start <= raw_date <= week_end):
+                    continue
+                week_has_data_layer_rows[idx] = True
                 source_payload["leads_values"][idx] = float(source_payload["leads_values"][idx]) + float(source_row.get("leads") or 0.0)
                 source_payload["sales_values"][idx] = float(source_payload["sales_values"][idx]) + float(source_row.get("sales_count") or 0.0)
                 source_payload["revenue_values"][idx] = float(source_payload["revenue_values"][idx]) + float(source_row.get("custom_value_4_amount_ron") or 0.0)
                 source_payload["cogs_values"][idx] = float(source_payload["cogs_values"][idx]) + float(source_row.get("cogs_amount_ron") or 0.0)
-
-        manual_metrics = self._build_manual_metrics(weeks=weeks, manual_values_map={})
-        manual_metrics["weekly_cogs_taxes"] = {
-            "aggregation": "sum",
-            "history_value": 0.0,
-            "weekly_values": [],
-        }
-        weekly_cogs_values: list[float] = []
-        for idx, week in enumerate(weeks):
-            cogs_value = round(sum(float((source_weekly_metrics.get(source_key) or {}).get("cogs_values", [0.0] * len(weeks))[idx]) for source_key in source_weekly_metrics.keys()), 4)
-            weekly_cogs_values.append(cogs_value)
-            manual_metrics["weekly_cogs_taxes"]["weekly_values"].append(
-                {"week_start": week["week_start"], "week_end": week["week_end"], "value": cogs_value}
-            )
-        manual_metrics["weekly_cogs_taxes"]["history_value"] = round(sum(weekly_cogs_values), 2)
 
         legacy_manual_source_map = {
             "google": "google_ads",
             "meta": "meta_ads",
             "tiktok": "tiktok_ads",
         }
+        for idx in range(len(weeks)):
+            if week_has_data_layer_rows[idx]:
+                continue
+            for legacy_prefix, source_key in legacy_manual_source_map.items():
+                source_payload = source_weekly_metrics.setdefault(
+                    source_key,
+                    {
+                        "label": source_key,
+                        "cost_values": [0.0 for _ in weeks],
+                        "leads_values": [0.0 for _ in weeks],
+                        "sales_values": [0.0 for _ in weeks],
+                        "revenue_values": [0.0 for _ in weeks],
+                        "cogs_values": [0.0 for _ in weeks],
+                    },
+                )
+                source_payload["leads_values"][idx] = float((manual_metrics.get(f"{legacy_prefix}_leads_manual") or {}).get("weekly_values", [{}])[idx].get("value") or 0.0)
+                source_payload["sales_values"][idx] = float((manual_metrics.get(f"{legacy_prefix}_sales_manual") or {}).get("weekly_values", [{}])[idx].get("value") or 0.0)
+                source_payload["revenue_values"][idx] = float((manual_metrics.get(f"{legacy_prefix}_revenue_manual") or {}).get("weekly_values", [{}])[idx].get("value") or 0.0)
+
+        weekly_cogs_values: list[float | None] = []
+        for idx, week in enumerate(weeks):
+            if week_has_data_layer_rows[idx]:
+                cogs_value = round(
+                    sum(float((source_weekly_metrics.get(source_key) or {}).get("cogs_values", [0.0] * len(weeks))[idx]) for source_key in source_weekly_metrics.keys()),
+                    4,
+                )
+                weekly_cogs_values.append(cogs_value)
+            else:
+                legacy_cogs = (manual_metrics.get("weekly_cogs_taxes") or {}).get("weekly_values", [{}])[idx].get("value")
+                weekly_cogs_values.append(float(legacy_cogs) if isinstance(legacy_cogs, (int, float)) else None)
+            manual_metrics["weekly_cogs_taxes"]["weekly_values"][idx] = {
+                "week_start": week["week_start"],
+                "week_end": week["week_end"],
+                "value": weekly_cogs_values[idx],
+            }
+        manual_metrics["weekly_cogs_taxes"]["history_value"] = round(sum(self._to_float(item) for item in weekly_cogs_values if item is not None), 2)
+
         for legacy_prefix, source_key in legacy_manual_source_map.items():
             for field_suffix, value_key in (("leads_manual", "leads_values"), ("sales_manual", "sales_values"), ("revenue_manual", "revenue_values")):
                 metric_key = f"{legacy_prefix}_{field_suffix}"
