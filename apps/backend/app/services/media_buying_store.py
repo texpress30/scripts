@@ -684,6 +684,11 @@ class MediaBuyingStore:
             date_from=query_date_from,
             date_to=query_date_to,
         )
+        legacy_manual_rows = self.list_lead_daily_manual_values(
+            client_id=int(client_id),
+            date_from=query_date_from,
+            date_to=query_date_to,
+        )
         business_ms = (time.perf_counter() - business_start) * 1000.0
 
         if not has_explicit_range:
@@ -697,7 +702,15 @@ class MediaBuyingStore:
                 for item in business_rows
                 if isinstance(item.get("date"), date) and self._source_daily_row_has_data(item)
             ]
-            all_dates = automated_dates + business_dates
+            data_layer_days = {item.isoformat() for item in business_dates}
+            legacy_dates = [
+                date.fromisoformat(str(item.get("date")))
+                for item in legacy_manual_rows
+                if self._manual_row_has_data(item)
+                and str(item.get("date"))
+                and str(item.get("date")) not in data_layer_days
+            ]
+            all_dates = automated_dates + business_dates + legacy_dates
             earliest_data_date = min(all_dates) if all_dates else None
             latest_data_date = max(all_dates) if all_dates else None
             date_from = earliest_data_date
@@ -768,6 +781,11 @@ class MediaBuyingStore:
         )
 
         daily_business_totals: dict[str, dict[str, object]] = {}
+        data_layer_day_keys: set[str] = {
+            item.get("date").isoformat()
+            for item in business_rows
+            if isinstance(item.get("date"), date)
+        }
         for row in source_daily_rows:
             day_key = str(row.get("date"))
             bucket = daily_business_totals.setdefault(
@@ -788,6 +806,26 @@ class MediaBuyingStore:
             for key_name in ("custom_value_3_amount_ron", "custom_value_4_amount_ron", "custom_value_5_amount_ron"):
                 bucket[key_name] = float(bucket[key_name]) + float(row.get(key_name) or 0.0)
 
+        # Temporary compatibility fallback:
+        # when a day has no Data-layer rows yet, read legacy manual day values.
+        # If Data-layer rows exist for a day, they are the exclusive source.
+        for legacy_row in legacy_manual_rows:
+            day_key = str(legacy_row.get("date") or "")
+            if not day_key or day_key in data_layer_day_keys:
+                continue
+            if not self._manual_row_has_data(legacy_row):
+                continue
+            daily_business_totals[day_key] = {
+                "leads": int(legacy_row.get("leads") or 0),
+                "phones": int(legacy_row.get("phones") or 0),
+                "custom_value_1_count": int(legacy_row.get("custom_value_1_count") or 0),
+                "custom_value_2_count": int(legacy_row.get("custom_value_2_count") or 0),
+                "custom_value_3_amount_ron": float(legacy_row.get("custom_value_3_amount_ron") or 0.0),
+                "custom_value_4_amount_ron": float(legacy_row.get("custom_value_4_amount_ron") or 0.0),
+                "custom_value_5_amount_ron": float(legacy_row.get("custom_value_5_amount_ron") or 0.0),
+                "sales_count": int(legacy_row.get("sales_count") or 0),
+            }
+
         costs_by_date: dict[str, dict[str, float]] = {}
         for item in source_daily_rows:
             day_key = str(item.get("date"))
@@ -805,6 +843,9 @@ class MediaBuyingStore:
             raw_day = item.get("date")
             if isinstance(raw_day, str) and self._source_daily_row_has_data(item):
                 active_dates.add(date.fromisoformat(raw_day))
+        for day_key, manual_row in daily_business_totals.items():
+            if self._manual_row_has_data(manual_row):
+                active_dates.add(date.fromisoformat(day_key))
 
         day_rows = [
             self._build_daily_row(

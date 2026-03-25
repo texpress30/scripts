@@ -227,7 +227,7 @@ describe("SubMediaBuyingPage", () => {
     expect(screen.queryByRole("button", { name: /Mar 2026/i })).toBeNull();
   });
 
-  it("shows Edit in Data CTA and keeps current month context", async () => {
+  it("shows read-only message with Data page CTA and keeps current month context", async () => {
     apiMock.apiRequest.mockImplementation(async (path: string) => {
       if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
       if (path.startsWith("/clients/96/media-buying/lead/table")) return leadPayload();
@@ -236,7 +236,8 @@ describe("SubMediaBuyingPage", () => {
 
     render(<SubMediaBuyingPage />);
     expect(await screen.findByRole("columnheader", { name: /Appointments/ })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Edit in Data" })).toHaveAttribute("href", "/sub/96/data?month=2026-03");
+    expect(screen.getByText("Valorile manuale se editează acum din pagina Data.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Deschide pagina Data" })).toHaveAttribute("href", "/sub/96/data?month=2026-03");
   });
 
   it("is read-only for business values in daily rows", async () => {
@@ -252,7 +253,7 @@ describe("SubMediaBuyingPage", () => {
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
     expect(screen.queryByLabelText(/Leads 2026-03-11/)).toBeNull();
-    expect(screen.queryByText("Edit values in Data page")).toBeNull();
+    expect(screen.getByText("Valorile manuale se editează acum din pagina Data.")).toBeInTheDocument();
   });
 
   it("does not expose inline label editing controls", async () => {

@@ -676,9 +676,10 @@ export default function SubMediaBuyingPage() {
 
         <section className="wm-card p-6">
           <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
-          <div className="mt-2">
-            <Link href={`/sub/${clientId}/data?month=${dataMonthKey}`} className="text-sm font-medium text-indigo-700 hover:text-indigo-800 hover:underline">
-              Edit in Data
+          <div className="mt-2 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
+            <p>Valorile manuale se editează acum din pagina Data.</p>
+            <Link href={`/sub/${clientId}/data?month=${dataMonthKey}`} className="mt-1 inline-block font-medium text-indigo-700 hover:text-indigo-800 hover:underline">
+              Deschide pagina Data
             </Link>
           </div>
           <p className="mt-2 text-sm text-slate-600">

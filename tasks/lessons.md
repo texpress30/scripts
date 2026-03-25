@@ -1,5 +1,7 @@
 # Lessons
 
+- 2026-03-25: După un PR marcat nesatisfăcător, aplic strict scope-ul nou cerut (aici doar Media Buying read path + UI read-only) și evit orice extindere în Media Tracker/Data page/business rules adiacente.
+
 - 2026-03-25: Când userul reafirmă instrucțiuni AGENTS/process, execut imediat end-to-end în același turn (plan în todo + implementare + teste + commit + make_pr), fără răspuns intermediar de confirmare.
 
 - 2026-03-25: Pentru endpoint-uri protejate apelate din layout/global effects (ex. favicon/branding), folosesc explicit guard de auth în helper (`requireAuth`) ca să evit requesturi 401 înainte de disponibilitatea tokenului.

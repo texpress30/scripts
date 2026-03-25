@@ -1,3 +1,19 @@
+# TODO — Media Buying read-only + Data-layer-first business values (2026-03-25)
+
+- [x] Confirm workspace up-to-date local și verific `git status`/`git diff`.
+- [x] Inspect strict fișierele țintă backend/frontend + testele Media Buying.
+- [x] Implement Data-layer-first pe zi în `media_buying_store` cu fallback legacy doar dacă ziua nu are rânduri în Data layer.
+- [x] Mențin metricile automate (spend/impressions/clicks) din flow-ul actual.
+- [x] Transform UI Media Buying în read-only (fără Edit/Save/Cancel/inputuri manuale) + mesaj/link către Data page.
+- [x] Ajustez teste backend/frontend strict pentru acest scope.
+- [x] Rulez testele țintite + check rapid de import/compilare pentru fișierele modificate.
+- [x] Completez review section.
+
+## Review
+- [x] Confirm fără schimbări Media Tracker.
+- [x] Confirm fără endpoint-uri noi Data/refactor mare/migrații noi.
+- [x] Confirm write endpoints legacy rămân neatinse (sau notez minim dacă e cazul).
+
 # TODO — Sub Data page: main form sale_entries[] multiplu (frontend-only) (2026-03-25)
 
 - [x] Refresh workspace state și inspect explicit `apps/frontend/src/app/sub/[id]/data/page.tsx` + `page.test.tsx`.
