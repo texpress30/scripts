@@ -67,7 +67,7 @@ export default function SettingsCompanyPage() {
     setLoading(true);
     setErrorMessage("");
     try {
-      const payload = await apiRequest<CompanySettings>("/company/settings");
+      const payload = await apiRequest<CompanySettings>("/company/settings", { requireAuth: true });
       setForm(payload);
       setInitialForm(payload);
     } catch (err) {
@@ -150,6 +150,7 @@ export default function SettingsCompanyPage() {
     setErrorMessage("");
     try {
       const updated = await apiRequest<CompanySettings>("/company/settings", {
+        requireAuth: true,
         method: "PATCH",
         body: JSON.stringify({
           ...form,

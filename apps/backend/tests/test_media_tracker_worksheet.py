@@ -12,6 +12,8 @@ class _MediaBuyingStoreStub:
     def __init__(
         self,
         days: list[dict[str, object]],
+        source_daily_rows: list[dict[str, object]] | None = None,
+        data_layer_source_daily_rows: list[dict[str, object]] | None = None,
         *,
         display_currency: str = "USD",
         display_currency_source: str = "agency_client_currency",
@@ -23,6 +25,8 @@ class _MediaBuyingStoreStub:
         self.display_currency_source = display_currency_source
         self.custom_label_1 = custom_label_1
         self.custom_label_2 = custom_label_2
+        self.source_daily_rows = source_daily_rows or []
+        self.data_layer_source_daily_rows = data_layer_source_daily_rows or []
 
     def get_lead_table(self, *, client_id: int, date_from: date, date_to: date) -> dict[str, object]:
         return {
@@ -38,9 +42,17 @@ class _MediaBuyingStoreStub:
             },
         }
 
+    def get_source_daily_rows(self, *, client_id: int, date_from: date, date_to: date) -> list[dict[str, object]]:
+        return list(self.source_daily_rows)
+
+    def _list_data_layer_source_daily_business_rows(self, *, client_id: int, date_from: date, date_to: date) -> list[dict[str, object]]:
+        return list(self.data_layer_source_daily_rows)
+
 
 def _set_store(
     days: list[dict[str, object]],
+    source_daily_rows: list[dict[str, object]] | None = None,
+    data_layer_source_daily_rows: list[dict[str, object]] | None = None,
     *,
     display_currency: str = "USD",
     display_currency_source: str = "agency_client_currency",
@@ -51,6 +63,8 @@ def _set_store(
     original = worksheet_module.media_buying_store
     worksheet_module.media_buying_store = _MediaBuyingStoreStub(
         days=days,
+        source_daily_rows=source_daily_rows,
+        data_layer_source_daily_rows=data_layer_source_daily_rows,
         display_currency=display_currency,
         display_currency_source=display_currency_source,
         custom_label_1=custom_label_1,
@@ -874,3 +888,97 @@ def test_worksheet_foundation_works_with_real_media_buying_store_automated_sql_p
 
     assert payload["requested_scope"]["granularity"] == "month"
     assert payload["history"]["visible_week_count"] == len(payload["weeks"])
+
+
+def _weekly_value(payload: dict[str, object], section_key: str, row_key: str, week_start: str) -> float | None:
+    section = next(item for item in payload["sections"] if item["key"] == section_key)
+    row = next(item for item in section["rows"] if item["row_key"] == row_key)
+    cell = next(item for item in row["weekly_values"] if item["week_start"] == week_start)
+    return cell["value"]
+
+
+def test_media_tracker_weekly_data_layer_first_and_legacy_fallback_rules() -> None:
+    source_daily_rows = [
+        {"date": "2026-03-03", "source": "google_ads", "source_label": "Google", "cost_amount": 100.0},
+        {"date": "2026-03-10", "source": "google_ads", "source_label": "Google", "cost_amount": 200.0},
+    ]
+    data_layer_source_daily_rows = [
+        {
+            "date": date(2026, 3, 3),
+            "source": "google_ads",
+            "source_label": "Google",
+            "leads": 8,
+            "sales_count": 4,
+            "custom_value_4_amount_ron": 400.0,
+            "cogs_amount_ron": 120.0,
+        },
+    ]
+    original_store = _set_store(
+        days=[
+            {"date": "2026-03-03", "cost_total": 100.0, "cost_google": 100.0, "cost_meta": 0.0, "cost_tiktok": 0.0, "total_leads": 0, "custom_value_1_count": 0, "custom_value_2_count": 0},
+            {"date": "2026-03-10", "cost_total": 200.0, "cost_google": 200.0, "cost_meta": 0.0, "cost_tiktok": 0.0, "total_leads": 0, "custom_value_1_count": 0, "custom_value_2_count": 0},
+        ],
+        source_daily_rows=source_daily_rows,
+        data_layer_source_daily_rows=data_layer_source_daily_rows,
+    )
+    service = worksheet_module.media_tracker_worksheet_service
+    try:
+        service.upsert_weekly_manual_values(
+            client_id=801,
+            granularity="month",
+            anchor_date=date(2026, 3, 15),
+            entries=[
+                {"week_start": "2026-03-02", "field_key": "google_leads_manual", "value": 99},
+                {"week_start": "2026-03-02", "field_key": "google_sales_manual", "value": 99},
+                {"week_start": "2026-03-02", "field_key": "google_revenue_manual", "value": 9999},
+                {"week_start": "2026-03-02", "field_key": "weekly_cogs_taxes", "value": 999},
+                {"week_start": "2026-03-09", "field_key": "google_leads_manual", "value": 7},
+                {"week_start": "2026-03-09", "field_key": "google_sales_manual", "value": 3},
+                {"week_start": "2026-03-09", "field_key": "google_revenue_manual", "value": 350},
+                {"week_start": "2026-03-09", "field_key": "weekly_cogs_taxes", "value": 140},
+            ],
+        )
+        payload = service.build_weekly_worksheet_foundation(
+            granularity="month",
+            anchor_date=date(2026, 3, 15),
+            client_id=801,
+        )
+    finally:
+        worksheet_module.media_buying_store = original_store
+
+    assert _weekly_value(payload, "google_spend", "leads_manual", "2026-03-02") == 8.0
+    assert _weekly_value(payload, "google_spend", "sales_manual", "2026-03-02") == 4.0
+    assert _weekly_value(payload, "google_spend", "revenue_manual", "2026-03-02") == 400.0
+    assert _weekly_value(payload, "summary", "weekly_cogs_taxes", "2026-03-02") == 120.0
+
+    assert _weekly_value(payload, "google_spend", "leads_manual", "2026-03-09") == 7.0
+    assert _weekly_value(payload, "google_spend", "sales_manual", "2026-03-09") == 3.0
+    assert _weekly_value(payload, "google_spend", "revenue_manual", "2026-03-09") == 350.0
+    assert _weekly_value(payload, "summary", "weekly_cogs_taxes", "2026-03-09") == 140.0
+
+    assert _weekly_value(payload, "google_spend", "cost", "2026-03-02") == 100.0
+    assert _weekly_value(payload, "google_spend", "cost", "2026-03-09") == 200.0
+
+
+def test_media_tracker_data_layer_aggregates_multiple_sources_per_week() -> None:
+    original_store = _set_store(
+        days=[],
+        source_daily_rows=[],
+        data_layer_source_daily_rows=[
+            {"date": date(2026, 3, 11), "source": "google_ads", "source_label": "Google", "leads": 2, "sales_count": 1, "custom_value_4_amount_ron": 100.0, "cogs_amount_ron": 30.0},
+            {"date": date(2026, 3, 12), "source": "meta_ads", "source_label": "Meta", "leads": 3, "sales_count": 2, "custom_value_4_amount_ron": 180.0, "cogs_amount_ron": 70.0},
+        ],
+    )
+    service = worksheet_module.media_tracker_worksheet_service
+    try:
+        payload = service.build_weekly_worksheet_foundation(
+            granularity="month",
+            anchor_date=date(2026, 3, 15),
+            client_id=802,
+        )
+    finally:
+        worksheet_module.media_buying_store = original_store
+
+    assert _weekly_value(payload, "summary", "revenue", "2026-03-09") == 280.0
+    assert _weekly_value(payload, "summary", "sales", "2026-03-09") == 3.0
+    assert _weekly_value(payload, "summary", "weekly_cogs_taxes", "2026-03-09") == 100.0

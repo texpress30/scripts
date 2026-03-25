@@ -1,13 +1,14 @@
 "use client";
 
-import Link from "next/link";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
 import { normalizeCurrencyCode } from "@/lib/subAccountCurrency";
+import { SubReportingNav } from "@/app/sub/[id]/_components/SubReportingNav";
 
 import { WeeklyWorksheetTable, type WorksheetSection, type WorksheetWeek } from "./_components/WeeklyWorksheetTable";
 
@@ -84,10 +85,6 @@ export default function SubMediaTrackerPage() {
   const [worksheetData, setWorksheetData] = useState<WorksheetPayload | null>(null);
   const [worksheetLoading, setWorksheetLoading] = useState(false);
   const [worksheetError, setWorksheetError] = useState("");
-  const [rateEditing, setRateEditing] = useState(false);
-  const [rateDraft, setRateDraft] = useState("");
-  const [rateSaving, setRateSaving] = useState(false);
-  const [rateError, setRateError] = useState("");
 
   useEffect(() => {
     let ignore = false;
@@ -132,82 +129,26 @@ export default function SubMediaTrackerPage() {
     void loadWorksheet();
   }, [activeView, loadWorksheet]);
 
-
-  const saveManualCell = useCallback(async ({ fieldKey, weekStart, value }: { fieldKey: string; weekStart: string; value: number | null }) => {
-    if (!Number.isFinite(clientId)) throw new Error("Client invalid");
-    const payload = await apiRequest<WorksheetPayload>(
-      `/clients/${clientId}/media-tracker/worksheet/manual-values`,
-      {
-        method: "PUT",
-        body: JSON.stringify({
-          granularity: worksheetGranularity,
-          anchor_date: worksheetAnchorDate,
-          entries: [{ week_start: weekStart, field_key: fieldKey, value }],
-        }),
-      }
-    );
-    if (!isWorksheetPayload(payload)) throw new Error("Răspuns worksheet invalid");
-    setWorksheetData(payload);
-    setWorksheetError("");
-  }, [clientId, worksheetAnchorDate, worksheetGranularity]);
-
-
-
-  const saveScopeRate = useCallback(async () => {
-    const normalized = rateDraft.trim();
-    const parsed = normalized === "" ? null : Number(normalized);
-    if (normalized !== "" && !Number.isFinite(parsed)) {
-      setRateError("Valoare invalidă");
-      return;
-    }
-
-    setRateSaving(true);
-    setRateError("");
-    try {
-      const payload = await apiRequest<WorksheetPayload>(
-        `/clients/${clientId}/media-tracker/worksheet/eur-ron-rate`,
-        {
-          method: "PUT",
-          body: JSON.stringify({
-            granularity: worksheetGranularity,
-            anchor_date: worksheetAnchorDate,
-            value: parsed,
-          }),
-        }
-      );
-      if (!isWorksheetPayload(payload)) throw new Error("Răspuns worksheet invalid");
-      setWorksheetData(payload);
-      setWorksheetError("");
-      setRateEditing(false);
-    } catch (err) {
-      setRateError(err instanceof Error ? err.message : "Nu am putut salva rata");
-    } finally {
-      setRateSaving(false);
-    }
-  }, [clientId, rateDraft, worksheetAnchorDate, worksheetGranularity]);
-
   const composedTitle = useMemo(() => `Media Tracker - ${clientName}`, [clientName]);
   const scopeLabel = useMemo(() => formatScopeLabel(worksheetAnchorDate, worksheetGranularity), [worksheetAnchorDate, worksheetGranularity]);
+  const dataMonthKey = useMemo(() => worksheetAnchorDate.slice(0, 7), [worksheetAnchorDate]);
 
   const hasRows = !!worksheetData?.sections?.some((section) => section.rows.length > 0);
   const worksheetDisplayCurrency = normalizeCurrencyCode(worksheetData?.display_currency, "USD");
 
-  useEffect(() => {
-    if (rateEditing) return;
-    setRateDraft(worksheetData?.eur_ron_rate == null ? "" : String(worksheetData.eur_ron_rate));
-  }, [worksheetData?.eur_ron_rate, rateEditing]);
-
-
   return (
     <ProtectedPage>
       <AppShell title={null}>
-        <div className="mb-4 flex items-center gap-4 text-sm">
-          <Link href={`/sub/${clientId}/media-buying`} className="text-indigo-600 transition-colors hover:text-indigo-700 hover:underline">Media Buying</Link>
-          <Link href={`/sub/${clientId}/media-tracker`} className="text-indigo-600 transition-colors hover:text-indigo-700 hover:underline">Media Tracker</Link>
-        </div>
+        <SubReportingNav clientId={clientId} />
 
         <section className="wm-card p-6">
           <h1 className="text-xl font-semibold text-slate-900">{composedTitle}</h1>
+          <div className="mt-2 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
+            <p>Valorile manuale se editează acum din pagina Data.</p>
+            <Link href={`/sub/${clientId}/data?month=${dataMonthKey}`} className="mt-1 inline-block font-medium text-indigo-700 hover:text-indigo-800 hover:underline">
+              Deschide pagina Data
+            </Link>
+          </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <button
@@ -265,49 +206,8 @@ export default function SubMediaTrackerPage() {
                   <span className="font-medium text-slate-700">Currency: {worksheetDisplayCurrency}</span>
                   <span className="text-slate-300">|</span>
                   <span className="font-medium text-slate-700">EUR/RON</span>
-                  {!rateEditing ? (
-                    <button
-                      type="button"
-                      className="rounded border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50"
-                      onClick={() => {
-                        setRateDraft(worksheetData?.eur_ron_rate == null ? "" : String(worksheetData.eur_ron_rate));
-                        setRateError("");
-                        setRateEditing(true);
-                      }}
-                    >
-                      {formatRateDisplay(worksheetData?.eur_ron_rate)}
-                    </button>
-                  ) : (
-                    <input
-                      autoFocus
-                      inputMode="decimal"
-                      value={rateDraft}
-                      disabled={rateSaving}
-                      className="w-24 rounded border border-indigo-300 px-2 py-1 text-right"
-                      onChange={(event) => {
-                        setRateDraft(event.target.value);
-                        if (rateError) setRateError("");
-                      }}
-                      onBlur={() => {
-                        void saveScopeRate();
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          void saveScopeRate();
-                        }
-                        if (event.key === "Escape") {
-                          event.preventDefault();
-                          setRateDraft(worksheetData?.eur_ron_rate == null ? "" : String(worksheetData.eur_ron_rate));
-                          setRateError("");
-                          setRateEditing(false);
-                        }
-                      }}
-                    />
-                  )}
+                  <span className="rounded border border-slate-300 px-2 py-1 text-slate-700">{formatRateDisplay(worksheetData?.eur_ron_rate)}</span>
                   <span className="text-xs text-slate-500">pentru {scopeLabel}</span>
-                  {rateSaving ? <span className="text-xs text-slate-500">Saving...</span> : null}
-                  {rateError ? <span className="text-xs text-rose-600">{rateError}</span> : null}
                 </div>
               </div>
 
@@ -316,7 +216,7 @@ export default function SubMediaTrackerPage() {
               {!worksheetLoading && !worksheetError && worksheetData && !hasRows ? <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">No worksheet rows for selected scope.</div> : null}
 
               {!worksheetLoading && !worksheetError && worksheetData && hasRows ? (
-                <WeeklyWorksheetTable weeks={worksheetData.weeks} sections={worksheetData.sections} displayCurrency={worksheetDisplayCurrency} onManualCellCommit={saveManualCell} />
+                <WeeklyWorksheetTable weeks={worksheetData.weeks} sections={worksheetData.sections} displayCurrency={worksheetDisplayCurrency} />
               ) : null}
             </div>
           )}
