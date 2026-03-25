@@ -1,3 +1,31 @@
+# TODO — Media Buying read-only + Data-layer-first business values (2026-03-25)
+
+- [x] Confirm workspace up-to-date local și verific `git status`/`git diff`.
+- [x] Inspect strict fișierele țintă backend/frontend + testele Media Buying.
+- [x] Implement Data-layer-first pe zi în `media_buying_store` cu fallback legacy doar dacă ziua nu are rânduri în Data layer.
+- [x] Mențin metricile automate (spend/impressions/clicks) din flow-ul actual.
+- [x] Transform UI Media Buying în read-only (fără Edit/Save/Cancel/inputuri manuale) + mesaj/link către Data page.
+- [x] Ajustez teste backend/frontend strict pentru acest scope.
+- [x] Rulez testele țintite + check rapid de import/compilare pentru fișierele modificate.
+- [x] Completez review section.
+
+## Review
+- [x] Confirm fără schimbări Media Tracker.
+- [x] Confirm fără endpoint-uri noi Data/refactor mare/migrații noi.
+- [x] Confirm write endpoints legacy rămân neatinse (sau notez minim dacă e cazul).
+
+# TODO — Sub Data page: main form sale_entries[] multiplu (frontend-only) (2026-03-25)
+
+- [x] Refresh workspace state și inspect explicit `apps/frontend/src/app/sub/[id]/data/page.tsx` + `page.test.tsx`.
+- [x] Ajustez formularul principal pentru payload multiplu `sale_entries[]` (fără schimbări backend/business logic).
+- [x] Actualizez testele din `page.test.tsx` pentru noul comportament.
+- [x] Rulez testele țintite frontend pentru pagina Data.
+- [x] Completez review section cu boundary checks.
+
+## Review
+- [x] Confirm schimbările sunt strict pe Data page frontend + teste.
+- [x] Confirm fără modificări backend/API contracts în acest task.
+
 # TODO — Creative workflow publish persistence în Mongo (feature-flagged, safe) (2026-03-22)
 
 - [x] Refresh workspace state și inspect explicit: `creative_workflow.py`, creative repositories/counters, `api/creative.py`, publish adapters/helpers, `core/config.py`, teste backend.
@@ -6796,3 +6824,466 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, f�
 - [x] Publish UI este local și compact în pagina Creative (fără wizard/restructurare mare).
 - [x] Flow-urile existente (media library, add variant, preview) au rămas funcționale în testele țintite.
 - [x] Nicio modificare backend majoră pentru publish/storage/branding.
+
+# TODO — Data layer migration (daily inputs + sale entries) (2026-03-23)
+
+- [x] Refresh workspace to latest current-branch state and inspect git status/diff for prior partial attempts.
+- [x] Audit existing migration files and migration-loading tests for naming/ordering patterns.
+- [x] Reuse or create migration for `client_data_daily_inputs` and `client_data_sale_entries` only, keeping scope strict.
+- [x] Run targeted migration-related tests/checks.
+- [x] Review diff for scope safety (no API/UI/service changes) and document outcomes.
+
+## Review
+- [x] Confirm only migration scope was changed.
+- [x] Confirm targeted checks/tests passed.
+
+# TODO — Data layer migration custom fields + daily custom values (2026-03-23)
+
+- [x] Sync workspace state on current branch and inspect `git status`/`git diff`.
+- [x] Audit existing migrations and migration tests; verify Task 1A migration FK compatibility.
+- [x] Reuse existing partial migration if present, otherwise create next migration for only `client_data_custom_fields` and `client_data_daily_custom_values`.
+- [x] Run targeted migration resolver/loading tests and a quick relevant check.
+- [x] Review final diff for strict scope (migration-only).
+
+## Review
+- [x] Confirm only migration scope changed (plus required task tracking docs).
+- [x] Confirm targeted checks/tests passed.
+
+# TODO — Client data store pure helpers only (2026-03-23)
+
+- [x] Sync workspace on current branch and verify clean `git status` / `git diff`.
+- [x] Inspect only `client_data_store` and related tests to confirm current state / partial leftovers.
+- [x] Implement `client_data_store.py` with canonical source catalog and pure formula helpers only.
+- [x] Add focused pure tests for source catalog and formula helpers.
+- [x] Run only targeted pure tests + import/compile check.
+- [x] Review diff to ensure no migrations/API/frontend/DB CRUD changes.
+
+## Review
+- [x] Confirm module remains importable and scope is pure helpers only.
+- [x] Confirm targeted tests/checks passed.
+
+# TODO — Client data custom fields CRUD slice 1 (2026-03-23)
+
+- [x] Sync workspace and verify clean status/diff.
+- [x] Extend `client_data_store.py` only with `list_custom_fields`, `create_custom_field`, `validate_custom_field_belongs_to_client` plus minimal private helpers.
+- [x] Keep out-of-scope functions unimplemented (no update/archive/daily inputs/sales/custom values CRUD).
+- [x] Add targeted tests for custom-field CRUD slice behaviors.
+- [x] Run only targeted client_data_store tests + compile check.
+- [x] Review diff for strict scope.
+
+## Review
+- [x] Confirm scope is only `client_data_store.py` + related tests/docs.
+- [x] Confirm targeted tests/checks passed.
+
+# TODO — Client data custom fields CRUD slice 2 (update only) (2026-03-24)
+
+- [x] Sync workspace and verify status/diff.
+- [x] Implement only `update_custom_field(...)` in `client_data_store.py` with scoped validation rules.
+- [x] Add targeted tests for `update_custom_field` behavior and validation errors.
+- [x] Run only `client_data_store` tests + compile check.
+- [x] Review diff for strict scope (no archive/no other CRUD/API/UI changes).
+
+## Review
+- [x] Confirm only requested function and tests were changed.
+- [x] Confirm targeted checks/tests passed.
+
+# TODO — Client data custom fields CRUD slice 3 (archive only) (2026-03-24)
+
+- [x] Sync workspace check done; continue from local branch state when origin unavailable.
+- [x] Implement only `archive_custom_field(...)` in `client_data_store.py` with idempotent soft-archive semantics.
+- [x] Add targeted archive tests (including listing visibility and idempotency).
+- [x] Run `client_data_store` test file + compile check.
+- [x] Review diff for strict scope.
+
+## Review
+- [x] Confirm only archive slice + tests/docs were changed.
+- [x] Confirm tests/checks passed.
+
+# TODO — Daily input CRUD slice 1 (get_or_create only) (2026-03-24)
+
+- [x] Sync workspace attempted and continue with local state if `origin` unavailable.
+- [x] Implement only `get_or_create_daily_input(...)` with validation + idempotent lookup/create.
+- [x] Add targeted tests for get/create/idempotency/validation.
+- [x] Run targeted client_data_store tests + compile check.
+- [x] Review diff for strict scope.
+
+## Review
+- [x] Confirm only requested daily-input function and tests were changed.
+- [x] Confirm checks/tests passed.
+
+# TODO — Daily input CRUD slice 2 (upsert only) (2026-03-24)
+
+- [x] Sync workspace attempted and continue locally when origin unavailable.
+- [x] Implement only `upsert_daily_input(...)` reusing `get_or_create_daily_input(...)`.
+- [x] Add targeted tests for partial upsert/update validations and notes/source invariants.
+- [x] Run targeted client_data_store tests + compile check.
+- [x] Review diff for strict scope.
+
+## Review
+- [x] Confirm only requested upsert function + tests/docs changed.
+- [x] Confirm checks/tests passed.
+
+# TODO — Daily input CRUD slice 3 (set notes only) (2026-03-24)
+
+- [x] Sync attempted; continue local when origin unavailable.
+- [x] Implement only `set_daily_input_notes(...)` using `get_or_create_daily_input(...)`.
+- [x] Add targeted tests for notes normalization/validation and invariants.
+- [x] Run targeted tests + compile check.
+- [x] Review strict scope.
+
+## Review
+- [x] Confirm only notes function + tests/docs changed.
+- [x] Confirm checks/tests passed.
+
+# TODO — Daily input CRUD slice 4 (list only) (2026-03-24)
+
+- [x] Sync attempted; proceed local if origin unavailable.
+- [x] Implement only `list_daily_inputs(client_id, date_from, date_to)` with strict validation and sorting.
+- [x] Add targeted list-daily-input tests for range/filter/order/shape/validation.
+- [x] Run targeted tests + compile check.
+- [x] Review strict scope.
+
+## Review
+- [x] Confirm only list function + tests/docs changed.
+- [x] Confirm checks/tests passed.
+
+# TODO — Daily input CRUD slice 5 (map only) (2026-03-24)
+
+- [x] Sync attempted; proceed local if origin unavailable.
+- [x] Implement only `get_daily_input_map(client_id, date_from, date_to)` reusing list logic.
+- [x] Add targeted tests for map behavior/keys/shape/range/validation.
+- [x] Run targeted tests + compile check.
+- [x] Review strict scope.
+
+## Review
+- [x] Confirm only map function + tests/docs changed.
+- [x] Confirm checks/tests passed.
+
+# TODO — Sale entries CRUD slice 1 (list/create only) (2026-03-24)
+
+- [x] Sync attempted; proceed local when origin unavailable.
+- [x] Implement only `list_sale_entries_for_daily_input(...)` and `create_sale_entry(...)`.
+- [x] Add targeted tests for sale-entry listing/creation/validation/sorting/gross-profit.
+- [x] Run targeted tests + compile check.
+- [x] Review strict scope.
+
+## Review
+- [x] Confirm only sale-entry list/create + tests/docs changed.
+- [x] Confirm checks/tests passed.
+
+# TODO — Sale entries CRUD slice 2 (update/delete only) (2026-03-24)
+
+- [x] Sync attempted; proceed local if origin unavailable.
+- [x] Implement only `update_sale_entry(...)` and `delete_sale_entry(...)`.
+- [x] Add targeted tests for update/delete behavior and validations.
+- [x] Run targeted tests + compile check.
+- [x] Review strict scope.
+
+## Review
+- [x] Confirm only sale-entry update/delete + tests/docs changed.
+- [x] Confirm checks/tests passed.
+
+# TODO — Daily custom values CRUD slice 1 (list/upsert only) (2026-03-24)
+
+- [x] Sync attempted; continue local if origin unavailable.
+- [x] Implement only `list_daily_custom_values(...)` and `upsert_daily_custom_value(...)`.
+- [x] Add targeted tests for listing/upsert behavior, validation, and ownership rules.
+- [x] Run targeted tests + compile check.
+- [x] Review strict scope.
+
+## Review
+- [x] Confirm only daily-custom-values list/upsert + tests/docs changed.
+- [x] Confirm checks/tests passed.
+
+# TODO — Daily custom values CRUD slice 2 (delete only + payload consistency) (2026-03-24)
+
+- [x] Sync attempted; continue local if origin unavailable.
+- [x] Implement only `delete_daily_custom_value(daily_input_id, custom_field_id)`.
+- [x] Ensure daily custom value payload consistency across list/upsert/delete.
+- [x] Add targeted tests for delete + payload consistency.
+- [x] Run targeted tests + compile check.
+- [x] Review strict scope.
+
+## Review
+- [x] Confirm only daily-custom-value delete/consistency + tests/docs changed.
+- [x] Confirm checks/tests passed.
+
+# TODO — Client data API endpoints: config + table (2026-03-24)
+
+- [x] Sync workspace state and inspect existing `clients.py`, `client.py` schemas, and `client_data_store.py` helper/store contracts.
+- [x] Add response schemas for client data config/table payloads (including source labels, fallback labels, and derived field descriptors).
+- [x] Implement `GET /clients/{client_id}/data/config` and `GET /clients/{client_id}/data/table` in `apps/backend/app/api/clients.py` using only `client_data_store` reads.
+- [x] Add focused backend tests for endpoint behavior: sorting, source label resolution, custom label fallback, and derived field calculations.
+- [x] Run targeted tests and document review outcomes.
+
+## Review
+- [x] Confirm scope is strict to API schema/router + focused tests/docs.
+- [x] Confirm targeted checks/tests passed.
+
+# TODO — Sub reporting Data tab + read-only data page (frontend only) (2026-03-24)
+
+- [x] Mandatory workspace refresh check done (`git fetch`/local fallback), plus `git status`/`git diff` inspection.
+- [x] Inspect only relevant frontend files for sub reporting nav/layout/pages and existing fetch/format patterns.
+- [x] Add `Data` tab/link near `Media Buying` / `Media Tracker` with minimal visual impact.
+- [x] Create `apps/frontend/src/app/sub/[id]/data/page.tsx` read-only page that fetches `data/config` + `data/table`.
+- [x] Implement month search-param flow (`month=YYYY-MM`) with Previous/Next controls and URL updates.
+- [x] Render read-only table with fixed labels from config, active dynamic custom fields, derived metrics, and row details (sale entries + dynamic custom values including historical inactive values).
+- [x] Implement required loading / empty / error states.
+- [x] Add focused frontend tests/checks only for this scope.
+- [x] Run relevant frontend checks and document review.
+
+## Review
+- [x] Confirm no backend files changed.
+- [x] Confirm no edit/mutation UI added.
+- [x] Confirm checks/tests passed (or clearly documented failures outside scope).
+
+# TODO — Client Data write API (daily fixed fields + sale entries) backend only (2026-03-24)
+
+- [x] Mandatory workspace refresh check completed (`git fetch` + `git status`/`git diff`) and continue local if no remote.
+- [x] Inspect only relevant backend files (`clients.py`, data schemas, `client_data_store.py`, related backend tests).
+- [x] Add/extend Pydantic models for daily-input write and sale-entry write requests/responses.
+- [x] Add `PUT /clients/{client_id}/data/daily-input` (numbers + notes combinations, clear empty-request error).
+- [x] Add `POST/PATCH/DELETE /clients/{client_id}/data/sale-entries...` with strict client ownership checks.
+- [x] Keep store changes minimal (small ownership helpers only if needed), no DB schema/frontend/media-buying/media-tracker changes.
+- [x] Add focused backend tests for all required success/error/scoping scenarios.
+- [x] Run targeted tests (`clients data write` + relevant `client_data_store`) and compile/import checks.
+
+## Review
+- [x] Confirm backend-only scope respected.
+- [x] Confirm no write API added for custom fields/daily custom values.
+- [x] Confirm targeted checks passed or documented.
+
+# TODO — Client Data write API (custom field definitions + daily custom values) backend only (2026-03-24)
+
+- [x] Mandatory workspace refresh check completed and local-state fallback confirmed when remote unavailable.
+- [x] Inspect relevant backend files only (`clients.py`, `schemas/client.py`, `client_data_store.py`, data endpoint tests).
+- [x] Add Pydantic write schemas for custom-field create/update + daily-custom-value upsert.
+- [x] Add endpoints for custom-field create/update/archive with stable payload and client ownership checks.
+- [x] Add endpoints for daily-custom-value upsert/delete with strict client ownership checks and inactive-field write guard.
+- [x] Keep changes minimal; no frontend/media-buying/media-tracker/DB schema modifications.
+- [x] Add focused backend tests for all requested success/error/scoping cases.
+- [x] Run targeted backend test suite + compile/import checks.
+
+## Review
+- [x] Confirm backend-only scope respected.
+- [x] Confirm no restore/unarchive endpoint added.
+- [x] Confirm targeted checks passed or clearly documented.
+
+# TODO — Sub Data page editable UI (daily rows + sales + custom fields/values) (2026-03-24)
+
+- [x] Mandatory workspace refresh check done and local fallback confirmed if remote unavailable.
+- [x] Inspect only Data page related frontend files (page, sub-nav helper, existing tests, formatting/fetch helpers).
+- [x] Add daily row editing/create flows (fixed fields + notes) wired to daily-input PUT endpoint.
+- [x] Add active dynamic custom field editing in row edit mode with upsert/delete custom-value calls.
+- [x] Add sale entry add/edit/delete flows in row details with proper API calls and confirms.
+- [x] Add custom field manager UI for create/update/archive with config+table refresh.
+- [x] Keep month navigation/query/loading/empty/error/table/details structure intact.
+- [x] Add focused frontend tests for the requested critical edit flows.
+- [x] Run relevant frontend tests/checks and document outcomes.
+
+## Review
+- [x] Confirm no Media Buying/Media Tracker edits in this task.
+- [x] Confirm no backend contract changes unless strictly required.
+- [x] Confirm targeted checks passed or clearly documented.
+
+# TODO — Rewire Media Buying + Media Tracker la Client Data layer read-only (2026-03-24)
+
+- [x] Mandatory workspace update check (`git fetch` + status/diff) done; continue local if `origin` missing.
+- [x] Audit only relevant backend/frontend files and existing tests for media buying/tracker + client data layer helpers.
+- [x] Rewire Media Buying backend read path to source business/manual metrics from `client_data_*` aggregations while preserving automated ad metrics and payload shape.
+- [x] Ensure Media Buying source/platform breakdown uses canonical source union (ads + data-layer business-only sources).
+- [x] Rewire Media Tracker worksheet read path to use data-layer business inputs (weekly leads/sales/revenue/cogs/custom values) while preserving week bucket logic + derived formulas.
+- [x] Keep legacy manual-write endpoints available for compatibility, but remove manual-edit usage from Media Buying / Media Tracker frontend pages.
+- [x] Convert Media Buying UI to read-only business values and add clear CTA link to `/sub/[id]/data?month=YYYY-MM` using current month context.
+- [x] Convert Media Tracker UI to read-only worksheet values and add clear CTA link to `/sub/[id]/data?month=YYYY-MM` using current scope context.
+- [x] Add/adjust targeted backend tests for rewiring correctness and frontend tests for read-only/CTA behavior.
+- [x] Run targeted backend/frontend tests + minimal compile/import checks and document outcomes.
+
+## Review
+- [x] Confirm no DB migrations or destructive cleanup.
+- [x] Confirm scope limited to Media Buying + Media Tracker rewiring/read-only.
+- [x] Confirm key targeted tests passed (or documented preexisting unrelated failures).
+
+# TODO — Corecții Data/Media copy+currency+labels+coloane (2026-03-24)
+
+- [ ] Mandatory workspace update check executat; continui local dacă origin lipsește.
+- [ ] Audit strict pe fișierele relevante: clients API/schema/client_data_store/media_buying_store + Data page + Media Buying page + testele lor.
+- [ ] Corectez `data/config` pentru currency_code din moneda clientului (Agency View source), fără schimbare de contract.
+- [ ] Sincronizez fixed labels Custom Value 1..5 în `data/config` cu config-ul Media Buying și mă asigur că CV4 este prezent.
+- [ ] Aliniez copy-ul nou introdus în Data la română (fără i18n refactor).
+- [ ] Ajustez tabelul principal Data să afișeze coloanele cerute (incl. CV4 read-only, vânzări/sale-entry câmpuri) în view principal.
+- [ ] Elimin textul `Edit values in Data page` din Media Buying fără alte modificări de layout/date.
+- [ ] Ajustez testele backend/frontend țintite pentru currency/labels/CV4/copy/coloane + Media Buying text removal.
+- [ ] Rulez testele relevante + compile/import checks și documentez limitările de mediu dacă există.
+
+## Review
+- [ ] Confirm fără migrații noi / endpoint-uri noi.
+- [ ] Confirm scope strict pe corecțiile cerute.
+- [ ] Confirm testele țintite verzi sau limitările preexistente documentate.
+
+# TODO — Data/Media Buying alignment + RO copy fix (2026-03-24)
+
+- [x] Re-check workspace state and inspect current partial diffs for backend config and Data/Media Buying pages.
+- [x] Stabilize backend `client-data/config` payload for currency + fixed fields labels and keep schema aligned.
+- [x] Stabilize `Data` page structure/copy changes without breaking editable flows or tests.
+- [x] Keep `Media Buying` daily-row helper text removed as requested (no extra UI scope).
+- [x] Run targeted backend/frontend tests for touched areas and fix regressions.
+- [x] Commit changes and create PR via `make_pr`.
+
+## Check-in
+- Plan confirmed. Starting implementation now on the exact files already touched in current diff.
+
+## Review — Data/Media Buying alignment + RO copy fix (2026-03-24)
+- [x] Backend config now returns currency aliases and fixed_fields labels derived from media-buying config while preserving existing sources/custom_fields/derived_fields contract.
+- [x] Data page copy + headers are stabilized in Romanian and the table structure matches the requested sales-centric columns.
+- [x] Media Buying day-row helper text was removed; page remains read-only with the top-level "Edit in Data" CTA.
+- [x] Targeted frontend/backend tests for touched flows pass.
+
+# TODO — Data Add Row: complete missing fields only (2026-03-24)
+
+- [x] Mandatory workspace sync attempt (`git fetch --all --prune`, `git pull --ff-only`) + inspect `git status`/`git diff`.
+- [x] Audit only relevant frontend files: `data/page.tsx` + `data/page.test.tsx`.
+- [x] Extend existing `Adaugă rând` form with missing fields only (no layout redesign, no table/main-page refactor).
+- [x] Implement calculated read-only values in add-row draft: `Săptămâna` (ISO), `Custom Value 4` (from `Preț vânzare`), `Vânzări` (0/1), `P/L brut` (`Preț vânzare - Preț actual`).
+- [x] Extend save flow: keep daily-row save as-is, and create one sale entry only when sale section is meaningfully filled with required prices.
+- [x] Add/adjust targeted frontend tests for new add-row fields, calculations, and save behavior.
+- [x] Run relevant frontend tests + minimal frontend compile/import check.
+- [x] Commit and create PR with `make_pr`.
+
+## Check-in
+- Scope confirmed: strict Add Row form completion only, no backend changes unless strictly needed.
+
+
+## Review — Data Add Row: complete missing fields only (2026-03-24)
+- [x] Add Row păstrează layout/styling/poziționare existente; au fost adăugate doar câmpurile lipsă în aceeași zonă.
+- [x] Câmpurile calculate (`Săptămâna`, `Custom Value 4`, `Vânzări`, `P/L brut`) sunt read-only și se actualizează automat din draft.
+- [x] Salvarea păstrează daily-row flow existent și creează un singur sale entry doar când secțiunea de vânzare este completată minim.
+- [x] Testele țintite pentru Data page sunt verzi; TypeScript full-check are erori preexistente unrelated documentate.
+
+# TODO — Data Add Row UI order+labels+blank initial values (2026-03-24)
+
+- [x] Mandatory workspace update attempt + verify `git status`/`git diff`.
+- [x] Audit only `apps/frontend/src/app/sub/[id]/data/page.tsx` and `apps/frontend/src/app/sub/[id]/data/page.test.tsx`.
+- [x] Keep Add Row layout/buttons intact; reorder so `Săptămâna` is first field.
+- [x] Convert Add Row to classic labeled fields (label above input), remove placeholders for this form.
+- [x] Ensure initial state is visually blank for calculated fields (`Săptămâna`, `Custom Value 4`, `Vânzări`, `P/L brut`) and no default `0` display.
+- [x] Keep save logic behavior; only minimal adjustments needed for blank calculated values.
+- [x] Update targeted Data-page frontend tests for order/labels/no-placeholder/blank-initial/calculation behavior.
+- [x] Run targeted frontend tests + minimal compile/import check.
+- [x] Commit + make_pr.
+
+## Check-in
+- Scope locked to Add Row UI/layout behavior only (frontend Data page).
+
+
+## Review — Data Add Row UI order+labels+blank initial values (2026-03-24)
+- [x] `Săptămâna` este primul câmp în formularul Add Row, iar layoutul general al secțiunii a rămas intact.
+- [x] Câmpurile au label deasupra, placeholderele din Add Row au fost eliminate, iar câmpurile calculate pornesc vizual goale.
+- [x] Calculul pentru `Săptămâna`, `Custom Value 4` și `P/L brut` se afișează doar când există date relevante.
+- [x] Testele Data page sunt verzi; TypeScript full-check are erori preexistente unrelated (documentate).
+
+# TODO — Data business rule fix for sold/sales/unrealized (2026-03-24)
+
+- [x] Mandatory workspace sync attempt + verify status/diff.
+- [x] Audit relevant backend/frontend files for current incorrect rule source (`custom_value_4`, `sales_count`, `custom_value_5`).
+- [x] Add minimal migration for `client_data_daily_inputs`: `custom_value_4_amount`, `sales_count` (if missing in DB model).
+- [x] Update `client_data_store` upsert/list mapping: persist manual `custom_value_4_amount` + `sales_count`, auto-calc `custom_value_5_amount = custom_value_3_amount - custom_value_4_amount`.
+- [x] Update Data API schemas/routes for config metadata and daily-input payload acceptance of `custom_value_4_amount` + `sales_count`.
+- [x] Update Media Buying / Media Tracker read logic to source Sold/Sales/Unrealized from daily row columns, not sale entries.
+- [x] Update Data page Add Row UI bindings so Sold + Sales are editable and Unrealized is read-only calculated.
+- [x] Update backend/frontend tests for the corrected rule.
+- [x] Run targeted backend/frontend tests + compile/import checks.
+- [x] Commit + make_pr.
+
+## Check-in
+- Scope confirmed: business-rule correction only; no redesign/refactor unrelated.
+
+
+## Review — Data business rule fix for sold/sales/unrealized (2026-03-24)
+- [x] Daily input model/API now support manual `custom_value_4_amount` (Val. Vândută) and manual `sales_count` (Vânzări).
+- [x] `custom_value_5_amount` (Val. Nerealizată) is calculated from `custom_value_3_amount - custom_value_4_amount` in save flow.
+- [x] Data Add Row now treats `Val. Vândută` + `Vânzări` as editable and `Val. Nerealizată` as read-only computed field.
+- [x] Media Buying/Tracker data-paths were adjusted to read these values from daily-row columns.
+- [x] Targeted tests run and compile checks documented (with unrelated preexisting failures called out).
+
+# TODO — Hotfix backend Data config currency source + table payload cleanup (2026-03-25)
+
+- [x] Mandatory workspace update attempt executed (`git fetch --all --prune`, `git pull --ff-only`) and local fallback respected when upstream is missing.
+- [x] Audit strict scope in backend Data API files and targeted tests only.
+- [x] Switch `/clients/{client_id}/data/config` currency source to client currency from Agency View, with media-buying currency as fallback only.
+- [x] Remove duplicate `custom_value_4_amount` assignment in `/clients/{client_id}/data/table` row payload mapping (no contract expansion).
+- [x] Update targeted backend test expectations for `data/config` currency fields.
+- [x] Run targeted checks and document environment limits.
+
+## Review
+- [x] Confirm no new endpoints or migrations.
+- [x] Confirm scope stayed backend-only and minimal.
+- [x] Confirm targeted backend test command is blocked only by missing environment dependencies (documented).
+
+# TODO — Data custom fields management end-to-end (backend endpoints + Data page manager) (2026-03-25)
+
+- [x] Mandatory workspace update check executed (`git fetch --all --prune`, `git pull --ff-only`, `git status`, `git diff`) and local continuation confirmed when no upstream/origin is available.
+- [x] Audit strict files only: clients API, client data store contracts, client schemas, Data page, and targeted tests.
+- [x] Backend: add `GET /clients/{client_id}/data/custom-fields` with `include_inactive` query + list response.
+- [x] Backend: keep/create `POST /clients/{client_id}/data/custom-fields` and `PATCH /clients/{client_id}/data/custom-fields/{custom_field_id}` wiring strictly via existing store methods.
+- [x] Backend: add `POST /clients/{client_id}/data/custom-fields/{custom_field_id}/archive` with ownership validation + archive mapping.
+- [x] Backend tests: cover list active/include_inactive, create/update/archive, wrong-client ownership and invalid payload patterns.
+- [x] Frontend: wire `Gestionează câmpuri custom` to custom-fields API list/create/update/archive with include-inactive toggle.
+- [x] Frontend: enforce loading/error/empty states and mark archived fields as non-editable.
+- [x] Keep scope strict: no sales CRUD changes, no daily custom values CRUD changes, no Media Buying/Tracker refactor, no business rule changes for fixed fields.
+- [x] Run relevant backend/frontend checks and capture environment limitations.
+
+## Review
+- [x] Confirmed custom field definitions are now manageable end-to-end from dedicated API + Data manager panel.
+- [x] Confirmed archived fields can be displayed (`include_inactive=true`) and are rendered read-only in UI.
+- [x] Confirmed no migrations and no scope creep into sales/daily custom values/media flows.
+
+# TODO — Canonical sales via `client_data_sale_entries` in Data API save/read flow (2026-03-25)
+
+- [x] Mandatory workspace update attempt executed (`git fetch --all --prune`, `git pull --ff-only`, `git status`, `git diff`); continue local when upstream/origin missing.
+- [x] Audit strict files only: `client_data_store.py`, `api/clients.py`, Data schemas, and backend tests (`test_client_data_store_pure.py`, `test_clients_data_api.py`).
+- [x] Store: keep `list_sale_entries_for_daily_input(...)` as canonical read and add replace-all helper for daily-input sale entries.
+- [x] Store: validate sale entry amounts/sort/text normalization and keep stable payload shape with per-entry `gross_profit_amount`.
+- [x] API save (`PUT /clients/{client_id}/data/daily-input`): add bridge for `sale_entries` array and legacy single-sale flat payload.
+- [x] API save: derive and persist cached daily fields from canonical sale entries (`sales_count`, `custom_value_4_amount`, `custom_value_5_amount`).
+- [x] API read (`GET /clients/{client_id}/data/table`): include canonical `sale_entries` and compute sales-derived fields consistently from entries.
+- [x] Add/adjust targeted backend tests for store replace/list/validation and API canonical derivation + compatibility scenarios.
+- [x] Run relevant backend tests and compile/import checks; document environment limits.
+
+## Review
+- [x] Confirmed no frontend refactor, no Media Buying/Tracker changes, no daily custom value scope changes.
+- [x] Confirmed canonical sales derivation now flows through `client_data_sale_entries` and read payload includes `sale_entries`.
+- [x] Confirmed backend checks pass for store suite; API test module remains blocked in this container by missing `fastapi` dependency.
+
+# TODO — Canonical dynamic daily custom values + Data page main form wiring (2026-03-25)
+
+- [x] Mandatory workspace update attempt executed (`git fetch --all --prune`, `git pull --ff-only`, `git status`, `git diff`) and continued local when upstream/origin missing.
+- [x] Audit strict files only: `client_data_store.py`, `api/clients.py`, `schemas/client.py`, backend tests, `data/page.tsx`, `data/page.test.tsx`.
+- [x] Store: add `list_daily_custom_values_for_daily_input(...)` with join metadata and stable order (`sort_order`, `custom_field_id`).
+- [x] Store: add `replace_daily_custom_values_for_daily_input(...)` with replace-all semantics, duplicate detection, ownership/active checks, and value-kind validation.
+- [x] Schema/API save: add optional `dynamic_custom_values` request support and preserve backward compatibility when omitted.
+- [x] API save behavior: omitted `dynamic_custom_values` keeps existing values; explicit array triggers replace-all; explicit empty array clears all.
+- [x] API read behavior: `GET /data/table` returns canonical `dynamic_custom_values` per row (including inactive-field history metadata).
+- [x] Frontend Data page: render active dynamic fields in Add Row/Edit flow and submit deterministic `dynamic_custom_values` array.
+- [x] Frontend robustness: keep rendering stable for rows with `dynamic_custom_values` and preserve existing manager/sales/media scope.
+- [x] Run targeted backend/frontend checks and document environment limitations.
+
+## Review
+- [x] Confirmed `client_data_daily_custom_values` is now canonical for daily dynamic custom field values in save/read flow.
+- [x] Confirmed Data page main form now sends deterministic `dynamic_custom_values` and supports active dynamic fields UI.
+- [x] Confirmed no Media Buying/Media Tracker changes and no new daily-custom-values CRUD endpoints were added.
+
+# TODO — HOTFIX auth 401 on `GET /company/settings` (2026-03-25)
+
+- [x] Mandatory workspace update attempt executed (`git fetch --all --prune`, `git pull --ff-only`, `git status`, `git diff`); continue local when upstream/origin missing.
+- [x] Audit strict call sites for `/company/settings` in frontend (`GlobalAgencyFavicon`, `AppShell`, settings page) and API helper auth behavior.
+- [x] Identify root cause: global/layout-level company-settings requests were sent without guaranteed token availability, producing avoidable 401s.
+- [x] Add minimal API helper hardening for protected requests (`requireAuth`) so protected fetches are blocked locally when token is missing.
+- [x] Apply fix on `/company/settings` callers to use protected request mode and graceful fallback handling.
+- [x] Add targeted tests for auth helper behavior and company-settings caller path.
+- [x] Run relevant frontend tests + rapid compile/import check scope.
+
+## Review
+- [x] Confirmed protected `/company/settings` requests no longer leave browser without token (`requireAuth` short-circuit).
+- [x] Confirmed authenticated requests still include `Authorization` header and callers keep graceful fallback on 401/errors.
+- [x] Confirmed no Data layer / Media Buying / Media Tracker / DB schema changes in this hotfix.

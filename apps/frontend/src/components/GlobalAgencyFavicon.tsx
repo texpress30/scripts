@@ -19,7 +19,7 @@ export function GlobalAgencyFavicon() {
 
     async function loadCompanyLogo() {
       try {
-        const payload = await apiRequest<CompanySettingsLogoResponse>("/company/settings");
+        const payload = await apiRequest<CompanySettingsLogoResponse>("/company/settings", { requireAuth: true });
         if (!ignore) {
           setAgencyLogoUrl(String(payload?.logo_url ?? "").trim());
           setRefreshKey((prev) => prev + 1);
