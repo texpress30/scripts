@@ -929,6 +929,86 @@ def list_sale_entries_for_daily_input(*, daily_input_id: int) -> list[dict[str, 
     return [payload for payload in (_row_to_sale_entry_payload(row) for row in rows) if payload is not None]
 
 
+def replace_sale_entries_for_daily_input(
+    *,
+    daily_input_id: int,
+    sale_entries: list[Mapping[str, Any]],
+) -> list[dict[str, object]]:
+    normalized_daily_input_id = _normalize_positive_int(daily_input_id, field_name="daily_input_id")
+    if not isinstance(sale_entries, list):
+        raise ValueError("sale_entries must be a list")
+
+    normalized_entries: list[dict[str, object]] = []
+    for idx, raw_entry in enumerate(sale_entries):
+        if not isinstance(raw_entry, Mapping):
+            raise ValueError(f"sale_entries[{idx}] must be an object")
+
+        sale_price_amount = _validate_decimal_amount(
+            raw_entry.get("sale_price_amount"),
+            field_name=f"sale_entries[{idx}].sale_price_amount",
+            allow_negative=False,
+        )
+        actual_price_amount = _validate_decimal_amount(
+            raw_entry.get("actual_price_amount"),
+            field_name=f"sale_entries[{idx}].actual_price_amount",
+            allow_negative=False,
+        )
+        normalized_entries.append(
+            {
+                "brand": _normalize_optional_text(raw_entry.get("brand"), field_name=f"sale_entries[{idx}].brand"),
+                "model": _normalize_optional_text(raw_entry.get("model"), field_name=f"sale_entries[{idx}].model"),
+                "sale_price_amount": sale_price_amount,
+                "actual_price_amount": actual_price_amount,
+                "notes": _normalize_optional_text(raw_entry.get("notes"), field_name=f"sale_entries[{idx}].notes"),
+                "sort_order": _validate_non_negative_int(
+                    raw_entry.get("sort_order", idx),
+                    field_name=f"sale_entries[{idx}].sort_order",
+                ),
+            }
+        )
+
+    with _connect() as conn:
+        daily_input = _get_daily_input_row_by_id(conn=conn, daily_input_id=normalized_daily_input_id)
+        if daily_input is None:
+            raise LookupError(f"Daily input {daily_input_id} not found")
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM client_data_sale_entries
+                WHERE daily_input_id = %s
+                """,
+                (normalized_daily_input_id,),
+            )
+
+            for entry in normalized_entries:
+                cur.execute(
+                    """
+                    INSERT INTO client_data_sale_entries (
+                        daily_input_id,
+                        brand,
+                        model,
+                        sale_price_amount,
+                        actual_price_amount,
+                        notes,
+                        sort_order
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        normalized_daily_input_id,
+                        entry["brand"],
+                        entry["model"],
+                        entry["sale_price_amount"],
+                        entry["actual_price_amount"],
+                        entry["notes"],
+                        entry["sort_order"],
+                    ),
+                )
+        conn.commit()
+
+    return list_sale_entries_for_daily_input(daily_input_id=normalized_daily_input_id)
+
+
 def create_sale_entry(
     *,
     daily_input_id: int,

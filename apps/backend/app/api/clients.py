@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.dependencies import enforce_action_scope, enforce_agency_navigation_access, get_current_user
@@ -535,6 +536,13 @@ def _decimal_to_string(value: object) -> str:
     return str(value)
 
 
+def _to_decimal(value: object) -> Decimal:
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal("0")
+
+
 def _fallback_field_label(*, label: object, custom_field_id: object) -> str:
     normalized_label = str(label or "").strip()
     if normalized_label:
@@ -572,6 +580,65 @@ def _map_sale_entry_write_payload(row: dict[str, object]) -> dict[str, object]:
         "sort_order": int(row["sort_order"]),
         "gross_profit_amount": _decimal_to_string(row["gross_profit_amount"]),
     }
+
+
+def _extract_sale_entries_from_daily_payload(payload: ClientDataDailyInputUpsertRequest) -> tuple[list[dict[str, object]], bool]:
+    if "sale_entries" in payload.model_fields_set and payload.sale_entries is not None:
+        mapped: list[dict[str, object]] = []
+        for idx, entry in enumerate(payload.sale_entries):
+            sort_value = entry.sort_order if entry.sort_order is not None else idx
+            mapped.append(
+                {
+                    "brand": entry.brand,
+                    "model": entry.model,
+                    "sale_price_amount": entry.sale_price_amount,
+                    "actual_price_amount": entry.actual_price_amount,
+                    "notes": entry.notes,
+                    "sort_order": sort_value,
+                }
+            )
+        return mapped, True
+
+    legacy_fields = {
+        "sale_brand",
+        "sale_model",
+        "sale_price_amount",
+        "sale_actual_price_amount",
+        "sale_notes",
+        "sale_sort_order",
+    }
+    legacy_provided = len(legacy_fields.intersection(payload.model_fields_set)) > 0
+    if not legacy_provided:
+        return [], False
+
+    has_any_meaningful_value = any(
+        (
+            payload.sale_brand not in {None, ""},
+            payload.sale_model not in {None, ""},
+            payload.sale_price_amount is not None,
+            payload.sale_actual_price_amount is not None,
+            payload.sale_notes not in {None, ""},
+        )
+    )
+    if not has_any_meaningful_value:
+        return [], True
+
+    if payload.sale_price_amount is None or payload.sale_actual_price_amount is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Legacy sale payload requires sale_price_amount and sale_actual_price_amount",
+        )
+
+    return [
+        {
+            "brand": payload.sale_brand,
+            "model": payload.sale_model,
+            "sale_price_amount": payload.sale_price_amount,
+            "actual_price_amount": payload.sale_actual_price_amount,
+            "notes": payload.sale_notes,
+            "sort_order": payload.sale_sort_order if payload.sale_sort_order is not None else 0,
+        }
+    ], True
 
 
 def _map_custom_field_write_payload(row: dict[str, object]) -> dict[str, object]:
@@ -696,6 +763,10 @@ def get_client_data_table(
         except LookupError:
             sale_entries = []
 
+        custom_value_3_amount = _to_decimal(daily_input["custom_value_3_amount"])
+        custom_value_4_amount = client_data_store.compute_custom_value_4(sale_entries)
+        custom_value_5_amount = custom_value_3_amount - custom_value_4_amount
+
         source_key = str(daily_input["source"])
         source_label = client_data_store.get_source_label(source_key) or "Unknown"
         rows.append(
@@ -708,14 +779,15 @@ def get_client_data_table(
                 "phones": int(daily_input["phones"]),
                 "custom_value_1_count": int(daily_input["custom_value_1_count"]),
                 "custom_value_2_count": int(daily_input["custom_value_2_count"]),
-                "custom_value_3_amount": _decimal_to_string(daily_input["custom_value_3_amount"]),
-                "custom_value_4_amount": _decimal_to_string(daily_input["custom_value_4_amount"]),
-                "custom_value_5_amount": _decimal_to_string(daily_input["custom_value_5_amount"]),
+                "custom_value_3_amount": _decimal_to_string(custom_value_3_amount),
+                "custom_value_4_amount": _decimal_to_string(custom_value_4_amount),
+                "custom_value_5_amount": _decimal_to_string(custom_value_5_amount),
                 "notes": daily_input.get("notes"),
-                "sales_count": int(daily_input["sales_count"]),
+                "sales_count": int(client_data_store.compute_sales_count(sale_entries)),
                 "revenue_amount": _decimal_to_string(client_data_store.compute_revenue(sale_entries)),
                 "cogs_amount": _decimal_to_string(client_data_store.compute_cogs(sale_entries)),
                 "gross_profit_amount": _decimal_to_string(client_data_store.compute_gross_profit(sale_entries)),
+                "sale_entries": [_map_sale_entry_write_payload(entry) for entry in sale_entries],
                 "custom_values": sorted(
                     custom_values_by_daily_input_id.get(daily_input_id, []),
                     key=lambda item: (int(item["sort_order"]), int(item["custom_field_id"])),
@@ -749,23 +821,25 @@ def upsert_client_data_daily_input(
         "custom_value_1_count",
         "custom_value_2_count",
         "custom_value_3_amount",
-        "custom_value_4_amount",
-        "sales_count",
-        "custom_value_5_amount",
     ):
         value = getattr(payload, key)
         if value is not None:
             numeric_updates[key] = value
 
+    sale_entries_payload, sales_payload_provided = _extract_sale_entries_from_daily_payload(payload)
     notes_provided = "notes" in payload.model_fields_set
-    if not numeric_updates and not notes_provided:
+    if not numeric_updates and not notes_provided and not sales_payload_provided:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="At least one field is required: numeric daily values and/or notes",
+            detail="At least one field is required: numeric daily values, notes and/or sales payload",
         )
 
     try:
-        latest_row: dict[str, object] | None = None
+        latest_row = client_data_store.get_or_create_daily_input(
+            client_id=client_id,
+            metric_date=payload.metric_date,
+            source=payload.source,
+        )
         if numeric_updates:
             latest_row = client_data_store.upsert_daily_input(
                 client_id=client_id,
@@ -780,6 +854,20 @@ def upsert_client_data_daily_input(
                 source=payload.source,
                 notes=payload.notes,
             )
+        if latest_row is None:
+            raise RuntimeError("Failed to initialize daily input for sales write")
+
+        sale_entries = client_data_store.replace_sale_entries_for_daily_input(
+            daily_input_id=int(latest_row["id"]),
+            sale_entries=sale_entries_payload,
+        )
+        latest_row = client_data_store.upsert_daily_input(
+            client_id=client_id,
+            metric_date=payload.metric_date,
+            source=payload.source,
+            custom_value_4_amount=client_data_store.compute_custom_value_4(sale_entries),
+            sales_count=client_data_store.compute_sales_count(sale_entries),
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     except LookupError as exc:

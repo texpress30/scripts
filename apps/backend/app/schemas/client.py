@@ -156,6 +156,17 @@ class ClientDataRowCustomValue(BaseModel):
     numeric_value: str
 
 
+class ClientDataTableSaleEntry(BaseModel):
+    id: int
+    brand: str | None = None
+    model: str | None = None
+    sale_price_amount: str
+    actual_price_amount: str
+    notes: str | None = None
+    sort_order: int
+    gross_profit_amount: str
+
+
 class ClientDataTableRow(BaseModel):
     daily_input_id: int
     metric_date: str
@@ -174,6 +185,7 @@ class ClientDataTableRow(BaseModel):
     custom_value_4_amount: str
     gross_profit_amount: str
     custom_values: list[ClientDataRowCustomValue]
+    sale_entries: list[ClientDataTableSaleEntry] = Field(default_factory=list)
 
 
 class ClientDataTableResponse(BaseModel):
@@ -196,6 +208,22 @@ class ClientDataDailyInputUpsertRequest(BaseModel):
     sales_count: int | None = None
     custom_value_5_amount: float | int | str | None = None
     notes: str | None = None
+    sale_entries: list["ClientDataSaleEntryUpsertItem"] | None = None
+    sale_brand: str | None = None
+    sale_model: str | None = None
+    sale_price_amount: float | int | str | None = None
+    sale_actual_price_amount: float | int | str | None = None
+    sale_notes: str | None = None
+    sale_sort_order: int | None = None
+
+
+class ClientDataSaleEntryUpsertItem(BaseModel):
+    brand: str | None = None
+    model: str | None = None
+    sale_price_amount: float | int | str
+    actual_price_amount: float | int | str
+    notes: str | None = None
+    sort_order: int | None = None
 
 
 class ClientDataDailyInputWriteResponse(BaseModel):

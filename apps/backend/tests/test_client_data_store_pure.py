@@ -271,8 +271,12 @@ class _FakeCursor:
             return
 
         if "delete from client_data_sale_entries" in q:
-            sale_entry_id = int(params[0])
-            self._state.sale_rows = [r for r in self._state.sale_rows if r["id"] != sale_entry_id]
+            if "where id = %s" in q:
+                sale_entry_id = int(params[0])
+                self._state.sale_rows = [r for r in self._state.sale_rows if r["id"] != sale_entry_id]
+            elif "where daily_input_id = %s" in q:
+                daily_input_id = int(params[0])
+                self._state.sale_rows = [r for r in self._state.sale_rows if r["daily_input_id"] != daily_input_id]
             self._fetchone = None
             return
 
@@ -288,7 +292,9 @@ class _FakeCursor:
                 "custom_value_1_count": 0,
                 "custom_value_2_count": 0,
                 "custom_value_3_amount": "0",
+                "custom_value_4_amount": "0",
                 "custom_value_5_amount": "0",
+                "sales_count": 0,
                 "notes": None,
             }
             self._state.daily_rows.append(row)
@@ -322,8 +328,14 @@ class _FakeCursor:
             if "custom_value_3_amount = %s" in q:
                 row["custom_value_3_amount"] = str(params[param_index])
                 param_index += 1
+            if "custom_value_4_amount = %s" in q:
+                row["custom_value_4_amount"] = str(params[param_index])
+                param_index += 1
             if "custom_value_5_amount = %s" in q:
                 row["custom_value_5_amount"] = str(params[param_index])
+                param_index += 1
+            if "sales_count = %s" in q:
+                row["sales_count"] = int(params[param_index])
                 param_index += 1
 
             self._fetchone = _daily_row_tuple(row)
@@ -422,7 +434,9 @@ def _daily_row_tuple(row: dict[str, object] | None) -> tuple[object, ...] | None
         row["custom_value_1_count"],
         row["custom_value_2_count"],
         row["custom_value_3_amount"],
+        row["custom_value_4_amount"],
         row["custom_value_5_amount"],
+        row["sales_count"],
         row["notes"],
     )
 
@@ -742,7 +756,7 @@ class ClientDataStoreCustomFieldCrudSliceTests(unittest.TestCase):
         self.assertEqual(row["custom_value_1_count"], 3)
         self.assertEqual(row["custom_value_2_count"], 4)
         self.assertEqual(str(row["custom_value_3_amount"]), "5.50")
-        self.assertEqual(str(row["custom_value_5_amount"]), "6.75")
+        self.assertEqual(str(row["custom_value_5_amount"]), "5.50")
 
     def test_upsert_daily_input_custom_value_5_accepts_negative(self):
         row = client_data_store.upsert_daily_input(
@@ -751,7 +765,7 @@ class ClientDataStoreCustomFieldCrudSliceTests(unittest.TestCase):
             source="meta_ads",
             custom_value_5_amount="-10.25",
         )
-        self.assertEqual(str(row["custom_value_5_amount"]), "-10.25")
+        self.assertEqual(str(row["custom_value_5_amount"]), "0")
 
     def test_upsert_daily_input_rejects_no_fields(self):
         with self.assertRaises(ValueError):
@@ -819,7 +833,7 @@ class ClientDataStoreCustomFieldCrudSliceTests(unittest.TestCase):
         self.assertEqual(updated["custom_value_1_count"], 1)
         self.assertEqual(updated["custom_value_2_count"], 2)
         self.assertEqual(str(updated["custom_value_3_amount"]), "5.25")
-        self.assertEqual(str(updated["custom_value_5_amount"]), "-1.50")
+        self.assertEqual(str(updated["custom_value_5_amount"]), "5.25")
 
     def test_set_daily_input_notes_none_clears_notes(self):
         client_data_store.set_daily_input_notes(client_id=21, metric_date="2026-03-24", source="meta_ads", notes="a")
@@ -1000,6 +1014,48 @@ class ClientDataStoreCustomFieldCrudSliceTests(unittest.TestCase):
     def test_list_sale_entries_errors_for_missing_daily_input(self):
         with self.assertRaises(LookupError):
             client_data_store.list_sale_entries_for_daily_input(daily_input_id=999)
+
+    def test_replace_sale_entries_for_daily_input_creates_rows_for_new_daily_input(self):
+        base = client_data_store.get_or_create_daily_input(client_id=70, metric_date="2026-03-24", source="meta_ads")
+        rows = client_data_store.replace_sale_entries_for_daily_input(
+            daily_input_id=base["id"],
+            sale_entries=[
+                {"brand": "Audi", "model": "A3", "sale_price_amount": "100", "actual_price_amount": "60", "sort_order": 1},
+                {"brand": "VW", "model": "Golf", "sale_price_amount": "80", "actual_price_amount": "50", "sort_order": 2},
+            ],
+        )
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["sort_order"], 1)
+        self.assertEqual(str(rows[0]["gross_profit_amount"]), "40")
+
+    def test_replace_sale_entries_for_daily_input_replaces_existing_rows(self):
+        base = client_data_store.get_or_create_daily_input(client_id=70, metric_date="2026-03-24", source="meta_ads")
+        client_data_store.create_sale_entry(daily_input_id=base["id"], sale_price_amount="10", actual_price_amount="5", sort_order=0)
+        rows = client_data_store.replace_sale_entries_for_daily_input(
+            daily_input_id=base["id"],
+            sale_entries=[{"brand": "Only", "model": "One", "sale_price_amount": "50", "actual_price_amount": "20", "sort_order": 0}],
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["brand"], "Only")
+        self.assertEqual(str(rows[0]["gross_profit_amount"]), "30")
+
+    def test_replace_sale_entries_for_daily_input_validates_amounts_and_sort_order(self):
+        base = client_data_store.get_or_create_daily_input(client_id=70, metric_date="2026-03-24", source="meta_ads")
+        with self.assertRaises(ValueError):
+            client_data_store.replace_sale_entries_for_daily_input(
+                daily_input_id=base["id"],
+                sale_entries=[{"sale_price_amount": -1, "actual_price_amount": 1, "sort_order": 0}],
+            )
+        with self.assertRaises(ValueError):
+            client_data_store.replace_sale_entries_for_daily_input(
+                daily_input_id=base["id"],
+                sale_entries=[{"sale_price_amount": 1, "actual_price_amount": -1, "sort_order": 0}],
+            )
+        with self.assertRaises(ValueError):
+            client_data_store.replace_sale_entries_for_daily_input(
+                daily_input_id=base["id"],
+                sale_entries=[{"sale_price_amount": 1, "actual_price_amount": 1, "sort_order": -1}],
+            )
 
     def test_create_sale_entry_valid_shape_and_gross_profit(self):
         base = client_data_store.get_or_create_daily_input(client_id=70, metric_date="2026-03-24", source="meta_ads")

@@ -7209,3 +7209,20 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, fÄ
 - [x] Confirmed custom field definitions are now manageable end-to-end from dedicated API + Data manager panel.
 - [x] Confirmed archived fields can be displayed (`include_inactive=true`) and are rendered read-only in UI.
 - [x] Confirmed no migrations and no scope creep into sales/daily custom values/media flows.
+
+# TODO â€” Canonical sales via `client_data_sale_entries` in Data API save/read flow (2026-03-25)
+
+- [x] Mandatory workspace update attempt executed (`git fetch --all --prune`, `git pull --ff-only`, `git status`, `git diff`); continue local when upstream/origin missing.
+- [x] Audit strict files only: `client_data_store.py`, `api/clients.py`, Data schemas, and backend tests (`test_client_data_store_pure.py`, `test_clients_data_api.py`).
+- [x] Store: keep `list_sale_entries_for_daily_input(...)` as canonical read and add replace-all helper for daily-input sale entries.
+- [x] Store: validate sale entry amounts/sort/text normalization and keep stable payload shape with per-entry `gross_profit_amount`.
+- [x] API save (`PUT /clients/{client_id}/data/daily-input`): add bridge for `sale_entries` array and legacy single-sale flat payload.
+- [x] API save: derive and persist cached daily fields from canonical sale entries (`sales_count`, `custom_value_4_amount`, `custom_value_5_amount`).
+- [x] API read (`GET /clients/{client_id}/data/table`): include canonical `sale_entries` and compute sales-derived fields consistently from entries.
+- [x] Add/adjust targeted backend tests for store replace/list/validation and API canonical derivation + compatibility scenarios.
+- [x] Run relevant backend tests and compile/import checks; document environment limits.
+
+## Review
+- [x] Confirmed no frontend refactor, no Media Buying/Tracker changes, no daily custom value scope changes.
+- [x] Confirmed canonical sales derivation now flows through `client_data_sale_entries` and read payload includes `sale_entries`.
+- [x] Confirmed backend checks pass for store suite; API test module remains blocked in this container by missing `fastapi` dependency.
