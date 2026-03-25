@@ -426,6 +426,7 @@ class MediaTrackerWorksheetService:
         weeks: list[dict[str, object]],
         auto_metrics: dict[str, dict[str, object]],
         manual_metrics: dict[str, dict[str, object]],
+        source_weekly_metrics: dict[str, dict[str, object]],
         eur_ron_rate: float | None,
         display_currency: str,
         custom_label_1: str,
@@ -440,20 +441,45 @@ class MediaTrackerWorksheetService:
         auto_apps = self._extract_weekly_values(metrics=auto_metrics, key="applications")
         auto_approved = self._extract_weekly_values(metrics=auto_metrics, key="approved_applications")
 
-        g_leads = self._extract_weekly_values(metrics=manual_metrics, key="google_leads_manual")
-        g_sales = self._extract_weekly_values(metrics=manual_metrics, key="google_sales_manual")
-        g_revenue = self._extract_weekly_values(metrics=manual_metrics, key="google_revenue_manual")
-        m_leads = self._extract_weekly_values(metrics=manual_metrics, key="meta_leads_manual")
-        m_sales = self._extract_weekly_values(metrics=manual_metrics, key="meta_sales_manual")
-        m_revenue = self._extract_weekly_values(metrics=manual_metrics, key="meta_revenue_manual")
-        t_leads = self._extract_weekly_values(metrics=manual_metrics, key="tiktok_leads_manual")
-        t_sales = self._extract_weekly_values(metrics=manual_metrics, key="tiktok_sales_manual")
-        t_revenue = self._extract_weekly_values(metrics=manual_metrics, key="tiktok_revenue_manual")
+        def source_metric_values(source_key: str, metric_key: str) -> list[float | None]:
+            payload = source_weekly_metrics.get(source_key) if isinstance(source_weekly_metrics.get(source_key), dict) else {}
+            values = payload.get(metric_key) if isinstance(payload.get(metric_key), list) else []
+            if len(values) == week_count:
+                return [float(item) if isinstance(item, (int, float)) else 0.0 for item in values]
+            return [0.0 for _ in range(week_count)]
+
+        g_leads = source_metric_values("google_ads", "leads_values")
+        g_sales = source_metric_values("google_ads", "sales_values")
+        g_revenue = source_metric_values("google_ads", "revenue_values")
+        m_leads = source_metric_values("meta_ads", "leads_values")
+        m_sales = source_metric_values("meta_ads", "sales_values")
+        m_revenue = source_metric_values("meta_ads", "revenue_values")
+        t_leads = source_metric_values("tiktok_ads", "leads_values")
+        t_sales = source_metric_values("tiktok_ads", "sales_values")
+        t_revenue = source_metric_values("tiktok_ads", "revenue_values")
         cogs = self._extract_weekly_values(metrics=manual_metrics, key="weekly_cogs_taxes")
 
         summary_cost = [self._to_float(item) for item in auto_cost_total]
-        summary_revenue = [self._to_float(g_revenue[i]) + self._to_float(m_revenue[i]) + self._to_float(t_revenue[i]) for i in range(week_count)]
-        summary_sales = [self._to_float(g_sales[i]) + self._to_float(m_sales[i]) + self._to_float(t_sales[i]) for i in range(week_count)]
+        summary_revenue = [
+            round(
+                sum(
+                    self._to_float((source_weekly_metrics.get(source_key) or {}).get("revenue_values", [0.0] * week_count)[i])
+                    for source_key in source_weekly_metrics.keys()
+                ),
+                4,
+            )
+            for i in range(week_count)
+        ]
+        summary_sales = [
+            round(
+                sum(
+                    self._to_float((source_weekly_metrics.get(source_key) or {}).get("sales_values", [0.0] * week_count)[i])
+                    for source_key in source_weekly_metrics.keys()
+                ),
+                4,
+            )
+            for i in range(week_count)
+        ]
         summary_leads = [self._to_float(item) for item in auto_leads]
         summary_apps = [self._to_float(item) for item in auto_apps]
         summary_approved = [self._to_float(item) for item in auto_approved]
@@ -596,13 +622,39 @@ class MediaTrackerWorksheetService:
             source_row_keys={"cost", "leads_manual", "cpa", "sales_manual", "revenue_manual"},
         )
 
-        return [
+        sections: list[dict[str, object]] = [
             {"key": "summary", "label": "Rezumat", "rows": summary_rows_with_wow},
             {"key": "new_clients", "label": "Clienti Noi", "rows": new_clients_rows},
             {"key": "google_spend", "label": "Google Spend", "rows": google_rows_with_wow},
             {"key": "meta_spend", "label": "Meta Spend", "rows": meta_rows_with_wow},
             {"key": "tiktok_spend", "label": "TikTok Spend", "rows": tiktok_rows_with_wow},
         ]
+
+        for source_key in sorted(source_weekly_metrics.keys()):
+            if source_key in {"google_ads", "meta_ads", "tiktok_ads"}:
+                continue
+            source_payload = source_weekly_metrics.get(source_key) or {}
+            source_label = str(source_payload.get("label") or source_key)
+            source_rows = platform_rows(
+                source_key,
+                source_label,
+                source_metric_values(source_key, "cost_values"),
+                source_metric_values(source_key, "leads_values"),
+                source_metric_values(source_key, "sales_values"),
+                source_metric_values(source_key, "revenue_values"),
+            )
+            sections.append(
+                {
+                    "key": f"{source_key}_spend",
+                    "label": f"{source_label} Spend",
+                    "rows": self._insert_wow_rows(
+                        weeks=weeks,
+                        rows=source_rows,
+                        source_row_keys={"cost", "leads_manual", "cpa", "sales_manual", "revenue_manual"},
+                    ),
+                }
+            )
+        return sections
 
     def upsert_weekly_manual_values(
         self,
@@ -761,9 +813,79 @@ class MediaTrackerWorksheetService:
         day_rows = lead_table.get("days") if isinstance(lead_table.get("days"), list) else []
         auto_metrics = self._build_auto_metrics(weeks=weeks, day_rows=day_rows)
 
-        week_starts = [date.fromisoformat(str(item["week_start"])) for item in weeks]
-        manual_values_map = self._list_manual_values_for_weeks(client_id=client_id, week_starts=week_starts)
-        manual_metrics = self._build_manual_metrics(weeks=weeks, manual_values_map=manual_values_map)
+        if hasattr(media_buying_store, "get_source_daily_rows"):
+            source_daily_rows = media_buying_store.get_source_daily_rows(
+                client_id=int(client_id),
+                date_from=first_week_start,
+                date_to=last_week_end,
+            )
+        else:
+            source_daily_rows = []
+        source_weekly_metrics: dict[str, dict[str, object]] = {}
+        for source_row in source_daily_rows:
+            raw_date = source_row.get("date")
+            if not isinstance(raw_date, str):
+                continue
+            try:
+                row_date = date.fromisoformat(raw_date)
+            except ValueError:
+                continue
+            source_key = str(source_row.get("source") or "unknown")
+            source_payload = source_weekly_metrics.setdefault(
+                source_key,
+                {
+                    "label": str(source_row.get("source_label") or source_key),
+                    "cost_values": [0.0 for _ in weeks],
+                    "leads_values": [0.0 for _ in weeks],
+                    "sales_values": [0.0 for _ in weeks],
+                    "revenue_values": [0.0 for _ in weeks],
+                    "cogs_values": [0.0 for _ in weeks],
+                },
+            )
+            for idx, week in enumerate(weeks):
+                week_start = date.fromisoformat(str(week["week_start"]))
+                week_end = date.fromisoformat(str(week["week_end"]))
+                if not (week_start <= row_date <= week_end):
+                    continue
+                source_payload["cost_values"][idx] = float(source_payload["cost_values"][idx]) + float(source_row.get("cost_amount") or 0.0)
+                source_payload["leads_values"][idx] = float(source_payload["leads_values"][idx]) + float(source_row.get("leads") or 0.0)
+                source_payload["sales_values"][idx] = float(source_payload["sales_values"][idx]) + float(source_row.get("sales_count") or 0.0)
+                source_payload["revenue_values"][idx] = float(source_payload["revenue_values"][idx]) + float(source_row.get("custom_value_4_amount_ron") or 0.0)
+                source_payload["cogs_values"][idx] = float(source_payload["cogs_values"][idx]) + float(source_row.get("cogs_amount_ron") or 0.0)
+
+        manual_metrics = self._build_manual_metrics(weeks=weeks, manual_values_map={})
+        manual_metrics["weekly_cogs_taxes"] = {
+            "aggregation": "sum",
+            "history_value": 0.0,
+            "weekly_values": [],
+        }
+        weekly_cogs_values: list[float] = []
+        for idx, week in enumerate(weeks):
+            cogs_value = round(sum(float((source_weekly_metrics.get(source_key) or {}).get("cogs_values", [0.0] * len(weeks))[idx]) for source_key in source_weekly_metrics.keys()), 4)
+            weekly_cogs_values.append(cogs_value)
+            manual_metrics["weekly_cogs_taxes"]["weekly_values"].append(
+                {"week_start": week["week_start"], "week_end": week["week_end"], "value": cogs_value}
+            )
+        manual_metrics["weekly_cogs_taxes"]["history_value"] = round(sum(weekly_cogs_values), 2)
+
+        legacy_manual_source_map = {
+            "google": "google_ads",
+            "meta": "meta_ads",
+            "tiktok": "tiktok_ads",
+        }
+        for legacy_prefix, source_key in legacy_manual_source_map.items():
+            for field_suffix, value_key in (("leads_manual", "leads_values"), ("sales_manual", "sales_values"), ("revenue_manual", "revenue_values")):
+                metric_key = f"{legacy_prefix}_{field_suffix}"
+                values = list((source_weekly_metrics.get(source_key) or {}).get(value_key, [0.0 for _ in weeks]))
+                manual_metrics[metric_key] = {
+                    "aggregation": "sum",
+                    "history_value": round(sum(float(item or 0.0) for item in values), 2),
+                    "weekly_values": [
+                        {"week_start": week["week_start"], "week_end": week["week_end"], "value": float(values[idx] or 0.0)}
+                        for idx, week in enumerate(weeks)
+                    ],
+                }
+
         eur_ron_rate = self._get_scope_eur_ron_rate(
             client_id=client_id,
             granularity=normalized_granularity,
@@ -800,6 +922,7 @@ class MediaTrackerWorksheetService:
                 weeks=weeks,
                 auto_metrics=auto_metrics,
                 manual_metrics=manual_metrics,
+                source_weekly_metrics=source_weekly_metrics,
                 eur_ron_rate=eur_ron_rate,
                 display_currency=display_currency,
                 custom_label_1=custom_label_1,

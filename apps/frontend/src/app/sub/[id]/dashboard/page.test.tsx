@@ -82,12 +82,13 @@ describe("SubDashboardPage header and platform links", () => {
     });
   });
 
-  it("removes old header title/nav and adds Media Buying + Media Tracker", async () => {
+  it("removes old header title/nav and adds Media Buying + Media Tracker + Data", async () => {
     render(<SubDashboardPage />);
 
     expect(screen.getByTestId("app-shell-title").textContent).toBe("");
     expect(await screen.findByRole("link", { name: "Media Buying" })).toHaveAttribute("href", "/sub/96/media-buying");
     expect(screen.getByRole("link", { name: "Media Tracker" })).toHaveAttribute("href", "/sub/96/media-tracker");
+    expect(screen.getByRole("link", { name: "Data" })).toHaveAttribute("href", "/sub/96/data");
 
     expect(screen.queryByRole("link", { name: "Campaigns" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Rules" })).toBeNull();

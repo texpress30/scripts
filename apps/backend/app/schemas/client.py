@@ -115,3 +115,173 @@ class MediaTrackerWorksheetEurRonRateUpsertRequest(BaseModel):
     granularity: Literal["month", "quarter", "year"]
     anchor_date: date
     value: float | None = None
+
+
+class ClientDataDerivedField(BaseModel):
+    key: str
+    label: str
+    value_kind: Literal["count", "amount"]
+
+
+class ClientDataSourceItem(BaseModel):
+    key: str
+    label: str
+
+
+class ClientDataCustomFieldItem(BaseModel):
+    id: int
+    field_key: str
+    label: str
+    value_kind: Literal["count", "amount"]
+    sort_order: int
+    is_active: bool
+
+
+class ClientDataConfigResponse(BaseModel):
+    client_id: int
+    currency_code: str | None = None
+    display_currency: str | None = None
+    fixed_fields: list[dict[str, object]] = Field(default_factory=list)
+    sources: list[ClientDataSourceItem]
+    custom_fields: list[ClientDataCustomFieldItem]
+    derived_fields: list[ClientDataDerivedField]
+
+
+class ClientDataRowCustomValue(BaseModel):
+    custom_field_id: int
+    field_key: str
+    label: str
+    value_kind: Literal["count", "amount"]
+    sort_order: int
+    numeric_value: str
+
+
+class ClientDataTableRow(BaseModel):
+    daily_input_id: int
+    metric_date: str
+    source: str
+    source_label: str
+    leads: int
+    phones: int
+    custom_value_1_count: int
+    custom_value_2_count: int
+    custom_value_3_amount: str
+    custom_value_5_amount: str
+    notes: str | None = None
+    sales_count: int
+    revenue_amount: str
+    cogs_amount: str
+    custom_value_4_amount: str
+    gross_profit_amount: str
+    custom_values: list[ClientDataRowCustomValue]
+
+
+class ClientDataTableResponse(BaseModel):
+    client_id: int
+    date_from: str
+    date_to: str
+    count: int
+    rows: list[ClientDataTableRow]
+
+
+class ClientDataDailyInputUpsertRequest(BaseModel):
+    metric_date: date
+    source: str
+    leads: int | None = None
+    phones: int | None = None
+    custom_value_1_count: int | None = None
+    custom_value_2_count: int | None = None
+    custom_value_3_amount: float | int | str | None = None
+    custom_value_4_amount: float | int | str | None = None
+    sales_count: int | None = None
+    custom_value_5_amount: float | int | str | None = None
+    notes: str | None = None
+
+
+class ClientDataDailyInputWriteResponse(BaseModel):
+    id: int
+    client_id: int
+    metric_date: str
+    source: str
+    leads: int
+    phones: int
+    custom_value_1_count: int
+    custom_value_2_count: int
+    custom_value_3_amount: str
+    custom_value_4_amount: str
+    custom_value_5_amount: str
+    sales_count: int
+    notes: str | None = None
+
+
+class ClientDataSaleEntryCreateRequest(BaseModel):
+    daily_input_id: int
+    sale_price_amount: float | int | str
+    actual_price_amount: float | int | str
+    brand: str | None = None
+    model: str | None = None
+    notes: str | None = None
+    sort_order: int | None = None
+
+
+class ClientDataSaleEntryUpdateRequest(BaseModel):
+    sale_price_amount: float | int | str | None = None
+    actual_price_amount: float | int | str | None = None
+    brand: str | None = None
+    model: str | None = None
+    notes: str | None = None
+    sort_order: int | None = None
+
+
+class ClientDataSaleEntryWriteResponse(BaseModel):
+    id: int
+    daily_input_id: int
+    brand: str | None = None
+    model: str | None = None
+    sale_price_amount: str
+    actual_price_amount: str
+    notes: str | None = None
+    sort_order: int
+    gross_profit_amount: str
+
+
+class ClientDataCustomFieldCreateRequest(BaseModel):
+    label: str
+    value_kind: str
+    field_key: str | None = None
+    sort_order: int | None = None
+
+
+class ClientDataCustomFieldUpdateRequest(BaseModel):
+    label: str | None = None
+    value_kind: str | None = None
+    sort_order: int | None = None
+
+
+class ClientDataCustomFieldWriteResponse(BaseModel):
+    id: int
+    client_id: int
+    field_key: str
+    label: str
+    value_kind: str
+    sort_order: int
+    is_active: bool
+    archived_at: str | None = None
+
+
+class ClientDataDailyCustomValueUpsertRequest(BaseModel):
+    numeric_value: float | int | str
+
+
+class ClientDataDailyCustomValueWriteResponse(BaseModel):
+    id: int
+    daily_input_id: int
+    metric_date: str
+    source: str
+    custom_field_id: int
+    field_key: str
+    label: str
+    value_kind: str
+    sort_order: int
+    is_active: bool
+    numeric_value: str
