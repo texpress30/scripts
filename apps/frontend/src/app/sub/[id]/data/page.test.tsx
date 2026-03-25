@@ -114,18 +114,20 @@ describe("SubDataPage editable flows", () => {
     expect(screen.getByLabelText("Săptămâna rând nou")).toHaveValue("11");
     fireEvent.change(screen.getByLabelText("Sursa rând nou"), { target: { value: "meta_ads" } });
     fireEvent.change(screen.getByLabelText("Lead-uri rând nou"), { target: { value: "10" } });
+    fireEvent.change(screen.getByLabelText("Custom Value 4 rând nou"), { target: { value: "250" } });
+    fireEvent.change(screen.getByLabelText("Vânzări rând nou"), { target: { value: "3" } });
     fireEvent.change(screen.getByLabelText("Preț vânzare rând nou"), { target: { value: "250" } });
-    expect(screen.getByLabelText("Custom Value 4 rând nou")).toHaveValue("250,00 RON");
-    expect(screen.getByLabelText("Vânzări rând nou")).toHaveValue("");
+    expect(screen.getByLabelText("Custom Value 4 rând nou")).toHaveValue("250");
+    expect(screen.getByLabelText("Vânzări rând nou")).toHaveValue("3");
     fireEvent.change(screen.getByLabelText("Preț actual rând nou"), { target: { value: "150" } });
-    expect(screen.getByLabelText("P/L brut rând nou")).toHaveValue("100,00 RON");
-    expect(screen.getByLabelText("Vânzări rând nou")).toHaveValue("1");
+    fireEvent.change(screen.getByLabelText("New row cv3"), { target: { value: "500" } });
+    expect(screen.getByLabelText("New row cv5")).toHaveValue("250,00 RON");
     fireEvent.click(screen.getByRole("button", { name: "Salvează rând" }));
 
     await waitFor(() => {
       expect(apiMock.apiRequest).toHaveBeenCalledWith(
         "/clients/96/data/daily-input",
-        expect.objectContaining({ method: "PUT", body: expect.stringContaining('"metric_date":"2026-03-12"') }),
+        expect.objectContaining({ method: "PUT", body: expect.stringContaining('"custom_value_4_amount":250') }),
       );
     });
 

@@ -813,11 +813,14 @@ class MediaTrackerWorksheetService:
         day_rows = lead_table.get("days") if isinstance(lead_table.get("days"), list) else []
         auto_metrics = self._build_auto_metrics(weeks=weeks, day_rows=day_rows)
 
-        source_daily_rows = media_buying_store.get_source_daily_rows(
-            client_id=int(client_id),
-            date_from=first_week_start,
-            date_to=last_week_end,
-        )
+        if hasattr(media_buying_store, "get_source_daily_rows"):
+            source_daily_rows = media_buying_store.get_source_daily_rows(
+                client_id=int(client_id),
+                date_from=first_week_start,
+                date_to=last_week_end,
+            )
+        else:
+            source_daily_rows = []
         source_weekly_metrics: dict[str, dict[str, object]] = {}
         for source_row in source_daily_rows:
             raw_date = source_row.get("date")

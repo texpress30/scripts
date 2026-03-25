@@ -552,7 +552,9 @@ def _map_daily_input_write_payload(row: dict[str, object]) -> dict[str, object]:
         "custom_value_1_count": int(row["custom_value_1_count"]),
         "custom_value_2_count": int(row["custom_value_2_count"]),
         "custom_value_3_amount": _decimal_to_string(row["custom_value_3_amount"]),
+        "custom_value_4_amount": _decimal_to_string(row["custom_value_4_amount"]),
         "custom_value_5_amount": _decimal_to_string(row["custom_value_5_amount"]),
+        "sales_count": int(row["sales_count"]),
         "notes": row.get("notes"),
     }
 
@@ -618,13 +620,14 @@ def get_client_data_config(client_id: int, user: AuthUser = Depends(get_current_
     media_buying_config = media_buying_store.get_config(client_id=client_id)
     display_currency = str(media_buying_config.get("display_currency") or "").strip().upper() or None
     fixed_fields = [
-        {"key": "leads", "label": "Lead-uri"},
-        {"key": "phones", "label": "Telefoane"},
-        {"key": "custom_value_1_count", "label": str(media_buying_config.get("custom_label_1") or "Custom Value 1")},
-        {"key": "custom_value_2_count", "label": str(media_buying_config.get("custom_label_2") or "Custom Value 2")},
-        {"key": "custom_value_3_amount", "label": str(media_buying_config.get("custom_label_3") or "Custom Value 3")},
-        {"key": "custom_value_4_amount", "label": str(media_buying_config.get("custom_label_4") or "Custom Value 4")},
-        {"key": "custom_value_5_amount", "label": str(media_buying_config.get("custom_label_5") or "Custom Value 5")},
+        {"key": "leads", "label": "Lead-uri", "editable": True, "read_only": False},
+        {"key": "phones", "label": "Telefoane", "editable": True, "read_only": False},
+        {"key": "custom_value_1_count", "label": str(media_buying_config.get("custom_label_1") or "Custom Value 1"), "editable": True, "read_only": False},
+        {"key": "custom_value_2_count", "label": str(media_buying_config.get("custom_label_2") or "Custom Value 2"), "editable": True, "read_only": False},
+        {"key": "custom_value_3_amount", "label": str(media_buying_config.get("custom_label_3") or "Custom Value 3"), "editable": True, "read_only": False},
+        {"key": "custom_value_4_amount", "label": str(media_buying_config.get("custom_label_4") or "Custom Value 4"), "editable": True, "read_only": False},
+        {"key": "custom_value_5_amount", "label": str(media_buying_config.get("custom_label_5") or "Custom Value 5"), "editable": False, "read_only": True},
+        {"key": "sales_count", "label": "Vânzări", "editable": True, "read_only": False},
     ]
 
     custom_fields = client_data_store.list_custom_fields(client_id=client_id, include_inactive=True)
@@ -702,12 +705,13 @@ def get_client_data_table(
                 "custom_value_1_count": int(daily_input["custom_value_1_count"]),
                 "custom_value_2_count": int(daily_input["custom_value_2_count"]),
                 "custom_value_3_amount": _decimal_to_string(daily_input["custom_value_3_amount"]),
+                "custom_value_4_amount": _decimal_to_string(daily_input["custom_value_4_amount"]),
                 "custom_value_5_amount": _decimal_to_string(daily_input["custom_value_5_amount"]),
                 "notes": daily_input.get("notes"),
-                "sales_count": client_data_store.compute_sales_count(sale_entries),
+                "sales_count": int(daily_input["sales_count"]),
                 "revenue_amount": _decimal_to_string(client_data_store.compute_revenue(sale_entries)),
                 "cogs_amount": _decimal_to_string(client_data_store.compute_cogs(sale_entries)),
-                "custom_value_4_amount": _decimal_to_string(client_data_store.compute_custom_value_4(sale_entries)),
+                "custom_value_4_amount": _decimal_to_string(daily_input["custom_value_4_amount"]),
                 "gross_profit_amount": _decimal_to_string(client_data_store.compute_gross_profit(sale_entries)),
                 "custom_values": sorted(
                     custom_values_by_daily_input_id.get(daily_input_id, []),
@@ -742,6 +746,8 @@ def upsert_client_data_daily_input(
         "custom_value_1_count",
         "custom_value_2_count",
         "custom_value_3_amount",
+        "custom_value_4_amount",
+        "sales_count",
         "custom_value_5_amount",
     ):
         value = getattr(payload, key)

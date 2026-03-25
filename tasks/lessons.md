@@ -587,3 +587,4 @@
 - 2026-03-24: După un feedback de tip „nu opri la jumătate”, nu trimit status intermediar; închid taskul end-to-end în același turn (fix + teste + commit + make_pr) sau nu livrez deloc ca final.
 - 2026-03-24: Când userul limitează explicit taskul la un sub-form (`Adaugă rând`), nu ating alte zone (tabel principal, Media Buying/Tracker, backend) și implementez strict câmpurile/calculul/salvarea cerute.
 - 2026-03-24: Pentru feedback UI strict pe formular, tratez explicit cerințele de ordine/label/blank-state înainte de logică suplimentară și evit complet placeholder/default-uri vizibile dacă userul cere formular clasic.
+- 2026-03-24: Când business rule-ul corect schimbă source-of-truth (manual fields vs derivat din sale entries), aliniez simultan store+API+reporting readers+UI și testele, ca să evit inconsistențe între pagini.

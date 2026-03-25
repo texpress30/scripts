@@ -98,7 +98,9 @@ class ClientsDataApiTests(unittest.TestCase):
                         "custom_value_1_count": 1,
                         "custom_value_2_count": 0,
                         "custom_value_3_amount": Decimal("10.50"),
+                        "custom_value_4_amount": Decimal("8.50"),
                         "custom_value_5_amount": Decimal("2.00"),
+                        "sales_count": 2,
                         "notes": "ok",
                     },
                     102: {
@@ -111,7 +113,9 @@ class ClientsDataApiTests(unittest.TestCase):
                         "custom_value_1_count": 0,
                         "custom_value_2_count": 2,
                         "custom_value_3_amount": Decimal("5.00"),
+                        "custom_value_4_amount": Decimal("4.00"),
                         "custom_value_5_amount": Decimal("1.00"),
+                        "sales_count": 0,
                         "notes": None,
                     },
                     201: {
@@ -124,7 +128,9 @@ class ClientsDataApiTests(unittest.TestCase):
                         "custom_value_1_count": 1,
                         "custom_value_2_count": 1,
                         "custom_value_3_amount": Decimal("1.00"),
+                        "custom_value_4_amount": Decimal("0.00"),
                         "custom_value_5_amount": Decimal("1.00"),
+                        "sales_count": 1,
                         "notes": None,
                     },
                 }
@@ -284,7 +290,9 @@ class ClientsDataApiTests(unittest.TestCase):
                         "custom_value_1_count": 0,
                         "custom_value_2_count": 0,
                         "custom_value_3_amount": Decimal("0"),
+                        "custom_value_4_amount": Decimal("0"),
                         "custom_value_5_amount": Decimal("0"),
+                        "sales_count": 0,
                         "notes": None,
                     }
                     self.daily_inputs[self.next_daily_input_id] = row
@@ -294,14 +302,19 @@ class ClientsDataApiTests(unittest.TestCase):
                         if not isinstance(value, int) or value < 0:
                             raise ValueError(f"{key} must be an integer >= 0")
                         row[key] = value
-                    elif key in {"custom_value_3_amount", "custom_value_5_amount"}:
+                    elif key in {"custom_value_3_amount", "custom_value_4_amount", "custom_value_5_amount"}:
                         try:
                             parsed = Decimal(str(value))
                         except Exception as exc:  # noqa: BLE001
                             raise ValueError(f"{key} must be a decimal") from exc
                         row[key] = parsed
+                    elif key in {"sales_count"}:
+                        if not isinstance(value, int) or value < 0:
+                            raise ValueError(f"{key} must be an integer >= 0")
+                        row[key] = value
                     else:
                         raise ValueError(f"Unsupported field {key}")
+                row["custom_value_5_amount"] = Decimal(str(row["custom_value_3_amount"])) - Decimal(str(row["custom_value_4_amount"]))
                 return dict(row)
 
             def set_daily_input_notes(self, *, client_id: int, metric_date, source, notes):
@@ -320,7 +333,9 @@ class ClientsDataApiTests(unittest.TestCase):
                         "custom_value_1_count": 0,
                         "custom_value_2_count": 0,
                         "custom_value_3_amount": Decimal("0"),
+                        "custom_value_4_amount": Decimal("0"),
                         "custom_value_5_amount": Decimal("0"),
+                        "sales_count": 0,
                         "notes": None,
                     }
                     self.daily_inputs[self.next_daily_input_id] = row
@@ -541,9 +556,10 @@ class ClientsDataApiTests(unittest.TestCase):
         self.assertEqual(payload["client_id"], self.client_id)
         self.assertEqual(payload["currency_code"], "RON")
         self.assertEqual(payload["display_currency"], "RON")
-        self.assertEqual(payload["fixed_fields"][0], {"key": "leads", "label": "Lead-uri"})
-        self.assertEqual(payload["fixed_fields"][1], {"key": "phones", "label": "Telefoane"})
-        self.assertEqual(payload["fixed_fields"][2], {"key": "custom_value_1_count", "label": "CV1"})
+        self.assertEqual(payload["fixed_fields"][0], {"key": "leads", "label": "Lead-uri", "editable": True, "read_only": False})
+        self.assertEqual(payload["fixed_fields"][1], {"key": "phones", "label": "Telefoane", "editable": True, "read_only": False})
+        self.assertEqual(payload["fixed_fields"][2], {"key": "custom_value_1_count", "label": "CV1", "editable": True, "read_only": False})
+        self.assertEqual(payload["fixed_fields"][6]["read_only"], True)
         self.assertEqual(payload["sources"][0]["key"], "meta_ads")
         self.assertEqual(payload["custom_fields"][0]["label"], "Appointments")
         self.assertEqual(payload["custom_fields"][1]["label"], "Custom Field 12")

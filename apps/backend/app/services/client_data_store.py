@@ -462,6 +462,7 @@ def _normalize_supported_source(source: str) -> str:
 def _row_to_daily_input_payload(row: tuple[object, ...] | None) -> dict[str, object] | None:
     if row is None:
         return None
+    has_extended_daily_columns = len(row) >= 13
     return {
         "id": int(row[0]),
         "client_id": int(row[1]),
@@ -472,8 +473,10 @@ def _row_to_daily_input_payload(row: tuple[object, ...] | None) -> dict[str, obj
         "custom_value_1_count": int(row[6]),
         "custom_value_2_count": int(row[7]),
         "custom_value_3_amount": _to_decimal(row[8]),
-        "custom_value_5_amount": _to_decimal(row[9]),
-        "notes": str(row[10]) if row[10] is not None else None,
+        "custom_value_4_amount": _to_decimal(row[9] if has_extended_daily_columns else 0),
+        "custom_value_5_amount": _to_decimal(row[10] if has_extended_daily_columns else row[9]),
+        "sales_count": int(row[11] if has_extended_daily_columns else 0),
+        "notes": str(row[12] if has_extended_daily_columns else row[10]) if (row[12] if has_extended_daily_columns else row[10]) is not None else None,
     }
 
 
@@ -496,7 +499,9 @@ def get_or_create_daily_input(*, client_id: int, metric_date: date | str, source
                     custom_value_1_count,
                     custom_value_2_count,
                     custom_value_3_amount,
+                    custom_value_4_amount,
                     custom_value_5_amount,
+                    sales_count,
                     notes
                 FROM client_data_daily_inputs
                 WHERE client_id = %s AND metric_date = %s AND source = %s
@@ -522,9 +527,11 @@ def get_or_create_daily_input(*, client_id: int, metric_date: date | str, source
                     custom_value_1_count,
                     custom_value_2_count,
                     custom_value_3_amount,
+                    custom_value_4_amount,
                     custom_value_5_amount,
+                    sales_count,
                     notes
-                ) VALUES (%s, %s, %s, 0, 0, 0, 0, 0, 0, NULL)
+                ) VALUES (%s, %s, %s, 0, 0, 0, 0, 0, 0, 0, NULL)
                 RETURNING
                     id,
                     client_id,
@@ -535,7 +542,9 @@ def get_or_create_daily_input(*, client_id: int, metric_date: date | str, source
                     custom_value_1_count,
                     custom_value_2_count,
                     custom_value_3_amount,
+                    custom_value_4_amount,
                     custom_value_5_amount,
+                    sales_count,
                     notes
                 """,
                 (normalized_client_id, normalized_metric_date, normalized_source),
@@ -587,7 +596,9 @@ def upsert_daily_input(
     custom_value_1_count: int | None = None,
     custom_value_2_count: int | None = None,
     custom_value_3_amount: object | None = None,
+    custom_value_4_amount: object | None = None,
     custom_value_5_amount: object | None = None,
+    sales_count: int | None = None,
 ) -> dict[str, object]:
     updates: dict[str, object] = {}
     if leads is not None:
@@ -604,7 +615,15 @@ def upsert_daily_input(
             field_name="custom_value_3_amount",
             allow_negative=False,
         )
-    if custom_value_5_amount is not None:
+    if custom_value_4_amount is not None:
+        updates["custom_value_4_amount"] = _validate_decimal_amount(
+            custom_value_4_amount,
+            field_name="custom_value_4_amount",
+            allow_negative=False,
+        )
+    if sales_count is not None:
+        updates["sales_count"] = _validate_non_negative_int(sales_count, field_name="sales_count")
+    if custom_value_5_amount is not None:  # accepted for backward compatibility, then overwritten by formula
         updates["custom_value_5_amount"] = _validate_decimal_amount(
             custom_value_5_amount,
             field_name="custom_value_5_amount",
@@ -615,6 +634,9 @@ def upsert_daily_input(
         raise ValueError("At least one daily input field must be provided")
 
     base_row = get_or_create_daily_input(client_id=client_id, metric_date=metric_date, source=source)
+    effective_custom_value_3 = _to_decimal(updates.get("custom_value_3_amount", base_row.get("custom_value_3_amount")))
+    effective_custom_value_4 = _to_decimal(updates.get("custom_value_4_amount", base_row.get("custom_value_4_amount")))
+    updates["custom_value_5_amount"] = effective_custom_value_3 - effective_custom_value_4
 
     set_clauses: list[str] = []
     params: list[object] = []
@@ -624,7 +646,9 @@ def upsert_daily_input(
         "custom_value_1_count",
         "custom_value_2_count",
         "custom_value_3_amount",
+        "custom_value_4_amount",
         "custom_value_5_amount",
+        "sales_count",
     ):
         if column in updates:
             set_clauses.append(f"{column} = %s")
@@ -650,7 +674,9 @@ def upsert_daily_input(
                     custom_value_1_count,
                     custom_value_2_count,
                     custom_value_3_amount,
+                    custom_value_4_amount,
                     custom_value_5_amount,
+                    sales_count,
                     notes
                 """,
                 tuple(params),
@@ -702,7 +728,9 @@ def set_daily_input_notes(
                     custom_value_1_count,
                     custom_value_2_count,
                     custom_value_3_amount,
+                    custom_value_4_amount,
                     custom_value_5_amount,
+                    sales_count,
                     notes
                 """,
                 (normalized_notes, int(base_row["id"])),
@@ -742,7 +770,9 @@ def list_daily_inputs(
                     custom_value_1_count,
                     custom_value_2_count,
                     custom_value_3_amount,
+                    custom_value_4_amount,
                     custom_value_5_amount,
+                    sales_count,
                     notes
                 FROM client_data_daily_inputs
                 WHERE client_id = %s
@@ -806,7 +836,9 @@ def _get_daily_input_row_by_id(*, conn, daily_input_id: int) -> dict[str, object
                 custom_value_1_count,
                 custom_value_2_count,
                 custom_value_3_amount,
+                custom_value_4_amount,
                 custom_value_5_amount,
+                sales_count,
                 notes
             FROM client_data_daily_inputs
             WHERE id = %s

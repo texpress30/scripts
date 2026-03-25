@@ -368,76 +368,52 @@ class MediaBuyingStore:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
-                    WITH daily_inputs AS (
-                        SELECT
-                            di.metric_date,
-                            di.source,
-                            SUM(COALESCE(di.leads, 0))::bigint AS leads,
-                            SUM(COALESCE(di.phones, 0))::bigint AS phones,
-                            SUM(COALESCE(di.custom_value_1_count, 0))::bigint AS custom_value_1_count,
-                            SUM(COALESCE(di.custom_value_2_count, 0))::bigint AS custom_value_2_count,
-                            SUM(COALESCE(di.custom_value_3_amount, 0))::numeric(18, 4) AS custom_value_3_amount,
-                            SUM(COALESCE(di.custom_value_5_amount, 0))::numeric(18, 4) AS custom_value_5_amount
-                        FROM client_data_daily_inputs di
-                        WHERE {where_sql}
-                        GROUP BY di.metric_date, di.source
-                    ),
-                    sale_entries AS (
-                        SELECT
-                            di.metric_date,
-                            di.source,
-                            COUNT(se.id)::bigint AS sales_count,
-                            SUM(COALESCE(se.sale_price_amount, 0))::numeric(18, 4) AS revenue_amount,
-                            SUM(COALESCE(se.actual_price_amount, 0))::numeric(18, 4) AS cogs_amount
-                        FROM client_data_daily_inputs di
-                        JOIN client_data_sale_entries se ON se.daily_input_id = di.id
-                        WHERE {where_sql}
-                        GROUP BY di.metric_date, di.source
-                    )
                     SELECT
-                        inp.metric_date,
-                        inp.source,
-                        inp.leads,
-                        inp.phones,
-                        inp.custom_value_1_count,
-                        inp.custom_value_2_count,
-                        inp.custom_value_3_amount,
-                        inp.custom_value_5_amount,
-                        COALESCE(s.sales_count, 0) AS sales_count,
-                        COALESCE(s.revenue_amount, 0) AS revenue_amount,
-                        COALESCE(s.cogs_amount, 0) AS cogs_amount
-                    FROM daily_inputs inp
-                    LEFT JOIN sale_entries s
-                      ON s.metric_date = inp.metric_date
-                     AND s.source = inp.source
-                    ORDER BY inp.metric_date ASC, inp.source ASC
+                        di.metric_date,
+                        di.source,
+                        SUM(COALESCE(di.leads, 0))::bigint AS leads,
+                        SUM(COALESCE(di.phones, 0))::bigint AS phones,
+                        SUM(COALESCE(di.custom_value_1_count, 0))::bigint AS custom_value_1_count,
+                        SUM(COALESCE(di.custom_value_2_count, 0))::bigint AS custom_value_2_count,
+                        SUM(COALESCE(di.custom_value_3_amount, 0))::numeric(18, 4) AS custom_value_3_amount,
+                        SUM(COALESCE(di.custom_value_4_amount, 0))::numeric(18, 4) AS custom_value_4_amount,
+                        SUM(COALESCE(di.custom_value_5_amount, 0))::numeric(18, 4) AS custom_value_5_amount,
+                        SUM(COALESCE(di.sales_count, 0))::bigint AS sales_count,
+                        SUM(COALESCE(se.actual_price_amount, 0))::numeric(18, 4) AS cogs_amount
+                    FROM client_data_daily_inputs di
+                    LEFT JOIN client_data_sale_entries se ON se.daily_input_id = di.id
+                    WHERE {where_sql}
+                    GROUP BY di.metric_date, di.source
+                    ORDER BY di.metric_date ASC, di.source ASC
                     """,
-                    tuple(params + params),
+                    tuple(params),
                 )
                 rows = cur.fetchall() or []
 
         payload: list[dict[str, object]] = []
         for row in rows:
+            def _at(idx: int, default: object = 0) -> object:
+                return row[idx] if len(row) > idx else default
             metric_date = row[0] if isinstance(row[0], date) else None
             if metric_date is None:
                 continue
             source_key = str(row[1] or "").strip().lower()
             if not source_key:
                 source_key = "unknown"
-            revenue = float(row[9] or 0.0)
-            cogs = float(row[10] or 0.0)
+            revenue = float(_at(7, 0.0) or 0.0)
+            cogs = float(_at(10, 0.0) or 0.0)
             payload.append(
                 {
                     "date": metric_date,
                     "source": source_key,
                     "source_label": client_data_store.get_source_label(source_key) or source_key,
-                    "leads": int(row[2] or 0),
-                    "phones": int(row[3] or 0),
-                    "custom_value_1_count": int(row[4] or 0),
-                    "custom_value_2_count": int(row[5] or 0),
-                    "custom_value_3_amount_ron": float(row[6] or 0.0),
-                    "custom_value_5_amount_ron": float(row[7] or 0.0),
-                    "sales_count": int(row[8] or 0),
+                    "leads": int(_at(2, 0) or 0),
+                    "phones": int(_at(3, 0) or 0),
+                    "custom_value_1_count": int(_at(4, 0) or 0),
+                    "custom_value_2_count": int(_at(5, 0) or 0),
+                    "custom_value_3_amount_ron": float(_at(6, 0.0) or 0.0),
+                    "custom_value_5_amount_ron": float(_at(8, 0.0) or 0.0),
+                    "sales_count": int(_at(9, 0) or 0),
                     "custom_value_4_amount_ron": revenue,
                     "cogs_amount_ron": cogs,
                     "gross_profit_amount_ron": revenue - cogs,
@@ -619,7 +595,7 @@ class MediaBuyingStore:
                 "custom_value_1_count": int(sums["custom_value_1_count"]),
                 "custom_value_2_count": int(sums["custom_value_2_count"]),
                 "custom_value_3_amount_ron": round(sums["custom_value_3_amount_ron"], 2),
-                "custom_value_4_amount_ron": max(round(sums["custom_value_3_amount_ron"], 2) - round(sums["custom_value_5_amount_ron"], 2), 0.0),
+                "custom_value_4_amount_ron": round(sums["custom_value_4_amount_ron"], 2),
                 "custom_value_5_amount_ron": round(sums["custom_value_5_amount_ron"], 2),
                 "sales_count": int(sums["sales_count"]),
                 "custom_value_rate_1": self._safe_div(float(sums["sales_count"]), float(sums["custom_value_1_count"])),

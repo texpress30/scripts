@@ -82,7 +82,9 @@ type DailyRowDraft = {
   custom_value_1_count: string;
   custom_value_2_count: string;
   custom_value_3_amount: string;
+  custom_value_4_amount: string;
   custom_value_5_amount: string;
+  sales_count: string;
   notes: string;
   dynamicValues: Record<number, string>;
 };
@@ -204,7 +206,9 @@ function buildDailyDraft(row: DataTableRow): DailyRowDraft {
     custom_value_1_count: String(row.custom_value_1_count ?? ""),
     custom_value_2_count: String(row.custom_value_2_count ?? ""),
     custom_value_3_amount: String(row.custom_value_3_amount ?? ""),
+    custom_value_4_amount: String(row.custom_value_4_amount ?? ""),
     custom_value_5_amount: String(row.custom_value_5_amount ?? ""),
+    sales_count: String(row.sales_count ?? ""),
     notes: String(row.notes ?? ""),
     dynamicValues,
   };
@@ -219,7 +223,9 @@ function emptyDailyDraft(dateFrom: string): DailyRowDraft {
     custom_value_1_count: "",
     custom_value_2_count: "",
     custom_value_3_amount: "",
+    custom_value_4_amount: "",
     custom_value_5_amount: "",
+    sales_count: "",
     notes: "",
     dynamicValues: {},
   };
@@ -289,9 +295,14 @@ export default function SubDataPage() {
       || newRowActualPriceRaw,
   );
   const newRowHasCompleteSaleInput = newRowHasValidSalePrice && newRowHasValidActualPrice;
-  const newRowSalesCountValue = newRowHasCompleteSaleInput ? "1" : "";
-  const newRowDerivedCustomValue4Display = newRowHasValidSalePrice ? formatAmount(newRowSalePriceNumber, currencyCode) : "";
   const newRowDerivedGrossProfitDisplay = newRowHasCompleteSaleInput ? formatAmount(newRowSalePriceNumber - newRowActualPriceNumber, currencyCode) : "";
+  const newRowCv3Raw = newRowDraft.custom_value_3_amount.trim();
+  const newRowCv4Raw = newRowDraft.custom_value_4_amount.trim();
+  const newRowCv3Number = Number(newRowCv3Raw);
+  const newRowCv4Number = Number(newRowCv4Raw);
+  const newRowHasValidCv3 = newRowCv3Raw !== "" && Number.isFinite(newRowCv3Number);
+  const newRowHasValidCv4 = newRowCv4Raw !== "" && Number.isFinite(newRowCv4Number);
+  const newRowDerivedUnrealizedDisplay = (newRowHasValidCv3 && newRowHasValidCv4) ? formatAmount(newRowCv3Number - newRowCv4Number, currencyCode) : "";
 
   async function loadClientName() {
     const result = await apiRequest<{ items: ClientItem[] }>("/clients");
@@ -369,7 +380,9 @@ export default function SubDataPage() {
         custom_value_1_count: Number(draft.custom_value_1_count || 0),
         custom_value_2_count: Number(draft.custom_value_2_count || 0),
         custom_value_3_amount: Number(draft.custom_value_3_amount || 0),
-        custom_value_5_amount: Number(draft.custom_value_5_amount || 0),
+        custom_value_4_amount: Number(draft.custom_value_4_amount || 0),
+        custom_value_5_amount: Number((Number(draft.custom_value_3_amount || 0) - Number(draft.custom_value_4_amount || 0))),
+        sales_count: Number(draft.sales_count || 0),
         notes: draft.notes.trim() || null,
       };
 
@@ -659,9 +672,9 @@ export default function SubDataPage() {
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_1_count}</label><input aria-label="New row cv1" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_1_count} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_1_count: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_2_count}</label><input aria-label="New row cv2" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_2_count} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_2_count: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_3_amount}</label><input aria-label="New row cv3" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_3_amount} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_3_amount: e.target.value }))} /></div>
-                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_4_amount}</label><input aria-label="Custom Value 4 rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowDerivedCustomValue4Display} readOnly /></div>
-                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_5_amount}</label><input aria-label="New row cv5" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_5_amount} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_5_amount: e.target.value }))} /></div>
-                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Vânzări</label><input aria-label="Vânzări rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowSalesCountValue} readOnly /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_4_amount}</label><input aria-label="Custom Value 4 rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_4_amount} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_4_amount: e.target.value }))} /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_5_amount}</label><input aria-label="New row cv5" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowDerivedUnrealizedDisplay} readOnly /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Vânzări</label><input aria-label="Vânzări rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.sales_count} onChange={(e) => setNewRowDraft((p) => ({ ...p, sales_count: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Marcă</label><input aria-label="Marcă rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.brand} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, brand: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Model</label><input aria-label="Model rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.model} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, model: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Preț vânzare</label><input aria-label="Preț vânzare rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.sale_price_amount} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, sale_price_amount: e.target.value }))} /></div>

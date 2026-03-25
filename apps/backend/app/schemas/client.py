@@ -141,7 +141,7 @@ class ClientDataConfigResponse(BaseModel):
     client_id: int
     currency_code: str | None = None
     display_currency: str | None = None
-    fixed_fields: list[dict[str, str]] = Field(default_factory=list)
+    fixed_fields: list[dict[str, object]] = Field(default_factory=list)
     sources: list[ClientDataSourceItem]
     custom_fields: list[ClientDataCustomFieldItem]
     derived_fields: list[ClientDataDerivedField]
@@ -192,6 +192,8 @@ class ClientDataDailyInputUpsertRequest(BaseModel):
     custom_value_1_count: int | None = None
     custom_value_2_count: int | None = None
     custom_value_3_amount: float | int | str | None = None
+    custom_value_4_amount: float | int | str | None = None
+    sales_count: int | None = None
     custom_value_5_amount: float | int | str | None = None
     notes: str | None = None
 
@@ -206,7 +208,9 @@ class ClientDataDailyInputWriteResponse(BaseModel):
     custom_value_1_count: int
     custom_value_2_count: int
     custom_value_3_amount: str
+    custom_value_4_amount: str
     custom_value_5_amount: str
+    sales_count: int
     notes: str | None = None
 
 
