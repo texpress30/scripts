@@ -606,3 +606,6 @@
 - 2026-03-24: Când userul limitează explicit taskul la un sub-form (`Adaugă rând`), nu ating alte zone (tabel principal, Media Buying/Tracker, backend) și implementez strict câmpurile/calculul/salvarea cerute.
 - 2026-03-24: Pentru feedback UI strict pe formular, tratez explicit cerințele de ordine/label/blank-state înainte de logică suplimentară și evit complet placeholder/default-uri vizibile dacă userul cere formular clasic.
 - 2026-03-24: Când business rule-ul corect schimbă source-of-truth (manual fields vs derivat din sale entries), aliniez simultan store+API+reporting readers+UI și testele, ca să evit inconsistențe între pagini.
+- 2026-03-26: Pentru flow canonic Data, validez explicit `source` atât în frontend (pre-submit), cât și în backend (422 clar cu allowed values), ca să evit false-success când config/fallback trimite chei invalide.
+- 2026-03-26: La cleanup-ul Data page, elimin complet atât UI-ul cât și state/handlers dedicate fluxurilor legacy (vânzări/mențiuni) și păstrez strict payloadul canonic editabil, cu teste care verifică explicit absența controalelor scoase.
+- 2026-03-26: Pentru endpoint-ul canonic daily-input, resping explicit câmpurile legacy (422) și evit orice side-effect implicit pe sale_entries/derivări, ca să nu apară ștergeri ascunse la save standard.

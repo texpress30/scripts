@@ -599,6 +599,7 @@ def upsert_daily_input(
     custom_value_4_amount: object | None = None,
     custom_value_5_amount: object | None = None,
     sales_count: int | None = None,
+    recompute_custom_value_5: bool = True,
 ) -> dict[str, object]:
     updates: dict[str, object] = {}
     if leads is not None:
@@ -634,9 +635,10 @@ def upsert_daily_input(
         raise ValueError("At least one daily input field must be provided")
 
     base_row = get_or_create_daily_input(client_id=client_id, metric_date=metric_date, source=source)
-    effective_custom_value_3 = _to_decimal(updates.get("custom_value_3_amount", base_row.get("custom_value_3_amount")))
-    effective_custom_value_4 = _to_decimal(updates.get("custom_value_4_amount", base_row.get("custom_value_4_amount")))
-    updates["custom_value_5_amount"] = effective_custom_value_3 - effective_custom_value_4
+    if recompute_custom_value_5:
+        effective_custom_value_3 = _to_decimal(updates.get("custom_value_3_amount", base_row.get("custom_value_3_amount")))
+        effective_custom_value_4 = _to_decimal(updates.get("custom_value_4_amount", base_row.get("custom_value_4_amount")))
+        updates["custom_value_5_amount"] = effective_custom_value_3 - effective_custom_value_4
 
     set_clauses: list[str] = []
     params: list[object] = []

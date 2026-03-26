@@ -1,3 +1,39 @@
+# TODO — Backend canonical contract hardening for daily-input save (2026-03-26)
+
+- [x] Sync workspace și recitesc fișierele backend/ teste relevante înainte de modificări.
+- [x] Restrâng contractul `PUT /clients/{client_id}/data/daily-input` la câmpuri canonice + resping explicit câmpuri legacy (422).
+- [x] Elimin side-effect-urile implicite de replace sale_entries/notes/recalc legacy din canonical save path.
+- [x] Adaug teste backend pentru: legacy rejected, sale_entries intacte la canonical save, derivări read-side intacte, regression Data->MB->MT.
+- [x] Rulez validări țintite și documentez rezultatul.
+
+## Review
+- [x] Confirm separare explicită între canonical daily save și flow-urile legacy sale entries.
+- [x] Confirm canonical save nu mai poate șterge implicit sale entries istorice.
+
+# TODO — Data page cleanup: remove interactive sales/notes controls (2026-03-26)
+
+- [x] Sync workspace și recitesc fișierele relevante înainte de modificări.
+- [x] Identific și elimin UI + logică frontend pentru add/edit/delete vânzări și mențiuni din Data page.
+- [x] Păstrez intact fluxul canonic de salvare/citire (metric_date, source, fixed fields, dynamic custom values).
+- [x] Adaug/ajustez teste focalizate pentru absența controalelor eliminate și non-regresie flux canonic.
+- [x] Rulez validări țintite și documentez rezultatul.
+
+## Review
+- [x] Confirm fără redesign/refactor extins și fără modificări Media Buying/Media Tracker în afara build/tests.
+- [x] Confirm fixul Task 1 (`source` validation explicit) rămâne activ și ne-regresat.
+
+# TODO — Stabilizare flux canonic Data save/read + propagare MB/MT (2026-03-26)
+
+- [x] Sync workspace și re-citire fișiere țintă înainte de modificări.
+- [x] Analiză end-to-end save/read pentru Data + Media Buying + Media Tracker pe fișierele cerute.
+- [x] Implement fix minim și sigur pentru persistența canonică (inclusiv validare `source` fără false success).
+- [x] Adăugare/ajustare teste backend roundtrip (data/table, media-buying lead table, media-tracker worksheet, caz source invalid).
+- [x] Rulare teste țintite + review final + documentare rezultat.
+
+## Review
+- [x] Confirm fără redesign/refactor extins și fără cleanup UI mare.
+- [x] Confirm același rând salvat în Data apare în MB și MT prin sursa canonică backend.
+
 # TODO — Final stabilization Data canonical flow (2026-03-25)
 
 - [x] Confirm workspace up-to-date local și verific `git status`/`git diff`.
