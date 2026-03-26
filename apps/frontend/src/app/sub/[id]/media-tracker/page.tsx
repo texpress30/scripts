@@ -203,6 +203,37 @@ export default function SubMediaTrackerPage() {
     }
   }
 
+  async function saveEurRonRate() {
+    if (!Number.isFinite(clientId)) return;
+    const normalized = eurRonDraft.trim();
+    const parsed = Number(normalized);
+    if (!normalized || !Number.isFinite(parsed) || parsed <= 0) {
+      setEurRonError("Introdu un curs EUR/RON valid (număr pozitiv).");
+      setEurRonMessage("");
+      return;
+    }
+
+    setEurRonSaving(true);
+    setEurRonError("");
+    setEurRonMessage("");
+    try {
+      await apiRequest<EurRonRateUpdateResponse>(`/clients/${clientId}/media-tracker/worksheet/eur-ron-rate`, {
+        method: "PUT",
+        body: JSON.stringify({
+          granularity: worksheetGranularity,
+          anchor_date: worksheetAnchorDate,
+          value: parsed,
+        }),
+      });
+      await loadWorksheet();
+      setEurRonMessage("Cursul EUR/RON a fost salvat.");
+    } catch (err) {
+      setEurRonError(err instanceof Error ? err.message : "Nu am putut salva cursul EUR/RON.");
+    } finally {
+      setEurRonSaving(false);
+    }
+  }
+
   return (
     <ProtectedPage>
       <AppShell title={null}>
