@@ -211,8 +211,8 @@ class ClientDataDailyInputUpsertRequest(BaseModel):
     custom_value_1_count: int | None = None
     custom_value_2_count: int | None = None
     custom_value_3_amount: float | int | str | None = None
-    custom_value_4_amount: float | int | str | None = Field(default=None, description="Legacy field: rejected by canonical daily-input save")
-    sales_count: int | None = Field(default=None, description="Legacy field: rejected by canonical daily-input save")
+    custom_value_4_amount: float | int | str | None = None
+    sales_count: int | None = None
     custom_value_5_amount: float | int | str | None = Field(default=None, description="Legacy field: rejected by canonical daily-input save")
     notes: str | None = Field(default=None, description="Legacy field: rejected by canonical daily-input save")
     dynamic_custom_values: list[ClientDataDynamicCustomValueUpsertItem] | None = None

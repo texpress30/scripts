@@ -577,9 +577,7 @@ _CANONICAL_DAILY_INPUT_DISALLOWED_FIELDS = {
     "sale_actual_price_amount",
     "sale_notes",
     "sale_sort_order",
-    "custom_value_4_amount",
     "custom_value_5_amount",
-    "sales_count",
 }
 
 
@@ -590,7 +588,7 @@ def _reject_legacy_daily_input_fields_or_422(payload: ClientDataDailyInputUpsert
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
                 "Canonical daily-input save accepts only metric_date, source, leads, phones, "
-                "custom_value_1_count, custom_value_2_count, custom_value_3_amount and dynamic_custom_values. "
+                "custom_value_1_count, custom_value_2_count, custom_value_3_amount, custom_value_4_amount, sales_count and dynamic_custom_values. "
                 f"Unsupported fields: {blocked}"
             ),
         )
@@ -659,9 +657,7 @@ def _map_daily_custom_value_write_payload(row: dict[str, object]) -> dict[str, o
 
 def _build_client_data_derived_fields(*, media_buying_config: dict[str, object]) -> list[dict[str, str]]:
     return [
-        {"key": "custom_value_4_amount", "label": str(media_buying_config.get("custom_label_4") or "Custom Value 4"), "value_kind": "amount"},
         {"key": "custom_value_5_amount", "label": str(media_buying_config.get("custom_label_5") or "Custom Value 5"), "value_kind": "amount"},
-        {"key": "sales_count", "label": "Vânzări", "value_kind": "count"},
         {"key": "revenue_amount", "label": "Venit", "value_kind": "amount"},
         {"key": "cogs_amount", "label": "COGS", "value_kind": "amount"},
         {"key": "gross_profit_amount", "label": "Profit Brut", "value_kind": "amount"},
@@ -685,6 +681,8 @@ def get_client_data_config(client_id: int, user: AuthUser = Depends(get_current_
         {"key": "custom_value_1_count", "label": str(media_buying_config.get("custom_label_1") or "Custom Value 1"), "editable": True, "read_only": False},
         {"key": "custom_value_2_count", "label": str(media_buying_config.get("custom_label_2") or "Custom Value 2"), "editable": True, "read_only": False},
         {"key": "custom_value_3_amount", "label": str(media_buying_config.get("custom_label_3") or "Custom Value 3"), "editable": True, "read_only": False},
+        {"key": "custom_value_4_amount", "label": str(media_buying_config.get("custom_label_4") or "Custom Value 4"), "editable": True, "read_only": False},
+        {"key": "sales_count", "label": "Vânzări", "editable": True, "read_only": False},
     ]
     derived_fields = _build_client_data_derived_fields(media_buying_config=media_buying_config)
 
@@ -754,7 +752,7 @@ def get_client_data_table(
             sale_entries = []
 
         custom_value_3_amount = _to_decimal(daily_input["custom_value_3_amount"])
-        custom_value_4_amount = client_data_store.compute_custom_value_4(sale_entries)
+        custom_value_4_amount = _to_decimal(daily_input["custom_value_4_amount"])
         custom_value_5_amount = custom_value_3_amount - custom_value_4_amount
 
         source_key = str(daily_input["source"])
@@ -773,7 +771,7 @@ def get_client_data_table(
                 "custom_value_4_amount": _decimal_to_string(custom_value_4_amount),
                 "custom_value_5_amount": _decimal_to_string(custom_value_5_amount),
                 "notes": daily_input.get("notes"),
-                "sales_count": int(client_data_store.compute_sales_count(sale_entries)),
+                "sales_count": int(daily_input["sales_count"]),
                 "revenue_amount": _decimal_to_string(client_data_store.compute_revenue(sale_entries)),
                 "cogs_amount": _decimal_to_string(client_data_store.compute_cogs(sale_entries)),
                 "gross_profit_amount": _decimal_to_string(client_data_store.compute_gross_profit(sale_entries)),
@@ -817,6 +815,8 @@ def upsert_client_data_daily_input(
         "custom_value_1_count",
         "custom_value_2_count",
         "custom_value_3_amount",
+        "custom_value_4_amount",
+        "sales_count",
     ):
         value = getattr(payload, key)
         if value is not None:
@@ -846,7 +846,7 @@ def upsert_client_data_daily_input(
                 client_id=client_id,
                 metric_date=payload.metric_date,
                 source=source_key,
-                recompute_custom_value_5=False,
+                recompute_custom_value_5=True,
                 **numeric_updates,
             )
         if dynamic_values_provided:

@@ -1,3 +1,17 @@
+# TODO — Data canonical summary fields editable again (2026-03-26)
+
+- [x] Sync workspace și recitesc fișierele backend/frontend/teste relevante înainte de modificări.
+- [x] Fac `custom_value_4_amount` și `sales_count` din nou câmpuri canonice editabile în API + config + UI.
+- [x] Păstrez `custom_value_5_amount` derivat/read-only și recalc automat din `custom_value_3_amount - custom_value_4_amount`.
+- [x] Mențin slotul unic de vânzare separat de summary fields și fără câmpuri legacy în payload-ul canonic.
+- [x] Ajustez teste frontend/backend pentru noile câmpuri canonice + non-regresie delete.
+- [x] Rulez validările țintite și documentez limitările de mediu.
+
+## Review
+- [x] Confirm `Val. Vândută` și `Vânzări` sunt editabile în Add Row + Edit row.
+- [x] Confirm `Val. Nerealizată` rămâne read-only derivat.
+- [x] Confirm flow-ul de delete per-rând rămâne activ și ne-regresat.
+
 # TODO — Data page reorder + per-row delete endpoint (2026-03-26)
 
 - [x] Sync workspace și recitesc fișierele frontend/backend relevante înainte de modificări.

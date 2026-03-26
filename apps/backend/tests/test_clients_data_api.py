@@ -666,16 +666,14 @@ class ClientsDataApiTests(unittest.TestCase):
         self.assertEqual(payload["fixed_fields"][0], {"key": "leads", "label": "Lead-uri", "editable": True, "read_only": False})
         self.assertEqual(payload["fixed_fields"][1], {"key": "phones", "label": "Telefoane", "editable": True, "read_only": False})
         self.assertEqual(payload["fixed_fields"][2], {"key": "custom_value_1_count", "label": "CV1", "editable": True, "read_only": False})
-        self.assertEqual([item["key"] for item in payload["fixed_fields"]], ["leads", "phones", "custom_value_1_count", "custom_value_2_count", "custom_value_3_amount"])
+        self.assertEqual([item["key"] for item in payload["fixed_fields"]], ["leads", "phones", "custom_value_1_count", "custom_value_2_count", "custom_value_3_amount", "custom_value_4_amount", "sales_count"])
         self.assertEqual(payload["sources"][0]["key"], "meta_ads")
         self.assertEqual(payload["custom_fields"][0]["label"], "Appointments")
         self.assertEqual(payload["custom_fields"][1]["label"], "Custom Field 12")
         self.assertEqual(
             payload["derived_fields"],
             [
-                {"key": "custom_value_4_amount", "label": "CV4", "value_kind": "amount"},
                 {"key": "custom_value_5_amount", "label": "CV5", "value_kind": "amount"},
-                {"key": "sales_count", "label": "Vânzări", "value_kind": "count"},
                 {"key": "revenue_amount", "label": "Venit", "value_kind": "amount"},
                 {"key": "cogs_amount", "label": "COGS", "value_kind": "amount"},
                 {"key": "gross_profit_amount", "label": "Profit Brut", "value_kind": "amount"},
@@ -699,8 +697,8 @@ class ClientsDataApiTests(unittest.TestCase):
         self.assertEqual(payload["rows"][1]["revenue_amount"], "150")
         self.assertEqual(payload["rows"][1]["cogs_amount"], "90")
         self.assertEqual(payload["rows"][1]["gross_profit_amount"], "60")
-        self.assertEqual(payload["rows"][1]["custom_value_4_amount"], "150")
-        self.assertEqual(payload["rows"][1]["custom_value_5_amount"], "-139.50")
+        self.assertEqual(payload["rows"][1]["custom_value_4_amount"], "8.50")
+        self.assertEqual(payload["rows"][1]["custom_value_5_amount"], "2.00")
         self.assertEqual(payload["rows"][1]["sale_entries"][0]["brand"], "VW")
         self.assertEqual(payload["rows"][1]["custom_values"][0]["custom_field_id"], 11)
         self.assertEqual(payload["rows"][1]["custom_values"][1]["custom_field_id"], 12)
@@ -741,6 +739,20 @@ class ClientsDataApiTests(unittest.TestCase):
         self.assertEqual(mixed["custom_value_2_count"], 2)
         self.assertEqual(mixed["custom_value_3_amount"], "99")
 
+        summary = clients_api.upsert_client_data_daily_input(
+            client_id=self.client_id,
+            payload=ClientDataDailyInputUpsertRequest(
+                metric_date=date(2026, 3, 24),
+                source="meta_ads",
+                custom_value_4_amount=11,
+                sales_count=6,
+            ),
+            user=self.user,
+        )
+        self.assertEqual(summary["custom_value_4_amount"], "11")
+        self.assertEqual(summary["sales_count"], 6)
+        self.assertEqual(summary["custom_value_5_amount"], "88")
+
     def test_put_daily_input_rejects_legacy_fields_with_explicit_422(self):
         cases = [
             ClientDataDailyInputUpsertRequest(metric_date=date(2026, 3, 24), source="meta_ads", notes="legacy"),
@@ -757,7 +769,7 @@ class ClientsDataApiTests(unittest.TestCase):
                 sale_price_amount=120,
                 sale_actual_price_amount=20,
             ),
-            ClientDataDailyInputUpsertRequest(metric_date=date(2026, 3, 24), source="meta_ads", custom_value_4_amount=10),
+            ClientDataDailyInputUpsertRequest(metric_date=date(2026, 3, 24), source="meta_ads", custom_value_5_amount=10),
         ]
         for payload in cases:
             with self.assertRaises(HTTPException) as ctx:
@@ -796,7 +808,7 @@ class ClientsDataApiTests(unittest.TestCase):
         target = next(row for row in table["rows"] if int(row["daily_input_id"]) == 101)
         self.assertEqual(target["sales_count"], 2)
         self.assertEqual(target["revenue_amount"], "150")
-        self.assertEqual(target["custom_value_4_amount"], "150")
+        self.assertEqual(target["custom_value_4_amount"], "8.50")
 
     def test_put_daily_input_with_dynamic_custom_values_replaces_values(self):
         _ = clients_api.upsert_client_data_daily_input(
@@ -995,6 +1007,8 @@ class ClientsDataApiTests(unittest.TestCase):
                 custom_value_1_count=2,
                 custom_value_2_count=1,
                 custom_value_3_amount=120,
+                custom_value_4_amount=50,
+                sales_count=4,
                 dynamic_custom_values=[{"custom_field_id": 11, "numeric_value": 5}],
             ),
             user=self.user,
@@ -1008,6 +1022,8 @@ class ClientsDataApiTests(unittest.TestCase):
         )
         target_data_row = next(row for row in data_table["rows"] if row["metric_date"] == "2025-10-12" and row["source"] == "meta_ads")
         self.assertEqual(target_data_row["leads"], 7)
+        self.assertEqual(target_data_row["custom_value_4_amount"], "50")
+        self.assertEqual(target_data_row["sales_count"], 4)
         self.assertEqual(target_data_row["dynamic_custom_values"][0]["custom_field_id"], 11)
 
         lead_table = clients_api.get_media_buying_lead_table(
@@ -1018,6 +1034,8 @@ class ClientsDataApiTests(unittest.TestCase):
         )
         target_day = next(row for row in lead_table["days"] if row["date"] == "2025-10-12")
         self.assertEqual(target_day["leads"], 7)
+        self.assertEqual(float(target_day["custom_value_4_amount_ron"]), 50.0)
+        self.assertEqual(int(target_day["sales_count"]), 4)
 
         worksheet = clients_api.get_media_tracker_weekly_worksheet_foundation(
             client_id=self.client_id,

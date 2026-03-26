@@ -81,6 +81,8 @@ type DailyRowDraft = {
   custom_value_1_count: string;
   custom_value_2_count: string;
   custom_value_3_amount: string;
+  custom_value_4_amount: string;
+  sales_count: string;
   dynamicValues: Record<number, string>;
 };
 
@@ -97,6 +99,8 @@ const FIXED_FIELD_FALLBACK_LABELS: Record<string, string> = {
   custom_value_1_count: "Custom 1",
   custom_value_2_count: "Custom 2",
   custom_value_3_amount: "Custom 3",
+  custom_value_4_amount: "Custom 4",
+  sales_count: "Vânzări",
 };
 
 const DERIVED_FIELD_FALLBACK_LABELS: Record<string, string> = {
@@ -201,6 +205,8 @@ function buildDailyDraft(row: DataTableRow): DailyRowDraft {
     custom_value_1_count: String(row.custom_value_1_count ?? ""),
     custom_value_2_count: String(row.custom_value_2_count ?? ""),
     custom_value_3_amount: String(row.custom_value_3_amount ?? ""),
+    custom_value_4_amount: String(row.custom_value_4_amount ?? ""),
+    sales_count: String(row.sales_count ?? ""),
     dynamicValues,
   };
 }
@@ -214,6 +220,8 @@ function emptyDailyDraft(dateFrom: string): DailyRowDraft {
     custom_value_1_count: "",
     custom_value_2_count: "",
     custom_value_3_amount: "",
+    custom_value_4_amount: "",
+    sales_count: "",
     dynamicValues: {},
   };
 }
@@ -274,20 +282,16 @@ export default function SubDataPage() {
   const newRowCv3Raw = newRowDraft.custom_value_3_amount.trim();
   const newRowCv3Number = Number(newRowCv3Raw);
   const newRowHasValidCv3 = newRowCv3Raw !== "" && Number.isFinite(newRowCv3Number);
+  const newRowCv4Raw = newRowDraft.custom_value_4_amount.trim();
+  const newRowCv4Number = Number(newRowCv4Raw);
+  const newRowHasValidCv4 = newRowCv4Raw !== "" && Number.isFinite(newRowCv4Number);
   const newRowSalePriceRaw = newRowSaleDraft.sale_price_amount.trim();
   const newRowActualPriceRaw = newRowSaleDraft.actual_price_amount.trim();
   const newRowSalePriceNumber = Number(newRowSalePriceRaw);
   const newRowActualPriceNumber = Number(newRowActualPriceRaw);
-  const newRowSaleHasAnyInput = [
-    newRowSaleDraft.brand.trim(),
-    newRowSaleDraft.model.trim(),
-    newRowSalePriceRaw,
-    newRowActualPriceRaw,
-  ].some(Boolean);
   const newRowSaleHasValidNumbers = newRowSalePriceRaw !== "" && newRowActualPriceRaw !== "" && Number.isFinite(newRowSalePriceNumber) && Number.isFinite(newRowActualPriceNumber);
-  const newRowDerivedSoldAmount = newRowSaleHasValidNumbers ? newRowSalePriceNumber : 0;
+  const newRowDerivedSoldAmount = newRowHasValidCv4 ? newRowCv4Number : 0;
   const newRowDerivedUnrealizedAmount = newRowHasValidCv3 ? (newRowCv3Number - newRowDerivedSoldAmount) : 0;
-  const newRowDerivedSalesCount = newRowSaleHasAnyInput && newRowSaleHasValidNumbers ? 1 : 0;
   const newRowDerivedGrossProfit = newRowSaleHasValidNumbers ? (newRowSalePriceNumber - newRowActualPriceNumber) : 0;
 
   async function loadClientName() {
@@ -404,6 +408,8 @@ export default function SubDataPage() {
         custom_value_1_count: Number(draft.custom_value_1_count || 0),
         custom_value_2_count: Number(draft.custom_value_2_count || 0),
         custom_value_3_amount: Number(draft.custom_value_3_amount || 0),
+        custom_value_4_amount: Number(draft.custom_value_4_amount || 0),
+        sales_count: Number(draft.sales_count || 0),
         dynamic_custom_values: dynamicCustomValuesPayload,
       };
 
@@ -656,9 +662,9 @@ export default function SubDataPage() {
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_1_count}</label><input aria-label="New row cv1" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_1_count} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_1_count: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_2_count}</label><input aria-label="New row cv2" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_2_count} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_2_count: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_3_amount}</label><input aria-label="New row cv3" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_3_amount} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_3_amount: e.target.value }))} /></div>
-                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{derivedLabels.custom_value_4_amount}</label><input aria-label="Val. vândută rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowSaleHasValidNumbers ? formatAmount(newRowDerivedSoldAmount, currencyCode) : ""} readOnly /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_4_amount}</label><input aria-label="Val. vândută rând nou" type="number" step="any" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_4_amount} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_4_amount: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{derivedLabels.custom_value_5_amount}</label><input aria-label="Val. nerealizată rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowHasValidCv3 ? formatAmount(newRowDerivedUnrealizedAmount, currencyCode) : ""} readOnly /></div>
-                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{derivedLabels.sales_count}</label><input aria-label="Vânzări rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowSaleHasAnyInput ? String(newRowDerivedSalesCount) : ""} readOnly /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.sales_count}</label><input aria-label="Vânzări rând nou" type="number" step="1" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.sales_count} onChange={(e) => setNewRowDraft((p) => ({ ...p, sales_count: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Marcă</label><input aria-label="Marcă rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.brand} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, brand: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Model</label><input aria-label="Model rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.model} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, model: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Preț vânzare</label><input aria-label="Preț vânzare rând nou" type="number" step="any" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.sale_price_amount} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, sale_price_amount: e.target.value }))} /></div>
@@ -702,9 +708,9 @@ export default function SubDataPage() {
                     <th className="border border-slate-200 px-3 py-2">{fixedLabels.custom_value_1_count}</th>
                     <th className="border border-slate-200 px-3 py-2">{fixedLabels.custom_value_2_count}</th>
                     <th className="border border-slate-200 px-3 py-2">{fixedLabels.custom_value_3_amount}</th>
-                    <th className="border border-slate-200 px-3 py-2">{derivedLabels.custom_value_4_amount}</th>
+                    <th className="border border-slate-200 px-3 py-2">{fixedLabels.custom_value_4_amount}</th>
                     <th className="border border-slate-200 px-3 py-2">{derivedLabels.custom_value_5_amount}</th>
-                    <th className="border border-slate-200 px-3 py-2">{derivedLabels.sales_count}</th>
+                    <th className="border border-slate-200 px-3 py-2">{fixedLabels.sales_count}</th>
                     <th className="border border-slate-200 px-3 py-2">Marcă</th>
                     <th className="border border-slate-200 px-3 py-2">Model</th>
                     <th className="border border-slate-200 px-3 py-2">Preț vânzare</th>
@@ -734,9 +740,9 @@ export default function SubDataPage() {
                           <td className="border border-slate-200 px-3 py-2">{isEditing ? <input className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_1_count} onChange={(e) => setEditingRowDraft((p) => (p ? { ...p, custom_value_1_count: e.target.value } : p))} /> : formatCount(row.custom_value_1_count)}</td>
                           <td className="border border-slate-200 px-3 py-2">{isEditing ? <input className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_2_count} onChange={(e) => setEditingRowDraft((p) => (p ? { ...p, custom_value_2_count: e.target.value } : p))} /> : formatCount(row.custom_value_2_count)}</td>
                           <td className="border border-slate-200 px-3 py-2">{isEditing ? <input className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_3_amount} onChange={(e) => setEditingRowDraft((p) => (p ? { ...p, custom_value_3_amount: e.target.value } : p))} /> : formatAmount(row.custom_value_3_amount, currencyCode)}</td>
-                          <td className="border border-slate-200 px-3 py-2">{formatAmount(derived.custom_value_4_amount ?? row.custom_value_4_amount, currencyCode)}</td>
+                          <td className="border border-slate-200 px-3 py-2">{isEditing ? <input aria-label={`Editează val vândută ${rowKey}`} className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_4_amount} onChange={(e) => setEditingRowDraft((p) => (p ? { ...p, custom_value_4_amount: e.target.value } : p))} /> : formatAmount(row.custom_value_4_amount, currencyCode)}</td>
                           <td className="border border-slate-200 px-3 py-2">{formatAmount(derived.custom_value_5_amount ?? row.custom_value_5_amount, currencyCode)}</td>
-                          <td className="border border-slate-200 px-3 py-2">{formatCount(derived.sales_count ?? row.sales_count)}</td>
+                          <td className="border border-slate-200 px-3 py-2">{isEditing ? <input aria-label={`Editează vânzări ${rowKey}`} className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.sales_count} onChange={(e) => setEditingRowDraft((p) => (p ? { ...p, sales_count: e.target.value } : p))} /> : formatCount(row.sales_count)}</td>
                           <td className="border border-slate-200 px-3 py-2">{firstSaleEntry?.brand || "—"}</td>
                           <td className="border border-slate-200 px-3 py-2">{firstSaleEntry?.model || "—"}</td>
                           <td className="border border-slate-200 px-3 py-2">{formatAmount(firstSaleEntry?.sale_price_amount, currencyCode)}</td>

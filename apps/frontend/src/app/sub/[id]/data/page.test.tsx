@@ -43,11 +43,11 @@ function setupApiMock() {
           { key: "custom_value_1_count", label: "Aplicații" },
           { key: "custom_value_2_count", label: "Aprobări" },
           { key: "custom_value_3_amount", label: "Val. Aprobată" },
+          { key: "custom_value_4_amount", label: "Val. Vândută" },
+          { key: "sales_count", label: "Vânzări" },
         ],
         derived_fields: [
-          { key: "custom_value_4_amount", label: "Val. Vândută", value_kind: "amount" },
           { key: "custom_value_5_amount", label: "Val. Nerealizată", value_kind: "amount" },
-          { key: "sales_count", label: "Vânzări", value_kind: "count" },
           { key: "revenue_amount", label: "Venit", value_kind: "amount" },
           { key: "cogs_amount", label: "COGS", value_kind: "amount" },
           { key: "gross_profit_amount", label: "Profit Brut", value_kind: "amount" },
@@ -70,11 +70,11 @@ function setupApiMock() {
             custom_value_1_count: 1,
             custom_value_2_count: 2,
             custom_value_3_amount: 100,
+            custom_value_4_amount: 80,
+            sales_count: 1,
             custom_value_5_amount: 20,
             derived: {
-              custom_value_4_amount: 80,
               custom_value_5_amount: 20,
-              sales_count: 1,
               gross_profit_amount: 50,
             },
             sale_entries: [
@@ -128,6 +128,8 @@ describe("SubDataPage canonical-only UI", () => {
     fireEvent.change(screen.getByLabelText("New row cv1"), { target: { value: "2" } });
     fireEvent.change(screen.getByLabelText("New row cv2"), { target: { value: "1" } });
     fireEvent.change(screen.getByLabelText("New row cv3"), { target: { value: "120" } });
+    fireEvent.change(screen.getByLabelText("Val. vândută rând nou"), { target: { value: "77" } });
+    fireEvent.change(screen.getByLabelText("Vânzări rând nou"), { target: { value: "3" } });
     fireEvent.change(screen.getByLabelText("Marcă rând nou"), { target: { value: "Toyota" } });
     fireEvent.change(screen.getByLabelText("Model rând nou"), { target: { value: "Corolla" } });
     fireEvent.change(screen.getByLabelText("Preț vânzare rând nou"), { target: { value: "100" } });
@@ -150,6 +152,9 @@ describe("SubDataPage canonical-only UI", () => {
     expect(putBody).toContain('"metric_date":"2026-03-12"');
     expect(putBody).toContain('"source":"meta_ads"');
     expect(putBody).not.toContain("sale_entries");
+    expect(putBody).toContain('"custom_value_4_amount":77');
+    expect(putBody).toContain('"sales_count":3');
+    expect(putBody).not.toContain("custom_value_5_amount");
     expect(putBody).not.toContain("sale_price_amount");
     expect(putBody).not.toContain("sale_actual_price_amount");
     expect(putBody).not.toContain("sale_brand");
@@ -201,9 +206,9 @@ describe("SubDataPage canonical-only UI", () => {
       "Sursa",
     ]);
 
-    expect(screen.getByLabelText("Val. vândută rând nou")).toHaveAttribute("readonly");
+    expect(screen.getByLabelText("Val. vândută rând nou")).not.toHaveAttribute("readonly");
     expect(screen.getByLabelText("Val. nerealizată rând nou")).toHaveAttribute("readonly");
-    expect(screen.getByLabelText("Vânzări rând nou")).toHaveAttribute("readonly");
+    expect(screen.getByLabelText("Vânzări rând nou")).not.toHaveAttribute("readonly");
     expect(screen.getByLabelText("Profit brut rând nou")).toHaveAttribute("readonly");
 
     expect(screen.getByRole("columnheader", { name: "Val. Vândută" })).toBeInTheDocument();
@@ -234,6 +239,31 @@ describe("SubDataPage canonical-only UI", () => {
     });
 
     confirmSpy.mockRestore();
+  });
+
+  it("allows editing Val. Vândută and Vânzări for existing row", async () => {
+    render(<SubDataPage />);
+    await screen.findByRole("heading", { name: "Data - Active Life Therapy" });
+    fireEvent.click(screen.getByRole("button", { name: "Editează" }));
+
+    const soldInput = await screen.findByLabelText(/Editează val vândută/);
+    const salesInput = await screen.findByLabelText(/Editează vânzări/);
+    fireEvent.change(soldInput, { target: { value: "99" } });
+    fireEvent.change(salesInput, { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(apiMock.apiRequest).toHaveBeenCalledWith(
+        "/clients/96/data/daily-input",
+        expect.objectContaining({
+          method: "PUT",
+          body: expect.stringContaining('"custom_value_4_amount":99'),
+        }),
+      );
+    });
+
+    const putCall = apiMock.apiRequest.mock.calls.find((call: any[]) => call[0] === "/clients/96/data/daily-input");
+    expect(String(putCall?.[1]?.body || "")).toContain('"sales_count":5');
   });
 
   it("blocks false success when single sale slot is partial/incoherent", async () => {
