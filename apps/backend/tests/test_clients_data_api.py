@@ -285,6 +285,8 @@ class ClientsDataApiTests(unittest.TestCase):
                 if str(metric_date) != "2026-03-24":
                     raise ValueError("metric_date must be a valid ISO date")
                 normalized_source = self._normalize_source(source)
+                updates = dict(updates)
+                updates.pop("recompute_custom_value_5", None)
                 if not updates:
                     raise ValueError("At least one daily input numeric field must be provided")
                 row = self._find_daily_input_by_pair(client_id=client_id, metric_date=str(metric_date), source=normalized_source)
@@ -705,7 +707,7 @@ class ClientsDataApiTests(unittest.TestCase):
 
         self.assertEqual(ctx.exception.status_code, 422)
 
-    def test_put_daily_input_supports_numeric_only_notes_only_and_mixed(self):
+    def test_put_daily_input_supports_canonical_numeric_fields(self):
         numeric = clients_api.upsert_client_data_daily_input(
             client_id=self.client_id,
             payload=ClientDataDailyInputUpsertRequest(metric_date=date(2026, 3, 24), source="meta_ads", leads=9, phones=3),
@@ -714,71 +716,77 @@ class ClientsDataApiTests(unittest.TestCase):
         self.assertEqual(numeric["leads"], 9)
         self.assertEqual(numeric["phones"], 3)
 
-        notes_only = clients_api.upsert_client_data_daily_input(
-            client_id=self.client_id,
-            payload=ClientDataDailyInputUpsertRequest(metric_date=date(2026, 3, 24), source="meta_ads", notes="   hello  "),
-            user=self.user,
-        )
-        self.assertEqual(notes_only["notes"], "hello")
-
         mixed = clients_api.upsert_client_data_daily_input(
-            client_id=self.client_id,
-            payload=ClientDataDailyInputUpsertRequest(metric_date=date(2026, 3, 24), source="meta_ads", leads=11, notes="  mixed "),
-            user=self.user,
-        )
-        self.assertEqual(mixed["leads"], 11)
-        self.assertEqual(mixed["notes"], "mixed")
-
-    def test_put_daily_input_accepts_sale_entries_array_and_derives_cached_values(self):
-        updated = clients_api.upsert_client_data_daily_input(
             client_id=self.client_id,
             payload=ClientDataDailyInputUpsertRequest(
                 metric_date=date(2026, 3, 24),
                 source="meta_ads",
-                custom_value_3_amount=500,
-                sale_entries=[
-                    {"brand": "A", "model": "M1", "sale_price_amount": 200, "actual_price_amount": 50, "sort_order": 1},
-                    {"brand": "B", "model": "M2", "sale_price_amount": 100, "actual_price_amount": 40, "sort_order": 2},
-                ],
+                custom_value_1_count=4,
+                custom_value_2_count=2,
+                custom_value_3_amount=99,
             ),
             user=self.user,
         )
-        self.assertEqual(updated["sales_count"], 2)
-        self.assertEqual(updated["custom_value_4_amount"], "300")
-        self.assertEqual(updated["custom_value_5_amount"], "200")
+        self.assertEqual(mixed["custom_value_1_count"], 4)
+        self.assertEqual(mixed["custom_value_2_count"], 2)
+        self.assertEqual(mixed["custom_value_3_amount"], "99")
 
-    def test_put_daily_input_accepts_legacy_single_sale_fields(self):
-        updated = clients_api.upsert_client_data_daily_input(
-            client_id=self.client_id,
-            payload=ClientDataDailyInputUpsertRequest(
+    def test_put_daily_input_rejects_legacy_fields_with_explicit_422(self):
+        cases = [
+            ClientDataDailyInputUpsertRequest(metric_date=date(2026, 3, 24), source="meta_ads", notes="legacy"),
+            ClientDataDailyInputUpsertRequest(
                 metric_date=date(2026, 3, 24),
                 source="meta_ads",
-                custom_value_3_amount=300,
+                sale_entries=[{"brand": "A", "model": "B", "sale_price_amount": 1, "actual_price_amount": 1}],
+            ),
+            ClientDataDailyInputUpsertRequest(
+                metric_date=date(2026, 3, 24),
+                source="meta_ads",
                 sale_brand="Legacy",
                 sale_model="One",
                 sale_price_amount=120,
                 sale_actual_price_amount=20,
-                sale_notes=" note ",
             ),
-            user=self.user,
-        )
-        self.assertEqual(updated["sales_count"], 1)
-        self.assertEqual(updated["custom_value_4_amount"], "120")
-        self.assertEqual(updated["custom_value_5_amount"], "180")
+            ClientDataDailyInputUpsertRequest(metric_date=date(2026, 3, 24), source="meta_ads", custom_value_4_amount=10),
+        ]
+        for payload in cases:
+            with self.assertRaises(HTTPException) as ctx:
+                clients_api.upsert_client_data_daily_input(
+                    client_id=self.client_id,
+                    payload=payload,
+                    user=self.user,
+                )
+            self.assertEqual(ctx.exception.status_code, 422)
+            self.assertIn("Canonical daily-input save accepts only", str(ctx.exception.detail))
 
-    def test_put_daily_input_without_sales_payload_replaces_with_zero_sales(self):
+    def test_put_daily_input_canonical_save_does_not_mutate_existing_sale_entries_or_derived_legacy_reads(self):
+        before_entries = clients_api.client_data_store.list_sale_entries_for_daily_input(daily_input_id=101)
+        self.assertEqual(len(before_entries), 2)
+
         updated = clients_api.upsert_client_data_daily_input(
             client_id=self.client_id,
             payload=ClientDataDailyInputUpsertRequest(
                 metric_date=date(2026, 3, 24),
                 source="meta_ads",
-                custom_value_3_amount=10,
+                leads=42,
             ),
             user=self.user,
         )
-        self.assertEqual(updated["sales_count"], 0)
-        self.assertEqual(updated["custom_value_4_amount"], "0")
-        self.assertEqual(updated["custom_value_5_amount"], "10")
+        self.assertEqual(updated["leads"], 42)
+
+        after_entries = clients_api.client_data_store.list_sale_entries_for_daily_input(daily_input_id=101)
+        self.assertEqual(after_entries, before_entries)
+
+        table = clients_api.get_client_data_table(
+            client_id=self.client_id,
+            date_from=date(2026, 3, 1),
+            date_to=date(2026, 3, 31),
+            user=self.user,
+        )
+        target = next(row for row in table["rows"] if int(row["daily_input_id"]) == 101)
+        self.assertEqual(target["sales_count"], 2)
+        self.assertEqual(target["revenue_amount"], "150")
+        self.assertEqual(target["custom_value_4_amount"], "150")
 
     def test_put_daily_input_with_dynamic_custom_values_replaces_values(self):
         _ = clients_api.upsert_client_data_daily_input(

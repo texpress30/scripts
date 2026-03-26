@@ -1,3 +1,15 @@
+# TODO — Backend canonical contract hardening for daily-input save (2026-03-26)
+
+- [x] Sync workspace și recitesc fișierele backend/ teste relevante înainte de modificări.
+- [x] Restrâng contractul `PUT /clients/{client_id}/data/daily-input` la câmpuri canonice + resping explicit câmpuri legacy (422).
+- [x] Elimin side-effect-urile implicite de replace sale_entries/notes/recalc legacy din canonical save path.
+- [x] Adaug teste backend pentru: legacy rejected, sale_entries intacte la canonical save, derivări read-side intacte, regression Data->MB->MT.
+- [x] Rulez validări țintite și documentez rezultatul.
+
+## Review
+- [x] Confirm separare explicită între canonical daily save și flow-urile legacy sale entries.
+- [x] Confirm canonical save nu mai poate șterge implicit sale entries istorice.
+
 # TODO — Data page cleanup: remove interactive sales/notes controls (2026-03-26)
 
 - [x] Sync workspace și recitesc fișierele relevante înainte de modificări.

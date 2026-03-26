@@ -211,18 +211,18 @@ class ClientDataDailyInputUpsertRequest(BaseModel):
     custom_value_1_count: int | None = None
     custom_value_2_count: int | None = None
     custom_value_3_amount: float | int | str | None = None
-    custom_value_4_amount: float | int | str | None = None
-    sales_count: int | None = None
-    custom_value_5_amount: float | int | str | None = None
-    notes: str | None = None
+    custom_value_4_amount: float | int | str | None = Field(default=None, description="Legacy field: rejected by canonical daily-input save")
+    sales_count: int | None = Field(default=None, description="Legacy field: rejected by canonical daily-input save")
+    custom_value_5_amount: float | int | str | None = Field(default=None, description="Legacy field: rejected by canonical daily-input save")
+    notes: str | None = Field(default=None, description="Legacy field: rejected by canonical daily-input save")
     dynamic_custom_values: list[ClientDataDynamicCustomValueUpsertItem] | None = None
-    sale_entries: list["ClientDataSaleEntryUpsertItem"] | None = None
-    sale_brand: str | None = None
-    sale_model: str | None = None
-    sale_price_amount: float | int | str | None = None
-    sale_actual_price_amount: float | int | str | None = None
-    sale_notes: str | None = None
-    sale_sort_order: int | None = None
+    sale_entries: list["ClientDataSaleEntryUpsertItem"] | None = Field(default=None, description="Legacy field: rejected by canonical daily-input save")
+    sale_brand: str | None = Field(default=None, description="Legacy field: rejected by canonical daily-input save")
+    sale_model: str | None = Field(default=None, description="Legacy field: rejected by canonical daily-input save")
+    sale_price_amount: float | int | str | None = Field(default=None, description="Legacy field: rejected by canonical daily-input save")
+    sale_actual_price_amount: float | int | str | None = Field(default=None, description="Legacy field: rejected by canonical daily-input save")
+    sale_notes: str | None = Field(default=None, description="Legacy field: rejected by canonical daily-input save")
+    sale_sort_order: int | None = Field(default=None, description="Legacy field: rejected by canonical daily-input save")
 
 
 class ClientDataSaleEntryUpsertItem(BaseModel):
