@@ -75,9 +75,9 @@ function worksheetPayload(
         ],
       },
       { key: "new_clients", label: "Clienți Noi", rows: [] },
-      { key: "google_spend", label: "Google Spend", rows: [] },
-      { key: "meta_spend", label: "Meta Spend", rows: [] },
-      { key: "tiktok_spend", label: "TikTok Spend", rows: [] },
+      { key: "google_spend", label: "Cheltuieli Google", rows: [] },
+      { key: "meta_spend", label: "Cheltuieli Meta", rows: [] },
+      { key: "tiktok_spend", label: "Cheltuieli TikTok", rows: [] },
     ],
   };
 }
@@ -114,18 +114,41 @@ describe("SubMediaTrackerPage", () => {
     });
 
     render(<SubMediaTrackerPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Weekly Worksheet" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fișă săptămânală" }));
 
     expect(await screen.findByRole("columnheader", { name: "Săpt. 10" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Săpt. 11" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "quarter" }));
+    fireEvent.click(screen.getByRole("button", { name: "Trimestru" }));
     expect(await screen.findByRole("columnheader", { name: "Săpt. 2" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Săpt. 14" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "year" }));
+    fireEvent.click(screen.getByRole("button", { name: "An" }));
     expect(await screen.findByRole("columnheader", { name: "Săpt. 1" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Săpt. 53" })).toBeInTheDocument();
+  });
+
+  it("renders main Media Tracker UI texts in Romanian", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy" }] };
+      if (path.includes("/clients/96/media-tracker/worksheet-foundation")) return worksheetPayload(monthWeeks);
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaTrackerPage />);
+    expect(screen.getByRole("button", { name: "Prezentare generală" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Fișă săptămânală" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Overview" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Weekly Worksheet" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Fișă săptămânală" }));
+    await screen.findByRole("columnheader", { name: "Săpt. 10" });
+    expect(screen.getByRole("button", { name: "Lună" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Trimestru" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "An" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Anterior" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Următor" })).toBeInTheDocument();
+    expect(screen.getByText("Monedă: USD")).toBeInTheDocument();
   });
 
   it("handles year-boundary week correctly (2025-12-29 => ISO week 1) and keeps row-2 dates", async () => {
@@ -136,7 +159,7 @@ describe("SubMediaTrackerPage", () => {
     });
 
     render(<SubMediaTrackerPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Weekly Worksheet" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fișă săptămânală" }));
 
     expect(await screen.findByRole("columnheader", { name: "Săpt. 1" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "2025-12-29" })).toBeInTheDocument();
@@ -151,7 +174,7 @@ describe("SubMediaTrackerPage", () => {
     });
 
     render(<SubMediaTrackerPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Weekly Worksheet" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fișă săptămânală" }));
 
     const weekHeader = await screen.findByRole("columnheader", { name: "Săpt. 10" });
     const dateHeader = screen.getByRole("columnheader", { name: "2026-03-02" });
@@ -164,20 +187,35 @@ describe("SubMediaTrackerPage", () => {
     }
   });
 
-  it("shows EUR/RON as read-only value without edit controls", async () => {
+  it("allows editing EUR/RON, sends PUT, and refreshes worksheet", async () => {
+    let worksheetCallCount = 0;
     apiMock.apiRequest.mockImplementation(async (path: string) => {
       if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy" }] };
-      if (path.includes("/clients/96/media-tracker/worksheet-foundation")) return worksheetPayload(monthWeeks, 5.09);
+      if (path.includes("/clients/96/media-tracker/worksheet-foundation")) {
+        worksheetCallCount += 1;
+        return worksheetPayload(monthWeeks, worksheetCallCount > 1 ? 5.15 : 5.09);
+      }
+      if (path === "/clients/96/media-tracker/worksheet/eur-ron-rate") return worksheetPayload(monthWeeks, 5.15);
       throw new Error(`Unexpected path ${path}`);
     });
 
     render(<SubMediaTrackerPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Weekly Worksheet" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fișă săptămânală" }));
     await screen.findByRole("columnheader", { name: "Săpt. 10" });
-    expect(screen.getByText("5.09")).toBeInTheDocument();
-    expect(screen.queryByRole("textbox")).toBeNull();
+    const rateInput = screen.getByLabelText("Curs EUR/RON");
+    expect(rateInput).not.toHaveAttribute("disabled");
+    fireEvent.change(rateInput, { target: { value: "5.15" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvează curs" }));
+
+    await screen.findByText("Cursul EUR/RON a fost salvat.");
+    expect(screen.getByDisplayValue("5.15")).toBeInTheDocument();
     const rateCalls = apiMock.apiRequest.mock.calls.filter(([path]) => path === "/clients/96/media-tracker/worksheet/eur-ron-rate");
-    expect(rateCalls.length).toBe(0);
+    expect(rateCalls.length).toBe(1);
+    expect(rateCalls[0][1]?.method).toBe("PUT");
+    const parsedBody = JSON.parse(String(rateCalls[0][1]?.body ?? "{}"));
+    expect(parsedBody.granularity).toBe("month");
+    expect(typeof parsedBody.anchor_date).toBe("string");
+    expect(parsedBody.value).toBe(5.15);
   });
 
   it("worksheet business cells are read-only and page links to Data month context", async () => {
@@ -190,7 +228,7 @@ describe("SubMediaTrackerPage", () => {
     render(<SubMediaTrackerPage />);
     expect(screen.getByText("Valorile manuale se editează acum din pagina Data.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Deschide pagina Data" })).toHaveAttribute("href", "/sub/96/data?month=2026-03");
-    fireEvent.click(screen.getByRole("button", { name: "Weekly Worksheet" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fișă săptămânală" }));
     await screen.findByRole("columnheader", { name: "Săpt. 10" });
     expect(screen.getByTestId("cell-summary-weekly_cogs_taxes-2026-03-02").querySelector("button")).toBeNull();
     const manualCalls = apiMock.apiRequest.mock.calls.filter(([path]) => path === "/clients/96/media-tracker/worksheet/manual-values");
@@ -206,10 +244,10 @@ describe("SubMediaTrackerPage", () => {
     });
 
     render(<SubMediaTrackerPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Weekly Worksheet" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fișă săptămânală" }));
 
     await screen.findByRole("columnheader", { name: "Săpt. 10" });
-    expect(screen.getByText("Currency: USD")).toBeInTheDocument();
+    expect(screen.getByText("Monedă: USD")).toBeInTheDocument();
 
     const historyCost = screen.getByTestId("history-summary-cost");
     expect(historyCost.textContent).toBe(formatCurrencyValue(300, "USD", "USD"));
@@ -231,8 +269,8 @@ describe("SubMediaTrackerPage", () => {
     });
 
     render(<SubMediaTrackerPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Weekly Worksheet" }));
-    expect(screen.getByText("Loading worksheet...")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Fișă săptămânală" }));
+    expect(screen.getByText("Se încarcă fișa săptămânală...")).toBeInTheDocument();
 
     resolver?.(worksheetPayload(monthWeeks));
     await screen.findByRole("columnheader", { name: "Săpt. 10" });
@@ -243,7 +281,7 @@ describe("SubMediaTrackerPage", () => {
       throw new Error(`Unexpected path ${path}`);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: "Următor" }));
     expect(await screen.findByText("boom")).toBeInTheDocument();
   });
 });
