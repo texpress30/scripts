@@ -45,8 +45,8 @@ function setupApiMock() {
           { key: "custom_value_3_amount", label: "CV3" },
         ],
         derived_fields: [
-          { key: "custom_value_4_amount", label: "CV4", value_kind: "amount" },
-          { key: "custom_value_5_amount", label: "CV5", value_kind: "amount" },
+          { key: "custom_value_4_amount", label: "Val. Vândută", value_kind: "amount" },
+          { key: "custom_value_5_amount", label: "Val. Nerealizată", value_kind: "amount" },
           { key: "sales_count", label: "Vânzări", value_kind: "count" },
           { key: "revenue_amount", label: "Venit", value_kind: "amount" },
           { key: "cogs_amount", label: "COGS", value_kind: "amount" },
@@ -70,10 +70,16 @@ function setupApiMock() {
             custom_value_1_count: 1,
             custom_value_2_count: 2,
             custom_value_3_amount: 100,
-            custom_value_4_amount: 80,
             custom_value_5_amount: 20,
-            sales_count: 1,
-            gross_profit_amount: 50,
+            derived: {
+              custom_value_4_amount: 80,
+              custom_value_5_amount: 20,
+              sales_count: 1,
+              gross_profit_amount: 50,
+            },
+            sale_entries: [
+              { id: 777, brand: "Dacia", model: "Duster", sale_price_amount: 80, actual_price_amount: 50, gross_profit_amount: 30 },
+            ],
             dynamic_custom_values: [
               { custom_field_id: 11, label: "Appointments", value_kind: "count", numeric_value: 7 },
             ],
@@ -82,6 +88,7 @@ function setupApiMock() {
       };
     }
     if (path === "/clients/96/data/daily-input") return { id: 101 };
+    if (path === "/clients/96/data/sale-entries") return { id: 777, daily_input_id: 101 };
     if (path.startsWith("/clients/96/data/custom-fields")) return { items: [] };
     throw new Error(`Unhandled path ${path}`);
   });
@@ -105,7 +112,7 @@ describe("SubDataPage canonical-only UI", () => {
     expect(screen.queryByText("Mențiuni")).not.toBeInTheDocument();
   });
 
-  it("saves canonical daily payload (date/source/fixed fields/dynamic custom values) and keeps source validation", async () => {
+  it("saves canonical daily payload, then posts single sale slot separately when completed", async () => {
     render(<SubDataPage />);
     await screen.findByRole("heading", { name: "Data - Active Life Therapy" });
 
@@ -120,6 +127,10 @@ describe("SubDataPage canonical-only UI", () => {
     fireEvent.change(screen.getByLabelText("New row cv1"), { target: { value: "2" } });
     fireEvent.change(screen.getByLabelText("New row cv2"), { target: { value: "1" } });
     fireEvent.change(screen.getByLabelText("New row cv3"), { target: { value: "120" } });
+    fireEvent.change(screen.getByLabelText("Marcă rând nou"), { target: { value: "Toyota" } });
+    fireEvent.change(screen.getByLabelText("Model rând nou"), { target: { value: "Corolla" } });
+    fireEvent.change(screen.getByLabelText("Preț vânzare rând nou"), { target: { value: "100" } });
+    fireEvent.change(screen.getByLabelText("Preț actual rând nou"), { target: { value: "70" } });
     fireEvent.change(screen.getByLabelText("Dynamic field Appointments rând nou"), { target: { value: "6" } });
     fireEvent.click(screen.getByRole("button", { name: "Salvează rând" }));
 
@@ -138,10 +149,31 @@ describe("SubDataPage canonical-only UI", () => {
     expect(putBody).toContain('"metric_date":"2026-03-12"');
     expect(putBody).toContain('"source":"meta_ads"');
     expect(putBody).not.toContain("sale_entries");
+    expect(putBody).not.toContain("sale_price_amount");
+    expect(putBody).not.toContain("sale_actual_price_amount");
+    expect(putBody).not.toContain("sale_brand");
+    expect(putBody).not.toContain("sale_model");
     expect(putBody).not.toContain("notes");
+
+    await waitFor(() => {
+      expect(apiMock.apiRequest).toHaveBeenCalledWith(
+        "/clients/96/data/sale-entries",
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining('"daily_input_id":101'),
+        }),
+      );
+    });
+
+    const salePostCall = apiMock.apiRequest.mock.calls.find((call: any[]) => call[0] === "/clients/96/data/sale-entries");
+    const saleBody = String(salePostCall?.[1]?.body || "");
+    expect(saleBody).toContain('"sale_price_amount":100');
+    expect(saleBody).toContain('"actual_price_amount":70');
+    expect(saleBody).toContain('"brand":"Toyota"');
+    expect(saleBody).toContain('"model":"Corolla"');
   });
 
-  it("renders canonical editable fields only and uses derived_fields labels for read-only columns", async () => {
+  it("renders single sale slot fields + derived labels and keeps legacy controls hidden", async () => {
     render(<SubDataPage />);
     await screen.findByRole("heading", { name: "Data - Active Life Therapy" });
     fireEvent.click(screen.getByRole("button", { name: "Adaugă rând" }));
@@ -152,12 +184,40 @@ describe("SubDataPage canonical-only UI", () => {
     expect(screen.getByLabelText("New row cv2")).toBeInTheDocument();
     expect(screen.getByLabelText("New row cv3")).toBeInTheDocument();
 
-    expect(screen.getByLabelText("Custom Value 4 rând nou")).toHaveAttribute("readonly");
-    expect(screen.getByLabelText("New row cv5")).toHaveAttribute("readonly");
+    expect(screen.getByLabelText("Marcă rând nou")).toBeInTheDocument();
+    expect(screen.getByLabelText("Model rând nou")).toBeInTheDocument();
+    expect(screen.getByLabelText("Preț vânzare rând nou")).toBeInTheDocument();
+    expect(screen.getByLabelText("Preț actual rând nou")).toBeInTheDocument();
 
-    expect(screen.getByRole("columnheader", { name: "CV4" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "CV5" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Val. vândută rând nou")).toHaveAttribute("readonly");
+    expect(screen.getByLabelText("Val. nerealizată rând nou")).toHaveAttribute("readonly");
+    expect(screen.getByLabelText("Vânzări rând nou")).toHaveAttribute("readonly");
+    expect(screen.getByLabelText("P/L brut rând nou")).toHaveAttribute("readonly");
+
+    expect(screen.getByRole("columnheader", { name: "Val. Vândută" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Val. Nerealizată" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Vânzări" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Marcă" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Model" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Preț vânzare" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Preț actual" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "P/L brut" })).toBeInTheDocument();
+    expect(screen.queryByText("Mențiuni")).not.toBeInTheDocument();
+    expect(screen.queryByText("Adaugă vânzare nouă")).not.toBeInTheDocument();
+    expect(screen.queryByText("Șterge vânzare")).not.toBeInTheDocument();
+  });
+
+  it("blocks false success when single sale slot is partial/incoherent", async () => {
+    render(<SubDataPage />);
+    await screen.findByRole("heading", { name: "Data - Active Life Therapy" });
+    fireEvent.click(screen.getByRole("button", { name: "Adaugă rând" }));
+
+    fireEvent.change(screen.getByLabelText("Data rând nou"), { target: { value: "2026-03-12" } });
+    fireEvent.change(screen.getByLabelText("Sursa rând nou"), { target: { value: "meta_ads" } });
+    fireEvent.change(screen.getByLabelText("Marcă rând nou"), { target: { value: "VW" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvează rând" }));
+
+    await screen.findByText("Completează coerent slotul de vânzare: Preț vânzare și Preț actual sunt obligatorii.");
+    expect(apiMock.apiRequest).not.toHaveBeenCalledWith("/clients/96/data/sale-entries", expect.anything());
   });
 });

@@ -610,3 +610,4 @@
 - 2026-03-26: La cleanup-ul Data page, elimin complet atât UI-ul cât și state/handlers dedicate fluxurilor legacy (vânzări/mențiuni) și păstrez strict payloadul canonic editabil, cu teste care verifică explicit absența controalelor scoase.
 - 2026-03-26: Pentru endpoint-ul canonic daily-input, resping explicit câmpurile legacy (422) și evit orice side-effect implicit pe sale_entries/derivări, ca să nu apară ștergeri ascunse la save standard.
 - 2026-03-26: Când separ contractul read-side Data config, țin `fixed_fields` strict pentru inputuri canonice editabile și mut labels read-only în `derived_fields`, iar frontend-ul citește explicit ambele hărți de label.
+- 2026-03-26: După feedback de tip “readu câmpurile lipsă”, restaurez strict slotul unic de vânzare în Data (form + tabel + POST dedicat) fără a redeschide multi-sale/mențiuni și fără a modifica payloadul canonic daily-input.

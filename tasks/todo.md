@@ -1,3 +1,16 @@
+# TODO — Data page: single-sale slot restore without reopening legacy contract (2026-03-26)
+
+- [x] Sync workspace state and re-read Data page + frontend tests before edits.
+- [x] Restore missing Add Row and table display fields for single sale slot + derived outputs.
+- [x] Keep canonical `daily-input` payload unchanged and add optional single `sale-entries` POST after canonical save.
+- [x] Enforce explicit validation for partial sale slot to avoid false success.
+- [x] Update frontend tests for restored fields/labels and split save behavior; run targeted vitest.
+
+## Review
+- [x] Confirm no reintroduction of Mențiuni / Adaugă vânzare nouă / Șterge vânzare controls.
+- [x] Confirm CV4/CV5 labels are rendered from `derived_fields` labels, not hardcoded generics.
+- [x] Confirm single-sale behavior only (no multi-sale orchestration).
+
 # TODO — Merge conflict resolution for Data canonical contract (2026-03-26)
 
 - [x] Inspect conflicted frontend/test/task files and keep canonical contract shape.
