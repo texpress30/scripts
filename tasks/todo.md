@@ -1,3 +1,27 @@
+# TODO — Data page cleanup: remove interactive sales/notes controls (2026-03-26)
+
+- [x] Sync workspace și recitesc fișierele relevante înainte de modificări.
+- [x] Identific și elimin UI + logică frontend pentru add/edit/delete vânzări și mențiuni din Data page.
+- [x] Păstrez intact fluxul canonic de salvare/citire (metric_date, source, fixed fields, dynamic custom values).
+- [x] Adaug/ajustez teste focalizate pentru absența controalelor eliminate și non-regresie flux canonic.
+- [x] Rulez validări țintite și documentez rezultatul.
+
+## Review
+- [x] Confirm fără redesign/refactor extins și fără modificări Media Buying/Media Tracker în afara build/tests.
+- [x] Confirm fixul Task 1 (`source` validation explicit) rămâne activ și ne-regresat.
+
+# TODO — Stabilizare flux canonic Data save/read + propagare MB/MT (2026-03-26)
+
+- [x] Sync workspace și re-citire fișiere țintă înainte de modificări.
+- [x] Analiză end-to-end save/read pentru Data + Media Buying + Media Tracker pe fișierele cerute.
+- [x] Implement fix minim și sigur pentru persistența canonică (inclusiv validare `source` fără false success).
+- [x] Adăugare/ajustare teste backend roundtrip (data/table, media-buying lead table, media-tracker worksheet, caz source invalid).
+- [x] Rulare teste țintite + review final + documentare rezultat.
+
+## Review
+- [x] Confirm fără redesign/refactor extins și fără cleanup UI mare.
+- [x] Confirm același rând salvat în Data apare în MB și MT prin sursa canonică backend.
+
 # TODO — Final stabilization Data canonical flow (2026-03-25)
 
 - [x] Confirm workspace up-to-date local și verific `git status`/`git diff`.
