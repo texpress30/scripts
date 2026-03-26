@@ -121,7 +121,7 @@ const SOURCE_FALLBACKS: SourceItem[] = [
   { key: "google_ads", label: "Google" },
   { key: "tiktok_ads", label: "TikTok" },
   { key: "organic", label: "Organic" },
-  { key: "manual", label: "Manual" },
+  { key: "direct", label: "Direct" },
 ];
 
 function parseMonthParam(value: string | null): Date {
@@ -395,6 +395,12 @@ export default function SubDataPage() {
     setMutationSuccess("");
 
     try {
+      const normalizedSource = String(draft.source || "").trim().toLowerCase();
+      const allowedSources = new Set(supportedSources.map((item) => String(item.key || "").trim().toLowerCase()).filter(Boolean));
+      if (!normalizedSource || !allowedSources.has(normalizedSource)) {
+        throw new Error("Selectează o sursă validă înainte de salvare.");
+      }
+
       const dynamicCustomValuesPayload = activeDynamicFields
         .map((field) => {
           const raw = String(draft.dynamicValues[field.id] ?? "").trim();
@@ -407,7 +413,7 @@ export default function SubDataPage() {
 
       const dailyPayload = {
         metric_date: draft.metric_date,
-        source: draft.source,
+        source: normalizedSource,
         leads: Number(draft.leads || 0),
         phones: Number(draft.phones || 0),
         custom_value_1_count: Number(draft.custom_value_1_count || 0),
