@@ -624,3 +624,4 @@
 - Când user-ul spune explicit că ultimul commit este nesatisfăcător, pornesc de la codul efectiv din HEAD și refac analiza înainte de orice afirmație.
 - Pentru task-uri cu cerințe de UI+backend pe același flow, introduc payload backend dedicat și testez explicit integrarea frontend pe endpointul nou.
 - Pentru grafice în vitest/jsdom, adaug imediat mock pentru `ResizeObserver` ca să evit false negatives și crash-uri la `ResponsiveContainer`.
+- 2026-03-26: Când feedback-ul cere layout specific din exemplu vizual (ex. „2 coloane”), aplic direct grila cerută în componenta de charts (`grid-cols-2` pe breakpoint relevant) fără a schimba logica dataset-urilor.

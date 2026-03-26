@@ -203,8 +203,6 @@ export default function SubMediaTrackerPage() {
     }
   }
 
-
-
   return (
     <ProtectedPage>
       <AppShell title={null}>

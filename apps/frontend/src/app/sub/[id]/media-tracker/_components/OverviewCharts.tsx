@@ -65,7 +65,7 @@ function colorForChannel(channel: string): string {
 export function SalesCharts({ payload }: { payload: OverviewChartsPayload }) {
   const sales = payload.sales || {};
   return (
-    <div className="mt-4 grid gap-4">
+    <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
       <ChartCard title="Trendul Vânzărilor Totale">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={sales.total_sales_trend || []}>
@@ -121,7 +121,7 @@ export function FinancialCharts({ payload }: { payload: OverviewChartsPayload })
   const custom2 = payload.custom_labels?.custom_label_2 || "Custom Value 2";
 
   return (
-    <div className="mt-4 grid gap-4">
+    <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
       <ChartCard title="Analiza Eficienței Costurilor (CPA și nCAC)">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={financial.cost_efficiency || []}>
