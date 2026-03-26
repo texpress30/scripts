@@ -1,3 +1,15 @@
+# TODO — Data source optional in canonical save (blank -> unknown) (2026-03-26)
+
+- [x] Sync workspace și recitesc fișierele frontend/backend/teste relevante înainte de modificări.
+- [x] Elimin validarea frontend care blochează sursa goală la save.
+- [x] Normalizez backend sursa goală la `unknown` și păstrez 422 pentru valori non-goale nesuportate.
+- [x] Ajustez teste frontend/backend pentru blank source acceptat + invalid non-blank respins.
+- [x] Rulez validări țintite și documentez rezultatul.
+
+## Review
+- [x] Confirm save cu sursă goală persistă `unknown` și apare corect în Data table/labels.
+- [x] Confirm valorile non-goale invalide rămân respinse cu 422.
+
 # TODO — Data create/update split by row id and same-day multi-row support (2026-03-26)
 
 - [x] Sync workspace și recitesc fișierele relevante frontend/backend înainte de modificări.

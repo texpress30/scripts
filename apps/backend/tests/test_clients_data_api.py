@@ -1005,6 +1005,22 @@ class ClientsDataApiTests(unittest.TestCase):
             )
         self.assertEqual(bad_date_ctx.exception.status_code, 422)
 
+        created_with_blank_source = clients_api.create_client_data_daily_input(
+            client_id=self.client_id,
+            payload=ClientDataDailyInputUpsertRequest(metric_date=date(2026, 3, 24), source="", leads=1),
+            user=self.user,
+        )
+        self.assertEqual(created_with_blank_source["source"], "unknown")
+        table_after_blank_source = clients_api.get_client_data_table(
+            client_id=self.client_id,
+            date_from=date(2026, 3, 1),
+            date_to=date(2026, 3, 31),
+            user=self.user,
+        )
+        blank_source_row = next(row for row in table_after_blank_source["rows"] if int(row["daily_input_id"]) == int(created_with_blank_source["id"]))
+        self.assertEqual(blank_source_row["source"], "unknown")
+        self.assertEqual(blank_source_row["source_label"], "Unknown")
+
         with self.assertRaises(HTTPException) as bad_source_ctx:
             clients_api.upsert_client_data_daily_input(
                 client_id=self.client_id,

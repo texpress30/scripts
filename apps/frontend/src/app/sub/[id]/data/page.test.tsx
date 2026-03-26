@@ -124,11 +124,7 @@ describe("SubDataPage canonical-only UI", () => {
     await screen.findByRole("heading", { name: "Data - Active Life Therapy" });
 
     fireEvent.click(screen.getByRole("button", { name: "Adaugă rând" }));
-    fireEvent.click(screen.getByRole("button", { name: "Salvează rând" }));
-    await screen.findByText("Selectează o sursă validă înainte de salvare.");
-
     fireEvent.change(screen.getByLabelText("Data rând nou"), { target: { value: "2026-03-12" } });
-    fireEvent.change(screen.getByLabelText("Sursa rând nou"), { target: { value: "meta_ads" } });
     fireEvent.change(screen.getByLabelText("Lead-uri rând nou"), { target: { value: "9" } });
     fireEvent.change(screen.getByLabelText("New row phones"), { target: { value: "4" } });
     fireEvent.change(screen.getByLabelText("New row cv1"), { target: { value: "2" } });
@@ -156,7 +152,7 @@ describe("SubDataPage canonical-only UI", () => {
     const putCall = apiMock.apiRequest.mock.calls.find((call: any[]) => call[0] === "/clients/96/data/daily-inputs");
     const putBody = String(putCall?.[1]?.body || "");
     expect(putBody).toContain('"metric_date":"2026-03-12"');
-    expect(putBody).toContain('"source":"meta_ads"');
+    expect(putBody).toContain('"source":"unknown"');
     expect(putBody).not.toContain("sale_entries");
     expect(putBody).toContain('"custom_value_4_amount":77');
     expect(putBody).toContain('"sales_count":3');

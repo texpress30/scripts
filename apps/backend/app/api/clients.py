@@ -553,13 +553,10 @@ def _fallback_field_label(*, label: object, custom_field_id: object) -> str:
     return f"Custom Field {int(custom_field_id)}"
 
 
-def _validate_canonical_source_or_422(source: str) -> str:
+def _validate_canonical_source_or_422(source: str | None) -> str:
     normalized = str(source or "").strip().lower()
     if not normalized:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="source is required and must be a supported source key",
-        )
+        return "unknown"
     if not client_data_store.is_supported_source(normalized):
         supported = [str(item.get("key")) for item in client_data_store.list_supported_sources() if str(item.get("key") or "").strip()]
         raise HTTPException(
@@ -756,7 +753,7 @@ def get_client_data_table(
         custom_value_4_amount = _to_decimal(daily_input["custom_value_4_amount"])
         custom_value_5_amount = custom_value_3_amount - custom_value_4_amount
 
-        source_key = str(daily_input["source"])
+        source_key = str(daily_input.get("source") or "").strip().lower() or "unknown"
         source_label = client_data_store.get_source_label(source_key) or "Unknown"
         rows.append(
             {

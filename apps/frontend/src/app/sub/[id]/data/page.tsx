@@ -385,10 +385,7 @@ export default function SubDataPage() {
 
     try {
       const normalizedSource = String(draft.source || "").trim().toLowerCase();
-      const allowedSources = new Set(supportedSources.map((item) => String(item.key || "").trim().toLowerCase()).filter(Boolean));
-      if (!normalizedSource || !allowedSources.has(normalizedSource)) {
-        throw new Error("Selectează o sursă validă înainte de salvare.");
-      }
+      const sourceKey = normalizedSource || "unknown";
 
       const dynamicCustomValuesPayload = activeDynamicFields
         .map((field) => {
@@ -402,7 +399,7 @@ export default function SubDataPage() {
 
       const dailyPayload = {
         metric_date: draft.metric_date,
-        source: normalizedSource,
+        source: sourceKey,
         leads: Number(draft.leads || 0),
         phones: Number(draft.phones || 0),
         custom_value_1_count: Number(draft.custom_value_1_count || 0),
