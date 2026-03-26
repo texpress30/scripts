@@ -60,8 +60,6 @@ type DataTableRow = {
   };
   sale_entries?: Array<{
     id: number;
-    brand?: string | null;
-    model?: string | null;
     sale_price_amount?: number | string;
     actual_price_amount?: number | string;
     gross_profit_amount?: number | string;
@@ -87,8 +85,6 @@ type DailyRowDraft = {
 };
 
 type SingleSaleDraft = {
-  brand: string;
-  model: string;
   sale_price_amount: string;
   actual_price_amount: string;
 };
@@ -228,8 +224,6 @@ function emptyDailyDraft(dateFrom: string): DailyRowDraft {
 
 function emptySingleSaleDraft(): SingleSaleDraft {
   return {
-    brand: "",
-    model: "",
     sale_price_amount: "",
     actual_price_amount: "",
   };
@@ -291,7 +285,8 @@ export default function SubDataPage() {
   const newRowActualPriceNumber = Number(newRowActualPriceRaw);
   const newRowSaleHasValidNumbers = newRowSalePriceRaw !== "" && newRowActualPriceRaw !== "" && Number.isFinite(newRowSalePriceNumber) && Number.isFinite(newRowActualPriceNumber);
   const newRowDerivedSoldAmount = newRowHasValidCv4 ? newRowCv4Number : 0;
-  const newRowDerivedUnrealizedAmount = newRowHasValidCv3 ? (newRowCv3Number - newRowDerivedSoldAmount) : 0;
+  const newRowHasValidUnrealizedInputs = newRowHasValidCv3 && newRowHasValidCv4;
+  const newRowDerivedUnrealizedAmount = newRowHasValidUnrealizedInputs ? (newRowCv4Number - newRowCv3Number) : 0;
   const newRowDerivedGrossProfit = newRowSaleHasValidNumbers ? (newRowSalePriceNumber - newRowActualPriceNumber) : 0;
 
   async function loadClientName() {
@@ -423,12 +418,7 @@ export default function SubDataPage() {
       if (isNew && saleDraft) {
         const rawSalePrice = String(saleDraft.sale_price_amount ?? "").trim();
         const rawActualPrice = String(saleDraft.actual_price_amount ?? "").trim();
-        const hasSaleInput = [
-          String(saleDraft.brand ?? "").trim(),
-          String(saleDraft.model ?? "").trim(),
-          rawSalePrice,
-          rawActualPrice,
-        ].some(Boolean);
+        const hasSaleInput = [rawSalePrice, rawActualPrice].some(Boolean);
         if (hasSaleInput) {
           const salePrice = Number(rawSalePrice);
           const actualPrice = Number(rawActualPrice);
@@ -444,8 +434,6 @@ export default function SubDataPage() {
               daily_input_id: Number(dailyInputWrite.id),
               sale_price_amount: salePrice,
               actual_price_amount: actualPrice,
-              ...(String(saleDraft.brand ?? "").trim() ? { brand: String(saleDraft.brand).trim() } : {}),
-              ...(String(saleDraft.model ?? "").trim() ? { model: String(saleDraft.model).trim() } : {}),
             }),
           });
         }
@@ -665,10 +653,8 @@ export default function SubDataPage() {
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_2_count}</label><input aria-label="New row cv2" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_2_count} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_2_count: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_3_amount}</label><input aria-label="New row cv3" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_3_amount} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_3_amount: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_4_amount}</label><input aria-label="Val. vândută rând nou" type="number" step="any" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_4_amount} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_4_amount: e.target.value }))} /></div>
-                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{derivedLabels.custom_value_5_amount}</label><input aria-label="Val. nerealizată rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowHasValidCv3 ? formatAmount(newRowDerivedUnrealizedAmount, currencyCode) : ""} readOnly /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{derivedLabels.custom_value_5_amount}</label><input aria-label="Val. nerealizată rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowHasValidUnrealizedInputs ? formatAmount(newRowDerivedUnrealizedAmount, currencyCode) : ""} readOnly /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.sales_count}</label><input aria-label="Vânzări rând nou" type="number" step="1" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.sales_count} onChange={(e) => setNewRowDraft((p) => ({ ...p, sales_count: e.target.value }))} /></div>
-                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Marcă</label><input aria-label="Marcă rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.brand} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, brand: e.target.value }))} /></div>
-                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Model</label><input aria-label="Model rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.model} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, model: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Preț vânzare</label><input aria-label="Preț vânzare rând nou" type="number" step="any" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.sale_price_amount} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, sale_price_amount: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Preț actual</label><input aria-label="Preț actual rând nou" type="number" step="any" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.actual_price_amount} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, actual_price_amount: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{derivedLabels.gross_profit_amount}</label><input aria-label="Profit brut rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowSaleHasValidNumbers ? formatAmount(newRowDerivedGrossProfit, currencyCode) : ""} readOnly /></div>
@@ -713,8 +699,6 @@ export default function SubDataPage() {
                     <th className="border border-slate-200 px-3 py-2">{fixedLabels.custom_value_4_amount}</th>
                     <th className="border border-slate-200 px-3 py-2">{derivedLabels.custom_value_5_amount}</th>
                     <th className="border border-slate-200 px-3 py-2">{fixedLabels.sales_count}</th>
-                    <th className="border border-slate-200 px-3 py-2">Marcă</th>
-                    <th className="border border-slate-200 px-3 py-2">Model</th>
                     <th className="border border-slate-200 px-3 py-2">Preț vânzare</th>
                     <th className="border border-slate-200 px-3 py-2">Preț actual</th>
                     <th className="border border-slate-200 px-3 py-2">{derivedLabels.gross_profit_amount}</th>
@@ -745,8 +729,6 @@ export default function SubDataPage() {
                           <td className="border border-slate-200 px-3 py-2">{isEditing ? <input aria-label={`Editează val vândută ${rowKey}`} className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.custom_value_4_amount} onChange={(e) => setEditingRowDraft((p) => (p ? { ...p, custom_value_4_amount: e.target.value } : p))} /> : formatAmount(row.custom_value_4_amount, currencyCode)}</td>
                           <td className="border border-slate-200 px-3 py-2">{formatAmount(derived.custom_value_5_amount ?? row.custom_value_5_amount, currencyCode)}</td>
                           <td className="border border-slate-200 px-3 py-2">{isEditing ? <input aria-label={`Editează vânzări ${rowKey}`} className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.sales_count} onChange={(e) => setEditingRowDraft((p) => (p ? { ...p, sales_count: e.target.value } : p))} /> : formatCount(row.sales_count)}</td>
-                          <td className="border border-slate-200 px-3 py-2">{firstSaleEntry?.brand || "—"}</td>
-                          <td className="border border-slate-200 px-3 py-2">{firstSaleEntry?.model || "—"}</td>
                           <td className="border border-slate-200 px-3 py-2">{formatAmount(firstSaleEntry?.sale_price_amount, currencyCode)}</td>
                           <td className="border border-slate-200 px-3 py-2">{formatAmount(firstSaleEntry?.actual_price_amount, currencyCode)}</td>
                           <td className="border border-slate-200 px-3 py-2">{formatAmount(derived.gross_profit_amount ?? row.gross_profit_amount, currencyCode)}</td>

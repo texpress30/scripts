@@ -102,7 +102,7 @@ class ClientsDataApiTests(unittest.TestCase):
                         "custom_value_2_count": 0,
                         "custom_value_3_amount": Decimal("10.50"),
                         "custom_value_4_amount": Decimal("8.50"),
-                        "custom_value_5_amount": Decimal("2.00"),
+                        "custom_value_5_amount": Decimal("-2.00"),
                         "sales_count": 2,
                         "notes": "ok",
                     },
@@ -117,7 +117,7 @@ class ClientsDataApiTests(unittest.TestCase):
                         "custom_value_2_count": 2,
                         "custom_value_3_amount": Decimal("5.00"),
                         "custom_value_4_amount": Decimal("4.00"),
-                        "custom_value_5_amount": Decimal("1.00"),
+                        "custom_value_5_amount": Decimal("-1.00"),
                         "sales_count": 0,
                         "notes": None,
                     },
@@ -132,7 +132,7 @@ class ClientsDataApiTests(unittest.TestCase):
                         "custom_value_2_count": 1,
                         "custom_value_3_amount": Decimal("1.00"),
                         "custom_value_4_amount": Decimal("0.00"),
-                        "custom_value_5_amount": Decimal("1.00"),
+                        "custom_value_5_amount": Decimal("-1.00"),
                         "sales_count": 1,
                         "notes": None,
                     },
@@ -326,7 +326,7 @@ class ClientsDataApiTests(unittest.TestCase):
                         row[key] = value
                     else:
                         raise ValueError(f"Unsupported field {key}")
-                row["custom_value_5_amount"] = Decimal(str(row["custom_value_3_amount"])) - Decimal(str(row["custom_value_4_amount"]))
+                row["custom_value_5_amount"] = Decimal(str(row["custom_value_4_amount"])) - Decimal(str(row["custom_value_3_amount"]))
                 return dict(row)
 
             def create_daily_input(
@@ -357,7 +357,7 @@ class ClientsDataApiTests(unittest.TestCase):
                     "sales_count": int(sales_count),
                     "notes": None,
                 }
-                created["custom_value_5_amount"] = Decimal(str(created["custom_value_3_amount"])) - Decimal(str(created["custom_value_4_amount"]))
+                created["custom_value_5_amount"] = Decimal(str(created["custom_value_4_amount"])) - Decimal(str(created["custom_value_3_amount"]))
                 self.daily_inputs[self.next_daily_input_id] = created
                 self.next_daily_input_id += 1
                 return dict(created)
@@ -743,7 +743,9 @@ class ClientsDataApiTests(unittest.TestCase):
         self.assertEqual(payload["rows"][1]["cogs_amount"], "90")
         self.assertEqual(payload["rows"][1]["gross_profit_amount"], "60")
         self.assertEqual(payload["rows"][1]["custom_value_4_amount"], "8.50")
-        self.assertEqual(payload["rows"][1]["custom_value_5_amount"], "2.00")
+        self.assertEqual(payload["rows"][1]["custom_value_5_amount"], "-2.00")
+        self.assertNotIn("brand", payload["rows"][1])
+        self.assertNotIn("model", payload["rows"][1])
         self.assertEqual(payload["rows"][1]["sale_entries"][0]["brand"], "VW")
         self.assertEqual(payload["rows"][1]["custom_values"][0]["custom_field_id"], 11)
         self.assertEqual(payload["rows"][1]["custom_values"][1]["custom_field_id"], 12)
@@ -796,7 +798,7 @@ class ClientsDataApiTests(unittest.TestCase):
         )
         self.assertEqual(summary["custom_value_4_amount"], "11")
         self.assertEqual(summary["sales_count"], 6)
-        self.assertEqual(summary["custom_value_5_amount"], "88")
+        self.assertEqual(summary["custom_value_5_amount"], "-88")
 
     def test_post_daily_inputs_creates_distinct_rows_for_same_day_and_source(self):
         first = clients_api.create_client_data_daily_input(
@@ -1155,6 +1157,7 @@ class ClientsDataApiTests(unittest.TestCase):
         target_data_row = next(row for row in data_table["rows"] if row["metric_date"] == "2025-10-12" and row["source"] == "meta_ads")
         self.assertEqual(target_data_row["leads"], 7)
         self.assertEqual(target_data_row["custom_value_4_amount"], "50")
+        self.assertEqual(target_data_row["custom_value_5_amount"], "-70")
         self.assertEqual(target_data_row["sales_count"], 4)
         self.assertEqual(target_data_row["dynamic_custom_values"][0]["custom_field_id"], 11)
 
@@ -1167,6 +1170,7 @@ class ClientsDataApiTests(unittest.TestCase):
         target_day = next(row for row in lead_table["days"] if row["date"] == "2025-10-12")
         self.assertEqual(target_day["leads"], 7)
         self.assertEqual(float(target_day["custom_value_4_amount_ron"]), 50.0)
+        self.assertEqual(float(target_day["custom_value_5_amount_ron"]), -70.0)
         self.assertEqual(int(target_day["sales_count"]), 4)
 
         worksheet = clients_api.get_media_tracker_weekly_worksheet_foundation(

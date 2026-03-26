@@ -638,7 +638,7 @@ def upsert_daily_input(
     if recompute_custom_value_5:
         effective_custom_value_3 = _to_decimal(updates.get("custom_value_3_amount", base_row.get("custom_value_3_amount")))
         effective_custom_value_4 = _to_decimal(updates.get("custom_value_4_amount", base_row.get("custom_value_4_amount")))
-        updates["custom_value_5_amount"] = effective_custom_value_3 - effective_custom_value_4
+        updates["custom_value_5_amount"] = effective_custom_value_4 - effective_custom_value_3
 
     set_clauses: list[str] = []
     params: list[object] = []
@@ -716,7 +716,7 @@ def create_daily_input(
     parsed_cv3 = _validate_decimal_amount(custom_value_3_amount, field_name="custom_value_3_amount", allow_negative=False)
     parsed_cv4 = _validate_decimal_amount(custom_value_4_amount, field_name="custom_value_4_amount", allow_negative=False)
     parsed_sales = _validate_non_negative_int(sales_count, field_name="sales_count")
-    parsed_cv5 = parsed_cv3 - parsed_cv4
+    parsed_cv5 = parsed_cv4 - parsed_cv3
 
     with _connect() as conn:
         with conn.cursor() as cur:
@@ -810,7 +810,7 @@ def update_daily_input_by_id(
 
         effective_custom_value_3 = _to_decimal(updates.get("custom_value_3_amount", base_row.get("custom_value_3_amount")))
         effective_custom_value_4 = _to_decimal(updates.get("custom_value_4_amount", base_row.get("custom_value_4_amount")))
-        updates["custom_value_5_amount"] = effective_custom_value_3 - effective_custom_value_4
+        updates["custom_value_5_amount"] = effective_custom_value_4 - effective_custom_value_3
 
         set_clauses: list[str] = []
         params: list[object] = []

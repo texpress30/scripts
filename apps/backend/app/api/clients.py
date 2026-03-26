@@ -751,7 +751,7 @@ def get_client_data_table(
 
         custom_value_3_amount = _to_decimal(daily_input["custom_value_3_amount"])
         custom_value_4_amount = _to_decimal(daily_input["custom_value_4_amount"])
-        custom_value_5_amount = custom_value_3_amount - custom_value_4_amount
+        custom_value_5_amount = custom_value_4_amount - custom_value_3_amount
 
         source_key = str(daily_input.get("source") or "").strip().lower() or "unknown"
         source_label = client_data_store.get_source_label(source_key) or "Unknown"

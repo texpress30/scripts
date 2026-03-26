@@ -1,3 +1,17 @@
+# TODO — Data page remove Brand/Model + invert Val. Nerealizată formula (2026-03-26)
+
+- [x] Sync workspace (fetch/pull where possible) și recitesc fișierele frontend/backend/teste relevante înainte de modificări.
+- [x] Elimin complet `Marcă`/`Model` din Data page (form add/edit, tabel, detalii, tipuri/state/helper-e/payload UI).
+- [x] Inversez formula `Val. Nerealizată` la `Val. Vândută - Val. Aprobată` în UI preview+tabel.
+- [x] Aliniez backend canonical save/read + Media Buying + Media Tracker la noua formulă pentru `custom_value_5_amount`.
+- [x] Actualizez/adaug teste frontend/backend pentru: eliminare brand/model, formula nouă, propagare Data->MB->MT, non-regresii cerute.
+- [x] Rulez validări țintite și documentez rezultatele/limitările.
+
+## Review
+- [x] Confirm `Marcă` și `Model` eliminate complet din Data page UI + payloaduri UI.
+- [x] Confirm formula finală: `Val. Nerealizată = Val. Vândută - Val. Aprobată`.
+- [x] Confirm MB/MT reflectă aceeași semantică fără regresii pe multi-row/per-row CRUD/source optional.
+
 # TODO — Data source optional in canonical save (blank -> unknown) (2026-03-26)
 
 - [x] Sync workspace și recitesc fișierele frontend/backend/teste relevante înainte de modificări.
