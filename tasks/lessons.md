@@ -606,3 +606,24 @@
 - 2026-03-24: Când userul limitează explicit taskul la un sub-form (`Adaugă rând`), nu ating alte zone (tabel principal, Media Buying/Tracker, backend) și implementez strict câmpurile/calculul/salvarea cerute.
 - 2026-03-24: Pentru feedback UI strict pe formular, tratez explicit cerințele de ordine/label/blank-state înainte de logică suplimentară și evit complet placeholder/default-uri vizibile dacă userul cere formular clasic.
 - 2026-03-24: Când business rule-ul corect schimbă source-of-truth (manual fields vs derivat din sale entries), aliniez simultan store+API+reporting readers+UI și testele, ca să evit inconsistențe între pagini.
+- 2026-03-26: Pentru flow canonic Data, validez explicit `source` atât în frontend (pre-submit), cât și în backend (422 clar cu allowed values), ca să evit false-success când config/fallback trimite chei invalide.
+- 2026-03-26: La cleanup-ul Data page, elimin complet atât UI-ul cât și state/handlers dedicate fluxurilor legacy (vânzări/mențiuni) și păstrez strict payloadul canonic editabil, cu teste care verifică explicit absența controalelor scoase.
+- 2026-03-26: Pentru endpoint-ul canonic daily-input, resping explicit câmpurile legacy (422) și evit orice side-effect implicit pe sale_entries/derivări, ca să nu apară ștergeri ascunse la save standard.
+- 2026-03-26: Când separ contractul read-side Data config, țin `fixed_fields` strict pentru inputuri canonice editabile și mut labels read-only în `derived_fields`, iar frontend-ul citește explicit ambele hărți de label.
+- 2026-03-26: După feedback de tip “readu câmpurile lipsă”, restaurez strict slotul unic de vânzare în Data (form + tabel + POST dedicat) fără a redeschide multi-sale/mențiuni și fără a modifica payloadul canonic daily-input.
+- 2026-03-26: Când userul cere ordine exactă UI + delete per rând, aliniez explicit secvența formularului cu ordinea header-elor din tabel și folosesc identificatorul canonic `daily_input_id` pentru endpoint dedicat de ștergere (fără delete pe toată ziua).
+- 2026-03-26: Dacă business-ul cere revenirea unor summary fields în canonical save (`custom_value_4_amount`, `sales_count`), le mut în `fixed_fields` + payload canonic și păstrez `custom_value_5_amount` strict derivat/read-only, fără cuplare implicită la `sale_entries`.
+- 2026-03-26: Când există cerință de multi-rând pe aceeași zi+sursă, separ explicit create (POST nou) de update (PATCH pe `daily_input_id`) și elimin presupunerea de unicitate la nivel DB, altfel frontend-ul singur nu poate evita suprascrierea.
+- 2026-03-26: După ce userul cere explicit relaxarea unei validări (`source` optional), aliniez simultan frontend + backend + teste pentru aceeași regulă canonică (blank -> `unknown`, non-blank invalid -> 422) înainte de mesajul final.
+- 2026-03-26: Când userul cere eliminarea completă a unor câmpuri UI (`Marcă`/`Model`), elimin simultan inputuri + coloane + state/type/payload locale și adaug test explicit de absență atât în formular, cât și în header-ul tabelului.
+- 2026-03-26: Pentru cerințe de prezentare strict UI pe o coloană (`Val. Vândută`), modific doar formatter-ul/randarea acelei coloane și acopăr explicit total lunar + rând zilnic cu test de absență paranteze.
+- 2026-03-26: Pentru task-uri Media Tracker UI+backend punctuale, verific explicit endpoint-uri blocate `410` și reactivez doar cele cerute (`eur-ron-rate`) în paralel cu teste front/back pe edit+persist, fără a redeschide editări manuale necerute.
+- 2026-03-26: Când userul cere styling pe o coloană "de sus până jos", verific explicit ambele rânduri de header + toate celulele de date ale coloanei, nu doar header-ul principal și un singur cell.
+
+## 2026-03-26 — După feedback de respingere: refacere completă pe commitul curent, fără presupuneri
+- Când user-ul spune explicit că ultimul commit este nesatisfăcător, pornesc de la codul efectiv din HEAD și refac analiza înainte de orice afirmație.
+- Pentru task-uri cu cerințe de UI+backend pe același flow, introduc payload backend dedicat și testez explicit integrarea frontend pe endpointul nou.
+- Pentru grafice în vitest/jsdom, adaug imediat mock pentru `ResizeObserver` ca să evit false negatives și crash-uri la `ResponsiveContainer`.
+- 2026-03-26: Când feedback-ul cere layout specific din exemplu vizual (ex. „2 coloane”), aplic direct grila cerută în componenta de charts (`grid-cols-2` pe breakpoint relevant) fără a schimba logica dataset-urilor.
+- 2026-03-26: Dacă userul cere explicit scoaterea unui chart și schimbarea controlului de perioadă cu calendar, fac update strict pe UI/UX (elimin cardul și introduc selector range) fără extindere inutilă în backend.
+- 2026-03-26: Pentru feedback-uri fine de layout (swap poziții), schimb doar ordinea blocurilor în toolbar și păstrez funcționalitatea neschimbată.

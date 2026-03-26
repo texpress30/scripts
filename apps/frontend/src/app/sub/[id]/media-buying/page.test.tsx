@@ -121,7 +121,6 @@ function leadPayload(displayCurrency: string = "RON") {
   };
 }
 
-
 function leadPayloadWithMonths() {
   const base = leadPayload();
   return {
@@ -347,7 +346,7 @@ describe("SubMediaBuyingPage", () => {
     expect(screen.getByRole("columnheader", { name: /Cost Total/i }).className).toContain("border-dashed");
     expect(screen.getByRole("columnheader", { name: /Total Lead-uri/i }).className).toContain("border-dashed");
 
-    const unrealizedCells = screen.getAllByText((content) => content.includes("40") && content.toUpperCase().includes("RON") && content.includes("("));
+    const unrealizedCells = screen.getAllByText((content) => content.includes("40") && content.toUpperCase().includes("RON"));
     expect(unrealizedCells.length).toBeGreaterThan(0);
     expect(unrealizedCells[0].className || "").toContain("text-slate-900");
     expect(unrealizedCells[0].className || "").not.toContain("text-red-600");
@@ -426,8 +425,33 @@ describe("SubMediaBuyingPage", () => {
     const unrealizedHeader = screen.getByRole("columnheader", { name: /Val\. Nerealizata/i });
     expect(unrealizedHeader.className).not.toContain("text-red-600");
 
-    expect(screen.getByText(/\(RON\s?30\.00\)|\(.*30.*RON.*\)/i)).toBeInTheDocument();
     expect(screen.getAllByText(/RON\s?100\.00|100\.00\s?RON/i).length).toBeGreaterThan(0);
+  });
+
+  it("renders Val. Vândută as standard currency (no parentheses) for month totals and daily rows", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
+      if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
+      if (path.startsWith("/clients/96/media-buying/lead/table")) {
+        const payload = leadPayload();
+        payload.months[0].totals.custom_value_4_amount_ron = 367_782;
+        payload.months[0].days[0].custom_value_4_amount_ron = 1_234;
+        return payload;
+      }
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    render(<SubMediaBuyingPage />);
+    await screen.findByRole("button", { name: /Mar 2026/i });
+
+    const soldCells = screen.getAllByText((content) => {
+      const normalized = content.replace(/\u00a0/g, " ");
+      return normalized.toUpperCase().includes("RON") && (normalized.includes("367,782.00") || normalized.includes("1,234.00"));
+    });
+    expect(soldCells.length).toBeGreaterThanOrEqual(2);
+    for (const cell of soldCells) {
+      expect(cell.textContent || "").not.toContain("(");
+      expect(cell.textContent || "").not.toContain(")");
+    }
   });
 
   it("keeps custom columns uncolored even when client custom labels are changed", async () => {

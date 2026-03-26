@@ -127,6 +127,20 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
                     "days": [{"date": "2026-03-11", "percent_change": None, "display_currency": "RON"}],
                 }
 
+            def get_source_daily_rows(self, **kwargs):
+                return [
+                    {"date": "2026-03-11", "source": "google_ads", "source_label": "Google", "cost_amount": 1200},
+                    {"date": "2026-03-11", "source": "meta_ads", "source_label": "Meta", "cost_amount": 900},
+                    {"date": "2026-03-11", "source": "tiktok_ads", "source_label": "TikTok", "cost_amount": 700},
+                ]
+
+            def _list_data_layer_source_daily_business_rows(self, **kwargs):
+                return [
+                    {"date": date(2026, 3, 11), "source": "google_ads", "source_label": "Google", "leads": 40, "sales_count": 10, "custom_value_4_amount_ron": 8000, "cogs_amount_ron": 2200},
+                    {"date": date(2026, 3, 11), "source": "meta_ads", "source_label": "Meta", "leads": 30, "sales_count": 7, "custom_value_4_amount_ron": 5500, "cogs_amount_ron": 1800},
+                    {"date": date(2026, 3, 11), "source": "tiktok_ads", "source_label": "TikTok", "leads": 20, "sales_count": 5, "custom_value_4_amount_ron": 4200, "cogs_amount_ron": 1300},
+                ]
+
             def upsert_lead_daily_manual_value(self, **kwargs):
                 if kwargs["leads"] < 0:
                     raise ValueError("leads must be an integer >= 0")
@@ -386,6 +400,13 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
             user=self.user,
         )
         self.assertEqual(payload["eur_ron_rate"], 5.09)
+        foundation_after_first_save = clients_api.get_media_tracker_weekly_worksheet_foundation(
+            client_id=self.client_id,
+            granularity="month",
+            anchor_date=date(2026, 3, 15),
+            user=self.user,
+        )
+        self.assertEqual(foundation_after_first_save["eur_ron_rate"], 5.09)
 
         updated = clients_api.upsert_media_tracker_scope_eur_ron_rate(
             client_id=self.client_id,
@@ -397,6 +418,13 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
             user=self.user,
         )
         self.assertEqual(updated["eur_ron_rate"], 5.11)
+        foundation_after_update = clients_api.get_media_tracker_weekly_worksheet_foundation(
+            client_id=self.client_id,
+            granularity="month",
+            anchor_date=date(2026, 3, 20),
+            user=self.user,
+        )
+        self.assertEqual(foundation_after_update["eur_ron_rate"], 5.11)
 
         cleared = clients_api.upsert_media_tracker_scope_eur_ron_rate(
             client_id=self.client_id,
@@ -408,6 +436,40 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
             user=self.user,
         )
         self.assertIsNone(cleared["eur_ron_rate"])
+        foundation_after_clear = clients_api.get_media_tracker_weekly_worksheet_foundation(
+            client_id=self.client_id,
+            granularity="month",
+            anchor_date=date(2026, 3, 10),
+            user=self.user,
+        )
+        self.assertIsNone(foundation_after_clear["eur_ron_rate"])
+
+    def test_get_media_tracker_overview_charts_payload_includes_weeks_datasets_and_custom_labels(self):
+        clients_api.upsert_media_buying_config(
+            client_id=self.client_id,
+            payload=MediaBuyingConfigUpdateRequest(
+                template_type="lead",
+                custom_label_1="Aplicații",
+                custom_label_2="Aplicații Aprobate",
+                custom_label_3="Val. Aprobată",
+                custom_label_4="Val. Vândută",
+                custom_label_5="Val. Nerealizată",
+            ),
+            user=self.user,
+        )
+        payload = clients_api.get_media_tracker_overview_charts(
+            client_id=self.client_id,
+            granularity="month",
+            anchor_date=date(2026, 3, 15),
+            user=self.user,
+        )
+        self.assertGreaterEqual(len(payload["weeks"]), 4)
+        self.assertIn("sales", payload)
+        self.assertIn("financial", payload)
+        self.assertIn("total_sales_trend", payload["sales"])
+        self.assertIn("cost_efficiency", payload["financial"])
+        self.assertEqual(payload["custom_labels"]["custom_label_1"], "Aplicații")
+        self.assertEqual(payload["custom_labels"]["custom_label_4"], "Val. Vândută")
 
 
 if __name__ == "__main__":
