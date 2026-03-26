@@ -250,6 +250,22 @@ class ClientDataDailyInputWriteResponse(BaseModel):
     notes: str | None = None
 
 
+class ClientDataDailyInputDeleteResponse(BaseModel):
+    id: int
+    client_id: int
+    metric_date: str
+    source: str
+    leads: int
+    phones: int
+    custom_value_1_count: int
+    custom_value_2_count: int
+    custom_value_3_amount: str
+    custom_value_4_amount: str
+    custom_value_5_amount: str
+    sales_count: int
+    notes: str | None = None
+
+
 class ClientDataSaleEntryCreateRequest(BaseModel):
     daily_input_id: int
     sale_price_amount: float | int | str

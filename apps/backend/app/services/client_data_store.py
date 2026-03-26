@@ -864,6 +864,41 @@ def validate_daily_input_belongs_to_client(*, daily_input_id: int, client_id: in
     return payload
 
 
+def delete_daily_input_with_dependencies(*, daily_input_id: int) -> dict[str, object]:
+    normalized_daily_input_id = _normalize_positive_int(daily_input_id, field_name="daily_input_id")
+
+    with _connect() as conn:
+        daily_input = _get_daily_input_row_by_id(conn=conn, daily_input_id=normalized_daily_input_id)
+        if daily_input is None:
+            raise LookupError(f"Daily input {daily_input_id} not found")
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM client_data_daily_custom_values
+                WHERE daily_input_id = %s
+                """,
+                (normalized_daily_input_id,),
+            )
+            cur.execute(
+                """
+                DELETE FROM client_data_sale_entries
+                WHERE daily_input_id = %s
+                """,
+                (normalized_daily_input_id,),
+            )
+            cur.execute(
+                """
+                DELETE FROM client_data_daily_inputs
+                WHERE id = %s
+                """,
+                (normalized_daily_input_id,),
+            )
+        conn.commit()
+
+    return daily_input
+
+
 def _resolve_sale_entry_sort_order(*, conn, daily_input_id: int, sort_order: int | None) -> int:
     if sort_order is not None:
         return _validate_non_negative_int(sort_order, field_name="sort_order")

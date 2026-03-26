@@ -40,9 +40,9 @@ function setupApiMock() {
         fixed_fields: [
           { key: "leads", label: "Lead-uri" },
           { key: "phones", label: "Telefoane" },
-          { key: "custom_value_1_count", label: "CV1" },
-          { key: "custom_value_2_count", label: "CV2" },
-          { key: "custom_value_3_amount", label: "CV3" },
+          { key: "custom_value_1_count", label: "Aplicații" },
+          { key: "custom_value_2_count", label: "Aprobări" },
+          { key: "custom_value_3_amount", label: "Val. Aprobată" },
         ],
         derived_fields: [
           { key: "custom_value_4_amount", label: "Val. Vândută", value_kind: "amount" },
@@ -50,7 +50,7 @@ function setupApiMock() {
           { key: "sales_count", label: "Vânzări", value_kind: "count" },
           { key: "revenue_amount", label: "Venit", value_kind: "amount" },
           { key: "cogs_amount", label: "COGS", value_kind: "amount" },
-          { key: "gross_profit_amount", label: "P/L brut", value_kind: "amount" },
+          { key: "gross_profit_amount", label: "Profit Brut", value_kind: "amount" },
         ],
         dynamic_custom_fields: [
           { id: 11, field_key: "appointments", label: "Appointments", value_kind: "count", sort_order: 1, is_active: true },
@@ -89,6 +89,7 @@ function setupApiMock() {
     }
     if (path === "/clients/96/data/daily-input") return { id: 101 };
     if (path === "/clients/96/data/sale-entries") return { id: 777, daily_input_id: 101 };
+    if (path === "/clients/96/data/daily-inputs/101") return { id: 101 };
     if (path.startsWith("/clients/96/data/custom-fields")) return { items: [] };
     throw new Error(`Unhandled path ${path}`);
   });
@@ -173,26 +174,37 @@ describe("SubDataPage canonical-only UI", () => {
     expect(saleBody).toContain('"model":"Corolla"');
   });
 
-  it("renders single sale slot fields + derived labels and keeps legacy controls hidden", async () => {
+  it("renders Add Row fields in exact table order and keeps legacy controls hidden", async () => {
     render(<SubDataPage />);
     await screen.findByRole("heading", { name: "Data - Active Life Therapy" });
     fireEvent.click(screen.getByRole("button", { name: "Adaugă rând" }));
 
-    expect(screen.getByLabelText("Lead-uri rând nou")).toBeInTheDocument();
-    expect(screen.getByLabelText("New row phones")).toBeInTheDocument();
-    expect(screen.getByLabelText("New row cv1")).toBeInTheDocument();
-    expect(screen.getByLabelText("New row cv2")).toBeInTheDocument();
-    expect(screen.getByLabelText("New row cv3")).toBeInTheDocument();
-
-    expect(screen.getByLabelText("Marcă rând nou")).toBeInTheDocument();
-    expect(screen.getByLabelText("Model rând nou")).toBeInTheDocument();
-    expect(screen.getByLabelText("Preț vânzare rând nou")).toBeInTheDocument();
-    expect(screen.getByLabelText("Preț actual rând nou")).toBeInTheDocument();
+    const addRowPanel = screen.getByRole("heading", { name: "Adaugă rând" }).closest("div");
+    expect(addRowPanel).toBeTruthy();
+    const labelsInPanel = Array.from(addRowPanel?.querySelectorAll("label") ?? []).map((node) => node.textContent?.trim() ?? "");
+    expect(labelsInPanel.slice(0, 16)).toEqual([
+      "Săptămâna",
+      "Data vânzare",
+      "Lead-uri",
+      "Telefoane",
+      "Aplicații",
+      "Aprobări",
+      "Val. Aprobată",
+      "Val. Vândută",
+      "Val. Nerealizată",
+      "Vânzări",
+      "Marcă",
+      "Model",
+      "Preț vânzare",
+      "Preț actual",
+      "Profit Brut",
+      "Sursa",
+    ]);
 
     expect(screen.getByLabelText("Val. vândută rând nou")).toHaveAttribute("readonly");
     expect(screen.getByLabelText("Val. nerealizată rând nou")).toHaveAttribute("readonly");
     expect(screen.getByLabelText("Vânzări rând nou")).toHaveAttribute("readonly");
-    expect(screen.getByLabelText("P/L brut rând nou")).toHaveAttribute("readonly");
+    expect(screen.getByLabelText("Profit brut rând nou")).toHaveAttribute("readonly");
 
     expect(screen.getByRole("columnheader", { name: "Val. Vândută" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Val. Nerealizată" })).toBeInTheDocument();
@@ -201,10 +213,27 @@ describe("SubDataPage canonical-only UI", () => {
     expect(screen.getByRole("columnheader", { name: "Model" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Preț vânzare" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Preț actual" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "P/L brut" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Profit Brut" })).toBeInTheDocument();
     expect(screen.queryByText("Mențiuni")).not.toBeInTheDocument();
     expect(screen.queryByText("Adaugă vânzare nouă")).not.toBeInTheDocument();
     expect(screen.queryByText("Șterge vânzare")).not.toBeInTheDocument();
+  });
+
+  it("renders row delete action and calls row-level daily-input delete endpoint", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<SubDataPage />);
+    await screen.findByRole("heading", { name: "Data - Active Life Therapy" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Șterge rând" }));
+
+    await waitFor(() => {
+      expect(apiMock.apiRequest).toHaveBeenCalledWith(
+        "/clients/96/data/daily-inputs/101",
+        expect.objectContaining({ method: "DELETE" }),
+      );
+    });
+
+    confirmSpy.mockRestore();
   });
 
   it("blocks false success when single sale slot is partial/incoherent", async () => {

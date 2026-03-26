@@ -11,6 +11,7 @@ from app.schemas.client import (
     BusinessInputsImportResponse,
     ClientDataConfigResponse,
     ClientDataDailyInputUpsertRequest,
+    ClientDataDailyInputDeleteResponse,
     ClientDataDailyInputWriteResponse,
     ClientDataDailyCustomValueUpsertRequest,
     ClientDataDailyCustomValueWriteResponse,
@@ -862,6 +863,27 @@ def upsert_client_data_daily_input(
     if latest_row is None:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to write daily input")
     return _map_daily_input_write_payload(latest_row)
+
+
+@router.delete("/{client_id}/data/daily-inputs/{daily_input_id}", response_model=ClientDataDailyInputDeleteResponse)
+def delete_client_data_daily_input(
+    client_id: int,
+    daily_input_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    try:
+        client_data_store.validate_daily_input_belongs_to_client(daily_input_id=daily_input_id, client_id=client_id)
+        deleted = client_data_store.delete_daily_input_with_dependencies(daily_input_id=daily_input_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return _map_daily_input_write_payload(deleted)
 
 
 @router.post("/{client_id}/data/sale-entries", response_model=ClientDataSaleEntryWriteResponse)

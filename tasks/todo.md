@@ -1,3 +1,17 @@
+# TODO — Data page reorder + per-row delete endpoint (2026-03-26)
+
+- [x] Sync workspace și recitesc fișierele frontend/backend relevante înainte de modificări.
+- [x] Reordonez formularul `Adaugă rând` exact în secvența tabelului principal.
+- [x] Adaug acțiune frontend de delete per rând (`daily_input_id`) cu confirmare și refresh tabel.
+- [x] Implementez endpoint backend dedicat `DELETE /clients/{client_id}/data/daily-inputs/{daily_input_id}` cu ștergere dependentă.
+- [x] Adaug/ajustez teste frontend/backend pentru ordine + delete + propagare Data/MB/MT.
+- [x] Rulez validări țintite și documentez limitările de mediu.
+
+## Review
+- [x] Confirm fără reintroducere Mențiuni / Adaugă vânzare nouă / Șterge vânzare (slot multi-sale).
+- [x] Confirm delete-ul este per rând afișat (nu delete în masă pe zi).
+- [x] Confirm flow-ul canonic de save rămâne neschimbat.
+
 # TODO — Data page: single-sale slot restore without reopening legacy contract (2026-03-26)
 
 - [x] Sync workspace state and re-read Data page + frontend tests before edits.

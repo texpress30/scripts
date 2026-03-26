@@ -460,6 +460,28 @@ export default function SubDataPage() {
     }
   }
 
+  async function deleteRow(row: DataTableRow) {
+    const dailyInputId = Number(row.daily_input_id ?? 0);
+    if (!Number.isFinite(dailyInputId) || dailyInputId <= 0) {
+      setMutationError("Nu am putut determina rândul pentru ștergere.");
+      return;
+    }
+    if (typeof window !== "undefined" && !window.confirm("Ștergi definitiv acest rând?")) return;
+
+    setMutationLoadingKey(`delete-row:${dailyInputId}`);
+    setMutationError("");
+    setMutationSuccess("");
+    try {
+      await apiRequest(`/clients/${clientId}/data/daily-inputs/${dailyInputId}`, { method: "DELETE" });
+      await refreshTable();
+      setMutationSuccess("Rândul a fost șters.");
+    } catch (err) {
+      setMutationError(err instanceof Error ? err.message : "Nu am putut șterge rândul.");
+    } finally {
+      setMutationLoadingKey("");
+    }
+  }
+
   async function createCustomField() {
     setMutationLoadingKey("create-custom-field");
     setMutationError("");
@@ -629,20 +651,20 @@ export default function SubDataPage() {
               <div className="grid gap-2 md:grid-cols-4">
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Săptămâna</label><input aria-label="Săptămâna rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowWeekValue} readOnly /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Data vânzare</label><input aria-label="Data rând nou" type="date" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.metric_date} onChange={(e) => setNewRowDraft((p) => ({ ...p, metric_date: e.target.value }))} /></div>
-                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Sursa</label><select aria-label="Sursa rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.source} onChange={(e) => setNewRowDraft((p) => ({ ...p, source: e.target.value }))}><option value=""> </option>{supportedSources.map((source) => <option key={source.key} value={source.key}>{source.label}</option>)}</select></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.leads}</label><input aria-label="Lead-uri rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.leads} onChange={(e) => setNewRowDraft((p) => ({ ...p, leads: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.phones}</label><input aria-label="New row phones" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.phones} onChange={(e) => setNewRowDraft((p) => ({ ...p, phones: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_1_count}</label><input aria-label="New row cv1" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_1_count} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_1_count: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_2_count}</label><input aria-label="New row cv2" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_2_count} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_2_count: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_3_amount}</label><input aria-label="New row cv3" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_3_amount} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_3_amount: e.target.value }))} /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{derivedLabels.custom_value_4_amount}</label><input aria-label="Val. vândută rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowSaleHasValidNumbers ? formatAmount(newRowDerivedSoldAmount, currencyCode) : ""} readOnly /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{derivedLabels.custom_value_5_amount}</label><input aria-label="Val. nerealizată rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowHasValidCv3 ? formatAmount(newRowDerivedUnrealizedAmount, currencyCode) : ""} readOnly /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{derivedLabels.sales_count}</label><input aria-label="Vânzări rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowSaleHasAnyInput ? String(newRowDerivedSalesCount) : ""} readOnly /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Marcă</label><input aria-label="Marcă rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.brand} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, brand: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Model</label><input aria-label="Model rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.model} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, model: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Preț vânzare</label><input aria-label="Preț vânzare rând nou" type="number" step="any" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.sale_price_amount} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, sale_price_amount: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Preț actual</label><input aria-label="Preț actual rând nou" type="number" step="any" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowSaleDraft.actual_price_amount} onChange={(e) => setNewRowSaleDraft((p) => ({ ...p, actual_price_amount: e.target.value }))} /></div>
-                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{derivedLabels.custom_value_4_amount}</label><input aria-label="Val. vândută rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowSaleHasValidNumbers ? formatAmount(newRowDerivedSoldAmount, currencyCode) : ""} readOnly /></div>
-                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{derivedLabels.custom_value_5_amount}</label><input aria-label="Val. nerealizată rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowHasValidCv3 ? formatAmount(newRowDerivedUnrealizedAmount, currencyCode) : ""} readOnly /></div>
-                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{derivedLabels.sales_count}</label><input aria-label="Vânzări rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowSaleHasAnyInput ? String(newRowDerivedSalesCount) : ""} readOnly /></div>
-                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{derivedLabels.gross_profit_amount}</label><input aria-label="P/L brut rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowSaleHasValidNumbers ? formatAmount(newRowDerivedGrossProfit, currencyCode) : ""} readOnly /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{derivedLabels.gross_profit_amount}</label><input aria-label="Profit brut rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowSaleHasValidNumbers ? formatAmount(newRowDerivedGrossProfit, currencyCode) : ""} readOnly /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">Sursa</label><select aria-label="Sursa rând nou" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.source} onChange={(e) => setNewRowDraft((p) => ({ ...p, source: e.target.value }))}><option value=""> </option>{supportedSources.map((source) => <option key={source.key} value={source.key}>{source.label}</option>)}</select></div>
                 {activeDynamicFields.map((field) => (
                   <div key={`new-dynamic-${field.id}`} className="space-y-1">
                     <label className="text-xs font-medium text-slate-700">{field.label}</label>
@@ -728,7 +750,17 @@ export default function SubDataPage() {
                                 <button type="button" className="rounded border border-slate-300 px-2 py-1 text-xs" onClick={() => { setEditingRowKey(""); setEditingRowDraft(null); }}>Anulează</button>
                               </div>
                             ) : (
-                              <button type="button" className="rounded border border-slate-300 px-2 py-1 text-xs" onClick={() => beginEditRow(row)}>Editează</button>
+                              <div className="flex gap-2">
+                                <button type="button" className="rounded border border-slate-300 px-2 py-1 text-xs" onClick={() => beginEditRow(row)}>Editează</button>
+                                <button
+                                  type="button"
+                                  className="rounded border border-rose-300 px-2 py-1 text-xs text-rose-700 disabled:opacity-60"
+                                  disabled={mutationLoadingKey === `delete-row:${row.daily_input_id}`}
+                                  onClick={() => void deleteRow(row)}
+                                >
+                                  Șterge rând
+                                </button>
+                              </div>
                             )}
                           </td>
                           <td className="border border-slate-200 px-3 py-2">
