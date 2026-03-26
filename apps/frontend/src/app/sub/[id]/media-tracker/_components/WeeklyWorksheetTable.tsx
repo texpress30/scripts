@@ -18,6 +18,7 @@ export type WorksheetRow = {
 export type WorksheetSection = { key: string; label: string; rows: WorksheetRow[] };
 
 const DASHED_COL = "border-r border-black border-dashed";
+const MEDIA_BUYING_GREY_TEXT_CLASS = "text-[#bfbfbf]";
 
 function formatWorksheetValue(
   value: number | null | undefined,
@@ -182,7 +183,7 @@ export function WeeklyWorksheetTable(
         <thead>
           <tr className="bg-slate-100">
             <th className={`sticky left-0 z-20 min-w-56 border-b border-slate-200 bg-slate-100 px-3 py-2 text-left font-semibold text-slate-800 ${DASHED_COL}`}>Săptămâna</th>
-            <th className={`min-w-32 border-b border-slate-200 px-3 py-2 text-right font-semibold text-slate-800 ${DASHED_COL}`}>Istorie</th>
+            <th className={`min-w-32 border-b border-slate-200 px-3 py-2 text-right font-semibold ${MEDIA_BUYING_GREY_TEXT_CLASS} ${DASHED_COL}`}>Istorie</th>
             {weeks.map((week) => (
               <th key={`week-index:${week.week_start}`} className={`min-w-32 border-b border-slate-200 px-3 py-2 text-right font-semibold text-slate-700 ${DASHED_COL}`}>
                 Săpt. {isoWeekNumberFromWeekStart(week.week_start)}
@@ -191,7 +192,7 @@ export function WeeklyWorksheetTable(
           </tr>
           <tr className="bg-slate-50">
             <th className={`sticky left-0 z-20 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left font-medium text-slate-600 ${DASHED_COL}`}>Data Începere</th>
-            <th className={`border-b border-slate-200 px-3 py-2 text-right text-slate-500 ${DASHED_COL}`}>&nbsp;</th>
+            <th className={`border-b border-slate-200 px-3 py-2 text-right ${MEDIA_BUYING_GREY_TEXT_CLASS} ${DASHED_COL}`}>&nbsp;</th>
             {weeks.map((week) => (
               <th key={`week-start:${week.week_start}`} className={`border-b border-slate-200 px-3 py-2 text-right font-medium text-slate-600 ${DASHED_COL}`}>
                 {week.week_start}
@@ -210,7 +211,7 @@ export function WeeklyWorksheetTable(
                 return (
                   <tr key={`${section.key}:${row.row_key}`} className="border-t border-slate-100">
                     <td className={`sticky left-0 z-10 bg-white ${rowLabelClass(row)} ${DASHED_COL}`}>{row.label}</td>
-                    <td data-testid={`history-${section.key}-${row.row_key}`} className={`${rowCellClass(row)} ${DASHED_COL}`}>{formatWorksheetValue(row.history_value, row.value_kind, row.currency_code, displayCurrency)}</td>
+                    <td data-testid={`history-${section.key}-${row.row_key}`} className={`${rowCellClass(row)} ${MEDIA_BUYING_GREY_TEXT_CLASS} ${DASHED_COL}`}>{formatWorksheetValue(row.history_value, row.value_kind, row.currency_code, displayCurrency)}</td>
                     {row.weekly_values.map((cell) => {
                       const editable = !!manualFieldKey && typeof onManualCellCommit === "function";
                       return (
