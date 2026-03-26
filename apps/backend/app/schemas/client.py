@@ -225,6 +225,17 @@ class ClientDataDailyInputUpsertRequest(BaseModel):
     sale_sort_order: int | None = Field(default=None, description="Legacy field: rejected by canonical daily-input save")
 
 
+class ClientDataDailyInputPatchRequest(BaseModel):
+    leads: int | None = None
+    phones: int | None = None
+    custom_value_1_count: int | None = None
+    custom_value_2_count: int | None = None
+    custom_value_3_amount: float | int | str | None = None
+    custom_value_4_amount: float | int | str | None = None
+    sales_count: int | None = None
+    dynamic_custom_values: list[ClientDataDynamicCustomValueUpsertItem] | None = None
+
+
 class ClientDataSaleEntryUpsertItem(BaseModel):
     brand: str | None = None
     model: str | None = None

@@ -28,6 +28,7 @@ vi.mock("@/components/AppShell", () => ({
 }));
 
 function setupApiMock() {
+  let nextDailyInputId = 301;
   apiMock.apiRequest.mockImplementation(async (path: string) => {
     if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy" }] };
     if (path === "/clients/96/data/config") {
@@ -87,7 +88,12 @@ function setupApiMock() {
         ],
       };
     }
-    if (path === "/clients/96/data/daily-input") return { id: 101 };
+    if (path === "/clients/96/data/daily-inputs") {
+      const id = nextDailyInputId;
+      nextDailyInputId += 1;
+      return { id };
+    }
+    if (path === "/clients/96/data/daily-inputs/101") return { id: 101 };
     if (path === "/clients/96/data/sale-entries") return { id: 777, daily_input_id: 101 };
     if (path === "/clients/96/data/daily-inputs/101") return { id: 101 };
     if (path.startsWith("/clients/96/data/custom-fields")) return { items: [] };
@@ -139,15 +145,15 @@ describe("SubDataPage canonical-only UI", () => {
 
     await waitFor(() => {
       expect(apiMock.apiRequest).toHaveBeenCalledWith(
-        "/clients/96/data/daily-input",
+        "/clients/96/data/daily-inputs",
         expect.objectContaining({
-          method: "PUT",
+          method: "POST",
           body: expect.stringContaining('"dynamic_custom_values":[{"custom_field_id":11,"numeric_value":6}]'),
         }),
       );
     });
 
-    const putCall = apiMock.apiRequest.mock.calls.find((call: any[]) => call[0] === "/clients/96/data/daily-input");
+    const putCall = apiMock.apiRequest.mock.calls.find((call: any[]) => call[0] === "/clients/96/data/daily-inputs");
     const putBody = String(putCall?.[1]?.body || "");
     expect(putBody).toContain('"metric_date":"2026-03-12"');
     expect(putBody).toContain('"source":"meta_ads"');
@@ -166,7 +172,7 @@ describe("SubDataPage canonical-only UI", () => {
         "/clients/96/data/sale-entries",
         expect.objectContaining({
           method: "POST",
-          body: expect.stringContaining('"daily_input_id":101'),
+          body: expect.stringContaining('"daily_input_id":301'),
         }),
       );
     });
@@ -254,16 +260,43 @@ describe("SubDataPage canonical-only UI", () => {
 
     await waitFor(() => {
       expect(apiMock.apiRequest).toHaveBeenCalledWith(
-        "/clients/96/data/daily-input",
+        "/clients/96/data/daily-inputs/101",
         expect.objectContaining({
-          method: "PUT",
+          method: "PATCH",
           body: expect.stringContaining('"custom_value_4_amount":99'),
         }),
       );
     });
 
-    const putCall = apiMock.apiRequest.mock.calls.find((call: any[]) => call[0] === "/clients/96/data/daily-input");
+    const putCall = apiMock.apiRequest.mock.calls.find((call: any[]) => call[0] === "/clients/96/data/daily-inputs/101");
     expect(String(putCall?.[1]?.body || "")).toContain('"sales_count":5');
+  });
+
+  it("creates two distinct rows for same day and source via POST daily-inputs", async () => {
+    render(<SubDataPage />);
+    await screen.findByRole("heading", { name: "Data - Active Life Therapy" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Adaugă rând" }));
+    fireEvent.change(screen.getByLabelText("Data rând nou"), { target: { value: "2026-03-12" } });
+    fireEvent.change(screen.getByLabelText("Sursa rând nou"), { target: { value: "meta_ads" } });
+    fireEvent.change(screen.getByLabelText("Lead-uri rând nou"), { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvează rând" }));
+
+    await waitFor(() => {
+      const postCalls = apiMock.apiRequest.mock.calls.filter((call: any[]) => call[0] === "/clients/96/data/daily-inputs");
+      expect(postCalls.length).toBe(1);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Adaugă rând" }));
+    fireEvent.change(screen.getByLabelText("Data rând nou"), { target: { value: "2026-03-12" } });
+    fireEvent.change(screen.getByLabelText("Sursa rând nou"), { target: { value: "meta_ads" } });
+    fireEvent.change(screen.getByLabelText("Lead-uri rând nou"), { target: { value: "8" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvează rând" }));
+
+    await waitFor(() => {
+      const postCalls = apiMock.apiRequest.mock.calls.filter((call: any[]) => call[0] === "/clients/96/data/daily-inputs");
+      expect(postCalls.length).toBe(2);
+    });
   });
 
   it("blocks false success when single sale slot is partial/incoherent", async () => {

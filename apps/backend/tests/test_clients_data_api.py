@@ -9,6 +9,7 @@ from app.api import clients as clients_api
 from app.schemas.client import (
     ClientDataCustomFieldCreateRequest,
     ClientDataCustomFieldUpdateRequest,
+    ClientDataDailyInputPatchRequest,
     ClientDataDailyInputUpsertRequest,
     ClientDataDailyCustomValueUpsertRequest,
     ClientDataSaleEntryCreateRequest,
@@ -327,6 +328,50 @@ class ClientsDataApiTests(unittest.TestCase):
                         raise ValueError(f"Unsupported field {key}")
                 row["custom_value_5_amount"] = Decimal(str(row["custom_value_3_amount"])) - Decimal(str(row["custom_value_4_amount"]))
                 return dict(row)
+
+            def create_daily_input(
+                self,
+                *,
+                client_id: int,
+                metric_date,
+                source,
+                leads=0,
+                phones=0,
+                custom_value_1_count=0,
+                custom_value_2_count=0,
+                custom_value_3_amount=0,
+                custom_value_4_amount=0,
+                sales_count=0,
+            ):
+                created = {
+                    "id": self.next_daily_input_id,
+                    "client_id": int(client_id),
+                    "metric_date": str(metric_date),
+                    "source": self._normalize_source(source),
+                    "leads": int(leads),
+                    "phones": int(phones),
+                    "custom_value_1_count": int(custom_value_1_count),
+                    "custom_value_2_count": int(custom_value_2_count),
+                    "custom_value_3_amount": Decimal(str(custom_value_3_amount)),
+                    "custom_value_4_amount": Decimal(str(custom_value_4_amount)),
+                    "sales_count": int(sales_count),
+                    "notes": None,
+                }
+                created["custom_value_5_amount"] = Decimal(str(created["custom_value_3_amount"])) - Decimal(str(created["custom_value_4_amount"]))
+                self.daily_inputs[self.next_daily_input_id] = created
+                self.next_daily_input_id += 1
+                return dict(created)
+
+            def update_daily_input_by_id(self, *, daily_input_id: int, **updates):
+                row = self.daily_inputs.get(int(daily_input_id))
+                if row is None:
+                    raise LookupError(f"Daily input {daily_input_id} not found")
+                return self.upsert_daily_input(
+                    client_id=int(row["client_id"]),
+                    metric_date=str(row["metric_date"]),
+                    source=str(row["source"]),
+                    **updates,
+                )
 
             def get_or_create_daily_input(self, *, client_id: int, metric_date, source):
                 for row in self.daily_inputs.values():
@@ -752,6 +797,77 @@ class ClientsDataApiTests(unittest.TestCase):
         self.assertEqual(summary["custom_value_4_amount"], "11")
         self.assertEqual(summary["sales_count"], 6)
         self.assertEqual(summary["custom_value_5_amount"], "88")
+
+    def test_post_daily_inputs_creates_distinct_rows_for_same_day_and_source(self):
+        first = clients_api.create_client_data_daily_input(
+            client_id=self.client_id,
+            payload=ClientDataDailyInputUpsertRequest(
+                metric_date=date(2026, 3, 24),
+                source="meta_ads",
+                leads=1,
+                custom_value_4_amount=10,
+                sales_count=1,
+            ),
+            user=self.user,
+        )
+        second = clients_api.create_client_data_daily_input(
+            client_id=self.client_id,
+            payload=ClientDataDailyInputUpsertRequest(
+                metric_date=date(2026, 3, 24),
+                source="meta_ads",
+                leads=2,
+                custom_value_4_amount=20,
+                sales_count=1,
+            ),
+            user=self.user,
+        )
+        self.assertNotEqual(int(first["id"]), int(second["id"]))
+
+        table = clients_api.get_client_data_table(
+            client_id=self.client_id,
+            date_from=date(2026, 3, 1),
+            date_to=date(2026, 3, 31),
+            user=self.user,
+        )
+        same_day_source_rows = [row for row in table["rows"] if row["metric_date"] == "2026-03-24" and row["source"] == "meta_ads"]
+        self.assertGreaterEqual(len(same_day_source_rows), 3)
+
+    def test_patch_daily_input_updates_strict_row_by_daily_input_id(self):
+        target_id = clients_api.create_client_data_daily_input(
+            client_id=self.client_id,
+            payload=ClientDataDailyInputUpsertRequest(
+                metric_date=date(2026, 3, 24),
+                source="meta_ads",
+                leads=5,
+                custom_value_4_amount=25,
+                sales_count=2,
+            ),
+            user=self.user,
+        )["id"]
+        other_id = clients_api.create_client_data_daily_input(
+            client_id=self.client_id,
+            payload=ClientDataDailyInputUpsertRequest(
+                metric_date=date(2026, 3, 24),
+                source="meta_ads",
+                leads=8,
+                custom_value_4_amount=30,
+                sales_count=3,
+            ),
+            user=self.user,
+        )["id"]
+
+        updated = clients_api.patch_client_data_daily_input(
+            client_id=self.client_id,
+            daily_input_id=int(target_id),
+            payload=ClientDataDailyInputPatchRequest(leads=99, custom_value_4_amount=40, sales_count=7),
+            user=self.user,
+        )
+        self.assertEqual(int(updated["id"]), int(target_id))
+        self.assertEqual(updated["leads"], 99)
+
+        other = clients_api.client_data_store.validate_daily_input_belongs_to_client(daily_input_id=int(other_id), client_id=self.client_id)
+        self.assertEqual(int(other["leads"]), 8)
+        self.assertEqual(str(other["custom_value_4_amount"]), "30")
 
     def test_put_daily_input_rejects_legacy_fields_with_explicit_422(self):
         cases = [

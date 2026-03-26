@@ -692,6 +692,175 @@ def upsert_daily_input(
     return payload
 
 
+def create_daily_input(
+    *,
+    client_id: int,
+    metric_date: date | str,
+    source: str,
+    leads: int = 0,
+    phones: int = 0,
+    custom_value_1_count: int = 0,
+    custom_value_2_count: int = 0,
+    custom_value_3_amount: object = 0,
+    custom_value_4_amount: object = 0,
+    sales_count: int = 0,
+) -> dict[str, object]:
+    normalized_client_id = _normalize_client_id(client_id)
+    normalized_metric_date = _normalize_metric_date(metric_date)
+    normalized_source = _normalize_supported_source(source)
+
+    parsed_leads = _validate_non_negative_int(leads, field_name="leads")
+    parsed_phones = _validate_non_negative_int(phones, field_name="phones")
+    parsed_cv1 = _validate_non_negative_int(custom_value_1_count, field_name="custom_value_1_count")
+    parsed_cv2 = _validate_non_negative_int(custom_value_2_count, field_name="custom_value_2_count")
+    parsed_cv3 = _validate_decimal_amount(custom_value_3_amount, field_name="custom_value_3_amount", allow_negative=False)
+    parsed_cv4 = _validate_decimal_amount(custom_value_4_amount, field_name="custom_value_4_amount", allow_negative=False)
+    parsed_sales = _validate_non_negative_int(sales_count, field_name="sales_count")
+    parsed_cv5 = parsed_cv3 - parsed_cv4
+
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO client_data_daily_inputs (
+                    client_id,
+                    metric_date,
+                    source,
+                    leads,
+                    phones,
+                    custom_value_1_count,
+                    custom_value_2_count,
+                    custom_value_3_amount,
+                    custom_value_4_amount,
+                    custom_value_5_amount,
+                    sales_count,
+                    notes
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL)
+                RETURNING
+                    id,
+                    client_id,
+                    metric_date,
+                    source,
+                    leads,
+                    phones,
+                    custom_value_1_count,
+                    custom_value_2_count,
+                    custom_value_3_amount,
+                    custom_value_4_amount,
+                    custom_value_5_amount,
+                    sales_count,
+                    notes
+                """,
+                (
+                    normalized_client_id,
+                    normalized_metric_date,
+                    normalized_source,
+                    parsed_leads,
+                    parsed_phones,
+                    parsed_cv1,
+                    parsed_cv2,
+                    parsed_cv3,
+                    parsed_cv4,
+                    parsed_cv5,
+                    parsed_sales,
+                ),
+            )
+            row = cur.fetchone()
+        conn.commit()
+    payload = _row_to_daily_input_payload(row)
+    if payload is None:
+        raise RuntimeError("Failed to create daily input row")
+    return payload
+
+
+def update_daily_input_by_id(
+    *,
+    daily_input_id: int,
+    leads: int | None = None,
+    phones: int | None = None,
+    custom_value_1_count: int | None = None,
+    custom_value_2_count: int | None = None,
+    custom_value_3_amount: object | None = None,
+    custom_value_4_amount: object | None = None,
+    sales_count: int | None = None,
+) -> dict[str, object]:
+    normalized_daily_input_id = _normalize_positive_int(daily_input_id, field_name="daily_input_id")
+    with _connect() as conn:
+        base_row = _get_daily_input_row_by_id(conn=conn, daily_input_id=normalized_daily_input_id)
+        if base_row is None:
+            raise LookupError(f"Daily input {daily_input_id} not found")
+
+        updates: dict[str, object] = {}
+        if leads is not None:
+            updates["leads"] = _validate_non_negative_int(leads, field_name="leads")
+        if phones is not None:
+            updates["phones"] = _validate_non_negative_int(phones, field_name="phones")
+        if custom_value_1_count is not None:
+            updates["custom_value_1_count"] = _validate_non_negative_int(custom_value_1_count, field_name="custom_value_1_count")
+        if custom_value_2_count is not None:
+            updates["custom_value_2_count"] = _validate_non_negative_int(custom_value_2_count, field_name="custom_value_2_count")
+        if custom_value_3_amount is not None:
+            updates["custom_value_3_amount"] = _validate_decimal_amount(custom_value_3_amount, field_name="custom_value_3_amount", allow_negative=False)
+        if custom_value_4_amount is not None:
+            updates["custom_value_4_amount"] = _validate_decimal_amount(custom_value_4_amount, field_name="custom_value_4_amount", allow_negative=False)
+        if sales_count is not None:
+            updates["sales_count"] = _validate_non_negative_int(sales_count, field_name="sales_count")
+        if not updates:
+            raise ValueError("At least one daily input field must be provided")
+
+        effective_custom_value_3 = _to_decimal(updates.get("custom_value_3_amount", base_row.get("custom_value_3_amount")))
+        effective_custom_value_4 = _to_decimal(updates.get("custom_value_4_amount", base_row.get("custom_value_4_amount")))
+        updates["custom_value_5_amount"] = effective_custom_value_3 - effective_custom_value_4
+
+        set_clauses: list[str] = []
+        params: list[object] = []
+        for column in (
+            "leads",
+            "phones",
+            "custom_value_1_count",
+            "custom_value_2_count",
+            "custom_value_3_amount",
+            "custom_value_4_amount",
+            "custom_value_5_amount",
+            "sales_count",
+        ):
+            if column in updates:
+                set_clauses.append(f"{column} = %s")
+                params.append(updates[column])
+        set_clauses.append("updated_at = NOW()")
+        params.append(normalized_daily_input_id)
+
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                UPDATE client_data_daily_inputs
+                SET {', '.join(set_clauses)}
+                WHERE id = %s
+                RETURNING
+                    id,
+                    client_id,
+                    metric_date,
+                    source,
+                    leads,
+                    phones,
+                    custom_value_1_count,
+                    custom_value_2_count,
+                    custom_value_3_amount,
+                    custom_value_4_amount,
+                    custom_value_5_amount,
+                    sales_count,
+                    notes
+                """,
+                tuple(params),
+            )
+            row = cur.fetchone()
+        conn.commit()
+    payload = _row_to_daily_input_payload(row)
+    if payload is None:
+        raise RuntimeError(f"Failed to update daily input {daily_input_id}")
+    return payload
+
+
 def _normalize_notes(notes: str | None) -> str | None:
     if notes is None:
         return None
@@ -780,7 +949,7 @@ def list_daily_inputs(
                 WHERE client_id = %s
                   AND metric_date >= %s
                   AND metric_date <= %s
-                ORDER BY metric_date DESC, source ASC, id ASC
+                ORDER BY metric_date DESC, id DESC
                 """,
                 (normalized_client_id, normalized_date_from, normalized_date_to),
             )

@@ -1,3 +1,17 @@
+# TODO — Data create/update split by row id and same-day multi-row support (2026-03-26)
+
+- [x] Sync workspace și recitesc fișierele relevante frontend/backend înainte de modificări.
+- [x] Introduc contract explicit create/update/delete pentru Data: POST create nou, PATCH update per `daily_input_id`, DELETE per `daily_input_id`.
+- [x] Elimin presupunerea structurală de unicitate `(client_id, metric_date, source)` prin migrare DB.
+- [x] Actualizez Data page să folosească POST pentru Add Row și PATCH pentru Edit row (fără upsert zi+sursă la create).
+- [x] Verific agregarea Media Buying pe mai multe rânduri/zi și repar riscul de totaluri umflate din join sale entries.
+- [x] Adaug/ajustez teste frontend/backend pentru multi-row same-day, edit per-row și propagare MB/MT.
+
+## Review
+- [x] Confirm create permite multiple rânduri în aceeași zi și aceeași sursă.
+- [x] Confirm edit/delete rămân strict per-rând pe `daily_input_id`.
+- [x] Confirm fără reintroducere Mențiuni / Adaugă vânzare nouă / Șterge vânzare.
+
 # TODO — Data canonical summary fields editable again (2026-03-26)
 
 - [x] Sync workspace și recitesc fișierele backend/frontend/teste relevante înainte de modificări.

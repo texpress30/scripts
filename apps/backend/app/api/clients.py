@@ -11,6 +11,7 @@ from app.schemas.client import (
     BusinessInputsImportResponse,
     ClientDataConfigResponse,
     ClientDataDailyInputUpsertRequest,
+    ClientDataDailyInputPatchRequest,
     ClientDataDailyInputDeleteResponse,
     ClientDataDailyInputWriteResponse,
     ClientDataDailyCustomValueUpsertRequest,
@@ -863,6 +864,101 @@ def upsert_client_data_daily_input(
     if latest_row is None:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to write daily input")
     return _map_daily_input_write_payload(latest_row)
+
+
+@router.post("/{client_id}/data/daily-inputs", response_model=ClientDataDailyInputWriteResponse)
+def create_client_data_daily_input(
+    client_id: int,
+    payload: ClientDataDailyInputUpsertRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+    _reject_legacy_daily_input_fields_or_422(payload)
+    source_key = _validate_canonical_source_or_422(payload.source)
+
+    try:
+        created = client_data_store.create_daily_input(
+            client_id=client_id,
+            metric_date=payload.metric_date,
+            source=source_key,
+            leads=int(payload.leads or 0),
+            phones=int(payload.phones or 0),
+            custom_value_1_count=int(payload.custom_value_1_count or 0),
+            custom_value_2_count=int(payload.custom_value_2_count or 0),
+            custom_value_3_amount=payload.custom_value_3_amount or 0,
+            custom_value_4_amount=payload.custom_value_4_amount or 0,
+            sales_count=int(payload.sales_count or 0),
+        )
+        if "dynamic_custom_values" in payload.model_fields_set and payload.dynamic_custom_values is not None:
+            dynamic_values_payload = [
+                {"custom_field_id": int(item.custom_field_id), "numeric_value": item.numeric_value}
+                for item in payload.dynamic_custom_values or []
+            ]
+            client_data_store.replace_daily_custom_values_for_daily_input(
+                client_id=client_id,
+                daily_input_id=int(created["id"]),
+                dynamic_custom_values=dynamic_values_payload,
+            )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return _map_daily_input_write_payload(created)
+
+
+@router.patch("/{client_id}/data/daily-inputs/{daily_input_id}", response_model=ClientDataDailyInputWriteResponse)
+def patch_client_data_daily_input(
+    client_id: int,
+    daily_input_id: int,
+    payload: ClientDataDailyInputPatchRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    allowed_fields = {
+        "leads",
+        "phones",
+        "custom_value_1_count",
+        "custom_value_2_count",
+        "custom_value_3_amount",
+        "custom_value_4_amount",
+        "sales_count",
+    }
+    provided_fields = set(payload.model_fields_set).intersection(allowed_fields)
+    dynamic_values_provided = "dynamic_custom_values" in payload.model_fields_set and payload.dynamic_custom_values is not None
+    if not provided_fields and not dynamic_values_provided:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="At least one canonical field is required")
+
+    try:
+        client_data_store.validate_daily_input_belongs_to_client(daily_input_id=daily_input_id, client_id=client_id)
+        kwargs = {field: getattr(payload, field) for field in provided_fields}
+        updated = None
+        if kwargs:
+            updated = client_data_store.update_daily_input_by_id(daily_input_id=daily_input_id, **kwargs)
+        else:
+            updated = client_data_store.validate_daily_input_belongs_to_client(daily_input_id=daily_input_id, client_id=client_id)
+
+        if dynamic_values_provided:
+            dynamic_values_payload = [
+                {"custom_field_id": int(item.custom_field_id), "numeric_value": item.numeric_value}
+                for item in payload.dynamic_custom_values or []
+            ]
+            client_data_store.replace_daily_custom_values_for_daily_input(
+                client_id=client_id,
+                daily_input_id=daily_input_id,
+                dynamic_custom_values=dynamic_values_payload,
+            )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return _map_daily_input_write_payload(updated)
 
 
 @router.delete("/{client_id}/data/daily-inputs/{daily_input_id}", response_model=ClientDataDailyInputDeleteResponse)

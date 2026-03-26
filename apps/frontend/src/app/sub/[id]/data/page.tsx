@@ -413,10 +413,15 @@ export default function SubDataPage() {
         dynamic_custom_values: dynamicCustomValuesPayload,
       };
 
-      const dailyInputWrite = await apiRequest<{ id: number }>(`/clients/${clientId}/data/daily-input`, {
-        method: "PUT",
-        body: JSON.stringify(dailyPayload),
-      });
+      const dailyInputWrite = isNew
+        ? await apiRequest<{ id: number }>(`/clients/${clientId}/data/daily-inputs`, {
+          method: "POST",
+          body: JSON.stringify(dailyPayload),
+        })
+        : await apiRequest<{ id: number }>(`/clients/${clientId}/data/daily-inputs/${Number(currentRow?.daily_input_id ?? 0)}`, {
+          method: "PATCH",
+          body: JSON.stringify(dailyPayload),
+        });
 
       if (isNew && saleDraft) {
         const rawSalePrice = String(saleDraft.sale_price_amount ?? "").trim();
