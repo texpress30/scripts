@@ -1,3 +1,26 @@
+# TODO — Merge conflict resolution for Data canonical contract (2026-03-26)
+
+- [x] Inspect conflicted frontend/test/task files and keep canonical contract shape.
+- [x] Resolve merge markers in `page.tsx` and `page.test.tsx` favoring derived labels/read-only split.
+- [x] Resolve task doc conflicts and preserve latest lessons.
+- [x] Run targeted frontend test for Data page and record outcome.
+- [x] Commit merge resolution and open PR.
+
+## Review
+- [x] Confirm no merge markers remain and `git status` is clean after commit.
+- [x] Confirm Data page test suite still passes after conflict resolution.
+
+# TODO — Data config contract alignment: canonical fixed_fields vs derived_fields (2026-03-26)
+
+- [x] Sync workspace și recitesc fișierele backend/frontend/teste relevante.
+- [x] Ajustez `GET /clients/{client_id}/data/config` pentru fixed_fields strict canonice editabile și derived_fields explicite read-only.
+- [x] Actualizez Data page să consume labels/contract separat (editable canonical vs derived read-only) fără draft/payload derivate.
+- [x] Adaug/ajustez teste backend + frontend pentru separarea fixed/derived și non-regresii canonic save + Data->MB->MT.
+- [x] Rulez validări țintite și documentez rezultatul.
+
+## Review
+- [x] Confirm fără redesign și fără reintroducere câmpuri legacy în flow-ul canonic.
+- [x] Confirm flux canonic Data->MB->MT ne-regresat după alinierea read-side.
 # TODO — Backend canonical contract hardening for daily-input save (2026-03-26)
 
 - [x] Sync workspace și recitesc fișierele backend/ teste relevante înainte de modificări.

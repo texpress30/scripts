@@ -609,3 +609,4 @@
 - 2026-03-26: Pentru flow canonic Data, validez explicit `source` atât în frontend (pre-submit), cât și în backend (422 clar cu allowed values), ca să evit false-success când config/fallback trimite chei invalide.
 - 2026-03-26: La cleanup-ul Data page, elimin complet atât UI-ul cât și state/handlers dedicate fluxurilor legacy (vânzări/mențiuni) și păstrez strict payloadul canonic editabil, cu teste care verifică explicit absența controalelor scoase.
 - 2026-03-26: Pentru endpoint-ul canonic daily-input, resping explicit câmpurile legacy (422) și evit orice side-effect implicit pe sale_entries/derivări, ca să nu apară ștergeri ascunse la save standard.
+- 2026-03-26: Când separ contractul read-side Data config, țin `fixed_fields` strict pentru inputuri canonice editabile și mut labels read-only în `derived_fields`, iar frontend-ul citește explicit ambele hărți de label.

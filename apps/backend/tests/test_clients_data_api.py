@@ -666,11 +666,21 @@ class ClientsDataApiTests(unittest.TestCase):
         self.assertEqual(payload["fixed_fields"][0], {"key": "leads", "label": "Lead-uri", "editable": True, "read_only": False})
         self.assertEqual(payload["fixed_fields"][1], {"key": "phones", "label": "Telefoane", "editable": True, "read_only": False})
         self.assertEqual(payload["fixed_fields"][2], {"key": "custom_value_1_count", "label": "CV1", "editable": True, "read_only": False})
-        self.assertEqual(payload["fixed_fields"][6]["read_only"], True)
+        self.assertEqual([item["key"] for item in payload["fixed_fields"]], ["leads", "phones", "custom_value_1_count", "custom_value_2_count", "custom_value_3_amount"])
         self.assertEqual(payload["sources"][0]["key"], "meta_ads")
         self.assertEqual(payload["custom_fields"][0]["label"], "Appointments")
         self.assertEqual(payload["custom_fields"][1]["label"], "Custom Field 12")
-        self.assertEqual(payload["derived_fields"][0], {"key": "sales_count", "label": "Vânzări", "value_kind": "count"})
+        self.assertEqual(
+            payload["derived_fields"],
+            [
+                {"key": "custom_value_4_amount", "label": "CV4", "value_kind": "amount"},
+                {"key": "custom_value_5_amount", "label": "CV5", "value_kind": "amount"},
+                {"key": "sales_count", "label": "Vânzări", "value_kind": "count"},
+                {"key": "revenue_amount", "label": "Venit", "value_kind": "amount"},
+                {"key": "cogs_amount", "label": "COGS", "value_kind": "amount"},
+                {"key": "gross_profit_amount", "label": "Profit Brut", "value_kind": "amount"},
+            ],
+        )
 
     def test_get_client_data_table_resolves_source_labels_custom_value_sort_and_derived_metrics(self):
         payload = clients_api.get_client_data_table(

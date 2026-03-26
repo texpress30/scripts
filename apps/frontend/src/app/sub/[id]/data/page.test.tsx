@@ -43,8 +43,14 @@ function setupApiMock() {
           { key: "custom_value_1_count", label: "CV1" },
           { key: "custom_value_2_count", label: "CV2" },
           { key: "custom_value_3_amount", label: "CV3" },
-          { key: "custom_value_4_amount", label: "CV4" },
-          { key: "custom_value_5_amount", label: "CV5" },
+        ],
+        derived_fields: [
+          { key: "custom_value_4_amount", label: "CV4", value_kind: "amount" },
+          { key: "custom_value_5_amount", label: "CV5", value_kind: "amount" },
+          { key: "sales_count", label: "Vânzări", value_kind: "count" },
+          { key: "revenue_amount", label: "Venit", value_kind: "amount" },
+          { key: "cogs_amount", label: "COGS", value_kind: "amount" },
+          { key: "gross_profit_amount", label: "P/L brut", value_kind: "amount" },
         ],
         dynamic_custom_fields: [
           { id: 11, field_key: "appointments", label: "Appointments", value_kind: "count", sort_order: 1, is_active: true },
@@ -133,5 +139,25 @@ describe("SubDataPage canonical-only UI", () => {
     expect(putBody).toContain('"source":"meta_ads"');
     expect(putBody).not.toContain("sale_entries");
     expect(putBody).not.toContain("notes");
+  });
+
+  it("renders canonical editable fields only and uses derived_fields labels for read-only columns", async () => {
+    render(<SubDataPage />);
+    await screen.findByRole("heading", { name: "Data - Active Life Therapy" });
+    fireEvent.click(screen.getByRole("button", { name: "Adaugă rând" }));
+
+    expect(screen.getByLabelText("Lead-uri rând nou")).toBeInTheDocument();
+    expect(screen.getByLabelText("New row phones")).toBeInTheDocument();
+    expect(screen.getByLabelText("New row cv1")).toBeInTheDocument();
+    expect(screen.getByLabelText("New row cv2")).toBeInTheDocument();
+    expect(screen.getByLabelText("New row cv3")).toBeInTheDocument();
+
+    expect(screen.getByLabelText("Custom Value 4 rând nou")).toHaveAttribute("readonly");
+    expect(screen.getByLabelText("New row cv5")).toHaveAttribute("readonly");
+
+    expect(screen.getByRole("columnheader", { name: "CV4" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "CV5" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Vânzări" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "P/L brut" })).toBeInTheDocument();
   });
 });

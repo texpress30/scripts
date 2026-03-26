@@ -13,6 +13,7 @@ type ClientItem = { id: number; name: string };
 type SourceItem = { key: string; label: string };
 
 type FixedFieldConfig = { key: string; label: string };
+type DerivedFieldConfig = { key: string; label: string; value_kind?: "count" | "amount" };
 type DynamicCustomFieldConfig = { id: number; field_key: string; label: string; value_kind?: "count" | "amount"; sort_order?: number; is_active?: boolean };
 
 type DataConfigResponse = {
@@ -20,6 +21,7 @@ type DataConfigResponse = {
   display_currency?: string;
   sources?: SourceItem[];
   fixed_fields?: FixedFieldConfig[];
+  derived_fields?: DerivedFieldConfig[];
   dynamic_custom_fields?: DynamicCustomFieldConfig[];
   custom_fields?: DynamicCustomFieldConfig[];
 };
@@ -70,7 +72,6 @@ type DailyRowDraft = {
   custom_value_1_count: string;
   custom_value_2_count: string;
   custom_value_3_amount: string;
-  custom_value_4_amount: string;
   dynamicValues: Record<number, string>;
 };
 
@@ -80,8 +81,15 @@ const FIXED_FIELD_FALLBACK_LABELS: Record<string, string> = {
   custom_value_1_count: "Custom 1",
   custom_value_2_count: "Custom 2",
   custom_value_3_amount: "Custom 3",
-  custom_value_4_amount: "Custom 4",
-  custom_value_5_amount: "Custom 5",
+};
+
+const DERIVED_FIELD_FALLBACK_LABELS: Record<string, string> = {
+  custom_value_4_amount: "Custom Value 4",
+  custom_value_5_amount: "Custom Value 5",
+  sales_count: "Vânzări",
+  revenue_amount: "Venit",
+  cogs_amount: "COGS",
+  gross_profit_amount: "Profit Brut",
 };
 
 const SOURCE_FALLBACKS: SourceItem[] = [
@@ -145,6 +153,16 @@ function normalizeFixedLabels(config: DataConfigResponse | null): Record<string,
   return mapped;
 }
 
+function normalizeDerivedLabels(config: DataConfigResponse | null): Record<string, string> {
+  const mapped: Record<string, string> = { ...DERIVED_FIELD_FALLBACK_LABELS };
+  for (const field of config?.derived_fields ?? []) {
+    const key = String(field?.key || "").trim();
+    const label = String(field?.label || "").trim();
+    if (key && label) mapped[key] = label;
+  }
+  return mapped;
+}
+
 function normalizeActiveDynamicFields(config: DataConfigResponse | null): DynamicCustomFieldConfig[] {
   const fields = (config?.dynamic_custom_fields ?? config?.custom_fields ?? []).slice();
   return fields.filter((field) => Boolean(field?.is_active ?? true)).sort((a, b) => (Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0)) || (Number(a.id) - Number(b.id)));
@@ -167,7 +185,6 @@ function buildDailyDraft(row: DataTableRow): DailyRowDraft {
     custom_value_1_count: String(row.custom_value_1_count ?? ""),
     custom_value_2_count: String(row.custom_value_2_count ?? ""),
     custom_value_3_amount: String(row.custom_value_3_amount ?? ""),
-    custom_value_4_amount: String(row.custom_value_4_amount ?? ""),
     dynamicValues,
   };
 }
@@ -181,7 +198,6 @@ function emptyDailyDraft(dateFrom: string): DailyRowDraft {
     custom_value_1_count: "",
     custom_value_2_count: "",
     custom_value_3_amount: "",
-    custom_value_4_amount: "",
     dynamicValues: {},
   };
 }
@@ -223,6 +239,7 @@ export default function SubDataPage() {
 
   const currencyCode = String(config?.currency_code || config?.display_currency || "USD").toUpperCase();
   const fixedLabels = useMemo(() => normalizeFixedLabels(config), [config]);
+  const derivedLabels = useMemo(() => normalizeDerivedLabels(config), [config]);
   const activeDynamicFields = useMemo(() => normalizeActiveDynamicFields(config), [config]);
   const supportedSources = useMemo(() => (config?.sources?.length ? config.sources : SOURCE_FALLBACKS), [config?.sources]);
 
@@ -546,8 +563,8 @@ export default function SubDataPage() {
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_1_count}</label><input aria-label="New row cv1" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_1_count} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_1_count: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_2_count}</label><input aria-label="New row cv2" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_2_count} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_2_count: e.target.value }))} /></div>
                 <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{fixedLabels.custom_value_3_amount}</label><input aria-label="New row cv3" className="w-full rounded border border-slate-300 px-2 py-1" value={newRowDraft.custom_value_3_amount} onChange={(e) => setNewRowDraft((p) => ({ ...p, custom_value_3_amount: e.target.value }))} /></div>
-                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">CV4</label><input aria-label="Custom Value 4 rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowCv3Raw ? "Auto" : ""} readOnly /></div>
-                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">CV5</label><input aria-label="New row cv5" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowDerivedUnrealizedDisplay} readOnly /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{derivedLabels.custom_value_4_amount}</label><input aria-label="Custom Value 4 rând nou" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowCv3Raw ? "Auto" : ""} readOnly /></div>
+                <div className="space-y-1"><label className="text-xs font-medium text-slate-700">{derivedLabels.custom_value_5_amount}</label><input aria-label="New row cv5" className="w-full rounded border border-slate-300 bg-slate-100 px-2 py-1" value={newRowDerivedUnrealizedDisplay} readOnly /></div>
                 {activeDynamicFields.map((field) => (
                   <div key={`new-dynamic-${field.id}`} className="space-y-1">
                     <label className="text-xs font-medium text-slate-700">{field.label}</label>
@@ -585,10 +602,10 @@ export default function SubDataPage() {
                     <th className="border border-slate-200 px-3 py-2">{fixedLabels.custom_value_1_count}</th>
                     <th className="border border-slate-200 px-3 py-2">{fixedLabels.custom_value_2_count}</th>
                     <th className="border border-slate-200 px-3 py-2">{fixedLabels.custom_value_3_amount}</th>
-                    <th className="border border-slate-200 px-3 py-2">{fixedLabels.custom_value_4_amount}</th>
-                    <th className="border border-slate-200 px-3 py-2">{fixedLabels.custom_value_5_amount}</th>
-                    <th className="border border-slate-200 px-3 py-2">Vânzări</th>
-                    <th className="border border-slate-200 px-3 py-2">P/L brut</th>
+                    <th className="border border-slate-200 px-3 py-2">{derivedLabels.custom_value_4_amount}</th>
+                    <th className="border border-slate-200 px-3 py-2">{derivedLabels.custom_value_5_amount}</th>
+                    <th className="border border-slate-200 px-3 py-2">{derivedLabels.sales_count}</th>
+                    <th className="border border-slate-200 px-3 py-2">{derivedLabels.gross_profit_amount}</th>
                     <th className="border border-slate-200 px-3 py-2">Sursa</th>
                     <th className="border border-slate-200 px-3 py-2">Acțiuni</th>
                     <th className="border border-slate-200 px-3 py-2">Detalii</th>
