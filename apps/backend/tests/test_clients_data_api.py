@@ -9,6 +9,7 @@ from app.api import clients as clients_api
 from app.schemas.client import (
     ClientDataCustomFieldCreateRequest,
     ClientDataCustomFieldUpdateRequest,
+    ClientDataDailyInputPatchRequest,
     ClientDataDailyInputUpsertRequest,
     ClientDataDailyCustomValueUpsertRequest,
     ClientDataSaleEntryCreateRequest,
@@ -16,6 +17,7 @@ from app.schemas.client import (
 )
 from app.services.auth import AuthUser
 from app.services.client_registry import client_registry_service
+from app.services import media_tracker_worksheet as worksheet_module
 
 
 class ClientsDataApiTests(unittest.TestCase):
@@ -40,6 +42,7 @@ class ClientsDataApiTests(unittest.TestCase):
 
         self.original_store = clients_api.client_data_store
         self.original_media_buying_store = clients_api.media_buying_store
+        self.original_worksheet_media_buying_store = worksheet_module.media_buying_store
 
         class _MediaBuyingStoreStub:
             def get_config(self, client_id: int):
@@ -283,6 +286,8 @@ class ClientsDataApiTests(unittest.TestCase):
                 if str(metric_date) != "2026-03-24":
                     raise ValueError("metric_date must be a valid ISO date")
                 normalized_source = self._normalize_source(source)
+                updates = dict(updates)
+                updates.pop("recompute_custom_value_5", None)
                 if not updates:
                     raise ValueError("At least one daily input numeric field must be provided")
                 row = self._find_daily_input_by_pair(client_id=client_id, metric_date=str(metric_date), source=normalized_source)
@@ -323,6 +328,50 @@ class ClientsDataApiTests(unittest.TestCase):
                         raise ValueError(f"Unsupported field {key}")
                 row["custom_value_5_amount"] = Decimal(str(row["custom_value_3_amount"])) - Decimal(str(row["custom_value_4_amount"]))
                 return dict(row)
+
+            def create_daily_input(
+                self,
+                *,
+                client_id: int,
+                metric_date,
+                source,
+                leads=0,
+                phones=0,
+                custom_value_1_count=0,
+                custom_value_2_count=0,
+                custom_value_3_amount=0,
+                custom_value_4_amount=0,
+                sales_count=0,
+            ):
+                created = {
+                    "id": self.next_daily_input_id,
+                    "client_id": int(client_id),
+                    "metric_date": str(metric_date),
+                    "source": self._normalize_source(source),
+                    "leads": int(leads),
+                    "phones": int(phones),
+                    "custom_value_1_count": int(custom_value_1_count),
+                    "custom_value_2_count": int(custom_value_2_count),
+                    "custom_value_3_amount": Decimal(str(custom_value_3_amount)),
+                    "custom_value_4_amount": Decimal(str(custom_value_4_amount)),
+                    "sales_count": int(sales_count),
+                    "notes": None,
+                }
+                created["custom_value_5_amount"] = Decimal(str(created["custom_value_3_amount"])) - Decimal(str(created["custom_value_4_amount"]))
+                self.daily_inputs[self.next_daily_input_id] = created
+                self.next_daily_input_id += 1
+                return dict(created)
+
+            def update_daily_input_by_id(self, *, daily_input_id: int, **updates):
+                row = self.daily_inputs.get(int(daily_input_id))
+                if row is None:
+                    raise LookupError(f"Daily input {daily_input_id} not found")
+                return self.upsert_daily_input(
+                    client_id=int(row["client_id"]),
+                    metric_date=str(row["metric_date"]),
+                    source=str(row["source"]),
+                    **updates,
+                )
 
             def get_or_create_daily_input(self, *, client_id: int, metric_date, source):
                 for row in self.daily_inputs.values():
@@ -646,6 +695,7 @@ class ClientsDataApiTests(unittest.TestCase):
     def tearDown(self):
         clients_api.client_data_store = self.original_store
         clients_api.media_buying_store = self.original_media_buying_store
+        worksheet_module.media_buying_store = self.original_worksheet_media_buying_store
         clients_api.enforce_action_scope = self.original_enforce_action_scope
         clients_api.enforce_agency_navigation_access = self.original_enforce_nav
         client_registry_service._is_test_mode = self.original_is_test_mode
@@ -661,11 +711,19 @@ class ClientsDataApiTests(unittest.TestCase):
         self.assertEqual(payload["fixed_fields"][0], {"key": "leads", "label": "Lead-uri", "editable": True, "read_only": False})
         self.assertEqual(payload["fixed_fields"][1], {"key": "phones", "label": "Telefoane", "editable": True, "read_only": False})
         self.assertEqual(payload["fixed_fields"][2], {"key": "custom_value_1_count", "label": "CV1", "editable": True, "read_only": False})
-        self.assertEqual(payload["fixed_fields"][6]["read_only"], True)
+        self.assertEqual([item["key"] for item in payload["fixed_fields"]], ["leads", "phones", "custom_value_1_count", "custom_value_2_count", "custom_value_3_amount", "custom_value_4_amount", "sales_count"])
         self.assertEqual(payload["sources"][0]["key"], "meta_ads")
         self.assertEqual(payload["custom_fields"][0]["label"], "Appointments")
         self.assertEqual(payload["custom_fields"][1]["label"], "Custom Field 12")
-        self.assertEqual(payload["derived_fields"][0], {"key": "sales_count", "label": "Vânzări", "value_kind": "count"})
+        self.assertEqual(
+            payload["derived_fields"],
+            [
+                {"key": "custom_value_5_amount", "label": "CV5", "value_kind": "amount"},
+                {"key": "revenue_amount", "label": "Venit", "value_kind": "amount"},
+                {"key": "cogs_amount", "label": "COGS", "value_kind": "amount"},
+                {"key": "gross_profit_amount", "label": "Profit Brut", "value_kind": "amount"},
+            ],
+        )
 
     def test_get_client_data_table_resolves_source_labels_custom_value_sort_and_derived_metrics(self):
         payload = clients_api.get_client_data_table(
@@ -684,8 +742,8 @@ class ClientsDataApiTests(unittest.TestCase):
         self.assertEqual(payload["rows"][1]["revenue_amount"], "150")
         self.assertEqual(payload["rows"][1]["cogs_amount"], "90")
         self.assertEqual(payload["rows"][1]["gross_profit_amount"], "60")
-        self.assertEqual(payload["rows"][1]["custom_value_4_amount"], "150")
-        self.assertEqual(payload["rows"][1]["custom_value_5_amount"], "-139.50")
+        self.assertEqual(payload["rows"][1]["custom_value_4_amount"], "8.50")
+        self.assertEqual(payload["rows"][1]["custom_value_5_amount"], "2.00")
         self.assertEqual(payload["rows"][1]["sale_entries"][0]["brand"], "VW")
         self.assertEqual(payload["rows"][1]["custom_values"][0]["custom_field_id"], 11)
         self.assertEqual(payload["rows"][1]["custom_values"][1]["custom_field_id"], 12)
@@ -702,7 +760,7 @@ class ClientsDataApiTests(unittest.TestCase):
 
         self.assertEqual(ctx.exception.status_code, 422)
 
-    def test_put_daily_input_supports_numeric_only_notes_only_and_mixed(self):
+    def test_put_daily_input_supports_canonical_numeric_fields(self):
         numeric = clients_api.upsert_client_data_daily_input(
             client_id=self.client_id,
             payload=ClientDataDailyInputUpsertRequest(metric_date=date(2026, 3, 24), source="meta_ads", leads=9, phones=3),
@@ -711,71 +769,162 @@ class ClientsDataApiTests(unittest.TestCase):
         self.assertEqual(numeric["leads"], 9)
         self.assertEqual(numeric["phones"], 3)
 
-        notes_only = clients_api.upsert_client_data_daily_input(
-            client_id=self.client_id,
-            payload=ClientDataDailyInputUpsertRequest(metric_date=date(2026, 3, 24), source="meta_ads", notes="   hello  "),
-            user=self.user,
-        )
-        self.assertEqual(notes_only["notes"], "hello")
-
         mixed = clients_api.upsert_client_data_daily_input(
-            client_id=self.client_id,
-            payload=ClientDataDailyInputUpsertRequest(metric_date=date(2026, 3, 24), source="meta_ads", leads=11, notes="  mixed "),
-            user=self.user,
-        )
-        self.assertEqual(mixed["leads"], 11)
-        self.assertEqual(mixed["notes"], "mixed")
-
-    def test_put_daily_input_accepts_sale_entries_array_and_derives_cached_values(self):
-        updated = clients_api.upsert_client_data_daily_input(
             client_id=self.client_id,
             payload=ClientDataDailyInputUpsertRequest(
                 metric_date=date(2026, 3, 24),
                 source="meta_ads",
-                custom_value_3_amount=500,
-                sale_entries=[
-                    {"brand": "A", "model": "M1", "sale_price_amount": 200, "actual_price_amount": 50, "sort_order": 1},
-                    {"brand": "B", "model": "M2", "sale_price_amount": 100, "actual_price_amount": 40, "sort_order": 2},
-                ],
+                custom_value_1_count=4,
+                custom_value_2_count=2,
+                custom_value_3_amount=99,
             ),
             user=self.user,
         )
-        self.assertEqual(updated["sales_count"], 2)
-        self.assertEqual(updated["custom_value_4_amount"], "300")
-        self.assertEqual(updated["custom_value_5_amount"], "200")
+        self.assertEqual(mixed["custom_value_1_count"], 4)
+        self.assertEqual(mixed["custom_value_2_count"], 2)
+        self.assertEqual(mixed["custom_value_3_amount"], "99")
 
-    def test_put_daily_input_accepts_legacy_single_sale_fields(self):
-        updated = clients_api.upsert_client_data_daily_input(
+        summary = clients_api.upsert_client_data_daily_input(
             client_id=self.client_id,
             payload=ClientDataDailyInputUpsertRequest(
                 metric_date=date(2026, 3, 24),
                 source="meta_ads",
-                custom_value_3_amount=300,
+                custom_value_4_amount=11,
+                sales_count=6,
+            ),
+            user=self.user,
+        )
+        self.assertEqual(summary["custom_value_4_amount"], "11")
+        self.assertEqual(summary["sales_count"], 6)
+        self.assertEqual(summary["custom_value_5_amount"], "88")
+
+    def test_post_daily_inputs_creates_distinct_rows_for_same_day_and_source(self):
+        first = clients_api.create_client_data_daily_input(
+            client_id=self.client_id,
+            payload=ClientDataDailyInputUpsertRequest(
+                metric_date=date(2026, 3, 24),
+                source="meta_ads",
+                leads=1,
+                custom_value_4_amount=10,
+                sales_count=1,
+            ),
+            user=self.user,
+        )
+        second = clients_api.create_client_data_daily_input(
+            client_id=self.client_id,
+            payload=ClientDataDailyInputUpsertRequest(
+                metric_date=date(2026, 3, 24),
+                source="meta_ads",
+                leads=2,
+                custom_value_4_amount=20,
+                sales_count=1,
+            ),
+            user=self.user,
+        )
+        self.assertNotEqual(int(first["id"]), int(second["id"]))
+
+        table = clients_api.get_client_data_table(
+            client_id=self.client_id,
+            date_from=date(2026, 3, 1),
+            date_to=date(2026, 3, 31),
+            user=self.user,
+        )
+        same_day_source_rows = [row for row in table["rows"] if row["metric_date"] == "2026-03-24" and row["source"] == "meta_ads"]
+        self.assertGreaterEqual(len(same_day_source_rows), 3)
+
+    def test_patch_daily_input_updates_strict_row_by_daily_input_id(self):
+        target_id = clients_api.create_client_data_daily_input(
+            client_id=self.client_id,
+            payload=ClientDataDailyInputUpsertRequest(
+                metric_date=date(2026, 3, 24),
+                source="meta_ads",
+                leads=5,
+                custom_value_4_amount=25,
+                sales_count=2,
+            ),
+            user=self.user,
+        )["id"]
+        other_id = clients_api.create_client_data_daily_input(
+            client_id=self.client_id,
+            payload=ClientDataDailyInputUpsertRequest(
+                metric_date=date(2026, 3, 24),
+                source="meta_ads",
+                leads=8,
+                custom_value_4_amount=30,
+                sales_count=3,
+            ),
+            user=self.user,
+        )["id"]
+
+        updated = clients_api.patch_client_data_daily_input(
+            client_id=self.client_id,
+            daily_input_id=int(target_id),
+            payload=ClientDataDailyInputPatchRequest(leads=99, custom_value_4_amount=40, sales_count=7),
+            user=self.user,
+        )
+        self.assertEqual(int(updated["id"]), int(target_id))
+        self.assertEqual(updated["leads"], 99)
+
+        other = clients_api.client_data_store.validate_daily_input_belongs_to_client(daily_input_id=int(other_id), client_id=self.client_id)
+        self.assertEqual(int(other["leads"]), 8)
+        self.assertEqual(str(other["custom_value_4_amount"]), "30")
+
+    def test_put_daily_input_rejects_legacy_fields_with_explicit_422(self):
+        cases = [
+            ClientDataDailyInputUpsertRequest(metric_date=date(2026, 3, 24), source="meta_ads", notes="legacy"),
+            ClientDataDailyInputUpsertRequest(
+                metric_date=date(2026, 3, 24),
+                source="meta_ads",
+                sale_entries=[{"brand": "A", "model": "B", "sale_price_amount": 1, "actual_price_amount": 1}],
+            ),
+            ClientDataDailyInputUpsertRequest(
+                metric_date=date(2026, 3, 24),
+                source="meta_ads",
                 sale_brand="Legacy",
                 sale_model="One",
                 sale_price_amount=120,
                 sale_actual_price_amount=20,
-                sale_notes=" note ",
             ),
-            user=self.user,
-        )
-        self.assertEqual(updated["sales_count"], 1)
-        self.assertEqual(updated["custom_value_4_amount"], "120")
-        self.assertEqual(updated["custom_value_5_amount"], "180")
+            ClientDataDailyInputUpsertRequest(metric_date=date(2026, 3, 24), source="meta_ads", custom_value_5_amount=10),
+        ]
+        for payload in cases:
+            with self.assertRaises(HTTPException) as ctx:
+                clients_api.upsert_client_data_daily_input(
+                    client_id=self.client_id,
+                    payload=payload,
+                    user=self.user,
+                )
+            self.assertEqual(ctx.exception.status_code, 422)
+            self.assertIn("Canonical daily-input save accepts only", str(ctx.exception.detail))
 
-    def test_put_daily_input_without_sales_payload_replaces_with_zero_sales(self):
+    def test_put_daily_input_canonical_save_does_not_mutate_existing_sale_entries_or_derived_legacy_reads(self):
+        before_entries = clients_api.client_data_store.list_sale_entries_for_daily_input(daily_input_id=101)
+        self.assertEqual(len(before_entries), 2)
+
         updated = clients_api.upsert_client_data_daily_input(
             client_id=self.client_id,
             payload=ClientDataDailyInputUpsertRequest(
                 metric_date=date(2026, 3, 24),
                 source="meta_ads",
-                custom_value_3_amount=10,
+                leads=42,
             ),
             user=self.user,
         )
-        self.assertEqual(updated["sales_count"], 0)
-        self.assertEqual(updated["custom_value_4_amount"], "0")
-        self.assertEqual(updated["custom_value_5_amount"], "10")
+        self.assertEqual(updated["leads"], 42)
+
+        after_entries = clients_api.client_data_store.list_sale_entries_for_daily_input(daily_input_id=101)
+        self.assertEqual(after_entries, before_entries)
+
+        table = clients_api.get_client_data_table(
+            client_id=self.client_id,
+            date_from=date(2026, 3, 1),
+            date_to=date(2026, 3, 31),
+            user=self.user,
+        )
+        target = next(row for row in table["rows"] if int(row["daily_input_id"]) == 101)
+        self.assertEqual(target["sales_count"], 2)
+        self.assertEqual(target["revenue_amount"], "150")
+        self.assertEqual(target["custom_value_4_amount"], "8.50")
 
     def test_put_daily_input_with_dynamic_custom_values_replaces_values(self):
         _ = clients_api.upsert_client_data_daily_input(
@@ -863,6 +1012,7 @@ class ClientsDataApiTests(unittest.TestCase):
                 user=self.user,
             )
         self.assertEqual(bad_source_ctx.exception.status_code, 422)
+        self.assertIn("Allowed values", str(bad_source_ctx.exception.detail))
 
         with self.assertRaises(HTTPException) as bad_numeric_ctx:
             clients_api.upsert_client_data_daily_input(
@@ -871,6 +1021,346 @@ class ClientsDataApiTests(unittest.TestCase):
                 user=self.user,
             )
         self.assertEqual(bad_numeric_ctx.exception.status_code, 422)
+
+    def test_canonical_daily_input_roundtrip_propagates_to_data_media_buying_and_media_tracker(self):
+        store = clients_api.client_data_store
+        assert store is not None
+
+        class _CanonicalMediaBuyingStoreStub:
+            def __init__(self, *, data_store):
+                self._data_store = data_store
+
+            def get_config(self, *, client_id: int):
+                return {"display_currency": "RON", "custom_label_1": "CV1", "custom_label_2": "CV2"}
+
+            def _list_data_layer_source_daily_business_rows(self, *, client_id: int, date_from: date, date_to: date):
+                daily_rows = self._data_store.list_daily_inputs(client_id=client_id, date_from=date_from, date_to=date_to)
+                payload: list[dict[str, object]] = []
+                for row in daily_rows:
+                    sales = self._data_store.list_sale_entries_for_daily_input(daily_input_id=int(row["id"]))
+                    payload.append(
+                        {
+                            "date": date.fromisoformat(str(row["metric_date"])),
+                            "source": str(row["source"]),
+                            "source_label": self._data_store.get_source_label(str(row["source"])) or str(row["source"]),
+                            "leads": int(row["leads"]),
+                            "phones": int(row["phones"]),
+                            "custom_value_1_count": int(row["custom_value_1_count"]),
+                            "custom_value_2_count": int(row["custom_value_2_count"]),
+                            "custom_value_3_amount_ron": float(row["custom_value_3_amount"]),
+                            "custom_value_4_amount_ron": float(row["custom_value_4_amount"]),
+                            "custom_value_5_amount_ron": float(row["custom_value_5_amount"]),
+                            "sales_count": int(row["sales_count"]),
+                            "cogs_amount_ron": float(self._data_store.compute_cogs(sales)),
+                            "gross_profit_amount_ron": float(self._data_store.compute_gross_profit(sales)),
+                        }
+                    )
+                return payload
+
+            def get_source_daily_rows(self, *, client_id: int, date_from: date, date_to: date):
+                rows = self._list_data_layer_source_daily_business_rows(client_id=client_id, date_from=date_from, date_to=date_to)
+                return [
+                    {
+                        "date": str(item["date"]),
+                        "source": item["source"],
+                        "source_label": item["source_label"],
+                        "cost_amount": 0.0,
+                    }
+                    for item in rows
+                ]
+
+            def get_lead_table(self, *, client_id: int, date_from: date | None, date_to: date | None, include_days: bool = True):
+                start = date_from or date(2025, 10, 1)
+                end = date_to or date(2025, 10, 31)
+                rows = self._list_data_layer_source_daily_business_rows(client_id=client_id, date_from=start, date_to=end)
+                day_map: dict[str, dict[str, object]] = {}
+                for item in rows:
+                    key = str(item["date"])
+                    day_payload = day_map.setdefault(
+                        key,
+                        {
+                            "date": key,
+                            "cost_total": 0.0,
+                            "cost_google": 0.0,
+                            "cost_meta": 0.0,
+                            "cost_tiktok": 0.0,
+                            "leads": 0,
+                            "phones": 0,
+                            "custom_value_1_count": 0,
+                            "custom_value_2_count": 0,
+                            "custom_value_3_amount_ron": 0.0,
+                            "custom_value_4_amount_ron": 0.0,
+                            "custom_value_5_amount_ron": 0.0,
+                            "sales_count": 0,
+                            "total_leads": 0,
+                        },
+                    )
+                    for key_name in ("leads", "phones", "custom_value_1_count", "custom_value_2_count", "sales_count"):
+                        day_payload[key_name] = int(day_payload[key_name]) + int(item[key_name])
+                    for key_name in ("custom_value_3_amount_ron", "custom_value_4_amount_ron", "custom_value_5_amount_ron"):
+                        day_payload[key_name] = float(day_payload[key_name]) + float(item[key_name])
+                    day_payload["total_leads"] = int(day_payload["leads"])
+                ordered_days = [day_map[key] for key in sorted(day_map.keys())]
+                return {
+                    "meta": {"client_id": client_id, "display_currency": "RON", "display_currency_source": "agency_client_currency"},
+                    "days": ordered_days if include_days else [],
+                    "months": [{"month": "2025-10", "totals": {}, "days": ordered_days}],
+                }
+
+        canonical_media_store = _CanonicalMediaBuyingStoreStub(data_store=store)
+        clients_api.media_buying_store = canonical_media_store
+        worksheet_module.media_buying_store = canonical_media_store
+        worksheet_module.media_tracker_worksheet_service._is_test_mode = lambda: True
+        worksheet_module.media_tracker_worksheet_service.reset_test_state()
+
+        clients_api.upsert_client_data_daily_input(
+            client_id=self.client_id,
+            payload=ClientDataDailyInputUpsertRequest(
+                metric_date=date(2025, 10, 12),
+                source="meta_ads",
+                leads=7,
+                phones=3,
+                custom_value_1_count=2,
+                custom_value_2_count=1,
+                custom_value_3_amount=120,
+                custom_value_4_amount=50,
+                sales_count=4,
+                dynamic_custom_values=[{"custom_field_id": 11, "numeric_value": 5}],
+            ),
+            user=self.user,
+        )
+
+        data_table = clients_api.get_client_data_table(
+            client_id=self.client_id,
+            date_from=date(2025, 10, 1),
+            date_to=date(2025, 10, 31),
+            user=self.user,
+        )
+        target_data_row = next(row for row in data_table["rows"] if row["metric_date"] == "2025-10-12" and row["source"] == "meta_ads")
+        self.assertEqual(target_data_row["leads"], 7)
+        self.assertEqual(target_data_row["custom_value_4_amount"], "50")
+        self.assertEqual(target_data_row["sales_count"], 4)
+        self.assertEqual(target_data_row["dynamic_custom_values"][0]["custom_field_id"], 11)
+
+        lead_table = clients_api.get_media_buying_lead_table(
+            client_id=self.client_id,
+            date_from=date(2025, 10, 1),
+            date_to=date(2025, 10, 31),
+            user=self.user,
+        )
+        target_day = next(row for row in lead_table["days"] if row["date"] == "2025-10-12")
+        self.assertEqual(target_day["leads"], 7)
+        self.assertEqual(float(target_day["custom_value_4_amount_ron"]), 50.0)
+        self.assertEqual(int(target_day["sales_count"]), 4)
+
+        worksheet = clients_api.get_media_tracker_weekly_worksheet_foundation(
+            client_id=self.client_id,
+            granularity="month",
+            anchor_date=date(2025, 10, 12),
+            user=self.user,
+        )
+        meta_leads = worksheet["manual_metrics"]["meta_leads_manual"]["weekly_values"]
+        week_with_input = next(item for item in meta_leads if item["week_start"] == "2025-10-06")
+        self.assertEqual(week_with_input["value"], 7.0)
+
+    def test_delete_daily_input_endpoint_removes_row_sale_entries_and_dynamic_values_from_data_table(self):
+        clients_api.create_client_data_sale_entry(
+            client_id=self.client_id,
+            payload=ClientDataSaleEntryCreateRequest(
+                daily_input_id=101,
+                sale_price_amount=200,
+                actual_price_amount=150,
+                brand="Skoda",
+                model="Octavia",
+            ),
+            user=self.user,
+        )
+        clients_api.upsert_client_data_daily_custom_value(
+            client_id=self.client_id,
+            daily_input_id=101,
+            custom_field_id=11,
+            payload=ClientDataDailyCustomValueUpsertRequest(numeric_value=8),
+            user=self.user,
+        )
+
+        before = clients_api.get_client_data_table(
+            client_id=self.client_id,
+            date_from=date(2026, 3, 1),
+            date_to=date(2026, 3, 31),
+            user=self.user,
+        )
+        self.assertTrue(any(int(row["daily_input_id"]) == 101 for row in before["rows"]))
+
+        deleted = clients_api.delete_client_data_daily_input(
+            client_id=self.client_id,
+            daily_input_id=101,
+            user=self.user,
+        )
+        self.assertEqual(int(deleted["id"]), 101)
+
+        after = clients_api.get_client_data_table(
+            client_id=self.client_id,
+            date_from=date(2026, 3, 1),
+            date_to=date(2026, 3, 31),
+            user=self.user,
+        )
+        self.assertFalse(any(int(row["daily_input_id"]) == 101 for row in after["rows"]))
+
+        with self.assertRaises(LookupError):
+            self._data_store.list_sale_entries_for_daily_input(daily_input_id=101)
+
+        dynamic_values = self._data_store.list_daily_custom_values(
+            client_id=self.client_id,
+            date_from=date(2026, 3, 1),
+            date_to=date(2026, 3, 31),
+        )
+        self.assertFalse(any(int(item["daily_input_id"]) == 101 for item in dynamic_values))
+
+    def test_delete_daily_input_propagates_to_data_media_buying_and_media_tracker(self):
+        store = clients_api.client_data_store
+        assert store is not None
+
+        class _CanonicalMediaBuyingStoreStub:
+            def __init__(self, *, data_store):
+                self._data_store = data_store
+
+            def get_config(self, *, client_id: int):
+                return {"display_currency": "RON", "custom_label_1": "CV1", "custom_label_2": "CV2"}
+
+            def _list_data_layer_source_daily_business_rows(self, *, client_id: int, date_from: date, date_to: date):
+                daily_rows = self._data_store.list_daily_inputs(client_id=client_id, date_from=date_from, date_to=date_to)
+                payload: list[dict[str, object]] = []
+                for row in daily_rows:
+                    sales = self._data_store.list_sale_entries_for_daily_input(daily_input_id=int(row["id"]))
+                    payload.append(
+                        {
+                            "date": date.fromisoformat(str(row["metric_date"])),
+                            "source": str(row["source"]),
+                            "source_label": self._data_store.get_source_label(str(row["source"])) or str(row["source"]),
+                            "leads": int(row["leads"]),
+                            "phones": int(row["phones"]),
+                            "custom_value_1_count": int(row["custom_value_1_count"]),
+                            "custom_value_2_count": int(row["custom_value_2_count"]),
+                            "custom_value_3_amount_ron": float(row["custom_value_3_amount"]),
+                            "custom_value_4_amount_ron": float(row["custom_value_4_amount"]),
+                            "custom_value_5_amount_ron": float(row["custom_value_5_amount"]),
+                            "sales_count": int(row["sales_count"]),
+                            "cogs_amount_ron": float(self._data_store.compute_cogs(sales)),
+                            "gross_profit_amount_ron": float(self._data_store.compute_gross_profit(sales)),
+                        }
+                    )
+                return payload
+
+            def get_source_daily_rows(self, *, client_id: int, date_from: date, date_to: date):
+                rows = self._list_data_layer_source_daily_business_rows(client_id=client_id, date_from=date_from, date_to=date_to)
+                return [{"date": str(item["date"]), "source": item["source"], "source_label": item["source_label"], "cost_amount": 0.0} for item in rows]
+
+            def get_lead_table(self, *, client_id: int, date_from: date | None, date_to: date | None, include_days: bool = True):
+                start = date_from or date(2025, 10, 1)
+                end = date_to or date(2025, 10, 31)
+                rows = self._list_data_layer_source_daily_business_rows(client_id=client_id, date_from=start, date_to=end)
+                day_map: dict[str, dict[str, object]] = {}
+                for item in rows:
+                    key = str(item["date"])
+                    day_payload = day_map.setdefault(
+                        key,
+                        {
+                            "date": key,
+                            "cost_total": 0.0,
+                            "cost_google": 0.0,
+                            "cost_meta": 0.0,
+                            "cost_tiktok": 0.0,
+                            "leads": 0,
+                            "phones": 0,
+                            "custom_value_1_count": 0,
+                            "custom_value_2_count": 0,
+                            "custom_value_3_amount_ron": 0.0,
+                            "custom_value_4_amount_ron": 0.0,
+                            "custom_value_5_amount_ron": 0.0,
+                            "sales_count": 0,
+                            "total_leads": 0,
+                        },
+                    )
+                    for key_name in ("leads", "phones", "custom_value_1_count", "custom_value_2_count", "sales_count"):
+                        day_payload[key_name] = int(day_payload[key_name]) + int(item[key_name])
+                    for key_name in ("custom_value_3_amount_ron", "custom_value_4_amount_ron", "custom_value_5_amount_ron"):
+                        day_payload[key_name] = float(day_payload[key_name]) + float(item[key_name])
+                    day_payload["total_leads"] = int(day_payload["leads"])
+                ordered_days = [day_map[key] for key in sorted(day_map.keys())]
+                return {
+                    "meta": {"client_id": client_id, "display_currency": "RON", "display_currency_source": "agency_client_currency"},
+                    "days": ordered_days if include_days else [],
+                    "months": [{"month": "2025-10", "totals": {}, "days": ordered_days}],
+                }
+
+        canonical_media_store = _CanonicalMediaBuyingStoreStub(data_store=store)
+        clients_api.media_buying_store = canonical_media_store
+        worksheet_module.media_buying_store = canonical_media_store
+        worksheet_module.media_tracker_worksheet_service._is_test_mode = lambda: True
+        worksheet_module.media_tracker_worksheet_service.reset_test_state()
+
+        created = clients_api.upsert_client_data_daily_input(
+            client_id=self.client_id,
+            payload=ClientDataDailyInputUpsertRequest(
+                metric_date=date(2025, 10, 13),
+                source="meta_ads",
+                leads=9,
+                phones=4,
+                custom_value_1_count=3,
+                custom_value_2_count=2,
+                custom_value_3_amount=140,
+            ),
+            user=self.user,
+        )
+
+        lead_table_before = clients_api.get_media_buying_lead_table(
+            client_id=self.client_id,
+            date_from=date(2025, 10, 1),
+            date_to=date(2025, 10, 31),
+            user=self.user,
+        )
+        day_before = next(row for row in lead_table_before["days"] if row["date"] == "2025-10-13")
+        self.assertEqual(day_before["leads"], 9)
+
+        worksheet_before = clients_api.get_media_tracker_weekly_worksheet_foundation(
+            client_id=self.client_id,
+            granularity="month",
+            anchor_date=date(2025, 10, 13),
+            user=self.user,
+        )
+        week_before = next(item for item in worksheet_before["manual_metrics"]["meta_leads_manual"]["weekly_values"] if item["week_start"] == "2025-10-13")
+        self.assertEqual(week_before["value"], 9.0)
+
+        clients_api.delete_client_data_daily_input(
+            client_id=self.client_id,
+            daily_input_id=int(created["id"]),
+            user=self.user,
+        )
+
+        data_after = clients_api.get_client_data_table(
+            client_id=self.client_id,
+            date_from=date(2025, 10, 1),
+            date_to=date(2025, 10, 31),
+            user=self.user,
+        )
+        self.assertFalse(any(row["metric_date"] == "2025-10-13" and row["source"] == "meta_ads" for row in data_after["rows"]))
+
+        lead_table_after = clients_api.get_media_buying_lead_table(
+            client_id=self.client_id,
+            date_from=date(2025, 10, 1),
+            date_to=date(2025, 10, 31),
+            user=self.user,
+        )
+        self.assertFalse(any(row["date"] == "2025-10-13" and int(row["leads"]) > 0 for row in lead_table_after["days"]))
+
+        worksheet_after = clients_api.get_media_tracker_weekly_worksheet_foundation(
+            client_id=self.client_id,
+            granularity="month",
+            anchor_date=date(2025, 10, 13),
+            user=self.user,
+        )
+        week_after = next(item for item in worksheet_after["manual_metrics"]["meta_leads_manual"]["weekly_values"] if item["week_start"] == "2025-10-13")
+        self.assertEqual(week_after["value"], 0.0)
 
     def test_post_sale_entry_create_success_scoping_and_validation(self):
         created = clients_api.create_client_data_sale_entry(
