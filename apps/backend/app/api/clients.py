@@ -551,6 +551,50 @@ def _fallback_field_label(*, label: object, custom_field_id: object) -> str:
     return f"Custom Field {int(custom_field_id)}"
 
 
+def _validate_canonical_source_or_422(source: str) -> str:
+    normalized = str(source or "").strip().lower()
+    if not normalized:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="source is required and must be a supported source key",
+        )
+    if not client_data_store.is_supported_source(normalized):
+        supported = [str(item.get("key")) for item in client_data_store.list_supported_sources() if str(item.get("key") or "").strip()]
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unsupported source '{source}'. Allowed values: {supported}",
+        )
+    return normalized
+
+
+_CANONICAL_DAILY_INPUT_DISALLOWED_FIELDS = {
+    "notes",
+    "sale_entries",
+    "sale_brand",
+    "sale_model",
+    "sale_price_amount",
+    "sale_actual_price_amount",
+    "sale_notes",
+    "sale_sort_order",
+    "custom_value_4_amount",
+    "custom_value_5_amount",
+    "sales_count",
+}
+
+
+def _reject_legacy_daily_input_fields_or_422(payload: ClientDataDailyInputUpsertRequest) -> None:
+    blocked = sorted(_CANONICAL_DAILY_INPUT_DISALLOWED_FIELDS.intersection(payload.model_fields_set))
+    if blocked:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Canonical daily-input save accepts only metric_date, source, leads, phones, "
+                "custom_value_1_count, custom_value_2_count, custom_value_3_amount and dynamic_custom_values. "
+                f"Unsupported fields: {blocked}"
+            ),
+        )
+
+
 def _map_daily_input_write_payload(row: dict[str, object]) -> dict[str, object]:
     return {
         "id": int(row["id"]),
@@ -583,65 +627,6 @@ def _map_sale_entry_write_payload(row: dict[str, object]) -> dict[str, object]:
     }
 
 
-def _extract_sale_entries_from_daily_payload(payload: ClientDataDailyInputUpsertRequest) -> tuple[list[dict[str, object]], bool]:
-    if "sale_entries" in payload.model_fields_set and payload.sale_entries is not None:
-        mapped: list[dict[str, object]] = []
-        for idx, entry in enumerate(payload.sale_entries):
-            sort_value = entry.sort_order if entry.sort_order is not None else idx
-            mapped.append(
-                {
-                    "brand": entry.brand,
-                    "model": entry.model,
-                    "sale_price_amount": entry.sale_price_amount,
-                    "actual_price_amount": entry.actual_price_amount,
-                    "notes": entry.notes,
-                    "sort_order": sort_value,
-                }
-            )
-        return mapped, True
-
-    legacy_fields = {
-        "sale_brand",
-        "sale_model",
-        "sale_price_amount",
-        "sale_actual_price_amount",
-        "sale_notes",
-        "sale_sort_order",
-    }
-    legacy_provided = len(legacy_fields.intersection(payload.model_fields_set)) > 0
-    if not legacy_provided:
-        return [], False
-
-    has_any_meaningful_value = any(
-        (
-            payload.sale_brand not in {None, ""},
-            payload.sale_model not in {None, ""},
-            payload.sale_price_amount is not None,
-            payload.sale_actual_price_amount is not None,
-            payload.sale_notes not in {None, ""},
-        )
-    )
-    if not has_any_meaningful_value:
-        return [], True
-
-    if payload.sale_price_amount is None or payload.sale_actual_price_amount is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Legacy sale payload requires sale_price_amount and sale_actual_price_amount",
-        )
-
-    return [
-        {
-            "brand": payload.sale_brand,
-            "model": payload.sale_model,
-            "sale_price_amount": payload.sale_price_amount,
-            "actual_price_amount": payload.sale_actual_price_amount,
-            "notes": payload.sale_notes,
-            "sort_order": payload.sale_sort_order if payload.sale_sort_order is not None else 0,
-        }
-    ], True
-
-
 def _map_custom_field_write_payload(row: dict[str, object]) -> dict[str, object]:
     return {
         "id": int(row["id"]),
@@ -671,13 +656,15 @@ def _map_daily_custom_value_write_payload(row: dict[str, object]) -> dict[str, o
     }
 
 
-_CLIENT_DATA_DERIVED_FIELDS: list[dict[str, str]] = [
-    {"key": "sales_count", "label": "Vânzări", "value_kind": "count"},
-    {"key": "revenue_amount", "label": "Venit", "value_kind": "amount"},
-    {"key": "cogs_amount", "label": "COGS", "value_kind": "amount"},
-    {"key": "custom_value_4_amount", "label": "Custom Value 4", "value_kind": "amount"},
-    {"key": "gross_profit_amount", "label": "Profit Brut", "value_kind": "amount"},
-]
+def _build_client_data_derived_fields(*, media_buying_config: dict[str, object]) -> list[dict[str, str]]:
+    return [
+        {"key": "custom_value_4_amount", "label": str(media_buying_config.get("custom_label_4") or "Custom Value 4"), "value_kind": "amount"},
+        {"key": "custom_value_5_amount", "label": str(media_buying_config.get("custom_label_5") or "Custom Value 5"), "value_kind": "amount"},
+        {"key": "sales_count", "label": "Vânzări", "value_kind": "count"},
+        {"key": "revenue_amount", "label": "Venit", "value_kind": "amount"},
+        {"key": "cogs_amount", "label": "COGS", "value_kind": "amount"},
+        {"key": "gross_profit_amount", "label": "Profit Brut", "value_kind": "amount"},
+    ]
 
 
 @router.get("/{client_id}/data/config", response_model=ClientDataConfigResponse)
@@ -697,10 +684,8 @@ def get_client_data_config(client_id: int, user: AuthUser = Depends(get_current_
         {"key": "custom_value_1_count", "label": str(media_buying_config.get("custom_label_1") or "Custom Value 1"), "editable": True, "read_only": False},
         {"key": "custom_value_2_count", "label": str(media_buying_config.get("custom_label_2") or "Custom Value 2"), "editable": True, "read_only": False},
         {"key": "custom_value_3_amount", "label": str(media_buying_config.get("custom_label_3") or "Custom Value 3"), "editable": True, "read_only": False},
-        {"key": "custom_value_4_amount", "label": str(media_buying_config.get("custom_label_4") or "Custom Value 4"), "editable": True, "read_only": False},
-        {"key": "custom_value_5_amount", "label": str(media_buying_config.get("custom_label_5") or "Custom Value 5"), "editable": False, "read_only": True},
-        {"key": "sales_count", "label": "Vânzări", "editable": True, "read_only": False},
     ]
+    derived_fields = _build_client_data_derived_fields(media_buying_config=media_buying_config)
 
     custom_fields = client_data_store.list_custom_fields(client_id=client_id, include_inactive=True)
     mapped_custom_fields: list[dict[str, object]] = []
@@ -724,7 +709,7 @@ def get_client_data_config(client_id: int, user: AuthUser = Depends(get_current_
         "sources": client_data_store.list_supported_sources(),
         "dynamic_custom_fields": dynamic_custom_fields,
         "custom_fields": mapped_custom_fields,
-        "derived_fields": list(_CLIENT_DATA_DERIVED_FIELDS),
+        "derived_fields": derived_fields,
     }
 
 
@@ -821,6 +806,8 @@ def upsert_client_data_daily_input(
     enforce_action_scope(user=user, action="clients:create", scope="agency")
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
+    _reject_legacy_daily_input_fields_or_422(payload)
+    source_key = _validate_canonical_source_or_422(payload.source)
 
     numeric_updates: dict[str, object] = {}
     for key in (
@@ -834,7 +821,6 @@ def upsert_client_data_daily_input(
         if value is not None:
             numeric_updates[key] = value
 
-    sale_entries_payload, sales_payload_provided = _extract_sale_entries_from_daily_payload(payload)
     dynamic_values_provided = "dynamic_custom_values" in payload.model_fields_set and payload.dynamic_custom_values is not None
     dynamic_values_payload: list[dict[str, object]] = []
     if dynamic_values_provided:
@@ -842,53 +828,32 @@ def upsert_client_data_daily_input(
             {"custom_field_id": int(item.custom_field_id), "numeric_value": item.numeric_value}
             for item in payload.dynamic_custom_values or []
         ]
-    notes_provided = "notes" in payload.model_fields_set
-    if not numeric_updates and not notes_provided and not sales_payload_provided and not dynamic_values_provided:
+    if not numeric_updates and not dynamic_values_provided:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="At least one field is required: numeric daily values, notes and/or canonical payloads",
+            detail="At least one canonical field is required: numeric daily values and/or dynamic_custom_values",
         )
 
     try:
         latest_row = client_data_store.get_or_create_daily_input(
             client_id=client_id,
             metric_date=payload.metric_date,
-            source=payload.source,
+            source=source_key,
         )
         if numeric_updates:
             latest_row = client_data_store.upsert_daily_input(
                 client_id=client_id,
                 metric_date=payload.metric_date,
-                source=payload.source,
+                source=source_key,
+                recompute_custom_value_5=False,
                 **numeric_updates,
             )
-        if notes_provided:
-            latest_row = client_data_store.set_daily_input_notes(
-                client_id=client_id,
-                metric_date=payload.metric_date,
-                source=payload.source,
-                notes=payload.notes,
-            )
-        if latest_row is None:
-            raise RuntimeError("Failed to initialize daily input for sales write")
-
-        sale_entries = client_data_store.replace_sale_entries_for_daily_input(
-            daily_input_id=int(latest_row["id"]),
-            sale_entries=sale_entries_payload,
-        )
         if dynamic_values_provided:
             client_data_store.replace_daily_custom_values_for_daily_input(
                 client_id=client_id,
                 daily_input_id=int(latest_row["id"]),
                 dynamic_custom_values=dynamic_values_payload,
             )
-        latest_row = client_data_store.upsert_daily_input(
-            client_id=client_id,
-            metric_date=payload.metric_date,
-            source=payload.source,
-            custom_value_4_amount=client_data_store.compute_custom_value_4(sale_entries),
-            sales_count=client_data_store.compute_sales_count(sale_entries),
-        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     except LookupError as exc:
