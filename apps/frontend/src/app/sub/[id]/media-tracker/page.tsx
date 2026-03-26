@@ -3,6 +3,9 @@
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { format, subDays } from "date-fns";
+import { DayPicker, type DateRange } from "react-day-picker";
+import "react-day-picker/dist/style.css";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
@@ -11,6 +14,7 @@ import { normalizeCurrencyCode } from "@/lib/subAccountCurrency";
 import { SubReportingNav } from "@/app/sub/[id]/_components/SubReportingNav";
 
 import { WeeklyWorksheetTable, type WorksheetSection, type WorksheetWeek } from "./_components/WeeklyWorksheetTable";
+import { FinancialCharts, SalesCharts, type OverviewChartsPayload } from "./_components/OverviewCharts";
 
 type ClientItem = { id: number; name: string };
 type WorksheetGranularity = "month" | "quarter" | "year";
@@ -23,6 +27,7 @@ type WorksheetPayload = {
   eur_ron_rate_scope?: { granularity: string; period_start: string; period_end: string };
   resolved_period?: { period_start: string; period_end: string };
 };
+type EurRonRateUpdateResponse = WorksheetPayload;
 
 function toIsoLocalDate(value: Date): string {
   const year = value.getFullYear();
@@ -55,12 +60,6 @@ function formatScopeLabel(anchorDate: string, granularity: WorksheetGranularity)
   return new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(date);
 }
 
-
-function formatRateDisplay(value: number | null | undefined): string {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
-}
-
 function isWorksheetPayload(value: unknown): value is WorksheetPayload {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
@@ -73,18 +72,72 @@ function buildWorksheetPath(clientId: number, granularity: WorksheetGranularity,
   return `/clients/${clientId}/media-tracker/worksheet-foundation?${query}`;
 }
 
+function buildOverviewPath(clientId: number, granularity: WorksheetGranularity, anchorDate: string): string {
+  const query = new URLSearchParams({ granularity, anchor_date: anchorDate }).toString();
+  return `/clients/${clientId}/media-tracker/overview-charts?${query}`;
+}
+
+function formatRangeLabel(range: DateRange): string {
+  const from = range.from ?? subDays(new Date(), 29);
+  const to = range.to ?? from;
+  return `Last 30 days: ${format(from, "MMM d, yyyy")} - ${format(to, "MMM d, yyyy")}`;
+}
+
+function filterOverviewPayloadByRange(payload: OverviewChartsPayload, range: DateRange): OverviewChartsPayload {
+  const from = range.from ?? subDays(new Date(), 29);
+  const to = range.to ?? from;
+  const fromIso = toIsoLocalDate(from);
+  const toIso = toIsoLocalDate(to);
+  const inRange = (item: Record<string, unknown>) => {
+    const weekStart = String(item.week_start ?? "");
+    return weekStart >= fromIso && weekStart <= toIso;
+  };
+
+  return {
+    ...payload,
+    sales: {
+      total_sales_trend: (payload.sales?.total_sales_trend ?? []).filter((item) => inRange(item)),
+      channel_sales_composition: (payload.sales?.channel_sales_composition ?? []).filter((item) => inRange(item)),
+      sales_efficiency_scatter: (payload.sales?.sales_efficiency_scatter ?? []).filter((item) => inRange(item)),
+    },
+    financial: {
+      cost_efficiency: (payload.financial?.cost_efficiency ?? []).filter((item) => inRange(item)),
+      spend_vs_revenue_mix: (payload.financial?.spend_vs_revenue_mix ?? []).filter((item) => inRange(item)),
+      conversion_funnel: (payload.financial?.conversion_funnel ?? []).filter((item) => inRange(item)),
+      profitability: (payload.financial?.profitability ?? []).filter((item) => inRange(item)),
+      channel_performance: payload.financial?.channel_performance ?? [],
+    },
+  };
+}
+
 export default function SubMediaTrackerPage() {
   const params = useParams<{ id: string }>();
   const clientId = Number(params.id);
 
   const [clientName, setClientName] = useState<string>(`Sub-account #${clientId}`);
-  const [activeView, setActiveView] = useState<"overview" | "worksheet">("overview");
+  const [activeView, setActiveView] = useState<"sales" | "financial" | "worksheet">("sales");
 
   const [worksheetGranularity, setWorksheetGranularity] = useState<WorksheetGranularity>("month");
   const [worksheetAnchorDate, setWorksheetAnchorDate] = useState<string>(() => toIsoLocalDate(new Date()));
   const [worksheetData, setWorksheetData] = useState<WorksheetPayload | null>(null);
   const [worksheetLoading, setWorksheetLoading] = useState(false);
   const [worksheetError, setWorksheetError] = useState("");
+  const [overviewData, setOverviewData] = useState<OverviewChartsPayload | null>(null);
+  const [overviewLoading, setOverviewLoading] = useState(false);
+  const [overviewError, setOverviewError] = useState("");
+  const [openCalendar, setOpenCalendar] = useState(false);
+  const [appliedRange, setAppliedRange] = useState<DateRange>(() => {
+    const to = new Date();
+    return { from: subDays(to, 29), to };
+  });
+  const [draftRange, setDraftRange] = useState<DateRange>(() => {
+    const to = new Date();
+    return { from: subDays(to, 29), to };
+  });
+  const [eurRonDraft, setEurRonDraft] = useState("");
+  const [eurRonSaving, setEurRonSaving] = useState(false);
+  const [eurRonMessage, setEurRonMessage] = useState("");
+  const [eurRonError, setEurRonError] = useState("");
 
   useEffect(() => {
     let ignore = false;
@@ -124,17 +177,78 @@ export default function SubMediaTrackerPage() {
     }
   }, [clientId, worksheetAnchorDate, worksheetGranularity]);
 
+  const loadOverview = useCallback(async () => {
+    if (!Number.isFinite(clientId)) return;
+    setOverviewLoading(true);
+    setOverviewError("");
+    try {
+      const anchorDate = toIsoLocalDate(appliedRange.to ?? new Date());
+      const payload = await apiRequest<OverviewChartsPayload>(buildOverviewPath(clientId, "year", anchorDate));
+      setOverviewData(filterOverviewPayloadByRange(payload, appliedRange));
+    } catch (err) {
+      setOverviewData(null);
+      setOverviewError(err instanceof Error ? err.message : "Nu am putut încărca graficele");
+    } finally {
+      setOverviewLoading(false);
+    }
+  }, [appliedRange, clientId]);
+
   useEffect(() => {
     if (activeView !== "worksheet") return;
     void loadWorksheet();
   }, [activeView, loadWorksheet]);
 
+  useEffect(() => {
+    if (activeView === "worksheet") return;
+    void loadOverview();
+  }, [activeView, loadOverview]);
+
+  useEffect(() => {
+    if (!worksheetData) {
+      setEurRonDraft("");
+      return;
+    }
+    setEurRonDraft(typeof worksheetData.eur_ron_rate === "number" && Number.isFinite(worksheetData.eur_ron_rate) ? String(worksheetData.eur_ron_rate) : "");
+  }, [worksheetData?.eur_ron_rate]);
+
   const composedTitle = useMemo(() => `Media Tracker - ${clientName}`, [clientName]);
   const scopeLabel = useMemo(() => formatScopeLabel(worksheetAnchorDate, worksheetGranularity), [worksheetAnchorDate, worksheetGranularity]);
+  const calendarRangeLabel = useMemo(() => formatRangeLabel(appliedRange), [appliedRange]);
   const dataMonthKey = useMemo(() => worksheetAnchorDate.slice(0, 7), [worksheetAnchorDate]);
 
   const hasRows = !!worksheetData?.sections?.some((section) => section.rows.length > 0);
-  const worksheetDisplayCurrency = normalizeCurrencyCode(worksheetData?.display_currency, "USD");
+  const worksheetDisplayCurrency = normalizeCurrencyCode(worksheetData?.display_currency ?? overviewData?.display_currency, "USD");
+
+  async function saveEurRonRate() {
+    if (!Number.isFinite(clientId)) return;
+    const normalized = eurRonDraft.trim();
+    const parsed = Number(normalized);
+    if (!normalized || !Number.isFinite(parsed) || parsed <= 0) {
+      setEurRonError("Introdu un curs EUR/RON valid (număr pozitiv).");
+      setEurRonMessage("");
+      return;
+    }
+
+    setEurRonSaving(true);
+    setEurRonError("");
+    setEurRonMessage("");
+    try {
+      await apiRequest<EurRonRateUpdateResponse>(`/clients/${clientId}/media-tracker/worksheet/eur-ron-rate`, {
+        method: "PUT",
+        body: JSON.stringify({
+          granularity: worksheetGranularity,
+          anchor_date: worksheetAnchorDate,
+          value: parsed,
+        }),
+      });
+      await loadWorksheet();
+      setEurRonMessage("Cursul EUR/RON a fost salvat.");
+    } catch (err) {
+      setEurRonError(err instanceof Error ? err.message : "Nu am putut salva cursul EUR/RON.");
+    } finally {
+      setEurRonSaving(false);
+    }
+  }
 
   return (
     <ProtectedPage>
@@ -153,73 +267,171 @@ export default function SubMediaTrackerPage() {
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <button
               type="button"
-              className={`rounded-md border px-3 py-1.5 text-sm ${activeView === "overview" ? "border-indigo-600 bg-indigo-50 text-indigo-700" : "border-slate-300 text-slate-700"}`}
-              onClick={() => setActiveView("overview")}
+              className={`rounded-md border px-3 py-1.5 text-sm ${activeView === "sales" ? "border-indigo-600 bg-indigo-50 text-indigo-700" : "border-slate-300 text-slate-700"}`}
+              onClick={() => setActiveView("sales")}
             >
-              Overview
+              Vânzări
+            </button>
+            <button
+              type="button"
+              className={`rounded-md border px-3 py-1.5 text-sm ${activeView === "financial" ? "border-indigo-600 bg-indigo-50 text-indigo-700" : "border-slate-300 text-slate-700"}`}
+              onClick={() => setActiveView("financial")}
+            >
+              Financiare
             </button>
             <button
               type="button"
               className={`rounded-md border px-3 py-1.5 text-sm ${activeView === "worksheet" ? "border-indigo-600 bg-indigo-50 text-indigo-700" : "border-slate-300 text-slate-700"}`}
               onClick={() => setActiveView("worksheet")}
             >
-              Weekly Worksheet
+              Fișă săptămânală
             </button>
           </div>
 
-          {activeView === "overview" ? (
-            <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">Coming Soon</div>
-          ) : (
-            <div className="mt-4 space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3">
-                <div className="flex items-center gap-2">
-                  {(["month", "quarter", "year"] as WorksheetGranularity[]).map((item) => (
+          <div className="mt-4 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3">
+              {activeView === "worksheet" ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    {(["month", "quarter", "year"] as WorksheetGranularity[]).map((item) => (
+                      <button
+                        key={item}
+                        type="button"
+                        className={`rounded-md border px-3 py-1.5 text-sm capitalize ${worksheetGranularity === item ? "border-indigo-600 bg-indigo-50 text-indigo-700" : "border-slate-300 text-slate-700"}`}
+                        onClick={() => setWorksheetGranularity(item)}
+                      >
+                        {item === "month" ? "Lună" : item === "quarter" ? "Trimestru" : "An"}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2">
                     <button
-                      key={item}
                       type="button"
-                      className={`rounded-md border px-3 py-1.5 text-sm capitalize ${worksheetGranularity === item ? "border-indigo-600 bg-indigo-50 text-indigo-700" : "border-slate-300 text-slate-700"}`}
-                      onClick={() => setWorksheetGranularity(item)}
+                      className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700"
+                      onClick={() => setWorksheetAnchorDate((prev) => shiftAnchorDate(prev, worksheetGranularity, -1))}
                     >
-                      {item}
+                      Anterior
                     </button>
-                  ))}
-                </div>
-                <div className="flex items-center gap-2">
+                    <span className="min-w-32 text-center text-sm font-medium text-slate-800">{scopeLabel}</span>
+                    <button
+                      type="button"
+                      className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700"
+                      onClick={() => setWorksheetAnchorDate((prev) => shiftAnchorDate(prev, worksheetGranularity, 1))}
+                    >
+                      Următor
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="relative">
                   <button
                     type="button"
                     className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700"
-                    onClick={() => setWorksheetAnchorDate((prev) => shiftAnchorDate(prev, worksheetGranularity, -1))}
+                    onClick={() => setOpenCalendar((prev) => !prev)}
                   >
-                    Previous
+                    {calendarRangeLabel}
                   </button>
-                  <span className="min-w-32 text-center text-sm font-medium text-slate-800">{scopeLabel}</span>
-                  <button
-                    type="button"
-                    className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700"
-                    onClick={() => setWorksheetAnchorDate((prev) => shiftAnchorDate(prev, worksheetGranularity, 1))}
-                  >
-                    Next
-                  </button>
+                  {openCalendar ? (
+                    <div className="absolute right-0 z-20 mt-2 rounded-md border border-slate-200 bg-white p-3 shadow-lg">
+                      <DayPicker
+                        mode="range"
+                        selected={draftRange}
+                        onSelect={(next) => setDraftRange(next ?? draftRange)}
+                        numberOfMonths={2}
+                        defaultMonth={draftRange.from}
+                      />
+                      <div className="mt-2 flex justify-end gap-2">
+                        <button
+                          type="button"
+                          className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700"
+                          onClick={() => {
+                            setDraftRange(appliedRange);
+                            setOpenCalendar(false);
+                          }}
+                        >
+                          Anulează
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-md border border-indigo-300 px-2 py-1 text-xs text-indigo-700"
+                          onClick={() => {
+                            if (draftRange.from && draftRange.to) setAppliedRange(draftRange);
+                            setOpenCalendar(false);
+                          }}
+                        >
+                          Aplică
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
+              )}
 
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="font-medium text-slate-700">Currency: {worksheetDisplayCurrency}</span>
+              {activeView === "worksheet" ? (
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="font-medium text-slate-700">Monedă: {worksheetDisplayCurrency}</span>
                   <span className="text-slate-300">|</span>
                   <span className="font-medium text-slate-700">EUR/RON</span>
-                  <span className="rounded border border-slate-300 px-2 py-1 text-slate-700">{formatRateDisplay(worksheetData?.eur_ron_rate)}</span>
+                  <input
+                    aria-label="Curs EUR/RON"
+                    type="number"
+                    step="0.0001"
+                    min="0"
+                    className="w-28 rounded border border-slate-300 px-2 py-1 text-slate-700"
+                    value={eurRonDraft}
+                    onChange={(event) => {
+                      setEurRonDraft(event.target.value);
+                      if (eurRonError) setEurRonError("");
+                      if (eurRonMessage) setEurRonMessage("");
+                    }}
+                    disabled={eurRonSaving}
+                  />
+                  <button
+                    type="button"
+                    className="rounded border border-indigo-300 px-2 py-1 text-indigo-700 disabled:opacity-60"
+                    onClick={() => void saveEurRonRate()}
+                    disabled={eurRonSaving}
+                  >
+                    {eurRonSaving ? "Se salvează..." : "Salvează curs"}
+                  </button>
                   <span className="text-xs text-slate-500">pentru {scopeLabel}</span>
                 </div>
-              </div>
-
-              {worksheetLoading ? <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Loading worksheet...</div> : null}
-              {!worksheetLoading && worksheetError ? <div className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{worksheetError}</div> : null}
-              {!worksheetLoading && !worksheetError && worksheetData && !hasRows ? <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">No worksheet rows for selected scope.</div> : null}
-
-              {!worksheetLoading && !worksheetError && worksheetData && hasRows ? (
-                <WeeklyWorksheetTable weeks={worksheetData.weeks} sections={worksheetData.sections} displayCurrency={worksheetDisplayCurrency} />
-              ) : null}
+              ) : (
+                <span className="text-sm text-slate-600">Monedă: {worksheetDisplayCurrency}</span>
+              )}
             </div>
-          )}
+
+            {activeView === "sales" ? (
+              <>
+                {overviewLoading ? <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Se încarcă graficele de vânzări...</div> : null}
+                {!overviewLoading && overviewError ? <div className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{overviewError}</div> : null}
+                {!overviewLoading && !overviewError && overviewData ? <SalesCharts payload={overviewData} /> : null}
+              </>
+            ) : null}
+
+            {activeView === "financial" ? (
+              <>
+                {overviewLoading ? <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Se încarcă graficele financiare...</div> : null}
+                {!overviewLoading && overviewError ? <div className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{overviewError}</div> : null}
+                {!overviewLoading && !overviewError && overviewData ? <FinancialCharts payload={overviewData} /> : null}
+              </>
+            ) : null}
+
+            {activeView === "worksheet" ? (
+              <>
+                {eurRonMessage ? <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{eurRonMessage}</div> : null}
+                {eurRonError ? <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{eurRonError}</div> : null}
+
+                {worksheetLoading ? <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Se încarcă fișa săptămânală...</div> : null}
+                {!worksheetLoading && worksheetError ? <div className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{worksheetError}</div> : null}
+                {!worksheetLoading && !worksheetError && worksheetData && !hasRows ? <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Nu există rânduri pentru scope-ul selectat.</div> : null}
+
+                {!worksheetLoading && !worksheetError && worksheetData && hasRows ? (
+                  <WeeklyWorksheetTable weeks={worksheetData.weeks} sections={worksheetData.sections} displayCurrency={worksheetDisplayCurrency} />
+                ) : null}
+              </>
+            ) : null}
+          </div>
         </section>
       </AppShell>
     </ProtectedPage>
