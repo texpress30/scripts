@@ -1,3 +1,15 @@
+# TODO — Media Buying: Val. Vândută fără paranteze (2026-03-26)
+
+- [x] Sync workspace și recitesc fișierele frontend/teste relevante înainte de modificări.
+- [x] Identific exact locurile unde `Val. Vândută` este formatată (total lunar + rânduri zilnice).
+- [x] Ajustez strict afișarea UI pentru `Val. Vândută` la format monetar standard fără paranteze.
+- [x] Adaug/actualizez test frontend focalizat pentru lipsa parantezelor în total lunar și rând zilnic.
+- [x] Rulez validările țintite și documentez rezultatul.
+
+## Review
+- [x] Confirm `Val. Vândută` apare fără paranteze în Media Buying.
+- [x] Confirm fără schimbări de calcule backend și fără impact pe alte coloane.
+
 # TODO — Data page remove Brand/Model + invert Val. Nerealizată formula (2026-03-26)
 
 - [x] Sync workspace (fetch/pull where possible) și recitesc fișierele frontend/backend/teste relevante înainte de modificări.
