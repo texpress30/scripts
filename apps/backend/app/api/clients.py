@@ -551,6 +551,22 @@ def _fallback_field_label(*, label: object, custom_field_id: object) -> str:
     return f"Custom Field {int(custom_field_id)}"
 
 
+def _validate_canonical_source_or_422(source: str) -> str:
+    normalized = str(source or "").strip().lower()
+    if not normalized:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="source is required and must be a supported source key",
+        )
+    if not client_data_store.is_supported_source(normalized):
+        supported = [str(item.get("key")) for item in client_data_store.list_supported_sources() if str(item.get("key") or "").strip()]
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unsupported source '{source}'. Allowed values: {supported}",
+        )
+    return normalized
+
+
 def _map_daily_input_write_payload(row: dict[str, object]) -> dict[str, object]:
     return {
         "id": int(row["id"]),
@@ -821,6 +837,7 @@ def upsert_client_data_daily_input(
     enforce_action_scope(user=user, action="clients:create", scope="agency")
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
+    source_key = _validate_canonical_source_or_422(payload.source)
 
     numeric_updates: dict[str, object] = {}
     for key in (
@@ -853,20 +870,20 @@ def upsert_client_data_daily_input(
         latest_row = client_data_store.get_or_create_daily_input(
             client_id=client_id,
             metric_date=payload.metric_date,
-            source=payload.source,
+            source=source_key,
         )
         if numeric_updates:
             latest_row = client_data_store.upsert_daily_input(
                 client_id=client_id,
                 metric_date=payload.metric_date,
-                source=payload.source,
+                source=source_key,
                 **numeric_updates,
             )
         if notes_provided:
             latest_row = client_data_store.set_daily_input_notes(
                 client_id=client_id,
                 metric_date=payload.metric_date,
-                source=payload.source,
+                source=source_key,
                 notes=payload.notes,
             )
         if latest_row is None:
@@ -885,7 +902,7 @@ def upsert_client_data_daily_input(
         latest_row = client_data_store.upsert_daily_input(
             client_id=client_id,
             metric_date=payload.metric_date,
-            source=payload.source,
+            source=source_key,
             custom_value_4_amount=client_data_store.compute_custom_value_4(sale_entries),
             sales_count=client_data_store.compute_sales_count(sale_entries),
         )
