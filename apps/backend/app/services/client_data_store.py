@@ -531,7 +531,7 @@ def get_or_create_daily_input(*, client_id: int, metric_date: date | str, source
                     custom_value_5_amount,
                     sales_count,
                     notes
-                ) VALUES (%s, %s, %s, 0, 0, 0, 0, 0, 0, 0, NULL)
+                ) VALUES (%s, %s, %s, 0, 0, 0, 0, 0, 0, 0, 0, NULL)
                 RETURNING
                     id,
                     client_id,
