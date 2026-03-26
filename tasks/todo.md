@@ -7524,3 +7524,8 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, f�
 ## Review
 - [x] Confirm cardul de mix cheltuieli/venituri nu mai apare în Media Tracker.
 - [x] Confirm controlul pentru grafice este calendar range, nu butoane lună/trimestru/an.
+
+# TODO — Media Tracker toolbar swap calendar/currency (2026-03-26)
+- [x] Inversez poziția calendarului și a monedei în toolbar-ul pentru grafice: currency la stânga, calendar la dreapta.
+- [x] Păstrez neafectat flow-ul worksheet și EUR/RON.
+- [x] Rulez testele Media Tracker frontend.

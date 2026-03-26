@@ -323,6 +323,39 @@ export default function SubMediaTrackerPage() {
                   </div>
                 </>
               ) : (
+                <span className="text-sm text-slate-600">Monedă: {worksheetDisplayCurrency}</span>
+              )}
+
+              {activeView === "worksheet" ? (
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="font-medium text-slate-700">Monedă: {worksheetDisplayCurrency}</span>
+                  <span className="text-slate-300">|</span>
+                  <span className="font-medium text-slate-700">EUR/RON</span>
+                  <input
+                    aria-label="Curs EUR/RON"
+                    type="number"
+                    step="0.0001"
+                    min="0"
+                    className="w-28 rounded border border-slate-300 px-2 py-1 text-slate-700"
+                    value={eurRonDraft}
+                    onChange={(event) => {
+                      setEurRonDraft(event.target.value);
+                      if (eurRonError) setEurRonError("");
+                      if (eurRonMessage) setEurRonMessage("");
+                    }}
+                    disabled={eurRonSaving}
+                  />
+                  <button
+                    type="button"
+                    className="rounded border border-indigo-300 px-2 py-1 text-indigo-700 disabled:opacity-60"
+                    onClick={() => void saveEurRonRate()}
+                    disabled={eurRonSaving}
+                  >
+                    {eurRonSaving ? "Se salvează..." : "Salvează curs"}
+                  </button>
+                  <span className="text-xs text-slate-500">pentru {scopeLabel}</span>
+                </div>
+              ) : (
                 <div className="relative">
                   <button
                     type="button"
@@ -365,39 +398,6 @@ export default function SubMediaTrackerPage() {
                     </div>
                   ) : null}
                 </div>
-              )}
-
-              {activeView === "worksheet" ? (
-                <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <span className="font-medium text-slate-700">Monedă: {worksheetDisplayCurrency}</span>
-                  <span className="text-slate-300">|</span>
-                  <span className="font-medium text-slate-700">EUR/RON</span>
-                  <input
-                    aria-label="Curs EUR/RON"
-                    type="number"
-                    step="0.0001"
-                    min="0"
-                    className="w-28 rounded border border-slate-300 px-2 py-1 text-slate-700"
-                    value={eurRonDraft}
-                    onChange={(event) => {
-                      setEurRonDraft(event.target.value);
-                      if (eurRonError) setEurRonError("");
-                      if (eurRonMessage) setEurRonMessage("");
-                    }}
-                    disabled={eurRonSaving}
-                  />
-                  <button
-                    type="button"
-                    className="rounded border border-indigo-300 px-2 py-1 text-indigo-700 disabled:opacity-60"
-                    onClick={() => void saveEurRonRate()}
-                    disabled={eurRonSaving}
-                  >
-                    {eurRonSaving ? "Se salvează..." : "Salvează curs"}
-                  </button>
-                  <span className="text-xs text-slate-500">pentru {scopeLabel}</span>
-                </div>
-              ) : (
-                <span className="text-sm text-slate-600">Monedă: {worksheetDisplayCurrency}</span>
               )}
             </div>
 
