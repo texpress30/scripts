@@ -991,5 +991,205 @@ class MediaTrackerWorksheetService:
             ),
         }
 
+    def build_overview_charts_payload(self, *, granularity: WorksheetGranularity, anchor_date: date, client_id: int) -> dict[str, object]:
+        foundation = self.build_weekly_worksheet_foundation(
+            granularity=granularity,
+            anchor_date=anchor_date,
+            client_id=client_id,
+        )
+
+        weeks = foundation.get("weeks") if isinstance(foundation.get("weeks"), list) else []
+        sections = foundation.get("sections") if isinstance(foundation.get("sections"), list) else []
+
+        def get_section(section_key: str) -> dict[str, object]:
+            for section in sections:
+                if isinstance(section, dict) and str(section.get("key")) == section_key:
+                    return section
+            return {}
+
+        def get_row(section_key: str, row_key: str) -> dict[str, object]:
+            section = get_section(section_key)
+            rows = section.get("rows") if isinstance(section.get("rows"), list) else []
+            for row in rows:
+                if isinstance(row, dict) and str(row.get("row_key")) == row_key:
+                    return row
+            return {}
+
+        def values_from_row(section_key: str, row_key: str) -> list[float]:
+            row = get_row(section_key, row_key)
+            weekly_values = row.get("weekly_values") if isinstance(row.get("weekly_values"), list) else []
+            normalized: list[float] = []
+            for idx in range(len(weeks)):
+                weekly_value = weekly_values[idx] if idx < len(weekly_values) and isinstance(weekly_values[idx], dict) else {}
+                raw = weekly_value.get("value")
+                normalized.append(float(raw) if isinstance(raw, (int, float)) else 0.0)
+            return normalized
+
+        summary_revenue = values_from_row("summary", "revenue")
+        summary_leads = values_from_row("summary", "leads")
+        summary_custom_1 = values_from_row("summary", "applications")
+        summary_custom_2 = values_from_row("summary", "approved_applications")
+        summary_gross_profit = values_from_row("summary", "gross_profit")
+        summary_cogs_taxes = values_from_row("summary", "weekly_cogs_taxes")
+
+        google_cost = values_from_row("google_spend", "cost")
+        meta_cost = values_from_row("meta_spend", "cost")
+        tiktok_cost = values_from_row("tiktok_spend", "cost")
+        google_revenue = values_from_row("google_spend", "revenue_manual")
+        meta_revenue = values_from_row("meta_spend", "revenue_manual")
+        tiktok_revenue = values_from_row("tiktok_spend", "revenue_manual")
+        google_sales = values_from_row("google_spend", "sales_manual")
+        meta_sales = values_from_row("meta_spend", "sales_manual")
+        tiktok_sales = values_from_row("tiktok_spend", "sales_manual")
+        google_leads = values_from_row("google_spend", "leads_manual")
+        meta_leads = values_from_row("meta_spend", "leads_manual")
+        tiktok_leads = values_from_row("tiktok_spend", "leads_manual")
+        google_cpa = values_from_row("google_spend", "cpa")
+        meta_cpa = values_from_row("meta_spend", "cpa")
+        tiktok_cpa = values_from_row("tiktok_spend", "cpa")
+        google_ncac = values_from_row("google_spend", "ncac")
+        meta_ncac = values_from_row("meta_spend", "ncac")
+        tiktok_ncac = values_from_row("tiktok_spend", "ncac")
+
+        scope_weeks: list[dict[str, object]] = []
+        sales_total_trend: list[dict[str, object]] = []
+        sales_channel_composition: list[dict[str, object]] = []
+        sales_efficiency_scatter: list[dict[str, object]] = []
+        financial_cost_efficiency: list[dict[str, object]] = []
+        financial_mix_vs_revenue: list[dict[str, object]] = []
+        financial_conversion_funnel: list[dict[str, object]] = []
+        financial_profitability: list[dict[str, object]] = []
+
+        for idx, week in enumerate(weeks):
+            week_start = str((week if isinstance(week, dict) else {}).get("week_start") or "")
+            week_end = str((week if isinstance(week, dict) else {}).get("week_end") or "")
+            label = str((week if isinstance(week, dict) else {}).get("label") or week_start)
+            scope_weeks.append({"week_start": week_start, "week_end": week_end, "label": label})
+            sales_total_trend.append({"week_start": week_start, "week_end": week_end, "label": label, "revenue_total": summary_revenue[idx] if idx < len(summary_revenue) else 0.0})
+            sales_channel_composition.append(
+                {
+                    "week_start": week_start,
+                    "week_end": week_end,
+                    "label": label,
+                    "google": google_revenue[idx] if idx < len(google_revenue) else 0.0,
+                    "meta": meta_revenue[idx] if idx < len(meta_revenue) else 0.0,
+                    "tiktok": tiktok_revenue[idx] if idx < len(tiktok_revenue) else 0.0,
+                }
+            )
+            financial_cost_efficiency.append(
+                {
+                    "week_start": week_start,
+                    "week_end": week_end,
+                    "label": label,
+                    "google_cpa": google_cpa[idx] if idx < len(google_cpa) else 0.0,
+                    "google_ncac": google_ncac[idx] if idx < len(google_ncac) else 0.0,
+                    "meta_cpa": meta_cpa[idx] if idx < len(meta_cpa) else 0.0,
+                    "meta_ncac": meta_ncac[idx] if idx < len(meta_ncac) else 0.0,
+                    "tiktok_cpa": tiktok_cpa[idx] if idx < len(tiktok_cpa) else 0.0,
+                    "tiktok_ncac": tiktok_ncac[idx] if idx < len(tiktok_ncac) else 0.0,
+                }
+            )
+            financial_mix_vs_revenue.append(
+                {
+                    "week_start": week_start,
+                    "week_end": week_end,
+                    "label": label,
+                    "google_cost": google_cost[idx] if idx < len(google_cost) else 0.0,
+                    "meta_cost": meta_cost[idx] if idx < len(meta_cost) else 0.0,
+                    "tiktok_cost": tiktok_cost[idx] if idx < len(tiktok_cost) else 0.0,
+                    "revenue_total": summary_revenue[idx] if idx < len(summary_revenue) else 0.0,
+                }
+            )
+            financial_conversion_funnel.append(
+                {
+                    "week_start": week_start,
+                    "week_end": week_end,
+                    "label": label,
+                    "leads": summary_leads[idx] if idx < len(summary_leads) else 0.0,
+                    "custom_value_1_count": summary_custom_1[idx] if idx < len(summary_custom_1) else 0.0,
+                    "custom_value_2_count": summary_custom_2[idx] if idx < len(summary_custom_2) else 0.0,
+                }
+            )
+            financial_profitability.append(
+                {
+                    "week_start": week_start,
+                    "week_end": week_end,
+                    "label": label,
+                    "gross_profit": summary_gross_profit[idx] if idx < len(summary_gross_profit) else 0.0,
+                    "cogs_taxes": summary_cogs_taxes[idx] if idx < len(summary_cogs_taxes) else 0.0,
+                }
+            )
+
+            channel_points = (
+                ("google", google_cost, google_revenue),
+                ("meta", meta_cost, meta_revenue),
+                ("tiktok", tiktok_cost, tiktok_revenue),
+            )
+            for channel, costs, sold_values in channel_points:
+                sales_efficiency_scatter.append(
+                    {
+                        "week_start": week_start,
+                        "week_end": week_end,
+                        "label": label,
+                        "channel": channel,
+                        "cost": costs[idx] if idx < len(costs) else 0.0,
+                        "sold_value": sold_values[idx] if idx < len(sold_values) else 0.0,
+                    }
+                )
+
+        channel_performance: list[dict[str, object]] = []
+        for channel, cpa_values, leads_values, sales_values in (
+            ("google", google_cpa, google_leads, google_sales),
+            ("meta", meta_cpa, meta_leads, meta_sales),
+            ("tiktok", tiktok_cpa, tiktok_leads, tiktok_sales),
+        ):
+            total_sales = round(sum(sales_values), 4)
+            total_leads = round(sum(leads_values), 4)
+            conversion_rate = self._safe_div(total_sales, total_leads)
+            avg_cpa = self._safe_div(sum(cpa_values), float(len(cpa_values))) if len(cpa_values) > 0 else None
+            channel_performance.append(
+                {
+                    "channel": channel,
+                    "cpa": round(float(avg_cpa or 0.0), 4),
+                    "conversion_rate": round(float(conversion_rate or 0.0), 6),
+                    "sales_volume": total_sales,
+                }
+            )
+
+        config = media_buying_store.get_config(client_id=int(client_id))
+        custom_labels = {
+            "custom_label_1": self._normalized_label((config or {}).get("custom_label_1"), fallback="Custom Value 1"),
+            "custom_label_2": self._normalized_label((config or {}).get("custom_label_2"), fallback="Custom Value 2"),
+            "custom_label_3": self._normalized_label((config or {}).get("custom_label_3"), fallback="Custom Value 3"),
+            "custom_label_4": self._normalized_label((config or {}).get("custom_label_4"), fallback="Custom Value 4"),
+            "custom_label_5": self._normalized_label((config or {}).get("custom_label_5"), fallback="Custom Value 5"),
+        }
+
+        return {
+            "requested_scope": foundation.get("requested_scope"),
+            "resolved_period": foundation.get("resolved_period"),
+            "display_currency": foundation.get("display_currency"),
+            "eur_ron_rate": foundation.get("eur_ron_rate"),
+            "weeks": scope_weeks,
+            "custom_labels": custom_labels,
+            "formulas": {
+                "ncac": "cost / sales",
+                "conversion_rate": "sales / leads",
+                "sales_efficiency_scatter": "x=cost, y=sold_value",
+            },
+            "sales": {
+                "total_sales_trend": sales_total_trend,
+                "channel_sales_composition": sales_channel_composition,
+                "sales_efficiency_scatter": sales_efficiency_scatter,
+            },
+            "financial": {
+                "cost_efficiency": financial_cost_efficiency,
+                "spend_vs_revenue_mix": financial_mix_vs_revenue,
+                "conversion_funnel": financial_conversion_funnel,
+                "profitability": financial_profitability,
+                "channel_performance": channel_performance,
+            },
+        }
+
 
 media_tracker_worksheet_service = MediaTrackerWorksheetService()

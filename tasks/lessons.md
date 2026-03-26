@@ -619,3 +619,8 @@
 - 2026-03-26: Pentru cerințe de prezentare strict UI pe o coloană (`Val. Vândută`), modific doar formatter-ul/randarea acelei coloane și acopăr explicit total lunar + rând zilnic cu test de absență paranteze.
 - 2026-03-26: Pentru task-uri Media Tracker UI+backend punctuale, verific explicit endpoint-uri blocate `410` și reactivez doar cele cerute (`eur-ron-rate`) în paralel cu teste front/back pe edit+persist, fără a redeschide editări manuale necerute.
 - 2026-03-26: Când userul cere styling pe o coloană "de sus până jos", verific explicit ambele rânduri de header + toate celulele de date ale coloanei, nu doar header-ul principal și un singur cell.
+
+## 2026-03-26 — După feedback de respingere: refacere completă pe commitul curent, fără presupuneri
+- Când user-ul spune explicit că ultimul commit este nesatisfăcător, pornesc de la codul efectiv din HEAD și refac analiza înainte de orice afirmație.
+- Pentru task-uri cu cerințe de UI+backend pe același flow, introduc payload backend dedicat și testez explicit integrarea frontend pe endpointul nou.
+- Pentru grafice în vitest/jsdom, adaug imediat mock pentru `ResizeObserver` ca să evit false negatives și crash-uri la `ResponsiveContainer`.

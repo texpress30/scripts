@@ -1319,6 +1319,26 @@ def get_media_tracker_weekly_worksheet_foundation(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
 
+@router.get("/{client_id}/media-tracker/overview-charts")
+def get_media_tracker_overview_charts(
+    client_id: int,
+    granularity: str = Query(...),
+    anchor_date: date = Query(...),
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+    try:
+        return media_tracker_worksheet_service.build_overview_charts_payload(
+            granularity=str(granularity).strip().lower(),
+            anchor_date=anchor_date,
+            client_id=client_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
 @router.put("/{client_id}/media-tracker/worksheet/manual-values")
 def upsert_media_tracker_weekly_manual_values(
     client_id: int,
