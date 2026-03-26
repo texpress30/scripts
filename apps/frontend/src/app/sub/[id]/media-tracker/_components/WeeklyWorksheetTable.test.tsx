@@ -6,7 +6,7 @@ import { WeeklyWorksheetTable } from "./WeeklyWorksheetTable";
 
 describe("WeeklyWorksheetTable label alignment", () => {
   it("aligns normal and comparison row labels to the right while keeping comparison styling", () => {
-    render(
+    const { container } = render(
       <WeeklyWorksheetTable
         displayCurrency="RON"
         weeks={[{ week_start: "2026-03-02", week_end: "2026-03-08" }]}
@@ -54,7 +54,7 @@ describe("WeeklyWorksheetTable label alignment", () => {
   });
 
   it("styles history column with the same grey text class used in Media Buying", () => {
-    render(
+    const { container } = render(
       <WeeklyWorksheetTable
         displayCurrency="RON"
         weeks={[{ week_start: "2026-03-02", week_end: "2026-03-08" }]}
@@ -80,5 +80,8 @@ describe("WeeklyWorksheetTable label alignment", () => {
 
     expect(screen.getByRole("columnheader", { name: "Istorie" }).className).toContain("text-[#bfbfbf]");
     expect(screen.getByTestId("history-summary-cost").className).toContain("text-[#bfbfbf]");
+    const secondaryHistoryHeader = container.querySelector("thead tr:nth-of-type(2) th:nth-of-type(2)");
+    expect(secondaryHistoryHeader).toBeTruthy();
+    expect(secondaryHistoryHeader?.className || "").toContain("text-[#bfbfbf]");
   });
 });

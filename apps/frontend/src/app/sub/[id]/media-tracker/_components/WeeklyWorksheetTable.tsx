@@ -192,7 +192,7 @@ export function WeeklyWorksheetTable(
           </tr>
           <tr className="bg-slate-50">
             <th className={`sticky left-0 z-20 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left font-medium text-slate-600 ${DASHED_COL}`}>Data Începere</th>
-            <th className={`border-b border-slate-200 px-3 py-2 text-right text-slate-500 ${DASHED_COL}`}>&nbsp;</th>
+            <th className={`border-b border-slate-200 px-3 py-2 text-right ${MEDIA_BUYING_GREY_TEXT_CLASS} ${DASHED_COL}`}>&nbsp;</th>
             {weeks.map((week) => (
               <th key={`week-start:${week.week_start}`} className={`border-b border-slate-200 px-3 py-2 text-right font-medium text-slate-600 ${DASHED_COL}`}>
                 {week.week_start}
