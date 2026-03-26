@@ -3,6 +3,9 @@
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { format, subDays } from "date-fns";
+import { DayPicker, type DateRange } from "react-day-picker";
+import "react-day-picker/dist/style.css";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
@@ -74,6 +77,39 @@ function buildOverviewPath(clientId: number, granularity: WorksheetGranularity, 
   return `/clients/${clientId}/media-tracker/overview-charts?${query}`;
 }
 
+function formatRangeLabel(range: DateRange): string {
+  const from = range.from ?? subDays(new Date(), 29);
+  const to = range.to ?? from;
+  return `Last 30 days: ${format(from, "MMM d, yyyy")} - ${format(to, "MMM d, yyyy")}`;
+}
+
+function filterOverviewPayloadByRange(payload: OverviewChartsPayload, range: DateRange): OverviewChartsPayload {
+  const from = range.from ?? subDays(new Date(), 29);
+  const to = range.to ?? from;
+  const fromIso = toIsoLocalDate(from);
+  const toIso = toIsoLocalDate(to);
+  const inRange = (item: Record<string, unknown>) => {
+    const weekStart = String(item.week_start ?? "");
+    return weekStart >= fromIso && weekStart <= toIso;
+  };
+
+  return {
+    ...payload,
+    sales: {
+      total_sales_trend: (payload.sales?.total_sales_trend ?? []).filter((item) => inRange(item)),
+      channel_sales_composition: (payload.sales?.channel_sales_composition ?? []).filter((item) => inRange(item)),
+      sales_efficiency_scatter: (payload.sales?.sales_efficiency_scatter ?? []).filter((item) => inRange(item)),
+    },
+    financial: {
+      cost_efficiency: (payload.financial?.cost_efficiency ?? []).filter((item) => inRange(item)),
+      spend_vs_revenue_mix: (payload.financial?.spend_vs_revenue_mix ?? []).filter((item) => inRange(item)),
+      conversion_funnel: (payload.financial?.conversion_funnel ?? []).filter((item) => inRange(item)),
+      profitability: (payload.financial?.profitability ?? []).filter((item) => inRange(item)),
+      channel_performance: payload.financial?.channel_performance ?? [],
+    },
+  };
+}
+
 export default function SubMediaTrackerPage() {
   const params = useParams<{ id: string }>();
   const clientId = Number(params.id);
@@ -89,6 +125,15 @@ export default function SubMediaTrackerPage() {
   const [overviewData, setOverviewData] = useState<OverviewChartsPayload | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [overviewError, setOverviewError] = useState("");
+  const [openCalendar, setOpenCalendar] = useState(false);
+  const [appliedRange, setAppliedRange] = useState<DateRange>(() => {
+    const to = new Date();
+    return { from: subDays(to, 29), to };
+  });
+  const [draftRange, setDraftRange] = useState<DateRange>(() => {
+    const to = new Date();
+    return { from: subDays(to, 29), to };
+  });
   const [eurRonDraft, setEurRonDraft] = useState("");
   const [eurRonSaving, setEurRonSaving] = useState(false);
   const [eurRonMessage, setEurRonMessage] = useState("");
@@ -137,15 +182,16 @@ export default function SubMediaTrackerPage() {
     setOverviewLoading(true);
     setOverviewError("");
     try {
-      const payload = await apiRequest<OverviewChartsPayload>(buildOverviewPath(clientId, worksheetGranularity, worksheetAnchorDate));
-      setOverviewData(payload);
+      const anchorDate = toIsoLocalDate(appliedRange.to ?? new Date());
+      const payload = await apiRequest<OverviewChartsPayload>(buildOverviewPath(clientId, "year", anchorDate));
+      setOverviewData(filterOverviewPayloadByRange(payload, appliedRange));
     } catch (err) {
       setOverviewData(null);
       setOverviewError(err instanceof Error ? err.message : "Nu am putut încărca graficele");
     } finally {
       setOverviewLoading(false);
     }
-  }, [clientId, worksheetAnchorDate, worksheetGranularity]);
+  }, [appliedRange, clientId]);
 
   useEffect(() => {
     if (activeView !== "worksheet") return;
@@ -167,6 +213,7 @@ export default function SubMediaTrackerPage() {
 
   const composedTitle = useMemo(() => `Media Tracker - ${clientName}`, [clientName]);
   const scopeLabel = useMemo(() => formatScopeLabel(worksheetAnchorDate, worksheetGranularity), [worksheetAnchorDate, worksheetGranularity]);
+  const calendarRangeLabel = useMemo(() => formatRangeLabel(appliedRange), [appliedRange]);
   const dataMonthKey = useMemo(() => worksheetAnchorDate.slice(0, 7), [worksheetAnchorDate]);
 
   const hasRows = !!worksheetData?.sections?.some((section) => section.rows.length > 0);
@@ -243,35 +290,82 @@ export default function SubMediaTrackerPage() {
 
           <div className="mt-4 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3">
-              <div className="flex items-center gap-2">
-                {(["month", "quarter", "year"] as WorksheetGranularity[]).map((item) => (
+              {activeView === "worksheet" ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    {(["month", "quarter", "year"] as WorksheetGranularity[]).map((item) => (
+                      <button
+                        key={item}
+                        type="button"
+                        className={`rounded-md border px-3 py-1.5 text-sm capitalize ${worksheetGranularity === item ? "border-indigo-600 bg-indigo-50 text-indigo-700" : "border-slate-300 text-slate-700"}`}
+                        onClick={() => setWorksheetGranularity(item)}
+                      >
+                        {item === "month" ? "Lună" : item === "quarter" ? "Trimestru" : "An"}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700"
+                      onClick={() => setWorksheetAnchorDate((prev) => shiftAnchorDate(prev, worksheetGranularity, -1))}
+                    >
+                      Anterior
+                    </button>
+                    <span className="min-w-32 text-center text-sm font-medium text-slate-800">{scopeLabel}</span>
+                    <button
+                      type="button"
+                      className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700"
+                      onClick={() => setWorksheetAnchorDate((prev) => shiftAnchorDate(prev, worksheetGranularity, 1))}
+                    >
+                      Următor
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="relative">
                   <button
-                    key={item}
                     type="button"
-                    className={`rounded-md border px-3 py-1.5 text-sm capitalize ${worksheetGranularity === item ? "border-indigo-600 bg-indigo-50 text-indigo-700" : "border-slate-300 text-slate-700"}`}
-                    onClick={() => setWorksheetGranularity(item)}
+                    className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700"
+                    onClick={() => setOpenCalendar((prev) => !prev)}
                   >
-                    {item === "month" ? "Lună" : item === "quarter" ? "Trimestru" : "An"}
+                    {calendarRangeLabel}
                   </button>
-                ))}
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700"
-                  onClick={() => setWorksheetAnchorDate((prev) => shiftAnchorDate(prev, worksheetGranularity, -1))}
-                >
-                  Anterior
-                </button>
-                <span className="min-w-32 text-center text-sm font-medium text-slate-800">{scopeLabel}</span>
-                <button
-                  type="button"
-                  className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700"
-                  onClick={() => setWorksheetAnchorDate((prev) => shiftAnchorDate(prev, worksheetGranularity, 1))}
-                >
-                  Următor
-                </button>
-              </div>
+                  {openCalendar ? (
+                    <div className="absolute right-0 z-20 mt-2 rounded-md border border-slate-200 bg-white p-3 shadow-lg">
+                      <DayPicker
+                        mode="range"
+                        selected={draftRange}
+                        onSelect={(next) => setDraftRange(next ?? draftRange)}
+                        numberOfMonths={2}
+                        defaultMonth={draftRange.from}
+                      />
+                      <div className="mt-2 flex justify-end gap-2">
+                        <button
+                          type="button"
+                          className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700"
+                          onClick={() => {
+                            setDraftRange(appliedRange);
+                            setOpenCalendar(false);
+                          }}
+                        >
+                          Anulează
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-md border border-indigo-300 px-2 py-1 text-xs text-indigo-700"
+                          onClick={() => {
+                            if (draftRange.from && draftRange.to) setAppliedRange(draftRange);
+                            setOpenCalendar(false);
+                          }}
+                        >
+                          Aplică
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              )}
 
               {activeView === "worksheet" ? (
                 <div className="flex flex-wrap items-center gap-2 text-sm">

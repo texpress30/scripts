@@ -100,13 +100,12 @@ describe("SubMediaTrackerPage", () => {
     expect(screen.getByRole("button", { name: "Fișă săptămânală" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Prezentare generală" })).toBeNull();
     await screen.findByLabelText("Trendul Vânzărilor Totale");
+    expect(screen.getByRole("button", { name: /Last 30 days:/i })).toBeInTheDocument();
   });
 
-  it("switches between Vânzări and Financiare and keeps current scope", async () => {
+  it("switches between Vânzări and Financiare and keeps selected calendar range for charts", async () => {
     render(<SubMediaTrackerPage />);
     await screen.findByLabelText("Trendul Vânzărilor Totale");
-
-    fireEvent.click(screen.getByRole("button", { name: "Trimestru" }));
     fireEvent.click(screen.getByRole("button", { name: "Financiare" }));
 
     await screen.findByLabelText("Analiza Eficienței Costurilor (CPA și nCAC)");
@@ -114,7 +113,7 @@ describe("SubMediaTrackerPage", () => {
     const overviewCalls = apiMock.apiRequest.mock.calls
       .map(([path]) => String(path))
       .filter((path) => path.includes("/clients/96/media-tracker/overview-charts"));
-    expect(overviewCalls.some((path) => path.includes("granularity=quarter"))).toBe(true);
+    expect(overviewCalls.some((path) => path.includes("granularity=year"))).toBe(true);
   });
 
   it("uses custom labels from payload in financial conversion funnel legend/title context", async () => {
@@ -145,7 +144,8 @@ describe("SubMediaTrackerPage", () => {
     expect(screen.getByLabelText("Eficiența Vânzărilor")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Financiare" }));
-    await screen.findByLabelText("Analiza Mixului de Cheltuieli vs. Venituri");
+    await screen.findByLabelText("Analiza Pâlniei de Conversie");
+    expect(screen.queryByLabelText("Analiza Mixului de Cheltuieli vs. Venituri")).toBeNull();
     expect(screen.getByLabelText("Profitabilitatea")).toBeInTheDocument();
     expect(screen.getByLabelText("Analiza Performanței pe Canale")).toBeInTheDocument();
   });

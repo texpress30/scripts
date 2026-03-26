@@ -140,22 +140,6 @@ export function FinancialCharts({ payload }: { payload: OverviewChartsPayload })
         </ResponsiveContainer>
       </ChartCard>
 
-      <ChartCard title="Analiza Mixului de Cheltuieli vs. Venituri">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={financial.spend_vs_revenue_mix || []}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey="label" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Bar dataKey="google_cost" stackId="cost" fill="#2563eb" name="Cost Google" />
-            <Bar dataKey="meta_cost" stackId="cost" fill="#7c3aed" name="Cost Meta" />
-            <Bar dataKey="tiktok_cost" stackId="cost" fill="#0f766e" name="Cost TikTok" />
-            <Line dataKey="revenue_total" stroke="#dc2626" dot={false} isAnimationActive={false} name="Venit total" />
-          </BarChart>
-        </ResponsiveContainer>
-      </ChartCard>
-
       <ChartCard title="Analiza Pâlniei de Conversie">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={financial.conversion_funnel || []}>
