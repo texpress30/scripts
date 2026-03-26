@@ -1,3 +1,143 @@
+# TODO — Data page remove Brand/Model + invert Val. Nerealizată formula (2026-03-26)
+
+- [x] Sync workspace (fetch/pull where possible) și recitesc fișierele frontend/backend/teste relevante înainte de modificări.
+- [x] Elimin complet `Marcă`/`Model` din Data page (form add/edit, tabel, detalii, tipuri/state/helper-e/payload UI).
+- [x] Inversez formula `Val. Nerealizată` la `Val. Vândută - Val. Aprobată` în UI preview+tabel.
+- [x] Aliniez backend canonical save/read + Media Buying + Media Tracker la noua formulă pentru `custom_value_5_amount`.
+- [x] Actualizez/adaug teste frontend/backend pentru: eliminare brand/model, formula nouă, propagare Data->MB->MT, non-regresii cerute.
+- [x] Rulez validări țintite și documentez rezultatele/limitările.
+
+## Review
+- [x] Confirm `Marcă` și `Model` eliminate complet din Data page UI + payloaduri UI.
+- [x] Confirm formula finală: `Val. Nerealizată = Val. Vândută - Val. Aprobată`.
+- [x] Confirm MB/MT reflectă aceeași semantică fără regresii pe multi-row/per-row CRUD/source optional.
+
+# TODO — Data source optional in canonical save (blank -> unknown) (2026-03-26)
+
+- [x] Sync workspace și recitesc fișierele frontend/backend/teste relevante înainte de modificări.
+- [x] Elimin validarea frontend care blochează sursa goală la save.
+- [x] Normalizez backend sursa goală la `unknown` și păstrez 422 pentru valori non-goale nesuportate.
+- [x] Ajustez teste frontend/backend pentru blank source acceptat + invalid non-blank respins.
+- [x] Rulez validări țintite și documentez rezultatul.
+
+## Review
+- [x] Confirm save cu sursă goală persistă `unknown` și apare corect în Data table/labels.
+- [x] Confirm valorile non-goale invalide rămân respinse cu 422.
+
+# TODO — Data create/update split by row id and same-day multi-row support (2026-03-26)
+
+- [x] Sync workspace și recitesc fișierele relevante frontend/backend înainte de modificări.
+- [x] Introduc contract explicit create/update/delete pentru Data: POST create nou, PATCH update per `daily_input_id`, DELETE per `daily_input_id`.
+- [x] Elimin presupunerea structurală de unicitate `(client_id, metric_date, source)` prin migrare DB.
+- [x] Actualizez Data page să folosească POST pentru Add Row și PATCH pentru Edit row (fără upsert zi+sursă la create).
+- [x] Verific agregarea Media Buying pe mai multe rânduri/zi și repar riscul de totaluri umflate din join sale entries.
+- [x] Adaug/ajustez teste frontend/backend pentru multi-row same-day, edit per-row și propagare MB/MT.
+
+## Review
+- [x] Confirm create permite multiple rânduri în aceeași zi și aceeași sursă.
+- [x] Confirm edit/delete rămân strict per-rând pe `daily_input_id`.
+- [x] Confirm fără reintroducere Mențiuni / Adaugă vânzare nouă / Șterge vânzare.
+
+# TODO — Data canonical summary fields editable again (2026-03-26)
+
+- [x] Sync workspace și recitesc fișierele backend/frontend/teste relevante înainte de modificări.
+- [x] Fac `custom_value_4_amount` și `sales_count` din nou câmpuri canonice editabile în API + config + UI.
+- [x] Păstrez `custom_value_5_amount` derivat/read-only și recalc automat din `custom_value_3_amount - custom_value_4_amount`.
+- [x] Mențin slotul unic de vânzare separat de summary fields și fără câmpuri legacy în payload-ul canonic.
+- [x] Ajustez teste frontend/backend pentru noile câmpuri canonice + non-regresie delete.
+- [x] Rulez validările țintite și documentez limitările de mediu.
+
+## Review
+- [x] Confirm `Val. Vândută` și `Vânzări` sunt editabile în Add Row + Edit row.
+- [x] Confirm `Val. Nerealizată` rămâne read-only derivat.
+- [x] Confirm flow-ul de delete per-rând rămâne activ și ne-regresat.
+
+# TODO — Data page reorder + per-row delete endpoint (2026-03-26)
+
+- [x] Sync workspace și recitesc fișierele frontend/backend relevante înainte de modificări.
+- [x] Reordonez formularul `Adaugă rând` exact în secvența tabelului principal.
+- [x] Adaug acțiune frontend de delete per rând (`daily_input_id`) cu confirmare și refresh tabel.
+- [x] Implementez endpoint backend dedicat `DELETE /clients/{client_id}/data/daily-inputs/{daily_input_id}` cu ștergere dependentă.
+- [x] Adaug/ajustez teste frontend/backend pentru ordine + delete + propagare Data/MB/MT.
+- [x] Rulez validări țintite și documentez limitările de mediu.
+
+## Review
+- [x] Confirm fără reintroducere Mențiuni / Adaugă vânzare nouă / Șterge vânzare (slot multi-sale).
+- [x] Confirm delete-ul este per rând afișat (nu delete în masă pe zi).
+- [x] Confirm flow-ul canonic de save rămâne neschimbat.
+
+# TODO — Data page: single-sale slot restore without reopening legacy contract (2026-03-26)
+
+- [x] Sync workspace state and re-read Data page + frontend tests before edits.
+- [x] Restore missing Add Row and table display fields for single sale slot + derived outputs.
+- [x] Keep canonical `daily-input` payload unchanged and add optional single `sale-entries` POST after canonical save.
+- [x] Enforce explicit validation for partial sale slot to avoid false success.
+- [x] Update frontend tests for restored fields/labels and split save behavior; run targeted vitest.
+
+## Review
+- [x] Confirm no reintroduction of Mențiuni / Adaugă vânzare nouă / Șterge vânzare controls.
+- [x] Confirm CV4/CV5 labels are rendered from `derived_fields` labels, not hardcoded generics.
+- [x] Confirm single-sale behavior only (no multi-sale orchestration).
+
+# TODO — Merge conflict resolution for Data canonical contract (2026-03-26)
+
+- [x] Inspect conflicted frontend/test/task files and keep canonical contract shape.
+- [x] Resolve merge markers in `page.tsx` and `page.test.tsx` favoring derived labels/read-only split.
+- [x] Resolve task doc conflicts and preserve latest lessons.
+- [x] Run targeted frontend test for Data page and record outcome.
+- [x] Commit merge resolution and open PR.
+
+## Review
+- [x] Confirm no merge markers remain and `git status` is clean after commit.
+- [x] Confirm Data page test suite still passes after conflict resolution.
+
+# TODO — Data config contract alignment: canonical fixed_fields vs derived_fields (2026-03-26)
+
+- [x] Sync workspace și recitesc fișierele backend/frontend/teste relevante.
+- [x] Ajustez `GET /clients/{client_id}/data/config` pentru fixed_fields strict canonice editabile și derived_fields explicite read-only.
+- [x] Actualizez Data page să consume labels/contract separat (editable canonical vs derived read-only) fără draft/payload derivate.
+- [x] Adaug/ajustez teste backend + frontend pentru separarea fixed/derived și non-regresii canonic save + Data->MB->MT.
+- [x] Rulez validări țintite și documentez rezultatul.
+
+## Review
+- [x] Confirm fără redesign și fără reintroducere câmpuri legacy în flow-ul canonic.
+- [x] Confirm flux canonic Data->MB->MT ne-regresat după alinierea read-side.
+# TODO — Backend canonical contract hardening for daily-input save (2026-03-26)
+
+- [x] Sync workspace și recitesc fișierele backend/ teste relevante înainte de modificări.
+- [x] Restrâng contractul `PUT /clients/{client_id}/data/daily-input` la câmpuri canonice + resping explicit câmpuri legacy (422).
+- [x] Elimin side-effect-urile implicite de replace sale_entries/notes/recalc legacy din canonical save path.
+- [x] Adaug teste backend pentru: legacy rejected, sale_entries intacte la canonical save, derivări read-side intacte, regression Data->MB->MT.
+- [x] Rulez validări țintite și documentez rezultatul.
+
+## Review
+- [x] Confirm separare explicită între canonical daily save și flow-urile legacy sale entries.
+- [x] Confirm canonical save nu mai poate șterge implicit sale entries istorice.
+
+# TODO — Data page cleanup: remove interactive sales/notes controls (2026-03-26)
+
+- [x] Sync workspace și recitesc fișierele relevante înainte de modificări.
+- [x] Identific și elimin UI + logică frontend pentru add/edit/delete vânzări și mențiuni din Data page.
+- [x] Păstrez intact fluxul canonic de salvare/citire (metric_date, source, fixed fields, dynamic custom values).
+- [x] Adaug/ajustez teste focalizate pentru absența controalelor eliminate și non-regresie flux canonic.
+- [x] Rulez validări țintite și documentez rezultatul.
+
+## Review
+- [x] Confirm fără redesign/refactor extins și fără modificări Media Buying/Media Tracker în afara build/tests.
+- [x] Confirm fixul Task 1 (`source` validation explicit) rămâne activ și ne-regresat.
+
+# TODO — Stabilizare flux canonic Data save/read + propagare MB/MT (2026-03-26)
+
+- [x] Sync workspace și re-citire fișiere țintă înainte de modificări.
+- [x] Analiză end-to-end save/read pentru Data + Media Buying + Media Tracker pe fișierele cerute.
+- [x] Implement fix minim și sigur pentru persistența canonică (inclusiv validare `source` fără false success).
+- [x] Adăugare/ajustare teste backend roundtrip (data/table, media-buying lead table, media-tracker worksheet, caz source invalid).
+- [x] Rulare teste țintite + review final + documentare rezultat.
+
+## Review
+- [x] Confirm fără redesign/refactor extins și fără cleanup UI mare.
+- [x] Confirm același rând salvat în Data apare în MB și MT prin sursa canonică backend.
+
 # TODO — Final stabilization Data canonical flow (2026-03-25)
 
 - [x] Confirm workspace up-to-date local și verific `git status`/`git diff`.
