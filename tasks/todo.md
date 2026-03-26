@@ -1,3 +1,18 @@
+# TODO — Media Tracker: traduceri RO + Istorie gri + EUR/RON editabil (2026-03-26)
+
+- [x] Sync workspace și recitesc fișierele relevante frontend/backend/teste înainte de modificări.
+- [x] Audit complet textele user-facing Media Tracker și traduceri RO coerente (fără a traduce abrevierile stabile).
+- [x] Aplic stilul exact de text gri (ca în Media Buying) pentru coloana `Istorie` în worksheet.
+- [x] Fac `EUR/RON` editabil în UI + salvare robustă + refresh worksheet după save.
+- [x] Reactivez/aliniez backend `PUT /media-tracker/worksheet/eur-ron-rate` pentru persistare pe scope (month/quarter/year + anchor_date).
+- [x] Adaug/actualizez teste frontend/backend pentru traduceri, stil Istorie, edit/persist EUR/RON.
+- [x] Rulez validările țintite și documentez limitările de mediu.
+
+## Review
+- [x] Confirm principalele texte Media Tracker sunt în română.
+- [x] Confirm coloana `Istorie` folosește aceeași culoare ca textul gri din Media Buying (`text-[#bfbfbf]`).
+- [x] Confirm `EUR/RON` este editabil și persistat corect pe scope-ul curent.
+
 # TODO — Media Buying: Val. Vândută fără paranteze (2026-03-26)
 
 - [x] Sync workspace și recitesc fișierele frontend/teste relevante înainte de modificări.

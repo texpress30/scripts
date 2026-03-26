@@ -52,4 +52,33 @@ describe("WeeklyWorksheetTable label alignment", () => {
     expect(comparisonLabelCell?.className).toContain("pr-6");
     expect(comparisonLabelCell?.className).not.toContain("pl-6");
   });
+
+  it("styles history column with the same grey text class used in Media Buying", () => {
+    render(
+      <WeeklyWorksheetTable
+        displayCurrency="RON"
+        weeks={[{ week_start: "2026-03-02", week_end: "2026-03-08" }]}
+        sections={[
+          {
+            key: "summary",
+            label: "Rezumat",
+            rows: [
+              {
+                row_key: "cost",
+                label: "Cost",
+                history_value: 123,
+                source_kind: "computed",
+                value_kind: "currency_display",
+                currency_code: "RON",
+                weekly_values: [{ week_start: "2026-03-02", week_end: "2026-03-08", value: 10 }],
+              },
+            ],
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByRole("columnheader", { name: "Istorie" }).className).toContain("text-[#bfbfbf]");
+    expect(screen.getByTestId("history-summary-cost").className).toContain("text-[#bfbfbf]");
+  });
 });

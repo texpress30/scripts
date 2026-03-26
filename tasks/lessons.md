@@ -617,3 +617,4 @@
 - 2026-03-26: După ce userul cere explicit relaxarea unei validări (`source` optional), aliniez simultan frontend + backend + teste pentru aceeași regulă canonică (blank -> `unknown`, non-blank invalid -> 422) înainte de mesajul final.
 - 2026-03-26: Când userul cere eliminarea completă a unor câmpuri UI (`Marcă`/`Model`), elimin simultan inputuri + coloane + state/type/payload locale și adaug test explicit de absență atât în formular, cât și în header-ul tabelului.
 - 2026-03-26: Pentru cerințe de prezentare strict UI pe o coloană (`Val. Vândută`), modific doar formatter-ul/randarea acelei coloane și acopăr explicit total lunar + rând zilnic cu test de absență paranteze.
+- 2026-03-26: Pentru task-uri Media Tracker UI+backend punctuale, verific explicit endpoint-uri blocate `410` și reactivez doar cele cerute (`eur-ron-rate`) în paralel cu teste front/back pe edit+persist, fără a redeschide editări manuale necerute.

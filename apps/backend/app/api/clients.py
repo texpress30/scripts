@@ -1334,7 +1334,18 @@ def upsert_media_tracker_scope_eur_ron_rate(
     payload: MediaTrackerWorksheetEurRonRateUpsertRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    raise HTTPException(status_code=status.HTTP_410_GONE, detail=_LEGACY_MANUAL_EDIT_MOVED_DETAIL)
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+    try:
+        return media_tracker_worksheet_service.upsert_scope_eur_ron_rate(
+            client_id=client_id,
+            granularity=str(payload.granularity).strip().lower(),
+            anchor_date=payload.anchor_date,
+            value=payload.value,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
 
 @router.get("/{client_id}/accounts")
