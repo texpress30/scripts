@@ -386,6 +386,13 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
             user=self.user,
         )
         self.assertEqual(payload["eur_ron_rate"], 5.09)
+        foundation_after_first_save = clients_api.get_media_tracker_weekly_worksheet_foundation(
+            client_id=self.client_id,
+            granularity="month",
+            anchor_date=date(2026, 3, 15),
+            user=self.user,
+        )
+        self.assertEqual(foundation_after_first_save["eur_ron_rate"], 5.09)
 
         updated = clients_api.upsert_media_tracker_scope_eur_ron_rate(
             client_id=self.client_id,
@@ -397,6 +404,13 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
             user=self.user,
         )
         self.assertEqual(updated["eur_ron_rate"], 5.11)
+        foundation_after_update = clients_api.get_media_tracker_weekly_worksheet_foundation(
+            client_id=self.client_id,
+            granularity="month",
+            anchor_date=date(2026, 3, 20),
+            user=self.user,
+        )
+        self.assertEqual(foundation_after_update["eur_ron_rate"], 5.11)
 
         cleared = clients_api.upsert_media_tracker_scope_eur_ron_rate(
             client_id=self.client_id,
@@ -408,6 +422,13 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
             user=self.user,
         )
         self.assertIsNone(cleared["eur_ron_rate"])
+        foundation_after_clear = clients_api.get_media_tracker_weekly_worksheet_foundation(
+            client_id=self.client_id,
+            granularity="month",
+            anchor_date=date(2026, 3, 10),
+            user=self.user,
+        )
+        self.assertIsNone(foundation_after_clear["eur_ron_rate"])
 
 
 if __name__ == "__main__":

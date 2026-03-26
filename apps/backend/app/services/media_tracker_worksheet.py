@@ -16,15 +16,15 @@ WorksheetGranularity = Literal["month", "quarter", "year"]
 
 _MANUAL_FIELDS: tuple[dict[str, str], ...] = (
     {"field_key": "weekly_cogs_taxes", "label": "Total COGS + Taxe", "section_key": "summary"},
-    {"field_key": "google_leads_manual", "label": "Google Leads (Manual)", "section_key": "google_spend"},
-    {"field_key": "google_sales_manual", "label": "Google Sales (Manual)", "section_key": "google_spend"},
-    {"field_key": "google_revenue_manual", "label": "Google Revenue (Manual)", "section_key": "google_spend"},
-    {"field_key": "meta_leads_manual", "label": "Meta Leads (Manual)", "section_key": "meta_spend"},
-    {"field_key": "meta_sales_manual", "label": "Meta Sales (Manual)", "section_key": "meta_spend"},
-    {"field_key": "meta_revenue_manual", "label": "Meta Revenue (Manual)", "section_key": "meta_spend"},
-    {"field_key": "tiktok_leads_manual", "label": "TikTok Leads (Manual)", "section_key": "tiktok_spend"},
-    {"field_key": "tiktok_sales_manual", "label": "TikTok Sales (Manual)", "section_key": "tiktok_spend"},
-    {"field_key": "tiktok_revenue_manual", "label": "TikTok Revenue (Manual)", "section_key": "tiktok_spend"},
+    {"field_key": "google_leads_manual", "label": "Lead-uri Google (Manual)", "section_key": "google_spend"},
+    {"field_key": "google_sales_manual", "label": "Vânzări Google (Manual)", "section_key": "google_spend"},
+    {"field_key": "google_revenue_manual", "label": "Venit Google (Manual)", "section_key": "google_spend"},
+    {"field_key": "meta_leads_manual", "label": "Lead-uri Meta (Manual)", "section_key": "meta_spend"},
+    {"field_key": "meta_sales_manual", "label": "Vânzări Meta (Manual)", "section_key": "meta_spend"},
+    {"field_key": "meta_revenue_manual", "label": "Venit Meta (Manual)", "section_key": "meta_spend"},
+    {"field_key": "tiktok_leads_manual", "label": "Lead-uri TikTok (Manual)", "section_key": "tiktok_spend"},
+    {"field_key": "tiktok_sales_manual", "label": "Vânzări TikTok (Manual)", "section_key": "tiktok_spend"},
+    {"field_key": "tiktok_revenue_manual", "label": "Venit TikTok (Manual)", "section_key": "tiktok_spend"},
 )
 _MANUAL_FIELD_KEYS = {item["field_key"] for item in _MANUAL_FIELDS}
 
@@ -538,12 +538,12 @@ class MediaTrackerWorksheetService:
 
         summary_rows = [
             self._build_row(weeks=weeks, row_key="cost", label="Cost", value_kind="currency_display", weekly_values=summary_cost, currency_code=display_currency, history_value=cost_h, dependencies=["auto_metrics.cost_total"]),
-            self._build_row(weeks=weeks, row_key="avg_daily_spend", label="Avg. Daily Spend", value_kind="currency_display", weekly_values=summary_avg_daily_spend, currency_code=display_currency, history_value=self._safe_div(cost_h, float(week_count)) if week_count > 0 else None, dependencies=["summary.cost"]),
+            self._build_row(weeks=weeks, row_key="avg_daily_spend", label="Cheltuială medie zilnică", value_kind="currency_display", weekly_values=summary_avg_daily_spend, currency_code=display_currency, history_value=self._safe_div(cost_h, float(week_count)) if week_count > 0 else None, dependencies=["summary.cost"]),
             self._build_row(weeks=weeks, row_key="revenue", label="Venit", value_kind="currency_display", weekly_values=summary_revenue, currency_code=display_currency, history_value=revenue_h, dependencies=["manual_metrics.google_revenue_manual", "manual_metrics.meta_revenue_manual", "manual_metrics.tiktok_revenue_manual"]),
             self._build_row(weeks=weeks, row_key="revenue_target_per_day", label="Venit Țintă / Zi", value_kind="currency_display", weekly_values=summary_revenue_target_per_day, currency_code=display_currency, history_value=self._safe_div(revenue_h, float(week_count)) if week_count > 0 else None, dependencies=["summary.revenue"]),
             self._build_row(weeks=weeks, row_key="sales", label="Vânzări", value_kind="integer", weekly_values=summary_sales, history_value=sales_h, dependencies=["manual_metrics.google_sales_manual", "manual_metrics.meta_sales_manual", "manual_metrics.tiktok_sales_manual"]),
             self._build_row(weeks=weeks, row_key="aov", label="AOV", value_kind="currency_display", weekly_values=summary_aov, currency_code=display_currency, history_value=self._safe_div(revenue_h, sales_h), dependencies=["summary.revenue", "summary.sales"]),
-            self._build_row(weeks=weeks, row_key="leads", label="Leads", value_kind="integer", weekly_values=summary_leads, history_value=leads_h, dependencies=["auto_metrics.total_leads"]),
+            self._build_row(weeks=weeks, row_key="leads", label="Lead-uri", value_kind="integer", weekly_values=summary_leads, history_value=leads_h, dependencies=["auto_metrics.total_leads"]),
             self._build_row(weeks=weeks, row_key="cpa_leads", label="CPA", value_kind="currency_display", weekly_values=summary_cpa_leads, currency_code=display_currency, history_value=self._safe_div(cost_h, leads_h), dependencies=["summary.cost", "summary.leads"]),
             self._build_row(weeks=weeks, row_key="applications", label=custom_label_1, value_kind="integer", weekly_values=summary_apps, history_value=apps_h, dependencies=["auto_metrics.applications"]),
             self._build_row(weeks=weeks, row_key="cpa_applications", label="CPA", value_kind="currency_display", weekly_values=summary_cpa_apps, currency_code=display_currency, history_value=self._safe_div(cost_h, apps_h), dependencies=["summary.cost", "summary.applications"]),
@@ -555,7 +555,7 @@ class MediaTrackerWorksheetService:
             self._build_row(weeks=weeks, row_key="weekly_cogs_taxes", label="Total COGS + Taxe", value_kind="currency_ron", weekly_values=cogs, history_value=cogs_h, dependencies=["manual_metrics.weekly_cogs_taxes"], is_manual_input_row=True),
             self._build_row(weeks=weeks, row_key="gross_profit", label="Profit Brut", value_kind="currency_display", weekly_values=summary_gross_profit, currency_code=display_currency, history_value=gross_h, dependencies=["summary.revenue", "summary.weekly_cogs_taxes"]),
             self._build_row(weeks=weeks, row_key="gpt", label="GPT", value_kind="currency_display", weekly_values=summary_gpt, currency_code=display_currency, history_value=(self._safe_div(revenue_h, sales_h) - self._safe_div(cost_h, sales_h)) if self._safe_div(revenue_h, sales_h) is not None and self._safe_div(cost_h, sales_h) is not None else None, dependencies=["summary.aov", "new_clients.cost_per_new_client"]),
-            self._build_row(weeks=weeks, row_key="profit_contribution", label="Profit Contribution", value_kind="currency_display", weekly_values=summary_profit_contribution, currency_code=display_currency, history_value=(gross_h - cost_h) if gross_h is not None else None, dependencies=["summary.gross_profit", "summary.cost"]),
+            self._build_row(weeks=weeks, row_key="profit_contribution", label="Contribuție profit", value_kind="currency_display", weekly_values=summary_profit_contribution, currency_code=display_currency, history_value=(gross_h - cost_h) if gross_h is not None else None, dependencies=["summary.gross_profit", "summary.cost"]),
             self._build_row(weeks=weeks, row_key="applications_per_sale", label=f"{custom_label_1} / Vânzări", value_kind="decimal", weekly_values=summary_apps_per_sale, history_value=self._safe_div(apps_h, sales_h), dependencies=["summary.applications", "summary.sales"]),
             self._build_row(weeks=weeks, row_key="applications_per_approved_application", label=f"{custom_label_1} / {custom_label_2}", value_kind="decimal", weekly_values=summary_apps_per_approved, history_value=self._safe_div(apps_h, approved_h), dependencies=["summary.applications", "summary.approved_applications"]),
             self._build_row(weeks=weeks, row_key="approved_applications_per_sale", label=f"{custom_label_2} / Vânzări", value_kind="decimal", weekly_values=summary_approved_per_sale, history_value=self._safe_div(approved_h, sales_h), dependencies=["summary.approved_applications", "summary.sales"]),
@@ -571,7 +571,7 @@ class MediaTrackerWorksheetService:
             revenue_h_local = self._sum_history_nullable(revenue_values)
             return [
                 self._build_row(weeks=weeks, row_key="cost", label="Cost", value_kind="currency_display", weekly_values=[self._to_float(v) for v in cost_values], currency_code=display_currency, history_value=cost_h_local, dependencies=[f"auto_metrics.cost_{prefix}"]),
-                self._build_row(weeks=weeks, row_key="leads_manual", label="Leads", value_kind="integer", weekly_values=leads_values, history_value=leads_h_local, dependencies=[f"manual_metrics.{prefix}_leads_manual"], is_manual_input_row=True),
+                self._build_row(weeks=weeks, row_key="leads_manual", label="Lead-uri", value_kind="integer", weekly_values=leads_values, history_value=leads_h_local, dependencies=[f"manual_metrics.{prefix}_leads_manual"], is_manual_input_row=True),
                 self._build_row(weeks=weeks, row_key="cpa", label="CPA", value_kind="currency_display", weekly_values=cpa_values, currency_code=display_currency, history_value=self._safe_div(cost_h_local, leads_h_local), dependencies=["cost", "leads_manual"]),
                 self._build_row(weeks=weeks, row_key="sales_manual", label="Vânzări", value_kind="integer", weekly_values=sales_values, history_value=sales_h_local, dependencies=[f"manual_metrics.{prefix}_sales_manual"], is_manual_input_row=True),
                 self._build_row(weeks=weeks, row_key="revenue_manual", label="Val. Vânzare", value_kind="currency_display", weekly_values=revenue_values, currency_code=display_currency, history_value=revenue_h_local, dependencies=[f"manual_metrics.{prefix}_revenue_manual"], is_manual_input_row=True),
@@ -580,7 +580,7 @@ class MediaTrackerWorksheetService:
             ]
 
         new_clients_rows = [
-            self._build_row(weeks=weeks, row_key="combined_spend", label="Google + Meta + TikTok Spend", value_kind="currency_display", weekly_values=new_clients_combined_spend, currency_code=display_currency, history_value=cost_h, dependencies=["summary.cost"]),
+            self._build_row(weeks=weeks, row_key="combined_spend", label="Cheltuieli Google + Meta + TikTok", value_kind="currency_display", weekly_values=new_clients_combined_spend, currency_code=display_currency, history_value=cost_h, dependencies=["summary.cost"]),
             self._build_row(weeks=weeks, row_key="cost_per_new_client", label="Cost per Client Nou", value_kind="currency_display", weekly_values=new_clients_cost_per_new_client, currency_code=display_currency, history_value=self._safe_div(cost_h, sales_h), dependencies=["new_clients.combined_spend", "summary.sales"]),
             self._build_row(weeks=weeks, row_key="cost_per_new_client_eur", label="Cost per Client Nou EUR", value_kind="currency_eur", weekly_values=new_clients_cost_per_new_client_eur, currency_code="EUR", history_value=(self._safe_div(self._safe_div(cost_h, sales_h), eur_ron_rate) if eur_ron_rate not in {None, 0} else None), dependencies=["new_clients.cost_per_new_client", "eur_ron_rate"], requires_eur_ron_rate=True),
         ]
@@ -625,9 +625,9 @@ class MediaTrackerWorksheetService:
         sections: list[dict[str, object]] = [
             {"key": "summary", "label": "Rezumat", "rows": summary_rows_with_wow},
             {"key": "new_clients", "label": "Clienti Noi", "rows": new_clients_rows},
-            {"key": "google_spend", "label": "Google Spend", "rows": google_rows_with_wow},
-            {"key": "meta_spend", "label": "Meta Spend", "rows": meta_rows_with_wow},
-            {"key": "tiktok_spend", "label": "TikTok Spend", "rows": tiktok_rows_with_wow},
+            {"key": "google_spend", "label": "Cheltuieli Google", "rows": google_rows_with_wow},
+            {"key": "meta_spend", "label": "Cheltuieli Meta", "rows": meta_rows_with_wow},
+            {"key": "tiktok_spend", "label": "Cheltuieli TikTok", "rows": tiktok_rows_with_wow},
         ]
 
         for source_key in sorted(source_weekly_metrics.keys()):
@@ -646,7 +646,7 @@ class MediaTrackerWorksheetService:
             sections.append(
                 {
                     "key": f"{source_key}_spend",
-                    "label": f"{source_label} Spend",
+                    "label": f"Cheltuieli {source_label}",
                     "rows": self._insert_wow_rows(
                         weeks=weeks,
                         rows=source_rows,

@@ -1,0 +1,2 @@
+ALTER TABLE client_data_daily_inputs
+  DROP CONSTRAINT IF EXISTS client_data_daily_inputs_client_id_metric_date_source_key;
