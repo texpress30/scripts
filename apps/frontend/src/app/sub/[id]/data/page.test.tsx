@@ -116,6 +116,7 @@ describe("SubDataPage editable flows", () => {
   it("shows Add row and saves a new daily row via PUT", async () => {
     render(<SubDataPage />);
     await screen.findByRole("heading", { name: "Data - Active Life Therapy" });
+    expect(screen.getByText("Valorile salvate aici alimentează Media Buying și Media Tracker.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Adaugă rând" }));
     expect(screen.getByLabelText("Săptămâna rând nou")).toHaveValue("9");

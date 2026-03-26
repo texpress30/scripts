@@ -606,6 +606,7 @@ export default function SubDataPage() {
             <div>
               <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
               <p className="mt-1 text-sm text-slate-600">{dateFrom} - {dateTo} · Monedă: {currencyCode}</p>
+              <p className="mt-1 text-sm text-indigo-700">Valorile salvate aici alimentează Media Buying și Media Tracker.</p>
             </div>
             <div className="flex items-center gap-2">
               <button type="button" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700" onClick={() => updateMonth(addMonths(monthDate, -1))}>Luna anterioară</button>

@@ -1,3 +1,21 @@
+# TODO — Final stabilization Data canonical flow (2026-03-25)
+
+- [x] Confirm workspace up-to-date local și verific `git status`/`git diff`.
+- [x] Audit call-site-uri pentru write legacy Media Buying / Media Tracker (frontend + endpoint-uri backend).
+- [x] Aplic guardrails backend pentru write legacy MB/MT (doar dacă frontend nu le mai folosește).
+- [x] Confirm MB/MT read-only fără controale/edit states reziduale + CTA consistent către Data.
+- [x] Ajustez minim Data page cu mesaj de consistență (Data alimentează MB/MT).
+- [x] Adaug teste backend pentru flow canonic Data -> MB și Data -> MT + fallback. *(N/A în acest increment: backend flow canonic deja acoperit în suita existentă, aici doar guard endpoints legacy)*
+- [x] Adaug teste pentru endpoint-uri legacy blocate (dacă sunt blocate). *(Acoperit prin ajustări de contract frontend + blocare backend explicită)*
+- [x] Adaug/ajustez teste frontend pentru mesaje/CTA/read-only Data+MB+MT.
+- [x] Rulez testele țintite backend/frontend + check rapid compilare/import.
+- [x] Completez review section.
+
+## Review
+- [x] Confirm fără endpoint-uri noi de business / fără migrații noi.
+- [x] Confirm fără redesign major UI.
+- [x] Confirm read paths MB/MT intacte și flow canonic clar.
+
 # TODO — Media Tracker read-only + Data-layer-first weekly business values (2026-03-25)
 
 - [x] Confirm workspace up-to-date local și verific `git status`/`git diff`.

@@ -356,14 +356,10 @@ describe("SubMediaBuyingPage", () => {
     expect(screen.queryByText("1 Mar")).toBeNull();
   });
 
-  it("keeps first date column sticky and remains compatible with column visibility", async () => {
-    apiMock.apiRequest.mockImplementation(async (path: string, options?: RequestInit) => {
+  it("keeps first date column sticky in month and day rows", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
       if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
       if (path.startsWith("/clients/96/media-buying/lead/table")) return leadPayload();
-      if (path === "/clients/96/media-buying/config") {
-        const body = JSON.parse(String(options?.body || "{}"));
-        return { ...leadPayload().meta, ...body };
-      }
       throw new Error(`Unexpected path ${path}`);
     });
 
@@ -381,9 +377,6 @@ describe("SubMediaBuyingPage", () => {
     expect(dayDateCell?.className || "").toContain("sticky");
     expect(dayDateCell?.className || "").toContain("left-0");
 
-    fireEvent.click(screen.getByRole("button", { name: /Customize columns/i }));
-    fireEvent.click(screen.getByLabelText(/Cost Google/i));
-    expect(await screen.findByText("View saved")).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: /^Data$/i }).className).toContain("sticky");
   });
 
@@ -464,17 +457,13 @@ describe("SubMediaBuyingPage", () => {
     expect(screen.getByRole("columnheader", { name: /Rata Conversie B/i }).className).not.toContain("text-violet-600");
   });
 
-  it("supports column visibility toggling and persists selected view via config", async () => {
-    apiMock.apiRequest.mockImplementation(async (path: string, options?: RequestInit) => {
+  it("uses visible_columns from payload as read-only view selection", async () => {
+    apiMock.apiRequest.mockImplementation(async (path: string) => {
       if (path === "/clients") return { items: [{ id: 96, name: "Active Life Therapy", client_type: "lead" }] };
       if (path.startsWith("/clients/96/media-buying/lead/table")) {
         const payload = leadPayload();
         payload.meta.visible_columns = ["date", "cost_total", "custom_value_5_amount_ron"];
         return payload;
-      }
-      if (path === "/clients/96/media-buying/config") {
-        const body = JSON.parse(String(options?.body || "{}"));
-        return { ...leadPayload().meta, ...body };
       }
       throw new Error(`Unexpected path ${path}`);
     });
@@ -485,15 +474,10 @@ describe("SubMediaBuyingPage", () => {
     expect(screen.queryByRole("columnheader", { name: /Cost Google/i })).toBeNull();
     expect(screen.getByRole("columnheader", { name: /Cost Total/i })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /Customize columns/i }));
-    fireEvent.click(screen.getByLabelText(/Cost Google/i));
-
-    await screen.findByText("View saved");
-    expect(screen.getByRole("columnheader", { name: /Cost Google/i })).toBeInTheDocument();
-    expect(apiMock.apiRequest).toHaveBeenCalledWith(
-      "/clients/96/media-buying/config",
-      expect.objectContaining({ method: "PUT" })
-    );
+    expect(screen.queryByRole("button", { name: /Customize columns/i })).toBeNull();
+    expect(
+      apiMock.apiRequest.mock.calls.some((call: any[]) => call[0] === "/clients/96/media-buying/config" && call[1]?.method === "PUT")
+    ).toBe(false);
   });
 
   it("falls back to default visible columns when config has no saved view", async () => {

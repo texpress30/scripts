@@ -60,6 +60,7 @@ _SUPPORTED_PLATFORMS = {
     PLATFORM_SNAPCHAT_ADS,
     "reddit_ads",
 }
+_LEGACY_MANUAL_EDIT_MOVED_DETAIL = "Manual editing moved to the Data page for this client."
 
 
 def _looks_like_feature_flag_disabled_error(value: object | None) -> bool:
@@ -1155,28 +1156,7 @@ def upsert_media_buying_config(
     payload: MediaBuyingConfigUpdateRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:create", scope="agency")
-    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
-    _ensure_client_exists_or_404(client_id=client_id)
-    try:
-        return media_buying_store.upsert_config(
-            client_id=client_id,
-            template_type=payload.template_type,
-            display_currency=payload.display_currency,
-            custom_label_1=payload.custom_label_1,
-            custom_label_2=payload.custom_label_2,
-            custom_label_3=payload.custom_label_3,
-            custom_label_4=payload.custom_label_4,
-            custom_label_5=payload.custom_label_5,
-            custom_rate_label_1=payload.custom_rate_label_1,
-            custom_rate_label_2=payload.custom_rate_label_2,
-            custom_cost_label_1=payload.custom_cost_label_1,
-            custom_cost_label_2=payload.custom_cost_label_2,
-            visible_columns=payload.visible_columns,
-            enabled=payload.enabled,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail=_LEGACY_MANUAL_EDIT_MOVED_DETAIL)
 
 
 @router.get("/{client_id}/media-buying/lead/daily-values")
@@ -1202,24 +1182,7 @@ def upsert_media_buying_lead_daily_value(
     payload: MediaBuyingLeadDailyValueUpsertRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:create", scope="agency")
-    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
-    _ensure_client_exists_or_404(client_id=client_id)
-    try:
-        return media_buying_store.upsert_lead_daily_manual_value(
-            client_id=client_id,
-            metric_date=payload.date,
-            leads=payload.leads,
-            phones=payload.phones,
-            custom_value_1_count=payload.custom_value_1_count,
-            custom_value_2_count=payload.custom_value_2_count,
-            custom_value_3_amount_ron=payload.custom_value_3_amount_ron,
-            custom_value_4_amount_ron=payload.custom_value_4_amount_ron,
-            custom_value_5_amount_ron=payload.custom_value_5_amount_ron,
-            sales_count=payload.sales_count,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail=_LEGACY_MANUAL_EDIT_MOVED_DETAIL)
 
 
 
@@ -1282,18 +1245,7 @@ def upsert_media_tracker_weekly_manual_values(
     payload: MediaTrackerWorksheetManualValuesUpsertRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:create", scope="agency")
-    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
-    _ensure_client_exists_or_404(client_id=client_id)
-    try:
-        return media_tracker_worksheet_service.upsert_weekly_manual_values(
-            client_id=client_id,
-            granularity=payload.granularity,
-            anchor_date=payload.anchor_date,
-            entries=[entry.model_dump() for entry in payload.entries],
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail=_LEGACY_MANUAL_EDIT_MOVED_DETAIL)
 
 
 @router.put("/{client_id}/media-tracker/worksheet/eur-ron-rate")
@@ -1302,18 +1254,7 @@ def upsert_media_tracker_scope_eur_ron_rate(
     payload: MediaTrackerWorksheetEurRonRateUpsertRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:create", scope="agency")
-    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
-    _ensure_client_exists_or_404(client_id=client_id)
-    try:
-        return media_tracker_worksheet_service.upsert_scope_eur_ron_rate(
-            client_id=client_id,
-            granularity=payload.granularity,
-            anchor_date=payload.anchor_date,
-            value=payload.value,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail=_LEGACY_MANUAL_EDIT_MOVED_DETAIL)
 
 
 @router.get("/{client_id}/accounts")
