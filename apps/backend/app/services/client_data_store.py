@@ -599,6 +599,7 @@ def upsert_daily_input(
     custom_value_4_amount: object | None = None,
     custom_value_5_amount: object | None = None,
     sales_count: int | None = None,
+    recompute_custom_value_5: bool = True,
 ) -> dict[str, object]:
     updates: dict[str, object] = {}
     if leads is not None:
@@ -634,9 +635,10 @@ def upsert_daily_input(
         raise ValueError("At least one daily input field must be provided")
 
     base_row = get_or_create_daily_input(client_id=client_id, metric_date=metric_date, source=source)
-    effective_custom_value_3 = _to_decimal(updates.get("custom_value_3_amount", base_row.get("custom_value_3_amount")))
-    effective_custom_value_4 = _to_decimal(updates.get("custom_value_4_amount", base_row.get("custom_value_4_amount")))
-    updates["custom_value_5_amount"] = effective_custom_value_3 - effective_custom_value_4
+    if recompute_custom_value_5:
+        effective_custom_value_3 = _to_decimal(updates.get("custom_value_3_amount", base_row.get("custom_value_3_amount")))
+        effective_custom_value_4 = _to_decimal(updates.get("custom_value_4_amount", base_row.get("custom_value_4_amount")))
+        updates["custom_value_5_amount"] = effective_custom_value_3 - effective_custom_value_4
 
     set_clauses: list[str] = []
     params: list[object] = []
@@ -860,6 +862,41 @@ def validate_daily_input_belongs_to_client(*, daily_input_id: int, client_id: in
     if payload is None or int(payload["client_id"]) != normalized_client_id:
         raise LookupError(f"Daily input {daily_input_id} not found for client {client_id}")
     return payload
+
+
+def delete_daily_input_with_dependencies(*, daily_input_id: int) -> dict[str, object]:
+    normalized_daily_input_id = _normalize_positive_int(daily_input_id, field_name="daily_input_id")
+
+    with _connect() as conn:
+        daily_input = _get_daily_input_row_by_id(conn=conn, daily_input_id=normalized_daily_input_id)
+        if daily_input is None:
+            raise LookupError(f"Daily input {daily_input_id} not found")
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM client_data_daily_custom_values
+                WHERE daily_input_id = %s
+                """,
+                (normalized_daily_input_id,),
+            )
+            cur.execute(
+                """
+                DELETE FROM client_data_sale_entries
+                WHERE daily_input_id = %s
+                """,
+                (normalized_daily_input_id,),
+            )
+            cur.execute(
+                """
+                DELETE FROM client_data_daily_inputs
+                WHERE id = %s
+                """,
+                (normalized_daily_input_id,),
+            )
+        conn.commit()
+
+    return daily_input
 
 
 def _resolve_sale_entry_sort_order(*, conn, daily_input_id: int, sort_order: int | None) -> int:
