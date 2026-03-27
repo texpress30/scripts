@@ -42,6 +42,7 @@ type OverviewChartsPayload = {
     spend_vs_revenue_mix?: OverviewPoint[];
     conversion_funnel?: OverviewPoint[];
     profitability?: OverviewPoint[];
+    cost_per_new_client?: OverviewPoint[];
     channel_performance?: OverviewPoint[];
     cost_per_new_client?: OverviewPoint[];
   };
@@ -51,7 +52,7 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4" aria-label={title}>
       <h3 className="mb-3 text-sm font-semibold text-slate-900">{title}</h3>
-      <div className="h-64 w-full">{children}</div>
+      <div className="h-96 w-full">{children}</div>
     </section>
   );
 }
@@ -65,8 +66,16 @@ function colorForChannel(channel: string): string {
 
 export function SalesCharts({ payload }: { payload: OverviewChartsPayload }) {
   const sales = payload.sales || {};
+  const conversion = payload.financial?.conversion_funnel || [];
+  const salesFlowData = conversion.map((item) => ({
+    ...item,
+    applications: Number(item.custom_value_1_count || 0),
+    approved: Number(item.custom_value_2_count || 0),
+    sales_count: Number(item.sales || 0),
+    approval_to_sales_ratio: Number(item.sales || 0) > 0 ? Number(item.custom_value_2_count || 0) / Number(item.sales || 1) : 0,
+  }));
   return (
-    <div className="mt-4 grid gap-4">
+    <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
       <ChartCard title="Trendul Vânzărilor Totale">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={sales.total_sales_trend || []}>
@@ -112,6 +121,34 @@ export function SalesCharts({ payload }: { payload: OverviewChartsPayload }) {
           </ScatterChart>
         </ResponsiveContainer>
       </ChartCard>
+
+      <ChartCard title="Aplicații / Aplicații Aprobate / Vânzări">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={salesFlowData}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="label" />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Line type="monotone" dataKey="applications" stroke="#2563eb" dot={false} isAnimationActive={false} name={payload.custom_labels?.custom_label_1 || "Aplicații"} />
+            <Line type="monotone" dataKey="approved" stroke="#7c3aed" dot={false} isAnimationActive={false} name={payload.custom_labels?.custom_label_2 || "Aplicații Aprobate"} />
+            <Line type="monotone" dataKey="sales_count" stroke="#0f766e" dot={false} isAnimationActive={false} name="Vânzări" />
+          </LineChart>
+        </ResponsiveContainer>
+      </ChartCard>
+
+      <ChartCard title="Aprobări / Vânzări">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={salesFlowData}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="label" />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="approval_to_sales_ratio" fill="#334155" name="Aprobări / Vânzări" />
+          </BarChart>
+        </ResponsiveContainer>
+      </ChartCard>
     </div>
   );
 }
@@ -122,7 +159,7 @@ export function FinancialCharts({ payload }: { payload: OverviewChartsPayload })
   const custom2 = payload.custom_labels?.custom_label_2 || "Custom Value 2";
 
   return (
-    <div className="mt-4 grid gap-4">
+    <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
       <ChartCard title="Analiza Eficienței Costurilor (CPA și nCAC)">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={financial.cost_efficiency || []}>
@@ -138,22 +175,6 @@ export function FinancialCharts({ payload }: { payload: OverviewChartsPayload })
             <Line dataKey="tiktok_cpa" stroke="#0f766e" dot={false} isAnimationActive={false} name="TikTok CPA" />
             <Line dataKey="tiktok_ncac" stroke="#0f766e" strokeDasharray="5 5" dot={false} isAnimationActive={false} name="TikTok nCAC" />
           </LineChart>
-        </ResponsiveContainer>
-      </ChartCard>
-
-      <ChartCard title="Analiza Mixului de Cheltuieli vs. Venituri">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={financial.spend_vs_revenue_mix || []}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey="label" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Bar dataKey="google_cost" stackId="cost" fill="#2563eb" name="Cost Google" />
-            <Bar dataKey="meta_cost" stackId="cost" fill="#7c3aed" name="Cost Meta" />
-            <Bar dataKey="tiktok_cost" stackId="cost" fill="#0f766e" name="Cost TikTok" />
-            <Line dataKey="revenue_total" stroke="#dc2626" dot={false} isAnimationActive={false} name="Venit total" />
-          </BarChart>
         </ResponsiveContainer>
       </ChartCard>
 
@@ -211,6 +232,19 @@ export function FinancialCharts({ payload }: { payload: OverviewChartsPayload })
             <Radar dataKey="conversion_rate" stroke="#7c3aed" fill="#7c3aed" fillOpacity={0.2} name="Rată de conversie" />
             <Radar dataKey="sales_volume" stroke="#0f766e" fill="#0f766e" fillOpacity={0.2} name="Volum vânzări" />
           </RadarChart>
+        </ResponsiveContainer>
+      </ChartCard>
+
+      <ChartCard title="Cost per Client Nou">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={financial.cost_per_new_client || []}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="label" />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="cost_per_new_client" fill="#7c3aed" name="Cost per Client Nou" />
+          </BarChart>
         </ResponsiveContainer>
       </ChartCard>
     </div>

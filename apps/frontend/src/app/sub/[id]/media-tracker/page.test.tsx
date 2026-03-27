@@ -70,7 +70,7 @@ function overviewPayload() {
     financial: {
       cost_efficiency: monthWeeks.map((w) => ({ ...w, label: w.label, google_cpa: 10, google_ncac: 20, meta_cpa: 11, meta_ncac: 21, tiktok_cpa: 12, tiktok_ncac: 22 })),
       spend_vs_revenue_mix: monthWeeks.map((w) => ({ ...w, label: w.label, google_cost: 100, meta_cost: 80, tiktok_cost: 60, revenue_total: 400 })),
-      conversion_funnel: monthWeeks.map((w) => ({ ...w, label: w.label, leads: 50, custom_value_1_count: 20, custom_value_2_count: 10 })),
+      conversion_funnel: monthWeeks.map((w) => ({ ...w, label: w.label, leads: 50, custom_value_1_count: 20, custom_value_2_count: 10, sales: 5 })),
       profitability: monthWeeks.map((w) => ({ ...w, label: w.label, gross_profit: 200, cogs_taxes: 120 })),
       cost_per_new_client: monthWeeks.map((w) => ({ ...w, label: w.label, cost_per_new_client: 50 })),
       channel_performance: [
@@ -101,13 +101,12 @@ describe("SubMediaTrackerPage", () => {
     expect(screen.getByRole("button", { name: "Fișă săptămânală" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Prezentare generală" })).toBeNull();
     await screen.findByLabelText("Trendul Vânzărilor Totale");
+    expect(screen.getByRole("button", { name: /Last 30 days:/i })).toBeInTheDocument();
   });
 
-  it("switches between Vânzări and Financiare and keeps current scope", async () => {
+  it("switches between Vânzări and Financiare and keeps selected calendar range for charts", async () => {
     render(<SubMediaTrackerPage />);
     await screen.findByLabelText("Trendul Vânzărilor Totale");
-
-    fireEvent.click(screen.getByRole("button", { name: "Trimestru" }));
     fireEvent.click(screen.getByRole("button", { name: "Financiare" }));
 
     await screen.findByLabelText("Analiza Eficienței Costurilor (CPA și nCAC)");
@@ -115,7 +114,7 @@ describe("SubMediaTrackerPage", () => {
     const overviewCalls = apiMock.apiRequest.mock.calls
       .map(([path]) => String(path))
       .filter((path) => path.includes("/clients/96/media-tracker/overview-charts"));
-    expect(overviewCalls.some((path) => path.includes("granularity=quarter"))).toBe(true);
+    expect(overviewCalls.some((path) => path.includes("granularity=year"))).toBe(true);
   });
 
   it("uses custom labels from payload in financial conversion funnel legend/title context", async () => {
@@ -144,12 +143,16 @@ describe("SubMediaTrackerPage", () => {
     await screen.findByLabelText("Trendul Vânzărilor Totale");
     expect(screen.getByLabelText("Compoziția Vânzărilor pe Canale")).toBeInTheDocument();
     expect(screen.getByLabelText("Eficiența Vânzărilor")).toBeInTheDocument();
+    expect(screen.getByLabelText("Aplicații / Aplicații Aprobate / Vânzări")).toBeInTheDocument();
+    expect(screen.getByLabelText("Aprobări / Vânzări")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Financiare" }));
-    await screen.findByLabelText("Analiza Mixului de Cheltuieli vs. Venituri");
+    await screen.findByLabelText("Analiza Pâlniei de Conversie");
+    expect(screen.queryByLabelText("Analiza Mixului de Cheltuieli vs. Venituri")).toBeNull();
     expect(screen.getByLabelText("Profitabilitatea")).toBeInTheDocument();
     expect(screen.getByLabelText("Cost per Client Nou")).toBeInTheDocument();
     expect(screen.getByLabelText("Analiza Performanței pe Canale")).toBeInTheDocument();
+    expect(screen.getByLabelText("Cost per Client Nou")).toBeInTheDocument();
   });
 
   it("shows worksheet loading/error states", async () => {

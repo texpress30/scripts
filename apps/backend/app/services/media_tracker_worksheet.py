@@ -1026,11 +1026,13 @@ class MediaTrackerWorksheetService:
             return normalized
 
         summary_revenue = values_from_row("summary", "revenue")
+        summary_sales = values_from_row("summary", "sales")
         summary_leads = values_from_row("summary", "leads")
         summary_custom_1 = values_from_row("summary", "applications")
         summary_custom_2 = values_from_row("summary", "approved_applications")
         summary_gross_profit = values_from_row("summary", "gross_profit")
         summary_cogs_taxes = values_from_row("summary", "weekly_cogs_taxes")
+        new_clients_cost_per_client = values_from_row("new_clients", "cost_per_new_client")
 
         google_cost = values_from_row("google_spend", "cost")
         meta_cost = values_from_row("meta_spend", "cost")
@@ -1110,6 +1112,7 @@ class MediaTrackerWorksheetService:
                     "leads": summary_leads[idx] if idx < len(summary_leads) else 0.0,
                     "custom_value_1_count": summary_custom_1[idx] if idx < len(summary_custom_1) else 0.0,
                     "custom_value_2_count": summary_custom_2[idx] if idx < len(summary_custom_2) else 0.0,
+                    "sales": summary_sales[idx] if idx < len(summary_sales) else 0.0,
                 }
             )
             financial_profitability.append(
@@ -1197,6 +1200,7 @@ class MediaTrackerWorksheetService:
                 "spend_vs_revenue_mix": financial_mix_vs_revenue,
                 "conversion_funnel": financial_conversion_funnel,
                 "profitability": financial_profitability,
+                "cost_per_new_client": financial_cost_per_new_client,
                 "channel_performance": channel_performance,
                 "cost_per_new_client": financial_cost_per_new_client,
             },
