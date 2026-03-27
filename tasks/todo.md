@@ -7554,3 +7554,16 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, f�
 - [x] Exclud secțiunea `Cheltuieli Unknown` din Fișa Săptămânală.
 - [x] Actualizez testele frontend și test backend pentru absența section key `unknown_spend`.
 - [x] Rulez verificările relevante.
+
+# TODO — Media Tracker worksheet: Google/Meta/TikTok Lead-uri -> Conversions + CPA pe conversii (2026-03-27)
+
+- [x] Sync workspace și recitesc fluxul Media Tracker worksheet + sursele de metrici pe platformă înainte de modificări.
+- [x] Schimb strict rândul din secțiunile Cheltuieli Google/Meta/TikTok din `Lead-uri` în `Conversions`.
+- [x] Alimentez valorile acelui rând din conversiile platformelor (fără fallback la manual leads) și aliniez CPA pe același denominator.
+- [x] Actualizez teste backend/frontend strict pe acest scope și rulez validările țintite.
+- [x] Completez review section, commit, apoi PR.
+
+## Review
+- [x] Confirm rândul din secțiunile Google/Meta/TikTok afișează `Conversions`.
+- [x] Confirm valorile vin din conversii platformă, nu din manual leads fallback.
+- [x] Confirm CPA în aceste trei secțiuni folosește `Cost / Conversions`.

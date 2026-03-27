@@ -448,12 +448,15 @@ class MediaTrackerWorksheetService:
                 return [float(item) if isinstance(item, (int, float)) else 0.0 for item in values]
             return [0.0 for _ in range(week_count)]
 
+        g_conversions = source_metric_values("google_ads", "conversions_values")
         g_leads = source_metric_values("google_ads", "leads_values")
         g_sales = source_metric_values("google_ads", "sales_values")
         g_revenue = source_metric_values("google_ads", "revenue_values")
+        m_conversions = source_metric_values("meta_ads", "conversions_values")
         m_leads = source_metric_values("meta_ads", "leads_values")
         m_sales = source_metric_values("meta_ads", "sales_values")
         m_revenue = source_metric_values("meta_ads", "revenue_values")
+        t_conversions = source_metric_values("tiktok_ads", "conversions_values")
         t_leads = source_metric_values("tiktok_ads", "leads_values")
         t_sales = source_metric_values("tiktok_ads", "sales_values")
         t_revenue = source_metric_values("tiktok_ads", "revenue_values")
@@ -561,8 +564,9 @@ class MediaTrackerWorksheetService:
             self._build_row(weeks=weeks, row_key="approved_applications_per_sale", label=f"{custom_label_2} / Vânzări", value_kind="decimal", weekly_values=summary_approved_per_sale, history_value=self._safe_div(approved_h, sales_h), dependencies=["summary.approved_applications", "summary.sales"]),
         ]
 
-        def platform_rows(prefix: str, label_prefix: str, cost_values: list[float | None], leads_values: list[float | None], sales_values: list[float | None], revenue_values: list[float | None]) -> list[dict[str, object]]:
-            cpa_values = [self._safe_div(self._to_float(cost_values[i]), self._to_float(leads_values[i])) for i in range(week_count)]
+        def platform_rows(prefix: str, label_prefix: str, cost_values: list[float | None], leads_values: list[float | None], sales_values: list[float | None], revenue_values: list[float | None], conversion_values: list[float | None] | None = None, conversion_label: str = "Lead-uri") -> list[dict[str, object]]:
+            cpa_denominator_values = conversion_values if conversion_values is not None else leads_values
+            cpa_values = [self._safe_div(self._to_float(cost_values[i]), self._to_float(cpa_denominator_values[i])) for i in range(week_count)]
             ncac_values = [self._safe_div(self._to_float(cost_values[i]), self._to_float(sales_values[i])) for i in range(week_count)]
             ncac_eur_values = [self._safe_div(ncac_values[i], eur_ron_rate) if eur_ron_rate not in {None, 0} else None for i in range(week_count)]
             cost_h_local = additive(cost_values)
@@ -571,8 +575,8 @@ class MediaTrackerWorksheetService:
             revenue_h_local = self._sum_history_nullable(revenue_values)
             return [
                 self._build_row(weeks=weeks, row_key="cost", label="Cost", value_kind="currency_display", weekly_values=[self._to_float(v) for v in cost_values], currency_code=display_currency, history_value=cost_h_local, dependencies=[f"auto_metrics.cost_{prefix}"]),
-                self._build_row(weeks=weeks, row_key="leads_manual", label="Lead-uri", value_kind="integer", weekly_values=leads_values, history_value=leads_h_local, dependencies=[f"manual_metrics.{prefix}_leads_manual"], is_manual_input_row=True),
-                self._build_row(weeks=weeks, row_key="cpa", label="CPA", value_kind="currency_display", weekly_values=cpa_values, currency_code=display_currency, history_value=self._safe_div(cost_h_local, leads_h_local), dependencies=["cost", "leads_manual"]),
+                self._build_row(weeks=weeks, row_key="leads_manual", label=conversion_label, value_kind="integer", weekly_values=leads_values, history_value=leads_h_local, dependencies=[f"manual_metrics.{prefix}_leads_manual"], is_manual_input_row=True),
+                self._build_row(weeks=weeks, row_key="cpa", label="CPA", value_kind="currency_display", weekly_values=cpa_values, currency_code=display_currency, history_value=self._safe_div(cost_h_local, additive(cpa_denominator_values)), dependencies=["cost", "leads_manual"]),
                 self._build_row(weeks=weeks, row_key="sales_manual", label="Vânzări", value_kind="integer", weekly_values=sales_values, history_value=sales_h_local, dependencies=[f"manual_metrics.{prefix}_sales_manual"], is_manual_input_row=True),
                 self._build_row(weeks=weeks, row_key="revenue_manual", label="Val. Vânzare", value_kind="currency_display", weekly_values=revenue_values, currency_code=display_currency, history_value=revenue_h_local, dependencies=[f"manual_metrics.{prefix}_revenue_manual"], is_manual_input_row=True),
                 self._build_row(weeks=weeks, row_key="ncac", label="nCAC", value_kind="currency_display", weekly_values=ncac_values, currency_code=display_currency, history_value=self._safe_div(cost_h_local, sales_h_local), dependencies=["cost", "sales_manual"]),
@@ -585,9 +589,9 @@ class MediaTrackerWorksheetService:
             self._build_row(weeks=weeks, row_key="cost_per_new_client_eur", label="Cost per Client Nou EUR", value_kind="currency_eur", weekly_values=new_clients_cost_per_new_client_eur, currency_code="EUR", history_value=(self._safe_div(self._safe_div(cost_h, sales_h), eur_ron_rate) if eur_ron_rate not in {None, 0} else None), dependencies=["new_clients.cost_per_new_client", "eur_ron_rate"], requires_eur_ron_rate=True),
         ]
 
-        google_rows = platform_rows("google", "Google", auto_cost_google, g_leads, g_sales, g_revenue)
-        meta_rows = platform_rows("meta", "Meta", auto_cost_meta, m_leads, m_sales, m_revenue)
-        tiktok_rows = platform_rows("tiktok", "TikTok", auto_cost_tiktok, t_leads, t_sales, t_revenue)
+        google_rows = platform_rows("google", "Google", auto_cost_google, g_conversions, g_sales, g_revenue, conversion_values=g_conversions, conversion_label="Conversions")
+        meta_rows = platform_rows("meta", "Meta", auto_cost_meta, m_conversions, m_sales, m_revenue, conversion_values=m_conversions, conversion_label="Conversions")
+        tiktok_rows = platform_rows("tiktok", "TikTok", auto_cost_tiktok, t_conversions, t_sales, t_revenue, conversion_values=t_conversions, conversion_label="Conversions")
 
         summary_rows_with_wow = self._insert_wow_rows(
             weeks=weeks,
@@ -856,6 +860,7 @@ class MediaTrackerWorksheetService:
                 {
                     "label": str(source_row.get("source_label") or source_key),
                     "cost_values": [0.0 for _ in weeks],
+                    "conversions_values": [0.0 for _ in weeks],
                     "leads_values": [0.0 for _ in weeks],
                     "sales_values": [0.0 for _ in weeks],
                     "revenue_values": [0.0 for _ in weeks],
@@ -866,6 +871,7 @@ class MediaTrackerWorksheetService:
                 if not (week_start <= row_date <= week_end):
                     continue
                 source_payload["cost_values"][idx] = float(source_payload["cost_values"][idx]) + float(source_row.get("cost_amount") or 0.0)
+                source_payload["conversions_values"][idx] = float(source_payload["conversions_values"][idx]) + float(source_row.get("conversions") or 0.0)
 
         for source_row in data_layer_source_daily_rows:
             raw_date = source_row.get("date")
@@ -877,6 +883,7 @@ class MediaTrackerWorksheetService:
                 {
                     "label": str(source_row.get("source_label") or source_key),
                     "cost_values": [0.0 for _ in weeks],
+                    "conversions_values": [0.0 for _ in weeks],
                     "leads_values": [0.0 for _ in weeks],
                     "sales_values": [0.0 for _ in weeks],
                     "revenue_values": [0.0 for _ in weeks],
@@ -906,13 +913,13 @@ class MediaTrackerWorksheetService:
                     {
                         "label": source_key,
                         "cost_values": [0.0 for _ in weeks],
+                        "conversions_values": [0.0 for _ in weeks],
                         "leads_values": [0.0 for _ in weeks],
                         "sales_values": [0.0 for _ in weeks],
                         "revenue_values": [0.0 for _ in weeks],
                         "cogs_values": [0.0 for _ in weeks],
                     },
                 )
-                source_payload["leads_values"][idx] = float((manual_metrics.get(f"{legacy_prefix}_leads_manual") or {}).get("weekly_values", [{}])[idx].get("value") or 0.0)
                 source_payload["sales_values"][idx] = float((manual_metrics.get(f"{legacy_prefix}_sales_manual") or {}).get("weekly_values", [{}])[idx].get("value") or 0.0)
                 source_payload["revenue_values"][idx] = float((manual_metrics.get(f"{legacy_prefix}_revenue_manual") or {}).get("weekly_values", [{}])[idx].get("value") or 0.0)
 
@@ -935,7 +942,7 @@ class MediaTrackerWorksheetService:
         manual_metrics["weekly_cogs_taxes"]["history_value"] = round(sum(self._to_float(item) for item in weekly_cogs_values if item is not None), 2)
 
         for legacy_prefix, source_key in legacy_manual_source_map.items():
-            for field_suffix, value_key in (("leads_manual", "leads_values"), ("sales_manual", "sales_values"), ("revenue_manual", "revenue_values")):
+            for field_suffix, value_key in (("sales_manual", "sales_values"), ("revenue_manual", "revenue_values")):
                 metric_key = f"{legacy_prefix}_{field_suffix}"
                 values = list((source_weekly_metrics.get(source_key) or {}).get(value_key, [0.0 for _ in weeks]))
                 manual_metrics[metric_key] = {
