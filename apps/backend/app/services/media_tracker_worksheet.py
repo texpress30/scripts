@@ -631,7 +631,7 @@ class MediaTrackerWorksheetService:
         ]
 
         for source_key in sorted(source_weekly_metrics.keys()):
-            if source_key in {"google_ads", "meta_ads", "tiktok_ads"}:
+            if source_key in {"google_ads", "meta_ads", "tiktok_ads", "unknown"}:
                 continue
             source_payload = source_weekly_metrics.get(source_key) or {}
             source_label = str(source_payload.get("label") or source_key)
@@ -1052,7 +1052,6 @@ class MediaTrackerWorksheetService:
         google_ncac = values_from_row("google_spend", "ncac")
         meta_ncac = values_from_row("meta_spend", "ncac")
         tiktok_ncac = values_from_row("tiktok_spend", "ncac")
-        new_clients_cost_per_new_client = values_from_row("new_clients", "cost_per_new_client")
 
         scope_weeks: list[dict[str, object]] = []
         sales_total_trend: list[dict[str, object]] = []
@@ -1129,7 +1128,7 @@ class MediaTrackerWorksheetService:
                     "week_start": week_start,
                     "week_end": week_end,
                     "label": label,
-                    "cost_per_new_client": new_clients_cost_per_new_client[idx] if idx < len(new_clients_cost_per_new_client) else 0.0,
+                    "cost_per_new_client": new_clients_cost_per_client[idx] if idx < len(new_clients_cost_per_client) else 0.0,
                 }
             )
 
@@ -1202,7 +1201,6 @@ class MediaTrackerWorksheetService:
                 "profitability": financial_profitability,
                 "cost_per_new_client": financial_cost_per_new_client,
                 "channel_performance": channel_performance,
-                "cost_per_new_client": financial_cost_per_new_client,
             },
         }
 

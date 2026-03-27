@@ -471,6 +471,16 @@ class ClientsMediaBuyingApiTests(unittest.TestCase):
         self.assertEqual(payload["custom_labels"]["custom_label_1"], "Aplicații")
         self.assertEqual(payload["custom_labels"]["custom_label_4"], "Val. Vândută")
 
+    def test_media_tracker_worksheet_hides_unknown_source_section(self):
+        payload = clients_api.get_media_tracker_weekly_worksheet_foundation(
+            client_id=self.client_id,
+            granularity="month",
+            anchor_date=date(2026, 3, 15),
+            user=self.user,
+        )
+        section_keys = [str(item.get("key")) for item in payload.get("sections", []) if isinstance(item, dict)]
+        self.assertNotIn("unknown_spend", section_keys)
+
 
 if __name__ == "__main__":
     unittest.main()
