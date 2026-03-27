@@ -1,8 +1,10 @@
-# Task Plan
+# Task Plan: Fix Cost per Client Nou Chart
 
-- [x] Identify the correct branch containing the PR changes.
-- [x] Checkout the branch.
-- [x] Locate the duplicate `saveEurRonRate` function in `page.tsx`.
-- [x] Remove or rename the duplicate function.
-- [~] Compile using `pnpm build` in `apps/frontend` (Skipped due to no local pnpm).
-- [x] Commit and push the fix so the user can merge the PR.
+- [x] Add `cost_per_new_client` extraction to backend `build_overview_charts_payload`.
+- [x] Expose `financial.cost_per_new_client` in `media_tracker_worksheet.py` response.
+- [x] Add `cost_per_new_client` type to `OverviewChartsPayload` in `OverviewCharts.tsx`.
+- [x] Add the `Cost per Client Nou` BarChart below `Profitabilitatea` in `OverviewCharts.tsx`.
+- [x] Update frontend tests (`page.test.tsx`) with missing mock data and UI assertions.
+- [x] Run backend verification tests.
+- [~] Run frontend verification tests (Skipped due to no local pnpm).
+- [ ] Commit and create a new pull request on GitHub.

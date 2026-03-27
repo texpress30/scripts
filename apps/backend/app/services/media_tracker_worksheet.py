@@ -1050,6 +1050,7 @@ class MediaTrackerWorksheetService:
         google_ncac = values_from_row("google_spend", "ncac")
         meta_ncac = values_from_row("meta_spend", "ncac")
         tiktok_ncac = values_from_row("tiktok_spend", "ncac")
+        new_clients_cost_per_new_client = values_from_row("new_clients", "cost_per_new_client")
 
         scope_weeks: list[dict[str, object]] = []
         sales_total_trend: list[dict[str, object]] = []
@@ -1059,6 +1060,7 @@ class MediaTrackerWorksheetService:
         financial_mix_vs_revenue: list[dict[str, object]] = []
         financial_conversion_funnel: list[dict[str, object]] = []
         financial_profitability: list[dict[str, object]] = []
+        financial_cost_per_new_client: list[dict[str, object]] = []
 
         for idx, week in enumerate(weeks):
             week_start = str((week if isinstance(week, dict) else {}).get("week_start") or "")
@@ -1117,6 +1119,14 @@ class MediaTrackerWorksheetService:
                     "label": label,
                     "gross_profit": summary_gross_profit[idx] if idx < len(summary_gross_profit) else 0.0,
                     "cogs_taxes": summary_cogs_taxes[idx] if idx < len(summary_cogs_taxes) else 0.0,
+                }
+            )
+            financial_cost_per_new_client.append(
+                {
+                    "week_start": week_start,
+                    "week_end": week_end,
+                    "label": label,
+                    "cost_per_new_client": new_clients_cost_per_new_client[idx] if idx < len(new_clients_cost_per_new_client) else 0.0,
                 }
             )
 
@@ -1188,6 +1198,7 @@ class MediaTrackerWorksheetService:
                 "conversion_funnel": financial_conversion_funnel,
                 "profitability": financial_profitability,
                 "channel_performance": channel_performance,
+                "cost_per_new_client": financial_cost_per_new_client,
             },
         }
 

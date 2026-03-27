@@ -43,6 +43,7 @@ type OverviewChartsPayload = {
     conversion_funnel?: OverviewPoint[];
     profitability?: OverviewPoint[];
     channel_performance?: OverviewPoint[];
+    cost_per_new_client?: OverviewPoint[];
   };
 };
 
@@ -181,6 +182,19 @@ export function FinancialCharts({ payload }: { payload: OverviewChartsPayload })
             <Legend />
             <Bar dataKey="gross_profit" fill="#16a34a" name="Profit Brut" />
             <Line dataKey="cogs_taxes" stroke="#ea580c" dot={false} isAnimationActive={false} name="COGS + Taxe" />
+          </BarChart>
+        </ResponsiveContainer>
+      </ChartCard>
+
+      <ChartCard title="Cost per Client Nou">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={financial.cost_per_new_client || []}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="label" />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="cost_per_new_client" fill="#8b5cf6" name="Cost per Client Nou" />
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>

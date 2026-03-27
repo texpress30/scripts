@@ -624,3 +624,7 @@
 - Când user-ul spune explicit că ultimul commit este nesatisfăcător, pornesc de la codul efectiv din HEAD și refac analiza înainte de orice afirmație.
 - Pentru task-uri cu cerințe de UI+backend pe același flow, introduc payload backend dedicat și testez explicit integrarea frontend pe endpointul nou.
 - Pentru grafice în vitest/jsdom, adaug imediat mock pentru `ResizeObserver` ca să evit false negatives și crash-uri la `ResponsiveContainer`.
+
+- 2026-03-26: Când repari erori Vercel/CI dintr-un PR creat anterior (ex. Duplicate function implementation), verifică întâi branch-ul corect pe care s-a făcut PR-ul, deoarece branch-ul curent activ în workspace poate fi diferit și nu arată starea cu erori.
+
+- 2026-03-27: Când un PR anterior (ex. rollback) elimină complet o secțiune/grafic (aici Cost per Client Nou) și backend payload-ul aferent, noul PR trebuie să reinstaureze explicit atât extragerea din source-of-truth (`new_clients.cost_per_new_client`) cât și expunerea în payload-ul frontend, acoperind regresia prin mock-uri explicite în testele de pagină UI.
