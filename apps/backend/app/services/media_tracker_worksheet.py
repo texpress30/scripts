@@ -1032,7 +1032,7 @@ class MediaTrackerWorksheetService:
         summary_custom_2 = values_from_row("summary", "approved_applications")
         summary_gross_profit = values_from_row("summary", "gross_profit")
         summary_cogs_taxes = values_from_row("summary", "weekly_cogs_taxes")
-        new_clients_cost_per_client_eur = values_from_row("new_clients", "cost_per_new_client_eur")
+        new_clients_cost_per_client = values_from_row("new_clients", "cost_per_new_client")
 
         google_cost = values_from_row("google_spend", "cost")
         meta_cost = values_from_row("meta_spend", "cost")
@@ -1128,7 +1128,7 @@ class MediaTrackerWorksheetService:
                     "week_start": week_start,
                     "week_end": week_end,
                     "label": label,
-                    "cost_per_new_client_eur": new_clients_cost_per_client_eur[idx] if idx < len(new_clients_cost_per_client_eur) else 0.0,
+                    "cost_per_new_client": new_clients_cost_per_client[idx] if idx < len(new_clients_cost_per_client) else 0.0,
                 }
             )
 

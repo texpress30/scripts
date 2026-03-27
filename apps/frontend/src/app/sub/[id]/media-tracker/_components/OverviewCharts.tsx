@@ -229,7 +229,7 @@ export function FinancialCharts({ payload }: { payload: OverviewChartsPayload })
             <YAxis />
             <Tooltip />
             <Legend />
-            <Bar dataKey="cost_per_new_client_eur" fill="#7c3aed" name="Cost per Client Nou EUR" />
+            <Bar dataKey="cost_per_new_client" fill="#7c3aed" name="Cost per Client Nou" />
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>

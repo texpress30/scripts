@@ -7543,3 +7543,8 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, f�
 - [x] Folosesc valoarea `cost_per_new_client_eur` (EUR) din payload.
 - [x] Actualizez payload backend + test mock frontend.
 - [x] Rulez py_compile backend și vitest frontend pentru Media Tracker.
+
+# TODO — Media Tracker: Cost per Client Nou revine la RON (2026-03-27)
+- [x] Schimb `Cost per Client Nou` din EUR în RON (metrică totală).
+- [x] Actualizez payload backend și chart key frontend.
+- [x] Rulez py_compile backend + vitest frontend Media Tracker.
