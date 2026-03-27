@@ -168,12 +168,6 @@ function formatRate(value: number | null | undefined): string {
   return `${(value * 100).toFixed(2)}%`;
 }
 
-function formatUnrealizedMoney(value: number | null | undefined, currencyCode: string): string {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
-  if (value > 0) return `(${formatMoney(value, currencyCode)})`;
-  return formatMoney(0, currencyCode);
-}
-
 function columnClass(key: ColumnSemanticKey): string {
   const classes = ["px-3", "py-2"];
   if (GREY_COLUMNS.has(key)) classes.push("text-[#bfbfbf]");
@@ -521,7 +515,7 @@ export default function SubMediaBuyingPage() {
                           <td {...visibilityProps("custom_value_1_count")} className={classFor("custom_value_1_count")}>{formatCount(monthTotals.custom_value_1_count)}</td>
                           <td {...visibilityProps("custom_value_2_count")} className={classFor("custom_value_2_count")}>{formatCount(monthTotals.custom_value_2_count)}</td>
                           <td {...visibilityProps("custom_value_3_amount_ron")} className={classFor("custom_value_3_amount_ron")}>{formatMoney(monthTotals.custom_value_3_amount_ron, displayCurrency)}</td>
-                          <td {...visibilityProps("custom_value_4_amount_ron")} className={classFor("custom_value_4_amount_ron")}><span className="text-slate-900">{formatUnrealizedMoney(monthTotals.custom_value_4_amount_ron, displayCurrency)}</span></td>
+                          <td {...visibilityProps("custom_value_4_amount_ron")} className={classFor("custom_value_4_amount_ron")}><span className="text-slate-900">{formatMoney(monthTotals.custom_value_4_amount_ron, displayCurrency)}</span></td>
                           <td {...visibilityProps("custom_value_5_amount_ron")} className={classFor("custom_value_5_amount_ron")}>{formatMoney(monthTotals.custom_value_5_amount_ron, displayCurrency)}</td>
                           <td {...visibilityProps("sales_count")} className={classFor("sales_count")}>{formatCount(monthTotals.sales_count)}</td>
                           <td {...visibilityProps("custom_value_rate_1")} className={classFor("custom_value_rate_1")}>{formatRate(monthTotals.custom_value_rate_1)}</td>
@@ -583,7 +577,7 @@ export default function SubMediaBuyingPage() {
                                   <td {...visibilityProps("custom_value_1_count")} className={classFor("custom_value_1_count")}>{formatCount(day.custom_value_1_count)}</td>
                                   <td {...visibilityProps("custom_value_2_count")} className={classFor("custom_value_2_count")}>{formatCount(day.custom_value_2_count)}</td>
                                   <td {...visibilityProps("custom_value_3_amount_ron")} className={classFor("custom_value_3_amount_ron")}>{formatMoney(day.custom_value_3_amount_ron, displayCurrency)}</td>
-                                  <td {...visibilityProps("custom_value_4_amount_ron")} className={classFor("custom_value_4_amount_ron")}><span className="text-slate-900">{formatUnrealizedMoney(day.custom_value_4_amount_ron, displayCurrency)}</span></td>
+                                  <td {...visibilityProps("custom_value_4_amount_ron")} className={classFor("custom_value_4_amount_ron")}><span className="text-slate-900">{formatMoney(day.custom_value_4_amount_ron, displayCurrency)}</span></td>
                                   <td {...visibilityProps("custom_value_5_amount_ron")} className={classFor("custom_value_5_amount_ron")}><span className="text-slate-900">{formatMoney(day.custom_value_5_amount_ron, displayCurrency)}</span></td>
                                   <td {...visibilityProps("sales_count")} className={classFor("sales_count")}>{formatCount(day.sales_count)}</td>
                                   <td {...visibilityProps("custom_value_rate_1")} className={classFor("custom_value_rate_1")}>{formatRate(day.custom_value_rate_1)}</td>
