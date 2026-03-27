@@ -379,9 +379,13 @@ class MediaBuyingStore:
                         SUM(COALESCE(di.custom_value_4_amount, 0))::numeric(18, 4) AS custom_value_4_amount,
                         SUM(COALESCE(di.custom_value_5_amount, 0))::numeric(18, 4) AS custom_value_5_amount,
                         SUM(COALESCE(di.sales_count, 0))::bigint AS sales_count,
-                        SUM(COALESCE(se.actual_price_amount, 0))::numeric(18, 4) AS cogs_amount
+                        SUM(COALESCE(se.cogs_amount, 0))::numeric(18, 4) AS cogs_amount
                     FROM client_data_daily_inputs di
-                    LEFT JOIN client_data_sale_entries se ON se.daily_input_id = di.id
+                    LEFT JOIN (
+                        SELECT daily_input_id, SUM(COALESCE(actual_price_amount, 0))::numeric(18, 4) AS cogs_amount
+                        FROM client_data_sale_entries
+                        GROUP BY daily_input_id
+                    ) se ON se.daily_input_id = di.id
                     WHERE {where_sql}
                     GROUP BY di.metric_date, di.source
                     ORDER BY di.metric_date ASC, di.source ASC
