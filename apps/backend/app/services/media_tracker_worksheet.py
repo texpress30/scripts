@@ -1026,6 +1026,7 @@ class MediaTrackerWorksheetService:
             return normalized
 
         summary_revenue = values_from_row("summary", "revenue")
+        summary_sales = values_from_row("summary", "sales")
         summary_leads = values_from_row("summary", "leads")
         summary_custom_1 = values_from_row("summary", "applications")
         summary_custom_2 = values_from_row("summary", "approved_applications")
@@ -1108,6 +1109,7 @@ class MediaTrackerWorksheetService:
                     "leads": summary_leads[idx] if idx < len(summary_leads) else 0.0,
                     "custom_value_1_count": summary_custom_1[idx] if idx < len(summary_custom_1) else 0.0,
                     "custom_value_2_count": summary_custom_2[idx] if idx < len(summary_custom_2) else 0.0,
+                    "sales": summary_sales[idx] if idx < len(summary_sales) else 0.0,
                 }
             )
             financial_profitability.append(

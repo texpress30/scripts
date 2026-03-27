@@ -627,3 +627,4 @@
 - 2026-03-26: Când feedback-ul cere layout specific din exemplu vizual (ex. „2 coloane”), aplic direct grila cerută în componenta de charts (`grid-cols-2` pe breakpoint relevant) fără a schimba logica dataset-urilor.
 - 2026-03-26: Dacă userul cere explicit scoaterea unui chart și schimbarea controlului de perioadă cu calendar, fac update strict pe UI/UX (elimin cardul și introduc selector range) fără extindere inutilă în backend.
 - 2026-03-26: Pentru feedback-uri fine de layout (swap poziții), schimb doar ordinea blocurilor în toolbar și păstrez funcționalitatea neschimbată.
+- 2026-03-27: Pentru cerințe noi de charting, prefer să extind payload-ul existent minim (ex. adaug câmp `sales` în funnel) și să evit endpoint-uri noi dacă nu sunt necesare.

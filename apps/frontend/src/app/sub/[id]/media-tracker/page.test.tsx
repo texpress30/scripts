@@ -70,7 +70,7 @@ function overviewPayload() {
     financial: {
       cost_efficiency: monthWeeks.map((w) => ({ ...w, label: w.label, google_cpa: 10, google_ncac: 20, meta_cpa: 11, meta_ncac: 21, tiktok_cpa: 12, tiktok_ncac: 22 })),
       spend_vs_revenue_mix: monthWeeks.map((w) => ({ ...w, label: w.label, google_cost: 100, meta_cost: 80, tiktok_cost: 60, revenue_total: 400 })),
-      conversion_funnel: monthWeeks.map((w) => ({ ...w, label: w.label, leads: 50, custom_value_1_count: 20, custom_value_2_count: 10 })),
+      conversion_funnel: monthWeeks.map((w) => ({ ...w, label: w.label, leads: 50, custom_value_1_count: 20, custom_value_2_count: 10, sales: 5 })),
       profitability: monthWeeks.map((w) => ({ ...w, label: w.label, gross_profit: 200, cogs_taxes: 120 })),
       channel_performance: [
         { channel: "google", cpa: 10, conversion_rate: 0.2, sales_volume: 15 },
@@ -142,12 +142,15 @@ describe("SubMediaTrackerPage", () => {
     await screen.findByLabelText("Trendul Vânzărilor Totale");
     expect(screen.getByLabelText("Compoziția Vânzărilor pe Canale")).toBeInTheDocument();
     expect(screen.getByLabelText("Eficiența Vânzărilor")).toBeInTheDocument();
+    expect(screen.getByLabelText("Aplicații / Aplicații Aprobate / Vânzări")).toBeInTheDocument();
+    expect(screen.getByLabelText("Aprobări / Vânzări")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Financiare" }));
     await screen.findByLabelText("Analiza Pâlniei de Conversie");
     expect(screen.queryByLabelText("Analiza Mixului de Cheltuieli vs. Venituri")).toBeNull();
     expect(screen.getByLabelText("Profitabilitatea")).toBeInTheDocument();
     expect(screen.getByLabelText("Analiza Performanței pe Canale")).toBeInTheDocument();
+    expect(screen.getByLabelText("Cost per Client Nou")).toBeInTheDocument();
   });
 
   it("shows worksheet loading/error states", async () => {

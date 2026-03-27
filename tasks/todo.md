@@ -7529,3 +7529,11 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, f�
 - [x] Inversez poziția calendarului și a monedei în toolbar-ul pentru grafice: currency la stânga, calendar la dreapta.
 - [x] Păstrez neafectat flow-ul worksheet și EUR/RON.
 - [x] Rulez testele Media Tracker frontend.
+
+# TODO — Media Tracker charts: h-96 + grafice noi Vânzări/Financiare (2026-03-27)
+- [x] Cresc înălțimea cardurilor de grafice la `h-96`.
+- [x] Adaug în Vânzări: line chart smooth pentru Aplicații / Aprobate / Vânzări.
+- [x] Adaug în Vânzări: bar chart pentru `Aprobări / Vânzări`.
+- [x] Adaug în Financiare: bar chart pentru `Cost per Client Nou`.
+- [x] Extind payload-ul overview cu `sales` în `conversion_funnel`.
+- [x] Rulez testele frontend relevante + compile check backend.
