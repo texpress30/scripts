@@ -7537,3 +7537,9 @@ Plan verificat: focus strict pe backend storage init + logging/error mapping, f�
 - [x] Adaug în Financiare: bar chart pentru `Cost per Client Nou`.
 - [x] Extind payload-ul overview cu `sales` în `conversion_funnel`.
 - [x] Rulez testele frontend relevante + compile check backend.
+
+# TODO — Media Tracker: Cost per Client Nou total EUR (2026-03-27)
+- [x] Schimb graficul Cost per Client Nou din serie pe platforme în serie totală.
+- [x] Folosesc valoarea `cost_per_new_client_eur` (EUR) din payload.
+- [x] Actualizez payload backend + test mock frontend.
+- [x] Rulez py_compile backend și vitest frontend pentru Media Tracker.

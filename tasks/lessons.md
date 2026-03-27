@@ -628,3 +628,4 @@
 - 2026-03-26: Dacă userul cere explicit scoaterea unui chart și schimbarea controlului de perioadă cu calendar, fac update strict pe UI/UX (elimin cardul și introduc selector range) fără extindere inutilă în backend.
 - 2026-03-26: Pentru feedback-uri fine de layout (swap poziții), schimb doar ordinea blocurilor în toolbar și păstrez funcționalitatea neschimbată.
 - 2026-03-27: Pentru cerințe noi de charting, prefer să extind payload-ul existent minim (ex. adaug câmp `sales` în funnel) și să evit endpoint-uri noi dacă nu sunt necesare.
+- 2026-03-27: Când userul cere metrică totală (nu pe platforme), evit să deriv din seriile pe canale și folosesc direct rândul agregat din worksheet/payload (`cost_per_new_client_eur`).

@@ -42,6 +42,7 @@ type OverviewChartsPayload = {
     spend_vs_revenue_mix?: OverviewPoint[];
     conversion_funnel?: OverviewPoint[];
     profitability?: OverviewPoint[];
+    cost_per_new_client?: OverviewPoint[];
     channel_performance?: OverviewPoint[];
   };
 };
@@ -222,15 +223,13 @@ export function FinancialCharts({ payload }: { payload: OverviewChartsPayload })
 
       <ChartCard title="Cost per Client Nou">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={financial.cost_efficiency || []}>
+          <BarChart data={financial.cost_per_new_client || []}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="label" />
             <YAxis />
             <Tooltip />
             <Legend />
-            <Bar dataKey="google_ncac" fill="#2563eb" name="Google" />
-            <Bar dataKey="meta_ncac" fill="#7c3aed" name="Meta" />
-            <Bar dataKey="tiktok_ncac" fill="#0f766e" name="TikTok" />
+            <Bar dataKey="cost_per_new_client_eur" fill="#7c3aed" name="Cost per Client Nou EUR" />
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>
