@@ -240,6 +240,7 @@ class MediaBuyingStore:
                             apr.report_date,
                             NULLIF(regexp_replace(apr.customer_id, '[^0-9]', '', 'g'), '') AS customer_id_digits,
                             COALESCE(apr.spend, 0) AS spend,
+                            COALESCE(apr.conversions, 0) AS conversions,
                             apr.extra_metrics
                         FROM ad_performance_reports apr
                         WHERE apr.platform IN ('google_ads', 'meta_ads', 'tiktok_ads')
@@ -258,7 +259,8 @@ class MediaBuyingStore:
                                 NULLIF(TRIM(mapped.account_currency), ''),
                                 'USD'
                             ) AS account_currency,
-                            apr.spend
+                            apr.spend,
+                            apr.conversions
                         FROM scoped_reports apr
                         JOIN scoped_mapped mapped
                           ON apr.platform = mapped.platform
@@ -287,7 +289,7 @@ class MediaBuyingStore:
                           AND (%s::date IS NULL OR apr.report_date >= %s::date)
                           AND (%s::date IS NULL OR apr.report_date <= %s::date)
                     )
-                    SELECT report_date, platform, account_currency, SUM(spend)
+                    SELECT report_date, platform, account_currency, SUM(spend), SUM(conversions)
                     FROM perf
                     GROUP BY report_date, platform, account_currency
                     ORDER BY report_date ASC
@@ -305,6 +307,7 @@ class MediaBuyingStore:
                     "platform": str(row[1]),
                     "account_currency": str(row[2] or "USD").upper(),
                     "spend": float(row[3] or 0.0),
+                    "conversions": float((row[4] if len(row) > 4 else 0.0) or 0.0),
                 }
             )
         return payload
@@ -329,6 +332,7 @@ class MediaBuyingStore:
     def _source_daily_row_has_data(self, row: dict[str, object]) -> bool:
         fields = [
             "cost_amount",
+            "conversions",
             "leads",
             "phones",
             "custom_value_1_count",
@@ -379,9 +383,13 @@ class MediaBuyingStore:
                         SUM(COALESCE(di.custom_value_4_amount, 0))::numeric(18, 4) AS custom_value_4_amount,
                         SUM(COALESCE(di.custom_value_5_amount, 0))::numeric(18, 4) AS custom_value_5_amount,
                         SUM(COALESCE(di.sales_count, 0))::bigint AS sales_count,
-                        SUM(COALESCE(se.actual_price_amount, 0))::numeric(18, 4) AS cogs_amount
+                        SUM(COALESCE(se.cogs_amount, 0))::numeric(18, 4) AS cogs_amount
                     FROM client_data_daily_inputs di
-                    LEFT JOIN client_data_sale_entries se ON se.daily_input_id = di.id
+                    LEFT JOIN (
+                        SELECT daily_input_id, SUM(COALESCE(actual_price_amount, 0))::numeric(18, 4) AS cogs_amount
+                        FROM client_data_sale_entries
+                        GROUP BY daily_input_id
+                    ) se ON se.daily_input_id = di.id
                     WHERE {where_sql}
                     GROUP BY di.metric_date, di.source
                     ORDER BY di.metric_date ASC, di.source ASC
@@ -450,6 +458,7 @@ class MediaBuyingStore:
                     "source": source_key,
                     "source_label": client_data_store.get_source_label(source_key) or source_key,
                     "cost_amount": 0.0,
+                    "conversions": 0.0,
                     "leads": 0,
                     "phones": 0,
                     "custom_value_1_count": 0,
@@ -463,6 +472,7 @@ class MediaBuyingStore:
                 },
             )
             row["cost_amount"] = float(row["cost_amount"]) + float(spend)
+            row["conversions"] = float(row["conversions"]) + float(item.get("conversions") or 0.0)
 
         for item in business_rows:
             report_date = item.get("date")
@@ -477,6 +487,7 @@ class MediaBuyingStore:
                     "source": source_key,
                     "source_label": client_data_store.get_source_label(source_key) or source_key,
                     "cost_amount": 0.0,
+                    "conversions": 0.0,
                     "leads": 0,
                     "phones": 0,
                     "custom_value_1_count": 0,
@@ -920,6 +931,7 @@ class MediaBuyingStore:
                     "source": source_key,
                     "source_label": client_data_store.get_source_label(source_key) or source_key,
                     "cost_amount": 0.0,
+                    "conversions": 0.0,
                     "leads": 0,
                     "phones": 0,
                     "custom_value_1_count": 0,

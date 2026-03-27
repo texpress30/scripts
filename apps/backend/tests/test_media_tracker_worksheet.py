@@ -839,15 +839,21 @@ def test_week_over_week_comparison_rows_insertion_and_rules() -> None:
 
 def test_worksheet_foundation_works_with_real_media_buying_store_automated_sql_placeholder_contract() -> None:
     class _Cursor:
+        def __init__(self):
+            self._last_query = ""
+
         def execute(self, query, params=None):
             query_text = str(query)
+            self._last_query = query_text
             placeholder_count = query_text.count("%s")
             provided_count = len(tuple(params or ()))
             if placeholder_count != provided_count:
                 raise AssertionError(f"placeholder mismatch: {placeholder_count} vs {provided_count}")
 
         def fetchall(self):
-            return [(date(2026, 3, 11), "google_ads", "USD", 100.0)]
+            if "FROM client_data_daily_inputs" in self._last_query:
+                return []
+            return [(date(2026, 3, 11), "google_ads", "USD", 100.0, 8.0)]
 
         def __enter__(self):
             return self
@@ -899,8 +905,8 @@ def _weekly_value(payload: dict[str, object], section_key: str, row_key: str, we
 
 def test_media_tracker_weekly_data_layer_first_and_legacy_fallback_rules() -> None:
     source_daily_rows = [
-        {"date": "2026-03-03", "source": "google_ads", "source_label": "Google", "cost_amount": 100.0},
-        {"date": "2026-03-10", "source": "google_ads", "source_label": "Google", "cost_amount": 200.0},
+        {"date": "2026-03-03", "source": "google_ads", "source_label": "Google", "cost_amount": 100.0, "conversions": 12.0},
+        {"date": "2026-03-10", "source": "google_ads", "source_label": "Google", "cost_amount": 200.0, "conversions": 6.0},
     ]
     data_layer_source_daily_rows = [
         {
@@ -946,15 +952,19 @@ def test_media_tracker_weekly_data_layer_first_and_legacy_fallback_rules() -> No
     finally:
         worksheet_module.media_buying_store = original_store
 
-    assert _weekly_value(payload, "google_spend", "leads_manual", "2026-03-02") == 8.0
+    assert _weekly_value(payload, "google_spend", "leads_manual", "2026-03-02") == 12.0
     assert _weekly_value(payload, "google_spend", "sales_manual", "2026-03-02") == 4.0
     assert _weekly_value(payload, "google_spend", "revenue_manual", "2026-03-02") == 400.0
     assert _weekly_value(payload, "summary", "weekly_cogs_taxes", "2026-03-02") == 120.0
 
-    assert _weekly_value(payload, "google_spend", "leads_manual", "2026-03-09") == 7.0
+    assert _weekly_value(payload, "google_spend", "leads_manual", "2026-03-09") == 6.0
     assert _weekly_value(payload, "google_spend", "sales_manual", "2026-03-09") == 3.0
     assert _weekly_value(payload, "google_spend", "revenue_manual", "2026-03-09") == 350.0
     assert _weekly_value(payload, "summary", "weekly_cogs_taxes", "2026-03-09") == 140.0
+
+    google_rows = _row_map(payload, "google_spend")
+    assert google_rows["leads_manual"]["label"] == "Conversions"
+    assert _weekly_value(payload, "google_spend", "cpa", "2026-03-02") == round(100.0 / 12.0, 4)
 
     assert _weekly_value(payload, "google_spend", "cost", "2026-03-02") == 100.0
     assert _weekly_value(payload, "google_spend", "cost", "2026-03-09") == 200.0
