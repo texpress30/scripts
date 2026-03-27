@@ -44,7 +44,6 @@ type OverviewChartsPayload = {
     profitability?: OverviewPoint[];
     cost_per_new_client?: OverviewPoint[];
     channel_performance?: OverviewPoint[];
-    cost_per_new_client?: OverviewPoint[];
   };
 };
 
