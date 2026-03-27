@@ -206,6 +206,19 @@ export function FinancialCharts({ payload }: { payload: OverviewChartsPayload })
         </ResponsiveContainer>
       </ChartCard>
 
+      <ChartCard title="Cost per Client Nou">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={financial.cost_per_new_client || []}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="label" />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="cost_per_new_client" fill="#8b5cf6" name="Cost per Client Nou" />
+          </BarChart>
+        </ResponsiveContainer>
+      </ChartCard>
+
       <ChartCard title="Analiza Performanței pe Canale">
         <ResponsiveContainer width="100%" height="100%">
           <RadarChart data={financial.channel_performance || []}>
@@ -218,19 +231,6 @@ export function FinancialCharts({ payload }: { payload: OverviewChartsPayload })
             <Radar dataKey="conversion_rate" stroke="#7c3aed" fill="#7c3aed" fillOpacity={0.2} name="Rată de conversie" />
             <Radar dataKey="sales_volume" stroke="#0f766e" fill="#0f766e" fillOpacity={0.2} name="Volum vânzări" />
           </RadarChart>
-        </ResponsiveContainer>
-      </ChartCard>
-
-      <ChartCard title="Cost per Client Nou">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={financial.cost_per_new_client || []}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey="label" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Bar dataKey="cost_per_new_client" fill="#7c3aed" name="Cost per Client Nou" />
-          </BarChart>
         </ResponsiveContainer>
       </ChartCard>
     </div>

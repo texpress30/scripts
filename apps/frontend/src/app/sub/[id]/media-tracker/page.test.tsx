@@ -72,7 +72,7 @@ function overviewPayload() {
       spend_vs_revenue_mix: monthWeeks.map((w) => ({ ...w, label: w.label, google_cost: 100, meta_cost: 80, tiktok_cost: 60, revenue_total: 400 })),
       conversion_funnel: monthWeeks.map((w) => ({ ...w, label: w.label, leads: 50, custom_value_1_count: 20, custom_value_2_count: 10, sales: 5 })),
       profitability: monthWeeks.map((w) => ({ ...w, label: w.label, gross_profit: 200, cogs_taxes: 120 })),
-      cost_per_new_client: monthWeeks.map((w) => ({ ...w, label: w.label, cost_per_new_client: 350 })),
+      cost_per_new_client: monthWeeks.map((w) => ({ ...w, label: w.label, cost_per_new_client: 50 })),
       channel_performance: [
         { channel: "google", cpa: 10, conversion_rate: 0.2, sales_volume: 15 },
         { channel: "meta", cpa: 11, conversion_rate: 0.18, sales_volume: 11 },
@@ -150,6 +150,7 @@ describe("SubMediaTrackerPage", () => {
     await screen.findByLabelText("Analiza Pâlniei de Conversie");
     expect(screen.queryByLabelText("Analiza Mixului de Cheltuieli vs. Venituri")).toBeNull();
     expect(screen.getByLabelText("Profitabilitatea")).toBeInTheDocument();
+    expect(screen.getByLabelText("Cost per Client Nou")).toBeInTheDocument();
     expect(screen.getByLabelText("Analiza Performanței pe Canale")).toBeInTheDocument();
     expect(screen.getByLabelText("Cost per Client Nou")).toBeInTheDocument();
   });
