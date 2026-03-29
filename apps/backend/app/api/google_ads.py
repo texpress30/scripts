@@ -311,6 +311,13 @@ def google_ads_diagnostics(user: AuthUser = Depends(get_current_user)) -> dict[s
         "sample_customer_ids": [_mask_customer_id(str(item.get("customer_id") or "")) for item in mapped_accounts[:10]],
     }
     response_cache.set(cache_key, payload, ttl_seconds=90)
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="google_ads.diagnostics",
+        resource="integration:google_ads",
+        details={"warnings": len(diagnostics.get("warnings", [])) if isinstance(diagnostics.get("warnings"), list) else 0},
+    )
     return payload
 
 
@@ -441,23 +448,6 @@ def refresh_google_account_names(user: AuthUser = Depends(get_current_user)) -> 
         "items": refreshed_accounts,
         "last_import_at": client_registry_service.get_last_import_at(platform=PLATFORM_GOOGLE_ADS),
     }
-
-
-@router.get("/diagnostics")
-def google_ads_diagnostics(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
-    enforce_action_scope(user=user, action="integrations:status", scope="agency")
-    details = google_ads_service.run_diagnostics()
-    audit_log_service.log(
-        actor_email=user.email,
-        actor_role=user.role,
-        action="google_ads.diagnostics",
-        resource="integration:google_ads",
-        details={"warnings": len(details.get("warnings", []))},
-    )
-    return details
-
-
-
 
 
 
