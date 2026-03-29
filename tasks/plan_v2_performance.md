@@ -152,9 +152,9 @@
 - [ ] Simplifica join-urile la `norm = norm` fara COALESCE/regexp_replace
 
 ### 4.3 AppShell Boot Parallelization
-- [ ] Identifica request-urile independente din AppShell mount
-- [ ] Grupeaza in `Promise.all` (clients + company settings + access)
-- [ ] Lazy load business-profile dupa ce clientii sunt afisati
+- [x] Identifica request-urile independente din AppShell mount
+- [x] Grupeaza in `Promise.all` (clients + company settings + access)
+- [x] Lazy load business-profile dupa ce clientii sunt afisati
 
 ---
 

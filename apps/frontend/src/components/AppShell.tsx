@@ -497,17 +497,28 @@ export function AppShell({
 
   useEffect(() => {
     let ignore = false;
-    async function loadClients() {
-      try {
-        const result = await apiRequest<{ items: ClientItem[] }>("/clients");
-        if (!ignore) setClients(result.items);
-      } catch {
-        if (!ignore) setClients([]);
-      }
+
+    async function bootShell() {
+      const [clientsResult, companyResult] = await Promise.allSettled([
+        apiRequest<{ items: ClientItem[] }>("/clients"),
+        apiRequest<CompanySettings>("/company/settings", { requireAuth: true }),
+      ]);
+      if (ignore) return;
+      setClients(clientsResult.status === "fulfilled" ? clientsResult.value.items : []);
+      setCompanySettings(companyResult.status === "fulfilled" ? companyResult.value : null);
     }
-    void loadClients();
+
+    function onCompanySettingsUpdated() {
+      void apiRequest<CompanySettings>("/company/settings", { requireAuth: true })
+        .then((result) => { if (!ignore) setCompanySettings(result); })
+        .catch(() => { if (!ignore) setCompanySettings(null); });
+    }
+
+    void bootShell();
+    window.addEventListener("company-settings-updated", onCompanySettingsUpdated);
     return () => {
       ignore = true;
+      window.removeEventListener("company-settings-updated", onCompanySettingsUpdated);
     };
   }, []);
 
@@ -552,32 +563,7 @@ export function AppShell({
       ignore = true;
       window.removeEventListener("subaccount-business-profile-updated", onBusinessProfileUpdated as EventListener);
     };
-  }, [clients, contextClientId]);
-
-  useEffect(() => {
-    let ignore = false;
-    async function loadCompanySettings() {
-      try {
-        const result = await apiRequest<CompanySettings>("/company/settings", { requireAuth: true });
-        if (!ignore) {
-          setCompanySettings(result);
-        }
-      } catch {
-        if (!ignore) {
-          setCompanySettings(null);
-        }
-      }
-    }
-    function onCompanySettingsUpdated() {
-      void loadCompanySettings();
-    }
-    void loadCompanySettings();
-    window.addEventListener("company-settings-updated", onCompanySettingsUpdated);
-    return () => {
-      ignore = true;
-      window.removeEventListener("company-settings-updated", onCompanySettingsUpdated);
-    };
-  }, []);
+  }, [contextClientId]);
 
   useEffect(() => {
     if (!profileOpen && !loginAsOpen) return;
