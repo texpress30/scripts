@@ -9,6 +9,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest, listAccountSyncRuns, repairSyncRun, retryFailedSyncRun, type AccountSyncRun } from "@/lib/api";
 import { getEffectiveAccountStatus, getTikTokErrorPresentation, shouldSuppressStaleTikTokFeatureFlagError, isRunActive, isRunFailure, isRunSupersededByLaterSuccess, normalizeJobType, normalizeStatus } from "../../sync-runs";
+import { PollBackoff } from "@/lib/poll-backoff";
 
 type AccountMeta = {
   id: string;
@@ -494,22 +495,28 @@ export default function AgencyAccountDetailPage() {
     if (!hasActiveRun) return;
     let cancelled = false;
     let timeoutId: number | null = null;
+    const backoff = new PollBackoff(3000, 15000, 15000);
+    let prevRunsJson = "";
 
     async function pollActiveRun() {
       if (cancelled) return;
-      if (typeof document !== "undefined" && document.hidden) {
-        timeoutId = window.setTimeout(() => {
-          void pollActiveRun();
-        }, 12000);
-        return;
-      }
       await Promise.all([loadAccountMeta(), loadRuns()]);
+      if (cancelled) return;
       for (const jobId of expandedRunIds) {
         void loadChunks(jobId);
       }
+
+      const runsJson = JSON.stringify(runs);
+      if (runsJson !== prevRunsJson) {
+        backoff.active();
+        prevRunsJson = runsJson;
+      } else {
+        backoff.idle();
+      }
+
       timeoutId = window.setTimeout(() => {
         void pollActiveRun();
-      }, 4000);
+      }, backoff.nextMs());
     }
 
     void pollActiveRun();
