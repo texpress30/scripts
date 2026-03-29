@@ -868,6 +868,9 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
     return True
 
 
+_MAX_BACKOFF_SECONDS = 60
+
+
 def run_worker() -> None:
     settings = load_settings()
     if settings.app_env == "test":
@@ -879,12 +882,25 @@ def run_worker() -> None:
     once = os.environ.get("SYNC_WORKER_ONCE", "0") == "1"
 
     logger.info("sync_worker.start poll_seconds=%s platform_filter=%s once=%s", poll_seconds, platform_filter, once)
+    consecutive_errors = 0
     while True:
-        processed = process_next_chunk(platform_filter=platform_filter)
-        if once:
+        try:
+            processed = process_next_chunk(platform_filter=platform_filter)
+            consecutive_errors = 0
+            if once:
+                return
+            if not processed:
+                time.sleep(poll_seconds)
+        except KeyboardInterrupt:
+            logger.info("sync_worker.shutdown")
             return
-        if not processed:
-            time.sleep(poll_seconds)
+        except Exception:
+            consecutive_errors += 1
+            backoff = min(poll_seconds * (2 ** consecutive_errors), _MAX_BACKOFF_SECONDS)
+            logger.exception("sync_worker.transient_error consecutive=%d backoff=%.1fs", consecutive_errors, backoff)
+            if once:
+                raise
+            time.sleep(backoff)
 
 
 if __name__ == "__main__":
