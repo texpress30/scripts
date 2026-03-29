@@ -132,11 +132,11 @@
 ### 3.5 Bundle Analyzer + Cleanup
 **Impact: Mic | Efort: 0.5 zile | Risc: Mic**
 
-- [ ] Adauga `@next/bundle-analyzer` in devDependencies
-- [ ] Script: `"analyze": "ANALYZE=true next build"`
-- [ ] Adauga `optimizePackageImports: ['lucide-react']` in `next.config.js`
-- [ ] Sterge `PerformanceCharts.tsx` daca e dead code confirmat
-- [ ] Verifica ca `recharts` e doar in async chunks (nu in main bundle)
+- [x] Adauga `@next/bundle-analyzer` in devDependencies
+- [x] Script: `"analyze": "ANALYZE=true next build"`
+- [x] Adauga `optimizePackageImports: ['lucide-react']` in `next.config.js`
+- [x] Sterge `PerformanceCharts.tsx` daca e dead code confirmat
+- [x] Verifica ca `recharts` e doar in async chunks (nu in main bundle)
 
 ---
 
