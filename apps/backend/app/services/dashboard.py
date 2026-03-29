@@ -2773,13 +2773,28 @@ class UnifiedDashboardService:
 
     def _agency_reports_query(self) -> str:
         return """
-                    WITH perf AS (
+                    WITH ranked_mappings AS (
+                        SELECT DISTINCT ON (m.platform, m.account_id)
+                            m.platform,
+                            m.account_id,
+                            m.account_id_norm,
+                            m.client_id,
+                            m.account_currency
+                        FROM agency_account_client_mappings m
+                        ORDER BY m.platform, m.account_id, m.updated_at DESC, m.created_at DESC
+                    ),
+                    perf AS (
                         SELECT
                             apr.report_date,
-                            COALESCE(apr.client_id, mapped.client_id) AS resolved_client_id,
+                            COALESCE(apr.client_id, rm.client_id) AS resolved_client_id,
                             COALESCE(
-                                    NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') ELSE '' END), ''),
-                                    NULLIF(TRIM(mapped.account_currency), ''),
+                                    NULLIF(TRIM(CASE
+                                        WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '')
+                                        WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'account_currency', '')
+                                        WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'account_currency', '')
+                                        ELSE ''
+                                    END), ''),
+                                    NULLIF(TRIM(rm.account_currency), ''),
                                     NULLIF(TRIM(client.currency), ''),
                                     'RON'
                                 ) AS account_currency,
@@ -2789,23 +2804,28 @@ class UnifiedDashboardService:
                             apr.conversions,
                             apr.conversion_value
                         FROM ad_performance_reports apr
-                        LEFT JOIN LATERAL (
-                            SELECT m.client_id, m.account_currency
-                            FROM agency_account_client_mappings m
-                            WHERE m.platform = apr.platform
-                              AND (
-                                  m.account_id = apr.customer_id
-                                  OR (
-                                      apr.platform = 'google_ads'
-                                      AND COALESCE(m.account_id_norm, regexp_replace(m.account_id, '[^0-9]', '', 'g'))
-                                          = COALESCE(apr.customer_id_norm, regexp_replace(apr.customer_id, '[^0-9]', '', 'g'))
-                                  )
+                        LEFT JOIN ranked_mappings rm
+                          ON rm.platform = apr.platform
+                         AND (
+                              rm.account_id = apr.customer_id
+                              OR (
+                                  apr.platform = 'google_ads'
+                                  AND COALESCE(rm.account_id_norm, regexp_replace(rm.account_id, '[^0-9]', '', 'g'))
+                                      = COALESCE(apr.customer_id_norm, regexp_replace(apr.customer_id, '[^0-9]', '', 'g'))
                               )
-                            ORDER BY m.updated_at DESC, m.created_at DESC
-                            LIMIT 1
-                        ) mapped ON TRUE
-                        LEFT JOIN agency_clients client ON client.id = COALESCE(apr.client_id, mapped.client_id)
+                         )
+                        LEFT JOIN agency_clients client ON client.id = COALESCE(apr.client_id, rm.client_id)
                         WHERE apr.report_date BETWEEN %s AND %s
+                          AND apr.platform IN ('google_ads', 'meta_ads', 'tiktok_ads', 'pinterest_ads', 'snapchat_ads')
+                          AND COALESCE(
+                              NULLIF(TRIM(CASE
+                                  WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'grain', '')
+                                  WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'grain', '')
+                                  WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'grain', '')
+                                  ELSE ''
+                              END), ''),
+                              'account_daily'
+                          ) = 'account_daily'
                     )
                     SELECT
                         report_date,

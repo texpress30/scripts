@@ -26,7 +26,7 @@
 ### 1.2 Rewrite Agency Dashboard Query
 **Impact: CRITIC | Efort: 2 zile | Risc: Mediu**
 
-- [ ] Inlocuieste `LEFT JOIN LATERAL` din `_agency_reports_query()` cu un JOIN simplu pre-aggregat:
+- [x] Inlocuieste `LEFT JOIN LATERAL` din `_agency_reports_query()` cu un JOIN simplu pre-aggregat:
   ```sql
   -- In loc de LATERAL per row, pre-selecteaza mappings unice
   WITH ranked_mappings AS (
@@ -42,8 +42,8 @@
            OR (apr.platform = 'google_ads'
                AND m.account_id_norm = apr.customer_id_norm))
   ```
-- [ ] Adauga filtru `AND apr.platform IN ('google_ads', 'meta_ads', 'tiktok_ads', ...)` (lipseste azi)
-- [ ] Adauga filtru grain `account_daily` daca agency summary nu are nevoie de campaign-level
+- [x] Adauga filtru `AND apr.platform IN ('google_ads', 'meta_ads', 'tiktok_ads', ...)` (lipseste azi)
+- [x] Adauga filtru grain `account_daily` daca agency summary nu are nevoie de campaign-level
 - [ ] Verifica cu `EXPLAIN ANALYZE` pe date reale — compara LATERAL vs JOIN plan
 - [ ] Snapshot test: compara output-ul vechi vs nou pe aceleasi date
 
