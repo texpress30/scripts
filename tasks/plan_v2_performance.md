@@ -85,13 +85,13 @@
 ### 2.3 SWR / React Query pe Frontend
 **Impact: Mare | Efort: 2 zile | Risc: Mic**
 
-- [ ] Adauga `@tanstack/react-query` in `apps/frontend/package.json`
-- [ ] Creaza `QueryClientProvider` in layout/AppShell
-- [ ] Migreaza dashboard data fetching de la `useEffect + useState` la `useQuery`:
+- [x] Adauga `@tanstack/react-query` in `apps/frontend/package.json`
+- [x] Creaza `QueryClientProvider` in layout/AppShell
+- [x] Migreaza dashboard data fetching de la `useEffect + useState` la `useQuery`:
   - Sub dashboard: `useQuery(['client-dashboard', clientId, dateRange])`
   - Agency dashboard: `useQuery(['agency-summary', dateRange])`
-- [ ] Configureaza: `staleTime: 30_000, gcTime: 300_000, refetchOnWindowFocus: true`
-- [ ] Deduplicate: request-uri identice concurente se fac o singura data
+- [x] Configureaza: `staleTime: 30_000, gcTime: 300_000, refetchOnWindowFocus: true`
+- [x] Deduplicate: request-uri identice concurente se fac o singura data
 - [ ] AppShell: paralelizeaza boot requests cu `useQueries`
 
 ---

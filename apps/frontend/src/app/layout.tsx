@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { QueryProvider } from "@/components/QueryProvider";
 import { GlobalAgencyFavicon } from "@/components/GlobalAgencyFavicon";
 import { WebVitalsReporter } from "@/components/WebVitalsReporter";
 
@@ -17,9 +18,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="font-sans antialiased">
         <GlobalAgencyFavicon />
         <WebVitalsReporter />
-        <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
-          {children}
-        </ThemeProvider>
+        <QueryProvider>
+          <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
+            {children}
+          </ThemeProvider>
+        </QueryProvider>
       </body>
     </html>
   );
