@@ -1334,7 +1334,7 @@ class ClientRegistryService:
                     (platform, client_id),
                 )
                 rows = cur.fetchall()
-        return [
+        result = [
             {
                 "id": str(row[0]),
                 "name": str(row[1]),
@@ -1349,6 +1349,18 @@ class ClientRegistryService:
             }
             for row in rows
         ]
+        account_ids = [str(item["id"]) for item in result if str(item.get("id") or "").strip() != ""]
+        if len(account_ids) > 0:
+            from app.services.sync_runs_store import sync_runs_store
+
+            health_map = sync_runs_store.list_sync_health_for_accounts(platform=str(platform), account_ids=account_ids)
+            for item in result:
+                h = health_map.get(str(item.get("id") or ""))
+                if isinstance(h, dict):
+                    item["sync_health_status"] = h.get("status")
+                    item["sync_health_last_sync_at"] = h.get("last_sync_at")
+                    item["sync_health_last_error"] = h.get("last_error")
+        return result
 
     def list_client_accounts(self, *, client_id: int, platform: str | None = None) -> list[dict[str, object]]:
         target_platforms = [str(platform)] if platform else ["google_ads", "meta_ads", "tiktok_ads", "pinterest_ads", "snapchat_ads", "reddit_ads"]

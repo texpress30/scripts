@@ -352,6 +352,157 @@ class UnifiedDashboardService:
                           ) = 'account_daily'
                         """
 
+    def _client_reports_detail_for_rollup_sql(self) -> str:
+        """Same scope as _client_reports_query; aliased metrics for GROUP BY rollup insert."""
+        effective_currency_sql = self._effective_attached_account_currency_sql(
+            mapping_currency_expr="mapped.account_currency",
+            platform_currency_expr="apa.currency_code",
+            client_currency_expr="client.currency",
+            fallback_literal="USD",
+        )
+        return f"""
+                        SELECT
+                            apr.platform AS platform,
+                            apr.report_date AS report_date,
+                            COALESCE(
+                                NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'account_currency', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'account_currency', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'account_currency', '') ELSE '' END), ''),
+                                {effective_currency_sql}
+                            ) AS account_currency,
+                            COALESCE(apr.spend, 0) AS spend,
+                            COALESCE(apr.impressions, 0) AS impressions,
+                            COALESCE(apr.clicks, 0) AS clicks,
+                            COALESCE(apr.conversions, 0) AS conversions,
+                            COALESCE(apr.conversion_value, 0) AS conversion_value
+                        FROM ad_performance_reports apr
+                        JOIN agency_account_client_mappings mapped
+                          ON mapped.platform = apr.platform
+                         AND mapped.client_id = %s
+                         AND (
+                              mapped.account_id = apr.customer_id
+                              OR (
+                                  apr.platform = 'google_ads'
+                                  AND COALESCE(mapped.account_id_norm, regexp_replace(mapped.account_id, '[^0-9]', '', 'g'))
+                                      = COALESCE(apr.customer_id_norm, regexp_replace(apr.customer_id, '[^0-9]', '', 'g'))
+                              )
+                         )
+                        LEFT JOIN agency_platform_accounts apa
+                          ON apa.platform = apr.platform
+                         AND (
+                              apa.account_id = apr.customer_id
+                              OR (
+                                  apr.platform = 'google_ads'
+                                  AND COALESCE(apa.account_id_norm, regexp_replace(apa.account_id, '[^0-9]', '', 'g'))
+                                      = COALESCE(apr.customer_id_norm, regexp_replace(apr.customer_id, '[^0-9]', '', 'g'))
+                              )
+                         )
+                        JOIN agency_clients client
+                          ON client.id = mapped.client_id
+                        WHERE apr.report_date BETWEEN %s AND %s
+                          AND apr.platform IN ('google_ads', 'meta_ads', 'tiktok_ads', 'pinterest_ads', 'snapchat_ads')
+                          AND COALESCE(
+                              NULLIF(TRIM(CASE WHEN apr.platform = 'meta_ads' THEN COALESCE(apr.extra_metrics -> 'meta_ads' ->> 'grain', '') WHEN apr.platform = 'tiktok_ads' THEN COALESCE(apr.extra_metrics -> 'tiktok_ads' ->> 'grain', '') WHEN apr.platform = 'google_ads' THEN COALESCE(apr.extra_metrics -> 'google_ads' ->> 'grain', '') ELSE '' END), ''),
+                              'account_daily'
+                          ) = 'account_daily'
+                        """
+
+    def _try_fetch_dashboard_rows_from_rollup(
+        self, *, conn, client_id: int, start: date, end: date
+    ) -> list[tuple[object, ...]] | None:
+        """Return pre-aggregated rows if rollup meta covers [start, end]; else None (use live query)."""
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT range_start, range_end
+                    FROM client_platform_daily_rollup_meta
+                    WHERE client_id = %s
+                    """,
+                    (int(client_id),),
+                )
+                meta = cur.fetchone()
+                if meta is None:
+                    return None
+                rs, re_end = meta[0], meta[1]
+                if not isinstance(rs, date) or not isinstance(re_end, date):
+                    return None
+                if rs > start or re_end < end:
+                    return None
+                cur.execute(
+                    """
+                    SELECT platform, report_date, account_currency, spend, impressions, clicks, conversions, conversion_value
+                    FROM client_platform_daily_rollup
+                    WHERE client_id = %s AND report_date BETWEEN %s AND %s
+                    """,
+                    (int(client_id), start, end),
+                )
+                rollup_rows = cur.fetchall() or []
+        except Exception as exc:
+            logger.warning("dashboard_rollup_read_skipped", extra={"client_id": client_id, "error": str(exc)})
+            return None
+
+        empty_metrics: dict[str, object] = {}
+        out: list[tuple[object, ...]] = []
+        for r in rollup_rows:
+            out.append(
+                (
+                    r[0],
+                    r[1],
+                    r[2],
+                    float(r[3] or 0),
+                    int(r[4] or 0),
+                    int(r[5] or 0),
+                    float(r[6] or 0),
+                    float(r[7] or 0),
+                    empty_metrics,
+                )
+            )
+        return out
+
+    def refresh_client_daily_rollup(self, *, client_id: int, start_date: date, end_date: date) -> dict[str, object]:
+        """Rebuild rollup for one client and [start_date, end_date]; replaces prior rollup rows for that client."""
+        if start_date > end_date:
+            raise ValueError("start_date must be <= end_date")
+        performance_reports_store.initialize_schema()
+        detail_sql = self._client_reports_detail_for_rollup_sql()
+        insert_sql = f"""
+            WITH detail AS (
+            {detail_sql}
+            )
+            INSERT INTO client_platform_daily_rollup (
+                client_id, platform, report_date, account_currency,
+                spend, impressions, clicks, conversions, conversion_value, updated_at
+            )
+            SELECT %s, platform, report_date, account_currency,
+                SUM(spend), SUM(impressions), SUM(clicks), SUM(conversions), SUM(conversion_value), NOW()
+            FROM detail
+            GROUP BY platform, report_date, account_currency
+            """
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM client_platform_daily_rollup WHERE client_id = %s", (int(client_id),))
+                cur.execute(
+                    insert_sql,
+                    (int(client_id), start_date, end_date, int(client_id)),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO client_platform_daily_rollup_meta (client_id, range_start, range_end, refreshed_at)
+                    VALUES (%s, %s, %s, NOW())
+                    ON CONFLICT (client_id) DO UPDATE SET
+                        range_start = EXCLUDED.range_start,
+                        range_end = EXCLUDED.range_end,
+                        refreshed_at = EXCLUDED.refreshed_at
+                    """,
+                    (int(client_id), start_date, end_date),
+                )
+            conn.commit()
+        return {
+            "status": "ok",
+            "client_id": int(client_id),
+            "range": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
+            "source": "rollup_refresh",
+        }
+
     def _client_platform_account_rows_query(self, *, platform: str) -> str:
         if platform not in {"google_ads", "meta_ads", "tiktok_ads"}:
             raise ValueError("unsupported platform")
@@ -2124,12 +2275,22 @@ class UnifiedDashboardService:
         if not self._is_test_mode():
             performance_reports_store.initialize_schema()
             with self._connect() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        self._client_reports_query(),
-                        (client_id, resolved_start, resolved_end),
+                rollup_rows = self._try_fetch_dashboard_rows_from_rollup(
+                    conn=conn, client_id=client_id, start=resolved_start, end=resolved_end
+                )
+                if rollup_rows is not None:
+                    rows = rollup_rows
+                    logger.info(
+                        "client_dashboard_rollup_hit",
+                        extra={"client_id": int(client_id), "row_count": len(rollup_rows)},
                     )
-                    rows = cur.fetchall()
+                else:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            self._client_reports_query(),
+                            (client_id, resolved_start, resolved_end),
+                        )
+                        rows = cur.fetchall()
 
             currency_decision = self._client_reporting_currency_decision(client_id=client_id)
             reporting_currency = str(currency_decision.get("reporting_currency") or "USD")
