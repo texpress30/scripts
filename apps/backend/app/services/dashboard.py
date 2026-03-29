@@ -328,7 +328,8 @@ class UnifiedDashboardService:
                               mapped.account_id = apr.customer_id
                               OR (
                                   apr.platform = 'google_ads'
-                                  AND regexp_replace(mapped.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                                  AND COALESCE(mapped.account_id_norm, regexp_replace(mapped.account_id, '[^0-9]', '', 'g'))
+                                      = COALESCE(apr.customer_id_norm, regexp_replace(apr.customer_id, '[^0-9]', '', 'g'))
                               )
                          )
                         LEFT JOIN agency_platform_accounts apa
@@ -337,7 +338,8 @@ class UnifiedDashboardService:
                               apa.account_id = apr.customer_id
                               OR (
                                   apr.platform = 'google_ads'
-                                  AND regexp_replace(apa.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                                  AND COALESCE(apa.account_id_norm, regexp_replace(apa.account_id, '[^0-9]', '', 'g'))
+                                      = COALESCE(apr.customer_id_norm, regexp_replace(apr.customer_id, '[^0-9]', '', 'g'))
                               )
                          )
                         JOIN agency_clients client
@@ -696,7 +698,8 @@ class UnifiedDashboardService:
                               mapped.account_id = apr.customer_id
                               OR (
                                   apr.platform = 'google_ads'
-                                  AND regexp_replace(mapped.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                                  AND COALESCE(mapped.account_id_norm, regexp_replace(mapped.account_id, '[^0-9]', '', 'g'))
+                                      = COALESCE(apr.customer_id_norm, regexp_replace(apr.customer_id, '[^0-9]', '', 'g'))
                               )
                          )
                         LEFT JOIN agency_platform_accounts apa
@@ -705,7 +708,8 @@ class UnifiedDashboardService:
                               apa.account_id = apr.customer_id
                               OR (
                                   apr.platform = 'google_ads'
-                                  AND regexp_replace(apa.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                                  AND COALESCE(apa.account_id_norm, regexp_replace(apa.account_id, '[^0-9]', '', 'g'))
+                                      = COALESCE(apr.customer_id_norm, regexp_replace(apr.customer_id, '[^0-9]', '', 'g'))
                               )
                          )
                         LEFT JOIN agency_clients client
@@ -895,50 +899,58 @@ class UnifiedDashboardService:
 
     def _build_platform_sync_runs_summary(self, *, client_id: int, platform: str, attached_account_ids: list[str]) -> list[dict[str, object]]:
         runs: list[dict[str, object]] = []
-        for account_id in attached_account_ids:
-            for run in sync_runs_store.list_sync_runs_for_account(platform=platform, account_id=account_id, limit=20):
-                run_client_id = run.get("client_id")
-                if run_client_id is not None and int(run_client_id) != int(client_id):
-                    continue
-                chunk_counts = sync_run_chunks_store.get_sync_run_chunk_status_counts(str(run.get("job_id") or "")) if run.get("job_id") else {}
-                metadata = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
-                runs.append(
-                    {
-                        "job_id": run.get("job_id"),
-                        "platform": run.get("platform"),
-                        "account_id": run.get("account_id"),
-                        "client_id": run.get("client_id"),
-                        "job_type": run.get("job_type"),
-                        "trigger_source": metadata.get("trigger_source"),
-                        "status": run.get("status"),
-                        "grain": run.get("grain"),
-                        "date_start": run.get("date_start"),
-                        "date_end": run.get("date_end"),
-                        "chunks_total": run.get("chunks_total"),
-                        "chunks_done": run.get("chunks_done"),
-                        "chunk_status_counts": chunk_counts,
-                        "rows_written": run.get("rows_written"),
-                        "sync_health_status": metadata.get("sync_health_status") or metadata.get("coverage_status"),
-                        "coverage_status": metadata.get("coverage_status") or metadata.get("sync_health_status"),
-                        "requested_start_date": metadata.get("requested_start_date") or run.get("date_start"),
-                        "requested_end_date": metadata.get("requested_end_date") or run.get("date_end"),
-                        "total_chunk_count": metadata.get("total_chunk_count") or run.get("chunks_total"),
-                        "successful_chunk_count": metadata.get("successful_chunk_count") or run.get("chunks_done"),
-                        "failed_chunk_count": metadata.get("failed_chunk_count") or run.get("chunks_error"),
-                        "retry_attempted": metadata.get("retry_attempted"),
-                        "retry_recovered_chunk_count": metadata.get("retry_recovered_chunk_count"),
-                        "rows_written_count": metadata.get("rows_written_count") or run.get("rows_written"),
-                        "first_persisted_date": metadata.get("first_persisted_date"),
-                        "last_persisted_date": metadata.get("last_persisted_date"),
-                        "last_error": metadata.get("last_error") or run.get("error"),
-                        "last_error_summary": metadata.get("last_error_summary") or run.get("error"),
-                        "last_error_details": self._sanitize_error_details(metadata.get("last_error_details") or metadata.get("error_details")),
-                        "created_at": run.get("created_at"),
-                        "updated_at": run.get("updated_at"),
-                        "started_at": run.get("started_at"),
-                        "finished_at": run.get("finished_at"),
-                    }
-                )
+        raw_runs = sync_runs_store.list_sync_runs_for_accounts(platform=platform, account_ids=attached_account_ids, limit_per_account=20)
+        filtered_runs: list[dict[str, object]] = []
+        for run in raw_runs:
+            run_client_id = run.get("client_id")
+            if run_client_id is not None and int(run_client_id) != int(client_id):
+                continue
+            filtered_runs.append(run)
+
+        chunk_counts_by_job = sync_run_chunks_store.get_sync_run_chunk_status_counts_batch(
+            [str(item.get("job_id") or "") for item in filtered_runs if item.get("job_id")]
+        )
+        for run in filtered_runs:
+            job_id = str(run.get("job_id") or "")
+            chunk_counts = chunk_counts_by_job.get(job_id, {}) if job_id else {}
+            metadata = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
+            runs.append(
+                {
+                    "job_id": run.get("job_id"),
+                    "platform": run.get("platform"),
+                    "account_id": run.get("account_id"),
+                    "client_id": run.get("client_id"),
+                    "job_type": run.get("job_type"),
+                    "trigger_source": metadata.get("trigger_source"),
+                    "status": run.get("status"),
+                    "grain": run.get("grain"),
+                    "date_start": run.get("date_start"),
+                    "date_end": run.get("date_end"),
+                    "chunks_total": run.get("chunks_total"),
+                    "chunks_done": run.get("chunks_done"),
+                    "chunk_status_counts": chunk_counts,
+                    "rows_written": run.get("rows_written"),
+                    "sync_health_status": metadata.get("sync_health_status") or metadata.get("coverage_status"),
+                    "coverage_status": metadata.get("coverage_status") or metadata.get("sync_health_status"),
+                    "requested_start_date": metadata.get("requested_start_date") or run.get("date_start"),
+                    "requested_end_date": metadata.get("requested_end_date") or run.get("date_end"),
+                    "total_chunk_count": metadata.get("total_chunk_count") or run.get("chunks_total"),
+                    "successful_chunk_count": metadata.get("successful_chunk_count") or run.get("chunks_done"),
+                    "failed_chunk_count": metadata.get("failed_chunk_count") or run.get("chunks_error"),
+                    "retry_attempted": metadata.get("retry_attempted"),
+                    "retry_recovered_chunk_count": metadata.get("retry_recovered_chunk_count"),
+                    "rows_written_count": metadata.get("rows_written_count") or run.get("rows_written"),
+                    "first_persisted_date": metadata.get("first_persisted_date"),
+                    "last_persisted_date": metadata.get("last_persisted_date"),
+                    "last_error": metadata.get("last_error") or run.get("error"),
+                    "last_error_summary": metadata.get("last_error_summary") or run.get("error"),
+                    "last_error_details": self._sanitize_error_details(metadata.get("last_error_details") or metadata.get("error_details")),
+                    "created_at": run.get("created_at"),
+                    "updated_at": run.get("updated_at"),
+                    "started_at": run.get("started_at"),
+                    "finished_at": run.get("finished_at"),
+                }
+            )
         runs.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
         return runs[:100]
 
@@ -2236,6 +2248,8 @@ class UnifiedDashboardService:
         start_date: date,
         end_date: date,
         platform: str,
+        limit: int = 200,
+        offset: int = 0,
     ) -> dict[str, object]:
         if start_date > end_date:
             raise ValueError("start_date must be <= end_date")
@@ -2309,19 +2323,36 @@ class UnifiedDashboardService:
             items.append(account)
 
         items.sort(key=lambda item: _to_float(item.get("cost")), reverse=True)
+        total_count = len(items)
+        start_idx = max(0, int(offset))
+        end_idx = start_idx + max(1, int(limit))
+        items = items[start_idx:end_idx]
         return {
             "client_id": client_id,
             "currency": reporting_currency,
             "date_range": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
             "items": items,
+            "total_count": total_count,
+            "limit": max(1, int(limit)),
+            "offset": max(0, int(offset)),
         }
 
-    def get_client_google_ads_account_performance(self, *, client_id: int, start_date: date, end_date: date) -> dict[str, object]:
+    def get_client_google_ads_account_performance(
+        self,
+        *,
+        client_id: int,
+        start_date: date,
+        end_date: date,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> dict[str, object]:
         return self.get_client_platform_account_performance(
             client_id=client_id,
             start_date=start_date,
             end_date=end_date,
             platform="google_ads",
+            limit=limit,
+            offset=offset,
         )
 
     def get_client_platform_account_campaign_performance(
@@ -2332,6 +2363,8 @@ class UnifiedDashboardService:
         account_id: str,
         start_date: date,
         end_date: date,
+        limit: int = 200,
+        offset: int = 0,
     ) -> dict[str, object]:
         if start_date > end_date:
             raise ValueError("start_date must be <= end_date")
@@ -2430,6 +2463,10 @@ class UnifiedDashboardService:
             campaign["mer_inf"] = round(cost / revenue, 4) if revenue > 0 else None
             items.append(campaign)
         items.sort(key=lambda item: _to_float(item.get("cost")), reverse=True)
+        total_count = len(items)
+        start_idx = max(0, int(offset))
+        end_idx = start_idx + max(1, int(limit))
+        items = items[start_idx:end_idx]
         return {
             "client_id": client_id,
             "platform": platform,
@@ -2439,6 +2476,9 @@ class UnifiedDashboardService:
             "currency": reporting_currency,
             "date_range": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
             "items": items,
+            "total_count": total_count,
+            "limit": max(1, int(limit)),
+            "offset": max(0, int(offset)),
         }
 
     def get_client_platform_campaign_adgroup_performance(
@@ -2450,6 +2490,8 @@ class UnifiedDashboardService:
         campaign_id: str,
         start_date: date,
         end_date: date,
+        limit: int = 200,
+        offset: int = 0,
     ) -> dict[str, object]:
         if start_date > end_date:
             raise ValueError("start_date must be <= end_date")
@@ -2549,6 +2591,10 @@ class UnifiedDashboardService:
             ad_group["mer_inf"] = round(cost / revenue, 4) if revenue > 0 else None
             items.append(ad_group)
         items.sort(key=lambda item: _to_float(item.get("cost")), reverse=True)
+        total_count = len(items)
+        start_idx = max(0, int(offset))
+        end_idx = start_idx + max(1, int(limit))
+        items = items[start_idx:end_idx]
 
         return {
             "client_id": client_id,
@@ -2561,6 +2607,9 @@ class UnifiedDashboardService:
             "currency": reporting_currency,
             "date_range": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
             "items": items,
+            "total_count": total_count,
+            "limit": max(1, int(limit)),
+            "offset": max(0, int(offset)),
         }
 
     def _agency_reports_query(self) -> str:
@@ -2589,7 +2638,8 @@ class UnifiedDashboardService:
                                   m.account_id = apr.customer_id
                                   OR (
                                       apr.platform = 'google_ads'
-                                      AND regexp_replace(m.account_id, '[^0-9]', '', 'g') = regexp_replace(apr.customer_id, '[^0-9]', '', 'g')
+                                      AND COALESCE(m.account_id_norm, regexp_replace(m.account_id, '[^0-9]', '', 'g'))
+                                          = COALESCE(apr.customer_id_norm, regexp_replace(apr.customer_id, '[^0-9]', '', 'g'))
                                   )
                               )
                             ORDER BY m.updated_at DESC, m.created_at DESC

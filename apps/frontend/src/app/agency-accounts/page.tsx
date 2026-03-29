@@ -180,6 +180,11 @@ const META_TIKTOK_HISTORICAL_GRAINS = ["account_daily", "campaign_daily", "ad_gr
 const _PROGRESS_BATCH_ACCOUNT_IDS_MAX = 200;
 const BATCH_STORAGE_PREFIX = "agency-accounts-batch";
 
+function computeAdaptivePollMs(activeCount: number): number {
+  if (activeCount > 0) return 2500;
+  return 10000;
+}
+
 function prettyPlatform(platform: string): string {
   const map: Record<string, string> = {
     google_ads: "Google Ads",
@@ -1004,6 +1009,7 @@ export default function AgencyAccountsPage() {
   useEffect(() => {
     if (!currentBatchId) return;
     let cancelled = false;
+    let timeoutId: number | null = null;
 
     async function pollBatch() {
       try {
@@ -1045,16 +1051,28 @@ export default function AgencyAccountsPage() {
       }
     }
 
-    void pollBatch();
-    const intervalId = window.setInterval(() => {
-      void pollBatch();
-    }, 2000);
+    async function schedulePoll() {
+      if (cancelled) return;
+      if (typeof document !== "undefined" && document.hidden) {
+        timeoutId = window.setTimeout(() => {
+          void schedulePoll();
+        }, 10000);
+        return;
+      }
+      await pollBatch();
+      const activeCount = Number(batchProgress?.queued || 0) + Number(batchProgress?.running || 0);
+      timeoutId = window.setTimeout(() => {
+        void schedulePoll();
+      }, computeAdaptivePollMs(activeCount));
+    }
+
+    void schedulePoll();
 
     return () => {
       cancelled = true;
-      window.clearInterval(intervalId);
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
     };
-  }, [currentBatchId, currentHistoricalStartDate, currentJobType, currentBatchPlatform]);
+  }, [currentBatchId, currentHistoricalStartDate, currentJobType, currentBatchPlatform, batchProgress]);
 
 
   useEffect(() => {
@@ -1120,14 +1138,26 @@ export default function AgencyAccountsPage() {
       }
     }
 
-    void refreshActiveRunsProgress();
-    const intervalId = window.setInterval(() => {
-      void refreshActiveRunsProgress();
-    }, 5000);
+    let timeoutId: number | null = null;
+    async function scheduleProgressPoll() {
+      if (cancelled) return;
+      if (typeof document !== "undefined" && document.hidden) {
+        timeoutId = window.setTimeout(() => {
+          void scheduleProgressPoll();
+        }, 15000);
+        return;
+      }
+      await refreshActiveRunsProgress();
+      timeoutId = window.setTimeout(() => {
+        void scheduleProgressPoll();
+      }, 6000);
+    }
+
+    void scheduleProgressPoll();
 
     return () => {
       cancelled = true;
-      window.clearInterval(intervalId);
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
     };
   }, [activeSyncAccountIds, selectableFilteredAccountIds, selectedPlatform]);
 

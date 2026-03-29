@@ -16,13 +16,15 @@ async function proxy(req: NextRequest, path: string[]) {
 
   const method = req.method.toUpperCase();
   const body = method === "GET" || method === "HEAD" ? undefined : await req.arrayBuffer();
+  const isRead = method === "GET" || method === "HEAD";
 
   const upstream = await fetch(targetUrl.toString(), {
     method,
     headers,
     body,
     redirect: "manual",
-    cache: "no-store"
+    cache: isRead ? "force-cache" : "no-store",
+    ...(isRead ? { next: { revalidate: 30 } } : {}),
   });
 
   const responseHeaders = new Headers(upstream.headers);

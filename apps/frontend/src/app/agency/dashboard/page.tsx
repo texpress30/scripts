@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 
 import { format, startOfMonth, subDays } from "date-fns";
-import { DayPicker, type DateRange } from "react-day-picker";
-import "react-day-picker/dist/style.css";
+import type { DateRange } from "react-day-picker";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
@@ -57,6 +57,10 @@ const PRESET_ITEMS: Array<{ key: DatePresetKey; label: string }> = [
   { key: "month", label: "This month" },
   { key: "custom", label: "Custom" },
 ];
+
+const DayRangePicker = dynamic(() => import("@/components/DayRangePicker").then((m) => m.DayRangePicker), {
+  ssr: false,
+});
 
 function toIso(value: Date): string {
   return format(value, "yyyy-MM-dd");
@@ -213,9 +217,7 @@ export default function AgencyDashboardPage() {
               </div>
 
               <div className="flex-1">
-                <DayPicker
-                  mode="range"
-                  numberOfMonths={2}
+                <DayRangePicker
                   selected={draftRange}
                   onSelect={(range) => {
                     setDraftPreset("custom");

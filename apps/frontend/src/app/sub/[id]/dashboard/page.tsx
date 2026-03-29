@@ -3,11 +3,10 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import React, { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 
 import { format, startOfMonth, subDays } from "date-fns";
-import { DayPicker, type DateRange } from "react-day-picker";
-import "react-day-picker/dist/style.css";
-import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import type { DateRange } from "react-day-picker";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
@@ -93,6 +92,12 @@ const PRESET_ITEMS: Array<{ key: DatePresetKey; label: string }> = [
 ];
 const SUBACCOUNT_MODULE_ORDER = ["dashboard", "campaigns", "rules", "creative", "recommendations"] as const;
 
+const DayRangePicker = dynamic(() => import("@/components/DayRangePicker").then((m) => m.DayRangePicker), { ssr: false });
+const SubDashboardCharts = dynamic(
+  () => import("@/app/sub/[id]/_components/SubDashboardCharts").then((m) => m.SubDashboardCharts),
+  { ssr: false },
+);
+
 function toIso(value: Date): string {
   return format(value, "yyyy-MM-dd");
 }
@@ -117,10 +122,6 @@ function formatRangeLabel(preset: DatePresetKey, range: DateRange): string {
   const to = range.to ?? range.from ?? new Date();
   const presetLabel = PRESET_ITEMS.find((item) => item.key === preset)?.label ?? "Custom";
   return `${presetLabel}: ${format(from, "MMM d, yyyy")} - ${format(to, "MMM d, yyyy")}`;
-}
-
-function safeNumber(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function normalizeCurrencyCode(value: string | undefined): string {
@@ -326,9 +327,7 @@ export default function SubDashboardPage() {
               </div>
 
               <div className="flex-1">
-                <DayPicker
-                  mode="range"
-                  numberOfMonths={2}
+                <DayRangePicker
                   selected={draftRange}
                   onSelect={(range) => {
                     setDraftPreset("custom");
@@ -376,20 +375,7 @@ export default function SubDashboardPage() {
               ) : !hasSpendByDay ? (
                 <p className="text-sm text-slate-500">Nu există spend în perioada selectată.</p>
               ) : (
-                <div className="h-96 min-h-[24rem] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={spendByDay}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="date" tickFormatter={(value: string) => format(new Date(value), "dd MMM")} />
-                      <YAxis tickFormatter={(value: number) => formatCurrency(value, currencyCode)} width={100} />
-                      <Tooltip
-                        formatter={(value: number) => formatCurrency(safeNumber(value), currencyCode)}
-                        labelFormatter={(value: string) => format(new Date(value), "dd MMM yyyy")}
-                      />
-                      <Area type="monotone" dataKey="spend" stroke="#4f46e5" fill="#c7d2fe" strokeWidth={2} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
+                <SubDashboardCharts mode="total" spendByDay={spendByDay} spendByPlatformTimeline={[]} currencyCode={currencyCode} />
               )}
             </CardContent>
           </Card>
@@ -404,22 +390,7 @@ export default function SubDashboardPage() {
               ) : !hasPlatformTimeline ? (
                 <p className="text-sm text-slate-500">Nu există spend pe platforme în perioada selectată.</p>
               ) : (
-                <div className="h-96 min-h-[24rem] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={spendByPlatformTimeline}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="date" tickFormatter={(value: string) => format(new Date(value), "dd MMM")} />
-                      <YAxis tickFormatter={(value: number) => formatCurrency(value, currencyCode)} width={100} />
-                      <Tooltip
-                        formatter={(value: number) => formatCurrency(safeNumber(value), currencyCode)}
-                        labelFormatter={(value: string) => format(new Date(value), "dd MMM yyyy")}
-                      />
-                      <Line type="monotone" dataKey="google_ads" name="Google Ads" stroke="#22c55e" strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
-                      <Line type="monotone" dataKey="meta_ads" name="Meta Ads" stroke="#2563eb" strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
-                      <Line type="monotone" dataKey="tiktok_ads" name="TikTok Ads" stroke="#111827" strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
+                <SubDashboardCharts mode="platform" spendByDay={[]} spendByPlatformTimeline={spendByPlatformTimeline} currencyCode={currencyCode} />
               )}
             </CardContent>
           </Card>

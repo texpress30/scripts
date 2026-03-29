@@ -252,6 +252,44 @@ class SyncRunsStore:
                         int(rows_written),
                     ),
                 )
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS sync_health_summary (
+                        platform TEXT NOT NULL,
+                        account_id TEXT NOT NULL,
+                        client_id INTEGER,
+                        status TEXT NOT NULL,
+                        last_sync_at TIMESTAMPTZ,
+                        last_error TEXT,
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        PRIMARY KEY (platform, account_id)
+                    )
+                    """
+                )
+                cur.execute(
+                    """
+                    INSERT INTO sync_health_summary (platform, account_id, client_id, status, last_sync_at, last_error, updated_at)
+                    SELECT
+                        platform,
+                        account_id,
+                        client_id,
+                        status,
+                        CASE WHEN status IN ('done', 'success', 'completed') THEN COALESCE(finished_at, updated_at) ELSE last_sync_at END,
+                        COALESCE(error, %s),
+                        NOW()
+                    FROM sync_runs
+                    WHERE job_id = %s
+                    ON CONFLICT (platform, account_id)
+                    DO UPDATE
+                    SET
+                        client_id = EXCLUDED.client_id,
+                        status = EXCLUDED.status,
+                        last_sync_at = COALESCE(EXCLUDED.last_sync_at, sync_health_summary.last_sync_at),
+                        last_error = EXCLUDED.last_error,
+                        updated_at = NOW()
+                    """,
+                    (error, str(job_id)),
+                )
             conn.commit()
 
         return self.get_sync_run(str(job_id))
@@ -1278,6 +1316,53 @@ class SyncRunsStore:
                     LIMIT %s
                     """,
                     (str(platform), str(account_id), max(1, int(limit))),
+                )
+                rows = cur.fetchall() or []
+        return [self._row_to_payload(row) for row in rows if row is not None]
+
+    def list_sync_runs_for_accounts(self, *, platform: str, account_ids: list[str], limit_per_account: int = 20) -> list[dict[str, object]]:
+        self._ensure_schema()
+        normalized_account_ids = [str(item).strip() for item in account_ids if str(item).strip() != ""]
+        if len(normalized_account_ids) <= 0:
+            return []
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    WITH ranked AS (
+                        SELECT
+                            {_SYNC_RUNS_SELECT_COLUMNS},
+                            ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY created_at DESC) AS rn
+                        FROM sync_runs
+                        WHERE platform = %s
+                          AND account_id = ANY(%s::text[])
+                    )
+                    SELECT
+                        job_id,
+                        platform,
+                        status,
+                        client_id,
+                        account_id,
+                        date_start,
+                        date_end,
+                        chunk_days,
+                        created_at,
+                        updated_at,
+                        started_at,
+                        finished_at,
+                        error,
+                        metadata,
+                        batch_id,
+                        job_type,
+                        grain,
+                        chunks_total,
+                        chunks_done,
+                        rows_written
+                    FROM ranked
+                    WHERE rn <= %s
+                    ORDER BY created_at DESC
+                    """,
+                    (str(platform), normalized_account_ids, max(1, int(limit_per_account))),
                 )
                 rows = cur.fetchall() or []
         return [self._row_to_payload(row) for row in rows if row is not None]

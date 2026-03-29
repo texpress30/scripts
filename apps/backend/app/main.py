@@ -1,5 +1,6 @@
 import logging
 import time
+from time import perf_counter
 
 try:
     import psycopg
@@ -9,6 +10,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI
+from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.audit import router as audit_router
@@ -63,6 +65,25 @@ app.add_middleware(
     allow_headers=["*"],
     allow_origin_regex=settings.cors_origin_regex,
 )
+
+
+@app.middleware("http")
+async def request_timing_middleware(request: Request, call_next):
+    start = perf_counter()
+    response = await call_next(request)
+    duration_ms = (perf_counter() - start) * 1000.0
+    response.headers["X-Process-Time-Ms"] = f"{duration_ms:.2f}"
+
+    # Lightweight observability for p95/p99 by route/method/status.
+    route_label = request.url.path
+    logger.info(
+        "http_request method=%s path=%s status=%s duration_ms=%.2f",
+        request.method,
+        route_label,
+        response.status_code,
+        duration_ms,
+    )
+    return response
 
 # Core
 app.include_router(health_router)
