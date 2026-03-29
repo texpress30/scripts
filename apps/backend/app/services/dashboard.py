@@ -56,10 +56,8 @@ class UnifiedDashboardService:
         return load_settings().app_env == "test"
 
     def _connect(self):
-        settings = load_settings()
-        if psycopg is None:
-            raise RuntimeError("psycopg is required for dashboard Postgres queries")
-        return psycopg.connect(settings.database_url)
+        from app.db.pool import get_connection
+        return get_connection()
 
     def _normalize_currency_code(self, value: object, *, fallback: str = "USD") -> str:
         code = str(value or "").strip().upper()
