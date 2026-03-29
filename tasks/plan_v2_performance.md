@@ -61,17 +61,17 @@
 ### 2.1 SQL Pagination pe Account/Campaign/AdGroup Tables
 **Impact: Mare | Efort: 1 zi | Risc: Mic**
 
-- [ ] Modifica `_client_platform_account_rows_query` sa accepte `LIMIT/OFFSET` in SQL
-- [ ] Modifica `_client_platform_campaign_rows_query` la fel
-- [ ] Elimina pattern-ul `fetchall() → sort in Python → items[start:end]`
-- [ ] Adauga `ORDER BY cost DESC LIMIT %s OFFSET %s` direct in query
-- [ ] Asigura ca sortarea din SQL matcheaza sortarea din Python existenta
-- [ ] Adauga count query separat pentru total_count (sau `COUNT(*) OVER()`)
+- [x] Modifica `_client_platform_account_rows_query` sa accepte `LIMIT/OFFSET` in SQL
+- [x] Modifica `_client_platform_campaign_rows_query` la fel
+- [x] Elimina pattern-ul `fetchall() → sort in Python → items[start:end]`
+- [x] Adauga `ORDER BY cost DESC LIMIT %s OFFSET %s` direct in query
+- [x] Asigura ca sortarea din SQL matcheaza sortarea din Python existenta
+- [x] Adauga count query separat pentru total_count (sau `COUNT(*) OVER()`)
 
 ### 2.2 Batch Sync Writes
 **Impact: Mare | Efort: 1 zi | Risc: Mic**
 
-- [ ] Modifica `performance_reports.py` sa faca upsert in batch:
+- [x] Modifica `performance_reports.py` sa faca upsert in batch:
   ```python
   # In loc de per-row connect + insert + commit:
   with pool.getconn() as conn:
@@ -79,8 +79,8 @@
           execute_values(cur, upsert_sql, batch_of_rows)
       conn.commit()
   ```
-- [ ] Batch size: 500-1000 rows per commit
-- [ ] Asigura ca error handling pastreaza semantica (retry per batch, nu per row)
+- [x] Batch size: 500-1000 rows per commit
+- [x] Asigura ca error handling pastreaza semantica (retry per batch, nu per row)
 
 ### 2.3 SWR / React Query pe Frontend
 **Impact: Mare | Efort: 2 zile | Risc: Mic**

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 import json
+import logging
 from threading import Lock
 import os
 
@@ -12,6 +13,10 @@ try:
     import psycopg
 except Exception:  # noqa: BLE001
     psycopg = None
+
+logger = logging.getLogger(__name__)
+
+_BATCH_SIZE = 500
 
 
 class PerformanceReportsStore:
@@ -69,20 +74,89 @@ class PerformanceReportsStore:
     def upsert_rows(self, rows: list[DailyMetricRow]) -> int:
         if len(rows) == 0:
             return 0
-        for row in rows:
-            self.write_daily_report(
-                report_date=row.report_date,
-                platform=row.platform,
-                customer_id=row.account_id,
-                client_id=row.client_id,
-                spend=float(row.spend),
-                impressions=int(row.impressions),
-                clicks=int(row.clicks),
-                conversions=float(row.conversions),
-                conversion_value=float(row.revenue),
-                extra_metrics=dict(row.extra_metrics),
-            )
-        return len(rows)
+        payloads = [
+            {
+                "report_date": row.report_date,
+                "platform": row.platform,
+                "customer_id": row.account_id,
+                "client_id": row.client_id,
+                "spend": float(row.spend),
+                "impressions": int(row.impressions),
+                "clicks": int(row.clicks),
+                "conversions": float(row.conversions),
+                "conversion_value": float(row.revenue),
+                "extra_metrics": dict(row.extra_metrics),
+            }
+            for row in rows
+        ]
+        return self.write_daily_reports_batch(payloads)
+
+    def write_daily_reports_batch(self, rows: list[dict[str, object]]) -> int:
+        """Upsert multiple rows in batched commits (_BATCH_SIZE per transaction)."""
+        if not rows:
+            return 0
+
+        self._ensure_schema()
+
+        if self._is_test_mode():
+            for row in rows:
+                self.write_daily_report(
+                    report_date=row["report_date"],
+                    platform=str(row["platform"]),
+                    customer_id=str(row["customer_id"]),
+                    client_id=row.get("client_id"),
+                    spend=float(row.get("spend", 0)),
+                    impressions=int(row.get("impressions", 0)),
+                    clicks=int(row.get("clicks", 0)),
+                    conversions=float(row.get("conversions", 0)),
+                    conversion_value=float(row.get("conversion_value", 0)),
+                    extra_metrics=row.get("extra_metrics"),
+                )
+            return len(rows)
+
+        upsert_sql = """
+            INSERT INTO ad_performance_reports (
+                report_date, platform, customer_id, client_id,
+                spend, impressions, clicks, conversions, conversion_value,
+                extra_metrics
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+            ON CONFLICT (report_date, platform, customer_id)
+            DO UPDATE SET
+                spend = EXCLUDED.spend,
+                impressions = EXCLUDED.impressions,
+                clicks = EXCLUDED.clicks,
+                conversions = EXCLUDED.conversions,
+                conversion_value = EXCLUDED.conversion_value,
+                extra_metrics = EXCLUDED.extra_metrics,
+                client_id = EXCLUDED.client_id,
+                synced_at = NOW()
+        """
+
+        written = 0
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                for i in range(0, len(rows), _BATCH_SIZE):
+                    batch = rows[i : i + _BATCH_SIZE]
+                    params_seq = [
+                        (
+                            r["report_date"],
+                            r["platform"],
+                            r["customer_id"],
+                            r.get("client_id"),
+                            float(r.get("spend", 0)),
+                            int(r.get("impressions", 0)),
+                            int(r.get("clicks", 0)),
+                            float(r.get("conversions", 0)),
+                            float(r.get("conversion_value", 0)),
+                            json.dumps(dict(r.get("extra_metrics") or {})),
+                        )
+                        for r in batch
+                    ]
+                    cur.executemany(upsert_sql, params_seq)
+                    conn.commit()
+                    written += len(batch)
+                    logger.debug("Batch upsert: committed %d/%d rows", written, len(rows))
+        return written
 
     def write_daily_report(
         self,
