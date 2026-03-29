@@ -101,7 +101,7 @@
 ### 3.1 BFF Cache Per-Endpoint
 **Impact: Mediu | Efort: 0.5 zile | Risc: Mic**
 
-- [ ] In `apps/frontend/src/app/api/[...path]/route.ts`, diferentiaza revalidate per path:
+- [x] In `apps/frontend/src/app/api/[...path]/route.ts`, diferentiaza revalidate per path:
   - `/dashboard/*` → `revalidate: 30`
   - `/clients/*` → `revalidate: 60`
   - `/integrations/*/status` → `revalidate: 15`
