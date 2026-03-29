@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.95.2",
     "clsx": "2.1.1",
     "cmdk": "1.0.0",
     "date-fns": "^3.6.0",

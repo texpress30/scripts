@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import React, { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
+import { useQuery } from "@tanstack/react-query";
 
 import { format, startOfMonth, subDays } from "date-fns";
 import type { DateRange } from "react-day-picker";
@@ -177,9 +178,6 @@ export default function SubDashboardPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const clientId = Number(params.id);
-  const [data, setData] = useState<DashboardResponse | null>(null);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
   const [accessGuardReady, setAccessGuardReady] = useState(false);
 
   const initialRange = rangeForPreset("last30");
@@ -226,26 +224,19 @@ export default function SubDashboardPage() {
     };
   }, [clientId, router]);
 
-  async function load() {
-    setLoading(true);
-    setError("");
-    try {
-      const rangeNonce = `${toIso(appliedFrom)}_${toIso(appliedTo)}_${Date.now()}`;
-      const result = await apiRequest<DashboardResponse>(
-        `/dashboard/${clientId}?start_date=${toIso(appliedFrom)}&end_date=${toIso(appliedTo)}&_=${encodeURIComponent(rangeNonce)}`
-      );
-      setData(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Nu pot încărca dashboard-ul clientului");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const fromIso = toIso(appliedFrom);
+  const toIso_ = toIso(appliedTo);
 
-  useEffect(() => {
-    if (accessGuardReady && Number.isFinite(clientId)) void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clientId, appliedFrom, appliedTo, accessGuardReady]);
+  const { data, error: queryError, isLoading: loading } = useQuery<DashboardResponse>({
+    queryKey: ["client-dashboard", clientId, fromIso, toIso_],
+    queryFn: () =>
+      apiRequest<DashboardResponse>(
+        `/dashboard/${clientId}?start_date=${fromIso}&end_date=${toIso_}`,
+      ),
+    enabled: accessGuardReady && Number.isFinite(clientId),
+  });
+
+  const error = queryError instanceof Error ? queryError.message : queryError ? "Nu pot încărca dashboard-ul clientului" : "";
 
   function handlePresetClick(nextPreset: DatePresetKey) {
     setDraftPreset(nextPreset);

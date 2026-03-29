@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import dynamic from "next/dynamic";
+import { useQuery } from "@tanstack/react-query";
 
 import { format, startOfMonth, subDays } from "date-fns";
 import type { DateRange } from "react-day-picker";
@@ -121,32 +122,21 @@ export default function AgencyDashboardPage() {
   const [draftPreset, setDraftPreset] = useState<DatePresetKey>("last30");
   const [draftRange, setDraftRange] = useState<DateRange>(initialRange);
 
-  const [summary, setSummary] = useState<AgencySummaryResponse | null>(null);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
-
   const appliedFrom = appliedRange.from ?? subDays(new Date(), 29);
   const appliedTo = appliedRange.to ?? appliedFrom;
 
-  useEffect(() => {
-    async function loadDashboard() {
-      setLoading(true);
-      setError("");
-      try {
-        const agencySummary = await apiRequest<AgencySummaryResponse>(
-          `/dashboard/agency/summary?start_date=${toIso(appliedFrom)}&end_date=${toIso(appliedTo)}`
-        );
+  const fromIso = toIso(appliedFrom);
+  const toIso_ = toIso(appliedTo);
 
-        setSummary(agencySummary);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Nu am putut încărca dashboard-ul agency");
-      } finally {
-        setLoading(false);
-      }
-    }
+  const { data: summary, error: queryError, isLoading: loading } = useQuery<AgencySummaryResponse>({
+    queryKey: ["agency-summary", fromIso, toIso_],
+    queryFn: () =>
+      apiRequest<AgencySummaryResponse>(
+        `/dashboard/agency/summary?start_date=${fromIso}&end_date=${toIso_}`,
+      ),
+  });
 
-    void loadDashboard();
-  }, [appliedFrom, appliedTo]);
+  const error = queryError instanceof Error ? queryError.message : queryError ? "Nu am putut încărca dashboard-ul agency" : "";
 
   const currencyCode = normalizeCurrencyCode(summary?.currency);
 
