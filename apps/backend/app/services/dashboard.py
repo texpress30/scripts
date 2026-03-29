@@ -326,8 +326,7 @@ class UnifiedDashboardService:
                               mapped.account_id = apr.customer_id
                               OR (
                                   apr.platform = 'google_ads'
-                                  AND COALESCE(mapped.account_id_norm, regexp_replace(mapped.account_id, '[^0-9]', '', 'g'))
-                                      = COALESCE(apr.customer_id_norm, regexp_replace(apr.customer_id, '[^0-9]', '', 'g'))
+                                  AND mapped.account_id_norm = apr.customer_id_norm
                               )
                          )
                         LEFT JOIN agency_platform_accounts apa
@@ -336,8 +335,7 @@ class UnifiedDashboardService:
                               apa.account_id = apr.customer_id
                               OR (
                                   apr.platform = 'google_ads'
-                                  AND COALESCE(apa.account_id_norm, regexp_replace(apa.account_id, '[^0-9]', '', 'g'))
-                                      = COALESCE(apr.customer_id_norm, regexp_replace(apr.customer_id, '[^0-9]', '', 'g'))
+                                  AND apa.account_id_norm = apr.customer_id_norm
                               )
                          )
                         JOIN agency_clients client
@@ -379,8 +377,7 @@ class UnifiedDashboardService:
                               mapped.account_id = apr.customer_id
                               OR (
                                   apr.platform = 'google_ads'
-                                  AND COALESCE(mapped.account_id_norm, regexp_replace(mapped.account_id, '[^0-9]', '', 'g'))
-                                      = COALESCE(apr.customer_id_norm, regexp_replace(apr.customer_id, '[^0-9]', '', 'g'))
+                                  AND mapped.account_id_norm = apr.customer_id_norm
                               )
                          )
                         LEFT JOIN agency_platform_accounts apa
@@ -389,8 +386,7 @@ class UnifiedDashboardService:
                               apa.account_id = apr.customer_id
                               OR (
                                   apr.platform = 'google_ads'
-                                  AND COALESCE(apa.account_id_norm, regexp_replace(apa.account_id, '[^0-9]', '', 'g'))
-                                      = COALESCE(apr.customer_id_norm, regexp_replace(apr.customer_id, '[^0-9]', '', 'g'))
+                                  AND apa.account_id_norm = apr.customer_id_norm
                               )
                          )
                         JOIN agency_clients client
@@ -847,8 +843,7 @@ class UnifiedDashboardService:
                               mapped.account_id = apr.customer_id
                               OR (
                                   apr.platform = 'google_ads'
-                                  AND COALESCE(mapped.account_id_norm, regexp_replace(mapped.account_id, '[^0-9]', '', 'g'))
-                                      = COALESCE(apr.customer_id_norm, regexp_replace(apr.customer_id, '[^0-9]', '', 'g'))
+                                  AND mapped.account_id_norm = apr.customer_id_norm
                               )
                          )
                         LEFT JOIN agency_platform_accounts apa
@@ -857,8 +852,7 @@ class UnifiedDashboardService:
                               apa.account_id = apr.customer_id
                               OR (
                                   apr.platform = 'google_ads'
-                                  AND COALESCE(apa.account_id_norm, regexp_replace(apa.account_id, '[^0-9]', '', 'g'))
-                                      = COALESCE(apr.customer_id_norm, regexp_replace(apr.customer_id, '[^0-9]', '', 'g'))
+                                  AND apa.account_id_norm = apr.customer_id_norm
                               )
                          )
                         LEFT JOIN agency_clients client
@@ -2810,8 +2804,7 @@ class UnifiedDashboardService:
                               rm.account_id = apr.customer_id
                               OR (
                                   apr.platform = 'google_ads'
-                                  AND COALESCE(rm.account_id_norm, regexp_replace(rm.account_id, '[^0-9]', '', 'g'))
-                                      = COALESCE(apr.customer_id_norm, regexp_replace(apr.customer_id, '[^0-9]', '', 'g'))
+                                  AND rm.account_id_norm = apr.customer_id_norm
                               )
                          )
                         LEFT JOIN agency_clients client ON client.id = COALESCE(apr.client_id, rm.client_id)

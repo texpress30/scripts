@@ -136,8 +136,12 @@ class PerformanceReportsStore:
                 cur.execute(
                     """
                     INSERT INTO ad_performance_reports (
-                        report_date, platform, customer_id, client_id, spend, impressions, clicks, conversions, conversion_value, extra_metrics
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                        report_date, platform, customer_id, customer_id_norm, client_id,
+                        spend, impressions, clicks, conversions, conversion_value, extra_metrics
+                    ) VALUES (
+                        %s, %s, %s, regexp_replace(COALESCE(%s, ''), '[^0-9]', '', 'g'), %s,
+                        %s, %s, %s, %s, %s, %s::jsonb
+                    )
                     ON CONFLICT (report_date, platform, customer_id)
                     DO UPDATE SET
                         spend = EXCLUDED.spend,
@@ -147,11 +151,13 @@ class PerformanceReportsStore:
                         conversion_value = EXCLUDED.conversion_value,
                         extra_metrics = EXCLUDED.extra_metrics,
                         client_id = EXCLUDED.client_id,
+                        customer_id_norm = EXCLUDED.customer_id_norm,
                         synced_at = NOW()
                     """,
                     (
                         report_date,
                         platform,
+                        customer_id,
                         customer_id,
                         client_id,
                         float(spend),

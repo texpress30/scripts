@@ -50,9 +50,9 @@
 ### 1.3 Elimina Regex Fallback din Hot Joins (Optional P0)
 **Impact: Mediu | Efort: 0.5 zile | Risc: Mic daca norm-urile sunt backfilled**
 
-- [ ] Verifica ca `customer_id_norm` si `account_id_norm` sunt NOT NULL pe toate randurile relevante
-- [ ] Daca da: inlocuieste `COALESCE(norm, regexp_replace(...))` cu `norm = norm` direct
-- [ ] Daca nu: ruleaza un backfill one-time si adauga NOT NULL constraint
+- [x] Verifica ca `customer_id_norm` si `account_id_norm` sunt NOT NULL pe toate randurile relevante
+- [x] Daca da: inlocuieste `COALESCE(norm, regexp_replace(...))` cu `norm = norm` direct
+- [x] Daca nu: ruleaza un backfill one-time si adauga NOT NULL constraint
 
 ---
 
