@@ -307,11 +307,11 @@ class GoogleAdsService:
         return f"***{normalized[-4:]}"
 
     def _db_diagnostics_last_30_days(self) -> dict[str, object]:
-        database_url = os.environ.get("DATABASE_URL") or load_settings().database_url
+        from app.db.pool import get_connection
         try:
             if psycopg is None:
                 raise RuntimeError("psycopg not installed")
-            with psycopg.connect(database_url) as conn:
+            with get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute("SELECT to_regclass('public.ad_performance_reports')")
                     table_exists = (cur.fetchone() or [None])[0] is not None
@@ -376,7 +376,7 @@ class GoogleAdsService:
             }
 
     def db_debug_summary(self) -> dict[str, object]:
-        database_url = os.environ.get("DATABASE_URL") or load_settings().database_url
+        from app.db.pool import get_connection
         result: dict[str, object] = {
             "db_ok": False,
             "table_exists": False,
@@ -396,7 +396,7 @@ class GoogleAdsService:
             if psycopg is None:
                 raise RuntimeError("psycopg not installed")
 
-            with psycopg.connect(database_url) as conn:
+            with get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute("SELECT to_regclass('public.ad_performance_reports')")
                     table_exists = (cur.fetchone() or [None])[0] is not None
@@ -1559,12 +1559,12 @@ class GoogleAdsService:
         return 1
 
     def _count_rows_last_30_days_for_customer(self, *, customer_id: str) -> int:
-        database_url = os.environ.get("DATABASE_URL") or load_settings().database_url
+        from app.db.pool import get_connection
         normalized = self._normalize_customer_id(customer_id)
         try:
             if psycopg is None:
                 return 0
-            with psycopg.connect(database_url) as conn:
+            with get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """

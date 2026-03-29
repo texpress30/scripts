@@ -11,10 +11,8 @@ except Exception:  # noqa: BLE001
 
 class UserProfileService:
     def _connect(self):
-        settings = load_settings()
-        if psycopg is None:
-            raise RuntimeError("psycopg is required for user profile persistence")
-        return psycopg.connect(settings.database_url)
+        from app.db.pool import get_connection
+        return get_connection()
 
     def _connect_or_raise(self):
         return self._connect()
