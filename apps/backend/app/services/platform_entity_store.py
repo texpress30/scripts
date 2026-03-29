@@ -8,13 +8,14 @@ _CAMPAIGN_UPSERT_SQL = """
 INSERT INTO platform_campaigns (
     platform,
     account_id,
+    account_id_norm,
     campaign_id,
     name,
     status,
     raw_payload,
     payload_hash
 ) VALUES (
-    %s, %s, %s, %s, %s, %s::jsonb, %s
+    %s, %s, regexp_replace(COALESCE(%s, ''), '[^0-9]', '', 'g'), %s, %s, %s, %s::jsonb, %s
 )
 ON CONFLICT (platform, account_id, campaign_id)
 DO UPDATE SET
@@ -22,6 +23,7 @@ DO UPDATE SET
     status = EXCLUDED.status,
     raw_payload = EXCLUDED.raw_payload,
     payload_hash = EXCLUDED.payload_hash,
+    account_id_norm = EXCLUDED.account_id_norm,
     fetched_at = NOW(),
     last_seen_at = NOW()
 """
@@ -30,6 +32,7 @@ _AD_GROUP_UPSERT_SQL = """
 INSERT INTO platform_ad_groups (
     platform,
     account_id,
+    account_id_norm,
     ad_group_id,
     campaign_id,
     name,
@@ -37,7 +40,7 @@ INSERT INTO platform_ad_groups (
     raw_payload,
     payload_hash
 ) VALUES (
-    %s, %s, %s, %s, %s, %s, %s::jsonb, %s
+    %s, %s, regexp_replace(COALESCE(%s, ''), '[^0-9]', '', 'g'), %s, %s, %s, %s, %s::jsonb, %s
 )
 ON CONFLICT (platform, account_id, ad_group_id)
 DO UPDATE SET
@@ -46,6 +49,7 @@ DO UPDATE SET
     status = EXCLUDED.status,
     raw_payload = EXCLUDED.raw_payload,
     payload_hash = EXCLUDED.payload_hash,
+    account_id_norm = EXCLUDED.account_id_norm,
     fetched_at = NOW(),
     last_seen_at = NOW()
 """
@@ -117,6 +121,7 @@ def upsert_platform_campaigns(conn, rows: list[dict[str, Any]]) -> int:
         (
             str(row.get("platform") or ""),
             str(row.get("account_id") or ""),
+            str(row.get("account_id") or ""),
             str(row.get("campaign_id") or ""),
             row.get("name"),
             row.get("status"),
@@ -138,6 +143,7 @@ def upsert_platform_ad_groups(conn, rows: list[dict[str, Any]]) -> int:
     params = [
         (
             str(row.get("platform") or ""),
+            str(row.get("account_id") or ""),
             str(row.get("account_id") or ""),
             str(row.get("ad_group_id") or ""),
             row.get("campaign_id"),

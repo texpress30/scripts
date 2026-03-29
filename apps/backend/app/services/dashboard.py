@@ -324,19 +324,13 @@ class UnifiedDashboardService:
                          AND mapped.client_id = %s
                          AND (
                               mapped.account_id = apr.customer_id
-                              OR (
-                                  apr.platform = 'google_ads'
-                                  AND mapped.account_id_norm = apr.customer_id_norm
-                              )
+                              OR mapped.account_id_norm = apr.customer_id_norm
                          )
                         LEFT JOIN agency_platform_accounts apa
                           ON apa.platform = apr.platform
                          AND (
                               apa.account_id = apr.customer_id
-                              OR (
-                                  apr.platform = 'google_ads'
-                                  AND apa.account_id_norm = apr.customer_id_norm
-                              )
+                              OR apa.account_id_norm = apr.customer_id_norm
                          )
                         JOIN agency_clients client
                           ON client.id = mapped.client_id
@@ -375,19 +369,13 @@ class UnifiedDashboardService:
                          AND mapped.client_id = %s
                          AND (
                               mapped.account_id = apr.customer_id
-                              OR (
-                                  apr.platform = 'google_ads'
-                                  AND mapped.account_id_norm = apr.customer_id_norm
-                              )
+                              OR mapped.account_id_norm = apr.customer_id_norm
                          )
                         LEFT JOIN agency_platform_accounts apa
                           ON apa.platform = apr.platform
                          AND (
                               apa.account_id = apr.customer_id
-                              OR (
-                                  apr.platform = 'google_ads'
-                                  AND apa.account_id_norm = apr.customer_id_norm
-                              )
+                              OR apa.account_id_norm = apr.customer_id_norm
                          )
                         JOIN agency_clients client
                           ON client.id = mapped.client_id
@@ -500,9 +488,6 @@ class UnifiedDashboardService:
     def _client_platform_account_rows_query(self, *, platform: str) -> str:
         if platform not in {"google_ads", "meta_ads", "tiktok_ads"}:
             raise ValueError("unsupported platform")
-        normalized_mapped_account_sql = self._platform_account_normalized_sql(expr="mapped.account_id", platform=platform)
-        normalized_report_account_sql = self._platform_account_normalized_sql(expr="apr.customer_id", platform=platform)
-        normalized_apa_account_sql = self._platform_account_normalized_sql(expr="apa.account_id", platform=platform)
         effective_currency_sql = self._effective_attached_account_currency_sql(
             mapping_currency_expr="mapped.account_currency",
             platform_currency_expr="apa.currency_code",
@@ -533,7 +518,7 @@ class UnifiedDashboardService:
                               ON apa.platform = mapped.platform
                              AND (
                                   apa.account_id = mapped.account_id
-                                  OR {normalized_apa_account_sql} = {normalized_mapped_account_sql}
+                                  OR apa.account_id_norm = mapped.account_id_norm
                              )
                             LEFT JOIN ad_performance_reports apr
                               ON apr.platform = mapped.platform
@@ -541,7 +526,7 @@ class UnifiedDashboardService:
                              AND apr.report_date BETWEEN %s AND %s
                              AND (
                                   mapped.account_id = apr.customer_id
-                                  OR {normalized_mapped_account_sql} = {normalized_report_account_sql}
+                                  OR mapped.account_id_norm = apr.customer_id_norm
                              )
                              AND COALESCE(
                                   NULLIF(TRIM(COALESCE(apr.extra_metrics -> '{platform}' ->> 'grain', '')), ''),
@@ -570,11 +555,6 @@ class UnifiedDashboardService:
     def _client_platform_campaign_rows_query(self, *, platform: str) -> str:
         if platform not in {"google_ads", "meta_ads", "tiktok_ads"}:
             raise ValueError("unsupported platform")
-        normalized_mapped_account_sql = self._platform_account_normalized_sql(expr="mapped.account_id", platform=platform)
-        normalized_campaign_account_sql = self._platform_account_normalized_sql(expr="cpr.account_id", platform=platform)
-        normalized_apa_account_sql = self._platform_account_normalized_sql(expr="apa.account_id", platform=platform)
-        normalized_pc_account_sql = self._platform_account_normalized_sql(expr="pc.account_id", platform=platform)
-        normalized_input_account_sql = self._platform_account_normalized_sql(expr="%s", platform=platform)
         effective_currency_sql = self._effective_attached_account_currency_sql(
             mapping_currency_expr="mapped.account_currency",
             platform_currency_expr="apa.currency_code",
@@ -586,6 +566,7 @@ class UnifiedDashboardService:
                             SELECT
                                 cpr.platform,
                                 cpr.account_id,
+                                cpr.account_id_norm,
                                 cpr.campaign_id,
                                 cpr.report_date,
                                 cpr.spend,
@@ -598,7 +579,7 @@ class UnifiedDashboardService:
                               AND cpr.report_date BETWEEN %s AND %s
                               AND (
                                    cpr.account_id = %s
-                                   OR {normalized_campaign_account_sql} = {normalized_input_account_sql}
+                                   OR cpr.account_id_norm = regexp_replace(COALESCE(%s, ''), '[^0-9]', '', 'g')
                               )
                               AND COALESCE(
                                    NULLIF(TRIM(COALESCE(cpr.extra_metrics -> '{platform}' ->> 'grain', '')), ''),
@@ -608,6 +589,7 @@ class UnifiedDashboardService:
                             SELECT
                                 agpr.platform,
                                 agpr.account_id,
+                                agpr.account_id_norm,
                                 agpr.campaign_id,
                                 agpr.report_date,
                                 agpr.spend,
@@ -621,7 +603,7 @@ class UnifiedDashboardService:
                               AND agpr.report_date BETWEEN %s AND %s
                               AND (
                                    agpr.account_id = %s
-                                   OR {self._platform_account_normalized_sql(expr='agpr.account_id', platform=platform)} = {normalized_input_account_sql}
+                                   OR agpr.account_id_norm = regexp_replace(COALESCE(%s, ''), '[^0-9]', '', 'g')
                               )
                               AND COALESCE(
                                    NULLIF(TRIM(COALESCE(agpr.extra_metrics -> '{platform}' ->> 'grain', '')), ''),
@@ -672,7 +654,7 @@ class UnifiedDashboardService:
                          AND mapped.client_id = %s
                          AND (
                               mapped.account_id = perf.account_id
-                              OR {normalized_mapped_account_sql} = {self._platform_account_normalized_sql(expr='perf.account_id', platform=platform)}
+                              OR mapped.account_id_norm = perf.account_id_norm
                          )
                         JOIN agency_clients client
                           ON client.id = mapped.client_id
@@ -680,13 +662,13 @@ class UnifiedDashboardService:
                           ON apa.platform = perf.platform
                          AND (
                               apa.account_id = perf.account_id
-                              OR {normalized_apa_account_sql} = {self._platform_account_normalized_sql(expr='perf.account_id', platform=platform)}
+                              OR apa.account_id_norm = perf.account_id_norm
                          )
                         LEFT JOIN platform_campaigns pc
                          ON pc.platform = perf.platform
                          AND (
                               pc.account_id = perf.account_id
-                              OR {normalized_pc_account_sql} = {self._platform_account_normalized_sql(expr='perf.account_id', platform=platform)}
+                              OR pc.account_id_norm = perf.account_id_norm
                          )
                          AND pc.campaign_id = perf.campaign_id
                         )
@@ -713,12 +695,6 @@ class UnifiedDashboardService:
     def _client_platform_campaign_adgroup_rows_query(self, *, platform: str) -> str:
         if platform not in {"google_ads", "meta_ads", "tiktok_ads"}:
             raise ValueError("unsupported platform")
-        normalized_mapped_account_sql = self._platform_account_normalized_sql(expr="mapped.account_id", platform=platform)
-        normalized_agpr_account_sql = self._platform_account_normalized_sql(expr="agpr.account_id", platform=platform)
-        normalized_apa_account_sql = self._platform_account_normalized_sql(expr="apa.account_id", platform=platform)
-        normalized_pag_account_sql = self._platform_account_normalized_sql(expr="pag.account_id", platform=platform)
-        normalized_pc_account_sql = self._platform_account_normalized_sql(expr="pc.account_id", platform=platform)
-        normalized_input_account_sql = self._platform_account_normalized_sql(expr="%s", platform=platform)
         effective_currency_sql = self._effective_attached_account_currency_sql(
             mapping_currency_expr="mapped.account_currency",
             platform_currency_expr="apa.currency_code",
@@ -784,7 +760,7 @@ class UnifiedDashboardService:
                          AND mapped.client_id = %s
                          AND (
                               mapped.account_id = agpr.account_id
-                              OR {normalized_mapped_account_sql} = {normalized_agpr_account_sql}
+                              OR mapped.account_id_norm = agpr.account_id_norm
                          )
                         JOIN agency_clients client
                           ON client.id = mapped.client_id
@@ -792,20 +768,20 @@ class UnifiedDashboardService:
                           ON apa.platform = agpr.platform
                          AND (
                               apa.account_id = agpr.account_id
-                              OR {normalized_apa_account_sql} = {normalized_agpr_account_sql}
+                              OR apa.account_id_norm = agpr.account_id_norm
                          )
                         LEFT JOIN platform_campaigns pc
                           ON pc.platform = agpr.platform
                          AND (
                               pc.account_id = agpr.account_id
-                              OR {normalized_pc_account_sql} = {normalized_agpr_account_sql}
+                              OR pc.account_id_norm = agpr.account_id_norm
                          )
                          AND pc.campaign_id = agpr.campaign_id
                         LEFT JOIN platform_ad_groups pag
                           ON pag.platform = agpr.platform
                          AND (
                               pag.account_id = agpr.account_id
-                              OR {normalized_pag_account_sql} = {normalized_agpr_account_sql}
+                              OR pag.account_id_norm = agpr.account_id_norm
                          )
                          AND pag.campaign_id = agpr.campaign_id
                          AND pag.ad_group_id = agpr.ad_group_id
@@ -814,7 +790,7 @@ class UnifiedDashboardService:
                           AND agpr.campaign_id = %s
                           AND (
                                agpr.account_id = %s
-                               OR {normalized_agpr_account_sql} = {normalized_input_account_sql}
+                               OR agpr.account_id_norm = regexp_replace(COALESCE(%s, ''), '[^0-9]', '', 'g')
                           )
                           AND COALESCE(
                                NULLIF(TRIM(COALESCE(agpr.extra_metrics -> '{platform}' ->> 'grain', '')), ''),
@@ -842,16 +818,6 @@ class UnifiedDashboardService:
                         ORDER BY SUM(spend) DESC
                         LIMIT %s OFFSET %s
                         """
-
-    def _platform_account_normalized_sql(self, *, expr: str, platform: str) -> str:
-        if platform == "google_ads":
-            return f"regexp_replace(COALESCE({expr}, ''), '[^0-9]', '', 'g')"
-        if platform == "meta_ads":
-            return f"regexp_replace(lower(trim(COALESCE({expr}, ''))), '^act_', '', 'g')"
-        if platform == "tiktok_ads":
-            return f"lower(trim(COALESCE({expr}, '')))"
-        return f"trim(COALESCE({expr}, ''))"
-
 
     def _client_dashboard_reconciliation_rows_query(self) -> str:
         effective_currency_sql = self._effective_attached_account_currency_sql(
@@ -896,19 +862,13 @@ class UnifiedDashboardService:
                          AND mapped.client_id = %s
                          AND (
                               mapped.account_id = apr.customer_id
-                              OR (
-                                  apr.platform = 'google_ads'
-                                  AND mapped.account_id_norm = apr.customer_id_norm
-                              )
+                              OR mapped.account_id_norm = apr.customer_id_norm
                          )
                         LEFT JOIN agency_platform_accounts apa
                           ON apa.platform = apr.platform
                          AND (
                               apa.account_id = apr.customer_id
-                              OR (
-                                  apr.platform = 'google_ads'
-                                  AND apa.account_id_norm = apr.customer_id_norm
-                              )
+                              OR apa.account_id_norm = apr.customer_id_norm
                          )
                         LEFT JOIN agency_clients client
                           ON client.id = mapped.client_id
@@ -2764,10 +2724,7 @@ class UnifiedDashboardService:
                           ON rm.platform = apr.platform
                          AND (
                               rm.account_id = apr.customer_id
-                              OR (
-                                  apr.platform = 'google_ads'
-                                  AND rm.account_id_norm = apr.customer_id_norm
-                              )
+                              OR rm.account_id_norm = apr.customer_id_norm
                          )
                         LEFT JOIN agency_clients client ON client.id = COALESCE(apr.client_id, rm.client_id)
                         WHERE apr.report_date BETWEEN %s AND %s
