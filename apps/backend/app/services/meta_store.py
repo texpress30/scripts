@@ -19,10 +19,8 @@ class MetaSnapshotStore:
         return load_settings().app_env == "test"
 
     def _connect(self):
-        settings = load_settings()
-        if psycopg is None:
-            raise RuntimeError("psycopg is required for Meta Postgres persistence")
-        return psycopg.connect(settings.database_url)
+        from app.db.pool import get_connection
+        return get_connection()
 
     def _ensure_schema(self) -> None:
         if getattr(self, "_schema_initialized", False):

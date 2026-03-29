@@ -42,10 +42,8 @@ class AuthEmailTokensService:
         self._schema_initialized = False
 
     def _connect(self):
-        settings = load_settings()
-        if psycopg is None:
-            raise RuntimeError("psycopg is required for email token persistence")
-        return psycopg.connect(settings.database_url)
+        from app.db.pool import get_connection
+        return get_connection()
 
     def initialize_schema(self) -> None:
         if self._schema_initialized:

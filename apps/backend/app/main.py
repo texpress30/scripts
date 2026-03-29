@@ -7,6 +7,8 @@ try:
 except ImportError:
     psycopg = None
 
+from app.db.pool import open_pool, close_pool
+
 logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI
@@ -138,22 +140,12 @@ def root() -> dict[str, str]:
 @app.on_event("startup")
 def startup_event() -> None:
     if psycopg is not None:
-        max_retries = 5
-        acquired_lock = False
-        global_conn = None
-
         is_sqlite = settings.database_url.startswith("sqlite")
 
+        max_retries = 5
         for attempt in range(max_retries):
             try:
-                global_conn = psycopg.connect(settings.database_url)
-                if not is_sqlite:
-                    with global_conn.cursor() as cur:
-                        cur.execute("SELECT pg_try_advisory_lock(1, hashtext('global_schema_init'))")
-                        acquired_lock = bool(cur.fetchone()[0])
-                    global_conn.commit()
-                else:
-                    acquired_lock = True
+                open_pool(settings.database_url)
                 logger.info("Successfully connected to the database on startup.")
                 break
             except Exception as e:
@@ -163,6 +155,16 @@ def startup_event() -> None:
                 logger.warning("Database connection failed (attempt %d/%d): %s. Retrying in 3 seconds...", attempt + 1, max_retries, e)
                 time.sleep(3)
 
+        if not is_sqlite:
+            from app.db.pool import get_connection
+
+            with get_connection() as conn:
+                with conn.cursor() as cur:
+                    # Transaction-scoped lock: released on commit, safe for pooled connections.
+                    cur.execute("SELECT pg_try_advisory_xact_lock(1, hashtext('global_schema_init'))")
+                    cur.fetchone()
+                conn.commit()
+
     client_registry_service.initialize_schema()
     user_profile_service.initialize_schema()
     team_members_service.initialize_schema()
@@ -171,3 +173,8 @@ def startup_event() -> None:
     auth_email_tokens_service.initialize_schema()
     email_templates_service.initialize_schema()
     email_notifications_service.initialize_schema()
+
+
+@app.on_event("shutdown")
+def shutdown_event() -> None:
+    close_pool()

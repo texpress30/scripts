@@ -41,10 +41,8 @@ class MediaTrackerWorksheetService:
         return load_settings().app_env == "test"
 
     def _connect(self):
-        settings = load_settings()
-        if psycopg is None:
-            raise RuntimeError("psycopg is required for media tracker worksheet persistence")
-        return psycopg.connect(settings.database_url)
+        from app.db.pool import get_connection
+        return get_connection()
 
     def _ensure_schema(self) -> None:
         if self._is_test_mode() or self._schema_initialized:
