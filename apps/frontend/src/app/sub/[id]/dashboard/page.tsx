@@ -133,6 +133,10 @@ function formatCurrency(value: number, currencyCode: string): string {
   return new Intl.NumberFormat(undefined, { style: "currency", currency: currencyCode, maximumFractionDigits: 2 }).format(value);
 }
 
+function safeNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
 function normalizeMetrics(value?: PlatformMetrics): NormalizedMetrics {
   const spend = safeNumber(value?.spend);
   const revenue = safeNumber(value?.revenue);
