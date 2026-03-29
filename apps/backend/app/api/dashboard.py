@@ -29,6 +29,10 @@ class CurrencyDriftRepairRequest(BaseModel):
     dry_run: bool = True
 
 
+class RefreshDailyRollupRequest(BaseModel):
+    start_date: date
+    end_date: date
+
 
 @router.get("/agency/summary")
 def agency_dashboard_summary(
@@ -64,7 +68,40 @@ def agency_dashboard_summary(
     return metrics
 
 
-
+@router.post("/clients/{client_id}/refresh-daily-rollup")
+def refresh_client_daily_rollup_endpoint(
+    client_id: int,
+    payload: RefreshDailyRollupRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="dashboard:view", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_dashboard")
+    if payload.start_date > payload.end_date:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="start_date must be <= end_date")
+    try:
+        result = unified_dashboard_service.refresh_client_daily_rollup(
+            client_id=client_id,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"rollup refresh failed: {exc}",
+        ) from exc
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="dashboard.rollup.refresh",
+        resource=f"client:{client_id}",
+        details={
+            "start_date": payload.start_date.isoformat(),
+            "end_date": payload.end_date.isoformat(),
+        },
+    )
+    return result
 
 
 

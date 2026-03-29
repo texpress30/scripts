@@ -1367,6 +1367,44 @@ class SyncRunsStore:
                 rows = cur.fetchall() or []
         return [self._row_to_payload(row) for row in rows if row is not None]
 
+    def list_sync_health_for_accounts(self, *, platform: str, account_ids: list[str]) -> dict[str, dict[str, object]]:
+        """Precomputed sync health from sync_health_summary (Phase 3). Keyed by account_id."""
+        normalized_platform = str(platform).strip()
+        normalized_account_ids = [str(item).strip() for item in account_ids if str(item).strip() != ""]
+        if len(normalized_account_ids) <= 0:
+            return {}
+        self._ensure_schema()
+        out: dict[str, dict[str, object]] = {}
+        try:
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT platform, account_id, client_id, status, last_sync_at, last_error, updated_at
+                        FROM sync_health_summary
+                        WHERE platform = %s AND account_id = ANY(%s::text[])
+                        """,
+                        (normalized_platform, normalized_account_ids),
+                    )
+                    rows = cur.fetchall() or []
+        except Exception as exc:
+            logger.warning("sync_health_summary_unavailable", extra={"error": str(exc), "platform": normalized_platform})
+            return {}
+        for row in rows:
+            aid = str(row[1] or "")
+            if aid == "":
+                continue
+            out[aid] = {
+                "platform": str(row[0] or ""),
+                "account_id": aid,
+                "client_id": int(row[2]) if row[2] is not None else None,
+                "status": str(row[3] or ""),
+                "last_sync_at": str(row[4]) if row[4] is not None else None,
+                "last_error": str(row[5]) if row[5] is not None else None,
+                "updated_at": str(row[6]) if row[6] is not None else None,
+            }
+        return out
+
 
     def get_active_runs_progress_batch(self, *, platform: str, account_ids: list[str]) -> list[dict[str, object]]:
         self._ensure_schema()
