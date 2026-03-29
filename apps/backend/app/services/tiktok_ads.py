@@ -304,10 +304,8 @@ class TikTokAdsService:
         return settings.app_env == "test"
 
     def _connect(self):
-        settings = load_settings()
-        if psycopg is None:
-            raise TikTokAdsIntegrationError("psycopg is required for campaign/ad_group daily persistence")
-        return psycopg.connect(settings.database_url)
+        from app.db.pool import get_connection
+        return get_connection()
 
     def _http_json(
         self,

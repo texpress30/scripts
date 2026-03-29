@@ -134,10 +134,8 @@ class TeamMembersService:
             return ("agency", "member")
 
     def _connect(self):
-        settings = load_settings()
-        if psycopg is None:
-            raise RuntimeError("psycopg is required for team member persistence")
-        return psycopg.connect(settings.database_url)
+        from app.db.pool import get_connection
+        return get_connection()
 
     def initialize_schema(self) -> None:
         settings = load_settings()

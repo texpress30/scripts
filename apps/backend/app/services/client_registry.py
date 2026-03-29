@@ -165,10 +165,8 @@ class ClientRegistryService:
         return load_settings().app_env == "test" and os.environ.get("PYTEST_CURRENT_TEST") is not None
 
     def _connect(self):
-        settings = load_settings()
-        if psycopg is None:
-            raise RuntimeError("psycopg is required for client registry Postgres persistence")
-        return psycopg.connect(settings.database_url)
+        from app.db.pool import get_connection
+        return get_connection()
 
     def _connect_or_raise(self):
         conn = self._connect()
@@ -566,10 +564,11 @@ class ClientRegistryService:
 
                 cur.execute(
                     """
-                    INSERT INTO agency_account_client_mappings (platform, account_id, client_id, client_type, account_manager, account_currency)
+                    INSERT INTO agency_account_client_mappings (platform, account_id, account_id_norm, client_id, client_type, account_manager, account_currency)
                     VALUES (
                         %s,
                         %s,
+                        regexp_replace(COALESCE(%s, ''), '[^0-9]', '', 'g'),
                         %s,
                         (SELECT client_type FROM agency_clients WHERE id = %s),
                         (SELECT account_manager FROM agency_clients WHERE id = %s),
@@ -585,9 +584,10 @@ class ClientRegistryService:
                                 THEN EXCLUDED.account_currency
                             ELSE agency_account_client_mappings.account_currency
                         END,
+                        account_id_norm = EXCLUDED.account_id_norm,
                         updated_at = NOW()
                     """,
-                    (platform, account_id, client_id, client_id, client_id, platform, account_id, client_id),
+                    (platform, account_id, account_id, client_id, client_id, client_id, platform, account_id, client_id),
                 )
                 if platform == "google_ads":
                     # Keep legacy column in sync (best effort; not used as source-of-truth).
@@ -773,13 +773,14 @@ class ClientRegistryService:
                 for account in accounts:
                     cur.execute(
                         """
-                        INSERT INTO agency_platform_accounts (platform, account_id, account_name, imported_at)
-                        VALUES (%s, %s, %s, NOW())
+                        INSERT INTO agency_platform_accounts (platform, account_id, account_id_norm, account_name, imported_at)
+                        VALUES (%s, %s, regexp_replace(COALESCE(%s, ''), '[^0-9]', '', 'g'), %s, NOW())
                         ON CONFLICT(platform, account_id) DO UPDATE SET
                             account_name = EXCLUDED.account_name,
+                            account_id_norm = EXCLUDED.account_id_norm,
                             imported_at = NOW()
                         """,
-                        (platform, str(account["id"]), str(account["name"])),
+                        (platform, str(account["id"]), str(account["id"]), str(account["name"])),
                     )
                 cur.execute(
                     """

@@ -45,10 +45,8 @@ class AuthLoginError(RuntimeError):
 
 
 def _connect():
-    settings = load_settings()
-    if psycopg is None:
-        raise RuntimeError("psycopg is required for DB-backed authentication")
-    return psycopg.connect(settings.database_url)
+    from app.db.pool import get_connection
+    return get_connection()
 
 
 def hash_password(value: str) -> str:

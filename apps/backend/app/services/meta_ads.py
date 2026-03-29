@@ -93,10 +93,8 @@ class MetaAdsService:
         return settings.app_env == "test"
 
     def _connect(self):
-        settings = load_settings()
-        if psycopg is None:
-            raise MetaAdsIntegrationError("psycopg is required for campaign/ad_group/ad daily persistence")
-        return psycopg.connect(settings.database_url)
+        from app.db.pool import get_connection
+        return get_connection()
 
     def _is_placeholder(self, value: str) -> bool:
         normalized = value.strip().lower()

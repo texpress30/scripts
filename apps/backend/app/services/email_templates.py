@@ -158,10 +158,8 @@ _CANONICAL_SAMPLE_VARIABLES: dict[str, dict[str, str]] = {
 
 class EmailTemplatesService:
     def _connect(self):
-        settings = load_settings()
-        if psycopg is None:
-            raise RuntimeError("psycopg is required for email template persistence")
-        return psycopg.connect(settings.database_url)
+        from app.db.pool import get_connection
+        return get_connection()
 
     def initialize_schema(self) -> None:
         with self._connect() as conn:

@@ -30,10 +30,8 @@ class PerformanceReportsStore:
         return load_settings().app_env == "test" and os.environ.get("PYTEST_CURRENT_TEST") is not None
 
     def _connect(self):
-        settings = load_settings()
-        if psycopg is None:
-            raise RuntimeError("psycopg is required for ad performance persistence")
-        return psycopg.connect(settings.database_url)
+        from app.db.pool import get_connection
+        return get_connection()
 
     def _deduplicate_reports_query(self) -> str:
         return """
@@ -212,8 +210,12 @@ class PerformanceReportsStore:
                 cur.execute(
                     """
                     INSERT INTO ad_performance_reports (
-                        report_date, platform, customer_id, client_id, spend, impressions, clicks, conversions, conversion_value, extra_metrics
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                        report_date, platform, customer_id, customer_id_norm, client_id,
+                        spend, impressions, clicks, conversions, conversion_value, extra_metrics
+                    ) VALUES (
+                        %s, %s, %s, regexp_replace(COALESCE(%s, ''), '[^0-9]', '', 'g'), %s,
+                        %s, %s, %s, %s, %s, %s::jsonb
+                    )
                     ON CONFLICT (report_date, platform, customer_id)
                     DO UPDATE SET
                         spend = EXCLUDED.spend,
@@ -223,11 +225,13 @@ class PerformanceReportsStore:
                         conversion_value = EXCLUDED.conversion_value,
                         extra_metrics = EXCLUDED.extra_metrics,
                         client_id = EXCLUDED.client_id,
+                        customer_id_norm = EXCLUDED.customer_id_norm,
                         synced_at = NOW()
                     """,
                     (
                         report_date,
                         platform,
+                        customer_id,
                         customer_id,
                         client_id,
                         float(spend),

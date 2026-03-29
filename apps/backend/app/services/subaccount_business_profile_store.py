@@ -32,10 +32,8 @@ class SubaccountBusinessProfileStore:
         return load_settings().app_env == "test" and os.environ.get("PYTEST_CURRENT_TEST") is not None
 
     def _connect(self):
-        settings = load_settings()
-        if psycopg is None:
-            raise RuntimeError("psycopg is required for subaccount business profile persistence")
-        return psycopg.connect(settings.database_url)
+        from app.db.pool import get_connection
+        return get_connection()
 
     def _normalize_profile(self, payload: dict[str, object] | None) -> dict[str, object]:
         data = payload or {}
