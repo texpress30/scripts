@@ -1615,10 +1615,26 @@ class GoogleAdsService:
                         "google_customer_id": customer_id,
                         "synced_at": synced_at,
                     }
+                    batch_payloads: list[dict] = []
                     for row in daily_rows:
                         payload_row = dict(row)
                         payload_row["google_customer_id"] = customer_id
-                        self._persist_performance_report(snapshot=payload_row, client_id=client_id)
+                        rd_raw = str(payload_row.get("report_date") or "").strip()
+                        rd_val = date.fromisoformat(rd_raw) if rd_raw else datetime.now(timezone.utc).date()
+                        batch_payloads.append({
+                            "report_date": rd_val,
+                            "platform": "google_ads",
+                            "customer_id": customer_id,
+                            "client_id": client_id,
+                            "spend": float(payload_row.get("spend", 0.0)),
+                            "impressions": int(payload_row.get("impressions", 0)),
+                            "clicks": int(payload_row.get("clicks", 0)),
+                            "conversions": float(payload_row.get("conversions", 0)),
+                            "conversion_value": float(payload_row.get("revenue", 0.0)),
+                            "extra_metrics": dict(payload_row.get("extra_metrics", {})) if isinstance(payload_row.get("extra_metrics"), dict) else {},
+                        })
+                    if batch_payloads:
+                        performance_reports_store.write_daily_reports_batch(batch_payloads)
                 else:
                     spend = float(100 + client_id * 17)
                     impressions = 5000 + client_id * 110
