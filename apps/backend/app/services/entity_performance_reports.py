@@ -9,6 +9,7 @@ _CAMPAIGN_UPSERT_SQL = """
 INSERT INTO campaign_performance_reports (
     platform,
     account_id,
+    account_id_norm,
     campaign_id,
     report_date,
     spend,
@@ -21,7 +22,7 @@ INSERT INTO campaign_performance_reports (
     source_window_end,
     source_job_id
 ) VALUES (
-    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s
+    %s, %s, regexp_replace(COALESCE(%s, ''), '[^0-9]', '', 'g'), %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s
 )
 ON CONFLICT (platform, account_id, campaign_id, report_date)
 DO UPDATE SET
@@ -34,6 +35,7 @@ DO UPDATE SET
     source_window_start = EXCLUDED.source_window_start,
     source_window_end = EXCLUDED.source_window_end,
     source_job_id = EXCLUDED.source_job_id,
+    account_id_norm = EXCLUDED.account_id_norm,
     ingested_at = NOW()
 """
 
@@ -41,6 +43,7 @@ _AD_GROUP_UPSERT_SQL = """
 INSERT INTO ad_group_performance_reports (
     platform,
     account_id,
+    account_id_norm,
     ad_group_id,
     campaign_id,
     report_date,
@@ -54,7 +57,7 @@ INSERT INTO ad_group_performance_reports (
     source_window_end,
     source_job_id
 ) VALUES (
-    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s
+    %s, %s, regexp_replace(COALESCE(%s, ''), '[^0-9]', '', 'g'), %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s
 )
 ON CONFLICT (platform, account_id, ad_group_id, report_date)
 DO UPDATE SET
@@ -68,6 +71,7 @@ DO UPDATE SET
     source_window_start = EXCLUDED.source_window_start,
     source_window_end = EXCLUDED.source_window_end,
     source_job_id = EXCLUDED.source_job_id,
+    account_id_norm = EXCLUDED.account_id_norm,
     ingested_at = NOW()
 """
 
@@ -163,6 +167,7 @@ def upsert_campaign_performance_reports(conn, rows: list[dict[str, Any]]) -> int
         (
             str(row.get("platform") or ""),
             str(row.get("account_id") or ""),
+            str(row.get("account_id") or ""),
             str(row.get("campaign_id") or ""),
             _to_date_or_none(row.get("report_date")),
             float(row.get("spend", 0) or 0),
@@ -190,6 +195,7 @@ def upsert_ad_group_performance_reports(conn, rows: list[dict[str, Any]]) -> int
     params = [
         (
             str(row.get("platform") or ""),
+            str(row.get("account_id") or ""),
             str(row.get("account_id") or ""),
             str(row.get("ad_group_id") or ""),
             row.get("campaign_id"),

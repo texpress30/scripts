@@ -147,9 +147,9 @@
 - [x] Formula: `min(baseMs * 2^consecutiveIdles, maxMs)`, reset la activitate
 
 ### 4.2 Eliminare Completa Regex din Joins
-- [ ] Backfill complet `*_norm` pe toate platformele (nu doar Google)
-- [ ] Adauga `NOT NULL` + `DEFAULT` pe coloanele norm
-- [ ] Simplifica join-urile la `norm = norm` fara COALESCE/regexp_replace
+- [x] Backfill complet `*_norm` pe toate platformele (nu doar Google)
+- [x] Adauga `NOT NULL` + `DEFAULT` pe coloanele norm
+- [x] Simplifica join-urile la `norm = norm` fara COALESCE/regexp_replace
 
 ### 4.3 AppShell Boot Parallelization
 - [ ] Identifica request-urile independente din AppShell mount
