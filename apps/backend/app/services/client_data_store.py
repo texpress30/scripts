@@ -1135,6 +1135,39 @@ def list_sale_entries_for_daily_input(*, daily_input_id: int) -> list[dict[str, 
     return [payload for payload in (_row_to_sale_entry_payload(row) for row in rows) if payload is not None]
 
 
+def list_sale_entries_for_daily_input_ids(*, daily_input_ids: list[int]) -> dict[int, list[dict[str, object]]]:
+    normalized_ids = sorted({_normalize_positive_int(item, field_name="daily_input_id") for item in daily_input_ids})
+    if len(normalized_ids) <= 0:
+        return {}
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    daily_input_id,
+                    brand,
+                    model,
+                    sale_price_amount,
+                    actual_price_amount,
+                    notes,
+                    sort_order
+                FROM client_data_sale_entries
+                WHERE daily_input_id = ANY(%s::int[])
+                ORDER BY daily_input_id ASC, sort_order ASC, id ASC
+                """,
+                (normalized_ids,),
+            )
+            rows = cur.fetchall() or []
+    payload: dict[int, list[dict[str, object]]] = {int(item): [] for item in normalized_ids}
+    for row in rows:
+        entry = _row_to_sale_entry_payload(row)
+        if entry is None:
+            continue
+        payload.setdefault(int(entry["daily_input_id"]), []).append(entry)
+    return payload
+
+
 def replace_sale_entries_for_daily_input(
     *,
     daily_input_id: int,

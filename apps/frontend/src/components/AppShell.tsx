@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useEffect, useMemo, useState } from "react";
@@ -579,10 +580,11 @@ export function AppShell({
   }, []);
 
   useEffect(() => {
+    if (!profileOpen && !loginAsOpen) return;
     let ignore = false;
     async function loadTeamUsers() {
       try {
-        const result = await apiRequest<TeamMembersResponse>("/team/members?page=1&page_size=500");
+        const result = await apiRequest<TeamMembersResponse>("/team/members?page=1&page_size=100");
         if (!ignore) setTeamUsers(result.items);
       } catch {
         if (!ignore) setTeamUsers([]);
@@ -592,7 +594,7 @@ export function AppShell({
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [profileOpen, loginAsOpen]);
 
   useEffect(() => {
     const onFullscreen = () => setFullscreen(Boolean(document.fullscreenElement));
@@ -882,8 +884,15 @@ export function AppShell({
         <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-center dark:border-slate-700 dark:bg-slate-800/50">
           <div className="mx-auto mb-2 flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-white dark:border-slate-600 dark:bg-slate-900">
             {shouldRenderBrandingLogo(brandingLogoUrl, brandingImageLoadFailed) ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={brandingLogoUrl} alt="Logo context" className="h-full w-full object-cover" onError={() => setBrandingImageLoadFailed(true)} />
+              <Image
+                src={brandingLogoUrl}
+                alt="Logo context"
+                width={64}
+                height={64}
+                className="h-full w-full object-cover"
+                onError={() => setBrandingImageLoadFailed(true)}
+                unoptimized
+              />
             ) : (
               <span className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">{brandingInitials}</span>
             )}

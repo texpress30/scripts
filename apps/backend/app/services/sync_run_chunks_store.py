@@ -346,6 +346,31 @@ class SyncRunChunksStore:
             "errors": int(row[1] or 0),
         }
 
+    def get_sync_run_chunk_status_counts_batch(self, job_ids: list[str]) -> dict[str, dict[str, int]]:
+        self._ensure_schema()
+        normalized_job_ids = [str(item).strip() for item in job_ids if str(item).strip() != ""]
+        if len(normalized_job_ids) <= 0:
+            return {}
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        job_id,
+                        COUNT(*) FILTER (WHERE status IN ('queued', 'running', 'pending'))::int AS remaining,
+                        COUNT(*) FILTER (WHERE status IN ('error', 'failed'))::int AS errors
+                    FROM sync_run_chunks
+                    WHERE job_id = ANY(%s::text[])
+                    GROUP BY job_id
+                    """,
+                    (normalized_job_ids,),
+                )
+                rows = cur.fetchall() or []
+        payload: dict[str, dict[str, int]] = {}
+        for row in rows:
+            payload[str(row[0])] = {"remaining": int(row[1] or 0), "errors": int(row[2] or 0)}
+        return payload
+
     def claim_next_queued_chunk(self, *, job_id: str, max_attempts: int = 5) -> dict[str, object] | None:
         self._ensure_schema()
         with self._connect() as conn:

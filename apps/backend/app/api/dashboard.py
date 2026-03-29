@@ -12,6 +12,7 @@ from app.api.dependencies import (
 from app.services.audit import audit_log_service
 from app.services.auth import AuthUser
 from app.services.dashboard import unified_dashboard_service
+from app.services.response_cache import response_cache
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -44,10 +45,15 @@ def agency_dashboard_summary(
     if resolved_start > resolved_end:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="start_date must be <= end_date")
 
-    metrics = unified_dashboard_service.get_agency_dashboard(start_date=resolved_start, end_date=resolved_end)
+    cache_key = f"agency_summary:{resolved_start.isoformat()}:{resolved_end.isoformat()}"
+    cached = response_cache.get(cache_key)
+    if cached is not None:
+        metrics = cached
+    else:
+        metrics = unified_dashboard_service.get_agency_dashboard(start_date=resolved_start, end_date=resolved_end)
+        metrics = response_cache.set(cache_key, metrics, ttl_seconds=45)
     if response is not None:
-        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-        response.headers["Pragma"] = "no-cache"
+        response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=30"
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
@@ -247,15 +253,20 @@ def client_dashboard(
     if resolved_start > resolved_end:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="start_date must be <= end_date")
 
-    metrics = unified_dashboard_service.get_client_dashboard(
-        client_id=client_id,
-        start_date=resolved_start,
-        end_date=resolved_end,
-        business_period_grain=business_period_grain,
-    )
+    cache_key = f"client_dashboard:{client_id}:{resolved_start.isoformat()}:{resolved_end.isoformat()}:{business_period_grain}"
+    cached = response_cache.get(cache_key)
+    if cached is not None:
+        metrics = cached
+    else:
+        metrics = unified_dashboard_service.get_client_dashboard(
+            client_id=client_id,
+            start_date=resolved_start,
+            end_date=resolved_end,
+            business_period_grain=business_period_grain,
+        )
+        response_cache.set(cache_key, metrics, ttl_seconds=45)
     if response is not None:
-        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-        response.headers["Pragma"] = "no-cache"
+        response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=30"
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
@@ -271,6 +282,8 @@ def client_google_ads_table(
     client_id: int,
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     user: AuthUser = Depends(get_current_user),
     response: Response = None,
 ) -> dict[str, object]:
@@ -287,6 +300,8 @@ def client_google_ads_table(
             client_id=client_id,
             start_date=resolved_start,
             end_date=resolved_end,
+            limit=max(1, min(500, int(limit))),
+            offset=max(0, int(offset)),
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -313,6 +328,8 @@ def _client_platform_ads_table(
     user: AuthUser,
     response: Response | None,
     platform: str,
+    limit: int = 200,
+    offset: int = 0,
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="dashboard:view", scope="subaccount")
     enforce_subaccount_module_access(user=user, subaccount_id=client_id, module_key="dashboard")
@@ -328,6 +345,8 @@ def _client_platform_ads_table(
             start_date=resolved_start,
             end_date=resolved_end,
             platform=platform,
+            limit=max(1, min(500, int(limit))),
+            offset=max(0, int(offset)),
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -355,6 +374,8 @@ def _client_platform_account_campaigns(
     user: AuthUser,
     response: Response | None,
     platform: str,
+    limit: int = 200,
+    offset: int = 0,
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="dashboard:view", scope="subaccount")
     enforce_subaccount_module_access(user=user, subaccount_id=client_id, module_key="dashboard")
@@ -371,6 +392,8 @@ def _client_platform_account_campaigns(
             account_id=account_id,
             start_date=resolved_start,
             end_date=resolved_end,
+            limit=max(1, min(500, int(limit))),
+            offset=max(0, int(offset)),
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -399,6 +422,8 @@ def _client_platform_campaign_adgroups(
     user: AuthUser,
     response: Response | None,
     platform: str,
+    limit: int = 200,
+    offset: int = 0,
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="dashboard:view", scope="subaccount")
     enforce_subaccount_module_access(user=user, subaccount_id=client_id, module_key="dashboard")
@@ -416,6 +441,8 @@ def _client_platform_campaign_adgroups(
             campaign_id=campaign_id,
             start_date=resolved_start,
             end_date=resolved_end,
+            limit=max(1, min(500, int(limit))),
+            offset=max(0, int(offset)),
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -439,6 +466,8 @@ def client_meta_ads_table(
     client_id: int,
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     user: AuthUser = Depends(get_current_user),
     response: Response = None,
 ) -> dict[str, object]:
@@ -449,6 +478,8 @@ def client_meta_ads_table(
         user=user,
         response=response,
         platform="meta_ads",
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -457,6 +488,8 @@ def client_tiktok_ads_table(
     client_id: int,
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     user: AuthUser = Depends(get_current_user),
     response: Response = None,
 ) -> dict[str, object]:
@@ -467,6 +500,8 @@ def client_tiktok_ads_table(
         user=user,
         response=response,
         platform="tiktok_ads",
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -476,6 +511,8 @@ def client_google_ads_account_campaigns(
     account_id: str,
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     user: AuthUser = Depends(get_current_user),
     response: Response = None,
 ) -> dict[str, object]:
@@ -487,6 +524,8 @@ def client_google_ads_account_campaigns(
         user=user,
         response=response,
         platform="google_ads",
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -496,6 +535,8 @@ def client_meta_ads_account_campaigns(
     account_id: str,
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     user: AuthUser = Depends(get_current_user),
     response: Response = None,
 ) -> dict[str, object]:
@@ -507,6 +548,8 @@ def client_meta_ads_account_campaigns(
         user=user,
         response=response,
         platform="meta_ads",
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -516,6 +559,8 @@ def client_tiktok_ads_account_campaigns(
     account_id: str,
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     user: AuthUser = Depends(get_current_user),
     response: Response = None,
 ) -> dict[str, object]:
@@ -527,6 +572,8 @@ def client_tiktok_ads_account_campaigns(
         user=user,
         response=response,
         platform="tiktok_ads",
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -537,6 +584,8 @@ def client_google_ads_campaign_adgroups(
     campaign_id: str,
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     user: AuthUser = Depends(get_current_user),
     response: Response = None,
 ) -> dict[str, object]:
@@ -549,6 +598,8 @@ def client_google_ads_campaign_adgroups(
         user=user,
         response=response,
         platform="google_ads",
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -559,6 +610,8 @@ def client_meta_ads_campaign_adgroups(
     campaign_id: str,
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     user: AuthUser = Depends(get_current_user),
     response: Response = None,
 ) -> dict[str, object]:
@@ -571,6 +624,8 @@ def client_meta_ads_campaign_adgroups(
         user=user,
         response=response,
         platform="meta_ads",
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -581,6 +636,8 @@ def client_tiktok_ads_campaign_adgroups(
     campaign_id: str,
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     user: AuthUser = Depends(get_current_user),
     response: Response = None,
 ) -> dict[str, object]:
@@ -593,4 +650,6 @@ def client_tiktok_ads_campaign_adgroups(
         user=user,
         response=response,
         platform="tiktok_ads",
+        limit=limit,
+        offset=offset,
     )

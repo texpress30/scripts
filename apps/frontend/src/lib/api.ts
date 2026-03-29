@@ -51,6 +51,16 @@ type ApiRequestOptions = RequestInit & {
   requireAuth?: boolean;
 };
 
+function resolveRequestCache(path: string, init: RequestInit): RequestCache | undefined {
+  if (init.cache) return init.cache;
+  const method = String(init.method ?? "GET").toUpperCase();
+  if (method !== "GET" && method !== "HEAD") return "no-store";
+  const normalizedPath = String(path || "").toLowerCase();
+  if (normalizedPath.startsWith("/auth/")) return "no-store";
+  if (normalizedPath.includes("/sync-runs/")) return "no-store";
+  return "force-cache";
+}
+
 function extractErrorMessage(detail: string, status: number, requestUrl: string): string {
   const raw = detail.trim();
   if (!raw) return `Request failed: ${status} (${requestUrl})`;
@@ -87,7 +97,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   const response = await fetch(requestUrl, {
     ...requestInit,
     headers,
-    cache: "no-store"
+    cache: resolveRequestCache(path, requestInit),
   });
 
   if (!response.ok) {

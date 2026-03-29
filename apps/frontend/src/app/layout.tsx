@@ -4,6 +4,7 @@ import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { GlobalAgencyFavicon } from "@/components/GlobalAgencyFavicon";
+import { WebVitalsReporter } from "@/components/WebVitalsReporter";
 
 export const metadata: Metadata = {
   title: "VOXEL MCC",
@@ -15,6 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" suppressHydrationWarning className={`${GeistSans.variable} ${GeistMono.variable}`}>
       <body className="font-sans antialiased">
         <GlobalAgencyFavicon />
+        <WebVitalsReporter />
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
           {children}
         </ThemeProvider>

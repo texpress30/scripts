@@ -742,12 +742,12 @@ def get_client_data_table(
         )
 
     rows: list[dict[str, object]] = []
+    sale_entries_by_daily_input_id = client_data_store.list_sale_entries_for_daily_input_ids(
+        daily_input_ids=[int(item["id"]) for item in daily_inputs]
+    )
     for daily_input in daily_inputs:
         daily_input_id = int(daily_input["id"])
-        try:
-            sale_entries = client_data_store.list_sale_entries_for_daily_input(daily_input_id=daily_input_id)
-        except LookupError:
-            sale_entries = []
+        sale_entries = sale_entries_by_daily_input_id.get(daily_input_id, [])
 
         custom_value_3_amount = _to_decimal(daily_input["custom_value_3_amount"])
         custom_value_4_amount = _to_decimal(daily_input["custom_value_4_amount"])

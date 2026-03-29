@@ -492,15 +492,32 @@ export default function AgencyAccountDetailPage() {
 
   useEffect(() => {
     if (!hasActiveRun) return;
-    const intervalId = window.setInterval(() => {
-      void loadAccountMeta();
-      void loadRuns();
+    let cancelled = false;
+    let timeoutId: number | null = null;
+
+    async function pollActiveRun() {
+      if (cancelled) return;
+      if (typeof document !== "undefined" && document.hidden) {
+        timeoutId = window.setTimeout(() => {
+          void pollActiveRun();
+        }, 12000);
+        return;
+      }
+      await Promise.all([loadAccountMeta(), loadRuns()]);
       for (const jobId of expandedRunIds) {
         void loadChunks(jobId);
       }
-    }, 2500);
+      timeoutId = window.setTimeout(() => {
+        void pollActiveRun();
+      }, 4000);
+    }
 
-    return () => window.clearInterval(intervalId);
+    void pollActiveRun();
+
+    return () => {
+      cancelled = true;
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
   }, [expandedRunIds, hasActiveRun]);
 
   useEffect(() => {
