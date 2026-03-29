@@ -125,9 +125,9 @@
 ### 3.4 FX Rate Batch/Prefetch
 **Impact: Mediu | Efort: 1 zi | Risc: Mic**
 
-- [ ] Colecteaza toate perechile `(currency, date)` distincte inainte de iteratie
-- [ ] Faci un singur batch de request-uri FX (sau cache warmup)
-- [ ] Aplica rate-urile din cache in iteratia per-row
+- [x] Colecteaza toate perechile `(currency, date)` distincte inainte de iteratie
+- [x] Faci un singur batch de request-uri FX (sau cache warmup)
+- [x] Aplica rate-urile din cache in iteratia per-row
 
 ### 3.5 Bundle Analyzer + Cleanup
 **Impact: Mic | Efort: 0.5 zile | Risc: Mic**
