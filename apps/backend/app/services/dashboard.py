@@ -516,46 +516,61 @@ class UnifiedDashboardService:
             fallback_literal="USD",
         )
         return f"""
+                        WITH raw AS (
+                            SELECT
+                                mapped.account_id,
+                                COALESCE(NULLIF(TRIM(apa.account_name), ''), mapped.account_id) AS account_name,
+                                COALESCE(
+                                    NULLIF(TRIM(apa.status), ''),
+                                    NULLIF(TRIM(COALESCE(apr.extra_metrics -> '{platform}' ->> 'account_status', '')), '')
+                                ) AS account_status,
+                                COALESCE(
+                                    NULLIF(TRIM(COALESCE(apr.extra_metrics -> '{platform}' ->> 'account_currency', '')), ''),
+                                    {effective_currency_sql}
+                                ) AS account_currency,
+                                COALESCE(apr.spend, 0) AS spend,
+                                COALESCE(apr.conversion_value, 0) AS conversion_value,
+                                COALESCE(apr.impressions, 0) AS impressions,
+                                COALESCE(apr.clicks, 0) AS clicks
+                            FROM agency_account_client_mappings mapped
+                            JOIN agency_clients client
+                              ON client.id = mapped.client_id
+                            LEFT JOIN agency_platform_accounts apa
+                              ON apa.platform = mapped.platform
+                             AND (
+                                  apa.account_id = mapped.account_id
+                                  OR {normalized_apa_account_sql} = {normalized_mapped_account_sql}
+                             )
+                            LEFT JOIN ad_performance_reports apr
+                              ON apr.platform = mapped.platform
+                             AND apr.platform = '{platform}'
+                             AND apr.report_date BETWEEN %s AND %s
+                             AND (
+                                  mapped.account_id = apr.customer_id
+                                  OR {normalized_mapped_account_sql} = {normalized_report_account_sql}
+                             )
+                             AND COALESCE(
+                                  NULLIF(TRIM(COALESCE(apr.extra_metrics -> '{platform}' ->> 'grain', '')), ''),
+                                  'account_daily'
+                             ) = 'account_daily'
+                            WHERE mapped.client_id = %s
+                              AND mapped.platform = '{platform}'
+                        )
                         SELECT
-                            mapped.account_id,
-                            COALESCE(NULLIF(TRIM(apa.account_name), ''), mapped.account_id) AS account_name,
-                            COALESCE(
-                                NULLIF(TRIM(apa.status), ''),
-                                NULLIF(TRIM(COALESCE(apr.extra_metrics -> '{platform}' ->> 'account_status', '')), '')
-                            ) AS account_status,
-                            apr.report_date,
-                            COALESCE(
-                                NULLIF(TRIM(COALESCE(apr.extra_metrics -> '{platform}' ->> 'account_currency', '')), ''),
-                                {effective_currency_sql}
-                            ) AS account_currency,
-                            COALESCE(apr.spend, 0) AS spend,
-                            COALESCE(apr.conversion_value, 0) AS conversion_value,
-                            COALESCE(apr.impressions, 0) AS impressions,
-                            COALESCE(apr.clicks, 0) AS clicks
-                        FROM agency_account_client_mappings mapped
-                        JOIN agency_clients client
-                          ON client.id = mapped.client_id
-                        LEFT JOIN agency_platform_accounts apa
-                          ON apa.platform = mapped.platform
-                         AND (
-                              apa.account_id = mapped.account_id
-                              OR {normalized_apa_account_sql} = {normalized_mapped_account_sql}
-                         )
-                        LEFT JOIN ad_performance_reports apr
-                          ON apr.platform = mapped.platform
-                         AND apr.platform = '{platform}'
-                         AND apr.report_date BETWEEN %s AND %s
-                         AND (
-                              mapped.account_id = apr.customer_id
-                              OR {normalized_mapped_account_sql} = {normalized_report_account_sql}
-                         )
-                         AND COALESCE(
-                              NULLIF(TRIM(COALESCE(apr.extra_metrics -> '{platform}' ->> 'grain', '')), ''),
-                              'account_daily'
-                         ) = 'account_daily'
-                        WHERE mapped.client_id = %s
-                          AND mapped.platform = '{platform}'
-                        ORDER BY mapped.account_id, apr.report_date
+                            account_id,
+                            MAX(account_name) AS account_name,
+                            MAX(NULLIF(account_status, '')) AS account_status,
+                            MAX(account_currency) AS account_currency,
+                            COALESCE(SUM(spend), 0) AS spend,
+                            COALESCE(SUM(conversion_value), 0) AS conversion_value,
+                            COALESCE(SUM(impressions), 0) AS impressions,
+                            COALESCE(SUM(clicks), 0) AS clicks,
+                            COUNT(*) OVER() AS total_count
+                        FROM raw
+                        WHERE TRIM(COALESCE(account_id, '')) != ''
+                        GROUP BY account_id
+                        ORDER BY SUM(spend) DESC
+                        LIMIT %s OFFSET %s
                         """
 
     def _client_platform_campaign_rows_query(self, *, platform: str) -> str:
@@ -618,7 +633,8 @@ class UnifiedDashboardService:
                                    NULLIF(TRIM(COALESCE(agpr.extra_metrics -> '{platform}' ->> 'grain', '')), ''),
                                    'ad_group_daily'
                               ) = 'ad_group_daily'
-                        )
+                        ),
+                        raw AS (
                         SELECT
                             perf.account_id,
                             COALESCE(NULLIF(TRIM(apa.account_name), ''), perf.account_id) AS account_name,
@@ -679,7 +695,25 @@ class UnifiedDashboardService:
                               OR {normalized_pc_account_sql} = {self._platform_account_normalized_sql(expr='perf.account_id', platform=platform)}
                          )
                          AND pc.campaign_id = perf.campaign_id
-                        ORDER BY perf.campaign_id, perf.report_date
+                        )
+                        SELECT
+                            MAX(account_id) AS account_id,
+                            MAX(account_name) AS account_name,
+                            MAX(NULLIF(account_status, '')) AS account_status,
+                            campaign_id,
+                            MAX(campaign_name) AS campaign_name,
+                            MAX(NULLIF(campaign_status, '')) AS campaign_status,
+                            MAX(account_currency) AS account_currency,
+                            COALESCE(SUM(spend), 0) AS spend,
+                            COALESCE(SUM(conversion_value), 0) AS conversion_value,
+                            COALESCE(SUM(impressions), 0) AS impressions,
+                            COALESCE(SUM(clicks), 0) AS clicks,
+                            COUNT(*) OVER() AS total_count
+                        FROM raw
+                        WHERE TRIM(COALESCE(campaign_id, '')) != ''
+                        GROUP BY campaign_id
+                        ORDER BY SUM(spend) DESC
+                        LIMIT %s OFFSET %s
                         """
 
     def _client_platform_campaign_adgroup_rows_query(self, *, platform: str) -> str:
@@ -698,6 +732,7 @@ class UnifiedDashboardService:
             fallback_literal="USD",
         )
         return f"""
+                        WITH raw AS (
                         SELECT
                             agpr.account_id,
                             COALESCE(NULLIF(TRIM(apa.account_name), ''), agpr.account_id) AS account_name,
@@ -791,7 +826,27 @@ class UnifiedDashboardService:
                                NULLIF(TRIM(COALESCE(agpr.extra_metrics -> '{platform}' ->> 'grain', '')), ''),
                                'ad_group_daily'
                           ) = 'ad_group_daily'
-                        ORDER BY agpr.ad_group_id, agpr.report_date
+                        )
+                        SELECT
+                            MAX(account_id) AS account_id,
+                            MAX(account_name) AS account_name,
+                            MAX(NULLIF(account_status, '')) AS account_status,
+                            MAX(campaign_id) AS campaign_id,
+                            MAX(campaign_name) AS campaign_name,
+                            ad_group_id,
+                            MAX(ad_group_name) AS ad_group_name,
+                            MAX(NULLIF(ad_group_status, '')) AS ad_group_status,
+                            MAX(account_currency) AS account_currency,
+                            COALESCE(SUM(spend), 0) AS spend,
+                            COALESCE(SUM(conversion_value), 0) AS conversion_value,
+                            COALESCE(SUM(impressions), 0) AS impressions,
+                            COALESCE(SUM(clicks), 0) AS clicks,
+                            COUNT(*) OVER() AS total_count
+                        FROM raw
+                        WHERE TRIM(COALESCE(ad_group_id, '')) != ''
+                        GROUP BY ad_group_id
+                        ORDER BY SUM(spend) DESC
+                        LIMIT %s OFFSET %s
                         """
 
     def _platform_account_normalized_sql(self, *, expr: str, platform: str) -> str:
@@ -2418,76 +2473,48 @@ class UnifiedDashboardService:
             raise ValueError("unsupported platform")
 
         performance_reports_store.initialize_schema()
+        safe_limit = max(1, int(limit))
+        safe_offset = max(0, int(offset))
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(self._client_platform_account_rows_query(platform=platform), (start_date, end_date, client_id))
+                cur.execute(
+                    self._client_platform_account_rows_query(platform=platform),
+                    (start_date, end_date, client_id, safe_limit, safe_offset),
+                )
                 rows = cur.fetchall()
 
         currency_decision = self._client_reporting_currency_decision(client_id=client_id)
         reporting_currency = str(currency_decision.get("reporting_currency") or "USD")
-        by_account: dict[str, dict[str, object]] = {}
+
+        total_count = 0
+        items: list[dict[str, object]] = []
         for row in rows:
             account_id = str(row[0] or "").strip()
-            if account_id == "":
-                continue
             account_name = str(row[1] or account_id).strip() or account_id
             account_status = str(row[2] or "").strip().lower() or "unknown"
-            report_date = row[3] if isinstance(row[3], date) else end_date
-            account_currency = self._normalize_currency_code(row[4], fallback=reporting_currency)
-            spend = self._normalize_money(
-                amount=_to_float(row[5]),
-                from_currency=account_currency,
-                to_currency=reporting_currency,
-                rate_date=report_date,
-            )
-            revenue = self._normalize_money(
-                amount=_to_float(row[6]),
-                from_currency=account_currency,
-                to_currency=reporting_currency,
-                rate_date=report_date,
-            )
-            impressions = _to_int(row[7])
-            clicks = _to_int(row[8])
-            current = by_account.setdefault(
-                account_id,
-                {
-                    "account_id": account_id,
-                    "account_name": account_name,
-                    "status": account_status,
-                    "cost": 0.0,
-                    "rev_inf": 0.0,
-                    "roas_inf": 0.0,
-                    "mer_inf": None,
-                    "truecac_inf": None,
-                    "ecr_inf": None,
-                    "ecpnv_inf": None,
-                    "new_visits": None,
-                    "visits": None,
-                    "impressions": 0,
-                    "clicks": 0,
-                },
-            )
-            current["cost"] = _to_float(current.get("cost")) + spend
-            current["rev_inf"] = _to_float(current.get("rev_inf")) + revenue
-            current["impressions"] = _to_int(current.get("impressions")) + impressions
-            current["clicks"] = _to_int(current.get("clicks")) + clicks
-
-        items: list[dict[str, object]] = []
-        for account in by_account.values():
-            cost = round(_to_float(account.get("cost")), 2)
-            revenue = round(_to_float(account.get("rev_inf")), 2)
+            account_currency = self._normalize_currency_code(row[3], fallback=reporting_currency)
+            cost = round(self._normalize_money(amount=_to_float(row[4]), from_currency=account_currency, to_currency=reporting_currency, rate_date=end_date), 2)
+            revenue = round(self._normalize_money(amount=_to_float(row[5]), from_currency=account_currency, to_currency=reporting_currency, rate_date=end_date), 2)
+            impressions = _to_int(row[6])
+            clicks = _to_int(row[7])
+            total_count = _to_int(row[8])
             roas = round(revenue / cost, 4) if cost > 0 else 0.0
-            account["cost"] = cost
-            account["rev_inf"] = revenue
-            account["roas_inf"] = roas
-            account["mer_inf"] = round(cost / revenue, 4) if revenue > 0 else None
-            items.append(account)
-
-        items.sort(key=lambda item: _to_float(item.get("cost")), reverse=True)
-        total_count = len(items)
-        start_idx = max(0, int(offset))
-        end_idx = start_idx + max(1, int(limit))
-        items = items[start_idx:end_idx]
+            items.append({
+                "account_id": account_id,
+                "account_name": account_name,
+                "status": account_status,
+                "cost": cost,
+                "rev_inf": revenue,
+                "roas_inf": roas,
+                "mer_inf": round(cost / revenue, 4) if revenue > 0 else None,
+                "truecac_inf": None,
+                "ecr_inf": None,
+                "ecpnv_inf": None,
+                "new_visits": None,
+                "visits": None,
+                "impressions": impressions,
+                "clicks": clicks,
+            })
         return {
             "client_id": client_id,
             "currency": reporting_currency,
@@ -2536,6 +2563,8 @@ class UnifiedDashboardService:
             raise ValueError("account_id is required")
 
         performance_reports_store.initialize_schema()
+        safe_limit = max(1, int(limit))
+        safe_offset = max(0, int(offset))
         params = (
             platform,
             start_date,
@@ -2548,6 +2577,8 @@ class UnifiedDashboardService:
             normalized_account_id,
             normalized_account_id,
             client_id,
+            safe_limit,
+            safe_offset,
         )
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -2557,89 +2588,53 @@ class UnifiedDashboardService:
         currency_decision = self._client_reporting_currency_decision(client_id=client_id)
         reporting_currency = str(currency_decision.get("reporting_currency") or "USD")
 
-        by_campaign: dict[str, dict[str, object]] = {}
+        total_count = 0
+        items: list[dict[str, object]] = []
         resolved_account_name = normalized_account_id
+        account_status_resolved = "unknown"
         for row in rows:
             resolved_account_name = str(row[1] or resolved_account_name).strip() or resolved_account_name
             account_status = str(row[2] or "").strip().lower() or "unknown"
+            if account_status_resolved == "unknown" and account_status != "unknown":
+                account_status_resolved = account_status
             campaign_id = str(row[3] or "").strip()
-            if campaign_id == "":
-                continue
             campaign_name = str(row[4] or campaign_id).strip() or campaign_id
             campaign_status = str(row[5] or "").strip().lower() or "unknown"
-            report_date = row[6] if isinstance(row[6], date) else end_date
-            account_currency = self._normalize_currency_code(row[7], fallback=reporting_currency)
-            spend = self._normalize_money(
-                amount=_to_float(row[8]),
-                from_currency=account_currency,
-                to_currency=reporting_currency,
-                rate_date=report_date,
-            )
-            revenue = self._normalize_money(
-                amount=_to_float(row[9]),
-                from_currency=account_currency,
-                to_currency=reporting_currency,
-                rate_date=report_date,
-            )
-            impressions = _to_int(row[10])
-            clicks = _to_int(row[11])
-            current = by_campaign.setdefault(
-                campaign_id,
-                {
-                    "campaign_id": campaign_id,
-                    "campaign_name": campaign_name,
-                    "status": campaign_status,
-                    "cost": 0.0,
-                    "rev_inf": 0.0,
-                    "roas_inf": 0.0,
-                    "mer_inf": None,
-                    "truecac_inf": None,
-                    "ecr_inf": None,
-                    "ecpnv_inf": None,
-                    "new_visits": None,
-                    "visits": None,
-                    "impressions": 0,
-                    "clicks": 0,
-                },
-            )
-            if (
-                str(current.get("campaign_name") or "").strip() in {"", campaign_id}
-                and campaign_name not in {"", campaign_id}
-            ):
-                current["campaign_name"] = campaign_name
-            current["cost"] = _to_float(current.get("cost")) + spend
-            current["rev_inf"] = _to_float(current.get("rev_inf")) + revenue
-            current["impressions"] = _to_int(current.get("impressions")) + impressions
-            current["clicks"] = _to_int(current.get("clicks")) + clicks
-            if account_status != "unknown":
-                current["account_status"] = account_status
-
-        items: list[dict[str, object]] = []
-        for campaign in by_campaign.values():
-            cost = round(_to_float(campaign.get("cost")), 2)
-            revenue = round(_to_float(campaign.get("rev_inf")), 2)
-            campaign["cost"] = cost
-            campaign["rev_inf"] = revenue
-            campaign["roas_inf"] = round(revenue / cost, 4) if cost > 0 else 0.0
-            campaign["mer_inf"] = round(cost / revenue, 4) if revenue > 0 else None
-            items.append(campaign)
-        items.sort(key=lambda item: _to_float(item.get("cost")), reverse=True)
-        total_count = len(items)
-        start_idx = max(0, int(offset))
-        end_idx = start_idx + max(1, int(limit))
-        items = items[start_idx:end_idx]
+            account_currency = self._normalize_currency_code(row[6], fallback=reporting_currency)
+            cost = round(self._normalize_money(amount=_to_float(row[7]), from_currency=account_currency, to_currency=reporting_currency, rate_date=end_date), 2)
+            revenue = round(self._normalize_money(amount=_to_float(row[8]), from_currency=account_currency, to_currency=reporting_currency, rate_date=end_date), 2)
+            impressions = _to_int(row[9])
+            clicks = _to_int(row[10])
+            total_count = _to_int(row[11])
+            roas = round(revenue / cost, 4) if cost > 0 else 0.0
+            items.append({
+                "campaign_id": campaign_id,
+                "campaign_name": campaign_name,
+                "status": campaign_status,
+                "cost": cost,
+                "rev_inf": revenue,
+                "roas_inf": roas,
+                "mer_inf": round(cost / revenue, 4) if revenue > 0 else None,
+                "truecac_inf": None,
+                "ecr_inf": None,
+                "ecpnv_inf": None,
+                "new_visits": None,
+                "visits": None,
+                "impressions": impressions,
+                "clicks": clicks,
+            })
         return {
             "client_id": client_id,
             "platform": platform,
             "account_id": normalized_account_id,
             "account_name": resolved_account_name,
-            "account_status": next((str(item.get("account_status") or "").strip().lower() for item in items if str(item.get("account_status") or "").strip()), "unknown"),
+            "account_status": account_status_resolved,
             "currency": reporting_currency,
             "date_range": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
             "items": items,
             "total_count": total_count,
-            "limit": max(1, int(limit)),
-            "offset": max(0, int(offset)),
+            "limit": safe_limit,
+            "offset": safe_offset,
         }
 
     def get_client_platform_campaign_adgroup_performance(
@@ -2666,6 +2661,8 @@ class UnifiedDashboardService:
             raise ValueError("campaign_id is required")
 
         performance_reports_store.initialize_schema()
+        safe_limit = max(1, int(limit))
+        safe_offset = max(0, int(offset))
         params = (
             client_id,
             platform,
@@ -2674,6 +2671,8 @@ class UnifiedDashboardService:
             normalized_campaign_id,
             normalized_account_id,
             normalized_account_id,
+            safe_limit,
+            safe_offset,
         )
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -2682,7 +2681,8 @@ class UnifiedDashboardService:
 
         currency_decision = self._client_reporting_currency_decision(client_id=client_id)
         reporting_currency = str(currency_decision.get("reporting_currency") or "USD")
-        by_ad_group: dict[str, dict[str, object]] = {}
+        total_count = 0
+        items: list[dict[str, object]] = []
         resolved_account_name = normalized_account_id
         resolved_campaign_name = normalized_campaign_id
         account_status_resolved = "unknown"
@@ -2693,69 +2693,31 @@ class UnifiedDashboardService:
                 account_status_resolved = row_account_status
             resolved_campaign_name = str(row[4] or resolved_campaign_name).strip() or resolved_campaign_name
             ad_group_id = str(row[5] or "").strip()
-            if ad_group_id == "":
-                continue
             ad_group_name = str(row[6] or ad_group_id).strip() or ad_group_id
             ad_group_status = str(row[7] or "").strip().lower() or "unknown"
-            report_date = row[8] if isinstance(row[8], date) else end_date
-            account_currency = self._normalize_currency_code(row[9], fallback=reporting_currency)
-            spend = self._normalize_money(
-                amount=_to_float(row[10]),
-                from_currency=account_currency,
-                to_currency=reporting_currency,
-                rate_date=report_date,
-            )
-            revenue = self._normalize_money(
-                amount=_to_float(row[11]),
-                from_currency=account_currency,
-                to_currency=reporting_currency,
-                rate_date=report_date,
-            )
-            impressions = _to_int(row[12])
-            clicks = _to_int(row[13])
-            current = by_ad_group.setdefault(
-                ad_group_id,
-                {
-                    "ad_group_id": ad_group_id,
-                    "ad_group_name": ad_group_name,
-                    "status": ad_group_status,
-                    "cost": 0.0,
-                    "rev_inf": 0.0,
-                    "roas_inf": 0.0,
-                    "mer_inf": None,
-                    "truecac_inf": None,
-                    "ecr_inf": None,
-                    "ecpnv_inf": None,
-                    "new_visits": None,
-                    "visits": None,
-                    "impressions": 0,
-                    "clicks": 0,
-                },
-            )
-            if (
-                str(current.get("ad_group_name") or "").strip() in {"", ad_group_id}
-                and ad_group_name not in {"", ad_group_id}
-            ):
-                current["ad_group_name"] = ad_group_name
-            current["cost"] = _to_float(current.get("cost")) + spend
-            current["rev_inf"] = _to_float(current.get("rev_inf")) + revenue
-            current["impressions"] = _to_int(current.get("impressions")) + impressions
-            current["clicks"] = _to_int(current.get("clicks")) + clicks
-
-        items: list[dict[str, object]] = []
-        for ad_group in by_ad_group.values():
-            cost = round(_to_float(ad_group.get("cost")), 2)
-            revenue = round(_to_float(ad_group.get("rev_inf")), 2)
-            ad_group["cost"] = cost
-            ad_group["rev_inf"] = revenue
-            ad_group["roas_inf"] = round(revenue / cost, 4) if cost > 0 else 0.0
-            ad_group["mer_inf"] = round(cost / revenue, 4) if revenue > 0 else None
-            items.append(ad_group)
-        items.sort(key=lambda item: _to_float(item.get("cost")), reverse=True)
-        total_count = len(items)
-        start_idx = max(0, int(offset))
-        end_idx = start_idx + max(1, int(limit))
-        items = items[start_idx:end_idx]
+            account_currency = self._normalize_currency_code(row[8], fallback=reporting_currency)
+            cost = round(self._normalize_money(amount=_to_float(row[9]), from_currency=account_currency, to_currency=reporting_currency, rate_date=end_date), 2)
+            revenue = round(self._normalize_money(amount=_to_float(row[10]), from_currency=account_currency, to_currency=reporting_currency, rate_date=end_date), 2)
+            impressions = _to_int(row[11])
+            clicks = _to_int(row[12])
+            total_count = _to_int(row[13])
+            roas = round(revenue / cost, 4) if cost > 0 else 0.0
+            items.append({
+                "ad_group_id": ad_group_id,
+                "ad_group_name": ad_group_name,
+                "status": ad_group_status,
+                "cost": cost,
+                "rev_inf": revenue,
+                "roas_inf": roas,
+                "mer_inf": round(cost / revenue, 4) if revenue > 0 else None,
+                "truecac_inf": None,
+                "ecr_inf": None,
+                "ecpnv_inf": None,
+                "new_visits": None,
+                "visits": None,
+                "impressions": impressions,
+                "clicks": clicks,
+            })
 
         return {
             "client_id": client_id,
@@ -2769,8 +2731,8 @@ class UnifiedDashboardService:
             "date_range": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
             "items": items,
             "total_count": total_count,
-            "limit": max(1, int(limit)),
-            "offset": max(0, int(offset)),
+            "limit": safe_limit,
+            "offset": safe_offset,
         }
 
     def _agency_reports_query(self) -> str:
