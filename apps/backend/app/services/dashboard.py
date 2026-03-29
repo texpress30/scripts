@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 import json
 import time
@@ -129,6 +130,35 @@ class UnifiedDashboardService:
         if target_rate <= 0:
             return amount_ron
         return amount_ron / target_rate
+
+    def _prefetch_fx_rates(self, pairs: set[tuple[str, date]]) -> None:
+        """Warm the FX cache for all (currency, rate_date) pairs in parallel."""
+        to_fetch: list[tuple[str, date]] = []
+        now = time.time()
+        for currency, rate_date in pairs:
+            normalized = self._normalize_currency_code(currency, fallback="USD")
+            if normalized == "RON":
+                continue
+            cache_key = (rate_date.isoformat(), normalized)
+            cached = _MODULE_FX_CACHE.get(cache_key)
+            if cached is not None and (now - float(cached[1])) <= _MODULE_FX_CACHE_TTL_SECONDS:
+                continue
+            to_fetch.append((normalized, rate_date))
+
+        if not to_fetch:
+            return
+
+        def _fetch_one(pair: tuple[str, date]) -> None:
+            self._get_fx_rate_to_ron(currency_code=pair[0], rate_date=pair[1])
+
+        workers = min(len(to_fetch), 8)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(_fetch_one, p) for p in to_fetch]
+            for fut in as_completed(futures):
+                try:
+                    fut.result()
+                except Exception:  # noqa: BLE001
+                    pass
 
     def _aggregate_client_rows(
         self,
@@ -2002,6 +2032,16 @@ class UnifiedDashboardService:
             for row in mapping_rows
         ]
 
+        fx_pairs: set[tuple[str, date]] = set()
+        for row in report_rows:
+            rd = row[2] if isinstance(row[2], date) else end_date
+            cur_code = self._normalize_currency_code(row[13], fallback="USD")
+            fx_pairs.add((cur_code, rd))
+        if reporting_currency != "RON":
+            for _, rd in list(fx_pairs):
+                fx_pairs.add((reporting_currency, rd))
+        self._prefetch_fx_rates(fx_pairs)
+
         raw_totals_by_group: dict[tuple[str, str, str | None], dict[str, object]] = {}
         included_totals_by_group: dict[tuple[str, str, str], dict[str, object]] = {}
 
@@ -2341,6 +2381,16 @@ class UnifiedDashboardService:
 
             currency_decision = self._client_reporting_currency_decision(client_id=client_id)
             reporting_currency = str(currency_decision.get("reporting_currency") or "USD")
+
+            fx_pairs: set[tuple[str, date]] = set()
+            for row in rows:
+                rd = row[1] if isinstance(row[1], date) else resolved_end
+                fx_pairs.add((self._normalize_currency_code(row[2], fallback=reporting_currency), rd))
+            if reporting_currency != "RON":
+                for _, rd in list(fx_pairs):
+                    fx_pairs.add((reporting_currency, rd))
+            self._prefetch_fx_rates(fx_pairs)
+
             platform_totals = self._aggregate_client_rows(rows=rows, target_currency=reporting_currency)
             spend_by_day = self._build_spend_by_day(
                 rows=rows,
@@ -2921,6 +2971,13 @@ class UnifiedDashboardService:
             with conn.cursor() as cur:
                 cur.execute(self._agency_reports_query(), (start_date, end_date))
                 rows = cur.fetchall()
+
+        fx_pairs: set[tuple[str, date]] = set()
+        for row in rows:
+            rd = row[0] if isinstance(row[0], date) else end_date
+            cur_code = self._normalize_currency_code(row[2], fallback="USD")
+            fx_pairs.add((cur_code, rd))
+        self._prefetch_fx_rates(fx_pairs)
 
         totals, spend_by_client_ron, _spend_by_client_native, _client_currency, row_count = self._aggregate_agency_rows(rows)
 
