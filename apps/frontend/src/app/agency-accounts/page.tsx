@@ -9,6 +9,7 @@ import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest, postAccountSyncProgressBatch, type AccountSyncProgressBatchResult } from "@/lib/api";
 import { isTikTokIntegrationEnabled } from "@/lib/featureFlags";
 import { getEffectiveAccountStatus, getTikTokErrorPresentation, shouldSuppressStaleTikTokFeatureFlagError } from "./sync-runs";
+import { PollBackoff } from "@/lib/poll-backoff";
 
 type TikTokAccount = {
   id?: string;
@@ -179,11 +180,6 @@ const DEFAULT_META_TIKTOK_HISTORICAL_START = "2024-09-01";
 const META_TIKTOK_HISTORICAL_GRAINS = ["account_daily", "campaign_daily", "ad_group_daily", "ad_daily"] as const;
 const _PROGRESS_BATCH_ACCOUNT_IDS_MAX = 200;
 const BATCH_STORAGE_PREFIX = "agency-accounts-batch";
-
-function computeAdaptivePollMs(activeCount: number): number {
-  if (activeCount > 0) return 2500;
-  return 10000;
-}
 
 function prettyPlatform(platform: string): string {
   const map: Record<string, string> = {
@@ -1010,6 +1006,8 @@ export default function AgencyAccountsPage() {
     if (!currentBatchId) return;
     let cancelled = false;
     let timeoutId: number | null = null;
+    const backoff = new PollBackoff(2500, 15000, 15000);
+    let prevProgressJson = "";
 
     async function pollBatch() {
       try {
@@ -1022,6 +1020,14 @@ export default function AgencyAccountsPage() {
           if (run.account_id) byAccount[run.account_id] = String(run.status ?? "queued");
         }
         setBatchRunsByAccount(byAccount);
+
+        const progressJson = JSON.stringify(payload.progress);
+        if (progressJson !== prevProgressJson) {
+          backoff.active();
+          prevProgressJson = progressJson;
+        } else {
+          backoff.idle();
+        }
 
         const activeCount = Number(payload.progress.queued || 0) + Number(payload.progress.running || 0);
         if (activeCount <= 0) {
@@ -1053,17 +1059,11 @@ export default function AgencyAccountsPage() {
 
     async function schedulePoll() {
       if (cancelled) return;
-      if (typeof document !== "undefined" && document.hidden) {
-        timeoutId = window.setTimeout(() => {
-          void schedulePoll();
-        }, 10000);
-        return;
-      }
       await pollBatch();
-      const activeCount = Number(batchProgress?.queued || 0) + Number(batchProgress?.running || 0);
+      if (cancelled) return;
       timeoutId = window.setTimeout(() => {
         void schedulePoll();
-      }, computeAdaptivePollMs(activeCount));
+      }, backoff.nextMs());
     }
 
     void schedulePoll();
@@ -1139,18 +1139,25 @@ export default function AgencyAccountsPage() {
     }
 
     let timeoutId: number | null = null;
+    const progressBackoff = new PollBackoff(4000, 20000, 20000);
+    let prevProgressJson = "";
+
     async function scheduleProgressPoll() {
       if (cancelled) return;
-      if (typeof document !== "undefined" && document.hidden) {
-        timeoutId = window.setTimeout(() => {
-          void scheduleProgressPoll();
-        }, 15000);
-        return;
-      }
       await refreshActiveRunsProgress();
+      if (cancelled) return;
+
+      const currentJson = JSON.stringify(rowChunkProgressByAccount);
+      if (currentJson !== prevProgressJson) {
+        progressBackoff.active();
+        prevProgressJson = currentJson;
+      } else {
+        progressBackoff.idle();
+      }
+
       timeoutId = window.setTimeout(() => {
         void scheduleProgressPoll();
-      }, 6000);
+      }, progressBackoff.nextMs());
     }
 
     void scheduleProgressPoll();

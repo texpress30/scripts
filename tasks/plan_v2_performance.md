@@ -143,8 +143,8 @@
 ## Sprint 4 (Optional) — P3 Nice-to-have
 
 ### 4.1 Polling cu Backoff Real
-- [ ] Implementeaza exponential backoff pe polling (nu doar 2 intervale fixe)
-- [ ] Formula: `min(baseMs * 2^consecutiveIdles, maxMs)`, reset la activitate
+- [x] Implementeaza exponential backoff pe polling (nu doar 2 intervale fixe)
+- [x] Formula: `min(baseMs * 2^consecutiveIdles, maxMs)`, reset la activitate
 
 ### 4.2 Eliminare Completa Regex din Joins
 - [ ] Backfill complet `*_norm` pe toate platformele (nu doar Google)
