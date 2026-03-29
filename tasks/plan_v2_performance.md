@@ -110,11 +110,11 @@
 ### 3.2 Route Loading States
 **Impact: Mediu | Efort: 0.5 zile | Risc: Mic**
 
-- [ ] Adauga `loading.tsx` pe:
+- [x] Adauga `loading.tsx` pe:
   - `apps/frontend/src/app/agency/dashboard/loading.tsx`
   - `apps/frontend/src/app/sub/[id]/dashboard/loading.tsx`
   - `apps/frontend/src/app/agency-accounts/loading.tsx`
-- [ ] Skeleton UI simplu: header placeholder + table rows animate
+- [x] Skeleton UI simplu: header placeholder + table rows animate
 
 ### 3.3 Cache pe Google Ads /status
 **Impact: Mic | Efort: 0.5 zile | Risc: Mic**
