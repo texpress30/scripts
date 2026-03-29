@@ -119,8 +119,8 @@
 ### 3.3 Cache pe Google Ads /status
 **Impact: Mic | Efort: 0.5 zile | Risc: Mic**
 
-- [ ] Adauga `response_cache` cu TTL 30s pe `GET /integrations/google-ads/status`
-- [ ] Aliniaza cu pattern-ul existent de pe `/diagnostics`
+- [x] Adauga `response_cache` cu TTL 30s pe `GET /integrations/google-ads/status`
+- [x] Aliniaza cu pattern-ul existent de pe `/diagnostics`
 
 ### 3.4 FX Rate Batch/Prefetch
 **Impact: Mediu | Efort: 1 zi | Risc: Mic**

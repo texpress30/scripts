@@ -281,10 +281,16 @@ def google_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, o
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
+    cache_key = "google_ads:status"
+    cached = response_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     status_payload = google_ads_service.integration_status()
     google_accounts = client_registry_service.list_platform_accounts(platform=PLATFORM_GOOGLE_ADS)
     status_payload["connected_accounts_count"] = len(google_accounts)
     status_payload["last_import_at"] = client_registry_service.get_last_import_at(platform=PLATFORM_GOOGLE_ADS)
+    response_cache.set(cache_key, status_payload, ttl_seconds=30)
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
