@@ -2929,19 +2929,24 @@ class TikTokAdsService:
                         }
                     )
 
+                batch_payloads: list[dict] = [
+                    {
+                        "report_date": row.report_date,
+                        "platform": "tiktok_ads",
+                        "customer_id": identity_resolution.canonical_persistence_customer_id,
+                        "client_id": int(client_id),
+                        "spend": row.spend,
+                        "impressions": row.impressions,
+                        "clicks": row.clicks,
+                        "conversions": row.conversions,
+                        "conversion_value": row.conversion_value,
+                        "extra_metrics": row.extra_metrics,
+                    }
+                    for row in persistence_rows
+                ]
+                if batch_payloads:
+                    performance_reports_store.write_daily_reports_batch(batch_payloads)
                 for row in persistence_rows:
-                    performance_reports_store.write_daily_report(
-                        report_date=row.report_date,
-                        platform="tiktok_ads",
-                        customer_id=identity_resolution.canonical_persistence_customer_id,
-                        client_id=int(client_id),
-                        spend=row.spend,
-                        impressions=row.impressions,
-                        clicks=row.clicks,
-                        conversions=row.conversions,
-                        conversion_value=row.conversion_value,
-                        extra_metrics=row.extra_metrics,
-                    )
                     rows_written += 1
                     totals["spend"] += row.spend
                     totals["impressions"] += row.impressions

@@ -848,7 +848,7 @@ class MetaAdsService:
 
                 def _persist_insights_rows(insights_rows: list[dict[str, object]]) -> int:
                     nonlocal rows_written, account_rows_written, first_persisted_date, last_persisted_date
-                    persisted = 0
+                    batch_payloads: list[dict] = []
                     for item in insights_rows:
                         report_date_raw = str(item.get("date_start") or "").strip()
                         if report_date_raw == "":
@@ -868,21 +868,18 @@ class MetaAdsService:
                             selected_action_type=str(lead_conversion_details.get("lead_action_type_selected") or ""),
                         )
 
-                        performance_reports_store.write_daily_report(
-                            report_date=report_date_value,
-                            platform="meta_ads",
-                            customer_id=account_id,
-                            client_id=int(client_id),
-                            spend=spend,
-                            impressions=impressions,
-                            clicks=clicks,
-                            conversions=conversions,
-                            conversion_value=conversion_value,
-                            extra_metrics={"meta_ads": {**self._base_extra_metrics(item), "account_currency": resolved_account_currency, **self._lead_conversion_observability(details=lead_conversion_details), "grain": "account_daily"}},
-                        )
-                        rows_written += 1
-                        account_rows_written += 1
-                        persisted += 1
+                        batch_payloads.append({
+                            "report_date": report_date_value,
+                            "platform": "meta_ads",
+                            "customer_id": account_id,
+                            "client_id": int(client_id),
+                            "spend": spend,
+                            "impressions": impressions,
+                            "clicks": clicks,
+                            "conversions": conversions,
+                            "conversion_value": conversion_value,
+                            "extra_metrics": {"meta_ads": {**self._base_extra_metrics(item), "account_currency": resolved_account_currency, **self._lead_conversion_observability(details=lead_conversion_details), "grain": "account_daily"}},
+                        })
                         iso_day = report_date_value.isoformat()
                         first_persisted_date = iso_day if first_persisted_date is None or iso_day < first_persisted_date else first_persisted_date
                         last_persisted_date = iso_day if last_persisted_date is None or iso_day > last_persisted_date else last_persisted_date
@@ -891,6 +888,12 @@ class MetaAdsService:
                         account_totals["clicks"] += clicks
                         account_totals["conversions"] += conversions
                         account_totals["conversion_value"] += conversion_value
+
+                    if batch_payloads:
+                        performance_reports_store.write_daily_reports_batch(batch_payloads)
+                    persisted = len(batch_payloads)
+                    rows_written += persisted
+                    account_rows_written += persisted
                     return persisted
 
                 for chunk_start, chunk_end in chunk_windows:

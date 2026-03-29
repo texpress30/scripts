@@ -71,7 +71,7 @@
 ### 2.2 Batch Sync Writes
 **Impact: Mare | Efort: 1 zi | Risc: Mic**
 
-- [ ] Modifica `performance_reports.py` sa faca upsert in batch:
+- [x] Modifica `performance_reports.py` sa faca upsert in batch:
   ```python
   # In loc de per-row connect + insert + commit:
   with pool.getconn() as conn:
@@ -79,8 +79,8 @@
           execute_values(cur, upsert_sql, batch_of_rows)
       conn.commit()
   ```
-- [ ] Batch size: 500-1000 rows per commit
-- [ ] Asigura ca error handling pastreaza semantica (retry per batch, nu per row)
+- [x] Batch size: 500-1000 rows per commit
+- [x] Asigura ca error handling pastreaza semantica (retry per batch, nu per row)
 
 ### 2.3 SWR / React Query pe Frontend
 **Impact: Mare | Efort: 2 zile | Risc: Mic**
