@@ -246,5 +246,6 @@ def parse_csv_for_preview(file_content: bytes) -> dict:
         "valid": valid_count,
         "errors": error_count,
         "columns_detected": columns_detected,
+        "columns_mapping": column_mapping,
         "rows": rows,
     }
