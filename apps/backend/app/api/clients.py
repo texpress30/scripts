@@ -1,6 +1,6 @@
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 
 from app.api.dependencies import enforce_action_scope, enforce_agency_navigation_access, get_current_user
 from app.core.config import load_settings
@@ -40,6 +40,7 @@ from app.services.auth import AuthUser
 from app.services import client_data_store
 from app.services.client_registry import PlatformAccountAlreadyAttachedError, client_registry_service
 from app.services.client_business_inputs_import_service import client_business_inputs_import_service
+from app.services.client_data_csv_import_service import parse_csv_for_preview
 from app.services.media_buying_store import media_buying_store
 from app.services.storage_media_access import StorageMediaAccessError, storage_media_access_service
 from app.services.media_tracker_worksheet import media_tracker_worksheet_service
@@ -1379,3 +1380,42 @@ def list_client_accounts(
     normalized_platform = _normalize_platform_or_422(platform) if platform is not None else None
     items = client_registry_service.list_client_accounts(client_id=client_id, platform=normalized_platform)
     return {"items": items, "count": len(items), "platform": normalized_platform}
+
+
+@router.post("/{client_id}/data/import-preview")
+async def import_preview_client_data(
+    client_id: int,
+    file: UploadFile = File(...),
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    """Parse and validate a CSV file for data import preview. Does not write to DB."""
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    if file.content_type and file.content_type not in (
+        "text/csv",
+        "application/vnd.ms-excel",
+        "application/octet-stream",
+        "text/plain",
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Tip de fișier neacceptat: {file.content_type}. Încărcați un fișier CSV.",
+        )
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fișierul este gol.")
+
+    try:
+        result = parse_csv_for_preview(content)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    print(
+        f"[IMPORT-PREVIEW] sub_id={client_id}, rows={result['total']}, "
+        f"valid={result['valid']}, errors={result['errors']}"
+    )
+
+    return result
