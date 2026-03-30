@@ -24,7 +24,7 @@ function TikTokOAuthCallbackBody() {
   const providerError = searchParams.get("error") ?? "";
   const errorReason = searchParams.get("error_reason") ?? "";
   const errorDescription = searchParams.get("error_description") ?? "";
-  const code = searchParams.get("code") ?? "";
+  const code = searchParams.get("auth_code") ?? searchParams.get("code") ?? "";
   const state = searchParams.get("state") ?? "";
 
   useEffect(() => {
