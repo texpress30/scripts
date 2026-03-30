@@ -37,6 +37,7 @@ type DashboardResponse = {
   platform_sync_summary?: {
     meta_ads?: { accounts?: Array<Record<string, unknown>> };
     tiktok_ads?: { accounts?: Array<Record<string, unknown>> };
+    google_ads?: { accounts?: Array<Record<string, unknown>> };
   };
   spend_by_day?: Array<{
     date?: string;
