@@ -31,6 +31,17 @@ function TikTokOAuthCallbackBody() {
   // return its own state value that doesn't match our HMAC format.
   const state = savedState || urlState;
 
+  // Debug: log all callback parameters for troubleshooting
+  // eslint-disable-next-line no-console
+  console.log("[TikTok Callback]", {
+    urlState: urlState ? `${urlState.substring(0, 30)}... (len=${urlState.length})` : "(empty)",
+    savedState: savedState ? `${savedState.substring(0, 30)}... (len=${savedState.length})` : "(empty)",
+    stateUsed: state ? `${state.substring(0, 30)}... (len=${state.length})` : "(empty)",
+    stateSource: savedState ? "sessionStorage" : urlState ? "url" : "none",
+    codeParam: code ? `${code.substring(0, 10)}... (len=${code.length})` : "(empty)",
+    fullUrl: typeof window !== "undefined" ? window.location.href.substring(0, 150) : "ssr",
+  });
+
   useEffect(() => {
     let ignore = false;
 
@@ -50,7 +61,7 @@ function TikTokOAuthCallbackBody() {
 
       if (!code || !state) {
         if (!ignore) {
-          setError("Missing code/state in TikTok OAuth callback.");
+          setError(`Missing code/state in TikTok OAuth callback. code=${code ? "present" : "missing"}, state=${state ? "present" : "missing"}, urlState=${urlState ? "present" : "missing"}, savedState=${savedState ? "present" : "missing"}`);
           setLoading(false);
         }
         return;

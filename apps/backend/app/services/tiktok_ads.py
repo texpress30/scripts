@@ -514,13 +514,21 @@ class TikTokAdsService:
             raise TikTokAdsIntegrationError("TikTok OAuth is not configured. Set TIKTOK_APP_ID, TIKTOK_APP_SECRET, and TIKTOK_REDIRECT_URI.")
 
         state = generate_oauth_state("tiktok_ads")
+        redirect_uri = settings.tiktok_redirect_uri.strip()
         params = {
-            "app_id": settings.tiktok_app_id,
-            "redirect_uri": settings.tiktok_redirect_uri,
+            "app_id": settings.tiktok_app_id.strip(),
+            "redirect_uri": redirect_uri,
             "state": state,
         }
+        authorize_url = f"https://business-api.tiktok.com/portal/auth?{parse.urlencode(params)}"
+        logger.info(
+            "tiktok_ads.oauth.authorize redirect_uri=%r app_id=%s authorize_url=%s",
+            redirect_uri,
+            settings.tiktok_app_id.strip()[:8] + "...",
+            authorize_url[:200],
+        )
         return {
-            "authorize_url": f"https://business-api.tiktok.com/portal/auth?{parse.urlencode(params)}",
+            "authorize_url": authorize_url,
             "state": state,
         }
 
@@ -528,6 +536,10 @@ class TikTokAdsService:
         settings = load_settings()
         if not self._oauth_configured():
             raise TikTokAdsIntegrationError("TikTok OAuth is not configured. Set TIKTOK_APP_ID, TIKTOK_APP_SECRET, and TIKTOK_REDIRECT_URI.")
+        logger.info(
+            "tiktok_ads.oauth.exchange code_len=%d state_len=%d state_prefix=%s",
+            len(code), len(state), repr(state[:40]),
+        )
         state_valid, state_reason = verify_oauth_state("tiktok_ads", state)
         if not state_valid:
             raise TikTokAdsIntegrationError(f"Invalid OAuth state for TikTok connect callback: {state_reason}")
