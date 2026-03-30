@@ -115,7 +115,7 @@ export default function AgencyClientDetailsPage() {
   async function load() {
     setError("");
     try {
-      const payload = await apiRequest<ClientDetails>(`/clients/display/${displayId}`);
+      const payload = await apiRequest<ClientDetails>(`/clients/display/${displayId}`, { cache: "no-store" });
       setData(payload);
       setNameInput(payload.client.name);
       setClientCurrencyInput((payload.client.currency ?? "USD").toUpperCase());

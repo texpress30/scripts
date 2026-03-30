@@ -58,6 +58,8 @@ function resolveRequestCache(path: string, init: RequestInit): RequestCache | un
   const normalizedPath = String(path || "").toLowerCase();
   if (normalizedPath.startsWith("/auth/")) return "no-store";
   if (normalizedPath.includes("/sync-runs/")) return "no-store";
+  if (normalizedPath.startsWith("/clients")) return "no-store";
+  if (normalizedPath.startsWith("/company/")) return "no-store";
   return "force-cache";
 }
 

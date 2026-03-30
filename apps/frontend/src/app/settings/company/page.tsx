@@ -67,7 +67,7 @@ export default function SettingsCompanyPage() {
     setLoading(true);
     setErrorMessage("");
     try {
-      const payload = await apiRequest<CompanySettings>("/company/settings", { requireAuth: true });
+      const payload = await apiRequest<CompanySettings>("/company/settings", { requireAuth: true, cache: "no-store" });
       setForm(payload);
       setInitialForm(payload);
     } catch (err) {
