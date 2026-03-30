@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import base64
 import hashlib
 import json
 import logging
-import secrets
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Literal
@@ -18,7 +16,7 @@ from app.services.entity_performance_reports import (
     upsert_ad_unit_performance_reports,
     upsert_campaign_performance_reports,
 )
-from app.services.integration_secrets_store import integration_secrets_store, persist_oauth_state, check_oauth_state, delete_oauth_state
+from app.services.integration_secrets_store import integration_secrets_store, generate_oauth_state, verify_oauth_state
 from app.services.performance_reports import performance_reports_store
 from app.services.platform_entity_store import upsert_platform_ad_groups, upsert_platform_campaigns
 from app.services.tiktok_account_daily_identity_resolver import resolve_tiktok_account_daily_persistence_identity
@@ -290,10 +288,7 @@ class TikTokAdDailyMetric:
 
 
 class TikTokAdsService:
-    _oauth_state_cache: set[str]
-
     def __init__(self) -> None:
-        self._oauth_state_cache = set()
         self._memory_campaign_rows: dict[tuple[str, str, str, str], dict[str, object]] = {}
         self._memory_ad_group_rows: dict[tuple[str, str, str, str], dict[str, object]] = {}
         self._memory_ad_rows: dict[tuple[str, str, str, str], dict[str, object]] = {}
@@ -518,9 +513,7 @@ class TikTokAdsService:
         if not self._oauth_configured():
             raise TikTokAdsIntegrationError("TikTok OAuth is not configured. Set TIKTOK_APP_ID, TIKTOK_APP_SECRET, and TIKTOK_REDIRECT_URI.")
 
-        state = base64.urlsafe_b64encode(secrets.token_bytes(24)).decode("utf-8").rstrip("=")
-        self._oauth_state_cache.add(state)
-        persist_oauth_state("tiktok_ads", state)
+        state = generate_oauth_state("tiktok_ads")
         params = {
             "app_id": settings.tiktok_app_id,
             "redirect_uri": settings.tiktok_redirect_uri,
@@ -535,13 +528,8 @@ class TikTokAdsService:
         settings = load_settings()
         if not self._oauth_configured():
             raise TikTokAdsIntegrationError("TikTok OAuth is not configured. Set TIKTOK_APP_ID, TIKTOK_APP_SECRET, and TIKTOK_REDIRECT_URI.")
-        state_valid = state in self._oauth_state_cache
-        if not state_valid:
-            state_valid = check_oauth_state("tiktok_ads", state)
-        if not state_valid:
+        if not verify_oauth_state("tiktok_ads", state):
             raise TikTokAdsIntegrationError("Invalid OAuth state for TikTok connect callback")
-        self._oauth_state_cache.discard(state)
-        delete_oauth_state("tiktok_ads", state)
 
         token_payload = self._http_json(
             method="POST",
