@@ -148,64 +148,66 @@ integration_secrets_store = IntegrationSecretsStore()
 
 
 # ---------------------------------------------------------------------------
-# Lightweight OAuth state persistence (no encryption, direct SQL)
+# HMAC-based OAuth state: no storage needed, works across restarts/instances
 # ---------------------------------------------------------------------------
+import hmac as _hmac
 import logging as _logging
+import time as _time
 
-_oauth_state_logger = _logging.getLogger("oauth_state_db")
+_oauth_state_logger = _logging.getLogger("oauth_state")
+
+_OAUTH_STATE_MAX_AGE_SECONDS = 600  # 10 minutes
 
 
-def persist_oauth_state(provider: str, state: str) -> bool:
-    """Store an OAuth state token in the DB. Returns True on success."""
-    try:
-        integration_secrets_store._ensure_schema()
-        with integration_secrets_store._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO integration_secrets(provider, secret_key, scope, encrypted_value)
-                    VALUES (%s, %s, 'oauth_state', %s)
-                    ON CONFLICT(provider, secret_key, scope)
-                    DO UPDATE SET encrypted_value = EXCLUDED.encrypted_value, updated_at = NOW()
-                    """,
-                    (str(provider), f"oauth_state:{state}", "1"),
-                )
-            conn.commit()
-        _oauth_state_logger.info("oauth_state_persisted provider=%s state_prefix=%s", provider, state[:8])
-        return True
-    except Exception:
-        _oauth_state_logger.exception("oauth_state_persist_failed provider=%s", provider)
+def _oauth_hmac_key() -> bytes:
+    settings = load_settings()
+    return str(settings.app_auth_secret).encode("utf-8")
+
+
+def generate_oauth_state(provider: str) -> str:
+    """Create an HMAC-signed OAuth state token: {provider}.{timestamp}.{random}.{signature}"""
+    import secrets as _secrets
+    timestamp = str(int(_time.time()))
+    nonce = _secrets.token_urlsafe(18)
+    message = f"{provider}.{timestamp}.{nonce}"
+    sig = _hmac.new(_oauth_hmac_key(), message.encode("utf-8"), "sha256").hexdigest()[:32]
+    state = f"{message}.{sig}"
+    _oauth_state_logger.info("oauth_state_generated provider=%s", provider)
+    return state
+
+
+def verify_oauth_state(provider: str, state: str) -> bool:
+    """Verify an HMAC-signed OAuth state token."""
+    parts = str(state).split(".")
+    if len(parts) != 4:
+        _oauth_state_logger.warning("oauth_state_invalid_format provider=%s parts=%d", provider, len(parts))
         return False
+    state_provider, timestamp_str, nonce, received_sig = parts
+    if state_provider != provider:
+        _oauth_state_logger.warning("oauth_state_provider_mismatch provider=%s state_provider=%s", provider, state_provider)
+        return False
+    try:
+        ts = int(timestamp_str)
+    except ValueError:
+        _oauth_state_logger.warning("oauth_state_bad_timestamp provider=%s", provider)
+        return False
+    age = int(_time.time()) - ts
+    if age < 0 or age > _OAUTH_STATE_MAX_AGE_SECONDS:
+        _oauth_state_logger.warning("oauth_state_expired provider=%s age=%d", provider, age)
+        return False
+    message = f"{state_provider}.{timestamp_str}.{nonce}"
+    expected_sig = _hmac.new(_oauth_hmac_key(), message.encode("utf-8"), "sha256").hexdigest()[:32]
+    valid = _hmac.compare_digest(received_sig, expected_sig)
+    _oauth_state_logger.info("oauth_state_verify provider=%s valid=%s age=%ds", provider, valid, age)
+    return valid
 
+
+# Keep old functions as no-ops for backward compatibility during rollout
+def persist_oauth_state(provider: str, state: str) -> bool:
+    return True
 
 def check_oauth_state(provider: str, state: str) -> bool:
-    """Check if an OAuth state token exists in the DB. Returns True if found."""
-    try:
-        integration_secrets_store._ensure_schema()
-        with integration_secrets_store._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT 1 FROM integration_secrets WHERE provider = %s AND secret_key = %s AND scope = 'oauth_state' LIMIT 1",
-                    (str(provider), f"oauth_state:{state}"),
-                )
-                found = cur.fetchone() is not None
-        _oauth_state_logger.info("oauth_state_check provider=%s state_prefix=%s found=%s", provider, state[:8], found)
-        return found
-    except Exception:
-        _oauth_state_logger.exception("oauth_state_check_failed provider=%s", provider)
-        return False
-
+    return verify_oauth_state(provider, state)
 
 def delete_oauth_state(provider: str, state: str) -> None:
-    """Remove an OAuth state token from the DB."""
-    try:
-        integration_secrets_store._ensure_schema()
-        with integration_secrets_store._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "DELETE FROM integration_secrets WHERE provider = %s AND secret_key = %s AND scope = 'oauth_state'",
-                    (str(provider), f"oauth_state:{state}"),
-                )
-            conn.commit()
-    except Exception:
-        _oauth_state_logger.exception("oauth_state_delete_failed provider=%s", provider)
+    pass

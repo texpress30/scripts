@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import base64
 import json
 import logging
-import secrets
 from datetime import date, datetime, timedelta, timezone
 import math
 import re
@@ -18,7 +16,7 @@ from app.services.entity_performance_reports import (
     upsert_campaign_performance_reports,
 )
 from app.services.error_observability import safe_body_snippet, sanitize_payload, sanitize_text
-from app.services.integration_secrets_store import integration_secrets_store, persist_oauth_state, check_oauth_state, delete_oauth_state
+from app.services.integration_secrets_store import integration_secrets_store, generate_oauth_state, verify_oauth_state
 from app.services.meta_store import meta_snapshot_store
 from app.services.performance_reports import performance_reports_store
 
@@ -80,10 +78,7 @@ class MetaAdsIntegrationError(RuntimeError):
 
 
 class MetaAdsService:
-    _oauth_state_cache: set[str]
-
     def __init__(self) -> None:
-        self._oauth_state_cache = set()
         self._memory_campaign_daily_rows: list[dict[str, object]] = []
         self._memory_ad_group_daily_rows: list[dict[str, object]] = []
         self._memory_ad_daily_rows: list[dict[str, object]] = []
@@ -678,9 +673,7 @@ class MetaAdsService:
         if not self._oauth_configured():
             raise MetaAdsIntegrationError("Meta OAuth is not configured. Set META_APP_ID, META_APP_SECRET, and META_REDIRECT_URI.")
 
-        state = base64.urlsafe_b64encode(secrets.token_bytes(24)).decode("utf-8").rstrip("=")
-        self._oauth_state_cache.add(state)
-        persist_oauth_state("meta_ads", state)
+        state = generate_oauth_state("meta_ads")
         params = {
             "client_id": settings.meta_app_id,
             "redirect_uri": settings.meta_redirect_uri,
@@ -697,13 +690,8 @@ class MetaAdsService:
         settings = load_settings()
         if not self._oauth_configured():
             raise MetaAdsIntegrationError("Meta OAuth is not configured. Set META_APP_ID, META_APP_SECRET, and META_REDIRECT_URI.")
-        state_valid = state in self._oauth_state_cache
-        if not state_valid:
-            state_valid = check_oauth_state("meta_ads", state)
-        if not state_valid:
+        if not verify_oauth_state("meta_ads", state):
             raise MetaAdsIntegrationError("Invalid OAuth state for Meta connect callback")
-        self._oauth_state_cache.discard(state)
-        delete_oauth_state("meta_ads", state)
 
         query = parse.urlencode(
             {

@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import base64
 import json
 import logging
 import re
-import secrets
 import os
 from datetime import date, datetime, timezone, timedelta
 from urllib import error, parse, request
@@ -22,7 +20,7 @@ except Exception:  # noqa: BLE001
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
 from app.services.google_store import google_snapshot_store
-from app.services.integration_secrets_store import integration_secrets_store, persist_oauth_state, check_oauth_state, delete_oauth_state
+from app.services.integration_secrets_store import integration_secrets_store, generate_oauth_state, verify_oauth_state
 from app.services.performance_reports import performance_reports_store
 from app.services.sync_engine import BackfillRunResult, DailyMetricRow, enqueue_backfill
 
@@ -34,11 +32,9 @@ class GoogleAdsIntegrationError(RuntimeError):
 
 
 class GoogleAdsService:
-    _oauth_state_cache: set[str]
     _runtime_refresh_token: str | None
 
     def __init__(self) -> None:
-        self._oauth_state_cache = set()
         self._runtime_refresh_token = None
 
     def _is_production_mode(self) -> bool:
@@ -694,9 +690,7 @@ class GoogleAdsService:
     def build_oauth_authorize_url(self) -> dict[str, str]:
         self._require_production_credentials()
         settings = load_settings()
-        state = base64.urlsafe_b64encode(secrets.token_bytes(24)).decode("utf-8").rstrip("=")
-        self._oauth_state_cache.add(state)
-        persist_oauth_state("google_ads", state)
+        state = generate_oauth_state("google_ads")
         params = {
             "client_id": settings.google_ads_client_id,
             "redirect_uri": settings.google_ads_redirect_uri,
@@ -713,13 +707,8 @@ class GoogleAdsService:
 
     def exchange_oauth_code(self, *, code: str, state: str) -> dict[str, object]:
         self._require_production_credentials()
-        state_valid = state in self._oauth_state_cache
-        if not state_valid:
-            state_valid = check_oauth_state("google_ads", state)
-        if not state_valid:
+        if not verify_oauth_state("google_ads", state):
             raise GoogleAdsIntegrationError("Invalid OAuth state for Google connect callback")
-        self._oauth_state_cache.discard(state)
-        delete_oauth_state("google_ads", state)
 
         settings = load_settings()
         token_payload = self._http_json(
