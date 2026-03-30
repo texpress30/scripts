@@ -21,7 +21,15 @@ def _resolve_logo_storage_client_id(*, owner_email: str) -> int | None:
         candidate = int(item.get("id") or 0)
         if candidate > 0:
             return candidate
-    return None
+    # No clients exist yet — auto-create an internal agency client for storage
+    try:
+        created = client_registry_service.create_client(
+            name="Agency Storage",
+            owner_email=normalized_owner or "admin@example.com",
+        )
+        return int(created.get("id") or 0) or None
+    except Exception:  # noqa: BLE001
+        return None
 
 
 @router.get("/settings", response_model=CompanySettingsResponse)
