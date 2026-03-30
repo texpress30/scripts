@@ -37,6 +37,7 @@ type DashboardResponse = {
   platform_sync_summary?: {
     meta_ads?: { accounts?: Array<Record<string, unknown>> };
     tiktok_ads?: { accounts?: Array<Record<string, unknown>> };
+    google_ads?: { accounts?: Array<Record<string, unknown>> };
   };
   spend_by_day?: Array<{
     date?: string;
@@ -169,9 +170,11 @@ function normalizeSpendByDay(value: DashboardResponse["spend_by_day"]): SpendByD
 
 const STATUS_STYLES: Record<string, string> = {
   healthy: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  live: "bg-emerald-50 text-emerald-700 border-emerald-200",
   warning: "bg-amber-50 text-amber-700 border-amber-200",
   error: "bg-rose-50 text-rose-700 border-rose-200",
   unknown: "bg-slate-100 text-slate-600 border-slate-200",
+  offline: "bg-slate-100 text-slate-600 border-slate-200",
 };
 
 export default function SubDashboardPage() {
@@ -276,7 +279,8 @@ export default function SubDashboardPage() {
 
   const metaSync = derivePlatformSyncStatus("meta_ads", data?.platform_sync_summary?.meta_ads?.accounts ?? []);
   const tiktokSync = derivePlatformSyncStatus("tiktok_ads", data?.platform_sync_summary?.tiktok_ads?.accounts ?? []);
-  const flaggedPlatforms = [metaSync, tiktokSync].filter((item) => item.uiStatus === "warning" || item.uiStatus === "error");
+  const googleSync = derivePlatformSyncStatus("google_ads", data?.platform_sync_summary?.google_ads?.accounts ?? []);
+  const flaggedPlatforms = [metaSync, tiktokSync, googleSync].filter((item) => item.uiStatus === "warning" || item.uiStatus === "error");
   const flaggedPlatformCount = flaggedPlatforms.length;
   const affectedAccountCount = flaggedPlatforms.reduce((sum, item) => sum + item.affectedAccountCount, 0);
   const spendByDay = normalizeSpendByDay(data?.spend_by_day);
@@ -446,13 +450,23 @@ export default function SubDashboardPage() {
             </thead>
             <tbody>
               {([
-                ["Google Ads", "google-ads", google],
-                ["Meta Ads", "meta-ads", meta],
-                ["TikTok Ads", "tiktok-ads", tiktok],
-                ["Pinterest Ads", "pinterest-ads", pinterest],
-                ["Snapchat Ads", "snapchat-ads", snapchat],
-              ] as Array<[string, string, NormalizedMetrics]>).map(([name, slug, m]) => {
-                const platformSummary = name === "Meta Ads" ? metaSync : name === "TikTok Ads" ? tiktokSync : null;
+                ["Google Ads", "google-ads", google, "google_ads"],
+                ["Meta Ads", "meta-ads", meta, "meta_ads"],
+                ["TikTok Ads", "tiktok-ads", tiktok, "tiktok_ads"],
+                ["Pinterest Ads", "pinterest-ads", pinterest, "pinterest_ads"],
+                ["Snapchat Ads", "snapchat-ads", snapchat, "snapchat_ads"],
+              ] as Array<[string, string, NormalizedMetrics, string]>).map(([name, slug, m, platformKey]) => {
+                const syncMap: Record<string, typeof metaSync> = { meta_ads: metaSync, tiktok_ads: tiktokSync, google_ads: googleSync };
+                const platformSummary = syncMap[platformKey] ?? null;
+                const hasSpend = m.spend > 0;
+                const hasSyncAccounts = platformSummary !== null && platformSummary.accounts.length > 0;
+                const isLive = hasSpend || hasSyncAccounts;
+                const badgeStatus = platformSummary && (platformSummary.uiStatus === "warning" || platformSummary.uiStatus === "error")
+                  ? platformSummary.uiStatus
+                  : isLive ? "live" : "offline";
+                const badgeLabel = platformSummary && (platformSummary.uiStatus === "warning" || platformSummary.uiStatus === "error")
+                  ? `${platformSummary.uiLabel}${platformSummary.affectedAccountCount > 0 ? ` (${platformSummary.affectedAccountCount})` : ""}`
+                  : isLive ? "Live" : "Offline";
                 return (
                   <tr key={name} className="border-t border-slate-200 text-slate-900">
                     <td className="px-4 py-3">
@@ -460,11 +474,9 @@ export default function SubDashboardPage() {
                         <Link href={`/sub/${clientId}/${slug}`} className="text-slate-900 transition-colors hover:text-indigo-700 hover:underline">
                           {name}
                         </Link>
-                        {platformSummary ? (
-                          <button type="button" onClick={() => setDetailsOpen((current) => !current)} className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[platformSummary.uiStatus]}`}>
-                            {platformSummary.uiLabel}{platformSummary.affectedAccountCount > 0 ? ` (${platformSummary.affectedAccountCount})` : ""}
-                          </button>
-                        ) : null}
+                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[badgeStatus]}`}>
+                          {badgeLabel}
+                        </span>
                       </div>
                     </td>
                     <td className="px-4 py-3">{loading ? "..." : formatCurrency(m.spend, currencyCode)}</td>

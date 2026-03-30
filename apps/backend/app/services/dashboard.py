@@ -1144,7 +1144,7 @@ class UnifiedDashboardService:
 
     def _build_dashboard_platform_sync_summary(self, *, client_id: int) -> dict[str, object]:
         payload: dict[str, object] = {}
-        for platform in ("meta_ads", "tiktok_ads"):
+        for platform in ("meta_ads", "tiktok_ads", "google_ads"):
             attached_accounts = client_registry_service.list_client_platform_accounts(platform=platform, client_id=client_id)
             attached_account_ids = [str(item.get("id") or "") for item in attached_accounts if str(item.get("id") or "") != ""]
             if len(attached_account_ids) <= 0:
