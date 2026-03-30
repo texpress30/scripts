@@ -140,6 +140,7 @@ class TeamMembersFoundationTests(unittest.TestCase):
 
         joined = "\n".join(conn.cursor_obj.queries)
         self.assertIn("CREATE TABLE IF NOT EXISTS users", joined)
+        self.assertIn("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash", joined)
         self.assertIn("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active", joined)
         self.assertIn("CREATE TABLE IF NOT EXISTS user_memberships", joined)
         self.assertGreaterEqual(conn.commit_count, 2)

@@ -159,6 +159,14 @@ class TeamMembersService:
                     )
                     """
                 )
+                # Legacy DBs created by 0001_core_entities.sql already have `users` without auth/profile columns;
+                # CREATE TABLE IF NOT EXISTS is a no-op, so add missing columns explicitly.
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name TEXT NOT NULL DEFAULT ''")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name TEXT NOT NULL DEFAULT ''")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT NOT NULL DEFAULT ''")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS extension TEXT NOT NULL DEFAULT ''")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS platform_language TEXT NOT NULL DEFAULT 'ro'")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT NOT NULL DEFAULT ''")
                 cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE")
                 cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS must_reset_password BOOLEAN NOT NULL DEFAULT FALSE")
                 cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ NULL")
