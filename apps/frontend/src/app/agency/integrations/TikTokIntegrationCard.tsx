@@ -95,6 +95,8 @@ export function TikTokIntegrationCard() {
     setMessage("");
     setImportSummary(null);
     try {
+      // Clear any stale state from a previous OAuth attempt
+      sessionStorage.removeItem("tiktok_oauth_state");
       const payload = await apiRequest<TikTokConnectResponse>("/integrations/tiktok-ads/connect");
       if (payload.state) {
         sessionStorage.setItem("tiktok_oauth_state", payload.state);
