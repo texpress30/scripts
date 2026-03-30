@@ -40,7 +40,7 @@ from app.services.auth import AuthUser
 from app.services import client_data_store
 from app.services.client_registry import PlatformAccountAlreadyAttachedError, client_registry_service
 from app.services.client_business_inputs_import_service import client_business_inputs_import_service
-from app.services.client_data_csv_import_service import parse_csv_for_preview
+from app.services.client_data_csv_import_service import import_csv_rows, parse_csv_for_preview
 from app.services.media_buying_store import media_buying_store
 from app.services.storage_media_access import StorageMediaAccessError, storage_media_access_service
 from app.services.media_tracker_worksheet import media_tracker_worksheet_service
@@ -1416,6 +1416,34 @@ async def import_preview_client_data(
     print(
         f"[IMPORT-PREVIEW] sub_id={client_id}, rows={result['total']}, "
         f"valid={result['valid']}, errors={result['errors']}"
+    )
+
+    return result
+
+
+@router.post("/{client_id}/data/import-confirm")
+def confirm_import_client_data(
+    client_id: int,
+    payload: dict,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    """Import confirmed CSV rows into the database with transactional upsert."""
+    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+
+    rows = payload.get("rows")
+    if not rows or not isinstance(rows, list):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Lipsesc rândurile de importat.")
+
+    try:
+        result = import_csv_rows(client_id=client_id, rows=rows)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    print(
+        f"[IMPORT-CONFIRM] sub_id={client_id}, inserted={result['inserted']}, "
+        f"updated={result['updated']}, errors={len(result['errors'])}"
     )
 
     return result
