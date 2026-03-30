@@ -172,34 +172,47 @@ def generate_oauth_state(provider: str) -> str:
     message = f"{provider}.{timestamp}.{nonce}"
     sig = _hmac.new(_oauth_hmac_key(), message.encode("utf-8"), "sha256").hexdigest()[:32]
     state = f"{message}.{sig}"
-    _oauth_state_logger.info("oauth_state_generated provider=%s", provider)
+    _oauth_state_logger.info("oauth_state_generated provider=%s state_len=%d state_prefix=%s", provider, len(state), state[:30])
     return state
 
 
-def verify_oauth_state(provider: str, state: str) -> bool:
-    """Verify an HMAC-signed OAuth state token."""
-    parts = str(state).split(".")
+def verify_oauth_state(provider: str, state: str) -> tuple[bool, str]:
+    """Verify an HMAC-signed OAuth state token. Returns (valid, reason)."""
+    raw = str(state)
+    _oauth_state_logger.info(
+        "oauth_state_verify_start provider=%s state_len=%d state_repr=%s",
+        provider, len(raw), repr(raw[:80]),
+    )
+    parts = raw.split(".")
     if len(parts) != 4:
-        _oauth_state_logger.warning("oauth_state_invalid_format provider=%s parts=%d", provider, len(parts))
-        return False
+        reason = f"invalid_format: expected 4 dot-separated parts, got {len(parts)}"
+        _oauth_state_logger.warning("oauth_state_fail provider=%s reason=%s", provider, reason)
+        return False, reason
     state_provider, timestamp_str, nonce, received_sig = parts
     if state_provider != provider:
-        _oauth_state_logger.warning("oauth_state_provider_mismatch provider=%s state_provider=%s", provider, state_provider)
-        return False
+        reason = f"provider_mismatch: expected={provider} got={state_provider}"
+        _oauth_state_logger.warning("oauth_state_fail provider=%s reason=%s", provider, reason)
+        return False, reason
     try:
         ts = int(timestamp_str)
     except ValueError:
-        _oauth_state_logger.warning("oauth_state_bad_timestamp provider=%s", provider)
-        return False
+        reason = f"bad_timestamp: {timestamp_str!r}"
+        _oauth_state_logger.warning("oauth_state_fail provider=%s reason=%s", provider, reason)
+        return False, reason
     age = int(_time.time()) - ts
     if age < 0 or age > _OAUTH_STATE_MAX_AGE_SECONDS:
-        _oauth_state_logger.warning("oauth_state_expired provider=%s age=%d", provider, age)
-        return False
+        reason = f"expired: age={age}s max={_OAUTH_STATE_MAX_AGE_SECONDS}s"
+        _oauth_state_logger.warning("oauth_state_fail provider=%s reason=%s", provider, reason)
+        return False, reason
     message = f"{state_provider}.{timestamp_str}.{nonce}"
     expected_sig = _hmac.new(_oauth_hmac_key(), message.encode("utf-8"), "sha256").hexdigest()[:32]
     valid = _hmac.compare_digest(received_sig, expected_sig)
-    _oauth_state_logger.info("oauth_state_verify provider=%s valid=%s age=%ds", provider, valid, age)
-    return valid
+    if not valid:
+        reason = f"signature_mismatch: received={received_sig[:8]}... expected={expected_sig[:8]}..."
+        _oauth_state_logger.warning("oauth_state_fail provider=%s reason=%s", provider, reason)
+        return False, reason
+    _oauth_state_logger.info("oauth_state_verify_ok provider=%s age=%ds", provider, age)
+    return True, "ok"
 
 
 # Keep old functions as no-ops for backward compatibility during rollout
@@ -207,7 +220,8 @@ def persist_oauth_state(provider: str, state: str) -> bool:
     return True
 
 def check_oauth_state(provider: str, state: str) -> bool:
-    return verify_oauth_state(provider, state)
+    valid, _ = verify_oauth_state(provider, state)
+    return valid
 
 def delete_oauth_state(provider: str, state: str) -> None:
     pass

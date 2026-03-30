@@ -690,8 +690,9 @@ class MetaAdsService:
         settings = load_settings()
         if not self._oauth_configured():
             raise MetaAdsIntegrationError("Meta OAuth is not configured. Set META_APP_ID, META_APP_SECRET, and META_REDIRECT_URI.")
-        if not verify_oauth_state("meta_ads", state):
-            raise MetaAdsIntegrationError("Invalid OAuth state for Meta connect callback")
+        state_valid, state_reason = verify_oauth_state("meta_ads", state)
+        if not state_valid:
+            raise MetaAdsIntegrationError(f"Invalid OAuth state for Meta connect callback: {state_reason}")
 
         query = parse.urlencode(
             {
