@@ -45,7 +45,7 @@ export default function AgencyClientsPage() {
 
   async function loadClients() {
     try {
-      const payload = await apiRequest<ClientsResponse>("/clients");
+      const payload = await apiRequest<ClientsResponse>("/clients", { cache: "no-store" });
       setClients(payload.items);
     } catch (err) {
       setClients([]);

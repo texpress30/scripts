@@ -12,7 +12,7 @@ function resolveRevalidateSeconds(joined: string): number | false {
   if (p.includes("sync-runs/") || p.includes("sync-run")) return false;
   if (p.match(/^integrations\/[^/]+\/status/)) return 15;
   if (p.startsWith("dashboard/")) return 30;
-  if (p.startsWith("clients/")) return 60;
+  if (p === "clients" || p.startsWith("clients/")) return false;
   if (p.startsWith("team/")) return 120;
   if (p.startsWith("company/")) return 120;
   return 30;
