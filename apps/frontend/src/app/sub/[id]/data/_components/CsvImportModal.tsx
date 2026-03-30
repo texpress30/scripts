@@ -17,6 +17,14 @@ export type CsvImportPreviewResponse = {
   }>;
 };
 
+type ImportConfirmResponse = {
+  imported: number;
+  inserted: number;
+  updated: number;
+  errors: Array<{ row_index: number; error_message: string }>;
+  message: string;
+};
+
 type CsvImportModalProps = {
   open: boolean;
   onClose: () => void;
@@ -24,14 +32,17 @@ type CsvImportModalProps = {
   previewData: CsvImportPreviewResponse | null;
   onPreviewLoaded: (data: CsvImportPreviewResponse) => void;
   onPreviewReset: () => void;
+  onImportSuccess: () => void;
 };
 
-export function CsvImportModal({ open, onClose, clientId, previewData, onPreviewLoaded, onPreviewReset }: CsvImportModalProps) {
+export function CsvImportModal({ open, onClose, clientId, previewData, onPreviewLoaded, onPreviewReset, onImportSuccess }: CsvImportModalProps) {
   const [file, setFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [fileError, setFileError] = useState("");
+  const [importResult, setImportResult] = useState<ImportConfirmResponse | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -40,15 +51,26 @@ export function CsvImportModal({ open, onClose, clientId, previewData, onPreview
     setFile(null);
     setDragOver(false);
     setUploading(false);
+    setImporting(false);
     setErrorMessage("");
     setFileError("");
+    setImportResult(null);
   }, []);
 
   const handleClose = useCallback(() => {
+    const wasSuccess = importResult !== null;
     resetState();
     onPreviewReset();
     onClose();
-  }, [resetState, onPreviewReset, onClose]);
+    if (wasSuccess) onImportSuccess();
+  }, [resetState, onPreviewReset, onClose, onImportSuccess, importResult]);
+
+  const handleSuccessClose = useCallback(() => {
+    resetState();
+    onPreviewReset();
+    onClose();
+    onImportSuccess();
+  }, [resetState, onPreviewReset, onClose, onImportSuccess]);
 
   const handleBack = useCallback(() => {
     onPreviewReset();
@@ -91,7 +113,7 @@ export function CsvImportModal({ open, onClose, clientId, previewData, onPreview
     };
     document.addEventListener("keydown", trap);
     return () => document.removeEventListener("keydown", trap);
-  }, [open, previewData]);
+  }, [open, previewData, importResult]);
 
   const validateFile = (f: File): boolean => {
     setFileError("");
@@ -163,10 +185,52 @@ export function CsvImportModal({ open, onClose, clientId, previewData, onPreview
     }
   };
 
+  const handleConfirmImport = async () => {
+    if (!previewData) return;
+    const validRows = previewData.rows.filter((r) => r.status === "valid");
+    if (validRows.length === 0) return;
+
+    setImporting(true);
+    setErrorMessage("");
+
+    try {
+      const token = getAuthToken();
+      const headers: HeadersInit = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const response = await fetch(`${API_BASE_URL}/clients/${clientId}/data/import-confirm`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ rows: validRows }),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        let detail = `Eroare ${response.status}`;
+        try {
+          const parsed = JSON.parse(text);
+          if (typeof parsed.detail === "string") detail = parsed.detail;
+        } catch { /* use default */ }
+        setErrorMessage(detail);
+        return;
+      }
+
+      const data: ImportConfirmResponse = await response.json();
+      console.log(`[CSV-IMPORT] Import confirmed: ${data.inserted} inserted, ${data.updated} updated`);
+      setImportResult(data);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Eroare la importul datelor");
+    } finally {
+      setImporting(false);
+    }
+  };
+
   if (!open) return null;
 
   const canUpload = !!file && !fileError && !uploading;
-  const showPreview = previewData !== null;
+  const showPreview = previewData !== null && importResult === null;
+  const showSuccess = importResult !== null;
+  const canConfirm = previewData !== null && previewData.valid > 0 && !importing;
 
   return (
     <div
@@ -203,7 +267,26 @@ export function CsvImportModal({ open, onClose, clientId, previewData, onPreview
           </div>
         )}
 
-        {showPreview ? (
+        {showSuccess ? (
+          /* ── Success screen ── */
+          <div className="mt-6 flex flex-col items-center py-8">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <p className="mt-4 text-center text-base font-medium text-slate-800">
+              {importResult.message}
+            </p>
+            <button
+              type="button"
+              className="mt-6 rounded-md bg-indigo-600 px-6 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+              onClick={handleSuccessClose}
+            >
+              Închide
+            </button>
+          </div>
+        ) : showPreview ? (
           /* ── Preview table view ── */
           <>
             {/* Summary badges */}
@@ -289,25 +372,34 @@ export function CsvImportModal({ open, onClose, clientId, previewData, onPreview
             <div className="mt-4 flex items-center justify-between">
               <button
                 type="button"
-                className="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                className="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 onClick={handleBack}
+                disabled={importing}
               >
                 ← Înapoi
               </button>
               <div className="flex gap-2">
                 <button
                   type="button"
-                  className="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                  className="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                   onClick={handleClose}
+                  disabled={importing}
                 >
                   Anulează
                 </button>
                 <button
                   type="button"
-                  className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white opacity-50 cursor-not-allowed"
-                  disabled
-                  title="Se implementează în pasul următor"
+                  className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!canConfirm}
+                  onClick={handleConfirmImport}
+                  {...(previewData.valid === 0 ? { title: "Nu există rânduri valide de importat" } : {})}
                 >
+                  {importing && (
+                    <svg className="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  )}
                   Confirmă importul
                 </button>
               </div>

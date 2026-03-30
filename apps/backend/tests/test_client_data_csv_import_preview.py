@@ -1,9 +1,9 @@
-"""Tests for the CSV import preview service and endpoint."""
+"""Tests for the CSV import preview and confirm services."""
 
 import os
 import unittest
 
-from app.services.client_data_csv_import_service import parse_csv_for_preview
+from app.services.client_data_csv_import_service import import_csv_rows, parse_csv_for_preview
 
 
 class CsvImportPreviewServiceTests(unittest.TestCase):
@@ -148,6 +148,28 @@ class CsvImportPreviewServiceTests(unittest.TestCase):
         self.assertEqual(result["valid"], 2)
         self.assertEqual(result["errors"], 1)
         self.assertEqual(result["rows"][1]["status"], "error")
+
+
+class CsvImportConfirmServiceTests(unittest.TestCase):
+
+    def test_empty_rows_raises(self):
+        """import_csv_rows with empty rows list → ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            import_csv_rows(client_id=1, rows=[])
+        self.assertIn("Nu există rânduri", str(ctx.exception))
+
+    def test_columns_mapping_present_in_preview(self):
+        """Preview response includes columns_mapping parallel to columns_detected."""
+        csv_content = (
+            "Săptămâna;Data vânzare;Lead-uri\n"
+            "9;2026-03-01;10\n"
+        )
+        result = parse_csv_for_preview(csv_content.encode("utf-8"))
+        self.assertIn("columns_mapping", result)
+        self.assertEqual(len(result["columns_mapping"]), len(result["columns_detected"]))
+        self.assertEqual(result["columns_mapping"][0], "week")
+        self.assertEqual(result["columns_mapping"][1], "metric_date")
+        self.assertEqual(result["columns_mapping"][2], "leads")
 
 
 if __name__ == "__main__":

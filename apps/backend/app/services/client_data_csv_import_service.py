@@ -1,7 +1,7 @@
-"""CSV import preview service for client data daily inputs.
+"""CSV import service for client data daily inputs.
 
 Parses and validates a CSV file, maps columns to DB fields,
-and returns a preview without writing to the database.
+returns a preview, and imports confirmed rows via transactional upsert.
 """
 
 from __future__ import annotations
@@ -248,4 +248,170 @@ def parse_csv_for_preview(file_content: bytes) -> dict:
         "columns_detected": columns_detected,
         "columns_mapping": column_mapping,
         "rows": rows,
+    }
+
+
+# ── Fields that live in client_data_daily_inputs ──
+_DAILY_INPUT_INT_FIELDS = {"leads", "phones", "custom_value_1_count", "custom_value_2_count", "sales_count"}
+_DAILY_INPUT_DECIMAL_FIELDS = {"custom_value_3_amount", "custom_value_4_amount", "custom_value_5_amount"}
+_DAILY_INPUT_ALL_FIELDS = _DAILY_INPUT_INT_FIELDS | _DAILY_INPUT_DECIMAL_FIELDS
+
+# ── Fields that map to sale_entries ──
+_SALE_ENTRY_FIELDS = {"sale_price_amount", "actual_price_amount"}
+
+_RETURNING_COLS = (
+    "id, client_id, metric_date, source, leads, phones, "
+    "custom_value_1_count, custom_value_2_count, custom_value_3_amount, "
+    "custom_value_4_amount, custom_value_5_amount, sales_count, notes"
+)
+
+
+def import_csv_rows(*, client_id: int, rows: list[dict]) -> dict:
+    """Import validated CSV rows into DB using a single atomic transaction.
+
+    Each row is identified by (client_id, metric_date, source).
+    Existing rows are updated (only non-null CSV fields overwrite);
+    missing rows are inserted with CSV values (others default to 0).
+    Sale entries (sale_price, actual_price) are created as new entries
+    linked to the daily input.
+
+    Returns dict with imported, inserted, updated, errors, message.
+    Raises ValueError on total failure.
+    """
+    from app.db.pool import get_connection
+
+    if not rows:
+        raise ValueError("Nu există rânduri de importat.")
+
+    inserted = 0
+    updated = 0
+    errors: list[dict] = []
+
+    with get_connection() as conn:
+        try:
+            with conn.cursor() as cur:
+                for row in rows:
+                    row_data = row.get("data", {})
+                    row_index = row.get("row_index", 0)
+
+                    metric_date = row_data.get("metric_date")
+                    source = str(row_data.get("source", "unknown")).strip().lower() or "unknown"
+
+                    if not metric_date:
+                        errors.append({"row_index": row_index, "error_message": "Lipsește metric_date"})
+                        continue
+
+                    # Check if row exists
+                    cur.execute(
+                        "SELECT id, leads, phones, custom_value_1_count, custom_value_2_count, "
+                        "custom_value_3_amount, custom_value_4_amount, custom_value_5_amount, sales_count "
+                        "FROM client_data_daily_inputs "
+                        "WHERE client_id = %s AND metric_date = %s AND source = %s LIMIT 1",
+                        (int(client_id), str(metric_date), source),
+                    )
+                    existing = cur.fetchone()
+
+                    # Build field updates from CSV data (only non-null values)
+                    field_updates: dict[str, object] = {}
+                    for field in _DAILY_INPUT_INT_FIELDS:
+                        val = row_data.get(field)
+                        if val is not None:
+                            field_updates[field] = int(val)
+                    for field in _DAILY_INPUT_DECIMAL_FIELDS:
+                        val = row_data.get(field)
+                        if val is not None:
+                            field_updates[field] = Decimal(str(val))
+
+                    # Recompute custom_value_5_amount = cv4 - cv3
+                    if existing:
+                        # existing order: leads(0), phones(1), cv1(2), cv2(3), cv3(4), cv4(5), cv5(6), sales(7)
+                        effective_cv3 = Decimal(str(field_updates.get("custom_value_3_amount", existing[4] or 0)))
+                        effective_cv4 = Decimal(str(field_updates.get("custom_value_4_amount", existing[5] or 0)))
+                    else:
+                        effective_cv3 = Decimal(str(field_updates.get("custom_value_3_amount", 0)))
+                        effective_cv4 = Decimal(str(field_updates.get("custom_value_4_amount", 0)))
+                    field_updates["custom_value_5_amount"] = effective_cv4 - effective_cv3
+
+                    if existing:
+                        # UPDATE existing row
+                        daily_input_id = int(existing[0])
+                        if field_updates:
+                            set_clauses = [f"{col} = %s" for col in field_updates]
+                            set_clauses.append("updated_at = NOW()")
+                            params = list(field_updates.values()) + [daily_input_id]
+                            cur.execute(
+                                f"UPDATE client_data_daily_inputs SET {', '.join(set_clauses)} WHERE id = %s",
+                                tuple(params),
+                            )
+                        updated += 1
+                    else:
+                        # INSERT new row
+                        cur.execute(
+                            f"""
+                            INSERT INTO client_data_daily_inputs (
+                                client_id, metric_date, source,
+                                leads, phones, custom_value_1_count, custom_value_2_count,
+                                custom_value_3_amount, custom_value_4_amount, custom_value_5_amount,
+                                sales_count, notes
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL)
+                            RETURNING id
+                            """,
+                            (
+                                int(client_id),
+                                str(metric_date),
+                                source,
+                                int(field_updates.get("leads", 0)),
+                                int(field_updates.get("phones", 0)),
+                                int(field_updates.get("custom_value_1_count", 0)),
+                                int(field_updates.get("custom_value_2_count", 0)),
+                                field_updates.get("custom_value_3_amount", Decimal("0")),
+                                field_updates.get("custom_value_4_amount", Decimal("0")),
+                                field_updates.get("custom_value_5_amount", Decimal("0")),
+                                int(field_updates.get("sales_count", 0)),
+                            ),
+                        )
+                        new_row = cur.fetchone()
+                        daily_input_id = int(new_row[0])
+                        inserted += 1
+
+                    # Create sale entry if sale price fields are present
+                    sale_price = row_data.get("sale_price_amount")
+                    actual_price = row_data.get("actual_price_amount")
+                    if sale_price is not None or actual_price is not None:
+                        sp = Decimal(str(sale_price)) if sale_price is not None else Decimal("0")
+                        ap = Decimal(str(actual_price)) if actual_price is not None else Decimal("0")
+                        cur.execute(
+                            """
+                            INSERT INTO client_data_sale_entries (
+                                daily_input_id, sale_price_amount, actual_price_amount, sort_order
+                            ) VALUES (%s, %s, %s, 0)
+                            """,
+                            (daily_input_id, sp, ap),
+                        )
+
+            if errors:
+                conn.rollback()
+                raise ValueError(f"{len(errors)} rânduri au eșuat la import.")
+
+            conn.commit()
+        except ValueError:
+            raise
+        except Exception as exc:
+            conn.rollback()
+            raise ValueError(f"Eroare la import: {exc}") from exc
+
+    total_imported = inserted + updated
+    parts = []
+    if inserted > 0:
+        parts.append(f"{inserted} {'rând nou' if inserted == 1 else 'rânduri noi'}")
+    if updated > 0:
+        parts.append(f"{updated} {'actualizat' if updated == 1 else 'actualizate'}")
+    message = f"Import finalizat: {', '.join(parts)}." if parts else "Niciun rând importat."
+
+    return {
+        "imported": total_imported,
+        "inserted": inserted,
+        "updated": updated,
+        "errors": errors,
+        "message": message,
     }
