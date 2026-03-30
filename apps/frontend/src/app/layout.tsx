@@ -6,7 +6,6 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { QueryProvider } from "@/components/QueryProvider";
 import { GlobalAgencyFavicon } from "@/components/GlobalAgencyFavicon";
 import { WebVitalsReporter } from "@/components/WebVitalsReporter";
-import { BatchProgressProvider } from "@/components/BatchProgressContext";
 
 export const metadata: Metadata = {
   title: "VOXEL MCC",
@@ -21,9 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <WebVitalsReporter />
         <QueryProvider>
           <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
-            <BatchProgressProvider>
-              {children}
-            </BatchProgressProvider>
+            {children}
           </ThemeProvider>
         </QueryProvider>
       </body>
