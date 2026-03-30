@@ -197,6 +197,7 @@ class TikTokAdGroupDailyMetric:
     account_id: str
     ad_group_id: str
     ad_group_name: str
+    adgroup_name: str | None
     campaign_id: str
     campaign_name: str
     spend: float
@@ -259,6 +260,7 @@ class TikTokAdGroupDailyMetric:
     account_id: str
     ad_group_id: str
     ad_group_name: str
+    adgroup_name: str | None
     campaign_id: str
     campaign_name: str
     spend: float
