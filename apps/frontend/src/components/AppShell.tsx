@@ -5,7 +5,6 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useEffect, useMemo, useState } from "react";
-import { GlobalBatchBanner } from "@/components/BatchProgressContext";
 import {
   Bell,
   ChevronDown,
@@ -1162,8 +1161,6 @@ export function AppShell({
             </div>
           </div>
         ) : null}
-
-        <GlobalBatchBanner />
 
         <main className="p-4 md:p-6">{children}</main>
       </div>
