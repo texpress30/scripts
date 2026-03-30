@@ -49,6 +49,7 @@ from app.services.auth_email_tokens import auth_email_tokens_service
 from app.services.email_templates import email_templates_service
 from app.services.email_notifications import email_notifications_service
 from app.services.team_members import team_members_service
+from app.services.performance_reports import performance_reports_store
 from app.services.user_profile import user_profile_service
 
 settings = load_settings()
@@ -173,6 +174,7 @@ def startup_event() -> None:
     auth_email_tokens_service.initialize_schema()
     email_templates_service.initialize_schema()
     email_notifications_service.initialize_schema()
+    performance_reports_store.initialize_schema()
 
 
 @app.on_event("shutdown")

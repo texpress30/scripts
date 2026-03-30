@@ -30,12 +30,19 @@ class UserProfileService:
                         phone TEXT NOT NULL DEFAULT '',
                         extension TEXT NOT NULL DEFAULT '',
                         platform_language TEXT NOT NULL DEFAULT 'ro',
-                        password_hash TEXT NOT NULL,
+                        password_hash TEXT NOT NULL DEFAULT '',
                         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                     )
                     """
                 )
+                # Self-heal: if migration 0001 created the table without these columns
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT NOT NULL DEFAULT ''")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name TEXT NOT NULL DEFAULT ''")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name TEXT NOT NULL DEFAULT ''")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT NOT NULL DEFAULT ''")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS extension TEXT NOT NULL DEFAULT ''")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS platform_language TEXT NOT NULL DEFAULT 'ro'")
             conn.commit()
 
     def _ensure_user(self, *, email: str) -> None:

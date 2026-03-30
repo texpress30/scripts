@@ -61,10 +61,32 @@ class PerformanceReportsStore:
             with self._connect() as conn:
                 with conn.cursor() as cur:
                     cur.execute("SELECT pg_advisory_xact_lock(1, hashtext(%s))", ("ensure_schema_" + self.__class__.__name__,))
-                    cur.execute("SELECT to_regclass('public.ad_performance_reports')")
-                    row = cur.fetchone() or (None,)
-                    if row[0] is None:
-                        raise RuntimeError("Database schema for ad_performance_reports is not ready; run DB migrations")
+                    cur.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS ad_performance_reports (
+                            id BIGSERIAL PRIMARY KEY,
+                            report_date DATE NOT NULL,
+                            platform TEXT NOT NULL,
+                            customer_id TEXT NOT NULL,
+                            customer_id_norm TEXT NOT NULL DEFAULT '',
+                            client_id BIGINT NULL,
+                            spend NUMERIC(14, 2) NOT NULL DEFAULT 0,
+                            impressions BIGINT NOT NULL DEFAULT 0,
+                            clicks BIGINT NOT NULL DEFAULT 0,
+                            conversions NUMERIC(14, 4) NOT NULL DEFAULT 0,
+                            conversion_value NUMERIC(14, 4) NOT NULL DEFAULT 0,
+                            extra_metrics JSONB NOT NULL DEFAULT '{}'::jsonb,
+                            synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                        )
+                        """
+                    )
+                    cur.execute(
+                        """
+                        CREATE UNIQUE INDEX IF NOT EXISTS idx_ad_performance_reports_unique_daily_customer
+                            ON ad_performance_reports (report_date, platform, customer_id)
+                        """
+                    )
+                conn.commit()
 
             self._schema_initialized = True
 
