@@ -340,6 +340,8 @@ export default function AgencyAccountsPage() {
   const [clientFilter, setClientFilter] = useState("");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
   const [activeFirst, setActiveFirst] = useState(false);
+  const [sortColumn, setSortColumn] = useState<"name" | "client" | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [expandedClientRows, setExpandedClientRows] = useState<Set<string>>(new Set());
 
   const [actionBusy, setActionBusy] = useState(false);
@@ -362,6 +364,20 @@ export default function AgencyAccountsPage() {
   );
 
 
+
+  function toggleSort(column: "name" | "client") {
+    if (sortColumn === column) {
+      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortColumn(column);
+      setSortDirection("asc");
+    }
+  }
+
+  function sortIndicator(column: "name" | "client"): string {
+    if (sortColumn !== column) return " ↕";
+    return sortDirection === "asc" ? " ↑" : " ↓";
+  }
 
   function getEffectiveStatus(account: GoogleAccount): string {
     return getEffectiveAccountStatus({
@@ -386,36 +402,59 @@ export default function AgencyAccountsPage() {
     return String(account.sync_start_date ?? "").trim() === "";
   }
 
-  const quickFilterCounts = useMemo(() => {
-    let active = 0;
-    let errors = 0;
-    let uninitialized = 0;
-    for (const account of googleAccounts) {
-      if (isActiveAccount(account)) active += 1;
-      if (isErrorAccount(account)) errors += 1;
-      if (isUninitializedAccount(account)) uninitialized += 1;
-    }
-    return {
-      all: googleAccounts.length,
-      active,
-      errors,
-      uninitialized,
-    };
-  }, [googleAccounts, batchRunsByAccount]);
+  function getUnifiedEffectiveStatus(account: UnifiedProviderAccount): string {
+    return getEffectiveAccountStatus({
+      rowStatus: batchRunsByAccount[account.id] ?? null,
+      lastRunStatus: account.lastRunStatus ?? null,
+      hasActiveSync: false,
+      lastSuccessAt: account.lastSuccessAt ?? null,
+    });
+  }
+
+  function isUnifiedActive(account: UnifiedProviderAccount): boolean {
+    const status = getUnifiedEffectiveStatus(account);
+    return status === "queued" || status === "running" || status === "pending";
+  }
+
+  function isUnifiedError(account: UnifiedProviderAccount): boolean {
+    const status = getUnifiedEffectiveStatus(account);
+    return status === "error" || status === "failed";
+  }
+
+  function isUnifiedUninitialized(account: UnifiedProviderAccount): boolean {
+    return String(account.syncStartDate ?? "").trim() === "";
+  }
 
   const filteredGoogleAccounts = useMemo(() => {
     const needle = clientFilter.trim().toLowerCase();
     const base = googleAccounts.filter((account) => {
-      if (needle && !(account.attached_client_name || "").toLowerCase().includes(needle)) return false;
+      if (needle) {
+        const haystack = [
+          accountDisplayName(account),
+          account.id,
+          account.attached_client_name || "",
+        ].join(" ").toLowerCase();
+        if (!haystack.includes(needle)) return false;
+      }
       if (quickFilter === "active") return isActiveAccount(account);
       if (quickFilter === "errors") return isErrorAccount(account);
       if (quickFilter === "uninitialized") return isUninitializedAccount(account);
       return true;
     });
 
-    if (!activeFirst) return base;
+    const sorted = [...base];
+    if (sortColumn) {
+      const dir = sortDirection === "asc" ? 1 : -1;
+      sorted.sort((a, b) => {
+        const aVal = sortColumn === "name" ? accountDisplayName(a) : (a.attached_client_name || "");
+        const bVal = sortColumn === "name" ? accountDisplayName(b) : (b.attached_client_name || "");
+        return aVal.localeCompare(bVal, "ro", { sensitivity: "base" }) * dir;
+      });
+    }
 
-    return base
+    if (!activeFirst) return sorted;
+
+    return sorted
       .map((account, index) => ({ account, index }))
       .sort((left, right) => {
         const leftStatus = getEffectiveStatus(left.account);
@@ -432,7 +471,7 @@ export default function AgencyAccountsPage() {
         return left.index - right.index;
       })
       .map((item) => item.account);
-  }, [googleAccounts, clientFilter, quickFilter, activeFirst, batchRunsByAccount]);
+  }, [googleAccounts, clientFilter, quickFilter, activeFirst, batchRunsByAccount, sortColumn, sortDirection]);
 
   const totalAccountsPages = useMemo(
     () => Math.max(1, Math.ceil(filteredGoogleAccounts.length / accountsPageSize)),
@@ -482,13 +521,71 @@ export default function AgencyAccountsPage() {
     return [];
   }, [selectedPlatform, metaAccounts, tiktokAccounts]);
 
+  const quickFilterCounts = useMemo(() => {
+    if (selectedPlatform === "google_ads") {
+      let active = 0;
+      let errors = 0;
+      let uninitialized = 0;
+      for (const account of googleAccounts) {
+        if (isActiveAccount(account)) active += 1;
+        if (isErrorAccount(account)) errors += 1;
+        if (isUninitializedAccount(account)) uninitialized += 1;
+      }
+      return { all: googleAccounts.length, active, errors, uninitialized };
+    }
+    let active = 0;
+    let errors = 0;
+    let uninitialized = 0;
+    for (const account of unifiedProviderAccounts) {
+      if (isUnifiedActive(account)) active += 1;
+      if (isUnifiedError(account)) errors += 1;
+      if (isUnifiedUninitialized(account)) uninitialized += 1;
+    }
+    return { all: unifiedProviderAccounts.length, active, errors, uninitialized };
+  }, [selectedPlatform, googleAccounts, unifiedProviderAccounts, batchRunsByAccount]);
+
   const filteredUnifiedProviderAccounts = useMemo(() => {
     const needle = clientFilter.trim().toLowerCase();
-    return unifiedProviderAccounts.filter((account) => {
-      if (!needle) return true;
-      return String(account.attachedClientName || "").toLowerCase().includes(needle);
+    const base = unifiedProviderAccounts.filter((account) => {
+      if (needle) {
+        const haystack = [
+          account.name,
+          account.id,
+          account.attachedClientName || "",
+        ].join(" ").toLowerCase();
+        if (!haystack.includes(needle)) return false;
+      }
+      if (quickFilter === "active") return isUnifiedActive(account);
+      if (quickFilter === "errors") return isUnifiedError(account);
+      if (quickFilter === "uninitialized") return isUnifiedUninitialized(account);
+      return true;
     });
-  }, [unifiedProviderAccounts, clientFilter]);
+
+    const sorted = sortColumn ? [...base].sort((a, b) => {
+      const dir = sortDirection === "asc" ? 1 : -1;
+      const aVal = sortColumn === "name" ? a.name : (a.attachedClientName || "");
+      const bVal = sortColumn === "name" ? b.name : (b.attachedClientName || "");
+      return aVal.localeCompare(bVal, "ro", { sensitivity: "base" }) * dir;
+    }) : base;
+
+    if (!activeFirst) return sorted;
+
+    return sorted
+      .map((account, index) => ({ account, index }))
+      .sort((left, right) => {
+        const leftStatus = getUnifiedEffectiveStatus(left.account);
+        const rightStatus = getUnifiedEffectiveStatus(right.account);
+        const rank = (status: string): number => {
+          if (status === "queued" || status === "running" || status === "pending") return 0;
+          if (status === "error" || status === "failed") return 1;
+          return 2;
+        };
+        const byRank = rank(leftStatus) - rank(rightStatus);
+        if (byRank !== 0) return byRank;
+        return left.index - right.index;
+      })
+      .map((item) => item.account);
+  }, [unifiedProviderAccounts, clientFilter, quickFilter, activeFirst, sortColumn, sortDirection, batchRunsByAccount]);
 
   const totalUnifiedAccountsPages = useMemo(
     () => Math.max(1, Math.ceil(filteredUnifiedProviderAccounts.length / accountsPageSize)),
@@ -541,6 +638,17 @@ export default function AgencyAccountsPage() {
     }
     return grouped;
   }, [googleAccounts]);
+
+  const unifiedAccountsByClient = useMemo(() => {
+    const grouped = new Map<number, UnifiedProviderAccount[]>();
+    for (const account of unifiedProviderAccounts) {
+      if (!account.attachedClientId) continue;
+      const current = grouped.get(account.attachedClientId) ?? [];
+      current.push(account);
+      grouped.set(account.attachedClientId, current);
+    }
+    return grouped;
+  }, [unifiedProviderAccounts]);
 
   const activeSyncAccountIds = useMemo(() => {
     return googleAccounts
@@ -688,6 +796,9 @@ export default function AgencyAccountsPage() {
     setSelectedAccountIds(new Set());
     setExpandedClientRows(new Set());
     setAccountsPage(1);
+    setQuickFilter("all");
+    setSortColumn(null);
+    setClientFilter("");
   }, [selectedPlatform]);
 
   useEffect(() => {
@@ -1293,23 +1404,43 @@ export default function AgencyAccountsPage() {
                       </button>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
+                      <label htmlFor="unified-quick-filter" className="text-xs font-medium text-slate-600">Filtru rapid</label>
+                      <select
+                        id="unified-quick-filter"
+                        value={quickFilter}
+                        onChange={(event) => setQuickFilter(event.target.value as QuickFilter)}
+                        className="rounded-md border border-slate-300 px-2 py-1 text-xs"
+                      >
+                        <option value="all">Toate ({quickFilterCounts.all})</option>
+                        <option value="active">Active ({quickFilterCounts.active})</option>
+                        <option value="errors">Erori ({quickFilterCounts.errors})</option>
+                        <option value="uninitialized">Neinițializate ({quickFilterCounts.uninitialized})</option>
+                      </select>
                       <label htmlFor="client-filter" className="text-xs font-medium text-slate-600">Filtru client</label>
                       <input
                         id="client-filter"
                         value={clientFilter}
                         onChange={(event) => setClientFilter(event.target.value)}
-                        placeholder="Caută după numele clientului"
+                        placeholder="Caută după numele contului sau clientului"
                         className="w-56 rounded-md border border-slate-300 px-2 py-1 text-xs"
                       />
+                      <label className="inline-flex items-center gap-1 text-xs text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={activeFirst}
+                          onChange={(event) => setActiveFirst(event.target.checked)}
+                        />
+                        Active first
+                      </label>
                       <span>Pagina {accountsPage}/{totalUnifiedAccountsPages}</span>
                     </div>
                   </div>
 
                   <div className="hidden grid-cols-[48px_minmax(220px,2fr)_minmax(180px,1.2fr)_minmax(180px,1.2fr)_minmax(220px,1.4fr)_110px] gap-3 border-b border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 lg:grid">
                     <span>Selecție</span>
-                    <span>Cont</span>
+                    <button type="button" className="text-left hover:text-slate-800" onClick={() => toggleSort("name")}>Cont{sortIndicator("name")}</button>
                     <span>Sync progress</span>
-                    <span>Client atașat</span>
+                    <button type="button" className="text-left hover:text-slate-800" onClick={() => toggleSort("client")}>Client atașat{sortIndicator("client")}</button>
                     <span>Acțiuni</span>
                     <span>Detach</span>
                   </div>
@@ -1338,7 +1469,7 @@ export default function AgencyAccountsPage() {
                             <p className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Cont</p>
                             <p className="truncate text-sm font-medium text-slate-900"><Link href={accountDetailUrl(selectedPlatform, accountId)} className="hover:underline">{account.name}</Link></p>
                             <p className="text-xs text-slate-500">ID: {accountId || "-"}</p>
-                            <p className="text-xs text-slate-500">Ultimul sync reușit: {account.lastSuccessAt ? formatDateTime(account.lastSuccessAt) : "-"}</p>
+                            <p className="text-xs text-slate-500">Ultimul sync reușit: {account.lastSuccessAt ? formatDateTime(account.lastSuccessAt) : "Nu există sync finalizat încă"}</p>
                             {(() => {
                               if (!account.lastError) return <p className="text-xs text-slate-500">Eroare recentă: -</p>;
                               if (selectedPlatform !== "tiktok_ads") return <p className="text-xs text-red-600">Eroare recentă: {account.lastError}</p>;
@@ -1389,6 +1520,37 @@ export default function AgencyAccountsPage() {
                                 {historicalStartLabelForAccount(selectedPlatform, account.syncStartDate) ? (
                                   <p className="text-xs text-slate-500">{historicalStartLabelForAccount(selectedPlatform, account.syncStartDate)}</p>
                                 ) : null}
+                                <div className="mt-1 flex flex-wrap items-center gap-2">
+                                  <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                                    {(unifiedAccountsByClient.get(account.attachedClientId ?? 0) ?? []).length} conturi atribuite
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="text-xs font-medium text-indigo-700 hover:underline"
+                                    onClick={() => toggleClientQuickView(accountId, !expandedClientRows.has(accountId))}
+                                  >
+                                    {expandedClientRows.has(accountId) ? "Ascunde conturile" : "Vezi conturile"}
+                                  </button>
+                                </div>
+                                {expandedClientRows.has(accountId) ? (
+                                  <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2">
+                                    <p className="mb-1 text-xs font-semibold text-slate-600">Conturi atribuite aceluiași client</p>
+                                    <ul className="space-y-1">
+                                      {(unifiedAccountsByClient.get(account.attachedClientId ?? 0) ?? []).slice(0, 5).map((related) => (
+                                        <li key={`${accountId}-related-${related.id}`} className="text-xs text-slate-700">
+                                          <Link href={accountDetailUrl(selectedPlatform, related.id)} className="hover:underline">
+                                            {related.name}
+                                          </Link>{" "}
+                                          <span className="text-slate-500">({related.id})</span>
+                                          {related.id === accountId ? <span className="ml-1 rounded bg-indigo-100 px-1 py-0.5 text-[10px] font-medium text-indigo-700">curent</span> : null}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                    {(unifiedAccountsByClient.get(account.attachedClientId ?? 0) ?? []).length > 5 ? (
+                                      <p className="mt-1 text-xs text-slate-500">și încă {(unifiedAccountsByClient.get(account.attachedClientId ?? 0) ?? []).length - 5}</p>
+                                    ) : null}
+                                  </div>
+                                ) : null}
                               </>
                             ) : (
                               <p className="text-sm text-amber-700">Neatașat la client</p>
@@ -1398,35 +1560,21 @@ export default function AgencyAccountsPage() {
                             <p className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Acțiuni</p>
                             <select
                               className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
-                              value={selectedClientValue}
+                              value={account.attachedClientId?.toString() ?? ""}
                               onChange={(event) => {
-                                const value = event.target.value;
-                                if (selectedPlatform === "meta_ads") {
-                                  setMetaAttachClientByAccount((current) => ({ ...current, [accountId]: value }));
-                                } else {
-                                  setTikTokAttachClientByAccount((current) => ({ ...current, [accountId]: value }));
+                                const value = Number(event.target.value);
+                                if (value > 0) {
+                                  if (selectedPlatform === "meta_ads") void attachMetaAccount(value, accountId);
+                                  else void attachTikTokAccount(value, accountId);
                                 }
                               }}
-                              disabled={Boolean(busyState)}
+                              disabled={Boolean(busyState) || controlsDisabled}
                             >
                               <option value="">Atașează la client...</option>
                               {clients.map((client) => (
                                 <option key={client.id} value={client.id}>#{client.display_id ?? client.id} {client.name}</option>
                               ))}
                             </select>
-                            <button
-                              type="button"
-                              className="mt-2 inline-flex w-full items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-                              disabled={Boolean(busyState) || Number(selectedClientValue || 0) <= 0}
-                              onClick={() => {
-                                const cid = Number(selectedClientValue || 0);
-                                if (cid <= 0) return;
-                                if (selectedPlatform === "meta_ads") void attachMetaAccount(cid, accountId);
-                                else void attachTikTokAccount(cid, accountId);
-                              }}
-                            >
-                              {busyState === "attach" ? "Attaching..." : "Attach"}
-                            </button>
                           </div>
                           <div>
                             <p className="text-xs font-semibold uppercase text-slate-500 lg:hidden">Detach</p>
@@ -1577,7 +1725,7 @@ export default function AgencyAccountsPage() {
                           id="client-filter"
                           value={clientFilter}
                           onChange={(event) => setClientFilter(event.target.value)}
-                          placeholder="Caută după numele clientului"
+                          placeholder="Caută după numele contului sau clientului"
                           className="w-56 rounded-md border border-slate-300 px-2 py-1 text-xs"
                         />
                         <label className="inline-flex items-center gap-1 text-xs text-slate-600">
@@ -1594,9 +1742,9 @@ export default function AgencyAccountsPage() {
 
                     <div className="hidden grid-cols-[48px_minmax(220px,2fr)_minmax(180px,1.2fr)_minmax(180px,1.2fr)_minmax(220px,1.4fr)_110px] gap-3 border-b border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 lg:grid">
                       <span>Selecție</span>
-                      <span>Cont</span>
+                      <button type="button" className="text-left hover:text-slate-800" onClick={() => toggleSort("name")}>Cont{sortIndicator("name")}</button>
                       <span>Sync progress</span>
-                      <span>Client atașat</span>
+                      <button type="button" className="text-left hover:text-slate-800" onClick={() => toggleSort("client")}>Client atașat{sortIndicator("client")}</button>
                       <span>Acțiuni</span>
                       <span>Detach</span>
                     </div>
