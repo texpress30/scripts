@@ -16,18 +16,18 @@ export function GlobalAgencyFavicon() {
 
   useEffect(() => {
     let ignore = false;
+    let retryTimeout: ReturnType<typeof setTimeout> | null = null;
 
-    async function loadCompanyLogo() {
+    async function loadCompanyLogo(attempt = 0) {
       try {
-        const payload = await apiRequest<CompanySettingsLogoResponse>("/company/settings", { requireAuth: true });
+        const payload = await apiRequest<CompanySettingsLogoResponse>("/company/settings");
         if (!ignore) {
           setAgencyLogoUrl(String(payload?.logo_url ?? "").trim());
           setRefreshKey((prev) => prev + 1);
         }
       } catch {
-        if (!ignore) {
-          setAgencyLogoUrl("");
-          setRefreshKey((prev) => prev + 1);
+        if (!ignore && attempt < 3) {
+          retryTimeout = setTimeout(() => void loadCompanyLogo(attempt + 1), 2000 * (attempt + 1));
         }
       }
     }
@@ -40,6 +40,7 @@ export function GlobalAgencyFavicon() {
     window.addEventListener("company-settings-updated", onCompanySettingsUpdated);
     return () => {
       ignore = true;
+      if (retryTimeout) clearTimeout(retryTimeout);
       window.removeEventListener("company-settings-updated", onCompanySettingsUpdated);
     };
   }, []);
