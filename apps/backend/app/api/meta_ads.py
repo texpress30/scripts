@@ -649,6 +649,9 @@ def meta_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, obj
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
     status_payload = meta_ads_service.integration_status()
+    meta_accounts = client_registry_service.list_platform_accounts(platform=PLATFORM_META_ADS)
+    status_payload["connected_accounts_count"] = len(meta_accounts)
+    status_payload["last_import_at"] = client_registry_service.get_last_import_at(platform=PLATFORM_META_ADS)
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
