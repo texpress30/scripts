@@ -616,6 +616,30 @@ def recompute_meta_snapshot(
     }
 
 
+@router.get("/diagnostics")
+def meta_ads_diagnostics(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+    try:
+        diagnostics = meta_ads_service.run_diagnostics()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("meta_ads.diagnostics failed")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+    mapped_accounts = client_registry_service.list_platform_accounts(platform="meta_ads")
+    payload = {
+        **diagnostics,
+        "mapped_accounts_count": len(mapped_accounts),
+    }
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="meta_ads.diagnostics",
+        resource="integration:meta_ads",
+        details={"warnings": len(diagnostics.get("warnings", [])) if isinstance(diagnostics.get("warnings"), list) else 0},
+    )
+    return payload
+
+
 @router.get("/status")
 def meta_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
     try:

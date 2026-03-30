@@ -763,6 +763,83 @@ class MetaAdsService:
             "business_count": 0,
         }
 
+    def run_diagnostics(self) -> dict[str, object]:
+        settings = load_settings()
+        oauth_configured = self._oauth_configured()
+        token, token_source, token_updated_at = self._access_token_with_source()
+        has_usable_token = token != ""
+        api_version = self.graph_api_version()
+
+        oauth_ok = False
+        ad_accounts_count = 0
+        accessible_ad_accounts: list[dict[str, object]] = []
+        last_error: str | None = None
+        warnings: list[str] = []
+
+        if not oauth_configured:
+            warnings.append("Meta OAuth is not configured. Set META_APP_ID, META_APP_SECRET, and META_REDIRECT_URI.")
+
+        if has_usable_token:
+            try:
+                accessible_ad_accounts = self.list_accessible_ad_accounts()
+                ad_accounts_count = len(accessible_ad_accounts)
+                oauth_ok = True
+            except Exception as exc:  # noqa: BLE001
+                last_error = str(exc)
+                warnings.append(f"Failed to list ad accounts: {str(exc)[:200]}")
+        else:
+            warnings.append("No usable access token available.")
+
+        db_diag = self._db_diagnostics_last_30_days()
+
+        return {
+            "oauth_ok": oauth_ok,
+            "oauth_configured": oauth_configured,
+            "api_version": api_version,
+            "token_source": token_source,
+            "token_updated_at": token_updated_at,
+            "has_usable_token": has_usable_token,
+            "ad_accounts_count": ad_accounts_count,
+            "sample_ad_accounts": [
+                {"id": str(a.get("id", "")), "name": str(a.get("name", "")), "status": a.get("account_status")}
+                for a in accessible_ad_accounts[:10]
+            ],
+            "db_rows_last_30_days": db_diag.get("db_rows_last_30_days", 0),
+            "last_sync_at": db_diag.get("last_sync_at"),
+            "warnings": warnings,
+            "last_error": last_error or db_diag.get("db_error"),
+        }
+
+    def _db_diagnostics_last_30_days(self) -> dict[str, object]:
+        try:
+            import psycopg as _psycopg  # noqa: F811
+        except Exception:  # noqa: BLE001
+            return {"db_rows_last_30_days": 0, "last_sync_at": None, "db_error": "psycopg not available"}
+        try:
+            from app.db.pool import get_connection
+            with get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT to_regclass('public.ad_performance_reports')")
+                    table_exists = (cur.fetchone() or [None])[0] is not None
+                    if not table_exists:
+                        return {"db_rows_last_30_days": 0, "last_sync_at": None, "db_error": "Table ad_performance_reports missing"}
+                    cur.execute(
+                        """
+                        SELECT COALESCE(COUNT(*), 0), MAX(synced_at)
+                        FROM ad_performance_reports
+                        WHERE platform = %s
+                          AND synced_at >= NOW() - INTERVAL '30 days'
+                        """,
+                        ("meta_ads",),
+                    )
+                    row = cur.fetchone() or (0, None)
+                    return {
+                        "db_rows_last_30_days": int(row[0] or 0),
+                        "last_sync_at": row[1].isoformat() if row[1] is not None else None,
+                    }
+        except Exception as exc:  # noqa: BLE001
+            return {"db_rows_last_30_days": 0, "last_sync_at": None, "db_error": str(exc)[:200]}
+
     def _active_access_token(self) -> str:
         token, _, _ = self._access_token_with_source()
         return token
