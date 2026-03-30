@@ -18,7 +18,7 @@ from app.services.entity_performance_reports import (
     upsert_campaign_performance_reports,
 )
 from app.services.error_observability import safe_body_snippet, sanitize_payload, sanitize_text
-from app.services.integration_secrets_store import integration_secrets_store
+from app.services.integration_secrets_store import integration_secrets_store, persist_oauth_state, check_oauth_state, delete_oauth_state
 from app.services.meta_store import meta_snapshot_store
 from app.services.performance_reports import performance_reports_store
 
@@ -680,10 +680,7 @@ class MetaAdsService:
 
         state = base64.urlsafe_b64encode(secrets.token_bytes(24)).decode("utf-8").rstrip("=")
         self._oauth_state_cache.add(state)
-        try:
-            integration_secrets_store.upsert_secret(provider="meta_ads", secret_key=f"oauth_state:{state}", value="1")
-        except Exception:  # noqa: BLE001
-            pass
+        persist_oauth_state("meta_ads", state)
         params = {
             "client_id": settings.meta_app_id,
             "redirect_uri": settings.meta_redirect_uri,
@@ -702,18 +699,11 @@ class MetaAdsService:
             raise MetaAdsIntegrationError("Meta OAuth is not configured. Set META_APP_ID, META_APP_SECRET, and META_REDIRECT_URI.")
         state_valid = state in self._oauth_state_cache
         if not state_valid:
-            try:
-                db_state = integration_secrets_store.get_secret(provider="meta_ads", secret_key=f"oauth_state:{state}")
-                state_valid = db_state is not None
-            except Exception:  # noqa: BLE001
-                pass
+            state_valid = check_oauth_state("meta_ads", state)
         if not state_valid:
             raise MetaAdsIntegrationError("Invalid OAuth state for Meta connect callback")
         self._oauth_state_cache.discard(state)
-        try:
-            integration_secrets_store.delete_secret(provider="meta_ads", secret_key=f"oauth_state:{state}")
-        except Exception:  # noqa: BLE001
-            pass
+        delete_oauth_state("meta_ads", state)
 
         query = parse.urlencode(
             {

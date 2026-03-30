@@ -145,3 +145,67 @@ class IntegrationSecretsStore:
 
 
 integration_secrets_store = IntegrationSecretsStore()
+
+
+# ---------------------------------------------------------------------------
+# Lightweight OAuth state persistence (no encryption, direct SQL)
+# ---------------------------------------------------------------------------
+import logging as _logging
+
+_oauth_state_logger = _logging.getLogger("oauth_state_db")
+
+
+def persist_oauth_state(provider: str, state: str) -> bool:
+    """Store an OAuth state token in the DB. Returns True on success."""
+    try:
+        integration_secrets_store._ensure_schema()
+        with integration_secrets_store._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO integration_secrets(provider, secret_key, scope, encrypted_value)
+                    VALUES (%s, %s, 'oauth_state', %s)
+                    ON CONFLICT(provider, secret_key, scope)
+                    DO UPDATE SET encrypted_value = EXCLUDED.encrypted_value, updated_at = NOW()
+                    """,
+                    (str(provider), f"oauth_state:{state}", "1"),
+                )
+            conn.commit()
+        _oauth_state_logger.info("oauth_state_persisted provider=%s state_prefix=%s", provider, state[:8])
+        return True
+    except Exception:
+        _oauth_state_logger.exception("oauth_state_persist_failed provider=%s", provider)
+        return False
+
+
+def check_oauth_state(provider: str, state: str) -> bool:
+    """Check if an OAuth state token exists in the DB. Returns True if found."""
+    try:
+        integration_secrets_store._ensure_schema()
+        with integration_secrets_store._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM integration_secrets WHERE provider = %s AND secret_key = %s AND scope = 'oauth_state' LIMIT 1",
+                    (str(provider), f"oauth_state:{state}"),
+                )
+                found = cur.fetchone() is not None
+        _oauth_state_logger.info("oauth_state_check provider=%s state_prefix=%s found=%s", provider, state[:8], found)
+        return found
+    except Exception:
+        _oauth_state_logger.exception("oauth_state_check_failed provider=%s", provider)
+        return False
+
+
+def delete_oauth_state(provider: str, state: str) -> None:
+    """Remove an OAuth state token from the DB."""
+    try:
+        integration_secrets_store._ensure_schema()
+        with integration_secrets_store._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM integration_secrets WHERE provider = %s AND secret_key = %s AND scope = 'oauth_state'",
+                    (str(provider), f"oauth_state:{state}"),
+                )
+            conn.commit()
+    except Exception:
+        _oauth_state_logger.exception("oauth_state_delete_failed provider=%s", provider)

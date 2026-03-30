@@ -18,7 +18,7 @@ from app.services.entity_performance_reports import (
     upsert_ad_unit_performance_reports,
     upsert_campaign_performance_reports,
 )
-from app.services.integration_secrets_store import integration_secrets_store
+from app.services.integration_secrets_store import integration_secrets_store, persist_oauth_state, check_oauth_state, delete_oauth_state
 from app.services.performance_reports import performance_reports_store
 from app.services.platform_entity_store import upsert_platform_ad_groups, upsert_platform_campaigns
 from app.services.tiktok_account_daily_identity_resolver import resolve_tiktok_account_daily_persistence_identity
@@ -520,10 +520,7 @@ class TikTokAdsService:
 
         state = base64.urlsafe_b64encode(secrets.token_bytes(24)).decode("utf-8").rstrip("=")
         self._oauth_state_cache.add(state)
-        try:
-            integration_secrets_store.upsert_secret(provider="tiktok_ads", secret_key=f"oauth_state:{state}", value="1")
-        except Exception:  # noqa: BLE001
-            pass
+        persist_oauth_state("tiktok_ads", state)
         params = {
             "app_id": settings.tiktok_app_id,
             "redirect_uri": settings.tiktok_redirect_uri,
@@ -540,18 +537,11 @@ class TikTokAdsService:
             raise TikTokAdsIntegrationError("TikTok OAuth is not configured. Set TIKTOK_APP_ID, TIKTOK_APP_SECRET, and TIKTOK_REDIRECT_URI.")
         state_valid = state in self._oauth_state_cache
         if not state_valid:
-            try:
-                db_state = integration_secrets_store.get_secret(provider="tiktok_ads", secret_key=f"oauth_state:{state}")
-                state_valid = db_state is not None
-            except Exception:  # noqa: BLE001
-                pass
+            state_valid = check_oauth_state("tiktok_ads", state)
         if not state_valid:
             raise TikTokAdsIntegrationError("Invalid OAuth state for TikTok connect callback")
         self._oauth_state_cache.discard(state)
-        try:
-            integration_secrets_store.delete_secret(provider="tiktok_ads", secret_key=f"oauth_state:{state}")
-        except Exception:  # noqa: BLE001
-            pass
+        delete_oauth_state("tiktok_ads", state)
 
         token_payload = self._http_json(
             method="POST",
