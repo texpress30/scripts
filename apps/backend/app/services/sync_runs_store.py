@@ -39,7 +39,7 @@ _SYNC_RUNS_SELECT_COLUMNS = """
 _ACTIVE_CHUNK_STATUSES = ("queued", "running", "pending")
 _SUCCESS_CHUNK_STATUSES = ("done", "success", "completed")
 _ERROR_CHUNK_STATUSES = ("error", "failed")
-_TERMINAL_RUN_STATUSES = ("done", "error")
+_TERMINAL_RUN_STATUSES = ("done", "error", "partial")
 
 logger = logging.getLogger(__name__)
 
@@ -960,7 +960,7 @@ class SyncRunsStore:
                     SELECT chunk_index, date_start, date_end
                     FROM sync_run_chunks
                     WHERE job_id = %s
-                      AND status IN ('error', 'failed')
+                      AND (status IN ('error', 'failed') OR status LIKE 'repair:%%')
                     ORDER BY chunk_index ASC
                     FOR UPDATE
                     """,

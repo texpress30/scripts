@@ -916,11 +916,18 @@ def retry_failed_sync_run(job_id: str, user: AuthUser = Depends(get_current_user
 
     normalized_job_id = str(job_id).strip()
     retry_job_id = uuid4().hex
-    result = sync_runs_store.retry_failed_historical_run(
-        source_job_id=normalized_job_id,
-        retry_job_id=retry_job_id,
-        trigger_source="manual",
-    )
+    try:
+        result = sync_runs_store.retry_failed_historical_run(
+            source_job_id=normalized_job_id,
+            retry_job_id=retry_job_id,
+            trigger_source="manual",
+        )
+    except Exception as exc:
+        logger.exception("sync_runs.retry_failed error source_job_id=%s", normalized_job_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Retry failed: {exc}",
+        ) from exc
 
     outcome = str(result.get("outcome") or "")
     logger.info(
