@@ -96,6 +96,9 @@ export function TikTokIntegrationCard() {
     setImportSummary(null);
     try {
       const payload = await apiRequest<TikTokConnectResponse>("/integrations/tiktok-ads/connect");
+      if (payload.state) {
+        sessionStorage.setItem("tiktok_oauth_state", payload.state);
+      }
       setMessage("Redirecting către TikTok OAuth...");
       window.location.href = payload.authorize_url;
     } catch (err) {

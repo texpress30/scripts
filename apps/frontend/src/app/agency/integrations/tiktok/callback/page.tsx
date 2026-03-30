@@ -25,7 +25,9 @@ function TikTokOAuthCallbackBody() {
   const errorReason = searchParams.get("error_reason") ?? "";
   const errorDescription = searchParams.get("error_description") ?? "";
   const code = searchParams.get("auth_code") ?? searchParams.get("code") ?? "";
-  const state = searchParams.get("state") ?? "";
+  const urlState = searchParams.get("state") ?? "";
+  const savedState = typeof window !== "undefined" ? sessionStorage.getItem("tiktok_oauth_state") ?? "" : "";
+  const state = urlState || savedState;
 
   useEffect(() => {
     let ignore = false;
@@ -58,6 +60,7 @@ function TikTokOAuthCallbackBody() {
           body: JSON.stringify({ code, state }),
         });
 
+        sessionStorage.removeItem("tiktok_oauth_state");
         if (!ignore) {
           setSuccess(payload.message ?? "TikTok OAuth connected successfully.");
           setLoading(false);
