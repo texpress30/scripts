@@ -696,6 +696,10 @@ class GoogleAdsService:
         settings = load_settings()
         state = base64.urlsafe_b64encode(secrets.token_bytes(24)).decode("utf-8").rstrip("=")
         self._oauth_state_cache.add(state)
+        try:
+            integration_secrets_store.upsert_secret(provider="google_ads", secret_key=f"oauth_state:{state}", value="1")
+        except Exception:  # noqa: BLE001
+            pass
         params = {
             "client_id": settings.google_ads_client_id,
             "redirect_uri": settings.google_ads_redirect_uri,
@@ -712,9 +716,20 @@ class GoogleAdsService:
 
     def exchange_oauth_code(self, *, code: str, state: str) -> dict[str, object]:
         self._require_production_credentials()
-        if state not in self._oauth_state_cache:
+        state_valid = state in self._oauth_state_cache
+        if not state_valid:
+            try:
+                db_state = integration_secrets_store.get_secret(provider="google_ads", secret_key=f"oauth_state:{state}")
+                state_valid = db_state is not None
+            except Exception:  # noqa: BLE001
+                pass
+        if not state_valid:
             raise GoogleAdsIntegrationError("Invalid OAuth state for Google connect callback")
         self._oauth_state_cache.discard(state)
+        try:
+            integration_secrets_store.delete_secret(provider="google_ads", secret_key=f"oauth_state:{state}")
+        except Exception:  # noqa: BLE001
+            pass
 
         settings = load_settings()
         token_payload = self._http_json(

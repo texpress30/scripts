@@ -133,4 +133,15 @@ class IntegrationSecretsStore:
         )
 
 
+    def delete_secret(self, *, provider: str, secret_key: str, scope: str = "agency_default") -> None:
+        self._ensure_schema()
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM integration_secrets WHERE provider = %s AND secret_key = %s AND scope = %s",
+                    (str(provider), str(secret_key), str(scope)),
+                )
+            conn.commit()
+
+
 integration_secrets_store = IntegrationSecretsStore()
