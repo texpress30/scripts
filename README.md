@@ -28,6 +28,13 @@ npm run dev
 Variabile importante:
 - `APP_AUTH_SECRET` (obligatoriu)
 - `DATABASE_URL` (pentru persistență non-test)
+- `STORAGE_MEDIA_REMOTE_FETCH_TIMEOUT_SECONDS` (timeout fetch remote ingest, default 15)
+- `STORAGE_MEDIA_REMOTE_FETCH_MAX_BYTES` (limită bytes fetch remote ingest, default 10485760)
+- `CREATIVE_WORKFLOW_MONGO_CORE_WRITES_SOURCE_ENABLED` (default `false`; când e `true`, `create_asset` / `add_variant` / `link_to_campaign` folosesc Mongo ca source-of-truth pentru write path)
+- `CREATIVE_WORKFLOW_MONGO_DERIVED_WRITES_SOURCE_ENABLED` (default `false`; devine activ doar împreună cu `CREATIVE_WORKFLOW_MONGO_CORE_WRITES_SOURCE_ENABLED` pentru `generate_variants` / `update_approval` / `set_performance_scores`)
+- `CREATIVE_WORKFLOW_MONGO_PUBLISH_PERSIST_ENABLED` (default `false`; persistă `publish_to_channel` în Mongo doar când sunt active și `CORE_WRITES` + `DERIVED_WRITES`)
+- `CREATIVE_WORKFLOW_MEDIA_ID_LINKING_ENABLED` (default `false`; permite `media_id` opțional în `add_variant`, cu validare minimă prin media metadata repository)
+- `AI_RECOMMENDATIONS_MONGO_SOURCE_ENABLED` (default `false`; mută recommendations history pe Mongo source-of-truth pentru generate/list/get/review/actions)
 - `APP_ENV=test` trebuie folosit doar în teste automate (pytest), altfel aplicația poate porni în mod de test și pierde persistența la restart.
 - Google Ads production flow:
   - `GOOGLE_ADS_MODE=production`
@@ -36,7 +43,18 @@ Variabile importante:
   - `GOOGLE_ADS_DEVELOPER_TOKEN`
   - `GOOGLE_ADS_MANAGER_CUSTOMER_ID`
   - `GOOGLE_ADS_REDIRECT_URI`
-  - `GOOGLE_ADS_REFRESH_TOKEN` (după OAuth exchange)
+  - `INTEGRATION_SECRET_ENCRYPTION_KEY` (secret pentru criptarea token-urilor integration în DB; dacă lipsește se folosește `APP_AUTH_SECRET`)
+  - TikTok OAuth flow (Business advertiser auth):
+    - `TIKTOK_APP_ID`
+    - `TIKTOK_APP_SECRET`
+    - `TIKTOK_REDIRECT_URI` = `https://scripts-chi-nine.vercel.app/agency/integrations/tiktok/callback`
+    - opțional: `TIKTOK_API_BASE_URL` (default `https://business-api.tiktok.com`)
+    - opțional: `TIKTOK_API_VERSION` (default `v1.3`)
+  - Meta OAuth flow:
+    - `META_APP_ID`
+    - `META_APP_SECRET`
+    - `META_REDIRECT_URI` = `https://scripts-chi-nine.vercel.app/agency/integrations/meta/callback`
+    - opțional: `META_API_VERSION` (default `v20.0`)
 
 Feature flags:
 - `FF_TIKTOK_INTEGRATION`
@@ -53,15 +71,20 @@ cd apps/backend
 python ../../scripts/refresh_google_account_names.py
 ```
 
-### Mapping conturi la clienți (many-to-many client-side)
-- Un cont Google Ads este atașat la **un singur client**.
-- Un client poate avea **mai multe conturi Google Ads**.
+### Mapping conturi la clienți (generic, extensibil multi-platform)
+- Un cont de platformă este atașat la **un singur client** la un moment dat.
+- Un client poate avea **mai multe conturi** pe aceeași platformă sau pe platforme diferite.
 - Persistența se face în tabelul de legătură `agency_account_client_mappings`.
 
-Endpoint-uri relevante:
+Endpoint-uri generice:
+- `POST /clients/{client_id}/attach-account` cu body `{ "platform": "google_ads|meta_ads|...", "account_id": "..." }`
+- `POST /clients/{client_id}/detach-account` cu body `{ "platform": "...", "account_id": "..." }`
+- `GET /clients/{client_id}/accounts` (opțional `?platform=meta_ads`)
+- `GET /clients/accounts/{platform}`
+
+Endpoint-uri Google legacy (compatibile):
 - `POST /clients/{client_id}/attach-google-account`
 - `DELETE /clients/{client_id}/detach-google-account`
-- `GET /clients/{client_id}/accounts`
 - `GET /clients/accounts/google`
 
 ## Script diagnostic Google Ads
@@ -80,7 +103,17 @@ Variabile minime necesare:
 - `GOOGLE_ADS_DEVELOPER_TOKEN`
 - `GOOGLE_ADS_MANAGER_CUSTOMER_ID`
 - `GOOGLE_ADS_REDIRECT_URI`
-- `GOOGLE_ADS_REFRESH_TOKEN`
+- `INTEGRATION_SECRET_ENCRYPTION_KEY`
+
+
+### Meta Ads OAuth (connect foundation)
+- Variabile env noi (backend): `META_APP_ID`, `META_APP_SECRET`, `META_REDIRECT_URI`, opțional `META_API_VERSION` (default `v20.0`).
+- Endpoints:
+  - `GET /integrations/meta-ads/connect` → `{ authorize_url, state }`
+  - `POST /integrations/meta-ads/oauth/exchange` cu `{ code, state }` → persistă long-lived token securizat în `integration_secrets` (`provider=meta_ads`, `secret_key=access_token`).
+  - `POST /integrations/meta-ads/{client_id}/sync` → sync real pentru `account_daily` (default), `campaign_daily`, `ad_group_daily` (Meta ad sets mapate pe grain-ul generic `ad_group_daily`) sau `ad_daily` (Meta ads mapate pe grain-ul generic `ad_daily`) pe toate conturile `meta_ads` atașate clientului; body opțional `{ "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "grain": "account_daily|campaign_daily|ad_group_daily|ad_daily" }` (implicit ultimele 7 zile complete + `account_daily`).
+  - `POST /integrations/meta-ads/{client_id}/backfill` → enqueue backfill istoric chunked (implicit `2024-01-09` → ieri) pentru grains `account_daily|campaign_daily|ad_group_daily|ad_daily`; body opțional `{ "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "grains": ["..."] }`.
+- Status-ul `GET /integrations/meta-ads/status` expune `token_source`, `token_updated_at`, `token_expires_at` (dacă există) și `oauth_configured`.
 
 ## Endpoint-uri cheie
 ### Core
@@ -98,13 +131,32 @@ Variabile minime necesare:
 - `POST /integrations/google-ads/sync-now`
 - `GET /integrations/google-ads/diagnostics`
 - `GET /integrations/meta-ads/status`
+- `GET /integrations/meta-ads/connect`
+- `POST /integrations/meta-ads/oauth/exchange`
+- `POST /integrations/meta-ads/import-accounts`
 - `POST /integrations/meta-ads/{client_id}/sync`
 - `GET /integrations/tiktok-ads/status`
-- `POST /integrations/tiktok-ads/{client_id}/sync`
+- `GET /integrations/tiktok-ads/connect`
+- `POST /integrations/tiktok-ads/oauth/exchange`
+- `POST /integrations/tiktok-ads/import-accounts`
+
+`POST /integrations/tiktok-ads/import-accounts` face advertiser discovery real prin TikTok Business API (`/open_api/{version}/oauth2/advertiser/get/`) și persistă/upsertează conturile în registrul generic de platform accounts; dacă discovery întoarce 0 conturi, răspunsul include mesaj clar + diagnostice safe (`api_code`, `api_message`, `page_count_checked`, `row_container_used`).
+- `POST /integrations/tiktok-ads/{client_id}/sync` (opțional body: `start_date`, `end_date`, `grain` in {`account_daily`,`campaign_daily`,`ad_group_daily`,`ad_daily`}; fără body => `grain=account_daily` + ultimele 7 zile complete)
+- `POST /integrations/tiktok-ads/{client_id}/backfill` (opțional body: `start_date`, `end_date`, `grains`; default: `2024-01-09` → ieri, toate grain-urile TikTok, chunked 30 zile)
 - `GET /integrations/pinterest-ads/status`
 - `POST /integrations/pinterest-ads/{client_id}/sync`
 - `GET /integrations/snapchat-ads/status`
 - `POST /integrations/snapchat-ads/{client_id}/sync`
+
+`GET /dashboard/agency/summary` include în `integration_health` status real pentru `google_ads`, `meta_ads` și `tiktok_ads`; `pinterest_ads` și `snapchat_ads` rămân placeholder `disabled` până la integrare completă.
+
+
+## Redirect URI alignment (production)
+- TikTok Developers (Advertiser redirect URL) + Railway `TIKTOK_REDIRECT_URI` trebuie setate la: `https://scripts-chi-nine.vercel.app/agency/integrations/tiktok/callback`.
+- Meta Developers (OAuth Valid Redirect URI) + Railway `META_REDIRECT_URI` trebuie setate la: `https://scripts-chi-nine.vercel.app/agency/integrations/meta/callback`.
+- Callback pages frontend folosite în aplicație:
+  - TikTok: `/agency/integrations/tiktok/callback`
+  - Meta: `/agency/integrations/meta/callback`
 
 ## Verificare locală
 ```bash
@@ -130,10 +182,100 @@ cd apps/frontend && npm run build
    - `GOOGLE_ADS_DEVELOPER_TOKEN`
    - `GOOGLE_ADS_MANAGER_CUSTOMER_ID`
    - `GOOGLE_ADS_REDIRECT_URI`
-   - `GOOGLE_ADS_REFRESH_TOKEN`
+   - `INTEGRATION_SECRET_ENCRYPTION_KEY`
    - opțional: `GOOGLE_ADS_API_VERSION` (default `v23`)
-2. Rulează migrațiile DB (în ordinea fișierelor din `apps/backend/db/migrations`).
+2. Rulează migrațiile DB cu runner-ul idempotent: `cd apps/backend && PYTHONPATH=. python -m app.db.migrate`.
+2.1 OAuth callback salvează automat refresh token-ul Google în DB (criptat); nu mai este necesar copy/paste manual în Railway pentru `GOOGLE_ADS_REFRESH_TOKEN`.
 3. Rulează diagnostic local/remote: `PYTHONPATH=apps/backend python scripts/diag_google_ads.py`.
 4. Rulează sync on-demand pentru conturile mapate: `POST /integrations/google-ads/sync-now` (agency admin).
 5. Verifică datele în DB (`ad_performance_reports`) pe ultimele 30 zile și endpoint-ul `GET /dashboard/agency/summary?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD`.
 6. Confirmă în UI că Google Ads arată `rows30 > 0` și cardurile dashboard nu mai rămân pe 0 după sync.
+
+
+
+## Railway: rulare migrații Postgres (idempotent + lock)
+- Runner migrații: `cd apps/backend && PYTHONPATH=. python -m app.db.migrate`
+- Comportament: creează `schema_migrations` dacă lipsește, aplică fișierele `apps/backend/db/migrations/*.sql` în ordine lexicografică și marchează fiecare fișier aplicat o singură dată.
+- Siguranță concurență: runner-ul folosește advisory lock Postgres global, deci rulări paralele nu aplică dublu migrațiile.
+- Recomandare Railway (web start command): `python -m app.db.migrate --migrations-dir db/migrations --baseline-before 0015_ && uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
+
+
+## Meta/TikTok sync diagnostics (real errors)
+- Eroarea reală pentru run-urile Meta/TikTok este expusă în progresul sync (`/agency/sync-runs/accounts/{platform}/progress`) prin câmpurile additive:
+  - `active_run.last_error_summary`
+  - `active_run.last_error_details`
+- `last_error_details` include (când există): `platform`, `account_id`, `client_id`, `grain`, `chunk_index`, `start_date`, `end_date`, `provider_error_code`, `provider_error_message`, `http_status`, `endpoint`, `retryable`.
+- UI Agency Accounts afișează sumarul real sub statusul de eroare, fără redesign.
+- Repro rapid diagnostic:
+  1. Pornește un historical batch pentru Meta/TikTok din Agency Accounts.
+  2. Urmărește polling-ul batch/progress și verifică `last_error_summary` + `last_error_details`.
+  3. În logs backend caută `sync_worker.chunk_failed` pentru `job_id/chunk_index` + metadatele sanitizate.
+- Sanitizare: token-urile/secretele sunt mascate (`***`) în snippets/metadata/log strings pentru a evita expunerea credentialelor.
+
+## Railway: rolling sync zilnic (cron)
+- **Comandă cron Railway (daily enqueue):** `cd apps/backend && PYTHONPATH=. python -m app.workers.rolling_scheduler`
+- **Worker de procesare chunk-uri (service separat, continuu):** `cd apps/backend && PYTHONPATH=. python -m app.workers.sync_worker`
+- Cron-ul creează run-uri `job_type=rolling_refresh` cu `trigger_source=cron` în `sync_runs`, vizibile în Agency Account Detail → Sync runs.
+- Regula exactă pentru fereastra zilnică rolling: `end_date = yesterday` (în timezone-ul contului), `start_date = end_date - 6 zile` ⇒ fix 7 zile calendaristice complete.
+- Eligibilitate minimă rolling cron: cont mapat la client + `sync_start_date` inițiat (altfel este omis explicit ca `history_not_initialized`).
+- Feature flag opțional: `ROLLING_ENTITY_GRAINS_ENABLED=1` (alias compatibil cu API: `ENTITY_GRAINS_ENABLED=1`; dacă oricare e activ, feature-ul este ON).
+  - Default (lipsă/0): scheduler enqueuiește doar `grain=account_daily` (comportament actual).
+  - Activ (1/true/yes/on): pentru conturi Google Ads, scheduler enqueuiește și `campaign_daily`, `ad_group_daily`, `ad_daily`, `keyword_daily`; pentru conturi Meta Ads enqueuiește `campaign_daily`, `ad_group_daily`, `ad_daily`; pentru conturi TikTok Ads enqueuiește `campaign_daily`, `ad_group_daily`, `ad_daily` (toate plus `account_daily`) pe aceeași fereastră rolling de 7 zile complete.
+- Același flag (ENTITY/ROLLING alias) activează și auto-expand pentru `POST /agency/sync-runs/batch` pe request-uri legacy Google (`grain` lipsă sau `account_daily`) astfel încât historical backfill să includă și entity grains.
+
+## Railway: repair sweeper (historical + rolling stale runs)
+- **One-shot manual sweep (historical + rolling):** `cd apps/backend && PYTHONPATH=. python -m app.workers.historical_repair_sweeper`
+- **Periodic sweeper loop (historical + rolling, service separat):** `cd apps/backend && PYTHONPATH=. python -m app.workers.historical_repair_sweeper_loop`
+- Env vars suportate:
+  - `HISTORICAL_REPAIR_SWEEPER_ENABLED` (`true/false`, default `true` pentru loop runner)
+  - `HISTORICAL_REPAIR_SWEEPER_INTERVAL_SECONDS` (default `300`)
+  - `HISTORICAL_REPAIR_SWEEPER_STALE_MINUTES` (override la `SYNC_RUN_REPAIR_STALE_MINUTES`)
+  - `HISTORICAL_REPAIR_SWEEPER_LIMIT` (default `100`)
+- Loop-ul loghează explicit `iteration_started`/`iteration_finished` + summary; dacă o iterație eșuează, eroarea este logată și loop-ul continuă la următoarea iterație.
+
+## Team management foundation (users + user_memberships)
+- Backend team management folosește acum modelul normalizat `users` (identity) + `user_memberships` (scope + rol canonic) pentru a pregăti autentificarea reală în pasul următor.
+- Contractul API existent pentru `GET/POST /team/members` rămâne compatibil cu frontend-ul curent (payload/shape legacy), dar persistența nouă este făcută în `users` + `user_memberships`.
+- Rolurile canonice interne pentru memberships sunt:
+  - `agency_admin`, `agency_member`, `agency_viewer`
+  - `subaccount_admin`, `subaccount_user`, `subaccount_viewer`
+- Endpoint nou: `GET /team/subaccount-options` (id, name, label) pentru selecția de sub-account în flow-urile viitoare.
+- Login/token flow nu este modificat în acest pas; acest task pregătește migrarea către auth real user-based în pasul următor.
+- RBAC/session folosesc acum rolurile canonice ca sursă de adevăr (`agency_admin`, `agency_member`, `agency_viewer`, `subaccount_admin`, `subaccount_user`, `subaccount_viewer`).
+- Aliasurile legacy rămân tranzitoriu compatibile: `account_manager` -> `subaccount_user`, `client_viewer` -> `subaccount_viewer`.
+- Autentificarea `/auth/login` este acum DB-first (`users` + `user_memberships`) cu fallback de urgență pe credentials din env (token `super_admin` cu `is_env_admin=true`).
+- Când un user are mai multe memberships active pentru același rol, login-ul returnează `409` până la implementarea selecției explicite de sub-account la autentificare.
+- Endpointuri noi Sub-account Team (backend):
+  - `GET /team/subaccounts/{subaccount_id}/members`
+  - `POST /team/subaccounts/{subaccount_id}/members`
+- Scope enforcement: rolurile `subaccount_*` sunt limitate la propriul `subaccount_id` din token; rolurile agency/global pot accesa orice sub-account permis de RBAC.
+- Role picker-ul rămâne sursa de adevăr pentru rolul de bază; în plus, membership-urile `subaccount` pot avea acum `module_keys` (catalog canonic: `dashboard`, `campaigns`, `rules`, `creative`, `recommendations`) pentru restricții fine pe module.
+- Pentru membership-uri `subaccount`, dacă `module_keys` lipsește la create se aplică default-ul „toate modulele”; pentru membership-uri `agency`, trimiterea `module_keys` este respinsă explicit (400).
+- Grant ceiling backend: un actor `subaccount_*` poate acorda doar subset din modulele pe care le are deja pe același sub-account; actorii agency/global pot acorda orice modul valid.
+- Endpoint nou: `GET /team/module-catalog?scope=subaccount` pentru UI-ul viitor (returnează `key`, `label`, `order`, `scope`).
+- În acest pas nu sunt implementate încă: edit/deactivate/delete member, reassignment din UI, invite/reset password.
+- Mailgun backend foundation (agency-level) este disponibilă prin endpointurile:
+  - `GET /agency/integrations/mailgun/status`
+  - `POST /agency/integrations/mailgun/config`
+  - `POST /agency/integrations/mailgun/test`
+- Config-ul Mailgun se salvează în `integration_secrets` (scope `agency_default`), iar `api_key` este returnat doar mascat (`api_key_masked`).
+- Flow-urile `invite/reset password` rămân intenționat în afara acestui pas.
+- Backend forgot/reset password este implementat prin endpointurile publice `POST /auth/forgot-password` și `POST /auth/reset-password/confirm`.
+- `POST /auth/forgot-password` folosește Mailgun agency-level existent și răspunde generic (fără user enumeration).
+- Tokenurile de reset rămân one-time, expirabile, stocate doar ca hash în `auth_email_tokens`.
+- UI forgot/reset este conectat în frontend (`/forgot-password`, `/reset-password`, link din `/login`).
+- Invite backend este implementat prin `POST /team/members/{membership_id}/invite` (admin-only, Mailgun agency-level).
+- `POST /auth/reset-password/confirm` acceptă acum tokenuri `password_reset` și `invite_user`.
+- UI „Trimite invitație” este disponibil în Agency Team și apelează backend-ul `POST /team/members/{membership_id}/invite`.
+- Invite UI în Sub-account Team rămâne pentru taskul următor.
+
+
+## Storage media cleanup batch runner (manual + Railway Scheduled Job)
+- **Manual run (default limit from config):** `cd apps/backend && PYTHONPATH=. python -m app.workers.storage_media_cleanup_runner`
+- **Manual run (explicit limit):** `cd apps/backend && PYTHONPATH=. python -m app.workers.storage_media_cleanup_runner --limit 200`
+- **Railway Scheduled Job command (recommended):** `cd apps/backend && PYTHONPATH=. python -m app.workers.storage_media_cleanup_runner`
+- Batch size env: `STORAGE_MEDIA_CLEANUP_BATCH_LIMIT` (default `100`).
+- Runner output: JSON summary cu `limit`, `processed`, `purged`, `skipped`, `failed` (plus `status`).
+- Exit code semantics:
+  - `0` când batch-ul rulează (inclusiv dacă are item-uri `failed`/`skipped`)
+  - non-zero doar la eroare globală (ex: provider/config indisponibil, excepție neprevăzută înainte/în jurul run-ului).

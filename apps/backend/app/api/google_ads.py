@@ -16,6 +16,7 @@ from app.services.sync_run_chunks_store import sync_run_chunks_store
 from app.services.sync_runs_store import sync_runs_store
 from app.services.sync_state_store import sync_state_store
 from app.services.sync_constants import PLATFORM_GOOGLE_ADS, SYNC_GRAIN_ACCOUNT_DAILY, SYNC_STATUS_DONE, SYNC_STATUS_ERROR, SYNC_STATUS_QUEUED, SYNC_STATUS_RUNNING
+from app.services.response_cache import response_cache
 
 router = APIRouter(prefix="/integrations/google-ads", tags=["google-ads"])
 logger = logging.getLogger(__name__)
@@ -280,19 +281,16 @@ def google_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, o
     except RateLimitExceeded as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
+    cache_key = "google_ads:status"
+    cached = response_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     status_payload = google_ads_service.integration_status()
     google_accounts = client_registry_service.list_platform_accounts(platform=PLATFORM_GOOGLE_ADS)
     status_payload["connected_accounts_count"] = len(google_accounts)
     status_payload["last_import_at"] = client_registry_service.get_last_import_at(platform=PLATFORM_GOOGLE_ADS)
-
-    diagnostics = google_ads_service.run_diagnostics()
-    mapped_accounts = client_registry_service.list_google_mapped_accounts()
-    status_payload["accounts_found"] = diagnostics.get("accessible_customers_count", 0)
-    status_payload["rows_in_db_last_30_days"] = diagnostics.get("rows_in_db_last_30_days", diagnostics.get("db_rows_last_30_days", 0))
-    status_payload["last_sync_at"] = diagnostics.get("last_sync_at")
-    status_payload["last_error"] = diagnostics.get("last_error")
-    status_payload["mapped_accounts_count"] = len(mapped_accounts)
-    status_payload["sample_customer_ids"] = [_mask_customer_id(str(item.get("customer_id") or "")) for item in mapped_accounts[:10]]
+    response_cache.set(cache_key, status_payload, ttl_seconds=30)
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
@@ -301,6 +299,32 @@ def google_ads_status(user: AuthUser = Depends(get_current_user)) -> dict[str, o
         details={"status": status_payload["status"], "mode": status_payload.get("mode", "mock")},
     )
     return status_payload
+
+
+@router.get("/diagnostics")
+def google_ads_diagnostics(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:status", scope="agency")
+    cache_key = "google_ads:diagnostics"
+    cached = response_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    diagnostics = google_ads_service.run_diagnostics()
+    mapped_accounts = client_registry_service.list_google_mapped_accounts()
+    payload = {
+        **diagnostics,
+        "mapped_accounts_count": len(mapped_accounts),
+        "sample_customer_ids": [_mask_customer_id(str(item.get("customer_id") or "")) for item in mapped_accounts[:10]],
+    }
+    response_cache.set(cache_key, payload, ttl_seconds=90)
+    audit_log_service.log(
+        actor_email=user.email,
+        actor_role=user.role,
+        action="google_ads.diagnostics",
+        resource="integration:google_ads",
+        details={"warnings": len(diagnostics.get("warnings", [])) if isinstance(diagnostics.get("warnings"), list) else 0},
+    )
+    return payload
 
 
 @router.get("/connect")
@@ -430,23 +454,6 @@ def refresh_google_account_names(user: AuthUser = Depends(get_current_user)) -> 
         "items": refreshed_accounts,
         "last_import_at": client_registry_service.get_last_import_at(platform=PLATFORM_GOOGLE_ADS),
     }
-
-
-@router.get("/diagnostics")
-def google_ads_diagnostics(user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
-    enforce_action_scope(user=user, action="integrations:status", scope="agency")
-    details = google_ads_service.run_diagnostics()
-    audit_log_service.log(
-        actor_email=user.email,
-        actor_role=user.role,
-        action="google_ads.diagnostics",
-        resource="integration:google_ads",
-        details={"warnings": len(details.get("warnings", []))},
-    )
-    return details
-
-
-
 
 
 

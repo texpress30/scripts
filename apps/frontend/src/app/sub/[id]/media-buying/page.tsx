@@ -1,0 +1,604 @@
+"use client";
+
+import { useParams } from "next/navigation";
+import Link from "next/link";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+
+import { format } from "date-fns";
+
+import { AppShell } from "@/components/AppShell";
+import { ProtectedPage } from "@/components/ProtectedPage";
+import { apiRequest } from "@/lib/api";
+import { formatCurrencyValue, normalizeCurrencyCode } from "@/lib/subAccountCurrency";
+import { SubReportingNav } from "@/app/sub/[id]/_components/SubReportingNav";
+
+type ClientItem = { id: number; name: string; client_type?: string; currency?: string | null };
+
+type LeadTableRow = {
+  date: string;
+  cost_google: number;
+  cost_meta: number;
+  cost_tiktok: number;
+  cost_total: number;
+  percent_change: number | null;
+  leads: number;
+  phones: number;
+  total_leads: number;
+  custom_value_1_count: number;
+  custom_value_2_count: number;
+  custom_value_3_amount_ron: number;
+  custom_value_4_amount_ron: number;
+  custom_value_5_amount_ron: number;
+  sales_count: number;
+  custom_value_rate_1: number | null;
+  custom_value_rate_2: number | null;
+  cost_per_lead: number | null;
+  cost_custom_value_1: number | null;
+  cost_custom_value_2: number | null;
+  cost_per_sale: number | null;
+};
+
+type LeadTableMonth = {
+  month: string;
+  date_from: string;
+  date_to: string;
+  totals: LeadTableRow;
+  days?: LeadTableRow[];
+  day_count?: number;
+  has_days?: boolean;
+};
+
+type LeadTableMeta = {
+  client_id: number;
+  template_type: string;
+  display_currency: string;
+  display_currency_source?: string;
+  custom_label_1?: string;
+  custom_label_2?: string;
+  custom_label_3?: string;
+  custom_label_4?: string;
+  custom_label_5?: string;
+  custom_rate_label_1?: string;
+  custom_rate_label_2?: string;
+  custom_cost_label_1?: string;
+  custom_cost_label_2?: string;
+  visible_columns?: string[];
+  date_from: string | null;
+  date_to: string | null;
+  effective_date_from?: string | null;
+  effective_date_to?: string | null;
+  earliest_data_date?: string | null;
+  latest_data_date?: string | null;
+  available_months?: string[];
+};
+
+type LeadTableResponse = {
+  meta: LeadTableMeta;
+  days: LeadTableRow[];
+  months: LeadTableMonth[];
+};
+
+type LeadMonthDaysResponse = {
+  meta: LeadTableMeta;
+  month_start: string;
+  days: LeadTableRow[];
+};
+
+const RO_MONTH_SHORT = ["Ian", "Feb", "Mar", "Apr", "Mai", "Iun", "Iul", "Aug", "Sep", "Oct", "Noi", "Dec"] as const;
+const DEFAULT_VISIBLE_COLUMNS: ColumnSemanticKey[] = [
+  "date",
+  "cost_google",
+  "cost_meta",
+  "cost_tiktok",
+  "cost_total",
+  "percent_change",
+  "leads",
+  "phones",
+  "total_leads",
+  "custom_value_1_count",
+  "custom_value_2_count",
+  "custom_value_3_amount_ron",
+  "custom_value_4_amount_ron",
+  "custom_value_5_amount_ron",
+  "sales_count",
+  "custom_value_rate_1",
+  "custom_value_rate_2",
+  "cost_per_lead",
+  "cost_custom_value_1",
+  "cost_custom_value_2",
+  "cost_per_sale",
+];
+const MANDATORY_COLUMNS: Set<ColumnSemanticKey> = new Set(["date"]);
+
+type ColumnSemanticKey =
+  | "date"
+  | "cost_google"
+  | "cost_meta"
+  | "cost_tiktok"
+  | "cost_total"
+  | "percent_change"
+  | "leads"
+  | "phones"
+  | "total_leads"
+  | "custom_value_1_count"
+  | "custom_value_2_count"
+  | "custom_value_3_amount_ron"
+  | "custom_value_4_amount_ron"
+  | "custom_value_5_amount_ron"
+  | "sales_count"
+  | "custom_value_rate_1"
+  | "custom_value_rate_2"
+  | "cost_per_lead"
+  | "cost_custom_value_1"
+  | "cost_custom_value_2"
+  | "cost_per_sale";
+
+const GREY_COLUMNS: Set<ColumnSemanticKey> = new Set([
+  "cost_google",
+  "cost_meta",
+  "cost_tiktok",
+  "leads",
+  "phones",
+]);
+
+const DASHED_COLUMNS: Set<ColumnSemanticKey> = new Set([
+  "cost_total",
+  "total_leads",
+  "custom_value_rate_1",
+  "custom_value_rate_2",
+]);
+
+const VIOLET_COLUMNS: Set<ColumnSemanticKey> = new Set([]);
+
+function toIso(value: Date): string {
+  return format(value, "yyyy-MM-dd");
+}
+
+function formatMoney(value: number | null | undefined, currencyCode: string): string {
+  return formatCurrencyValue(value, currencyCode, "USD");
+}
+
+function formatCount(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  return Math.trunc(value).toLocaleString();
+}
+
+function formatRate(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  return `${(value * 100).toFixed(2)}%`;
+}
+
+function columnClass(key: ColumnSemanticKey): string {
+  const classes = ["px-3", "py-2"];
+  if (GREY_COLUMNS.has(key)) classes.push("text-[#bfbfbf]");
+  if (DASHED_COLUMNS.has(key)) classes.push("border-l", "border-r", "border-dashed", "border-slate-300");
+  if (VIOLET_COLUMNS.has(key)) classes.push("text-violet-600");
+  return classes.join(" ");
+}
+
+function stickyHeaderClass(column: ColumnSemanticKey): string {
+  if (column === "date") return "sticky left-0 top-0 z-50 bg-slate-50 shadow-[6px_0_8px_-8px_rgba(15,23,42,0.35)]";
+  return "sticky top-0 z-30 bg-slate-50";
+}
+
+function stickyDateCellClass(tone: "month" | "day"): string {
+  const base = "sticky left-0 z-20 border-r border-slate-200 bg-white shadow-[6px_0_8px_-8px_rgba(15,23,42,0.35)]";
+  if (tone === "month") return `${base} bg-slate-100`;
+  return base;
+}
+
+function monthLabel(value: string): string {
+  const [year, month] = value.split("-");
+  const monthIndex = Number(month) - 1;
+  return `${RO_MONTH_SHORT[Math.max(0, Math.min(11, monthIndex))]} ${year}`;
+}
+
+function monthStartFromKey(value: string): string {
+  return `${value}-01`;
+}
+
+function shortDayLabel(value: string): string {
+  const [, month, day] = value.split("-");
+  const monthIndex = Number(month) - 1;
+  return `${Number(day)} ${RO_MONTH_SHORT[Math.max(0, Math.min(11, monthIndex))]}`;
+}
+
+function fallbackLabel(value: string | undefined, fallback: string): string {
+  const normalized = String(value || "").trim();
+  return normalized || fallback;
+}
+
+function normalizedClientType(value: string | null): string {
+  const raw = String(value || "lead").trim().toLowerCase();
+  if (raw === "e-commerce") return "ecommerce";
+  if (raw === "ecommerce") return "ecommerce";
+  if (raw === "programmatic") return "programmatic";
+  return "lead";
+}
+
+export default function SubMediaBuyingPage() {
+  const params = useParams<{ id: string }>();
+  const clientId = Number(params.id);
+
+  const [clientName, setClientName] = useState<string>(`Sub-account #${clientId}`);
+  const [clientType, setClientType] = useState<string>("lead");
+  const [clientCurrency, setClientCurrency] = useState<string | null>(null);
+  const [clientContextLoaded, setClientContextLoaded] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [tableData, setTableData] = useState<LeadTableResponse | null>(null);
+  const [expandedMonths, setExpandedMonths] = useState<Record<string, boolean>>({});
+  const [monthDaysByMonth, setMonthDaysByMonth] = useState<Record<string, LeadTableRow[]>>({});
+  const [monthLoadingByMonth, setMonthLoadingByMonth] = useState<Record<string, boolean>>({});
+  const [monthErrorByMonth, setMonthErrorByMonth] = useState<Record<string, string>>({});
+  const [visibleColumns, setVisibleColumns] = useState<ColumnSemanticKey[]>(DEFAULT_VISIBLE_COLUMNS);
+
+  const loadTable = useCallback(async (preserveExpanded: boolean) => {
+    if (!Number.isFinite(clientId)) return;
+    setLoading(true);
+    setError("");
+    try {
+      const payload = await apiRequest<LeadTableResponse>(
+        `/clients/${clientId}/media-buying/lead/table?include_days=false`
+      );
+      setTableData(payload);
+      setMonthDaysByMonth({});
+      setMonthLoadingByMonth({});
+      setMonthErrorByMonth({});
+      if (!preserveExpanded) {
+        const latestMonth = [...payload.months].sort((a, b) => b.month.localeCompare(a.month))[0]?.month;
+        setExpandedMonths(latestMonth ? { [latestMonth]: true } : {});
+      }
+    } catch (err) {
+      setTableData(null);
+      setMonthDaysByMonth({});
+      setMonthLoadingByMonth({});
+      setMonthErrorByMonth({});
+      setError(err instanceof Error ? err.message : "Nu am putut încărca tabelul Media Buying");
+    } finally {
+      setLoading(false);
+    }
+  }, [clientId]);
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadClientContext() {
+      try {
+        const result = await apiRequest<{ items: ClientItem[] }>("/clients");
+        const match = result.items.find((item) => item.id === clientId);
+        if (!ignore) {
+          if (match?.name) setClientName(match.name);
+          if (match?.client_type) setClientType(normalizedClientType(match.client_type));
+          setClientCurrency(typeof match?.currency === "string" ? match.currency : null);
+          setClientContextLoaded(true);
+        }
+      } catch {
+        if (!ignore) {
+          setClientName(`Sub-account #${clientId}`);
+          setClientType("lead");
+          setClientCurrency(null);
+          setClientContextLoaded(true);
+        }
+      }
+    }
+
+    if (Number.isFinite(clientId)) void loadClientContext();
+    return () => {
+      ignore = true;
+    };
+  }, [clientId]);
+
+  useEffect(() => {
+    if (!clientContextLoaded) return;
+    if (clientType !== "lead") {
+      setLoading(false);
+      setTableData(null);
+      return;
+    }
+    void loadTable(false);
+  }, [loadTable, clientType, clientContextLoaded]);
+
+  const title = `Media Buying - ${clientName}`;
+
+  const displayCurrencyFromTable = String(tableData?.meta.display_currency || "").trim().toUpperCase();
+  const displayCurrencyFromClient = String(clientCurrency || "").trim().toUpperCase();
+  const resolvedDisplayCurrency = /^[A-Z]{3}$/.test(displayCurrencyFromTable)
+    ? displayCurrencyFromTable
+    : (/^[A-Z]{3}$/.test(displayCurrencyFromClient) ? displayCurrencyFromClient : null);
+  const displayCurrency = normalizeCurrencyCode(resolvedDisplayCurrency, "USD");
+  const displayCurrencyLabel = resolvedDisplayCurrency ?? "—";
+  const labelMap = {
+    custom_label_1: fallbackLabel(tableData?.meta.custom_label_1, "Custom Value 1"),
+    custom_label_2: fallbackLabel(tableData?.meta.custom_label_2, "Custom Value 2"),
+    custom_label_3: fallbackLabel(tableData?.meta.custom_label_3, "Custom Value 3"),
+    custom_label_4: fallbackLabel(tableData?.meta.custom_label_4, "Custom Value 4"),
+    custom_label_5: fallbackLabel(tableData?.meta.custom_label_5, "Custom Value 5"),
+    custom_rate_label_1: fallbackLabel(tableData?.meta.custom_rate_label_1, "Custom Value Rate 1"),
+    custom_rate_label_2: fallbackLabel(tableData?.meta.custom_rate_label_2, "Custom Value Rate 2"),
+    custom_cost_label_1: fallbackLabel(tableData?.meta.custom_cost_label_1, "Cost Custom Value 1"),
+    custom_cost_label_2: fallbackLabel(tableData?.meta.custom_cost_label_2, "Cost Custom Value 2"),
+  };
+
+  const columnsMenu: Array<{ key: ColumnSemanticKey; label: string }> = [
+    { key: "date", label: "Data" },
+    { key: "cost_google", label: "Cost Google" },
+    { key: "cost_meta", label: "Cost Meta" },
+    { key: "cost_tiktok", label: "Cost TikTok" },
+    { key: "cost_total", label: "Cost Total" },
+    { key: "percent_change", label: "%^" },
+    { key: "leads", label: "Lead-uri" },
+    { key: "phones", label: "Telefoane" },
+    { key: "total_leads", label: "Total Lead-uri" },
+    { key: "custom_value_1_count", label: labelMap.custom_label_1 },
+    { key: "custom_value_2_count", label: labelMap.custom_label_2 },
+    { key: "custom_value_3_amount_ron", label: labelMap.custom_label_3 },
+    { key: "custom_value_4_amount_ron", label: labelMap.custom_label_4 },
+    { key: "custom_value_5_amount_ron", label: labelMap.custom_label_5 },
+    { key: "sales_count", label: "Vânzări" },
+    { key: "custom_value_rate_1", label: labelMap.custom_rate_label_1 },
+    { key: "custom_value_rate_2", label: labelMap.custom_rate_label_2 },
+    { key: "cost_per_lead", label: "Cost per Lead" },
+    { key: "cost_custom_value_1", label: labelMap.custom_cost_label_1 },
+    { key: "cost_custom_value_2", label: labelMap.custom_cost_label_2 },
+    { key: "cost_per_sale", label: "Cost per Sale" },
+  ];
+
+  const isLeadTemplate = clientType === "lead";
+  const sortedMonths = useMemo(
+    () => (tableData ? [...tableData.months].sort((a, b) => b.month.localeCompare(a.month)) : []),
+    [tableData]
+  );
+  const dataMonthKey = useMemo(() => sortedMonths[0]?.month ?? format(new Date(), "yyyy-MM"), [sortedMonths]);
+  const monthsByKey = useMemo(() => Object.fromEntries(sortedMonths.map((item) => [item.month, item])), [sortedMonths]);
+
+  const ensureMonthDays = useCallback(async (month: LeadTableMonth, force: boolean = false) => {
+    const monthKey = month.month;
+    const hasInlineDays = Array.isArray(month.days) && month.days.length > 0;
+    if (!force && (hasInlineDays || monthDaysByMonth[monthKey] || monthLoadingByMonth[monthKey])) return;
+
+    const hasDaysHint = month.has_days ?? ((typeof month.day_count === "number" ? month.day_count : 0) > 0);
+    if (!hasDaysHint && !force) {
+      setMonthDaysByMonth((prev) => ({ ...prev, [monthKey]: [] }));
+      setMonthErrorByMonth((prev) => {
+        const next = { ...prev };
+        delete next[monthKey];
+        return next;
+      });
+      return;
+    }
+
+    setMonthLoadingByMonth((prev) => ({ ...prev, [monthKey]: true }));
+    setMonthErrorByMonth((prev) => {
+      const next = { ...prev };
+      delete next[monthKey];
+      return next;
+    });
+    try {
+      const payload = await apiRequest<LeadMonthDaysResponse>(
+        `/clients/${clientId}/media-buying/lead/month-days?month_start=${monthStartFromKey(monthKey)}`
+      );
+      setMonthDaysByMonth((prev) => ({ ...prev, [monthKey]: Array.isArray(payload.days) ? payload.days : [] }));
+    } catch (err) {
+      setMonthErrorByMonth((prev) => ({
+        ...prev,
+        [monthKey]: err instanceof Error ? err.message : "Nu am putut încărca zilele pentru lună",
+      }));
+    } finally {
+      setMonthLoadingByMonth((prev) => ({ ...prev, [monthKey]: false }));
+    }
+  }, [clientId, monthDaysByMonth, monthLoadingByMonth]);
+
+  const toggleMonth = useCallback((month: LeadTableMonth) => {
+    const open = Boolean(expandedMonths[month.month]);
+    if (open) {
+      setExpandedMonths((prev) => ({ ...prev, [month.month]: false }));
+      return;
+    }
+    setExpandedMonths((prev) => ({ ...prev, [month.month]: true }));
+    void ensureMonthDays(month);
+  }, [ensureMonthDays, expandedMonths]);
+
+  useEffect(() => {
+    const openKeys = Object.entries(expandedMonths).filter(([, isOpen]) => Boolean(isOpen)).map(([key]) => key);
+    for (const monthKey of openKeys) {
+      const month = monthsByKey[monthKey];
+      if (!month) continue;
+      if (monthDaysByMonth[monthKey] || monthLoadingByMonth[monthKey] || monthErrorByMonth[monthKey]) continue;
+      void ensureMonthDays(month);
+    }
+  }, [ensureMonthDays, expandedMonths, monthDaysByMonth, monthLoadingByMonth, monthErrorByMonth, monthsByKey]);
+
+  useEffect(() => {
+    const raw = tableData?.meta.visible_columns;
+    const allowed = new Set(DEFAULT_VISIBLE_COLUMNS);
+    const normalized = Array.isArray(raw)
+      ? raw.filter((item): item is ColumnSemanticKey => allowed.has(item as ColumnSemanticKey))
+      : [];
+    setVisibleColumns(normalized.length > 0 ? normalized : DEFAULT_VISIBLE_COLUMNS);
+  }, [tableData?.meta.visible_columns]);
+
+  const visibleSet = useMemo(() => new Set(visibleColumns), [visibleColumns]);
+  const isVisible = useCallback((column: ColumnSemanticKey) => MANDATORY_COLUMNS.has(column) || visibleSet.has(column), [visibleSet]);
+  const classFor = useCallback((column: ColumnSemanticKey) => `${columnClass(column)} ${isVisible(column) ? "" : "hidden"}`.trim(), [isVisible]);
+  const visibilityProps = useCallback((column: ColumnSemanticKey) => (isVisible(column) ? {} : { hidden: true, "aria-hidden": true }), [isVisible]);
+
+  return (
+    <ProtectedPage>
+      <AppShell title={null}>
+        <SubReportingNav clientId={clientId} />
+
+        <section className="wm-card p-6">
+          <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
+          <div className="mt-2 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
+            <p>Valorile manuale se editează acum din pagina Data.</p>
+            <Link href={`/sub/${clientId}/data?month=${dataMonthKey}`} className="mt-1 inline-block font-medium text-indigo-700 hover:text-indigo-800 hover:underline">
+              Deschide pagina Data
+            </Link>
+          </div>
+          <p className="mt-2 text-sm text-slate-600">
+            Range: {tableData?.meta.effective_date_from ?? tableData?.meta.date_from ?? "—"} - {tableData?.meta.effective_date_to ?? tableData?.meta.date_to ?? "—"}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">Currency: {displayCurrencyLabel}</p>
+
+          {loading ? <p className="mt-4 text-sm text-slate-600">Loading Media Buying table...</p> : null}
+          {!loading && error ? <p className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+
+          {!loading && !error && !isLeadTemplate ? (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              Template not implemented yet for this client type ({clientType}).
+            </div>
+          ) : null}
+
+          {!loading && !error && tableData && isLeadTemplate && sortedMonths.length === 0 ? (
+            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              No data available for selected range.
+            </div>
+          ) : null}
+
+          {!loading && !error && tableData && isLeadTemplate && sortedMonths.length > 0 ? (
+            <div className="mt-4 max-h-[70vh] overflow-auto rounded-lg border border-slate-200 scrollbar-thin scrollbar-track-slate-100 scrollbar-thumb-slate-300">
+              <table className="min-w-[1850px] wm-card text-left text-sm">
+                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-600">
+                  <tr>
+                    <th {...visibilityProps("date")} className={`${classFor("date")} ${stickyHeaderClass("date")}`}>Data</th>
+                    <th {...visibilityProps("cost_google")} className={`${classFor("cost_google")} ${stickyHeaderClass("cost_google")}`}>Cost Google</th>
+                    <th {...visibilityProps("cost_meta")} className={`${classFor("cost_meta")} ${stickyHeaderClass("cost_meta")}`}>Cost Meta</th>
+                    <th {...visibilityProps("cost_tiktok")} className={`${classFor("cost_tiktok")} ${stickyHeaderClass("cost_tiktok")}`}>Cost TikTok</th>
+                    <th {...visibilityProps("cost_total")} className={`${classFor("cost_total")} ${stickyHeaderClass("cost_total")}`}>Cost Total</th>
+                    <th {...visibilityProps("percent_change")} className={`${classFor("percent_change")} ${stickyHeaderClass("percent_change")}`}>%^</th>
+                    <th {...visibilityProps("leads")} className={`${classFor("leads")} ${stickyHeaderClass("leads")}`}>Lead-uri</th>
+                    <th {...visibilityProps("phones")} className={`${classFor("phones")} ${stickyHeaderClass("phones")}`}>Telefoane</th>
+                    <th {...visibilityProps("total_leads")} className={`${classFor("total_leads")} ${stickyHeaderClass("total_leads")}`}>Total Lead-uri</th>
+                    <th {...visibilityProps("custom_value_1_count")} className={`${classFor("custom_value_1_count")} ${stickyHeaderClass("custom_value_1_count")}`}>{labelMap.custom_label_1}</th>
+                    <th {...visibilityProps("custom_value_2_count")} className={`${classFor("custom_value_2_count")} ${stickyHeaderClass("custom_value_2_count")}`}>{labelMap.custom_label_2}</th>
+                    <th {...visibilityProps("custom_value_3_amount_ron")} className={`${classFor("custom_value_3_amount_ron")} ${stickyHeaderClass("custom_value_3_amount_ron")}`}>{labelMap.custom_label_3}</th>
+                    <th {...visibilityProps("custom_value_4_amount_ron")} className={`${classFor("custom_value_4_amount_ron")} ${stickyHeaderClass("custom_value_4_amount_ron")}`}>{labelMap.custom_label_4}</th>
+                    <th {...visibilityProps("custom_value_5_amount_ron")} className={`${classFor("custom_value_5_amount_ron")} ${stickyHeaderClass("custom_value_5_amount_ron")}`}>{labelMap.custom_label_5}</th>
+                    <th {...visibilityProps("sales_count")} className={`${classFor("sales_count")} ${stickyHeaderClass("sales_count")}`}>Vânzări</th>
+                    <th {...visibilityProps("custom_value_rate_1")} className={`${classFor("custom_value_rate_1")} ${stickyHeaderClass("custom_value_rate_1")}`}>{labelMap.custom_rate_label_1}</th>
+                    <th {...visibilityProps("custom_value_rate_2")} className={`${classFor("custom_value_rate_2")} ${stickyHeaderClass("custom_value_rate_2")}`}>{labelMap.custom_rate_label_2}</th>
+                    <th {...visibilityProps("cost_per_lead")} className={`${classFor("cost_per_lead")} ${stickyHeaderClass("cost_per_lead")}`}>Cost per Lead</th>
+                    <th {...visibilityProps("cost_custom_value_1")} className={`${classFor("cost_custom_value_1")} ${stickyHeaderClass("cost_custom_value_1")}`}>{labelMap.custom_cost_label_1}</th>
+                    <th {...visibilityProps("cost_custom_value_2")} className={`${classFor("cost_custom_value_2")} ${stickyHeaderClass("cost_custom_value_2")}`}>{labelMap.custom_cost_label_2}</th>
+                    <th {...visibilityProps("cost_per_sale")} className={`${classFor("cost_per_sale")} ${stickyHeaderClass("cost_per_sale")}`}>Cost per Sale</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedMonths.map((month) => {
+                    const open = Boolean(expandedMonths[month.month]);
+                    const monthTotals = month.totals;
+                    const monthDays = Array.isArray(month.days) ? month.days : (monthDaysByMonth[month.month] || []);
+                    const isMonthLoading = Boolean(monthLoadingByMonth[month.month]);
+                    const monthError = monthErrorByMonth[month.month];
+                    const hasDaysHint = month.has_days ?? ((typeof month.day_count === "number" ? month.day_count : monthDays.length) > 0);
+                    return (
+                      <React.Fragment key={month.month}>
+                        <tr className="border-t border-slate-300 bg-slate-100 font-semibold text-slate-900">
+                          <td {...visibilityProps("date")} className={`${classFor("date")} ${stickyDateCellClass("month")}`}>
+                            <button
+                              type="button"
+                              onClick={() => toggleMonth(month)}
+                              className="text-left"
+                            >
+                              {open ? "▾" : "▸"} {monthLabel(month.month)}
+                            </button>
+                          </td>
+                          <td {...visibilityProps("cost_google")} className={classFor("cost_google")}>{formatMoney(monthTotals.cost_google, displayCurrency)}</td>
+                          <td {...visibilityProps("cost_meta")} className={classFor("cost_meta")}>{formatMoney(monthTotals.cost_meta, displayCurrency)}</td>
+                          <td {...visibilityProps("cost_tiktok")} className={classFor("cost_tiktok")}>{formatMoney(monthTotals.cost_tiktok, displayCurrency)}</td>
+                          <td {...visibilityProps("cost_total")} className={classFor("cost_total")}>{formatMoney(monthTotals.cost_total, displayCurrency)}</td>
+                          <td {...visibilityProps("percent_change")} className={classFor("percent_change")}>{formatRate(monthTotals.percent_change)}</td>
+                          <td {...visibilityProps("leads")} className={classFor("leads")}>{formatCount(monthTotals.leads)}</td>
+                          <td {...visibilityProps("phones")} className={classFor("phones")}>{formatCount(monthTotals.phones)}</td>
+                          <td {...visibilityProps("total_leads")} className={classFor("total_leads")}>{formatCount(monthTotals.total_leads)}</td>
+                          <td {...visibilityProps("custom_value_1_count")} className={classFor("custom_value_1_count")}>{formatCount(monthTotals.custom_value_1_count)}</td>
+                          <td {...visibilityProps("custom_value_2_count")} className={classFor("custom_value_2_count")}>{formatCount(monthTotals.custom_value_2_count)}</td>
+                          <td {...visibilityProps("custom_value_3_amount_ron")} className={classFor("custom_value_3_amount_ron")}>{formatMoney(monthTotals.custom_value_3_amount_ron, displayCurrency)}</td>
+                          <td {...visibilityProps("custom_value_4_amount_ron")} className={classFor("custom_value_4_amount_ron")}><span className="text-slate-900">{formatMoney(monthTotals.custom_value_4_amount_ron, displayCurrency)}</span></td>
+                          <td {...visibilityProps("custom_value_5_amount_ron")} className={classFor("custom_value_5_amount_ron")}>{formatMoney(monthTotals.custom_value_5_amount_ron, displayCurrency)}</td>
+                          <td {...visibilityProps("sales_count")} className={classFor("sales_count")}>{formatCount(monthTotals.sales_count)}</td>
+                          <td {...visibilityProps("custom_value_rate_1")} className={classFor("custom_value_rate_1")}>{formatRate(monthTotals.custom_value_rate_1)}</td>
+                          <td {...visibilityProps("custom_value_rate_2")} className={classFor("custom_value_rate_2")}>{formatRate(monthTotals.custom_value_rate_2)}</td>
+                          <td {...visibilityProps("cost_per_lead")} className={classFor("cost_per_lead")}>{formatMoney(monthTotals.cost_per_lead, displayCurrency)}</td>
+                          <td {...visibilityProps("cost_custom_value_1")} className={classFor("cost_custom_value_1")}>{formatMoney(monthTotals.cost_custom_value_1, displayCurrency)}</td>
+                          <td {...visibilityProps("cost_custom_value_2")} className={classFor("cost_custom_value_2")}>{formatMoney(monthTotals.cost_custom_value_2, displayCurrency)}</td>
+                          <td {...visibilityProps("cost_per_sale")} className={classFor("cost_per_sale")}>{formatMoney(monthTotals.cost_per_sale, displayCurrency)}</td>
+                        </tr>
+
+                        {open && isMonthLoading ? (
+                          <tr className="border-t border-slate-200 bg-white text-slate-600">
+                            <td colSpan={columnsMenu.filter((item) => isVisible(item.key)).length} className="px-3 py-2 text-sm">
+                              Loading daily rows...
+                            </td>
+                          </tr>
+                        ) : null}
+
+                        {open && !isMonthLoading && monthError ? (
+                          <tr className="border-t border-red-200 bg-red-50 text-red-700">
+                            <td colSpan={columnsMenu.filter((item) => isVisible(item.key)).length} className="px-3 py-2 text-sm">
+                              <div className="flex items-center gap-2">
+                                <span>{monthError}</span>
+                                <button
+                                  type="button"
+                                  className="rounded border border-red-300 bg-white px-2 py-0.5 text-xs text-red-700 hover:bg-red-50"
+                                  onClick={() => void ensureMonthDays(month, true)}
+                                >
+                                  Retry
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : null}
+
+                        {open && !isMonthLoading && !monthError && !hasDaysHint ? (
+                          <tr className="border-t border-slate-200 bg-white text-slate-500">
+                            <td colSpan={columnsMenu.filter((item) => isVisible(item.key)).length} className="px-3 py-2 text-sm">
+                              No daily rows for this month.
+                            </td>
+                          </tr>
+                        ) : null}
+
+                        {open
+                          ? monthDays.map((day) => {
+                              return (
+                                <tr key={day.date} className="border-t border-slate-200 bg-white text-slate-800">
+                                  <td {...visibilityProps("date")} className={`${classFor("date")} ${stickyDateCellClass("day")} pl-8 align-top`}>
+                                    <div>{shortDayLabel(day.date)}</div>
+                                  </td>
+                                  <td {...visibilityProps("cost_google")} className={classFor("cost_google")}>{formatMoney(day.cost_google, displayCurrency)}</td>
+                                  <td {...visibilityProps("cost_meta")} className={classFor("cost_meta")}>{formatMoney(day.cost_meta, displayCurrency)}</td>
+                                  <td {...visibilityProps("cost_tiktok")} className={classFor("cost_tiktok")}>{formatMoney(day.cost_tiktok, displayCurrency)}</td>
+                                  <td {...visibilityProps("cost_total")} className={classFor("cost_total")}>{formatMoney(day.cost_total, displayCurrency)}</td>
+                                  <td {...visibilityProps("percent_change")} className={classFor("percent_change")}>{formatRate(day.percent_change)}</td>
+                                  <td {...visibilityProps("leads")} className={classFor("leads")}>{formatCount(day.leads)}</td>
+                                  <td {...visibilityProps("phones")} className={classFor("phones")}>{formatCount(day.phones)}</td>
+                                  <td {...visibilityProps("total_leads")} className={classFor("total_leads")}>{formatCount(day.total_leads)}</td>
+                                  <td {...visibilityProps("custom_value_1_count")} className={classFor("custom_value_1_count")}>{formatCount(day.custom_value_1_count)}</td>
+                                  <td {...visibilityProps("custom_value_2_count")} className={classFor("custom_value_2_count")}>{formatCount(day.custom_value_2_count)}</td>
+                                  <td {...visibilityProps("custom_value_3_amount_ron")} className={classFor("custom_value_3_amount_ron")}>{formatMoney(day.custom_value_3_amount_ron, displayCurrency)}</td>
+                                  <td {...visibilityProps("custom_value_4_amount_ron")} className={classFor("custom_value_4_amount_ron")}><span className="text-slate-900">{formatMoney(day.custom_value_4_amount_ron, displayCurrency)}</span></td>
+                                  <td {...visibilityProps("custom_value_5_amount_ron")} className={classFor("custom_value_5_amount_ron")}><span className="text-slate-900">{formatMoney(day.custom_value_5_amount_ron, displayCurrency)}</span></td>
+                                  <td {...visibilityProps("sales_count")} className={classFor("sales_count")}>{formatCount(day.sales_count)}</td>
+                                  <td {...visibilityProps("custom_value_rate_1")} className={classFor("custom_value_rate_1")}>{formatRate(day.custom_value_rate_1)}</td>
+                                  <td {...visibilityProps("custom_value_rate_2")} className={classFor("custom_value_rate_2")}>{formatRate(day.custom_value_rate_2)}</td>
+                                  <td {...visibilityProps("cost_per_lead")} className={classFor("cost_per_lead")}>{formatMoney(day.cost_per_lead, displayCurrency)}</td>
+                                  <td {...visibilityProps("cost_custom_value_1")} className={classFor("cost_custom_value_1")}>{formatMoney(day.cost_custom_value_1, displayCurrency)}</td>
+                                  <td {...visibilityProps("cost_custom_value_2")} className={classFor("cost_custom_value_2")}>{formatMoney(day.cost_custom_value_2, displayCurrency)}</td>
+                                  <td {...visibilityProps("cost_per_sale")} className={classFor("cost_per_sale")}>{formatMoney(day.cost_per_sale, displayCurrency)}</td>
+                                </tr>
+                              );
+                            })
+                          : null}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </section>
+      </AppShell>
+    </ProtectedPage>
+  );
+}

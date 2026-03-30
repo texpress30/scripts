@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.core.config import load_settings
+from app.services.storage_media_access import StorageMediaAccessError, storage_media_access_service
 
 try:
     import psycopg
@@ -10,10 +11,8 @@ except Exception:  # noqa: BLE001
 
 class CompanySettingsService:
     def _connect(self):
-        settings = load_settings()
-        if psycopg is None:
-            raise RuntimeError("psycopg is required for company settings persistence")
-        return psycopg.connect(settings.database_url)
+        from app.db.pool import get_connection
+        return get_connection()
 
     def initialize_schema(self) -> None:
         with self._connect() as conn:
@@ -38,11 +37,13 @@ class CompanySettingsService:
                         country TEXT NOT NULL DEFAULT 'România',
                         timezone TEXT NOT NULL DEFAULT 'Europe/Bucharest',
                         logo_url TEXT NOT NULL DEFAULT '',
+                        logo_media_id TEXT,
                         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                     )
                     """
                 )
+                cur.execute("ALTER TABLE companies ADD COLUMN IF NOT EXISTS logo_media_id TEXT")
             conn.commit()
 
     def _ensure_company(self, *, owner_email: str) -> None:
@@ -59,7 +60,23 @@ class CompanySettingsService:
                 )
             conn.commit()
 
-    def get_settings(self, *, owner_email: str) -> dict[str, str]:
+    def _resolve_logo_preview_url(self, *, logo_media_id: str, logo_url_legacy: str, logo_storage_client_id: int | None) -> str:
+        normalized_media_id = str(logo_media_id or "").strip()
+        if normalized_media_id == "" or logo_storage_client_id is None or int(logo_storage_client_id) <= 0:
+            return logo_url_legacy
+        try:
+            payload = storage_media_access_service.build_access_url(
+                client_id=int(logo_storage_client_id),
+                media_id=normalized_media_id,
+                disposition="inline",
+            )
+            return str(payload.get("url") or "").strip() or logo_url_legacy
+        except (StorageMediaAccessError, RuntimeError):
+            return logo_url_legacy
+        except Exception:  # noqa: BLE001
+            return logo_url_legacy
+
+    def get_settings(self, *, owner_email: str, logo_storage_client_id: int | None = None) -> dict[str, str | int | None]:
         self._ensure_company(owner_email=owner_email)
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -67,7 +84,7 @@ class CompanySettingsService:
                     """
                     SELECT company_name, company_email, company_phone_prefix, company_phone, company_website,
                            business_category, business_niche, platform_primary_use,
-                           address_line1, city, postal_code, region, country, timezone, logo_url
+                           address_line1, city, postal_code, region, country, timezone, logo_url, logo_media_id
                     FROM companies
                     WHERE owner_email = %s
                     """,
@@ -78,6 +95,8 @@ class CompanySettingsService:
         if row is None:
             raise RuntimeError("Company settings not found")
 
+        logo_url_legacy = str(row[14] or "")
+        logo_media_id = str(row[15] or "").strip() or None
         return {
             "company_name": str(row[0]),
             "company_email": str(row[1]),
@@ -93,10 +112,16 @@ class CompanySettingsService:
             "region": str(row[11]),
             "country": str(row[12]),
             "timezone": str(row[13]),
-            "logo_url": str(row[14]),
+            "logo_url": self._resolve_logo_preview_url(
+                logo_media_id=logo_media_id or "",
+                logo_url_legacy=logo_url_legacy,
+                logo_storage_client_id=logo_storage_client_id,
+            ),
+            "logo_media_id": logo_media_id,
+            "logo_storage_client_id": int(logo_storage_client_id) if logo_storage_client_id is not None else None,
         }
 
-    def update_settings(self, *, owner_email: str, payload: dict[str, str]) -> dict[str, str]:
+    def update_settings(self, *, owner_email: str, payload: dict[str, str], logo_storage_client_id: int | None = None) -> dict[str, str | int | None]:
         self._ensure_company(owner_email=owner_email)
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -118,6 +143,7 @@ class CompanySettingsService:
                         country = %s,
                         timezone = %s,
                         logo_url = %s,
+                        logo_media_id = %s,
                         updated_at = NOW()
                     WHERE owner_email = %s
                     """,
@@ -137,12 +163,13 @@ class CompanySettingsService:
                         payload["country"],
                         payload["timezone"],
                         payload["logo_url"],
+                        payload.get("logo_media_id"),
                         owner_email,
                     ),
                 )
             conn.commit()
 
-        return self.get_settings(owner_email=owner_email)
+        return self.get_settings(owner_email=owner_email, logo_storage_client_id=logo_storage_client_id)
 
 
 company_settings_service = CompanySettingsService()

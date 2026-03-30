@@ -1,4 +1,18 @@
+import logging
+import time
+from time import perf_counter
+
+try:
+    import psycopg
+except ImportError:
+    psycopg = None
+
+from app.db.pool import open_pool, close_pool
+
+logger = logging.getLogger(__name__)
+
 from fastapi import FastAPI
+from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.audit import router as audit_router
@@ -7,14 +21,18 @@ from app.api.ai import router as ai_router
 from app.api.agency_clients_google_ads import router as agency_clients_google_ads_router
 from app.api.auth import router as auth_router
 from app.api.clients import router as clients_router
+from app.api.campaigns import router as campaigns_router
 from app.api.creative import router as creative_router
 from app.api.company import router as company_router
 from app.api.dashboard import router as dashboard_router
+from app.api.email_notifications import router as email_notifications_router
+from app.api.email_templates import router as email_templates_router
 from app.api.exports import router as exports_router
 from app.api.google_ads import router as google_ads_router
 from app.api.google_accounts import router as google_accounts_router
 from app.api.health import router as health_router
 from app.api.meta_ads import router as meta_ads_router
+from app.api.mailgun import router as mailgun_router
 from app.api.pinterest_ads import router as pinterest_ads_router
 from app.api.snapchat_ads import router as snapchat_ads_router
 from app.api.storage import router as storage_router
@@ -26,6 +44,10 @@ from app.api.rules import router as rules_router
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
 from app.services.company_settings import company_settings_service
+from app.services.subaccount_business_profile_store import subaccount_business_profile_store
+from app.services.auth_email_tokens import auth_email_tokens_service
+from app.services.email_templates import email_templates_service
+from app.services.email_notifications import email_notifications_service
 from app.services.team_members import team_members_service
 from app.services.user_profile import user_profile_service
 
@@ -46,6 +68,25 @@ app.add_middleware(
     allow_origin_regex=settings.cors_origin_regex,
 )
 
+
+@app.middleware("http")
+async def request_timing_middleware(request: Request, call_next):
+    start = perf_counter()
+    response = await call_next(request)
+    duration_ms = (perf_counter() - start) * 1000.0
+    response.headers["X-Process-Time-Ms"] = f"{duration_ms:.2f}"
+
+    # Lightweight observability for p95/p99 by route/method/status.
+    route_label = request.url.path
+    logger.info(
+        "http_request method=%s path=%s status=%s duration_ms=%.2f",
+        request.method,
+        route_label,
+        response.status_code,
+        duration_ms,
+    )
+    return response
+
 # Core
 app.include_router(health_router)
 
@@ -59,10 +100,14 @@ app.include_router(audit_router)
 app.include_router(google_ads_router)
 app.include_router(google_accounts_router)
 app.include_router(meta_ads_router)
+app.include_router(mailgun_router)
 app.include_router(tiktok_ads_router)
 app.include_router(pinterest_ads_router)
 app.include_router(snapchat_ads_router)
 app.include_router(dashboard_router)
+app.include_router(campaigns_router)
+app.include_router(email_templates_router)
+app.include_router(email_notifications_router)
 
 # Sprint 4
 app.include_router(rules_router)
@@ -93,8 +138,43 @@ def root() -> dict[str, str]:
 
 
 @app.on_event("startup")
-def initialize_client_registry_schema() -> None:
+def startup_event() -> None:
+    if psycopg is not None:
+        is_sqlite = settings.database_url.startswith("sqlite")
+
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                open_pool(settings.database_url)
+                logger.info("Successfully connected to the database on startup.")
+                break
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    logger.error("Failed to connect to the database after %d attempts.", max_retries)
+                    raise
+                logger.warning("Database connection failed (attempt %d/%d): %s. Retrying in 3 seconds...", attempt + 1, max_retries, e)
+                time.sleep(3)
+
+        if not is_sqlite:
+            from app.db.pool import get_connection
+
+            with get_connection() as conn:
+                with conn.cursor() as cur:
+                    # Transaction-scoped lock: released on commit, safe for pooled connections.
+                    cur.execute("SELECT pg_try_advisory_xact_lock(1, hashtext('global_schema_init'))")
+                    cur.fetchone()
+                conn.commit()
+
     client_registry_service.initialize_schema()
     user_profile_service.initialize_schema()
     team_members_service.initialize_schema()
     company_settings_service.initialize_schema()
+    subaccount_business_profile_store.initialize_schema()
+    auth_email_tokens_service.initialize_schema()
+    email_templates_service.initialize_schema()
+    email_notifications_service.initialize_schema()
+
+
+@app.on_event("shutdown")
+def shutdown_event() -> None:
+    close_pool()

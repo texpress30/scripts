@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useEffect, useMemo, useState } from "react";
@@ -23,43 +24,93 @@ import {
   X,
 } from "lucide-react";
 
-import { apiRequest } from "@/lib/api";
+import { apiRequest, getAgencyMyAccess, getSubaccountMyAccess, type TeamAgencyMyAccessResponse, type TeamSubaccountMyAccessResponse } from "@/lib/api";
 import { isPinterestIntegrationEnabled, isSnapchatIntegrationEnabled, isTikTokIntegrationEnabled } from "@/lib/featureFlags";
-import { AppRole, getSessionInfo } from "@/lib/session";
+import { AppRole, SessionAccessContext, getSessionAccessContext, isSubaccountScopedContext } from "@/lib/session";
 import { cn } from "@/lib/utils";
 
 type ClientItem = { id: number; name: string; owner_email: string; client_logo_url?: string | null };
 type CompanySettings = { logo_url: string; city: string; country: string; company_name: string };
+type SubaccountBusinessProfileResponse = { address?: { city?: string; country?: string }; logo_url?: string; logo_media_id?: string | null };
 type TeamMemberItem = { id: number; first_name: string; last_name: string; email: string; user_role: string };
 type TeamMembersResponse = { items: TeamMemberItem[]; total: number };
 
-function getNavItems(pathname: string) {
+const SUBACCOUNT_MODULE_ORDER = ["dashboard", "campaigns", "rules", "creative", "recommendations"] as const;
+type SubaccountModuleKey = (typeof SUBACCOUNT_MODULE_ORDER)[number];
+const AGENCY_MAIN_MODULE_ORDER = ["agency_dashboard", "agency_clients", "agency_accounts", "integrations", "agency_audit", "creative"] as const;
+type AgencyMainModuleKey = (typeof AGENCY_MAIN_MODULE_ORDER)[number];
+const AGENCY_SETTINGS_MODULE_ORDER = [
+  "settings_profile",
+  "settings_company",
+  "settings_my_team",
+  "notifications",
+  "email_templates",
+  "settings_tags",
+  "settings_audit_logs",
+  "settings_ai_agents",
+  "settings_media_storage_usage",
+] as const;
+type AgencySettingsModuleKey = (typeof AGENCY_SETTINGS_MODULE_ORDER)[number];
+const SUBACCOUNT_SETTINGS_ROUTE_DEFAULT = "profile";
+
+type NavItem = {
+  href: string;
+  label: string;
+  icon: typeof Bell;
+  moduleKey?: SubaccountModuleKey | AgencyMainModuleKey;
+};
+
+type AgencyNavItem = {
+  href: string;
+  label: string;
+  icon: typeof Bell;
+  moduleKey: AgencyMainModuleKey;
+};
+
+type SettingsNavItem = {
+  href: string;
+  label: string;
+  moduleKey?: AgencySettingsModuleKey;
+};
+
+export const AGENCY_SETTINGS_ITEMS: readonly SettingsNavItem[] = [
+  { href: "/settings/profile", label: "Profile", moduleKey: "settings_profile" },
+  { href: "/settings/company", label: "Company", moduleKey: "settings_company" },
+  { href: "/settings/team", label: "My Team", moduleKey: "settings_my_team" },
+  { href: "/agency/notifications", label: "Notificări", moduleKey: "notifications" },
+  { href: "/agency/email-templates", label: "Email Templates", moduleKey: "email_templates" },
+  { href: "/settings/tags", label: "Tags", moduleKey: "settings_tags" },
+  { href: "/settings/audit-logs", label: "Audit Logs", moduleKey: "settings_audit_logs" },
+  { href: "/settings/ai-agents", label: "Ai Agents", moduleKey: "settings_ai_agents" },
+  { href: "/settings/storage", label: "Media Storage Usage", moduleKey: "settings_media_storage_usage" },
+] as const;
+
+export function getNavItems(pathname: string): NavItem[] {
   const subMatch = pathname.match(/^\/sub\/(\d+)/);
   if (subMatch) {
     const id = subMatch[1];
     return [
-      { href: `/sub/${id}/dashboard`, label: "Dashboard", icon: LayoutDashboard },
-      { href: `/sub/${id}/campaigns`, label: "Campaigns", icon: Bell },
-      { href: `/sub/${id}/rules`, label: "Rules", icon: Sparkles },
-      { href: `/sub/${id}/creative`, label: "Creative", icon: Palette },
-      { href: `/sub/${id}/recommendations`, label: "Recommendations", icon: Users },
+      { href: `/sub/${id}/dashboard`, label: "Dashboard", icon: LayoutDashboard, moduleKey: "dashboard" },
+      { href: `/sub/${id}/campaigns`, label: "Campaigns", icon: Bell, moduleKey: "campaigns" },
+      { href: `/sub/${id}/rules`, label: "Rules", icon: Sparkles, moduleKey: "rules" },
+      { href: `/sub/${id}/creative`, label: "Creative", icon: Palette, moduleKey: "creative" },
+      { href: `/sub/${id}/recommendations`, label: "Recommendations", icon: Users, moduleKey: "recommendations" },
     ];
   }
 
-  const agencyItems = [
-    { href: "/agency/dashboard", label: "Agency Dashboard", icon: LayoutDashboard },
-    { href: "/agency/clients", label: "Agency Clients", icon: Users },
-    { href: "/agency-accounts", label: "Agency Accounts", icon: Bell },
-    { href: "/agency/audit", label: "Agency Audit", icon: Sparkles },
-    { href: "/notifications", label: "Notificari", icon: Bell },
-    { href: "/creative", label: "Creative", icon: Palette },
+  const agencyItems: AgencyNavItem[] = [
+    { href: "/agency/dashboard", label: "Agency Dashboard", icon: LayoutDashboard, moduleKey: "agency_dashboard" },
+    { href: "/agency/clients", label: "Agency Clients", icon: Users, moduleKey: "agency_clients" },
+    { href: "/agency-accounts", label: "Agency Accounts", icon: Bell, moduleKey: "agency_accounts" },
+    { href: "/agency/audit", label: "Agency Audit", icon: Sparkles, moduleKey: "agency_audit" },
+    { href: "/creative", label: "Creative", icon: Palette, moduleKey: "creative" },
   ];
 
   if (isTikTokIntegrationEnabled() || isPinterestIntegrationEnabled() || isSnapchatIntegrationEnabled()) {
-    agencyItems.splice(3, 0, { href: "/agency/integrations", label: "Integrations (beta)", icon: Sparkles });
+    agencyItems.splice(3, 0, { href: "/agency/integrations", label: "Integrations (beta)", icon: Sparkles, moduleKey: "integrations" });
   }
 
-  return agencyItems;
+  return agencyItems.map((item) => ({ ...item }));
 }
 
 function initials(name: string): string {
@@ -72,12 +123,306 @@ function initials(name: string): string {
 function roleForImpersonation(value: string): AppRole {
   const role = value.trim().toLowerCase();
   if (role === "admin") return "agency_admin";
-  if (role === "viewer") return "client_viewer";
-  if (role === "member") return "account_manager";
-  if (["super_admin", "agency_owner", "agency_admin", "account_manager", "client_viewer"].includes(role)) {
+  if (role === "viewer") return "subaccount_viewer";
+  if (role === "member") return "subaccount_user";
+  if (
+    [
+      "super_admin",
+      "agency_owner",
+      "agency_admin",
+      "agency_member",
+      "agency_viewer",
+      "subaccount_admin",
+      "subaccount_user",
+      "subaccount_viewer",
+      "account_manager",
+      "client_viewer",
+    ].includes(role)
+  ) {
     return role as AppRole;
   }
-  return "account_manager";
+  return "subaccount_user";
+}
+
+export function formatSubaccountBrandingLocation(city: string | null | undefined, country: string | null | undefined): string {
+  const normalizedCity = String(city ?? "").trim();
+  const normalizedCountry = String(country ?? "").trim();
+  if (normalizedCity && normalizedCountry) return `Locație: ${normalizedCity}, ${normalizedCountry}`;
+  if (normalizedCity) return `Locație: ${normalizedCity}`;
+  return "Locație: -";
+}
+
+export function resolveSubaccountBrandingLogoUrl(
+  payload: SubaccountBusinessProfileResponse | null,
+  clientLogoUrl: string | null | undefined,
+): string {
+  const profileLogoUrl = String(payload?.logo_url ?? "").trim();
+  if (profileLogoUrl !== "") return profileLogoUrl;
+  return String(clientLogoUrl ?? "").trim();
+}
+
+export function shouldRenderBrandingLogo(logoUrl: string, imageLoadFailed: boolean): boolean {
+  return String(logoUrl || "").trim() !== "" && !imageLoadFailed;
+}
+
+type ScopedClientResult = {
+  visibleClients: ClientItem[];
+  allowedSubaccountIds: number[];
+};
+
+export function isSubaccountScopedRole(role: AppRole): boolean {
+  return role === "subaccount_admin" || role === "subaccount_user" || role === "subaccount_viewer" || role === "account_manager" || role === "client_viewer";
+}
+
+export function buildScopedClients(clients: ClientItem[], accessContext: SessionAccessContext): ScopedClientResult {
+  if (!isSubaccountScopedRole(accessContext.role)) {
+    return { visibleClients: clients, allowedSubaccountIds: [] };
+  }
+
+  const allowedIds = [...accessContext.allowed_subaccount_ids];
+  if (allowedIds.length === 0) {
+    return { visibleClients: [], allowedSubaccountIds: [] };
+  }
+
+  const byId = new Map<number, ClientItem>();
+  for (const client of clients) {
+    if (allowedIds.includes(client.id)) {
+      byId.set(client.id, client);
+    }
+  }
+
+  for (const entry of accessContext.allowed_subaccounts) {
+    if (!allowedIds.includes(entry.id)) continue;
+    if (byId.has(entry.id)) continue;
+    byId.set(entry.id, {
+      id: entry.id,
+      name: entry.name.trim() || `Sub-account #${entry.id}`,
+      owner_email: "",
+    });
+  }
+
+  const visibleClients = allowedIds
+    .map((id) => byId.get(id))
+    .filter((item): item is ClientItem => Boolean(item));
+
+  return { visibleClients, allowedSubaccountIds: allowedIds };
+}
+
+export function getSafeSubaccountId(accessContext: SessionAccessContext): number | null {
+  const primary = accessContext.primary_subaccount_id;
+  if (typeof primary === "number" && Number.isFinite(primary)) return primary;
+  if (accessContext.allowed_subaccount_ids.length > 0) return accessContext.allowed_subaccount_ids[0];
+  return null;
+}
+
+export function resolveSubaccountRouteGuardDecision(params: {
+  role: AppRole;
+  accessContext: SessionAccessContext;
+  allowedSubaccountIds: number[];
+  currentSubId: number | null;
+  subSettingsId: number | null;
+  pathname: string;
+}): string | null {
+  const { role, accessContext, allowedSubaccountIds, currentSubId, subSettingsId, pathname } = params;
+  if (!isSubaccountScopedRole(role) && !isSubaccountScopedContext(accessContext)) return null;
+
+  const safeSubaccountId = getSafeSubaccountId(accessContext);
+  if (safeSubaccountId === null) {
+    return pathname.startsWith("/agency/dashboard") ? null : "/agency/dashboard";
+  }
+
+  const inAllowed = (candidate: number | null) => candidate !== null && allowedSubaccountIds.includes(candidate);
+  if (!inAllowed(currentSubId) && !inAllowed(subSettingsId)) {
+    if (currentSubId !== null || subSettingsId !== null) {
+      return `/sub/${safeSubaccountId}/dashboard`;
+    }
+    if (allowedSubaccountIds.length === 1) {
+      return `/sub/${safeSubaccountId}/dashboard`;
+    }
+    return null;
+  }
+
+  if (allowedSubaccountIds.length === 1 && currentSubId === null && subSettingsId === null) {
+    return `/sub/${safeSubaccountId}/dashboard`;
+  }
+
+  return null;
+}
+
+export function filterSubaccountNavItems(params: {
+  navItems: NavItem[];
+  currentSubId: number | null;
+  moduleKeys: string[] | null;
+  loading: boolean;
+}): NavItem[] {
+  const { navItems, currentSubId, moduleKeys, loading } = params;
+  if (currentSubId === null) {
+    return navItems;
+  }
+  if (loading || moduleKeys === null) {
+    return navItems;
+  }
+  const allowed = new Set(moduleKeys.map((key) => key.trim().toLowerCase()));
+  return navItems.filter((item) => {
+    if (!item.moduleKey) return true;
+    return allowed.has(item.moduleKey);
+  });
+}
+
+export function resolveSubaccountModuleRedirect(params: {
+  pathname: string;
+  currentSubId: number | null;
+  moduleKeys: string[] | null;
+  loading: boolean;
+}): string | null {
+  const { pathname, currentSubId, moduleKeys, loading } = params;
+  if (currentSubId === null || loading || moduleKeys === null) {
+    return null;
+  }
+
+  const subRouteMatch = pathname.match(/^\/sub\/(\d+)\/([^/?#]+)/);
+  if (!subRouteMatch || Number(subRouteMatch[1]) !== currentSubId) {
+    return null;
+  }
+
+  const requestedModule = subRouteMatch[2].trim().toLowerCase();
+  if (!SUBACCOUNT_MODULE_ORDER.includes(requestedModule as SubaccountModuleKey)) {
+    return null;
+  }
+
+  const allowedSet = new Set(moduleKeys.map((item) => item.trim().toLowerCase()));
+  if (allowedSet.has(requestedModule)) {
+    return null;
+  }
+
+  const firstAllowed = SUBACCOUNT_MODULE_ORDER.find((module) => allowedSet.has(module));
+  if (firstAllowed) {
+    return `/sub/${currentSubId}/${firstAllowed}`;
+  }
+  if (allowedSet.has("settings")) return `/subaccount/${currentSubId}/settings/${SUBACCOUNT_SETTINGS_ROUTE_DEFAULT}`;
+  return "/agency/dashboard";
+}
+
+export function resolveSubaccountSettingsRedirect(params: {
+  pathname: string;
+  subSettingsId: number | null;
+  moduleKeys: string[] | null;
+  loading: boolean;
+}): string | null {
+  const { pathname, subSettingsId, moduleKeys, loading } = params;
+  if (subSettingsId === null || loading || moduleKeys === null) return null;
+  if (!pathname.startsWith(`/subaccount/${subSettingsId}/settings/`)) return null;
+
+  const allowed = normalizeModuleKeys(moduleKeys);
+  if (allowed.has("settings")) return null;
+  const firstAllowed = SUBACCOUNT_MODULE_ORDER.find((module) => allowed.has(module));
+  if (firstAllowed) return `/sub/${subSettingsId}/${firstAllowed}`;
+  return "/agency/dashboard";
+}
+
+function normalizeModuleKeys(keys: string[] | null): Set<string> {
+  return new Set((keys ?? []).map((item) => String(item || "").trim().toLowerCase()).filter((item) => item !== ""));
+}
+
+function isAgencyScopedRole(role: AppRole): boolean {
+  return !isSubaccountScopedRole(role);
+}
+
+export function resolveGlobalFaviconLogoUrl(companySettings: { logo_url?: string | null } | null | undefined): string {
+  return String(companySettings?.logo_url ?? "").trim();
+}
+
+export function filterAgencyNavItems(params: {
+  navItems: NavItem[];
+  role: AppRole;
+  moduleKeys: string[] | null;
+  loading: boolean;
+}): NavItem[] {
+  const { navItems, role, moduleKeys, loading } = params;
+  if (navItems.some((item) => item.href.startsWith("/sub/"))) return navItems;
+  if (!isAgencyScopedRole(role) || loading || moduleKeys === null) return navItems;
+  const allowed = normalizeModuleKeys(moduleKeys);
+  return navItems.filter((item) => {
+    const moduleKey = (item as AgencyNavItem).moduleKey;
+    if (!moduleKey) return true;
+    return allowed.has(moduleKey);
+  });
+}
+
+export function filterAgencySettingsItems(params: {
+  settingsItems: readonly SettingsNavItem[];
+  role: AppRole;
+  moduleKeys: string[] | null;
+  loading: boolean;
+}): SettingsNavItem[] {
+  const { settingsItems, role, moduleKeys, loading } = params;
+  if (!isAgencyScopedRole(role) || loading || moduleKeys === null) return [...settingsItems];
+  const allowed = normalizeModuleKeys(moduleKeys);
+  const hasSettingsParent = allowed.has("settings");
+  if (!hasSettingsParent) return [];
+  return settingsItems.filter((item) => !item.moduleKey || allowed.has(item.moduleKey));
+}
+
+export function resolveAgencyRouteRedirect(params: {
+  pathname: string;
+  role: AppRole;
+  moduleKeys: string[] | null;
+  loading: boolean;
+  settingsItems: readonly SettingsNavItem[];
+}): string | null {
+  const { pathname, role, moduleKeys, loading, settingsItems } = params;
+  if (!isAgencyScopedRole(role) || loading || moduleKeys === null) return null;
+  const allowed = normalizeModuleKeys(moduleKeys);
+  const requestedMainRoute = [
+    ["/agency/dashboard", "agency_dashboard"],
+    ["/agency-dashboard", "agency_dashboard"],
+    ["/agency/clients", "agency_clients"],
+    ["/agency-accounts", "agency_accounts"],
+    ["/agency/integrations", "integrations"],
+    ["/agency/audit", "agency_audit"],
+    ["/creative", "creative"],
+  ] as const;
+
+  const requestedMain = requestedMainRoute.find(([prefix]) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+  if (requestedMain && !allowed.has(requestedMain[1])) {
+    const fallbackMain = AGENCY_MAIN_MODULE_ORDER.find((key) => allowed.has(key));
+    if (fallbackMain === "agency_dashboard") return "/agency/dashboard";
+    if (fallbackMain === "agency_clients") return "/agency/clients";
+    if (fallbackMain === "agency_accounts") return "/agency-accounts";
+    if (fallbackMain === "integrations") return "/agency/integrations";
+    if (fallbackMain === "agency_audit") return "/agency/audit";
+    if (fallbackMain === "creative") return "/creative";
+    const firstSetting = settingsItems.find((item) => !item.moduleKey || allowed.has(item.moduleKey));
+    if (allowed.has("settings") && firstSetting) return firstSetting.href;
+    return "/agency/dashboard";
+  }
+
+  const isAgencySettingsRoute = pathname.startsWith("/settings/") || pathname.startsWith("/agency/email-templates") || pathname.startsWith("/agency/notifications");
+  if (!isAgencySettingsRoute) return null;
+  if (!allowed.has("settings")) {
+    const fallbackMain = AGENCY_MAIN_MODULE_ORDER.find((key) => allowed.has(key));
+    if (fallbackMain === "agency_clients") return "/agency/clients";
+    if (fallbackMain === "agency_accounts") return "/agency-accounts";
+    if (fallbackMain === "integrations") return "/agency/integrations";
+    if (fallbackMain === "agency_audit") return "/agency/audit";
+    if (fallbackMain === "creative") return "/creative";
+    return "/agency/dashboard";
+  }
+  const requestedSettings = settingsItems.find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`));
+  if (requestedSettings && requestedSettings.moduleKey && !allowed.has(requestedSettings.moduleKey)) {
+    const fallbackSetting = settingsItems.find((item) => !item.moduleKey || (item.moduleKey && allowed.has(item.moduleKey)));
+    if (fallbackSetting) return fallbackSetting.href;
+  }
+  if (settingsItems.length === 0) {
+    const fallbackMain = AGENCY_MAIN_MODULE_ORDER.find((key) => allowed.has(key));
+    if (fallbackMain === "agency_clients") return "/agency/clients";
+    if (fallbackMain === "agency_accounts") return "/agency-accounts";
+    if (fallbackMain === "integrations") return "/agency/integrations";
+    if (fallbackMain === "agency_audit") return "/agency/audit";
+    if (fallbackMain === "creative") return "/creative";
+    return "/agency/dashboard";
+  }
+  return null;
 }
 
 export function AppShell({
@@ -102,6 +447,8 @@ export function AppShell({
   const [search, setSearch] = useState("");
   const [clients, setClients] = useState<ClientItem[]>([]);
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
+  const [subaccountBusinessProfile, setSubaccountBusinessProfile] = useState<{ city: string; country: string; logoUrl: string } | null>(null);
+  const [brandingImageLoadFailed, setBrandingImageLoadFailed] = useState(false);
 
   const [profileOpen, setProfileOpen] = useState(false);
   const [loginAsOpen, setLoginAsOpen] = useState(false);
@@ -109,6 +456,10 @@ export function AppShell({
   const [teamUsers, setTeamUsers] = useState<TeamMemberItem[]>([]);
   const [fullscreen, setFullscreen] = useState(false);
   const [impersonatingAs, setImpersonatingAs] = useState<{ email: string; role: string } | null>(null);
+  const [subaccountMyAccess, setSubaccountMyAccess] = useState<TeamSubaccountMyAccessResponse | null>(null);
+  const [subaccountMyAccessLoading, setSubaccountMyAccessLoading] = useState(false);
+  const [agencyMyAccess, setAgencyMyAccess] = useState<TeamAgencyMyAccessResponse | null>(null);
+  const [agencyMyAccessLoading, setAgencyMyAccessLoading] = useState(false);
 
   const subMatch = pathname.match(/^\/sub\/(\d+)/);
   const currentSubId = subMatch ? Number(subMatch[1]) : null;
@@ -117,22 +468,12 @@ export function AppShell({
   const subSettingsId = subSettingsMatch ? Number(subSettingsMatch[1]) : null;
   const contextClientId = currentSubId ?? subSettingsId;
 
-  const isAgencySettingsMode = pathname.startsWith("/settings/");
+  const isAgencySettingsMode = pathname.startsWith("/settings/") || pathname.startsWith("/agency/email-templates") || pathname.startsWith("/agency/notifications");
   const isSubSettingsMode = pathname.startsWith("/subaccount/") && pathname.includes("/settings/");
   const isSettingsMode = isAgencySettingsMode || isSubSettingsMode;
 
   const settingsHeaderLabel = isSubSettingsMode ? "SUB-ACCOUNT SETTINGS" : "AGENCY SETTINGS";
   const goBackHref = isSubSettingsMode && subSettingsId ? `/sub/${subSettingsId}/dashboard` : "/agency/dashboard";
-
-  const agencySettingsItems = [
-    { href: "/settings/profile", label: "Profile" },
-    { href: "/settings/company", label: "Company" },
-    { href: "/settings/team", label: "My Team" },
-    { href: "/settings/tags", label: "Tags" },
-    { href: "/settings/audit-logs", label: "Audit Logs" },
-    { href: "/settings/ai-agents", label: "Ai Agents" },
-    { href: "/settings/storage", label: "Media Storage Usage" },
-  ] as const;
 
   const subSettingsItems = useMemo(
     () =>
@@ -150,49 +491,86 @@ export function AppShell({
     [subSettingsId]
   );
 
-  const settingsItems = isSubSettingsMode ? subSettingsItems : agencySettingsItems;
-
   useEffect(() => {
     setMounted(true);
   }, []);
 
   useEffect(() => {
     let ignore = false;
-    async function loadClients() {
-      try {
-        const result = await apiRequest<{ items: ClientItem[] }>("/clients");
-        if (!ignore) setClients(result.items);
-      } catch {
-        if (!ignore) setClients([]);
-      }
+
+    async function bootShell() {
+      const [clientsResult, companyResult] = await Promise.allSettled([
+        apiRequest<{ items: ClientItem[] }>("/clients"),
+        apiRequest<CompanySettings>("/company/settings", { requireAuth: true }),
+      ]);
+      if (ignore) return;
+      setClients(clientsResult.status === "fulfilled" ? clientsResult.value.items : []);
+      setCompanySettings(companyResult.status === "fulfilled" ? companyResult.value : null);
     }
-    void loadClients();
+
+    function onCompanySettingsUpdated() {
+      void apiRequest<CompanySettings>("/company/settings", { requireAuth: true })
+        .then((result) => { if (!ignore) setCompanySettings(result); })
+        .catch(() => { if (!ignore) setCompanySettings(null); });
+    }
+
+    void bootShell();
+    window.addEventListener("company-settings-updated", onCompanySettingsUpdated);
     return () => {
       ignore = true;
+      window.removeEventListener("company-settings-updated", onCompanySettingsUpdated);
     };
   }, []);
 
   useEffect(() => {
+    if (contextClientId === null) {
+      setSubaccountBusinessProfile(null);
+      return;
+    }
+
     let ignore = false;
-    async function loadCompanySettings() {
+    async function loadSubaccountBusinessLocation() {
       try {
-        const result = await apiRequest<CompanySettings>("/company/settings");
-        if (!ignore) setCompanySettings(result);
+        const payload = await apiRequest<SubaccountBusinessProfileResponse>(`/clients/${contextClientId}/business-profile`);
+        const contextClientLogoUrl = clients.find((item) => item.id === contextClientId)?.client_logo_url;
+        const city = String(payload?.address?.city ?? "").trim();
+        const countryCodeOrLabel = String(payload?.address?.country ?? "").trim();
+        const country =
+          countryCodeOrLabel === "RO"
+            ? "România"
+            : countryCodeOrLabel === "US"
+            ? "Statele Unite"
+            : countryCodeOrLabel;
+        const logoUrl = resolveSubaccountBrandingLogoUrl(payload, contextClientLogoUrl);
+        if (!ignore) {
+          setSubaccountBusinessProfile({ city, country, logoUrl });
+        }
       } catch {
-        if (!ignore) setCompanySettings(null);
+        if (!ignore) setSubaccountBusinessProfile(null);
       }
     }
-    void loadCompanySettings();
+
+    function onBusinessProfileUpdated(event: Event) {
+      const custom = event as CustomEvent<{ subaccountId?: string | number }>;
+      const updatedSubaccountId = Number(custom.detail?.subaccountId ?? 0);
+      if (updatedSubaccountId > 0 && updatedSubaccountId !== contextClientId) return;
+      void loadSubaccountBusinessLocation();
+    }
+
+    void loadSubaccountBusinessLocation();
+    window.addEventListener("subaccount-business-profile-updated", onBusinessProfileUpdated as EventListener);
     return () => {
       ignore = true;
+      window.removeEventListener("subaccount-business-profile-updated", onBusinessProfileUpdated as EventListener);
     };
-  }, []);
+  }, [contextClientId]);
 
   useEffect(() => {
+    if (!profileOpen && !loginAsOpen) return;
     let ignore = false;
     async function loadTeamUsers() {
       try {
-        const result = await apiRequest<TeamMembersResponse>("/team/members?page=1&page_size=500");
+        const result = await apiRequest<TeamMembersResponse>("/team/members?page=1&page_size=100");
         if (!ignore) setTeamUsers(result.items);
       } catch {
         if (!ignore) setTeamUsers([]);
@@ -202,7 +580,7 @@ export function AppShell({
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [profileOpen, loginAsOpen]);
 
   useEffect(() => {
     const onFullscreen = () => setFullscreen(Boolean(document.fullscreenElement));
@@ -225,11 +603,19 @@ export function AppShell({
     }
   }, []);
 
+  const sessionAccessContext = useMemo(() => getSessionAccessContext(), [pathname, impersonatingAs]);
+  const isSubaccountRole = isSubaccountScopedRole(sessionAccessContext.role);
+  const isAgencyRole = !isSubaccountRole;
+  const rawAgencySettingsItems = AGENCY_SETTINGS_ITEMS;
+  const scopedClientsResult = useMemo(() => buildScopedClients(clients, sessionAccessContext), [clients, sessionAccessContext]);
+  const scopedClients = scopedClientsResult.visibleClients;
+  const allowedSubaccountIds = scopedClientsResult.allowedSubaccountIds;
+
   const filteredClients = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return clients;
-    return clients.filter((c) => c.name.toLowerCase().includes(query) || String(c.id).includes(query));
-  }, [clients, search]);
+    if (!query) return scopedClients;
+    return scopedClients.filter((c) => c.name.toLowerCase().includes(query) || String(c.id).includes(query));
+  }, [scopedClients, search]);
 
   const filteredTeamUsers = useMemo(() => {
     const q = userSearch.trim().toLowerCase();
@@ -243,19 +629,26 @@ export function AppShell({
   const currentTitle = useMemo(() => {
     if (isSettingsMode) return "Settings";
     if (!currentSubId) return "Agency MCC";
-    return clients.find((c) => c.id === currentSubId)?.name ?? `Sub-account #${currentSubId}`;
-  }, [clients, currentSubId, isSettingsMode]);
+    return scopedClients.find((c) => c.id === currentSubId)?.name ?? `Sub-account #${currentSubId}`;
+  }, [scopedClients, currentSubId, isSettingsMode]);
 
-  const currentClient = useMemo(() => clients.find((c) => c.id === contextClientId) ?? null, [clients, contextClientId]);
+  const currentClient = useMemo(() => scopedClients.find((c) => c.id === contextClientId) ?? null, [scopedClients, contextClientId]);
   const isSubContext = contextClientId !== null || isSubSettingsMode;
   const brandingTitle = isSubContext ? (currentClient?.name ?? "Sub-cont") : (companySettings?.company_name || "Agency MCC");
-  const brandingSubtitle = `Locație: ${companySettings?.city || "-"}, ${companySettings?.country || "-"}`;
-  const agencyLogoUrl = companySettings?.logo_url?.trim() || "";
-  const subLogoUrl = currentClient?.client_logo_url?.trim() || "";
+  const brandingSubtitle = useMemo(() => {
+    if (!isSubContext) return `Locație: ${companySettings?.city || "-"}, ${companySettings?.country || "-"}`;
+    return formatSubaccountBrandingLocation(subaccountBusinessProfile?.city, subaccountBusinessProfile?.country);
+  }, [isSubContext, companySettings?.city, companySettings?.country, subaccountBusinessProfile?.city, subaccountBusinessProfile?.country]);
+  const agencyLogoUrl = resolveGlobalFaviconLogoUrl(companySettings);
+  const subLogoUrl = subaccountBusinessProfile?.logoUrl?.trim() || "";
   const brandingLogoUrl = isSubContext ? subLogoUrl : agencyLogoUrl;
   const brandingInitials = useMemo(() => initials(brandingTitle), [brandingTitle]);
 
-  const sessionInfo = getSessionInfo();
+  useEffect(() => {
+    setBrandingImageLoadFailed(false);
+  }, [brandingLogoUrl]);
+
+  const sessionInfo = { email: sessionAccessContext.email, role: sessionAccessContext.role };
   const profileName = useMemo(() => {
     const email = sessionInfo.email || "admin@omarosa.ro";
     const local = email.split("@")[0] || "User";
@@ -264,6 +657,153 @@ export function AppShell({
       .map((part) => (part ? `${part[0].toUpperCase()}${part.slice(1)}` : ""))
       .join(" ") || "Utilizator";
   }, [sessionInfo.email]);
+
+  useEffect(() => {
+    const redirectTo = resolveSubaccountRouteGuardDecision({
+      role: sessionInfo.role,
+      accessContext: sessionAccessContext,
+      allowedSubaccountIds,
+      currentSubId,
+      subSettingsId,
+      pathname,
+    });
+    if (redirectTo) {
+      router.replace(redirectTo);
+    }
+  }, [sessionInfo.role, sessionAccessContext, allowedSubaccountIds, currentSubId, subSettingsId, pathname, router]);
+
+  useEffect(() => {
+    if (!isAgencyRole) {
+      setAgencyMyAccess(null);
+      setAgencyMyAccessLoading(false);
+      return;
+    }
+
+    let ignore = false;
+    setAgencyMyAccessLoading(true);
+    async function loadAgencyAccessContext() {
+      try {
+        const payload = await getAgencyMyAccess();
+        if (!ignore) setAgencyMyAccess(payload);
+      } catch {
+        if (!ignore) {
+          setAgencyMyAccess({
+            role: sessionInfo.role,
+            module_keys: ["agency_dashboard", "agency_clients", "agency_accounts", "integrations", "agency_audit", "creative", "settings", ...AGENCY_SETTINGS_MODULE_ORDER],
+            source_scope: "fallback",
+            access_scope: "agency",
+            unrestricted_modules: true,
+          });
+        }
+      } finally {
+        if (!ignore) setAgencyMyAccessLoading(false);
+      }
+    }
+    void loadAgencyAccessContext();
+    return () => {
+      ignore = true;
+    };
+  }, [isAgencyRole, sessionInfo.role]);
+
+  useEffect(() => {
+    if (contextClientId === null) {
+      setSubaccountMyAccess(null);
+      setSubaccountMyAccessLoading(false);
+      return;
+    }
+    const targetSubaccountId = contextClientId;
+
+    let ignore = false;
+    setSubaccountMyAccessLoading(true);
+    async function loadSubaccountAccessContext() {
+      try {
+        const payload = await getSubaccountMyAccess(targetSubaccountId);
+        if (!ignore) setSubaccountMyAccess(payload);
+      } catch {
+        if (!ignore) {
+          setSubaccountMyAccess({
+            subaccount_id: targetSubaccountId,
+            role: sessionInfo.role,
+            module_keys: [...SUBACCOUNT_MODULE_ORDER],
+            source_scope: "fallback",
+            access_scope: "subaccount",
+            unrestricted_modules: false,
+          });
+        }
+      } finally {
+        if (!ignore) setSubaccountMyAccessLoading(false);
+      }
+    }
+    void loadSubaccountAccessContext();
+    return () => {
+      ignore = true;
+    };
+  }, [contextClientId, sessionInfo.role]);
+
+  useEffect(() => {
+    const redirectTo = resolveSubaccountModuleRedirect({
+      pathname,
+      currentSubId,
+      moduleKeys: subaccountMyAccess?.module_keys ?? null,
+      loading: subaccountMyAccessLoading,
+    });
+    if (redirectTo && redirectTo !== pathname) {
+      router.replace(redirectTo);
+    }
+  }, [pathname, sessionInfo.role, currentSubId, subaccountMyAccess, subaccountMyAccessLoading, router]);
+
+  const filteredAgencySettingsItems = useMemo(
+    () =>
+      filterAgencySettingsItems({
+        settingsItems: rawAgencySettingsItems,
+        role: sessionInfo.role,
+        moduleKeys: agencyMyAccess?.module_keys ?? null,
+        loading: agencyMyAccessLoading,
+      }),
+    [rawAgencySettingsItems, sessionInfo.role, agencyMyAccess, agencyMyAccessLoading],
+  );
+
+  const settingsItems = isSubSettingsMode ? subSettingsItems : filteredAgencySettingsItems;
+
+  useEffect(() => {
+    const redirectTo = resolveAgencyRouteRedirect({
+      pathname,
+      role: sessionInfo.role,
+      moduleKeys: agencyMyAccess?.module_keys ?? null,
+      loading: agencyMyAccessLoading,
+      settingsItems: filteredAgencySettingsItems,
+    });
+    if (redirectTo && redirectTo !== pathname) {
+      router.replace(redirectTo);
+    }
+  }, [pathname, sessionInfo.role, agencyMyAccess, agencyMyAccessLoading, filteredAgencySettingsItems, router]);
+
+  useEffect(() => {
+    const redirectTo = resolveSubaccountSettingsRedirect({
+      pathname,
+      subSettingsId,
+      moduleKeys: subaccountMyAccess?.module_keys ?? null,
+      loading: subaccountMyAccessLoading,
+    });
+    if (redirectTo && redirectTo !== pathname) {
+      router.replace(redirectTo);
+    }
+  }, [pathname, sessionInfo.role, subSettingsId, subaccountMyAccess, subaccountMyAccessLoading, router]);
+
+  const visibleNavItems = useMemo(() => {
+    const subFiltered = filterSubaccountNavItems({
+      navItems,
+      currentSubId,
+      moduleKeys: subaccountMyAccess?.module_keys ?? null,
+      loading: subaccountMyAccessLoading,
+    });
+    return filterAgencyNavItems({
+      navItems: subFiltered,
+      role: sessionInfo.role,
+      moduleKeys: agencyMyAccess?.module_keys ?? null,
+      loading: agencyMyAccessLoading,
+    });
+  }, [navItems, sessionInfo.role, currentSubId, subaccountMyAccess, subaccountMyAccessLoading, agencyMyAccess, agencyMyAccessLoading]);
 
   const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
 
@@ -318,7 +858,9 @@ export function AppShell({
     router.push("/login");
   }
 
-  const settingsEntryHref = contextClientId ? `/subaccount/${contextClientId}/settings/profile` : "/settings/profile";
+  const settingsEntryHref = contextClientId ? `/subaccount/${contextClientId}/settings/profile` : filteredAgencySettingsItems[0]?.href ?? "/agency/dashboard";
+  const showSubaccountSettingsEntry = contextClientId !== null ? Boolean(subaccountMyAccess?.module_keys?.map((k) => k.toLowerCase()).includes("settings")) : false;
+  const showAgencySettingsEntry = contextClientId === null ? filteredAgencySettingsItems.length > 0 : false;
 
   const profileTargetHref = isSubContext ? "/settings/team" : ["super_admin", "agency_owner", "agency_admin"].includes(sessionInfo.role) ? "/settings/profile" : "/settings/team";
 
@@ -327,9 +869,16 @@ export function AppShell({
       <div className="border-b border-slate-200 px-3 py-3 dark:border-slate-700">
         <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-center dark:border-slate-700 dark:bg-slate-800/50">
           <div className="mx-auto mb-2 flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-white dark:border-slate-600 dark:bg-slate-900">
-            {brandingLogoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={brandingLogoUrl} alt="Logo context" className="h-full w-full object-cover" />
+            {shouldRenderBrandingLogo(brandingLogoUrl, brandingImageLoadFailed) ? (
+              <Image
+                src={brandingLogoUrl}
+                alt="Logo context"
+                width={64}
+                height={64}
+                className="h-full w-full object-cover"
+                onError={() => setBrandingImageLoadFailed(true)}
+                unoptimized
+              />
             ) : (
               <span className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">{brandingInitials}</span>
             )}
@@ -422,7 +971,7 @@ export function AppShell({
                 </Link>
               );
             })
-          : navItems.map((item) => {
+          : visibleNavItems.map((item) => {
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
               const Icon = item.icon;
               return (
@@ -446,7 +995,7 @@ export function AppShell({
       </nav>
 
       <div className="space-y-1 border-t border-slate-200 px-3 py-4 dark:border-slate-700">
-        {!isSettingsMode ? (
+        {!isSettingsMode && (showSubaccountSettingsEntry || showAgencySettingsEntry) ? (
           <Link
             href={settingsEntryHref}
             onClick={() => setMobileOpen(false)}

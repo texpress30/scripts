@@ -1,14 +1,29 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Camera, ChevronLeft, Loader2, Pencil, Search, Trash2, UserCircle2 } from "lucide-react";
+import React, { FormEvent, useEffect, useMemo, useState } from "react";
+import { Camera, ChevronLeft, Loader2, Pencil, Power, RefreshCw, Search, Trash2, UserCircle2 } from "lucide-react";
 
 import { AppShell } from "@/components/AppShell";
+import { PermissionEditorItem, PermissionsEditor } from "@/components/team/PermissionsEditor";
 import { ProtectedPage } from "@/components/ProtectedPage";
-import { apiRequest } from "@/lib/api";
+import {
+  ApiRequestError,
+  TeamMembershipDetailItem,
+  TeamModuleCatalogItem,
+  apiRequest,
+  deleteTeamUser,
+  deactivateTeamMember,
+  getTeamMembershipDetail,
+  getTeamModuleCatalog,
+  inviteTeamMember,
+  reactivateTeamMember,
+  updateTeamMembership,
+} from "@/lib/api";
 
 type TeamMember = {
   id: number;
+  membership_id?: number | null;
+  user_id?: number | null;
   first_name: string;
   last_name: string;
   email: string;
@@ -18,6 +33,12 @@ type TeamMember = {
   user_role: string;
   location: string;
   subaccount: string;
+  module_keys?: string[];
+  allowed_subaccount_ids?: number[];
+  allowed_subaccounts?: { id: number; name: string; label?: string }[];
+  has_restricted_subaccount_access?: boolean;
+  membership_status?: "active" | "inactive" | string;
+  is_inherited?: boolean;
 };
 
 type TeamListResponse = {
@@ -27,6 +48,29 @@ type TeamListResponse = {
   page_size: number;
 };
 
+type SubaccountOption = {
+  id: number;
+  name: string;
+  label: string;
+};
+
+type SubaccountOptionsResponse = {
+  items: SubaccountOption[];
+};
+
+type ModuleCatalogItem = {
+  key: string;
+  label: string;
+  order: number;
+  scope: "agency" | "subaccount";
+  group_key: string;
+  group_label: string;
+  parent_key?: string | null;
+  is_container: boolean;
+};
+
+type CatalogScope = "agency" | "subaccount";
+type FormTab = "identity" | "permissions";
 const PAGE_SIZE = 10;
 
 function initials(firstName: string, lastName: string) {
@@ -35,8 +79,60 @@ function initials(firstName: string, lastName: string) {
   return `${a || "?"}${b || "?"}`;
 }
 
+
+function roleValueFromKey(roleKey: string): "owner" | "admin" | "member" | "viewer" {
+  const normalized = String(roleKey || "").trim().toLowerCase();
+  if (normalized.endsWith("_owner")) return "owner";
+  if (normalized.endsWith("_admin")) return "admin";
+  if (normalized.endsWith("_viewer")) return "viewer";
+  return "member";
+}
+
+function roleKeyFromMode(userType: string, userRole: string): string {
+  const type = String(userType || "").trim().toLowerCase();
+  const role = String(userRole || "").trim().toLowerCase();
+  if (type === "agency") {
+    if (role === "owner") return "agency_owner";
+    if (role === "admin") return "agency_admin";
+    if (role === "viewer") return "agency_viewer";
+    return "agency_member";
+  }
+  if (role === "admin") return "subaccount_admin";
+  if (role === "viewer") return "subaccount_viewer";
+  return "subaccount_user";
+}
+
+function activeScopeFromUserType(userType: string): CatalogScope {
+  return userType === "agency" ? "agency" : "subaccount";
+}
+
+function normalizeCatalogItems(items: TeamModuleCatalogItem[] | undefined, scope: CatalogScope): ModuleCatalogItem[] {
+  return (items ?? [])
+    .map((item) => ({
+      key: String(item.key ?? "").trim().toLowerCase(),
+      label: String(item.label ?? "").trim() || String(item.key ?? "").trim(),
+      order: Number(item.order ?? 0),
+      scope: scope,
+      group_key: String(item.group_key ?? "").trim().toLowerCase() || "main_nav",
+      group_label: String(item.group_label ?? "").trim() || "Main Navigation",
+      parent_key: String(item.parent_key ?? "").trim().toLowerCase() || null,
+      is_container: Boolean(item.is_container),
+    }))
+    .filter((item) => item.key !== "")
+    .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
+}
+
+function normalizeSelectedKeys(keys: string[]): string[] {
+  const out: string[] = [];
+  for (const key of keys) {
+    const normalized = String(key || "").trim().toLowerCase();
+    if (normalized && !out.includes(normalized)) out.push(normalized);
+  }
+  return out;
+}
+
 export default function SettingsTeamPage() {
-  const [mode, setMode] = useState<"list" | "create">("list");
+  const [mode, setMode] = useState<"list" | "create" | "edit">("list");
 
   const [search, setSearch] = useState("");
   const [userTypeFilter, setUserTypeFilter] = useState("");
@@ -50,7 +146,18 @@ export default function SettingsTeamPage() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
 
+  const [subaccountOptions, setSubaccountOptions] = useState<SubaccountOption[]>([]);
+  const [subaccountOptionsLoading, setSubaccountOptionsLoading] = useState(false);
+  const [subaccountOptionsError, setSubaccountOptionsError] = useState("");
+  const [moduleCatalogByScope, setModuleCatalogByScope] = useState<Record<CatalogScope, ModuleCatalogItem[]>>({
+    agency: [],
+    subaccount: [],
+  });
+  const [moduleCatalogLoading, setModuleCatalogLoading] = useState(false);
+  const [moduleCatalogError, setModuleCatalogError] = useState("");
+
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [activeFormTab, setActiveFormTab] = useState<FormTab>("identity");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
@@ -58,16 +165,63 @@ export default function SettingsTeamPage() {
   const [extension, setExtension] = useState("");
   const [userType, setUserType] = useState("agency");
   const [userRole, setUserRole] = useState("member");
-  const [location, setLocation] = useState("România");
-  const [subaccount, setSubaccount] = useState("Toate");
+  const [allowedSubaccountIds, setAllowedSubaccountIds] = useState<number[]>([]);
+  const [subaccount, setSubaccount] = useState("");
+  const [subaccountFieldError, setSubaccountFieldError] = useState("");
+  const [moduleFieldError, setModuleFieldError] = useState("");
+  const [selectedModuleKeys, setSelectedModuleKeys] = useState<string[]>([]);
   const [password, setPassword] = useState("");
+  const [autoInviteAfterCreate, setAutoInviteAfterCreate] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [inviteLoadingByMembership, setInviteLoadingByMembership] = useState<Record<number, boolean>>({});
+  const [lifecycleLoadingByMembership, setLifecycleLoadingByMembership] = useState<Record<number, boolean>>({});
+  const [deleteLoadingByUser, setDeleteLoadingByUser] = useState<Record<number, boolean>>({});
+  const [editingMembershipId, setEditingMembershipId] = useState<number | null>(null);
+  const [loadingEditDetail, setLoadingEditDetail] = useState(false);
+  const [editLockedInherited, setEditLockedInherited] = useState(false);
+  const [editOriginal, setEditOriginal] = useState<{ userRole: string; moduleKeys: string[]; allowedSubaccountIds: number[] } | null>(null);
+  const activeScope = activeScopeFromUserType(userType);
+  const activeCatalog = moduleCatalogByScope[activeScope];
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / PAGE_SIZE)), [total]);
 
   function showToast(message: string) {
     setToastMessage(message);
     window.setTimeout(() => setToastMessage(""), 2200);
+  }
+
+  async function loadSubaccountOptions() {
+    setSubaccountOptionsLoading(true);
+    setSubaccountOptionsError("");
+    try {
+      const data = await apiRequest<SubaccountOptionsResponse>("/team/subaccount-options");
+      const normalized = (data.items ?? []).map((item) => ({
+        id: Number(item.id),
+        name: String(item.name ?? "").trim(),
+        label: String(item.label ?? "").trim() || String(item.name ?? "").trim(),
+      }));
+      setSubaccountOptions(normalized.filter((item) => item.name !== "" && Number.isFinite(item.id)));
+    } catch (err) {
+      setSubaccountOptions([]);
+      setSubaccountOptionsError(err instanceof Error ? err.message : "Nu am putut încărca sub-conturile.");
+    } finally {
+      setSubaccountOptionsLoading(false);
+    }
+  }
+
+  async function loadModuleCatalog(scope: CatalogScope) {
+    setModuleCatalogLoading(true);
+    setModuleCatalogError("");
+    try {
+      const data = await getTeamModuleCatalog(scope);
+      const normalized = normalizeCatalogItems(data.items, scope);
+      setModuleCatalogByScope((prev) => ({ ...prev, [scope]: normalized }));
+    } catch (err) {
+      setModuleCatalogByScope((prev) => ({ ...prev, [scope]: [] }));
+      setModuleCatalogError(err instanceof Error ? err.message : "Nu am putut încărca modulele disponibile.");
+    } finally {
+      setModuleCatalogLoading(false);
+    }
   }
 
   async function loadMembers() {
@@ -96,10 +250,37 @@ export default function SettingsTeamPage() {
   }
 
   useEffect(() => {
+    void loadSubaccountOptions();
+    void loadModuleCatalog("agency");
+    void loadModuleCatalog("subaccount");
+  }, []);
+
+  useEffect(() => {
     if (mode === "list") {
       void loadMembers();
     }
   }, [mode, page, search, userTypeFilter, userRoleFilter, subaccountFilter]);
+
+  useEffect(() => {
+    if (userType === "agency") {
+      setSubaccount("");
+      setSubaccountFieldError("");
+    }
+    setModuleFieldError("");
+    if (mode === "create") {
+      setSelectedModuleKeys(activeCatalog.map((item) => item.key));
+    }
+  }, [userType, mode, activeCatalog]);
+
+  useEffect(() => {
+    if (userType !== "agency") {
+      setAllowedSubaccountIds([]);
+      return;
+    }
+    if (userRole === "owner" || userRole === "admin") {
+      setAllowedSubaccountIds([]);
+    }
+  }, [userType, userRole]);
 
   function resetCreateForm() {
     setFirstName("");
@@ -109,43 +290,537 @@ export default function SettingsTeamPage() {
     setExtension("");
     setUserType("agency");
     setUserRole("member");
-    setLocation("România");
-    setSubaccount("Toate");
+    setAllowedSubaccountIds([]);
+    setSubaccount("");
+    setSubaccountFieldError("");
+    setModuleFieldError("");
+    setSelectedModuleKeys(moduleCatalogByScope.agency.map((item) => item.key));
     setPassword("");
+    setAutoInviteAfterCreate(false);
     setAdvancedOpen(false);
+    setEditingMembershipId(null);
+    setEditOriginal(null);
+    setEditLockedInherited(false);
+    setActiveFormTab("identity");
+  }
+
+  function getMembershipId(member: TeamMember): number | null {
+    const candidate = member.membership_id ?? member.id;
+    if (!Number.isFinite(Number(candidate))) return null;
+    return Number(candidate);
+  }
+
+  function canInviteMember(member: TeamMember): boolean {
+    const membershipId = getMembershipId(member);
+        return membershipId !== null && String(member.email || "").trim() !== "";
+  }
+
+  function normalizeMembershipStatus(member: TeamMember): "active" | "inactive" {
+    const status = String(member.membership_status || "active").trim().toLowerCase();
+    return status === "inactive" ? "inactive" : "active";
+  }
+
+  function lifecycleErrorMessage(error: unknown): string {
+    if (error instanceof ApiRequestError) {
+      if (error.status === 403) return "Nu ai permisiuni suficiente pentru această acțiune";
+      if (error.status === 404) return "Membership inexistent sau inaccesibil";
+      if (error.status === 409) return "Acest access este moștenit și nu poate fi modificat aici";
+      return error.message || "Nu am putut actualiza statusul membership-ului";
+    }
+    return error instanceof Error ? error.message : "Nu am putut actualiza statusul membership-ului";
+  }
+
+  function deleteUserErrorMessage(error: unknown): string {
+    if (error instanceof ApiRequestError) {
+      if (error.status === 403) return "Nu ai permisiuni suficiente pentru a șterge acest utilizator";
+      if (error.status === 404) return "Utilizator inexistent";
+      if (error.status === 409) {
+        const normalized = String(error.message || "").toLowerCase();
+        if (normalized.includes("propriul utilizator") || normalized.includes("sesiunea curentă")) {
+          return "Nu îți poți șterge propriul utilizator din această sesiune";
+        }
+        return error.message || "Acest utilizator nu poate fi șters în acest moment";
+      }
+      return error.message || "Nu am putut șterge utilizatorul";
+    }
+    return error instanceof Error ? error.message : "Nu am putut șterge utilizatorul";
+  }
+
+  async function onDeleteUser(member: TeamMember) {
+    const userId = Number(member.user_id);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      setErrorMessage("Utilizator invalid pentru acțiunea selectată.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Sigur vrei să ștergi complet acest utilizator din sistem? Acțiunea elimină utilizatorul din users, toate memberships, permisiunile și tokenurile asociate.",
+    );
+    if (!confirmed) return;
+
+    setErrorMessage("");
+    setDeleteLoadingByUser((prev) => ({ ...prev, [userId]: true }));
+    try {
+      const response = await deleteTeamUser(userId);
+      showToast(response.message || "Utilizatorul a fost șters complet");
+      await loadMembers();
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 404) {
+        showToast(error.message || "Utilizator inexistent");
+        await loadMembers();
+      } else {
+        setErrorMessage(deleteUserErrorMessage(error));
+      }
+    } finally {
+      setDeleteLoadingByUser((prev) => {
+        const next = { ...prev };
+        delete next[userId];
+        return next;
+      });
+    }
+  }
+
+  async function onToggleMembershipLifecycle(member: TeamMember) {
+    const membershipId = getMembershipId(member);
+    if (membershipId === null) {
+      setErrorMessage("Membership invalid pentru acțiunea selectată.");
+      return;
+    }
+
+    const currentStatus = normalizeMembershipStatus(member);
+    if (currentStatus === "active") {
+      const confirmed = window.confirm("Confirmi dezactivarea accesului pentru acest membership?");
+      if (!confirmed) return;
+    }
+
+    setErrorMessage("");
+    setLifecycleLoadingByMembership((prev) => ({ ...prev, [membershipId]: true }));
+    try {
+      if (currentStatus === "active") {
+        const response = await deactivateTeamMember(membershipId);
+        showToast(response.message || "Accesul a fost dezactivat pentru sesiunile noi și pentru verificările bazate pe datele curente.");
+      } else {
+        const response = await reactivateTeamMember(membershipId);
+        showToast(response.message || "Accesul a fost reactivat.");
+      }
+      await loadMembers();
+    } catch (error) {
+      setErrorMessage(lifecycleErrorMessage(error));
+    } finally {
+      setLifecycleLoadingByMembership((prev) => {
+        const next = { ...prev };
+        delete next[membershipId];
+        return next;
+      });
+    }
+  }
+
+  function inviteErrorMessage(error: unknown): string {
+    if (error instanceof ApiRequestError) {
+      if (error.status === 403) return "Nu ai permisiunea să trimiți invitații pentru acest utilizator";
+      if (error.status === 404) return "Utilizatorul sau membership-ul nu mai există";
+      if (error.status === 503) return "Invitațiile sunt indisponibile temporar. Încearcă din nou mai târziu.";
+      return error.message || "Nu am putut trimite invitația";
+    }
+    return error instanceof Error ? error.message : "Nu am putut trimite invitația";
+  }
+
+  async function onInviteMember(member: TeamMember) {
+    const membershipId = getMembershipId(member);
+    if (membershipId === null) {
+      setErrorMessage("Utilizatorul nu are un membership valid pentru invitație.");
+      return;
+    }
+
+    setErrorMessage("");
+    setInviteLoadingByMembership((prev) => ({ ...prev, [membershipId]: true }));
+    try {
+      const response = await inviteTeamMember(membershipId);
+      showToast(response.message || "Invitația a fost trimisă");
+    } catch (err) {
+      setErrorMessage(inviteErrorMessage(err));
+    } finally {
+      setInviteLoadingByMembership((prev) => {
+        const next = { ...prev };
+        delete next[membershipId];
+        return next;
+      });
+    }
+  }
+
+  function editErrorMessage(error: unknown): string {
+    if (error instanceof ApiRequestError) {
+      if (error.status === 400) return error.message || "Date invalide pentru actualizare";
+      if (error.status === 403) return "Nu ai permisiuni suficiente pentru a edita acest membership";
+      if (error.status === 404) return "Membership inexistent sau inaccesibil";
+      if (error.status === 409) return "Acest access este moștenit și nu poate fi editat aici";
+      return error.message || "Nu am putut actualiza membership-ul";
+    }
+    return error instanceof Error ? error.message : "Nu am putut actualiza membership-ul";
+  }
+
+  async function openEditForm(member: TeamMember) {
+    const membershipId = getMembershipId(member);
+    if (membershipId === null) {
+      setErrorMessage("Rândul selectat nu are membership_id valid pentru editare.");
+      return;
+    }
+
+    setErrorMessage("");
+    setSaving(false);
+    setLoadingEditDetail(true);
+    setMode("edit");
+    setActiveFormTab("identity");
+    setEditingMembershipId(membershipId);
+    setModuleFieldError("");
+    setSubaccountFieldError("");
+    try {
+      const payload = await getTeamMembershipDetail(membershipId);
+      const detail: TeamMembershipDetailItem = payload.item;
+      setFirstName(detail.first_name || "");
+      setLastName(detail.last_name || "");
+      setEmail(detail.email || "");
+      setPhone(detail.phone || "");
+      setExtension(detail.extension || "");
+      setSubaccount(detail.subaccount_id ? String(detail.subaccount_id) : "");
+      const scopeFromDetail: CatalogScope = detail.scope_type === "subaccount" ? "subaccount" : "agency";
+      setUserType(scopeFromDetail === "subaccount" ? "client" : "agency");
+      setUserRole(roleValueFromKey(detail.role_key));
+      const catalogForScope = moduleCatalogByScope[scopeFromDetail];
+      if (catalogForScope.length === 0) {
+        void loadModuleCatalog(scopeFromDetail);
+      }
+      const normalizedKeys = normalizeSelectedKeys((detail.module_keys ?? []).map((key) => String(key)));
+      const filteredKeys = normalizeSelectedKeys(
+        normalizedKeys.filter((key) => catalogForScope.length === 0 || catalogForScope.some((item) => item.key === key)),
+      );
+      const coherentKeys = scopeFromDetail === "agency" ? applyAgencySettingsConsistency(filteredKeys) : filteredKeys;
+      setSelectedModuleKeys(coherentKeys);
+      const initialAllowedSubaccountIds = (detail.allowed_subaccount_ids ?? [])
+        .map((item) => Number(item))
+        .filter((item) => Number.isFinite(item));
+      setAllowedSubaccountIds(initialAllowedSubaccountIds);
+      setEditOriginal({ userRole: roleValueFromKey(detail.role_key), moduleKeys: [...coherentKeys].sort(), allowedSubaccountIds: [...initialAllowedSubaccountIds].sort((a, b) => a - b) });
+      setEditLockedInherited(Boolean(detail.is_inherited));
+      if (detail.is_inherited) {
+        setErrorMessage("Acest access este moștenit și nu poate fi editat aici");
+      }
+      setAdvancedOpen(false);
+      setAutoInviteAfterCreate(false);
+    } catch (error) {
+      setMode("list");
+      setEditingMembershipId(null);
+      setErrorMessage(editErrorMessage(error));
+    } finally {
+      setLoadingEditDetail(false);
+    }
+  }
+
+  async function submitEditForm(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (editingMembershipId === null) {
+      setErrorMessage("Membership inexistent sau inaccesibil");
+      return;
+    }
+    if (editLockedInherited) {
+      setErrorMessage("Acest access este moștenit și nu poate fi editat aici");
+      return;
+    }
+
+    setSaving(true);
+    setErrorMessage("");
+    setModuleFieldError("");
+
+    const nextModules = normalizeSelectedKeys(selectedModuleKeys).filter((key) => activeCatalog.some((item) => item.key === key));
+    if (activeCatalog.length > 0 && nextModules.length === 0) {
+      setSaving(false);
+      setModuleFieldError("Selectează cel puțin o permisiune de navigare.");
+      return;
+    }
+
+    const nextRole = userRole;
+
+    const noRoleChange = editOriginal ? editOriginal.userRole === nextRole : false;
+    const noModuleChange = editOriginal
+      ? JSON.stringify([...editOriginal.moduleKeys].sort()) === JSON.stringify([...nextModules].sort())
+      : false;
+
+    const nextAllowedIds = [...allowedSubaccountIds].sort((a, b) => a - b);
+    const noAllowedSubaccountChange = editOriginal
+      ? JSON.stringify(editOriginal.allowedSubaccountIds) === JSON.stringify(nextAllowedIds)
+      : false;
+
+    if (editOriginal && noRoleChange && noModuleChange && noAllowedSubaccountChange) {
+      setSaving(false);
+      return;
+    }
+
+    const payload: { user_role?: string; module_keys?: string[]; allowed_subaccount_ids?: number[] } = {
+      user_role: roleKeyFromMode(userType, userRole),
+    };
+    payload.module_keys = nextModules;
+    if (userType === "agency" && (userRole === "member" || userRole === "viewer")) {
+      payload.allowed_subaccount_ids = nextAllowedIds;
+    }
+
+    try {
+      await updateTeamMembership(editingMembershipId, payload);
+      showToast("Permisiunile au fost actualizate");
+      resetCreateForm();
+      setMode("list");
+      setPage(1);
+      void loadMembers();
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 400) {
+        const normalized = String(error.message || "").toLowerCase();
+        if (normalized.includes("cheie de navigare invalid") || normalized.includes("modul invalid")) {
+          setErrorMessage("Permisiunile selectate nu sunt valide pentru scope-ul acestui membership.");
+        } else if (normalized.includes("în afara permisiunilor proprii")) {
+          setErrorMessage("Nu poți acorda permisiuni peste grant-ceiling-ul tău curent.");
+        } else {
+          setErrorMessage(editErrorMessage(error));
+        }
+      } else {
+        setErrorMessage(editErrorMessage(error));
+      }
+      if (error instanceof ApiRequestError && error.status === 409) {
+        setEditLockedInherited(true);
+      }
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function submitCreateForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (mode === "create" && activeFormTab === "identity") {
+      handleCreateIdentityNextStep();
+      return;
+    }
+    if (mode === "create" && activeFormTab !== "permissions") return;
+
     setSaving(true);
     setErrorMessage("");
+    setSubaccountFieldError("");
+    setModuleFieldError("");
+
+    if (userType === "client" && !subaccount.trim()) {
+      setSaving(false);
+      setSubaccountFieldError("Selectarea unui sub-cont este obligatorie pentru utilizatorii de tip client.");
+      return;
+    }
+
+    const nextModules = normalizeSelectedKeys(selectedModuleKeys).filter((key) => activeCatalog.some((item) => item.key === key));
+    if (activeCatalog.length > 0 && nextModules.length === 0) {
+      setSaving(false);
+      setModuleFieldError("Selectează cel puțin o permisiune de navigare.");
+      return;
+    }
 
     try {
-      await apiRequest<{ item: TeamMember }>("/team/members", {
+      const payload: Record<string, unknown> = {
+        first_name: firstName,
+        last_name: lastName,
+        email,
+        phone,
+        extension,
+        user_type: userType,
+        user_role: userRole,
+        subaccount: userType === "client" ? subaccount : "",
+        password: advancedOpen ? password : undefined,
+      };
+      payload.module_keys = nextModules;
+      if (userType === "agency" && (userRole === "member" || userRole === "viewer")) {
+        payload.allowed_subaccount_ids = [...allowedSubaccountIds].sort((a, b) => a - b);
+      }
+
+      const createResponse = await apiRequest<{ item: TeamMember }>("/team/members", {
         method: "POST",
-        body: JSON.stringify({
-          first_name: firstName,
-          last_name: lastName,
-          email,
-          phone,
-          extension,
-          user_type: userType,
-          user_role: userRole,
-          location,
-          subaccount,
-          password: advancedOpen ? password : undefined,
-        }),
+        body: JSON.stringify(payload),
       });
-      showToast("Utilizator adăugat cu succes.");
+
+      if (!autoInviteAfterCreate) {
+        showToast("Utilizator adăugat cu succes.");
+      } else {
+        const createdMembershipId = (() => {
+          const candidate = createResponse.item?.membership_id ?? createResponse.item?.id;
+          if (!Number.isFinite(Number(candidate))) return null;
+          return Number(candidate);
+        })();
+
+        if (createdMembershipId === null) {
+          showToast("Utilizatorul a fost creat, dar invitația nu a putut fi trimisă");
+        } else {
+          try {
+            await inviteTeamMember(createdMembershipId);
+            showToast("Utilizatorul a fost creat și invitația a fost trimisă");
+          } catch (inviteError) {
+            showToast(`Utilizatorul a fost creat, dar invitația nu a putut fi trimisă. ${inviteErrorMessage(inviteError)}`);
+          }
+        }
+      }
+
       resetCreateForm();
       setMode("list");
       setPage(1);
       void loadMembers();
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : "Nu am putut adăuga utilizatorul.");
+      if (err instanceof ApiRequestError) {
+        const normalized = err.message.toLowerCase();
+        if (normalized.includes("modul invalid") || normalized.includes("cheie de navigare invalid")) {
+          setErrorMessage(`Permisiunile selectate sunt invalide pentru scope-ul curent. ${err.message}`);
+        } else if (normalized.includes("în afara permisiunilor proprii")) {
+          setErrorMessage("Nu poți acorda permisiuni peste grant-ceiling-ul tău curent.");
+        } else {
+          setErrorMessage(err.message || "Nu am putut adăuga utilizatorul.");
+        }
+      } else {
+        setErrorMessage(err instanceof Error ? err.message : "Nu am putut adăuga utilizatorul.");
+      }
     } finally {
       setSaving(false);
     }
+  }
+
+  function validateCreateIdentityStep(): boolean {
+    const normalizedFirstName = firstName.trim();
+    const normalizedLastName = lastName.trim();
+    const normalizedEmail = email.trim();
+    setErrorMessage("");
+    setSubaccountFieldError("");
+    if (!normalizedFirstName) {
+      setErrorMessage("Prenumele este obligatoriu.");
+      return false;
+    }
+    if (!normalizedLastName) {
+      setErrorMessage("Numele este obligatoriu.");
+      return false;
+    }
+    if (!normalizedEmail || !normalizedEmail.includes("@")) {
+      setErrorMessage("Email-ul este obligatoriu.");
+      return false;
+    }
+    if (userType === "client" && !subaccount.trim()) {
+      setSubaccountFieldError("Selectarea unui sub-cont este obligatorie pentru utilizatorii de tip client.");
+      return false;
+    }
+    return true;
+  }
+
+  function handleCreateIdentityNextStep() {
+    if (!validateCreateIdentityStep()) return;
+    setActiveFormTab("permissions");
+  }
+
+  function accessAccountsSummary(member: TeamMember): string {
+    const normalizedUserType = String(member.user_type || "").trim().toLowerCase();
+    const normalizedSubaccount = String(member.subaccount || "").trim();
+    if (normalizedUserType === "client" && normalizedSubaccount && normalizedSubaccount.toLowerCase() !== "toate") {
+      return normalizedSubaccount;
+    }
+    const normalizedRole = String(member.user_role || "").trim().toLowerCase();
+    if (normalizedRole === "owner" || normalizedRole === "admin") {
+      return "Toate conturile";
+    }
+    const allowedIds = (member.allowed_subaccount_ids ?? []).filter((item) => Number.isFinite(Number(item)));
+    const restricted = Boolean(member.has_restricted_subaccount_access) || allowedIds.length > 0;
+    if (!restricted) {
+      return "Toate conturile";
+    }
+    const labels = (member.allowed_subaccounts ?? [])
+      .map((item) => String(item.label || item.name || "").trim())
+      .filter((item) => item !== "");
+    if (labels.length > 0 && labels.length <= 2) return labels.join(", ");
+    return `${allowedIds.length} conturi selectate`;
+  }
+
+  const supportsAgencySubaccountGrants = userType === "agency" && (userRole === "member" || userRole === "viewer");
+  function toggleAllowedSubaccount(optionId: number) {
+    setAllowedSubaccountIds((prev) => {
+      if (prev.includes(optionId)) return prev.filter((item) => item !== optionId);
+      return [...prev, optionId].sort((a, b) => a - b);
+    });
+  }
+
+  const shouldShowModulePermissions = activeCatalog.length > 0;
+  const permissionEditorItems = useMemo<PermissionEditorItem[]>(
+    () =>
+      activeCatalog.map((item) => ({
+        key: item.key,
+        label: item.label,
+        order: item.order,
+        groupKey: item.group_key,
+        groupLabel: item.group_label,
+        parentKey: item.parent_key ?? null,
+        isContainer: item.is_container,
+      })),
+    [activeCatalog],
+  );
+  const isEditSaveDisabled = useMemo(() => {
+    if (mode !== "edit") return false;
+    if (saving || loadingEditDetail || editLockedInherited || editingMembershipId === null || editOriginal === null) return true;
+    if (selectedModuleKeys.length === 0) return true;
+
+    const sameRole = editOriginal.userRole === userRole;
+    const normalizedNow = [...selectedModuleKeys.map((key) => key.trim().toLowerCase()).filter((key) => key !== "")].sort();
+    const normalizedOriginal = [...editOriginal.moduleKeys].sort();
+    const sameModules = JSON.stringify(normalizedNow) === JSON.stringify(normalizedOriginal);
+    const normalizedAllowedNow = [...allowedSubaccountIds].sort((a, b) => a - b);
+    const normalizedAllowedOriginal = [...editOriginal.allowedSubaccountIds].sort((a, b) => a - b);
+    const sameAllowedSubaccounts = JSON.stringify(normalizedAllowedNow) === JSON.stringify(normalizedAllowedOriginal);
+    return sameRole && sameModules && sameAllowedSubaccounts;
+  }, [mode, saving, loadingEditDetail, editLockedInherited, editingMembershipId, editOriginal, selectedModuleKeys, userRole, allowedSubaccountIds]);
+
+  function applyAgencySettingsConsistency(keys: string[]): string[] {
+    if (activeScope !== "agency") return normalizeSelectedKeys(keys);
+    const normalized = new Set(normalizeSelectedKeys(keys));
+    const settingsParent = activeCatalog.find((item) => item.key === "settings");
+    const settingsChildren = activeCatalog.filter((item) => item.parent_key === "settings").map((item) => item.key);
+    if (!settingsParent || settingsChildren.length === 0) return Array.from(normalized);
+    if (!normalized.has("settings")) {
+      settingsChildren.forEach((child) => normalized.delete(child));
+      return Array.from(normalized);
+    }
+    const hasAnyChild = settingsChildren.some((child) => normalized.has(child));
+    if (!hasAnyChild) {
+      normalized.delete("settings");
+    }
+    if (hasAnyChild) {
+      normalized.add("settings");
+    }
+    return Array.from(normalized);
+  }
+
+  function toggleModule(moduleKey: string) {
+    setSelectedModuleKeys((prev) => {
+      const nextSet = new Set(normalizeSelectedKeys(prev));
+      const isEnabled = nextSet.has(moduleKey);
+      const isSettingsParent = activeScope === "agency" && moduleKey === "settings";
+      const isSettingsChild = activeScope === "agency" && activeCatalog.some((item) => item.parent_key === "settings" && item.key === moduleKey);
+      const settingsChildren = activeCatalog.filter((item) => item.parent_key === "settings").map((item) => item.key);
+
+      if (isSettingsParent) {
+        if (isEnabled) {
+          nextSet.delete("settings");
+          settingsChildren.forEach((child) => nextSet.delete(child));
+        } else {
+          nextSet.add("settings");
+          settingsChildren.forEach((child) => nextSet.add(child));
+        }
+      } else if (isSettingsChild) {
+        if (isEnabled) nextSet.delete(moduleKey);
+        else {
+          nextSet.add(moduleKey);
+          nextSet.add("settings");
+        }
+      } else if (isEnabled) {
+        nextSet.delete(moduleKey);
+      } else {
+        nextSet.add(moduleKey);
+      }
+      return applyAgencySettingsConsistency(Array.from(nextSet));
+    });
+    setModuleFieldError("");
   }
 
   return (
@@ -159,10 +834,22 @@ export default function SettingsTeamPage() {
             <section className="space-y-4">
               <header className="flex flex-wrap items-center justify-between gap-3">
                 <h1 className="text-2xl font-semibold text-slate-900">Echipă</h1>
-                <button className="wm-btn-primary" type="button" onClick={() => setMode("create")}>+ Adaugă Utilizator</button>
+                <button
+                  className="wm-btn-primary"
+                  type="button"
+                  onClick={() => {
+                    resetCreateForm();
+                    setMode("create");
+                    setActiveFormTab("identity");
+                  }}
+                >
+                  + Adaugă Utilizator
+                </button>
               </header>
 
               <div className="wm-card space-y-4 p-4">
+                {subaccountOptionsError ? <p className="text-xs text-amber-700">Sub-conturile nu au putut fi încărcate: {subaccountOptionsError}</p> : null}
+
                 <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
                   <select className="wm-input" value={userTypeFilter} onChange={(e) => { setPage(1); setUserTypeFilter(e.target.value); }}>
                     <option value="">Tip Utilizator</option>
@@ -171,49 +858,44 @@ export default function SettingsTeamPage() {
                   </select>
                   <select className="wm-input" value={userRoleFilter} onChange={(e) => { setPage(1); setUserRoleFilter(e.target.value); }}>
                     <option value="">Rol Utilizator</option>
+                    <option value="owner">Owner</option>
                     <option value="admin">Admin</option>
                     <option value="member">Membru</option>
                     <option value="viewer">Viewer</option>
                   </select>
                   <select className="wm-input" value={subaccountFilter} onChange={(e) => { setPage(1); setSubaccountFilter(e.target.value); }}>
-                    <option value="">Selectează Sub-cont</option>
-                    <option value="Toate">Toate</option>
-                    <option value="OMAROSA">OMAROSA</option>
+                    <option value="">Toate</option>
+                    {subaccountOptions.map((item) => (
+                      <option key={item.id} value={String(item.id)}>{item.label || item.name}</option>
+                    ))}
                   </select>
-                  <label className="relative block">
+                  <label className="relative">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <input
-                      className="wm-input pl-9"
-                      placeholder="nume, email, telefon, id-uri"
-                      value={search}
-                      onChange={(e) => {
-                        setPage(1);
-                        setSearch(e.target.value);
-                      }}
-                    />
+                    <input className="wm-input pl-9" placeholder="Caută nume, email, telefon" value={search} onChange={(e) => { setPage(1); setSearch(e.target.value); }} />
                   </label>
                 </div>
 
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-slate-50 text-left text-slate-600">
+                <div className="overflow-hidden rounded-lg border border-slate-200">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                       <tr>
                         <th className="px-3 py-2">Nume</th>
                         <th className="px-3 py-2">Email</th>
                         <th className="px-3 py-2">Telefon</th>
                         <th className="px-3 py-2">Tip Utilizator</th>
-                        <th className="px-3 py-2">Locație</th>
+                        <th className="px-3 py-2">Status</th>
+                        <th className="px-3 py-2">Acces / Conturi</th>
                         <th className="px-3 py-2 text-right">Acțiuni</th>
                       </tr>
                     </thead>
                     <tbody>
                       {loadingMembers ? (
                         <tr>
-                          <td colSpan={6} className="px-3 py-6 text-center text-slate-500">Se încarcă utilizatorii...</td>
+                          <td className="px-3 py-6 text-center text-slate-500" colSpan={7}>Se încarcă membri...</td>
                         </tr>
                       ) : members.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="px-3 py-6 text-center text-slate-500">Nu există utilizatori pentru filtrele selectate.</td>
+                          <td className="px-3 py-6 text-center text-slate-500" colSpan={7}>Nu există membri pentru filtrele curente.</td>
                         </tr>
                       ) : (
                         members.map((member) => (
@@ -229,11 +911,72 @@ export default function SettingsTeamPage() {
                             <td className="px-3 py-2">{member.email}</td>
                             <td className="px-3 py-2">{member.phone || "-"}</td>
                             <td className="px-3 py-2">{member.user_type}</td>
-                            <td className="px-3 py-2">{member.location}</td>
+                            <td className="px-3 py-2">
+                              {normalizeMembershipStatus(member) === "active" ? (
+                                <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Activ</span>
+                              ) : (
+                                <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Inactiv</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2">{accessAccountsSummary(member)}</td>
                             <td className="px-3 py-2">
                               <div className="flex items-center justify-end gap-2 text-slate-500">
-                                <button type="button" className="rounded p-1 hover:bg-slate-100" title="Editează"><Pencil className="h-4 w-4" /></button>
-                                <button type="button" className="rounded p-1 hover:bg-slate-100" title="Șterge"><Trash2 className="h-4 w-4" /></button>
+                                <button type="button" className="rounded p-1 hover:bg-slate-100" title="Editează" onClick={() => void openEditForm(member)}><Pencil className="h-4 w-4" /></button>
+                                {(() => {
+                                  const membershipId = getMembershipId(member);
+                                  const loadingLifecycle = membershipId !== null && Boolean(lifecycleLoadingByMembership[membershipId]);
+                                  const isInherited = Boolean(member.is_inherited);
+                                  const isActive = normalizeMembershipStatus(member) === "active";
+                                  const label = isActive ? "Dezactivează" : "Reactivează";
+                                  return (
+                                    <button
+                                      type="button"
+                                      className="rounded p-1 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                      title={isInherited ? "Access moștenit — indisponibil" : label}
+                                      aria-label={label}
+                                      disabled={membershipId === null || loadingLifecycle || isInherited}
+                                      onClick={() => void onToggleMembershipLifecycle(member)}
+                                    >
+                                      {loadingLifecycle ? <Loader2 className="h-4 w-4 animate-spin" /> : isActive ? <Power className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
+                                    </button>
+                                  );
+                                })()}
+                                {(() => {
+                                  const userId = Number(member.user_id);
+                                  const hasValidUserId = Number.isFinite(userId) && userId > 0;
+                                  const loadingDelete = hasValidUserId && Boolean(deleteLoadingByUser[userId]);
+                                  return (
+                                    <button
+                                      type="button"
+                                      className="rounded border border-rose-200 px-2 py-1 text-xs text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                      title={hasValidUserId ? "Șterge utilizatorul complet din sistem" : "Utilizator invalid — nu poate fi șters"}
+                                      aria-label="Șterge utilizator"
+                                      disabled={!hasValidUserId || loadingDelete}
+                                      onClick={() => void onDeleteUser(member)}
+                                    >
+                                      <span className="inline-flex items-center gap-1">
+                                        {loadingDelete ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                                        Șterge utilizator
+                                      </span>
+                                    </button>
+                                  );
+                                })()}
+                                {(() => {
+                                  const membershipId = getMembershipId(member);
+                                  const eligible = canInviteMember(member);
+                                  const loadingInvite = membershipId !== null && Boolean(inviteLoadingByMembership[membershipId]);
+                                  return (
+                                    <button
+                                      type="button"
+                                      className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                      title="Trimite invitație"
+                                      disabled={!eligible || loadingInvite}
+                                      onClick={() => void onInviteMember(member)}
+                                    >
+                                      {loadingInvite ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Trimite invitație"}
+                                    </button>
+                                  );
+                                })()}
                               </div>
                             </td>
                           </tr>
@@ -246,20 +989,10 @@ export default function SettingsTeamPage() {
                 <footer className="flex items-center justify-between border-t border-slate-100 pt-3 text-sm text-slate-600">
                   <span>Pagina {page} din {totalPages}</span>
                   <div className="flex items-center gap-2">
-                    <button
-                      className="wm-btn-secondary"
-                      type="button"
-                      onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                      disabled={page <= 1}
-                    >
+                    <button className="wm-btn-secondary" type="button" onClick={() => setPage((prev) => Math.max(1, prev - 1))} disabled={page <= 1}>
                       Înapoi
                     </button>
-                    <button
-                      className="wm-btn-secondary"
-                      type="button"
-                      onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
-                      disabled={page >= totalPages}
-                    >
+                    <button className="wm-btn-secondary" type="button" onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))} disabled={page >= totalPages}>
                       Înainte
                     </button>
                   </div>
@@ -277,100 +1010,326 @@ export default function SettingsTeamPage() {
 
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
                 <aside className="wm-card p-4">
-                  <p className="text-sm font-semibold text-slate-900">Informații Utilizator</p>
-                  <p className="mt-2 text-sm text-slate-500">Roluri și Permisiuni</p>
-                </aside>
-
-                <form className="wm-card space-y-4 p-4" onSubmit={submitCreateForm}>
-                  <h2 className="text-lg font-semibold text-slate-900">Informații Utilizator</h2>
-
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center">
-                    <div className="relative h-24 w-24 rounded-full border border-slate-200 bg-slate-50">
-                      <div className="flex h-full w-full items-center justify-center text-slate-400">
-                        <UserCircle2 className="h-14 w-14" />
-                      </div>
-                      <button type="button" className="absolute -bottom-1 -right-1 rounded-full border border-slate-200 bg-white p-1 text-slate-500 hover:bg-slate-50" title="Adaugă imagine">
-                        <Camera className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                    <p className="text-sm text-slate-500">Mărimea propusă este 512x512 px, nu mai mare de 2.5 MB</p>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <label className="text-sm text-slate-700">
-                      Prenume
-                      <input className="wm-input mt-1" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
-                    </label>
-                    <label className="text-sm text-slate-700">
-                      Nume
-                      <input className="wm-input mt-1" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
-                    </label>
-                    <label className="text-sm text-slate-700 md:col-span-2">
-                      Email <span className="text-red-500">*</span>
-                      <input className="wm-input mt-1" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-                    </label>
-                    <label className="text-sm text-slate-700">
-                      Telefon
-                      <input className="wm-input mt-1" value={phone} onChange={(e) => setPhone(e.target.value)} />
-                    </label>
-                    <label className="text-sm text-slate-700">
-                      Extensie
-                      <input className="wm-input mt-1" value={extension} onChange={(e) => setExtension(e.target.value)} />
-                    </label>
-                    <label className="text-sm text-slate-700">
-                      Tip Utilizator
-                      <select className="wm-input mt-1" value={userType} onChange={(e) => setUserType(e.target.value)}>
-                        <option value="agency">Agency</option>
-                        <option value="client">Client</option>
-                      </select>
-                    </label>
-                    <label className="text-sm text-slate-700">
-                      Rol Utilizator
-                      <select className="wm-input mt-1" value={userRole} onChange={(e) => setUserRole(e.target.value)}>
-                        <option value="admin">Admin</option>
-                        <option value="member">Membru</option>
-                        <option value="viewer">Viewer</option>
-                      </select>
-                    </label>
-                    <label className="text-sm text-slate-700">
-                      Locație
-                      <input className="wm-input mt-1" value={location} onChange={(e) => setLocation(e.target.value)} />
-                    </label>
-                    <label className="text-sm text-slate-700">
-                      Sub-cont
-                      <input className="wm-input mt-1" value={subaccount} onChange={(e) => setSubaccount(e.target.value)} />
-                    </label>
-                  </div>
-
-                  <div>
+                  <div className="space-y-2">
                     <button
                       type="button"
-                      className="text-sm font-medium text-indigo-600 hover:text-indigo-700"
-                      onClick={() => setAdvancedOpen((prev) => !prev)}
+                      className={`block w-full rounded-md px-3 py-2 text-left text-sm font-medium ${
+                        activeFormTab === "identity" ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-50"
+                      }`}
+                      onClick={() => setActiveFormTab("identity")}
                     >
-                      Setări Avansate
+                      Informații Utilizator
                     </button>
-                    {advancedOpen ? (
-                      <label className="mt-2 block text-sm text-slate-700">
-                        Parolă
-                        <input className="wm-input mt-1" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-                      </label>
-                    ) : null}
+                    <button
+                      type="button"
+                      className={`block w-full rounded-md px-3 py-2 text-left text-sm font-medium ${
+                        activeFormTab === "permissions" ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-50"
+                      }`}
+                      onClick={() => setActiveFormTab("permissions")}
+                    >
+                      Roluri și Permisiuni
+                    </button>
                   </div>
+                </aside>
 
-                  <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
-                    <button type="button" className="wm-btn-secondary" onClick={() => { resetCreateForm(); setMode("list"); }}>
-                      Anulează
-                    </button>
-                    <button type="submit" className="wm-btn-primary" disabled={saving}>
-                      {saving ? (
-                        <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Se salvează...</span>
-                      ) : (
-                        "Pasul Următor"
-                      )}
-                    </button>
+                {mode === "create" && activeFormTab === "identity" ? (
+                  <div className="wm-card space-y-4 p-4">
+                    <h2 className="text-lg font-semibold text-slate-900">Informații Utilizator</h2>
+
+                    {subaccountOptionsError ? <p className="text-xs text-amber-700">Sub-conturile nu au putut fi încărcate: {subaccountOptionsError}</p> : null}
+                    {subaccountOptionsLoading ? <p className="text-xs text-slate-500">Se încarcă sub-conturile...</p> : null}
+
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                      <div className="relative h-24 w-24 rounded-full border border-slate-200 bg-slate-50">
+                        <div className="flex h-full w-full items-center justify-center text-slate-400">
+                          <UserCircle2 className="h-14 w-14" />
+                        </div>
+                        <button type="button" className="absolute -bottom-1 -right-1 rounded-full border border-slate-200 bg-white p-1 text-slate-500 hover:bg-slate-50" title="Adaugă imagine">
+                          <Camera className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      <p className="text-sm text-slate-500">Mărimea propusă este 512x512 px, nu mai mare de 2.5 MB</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <label className="text-sm text-slate-700">
+                        Prenume
+                        <input className="wm-input mt-1" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
+                      </label>
+                      <label className="text-sm text-slate-700">
+                        Nume
+                        <input className="wm-input mt-1" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+                      </label>
+                      <label className="text-sm text-slate-700 md:col-span-2">
+                        Email <span className="text-red-500">*</span>
+                        <input className="wm-input mt-1" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                      </label>
+                      <label className="text-sm text-slate-700">
+                        Telefon
+                        <input className="wm-input mt-1" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                      </label>
+                      <label className="text-sm text-slate-700">
+                        Extensie
+                        <input className="wm-input mt-1" value={extension} onChange={(e) => setExtension(e.target.value)} />
+                      </label>
+                      <label className="text-sm text-slate-700">
+                        Tip Utilizator
+                        <select className="wm-input mt-1" value={userType} onChange={(e) => setUserType(e.target.value)}>
+                          <option value="agency">Agency</option>
+                          <option value="client">Client</option>
+                        </select>
+                      </label>
+                      <label className="text-sm text-slate-700">
+                        Rol Utilizator
+                        <select className="wm-input mt-1" value={userRole} onChange={(e) => setUserRole(e.target.value)}>
+                          <option value="owner">Agency Owner</option>
+                          <option value="admin">Admin</option>
+                          <option value="member">Membru</option>
+                          <option value="viewer">Viewer</option>
+                        </select>
+                      </label>
+                      <label className="text-sm text-slate-700">
+                        Sub-cont
+                        <select
+                          className="wm-input mt-1"
+                          value={subaccount}
+                          onChange={(e) => {
+                            setSubaccount(e.target.value);
+                            setSubaccountFieldError("");
+                          }}
+                          disabled={userType === "agency"}
+                        >
+                          <option value="">Selectează Sub-cont</option>
+                          {subaccountOptions.map((item) => (
+                            <option key={item.id} value={String(item.id)}>{item.label || item.name}</option>
+                          ))}
+                        </select>
+                        {subaccountFieldError ? <p className="mt-1 text-xs text-red-600">{subaccountFieldError}</p> : null}
+                      </label>
+                    </div>
+                    {supportsAgencySubaccountGrants ? (
+                      <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-sm font-medium text-slate-800">Acces sub-account-uri (agency)</p>
+                        <p className="mt-1 text-xs text-slate-600">Niciun sub-account selectat = acces la toate conturile.</p>
+                        <div className="mt-2 max-h-36 space-y-1 overflow-auto pr-1">
+                          {subaccountOptions.map((item) => (
+                            <label key={item.id} className="flex items-center gap-2 text-sm text-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={allowedSubaccountIds.includes(item.id)}
+                                onChange={() => toggleAllowedSubaccount(item.id)}
+                              />
+                              {item.label || item.name}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div>
+                      <button type="button" className="text-sm font-medium text-indigo-600 hover:text-indigo-700" onClick={() => setAdvancedOpen((prev) => !prev)}>
+                        Setări Avansate
+                      </button>
+                      {advancedOpen ? (
+                        <label className="mt-2 block text-sm text-slate-700">
+                          Parolă
+                          <input className="wm-input mt-1" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                        </label>
+                      ) : null}
+                    </div>
+
+                    <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                        checked={autoInviteAfterCreate}
+                        onChange={(e) => setAutoInviteAfterCreate(e.target.checked)}
+                      />
+                      Trimite invitație imediat după creare
+                    </label>
+
+                    <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
+                      <button type="button" className="wm-btn-secondary" onClick={() => { resetCreateForm(); setMode("list"); }}>
+                        Anulează
+                      </button>
+                      <button
+                        type="button"
+                        className="wm-btn-primary"
+                        disabled={saving}
+                        onClick={() => {
+                          handleCreateIdentityNextStep();
+                        }}
+                      >
+                        Pasul Următor
+                      </button>
+                    </div>
                   </div>
-                </form>
+                ) : (
+                  <form
+                    className="wm-card space-y-4 p-4"
+                    onSubmit={mode === "edit" ? submitEditForm : submitCreateForm}
+                  >
+                    <h2 className="text-lg font-semibold text-slate-900">{activeFormTab === "identity" ? "Informații Utilizator" : "Roluri și Permisiuni"}</h2>
+
+                    {activeFormTab === "identity" ? (
+                      <>
+                        {subaccountOptionsError ? <p className="text-xs text-amber-700">Sub-conturile nu au putut fi încărcate: {subaccountOptionsError}</p> : null}
+                        {subaccountOptionsLoading ? <p className="text-xs text-slate-500">Se încarcă sub-conturile...</p> : null}
+
+                        <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                          <div className="relative h-24 w-24 rounded-full border border-slate-200 bg-slate-50">
+                            <div className="flex h-full w-full items-center justify-center text-slate-400">
+                              <UserCircle2 className="h-14 w-14" />
+                            </div>
+                            <button type="button" className="absolute -bottom-1 -right-1 rounded-full border border-slate-200 bg-white p-1 text-slate-500 hover:bg-slate-50" title="Adaugă imagine">
+                              <Camera className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          <p className="text-sm text-slate-500">Mărimea propusă este 512x512 px, nu mai mare de 2.5 MB</p>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                          <label className="text-sm text-slate-700">
+                            Prenume
+                            <input className="wm-input mt-1" value={firstName} onChange={(e) => setFirstName(e.target.value)} required disabled={mode === "edit"} />
+                          </label>
+                          <label className="text-sm text-slate-700">
+                            Nume
+                            <input className="wm-input mt-1" value={lastName} onChange={(e) => setLastName(e.target.value)} required disabled={mode === "edit"} />
+                          </label>
+                          <label className="text-sm text-slate-700 md:col-span-2">
+                            Email <span className="text-red-500">*</span>
+                            <input className="wm-input mt-1" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={mode === "edit"} />
+                          </label>
+                          <label className="text-sm text-slate-700">
+                            Telefon
+                            <input className="wm-input mt-1" value={phone} onChange={(e) => setPhone(e.target.value)} disabled={mode === "edit"} />
+                          </label>
+                          <label className="text-sm text-slate-700">
+                            Extensie
+                            <input className="wm-input mt-1" value={extension} onChange={(e) => setExtension(e.target.value)} disabled={mode === "edit"} />
+                          </label>
+                          <label className="text-sm text-slate-700">
+                            Tip Utilizator
+                            <select className="wm-input mt-1" value={userType} onChange={(e) => setUserType(e.target.value)} disabled={mode === "edit"}>
+                              <option value="agency">Agency</option>
+                              <option value="client">Client</option>
+                            </select>
+                          </label>
+                          <label className="text-sm text-slate-700">
+                            Rol Utilizator
+                            <select className="wm-input mt-1" value={userRole} onChange={(e) => setUserRole(e.target.value)} disabled={editLockedInherited}>
+                              <option value="owner">Agency Owner</option>
+                              <option value="admin">Admin</option>
+                              <option value="member">Membru</option>
+                              <option value="viewer">Viewer</option>
+                            </select>
+                          </label>
+                          <label className="text-sm text-slate-700">
+                            Sub-cont
+                            <select
+                              className="wm-input mt-1"
+                              value={subaccount}
+                              onChange={(e) => {
+                                setSubaccount(e.target.value);
+                                setSubaccountFieldError("");
+                              }}
+                              disabled={userType === "agency" || mode === "edit"}
+                            >
+                              <option value="">Selectează Sub-cont</option>
+                              {subaccountOptions.map((item) => (
+                                <option key={item.id} value={String(item.id)}>{item.label || item.name}</option>
+                              ))}
+                            </select>
+                            {subaccountFieldError ? <p className="mt-1 text-xs text-red-600">{subaccountFieldError}</p> : null}
+                          </label>
+                        </div>
+                        {supportsAgencySubaccountGrants ? (
+                          <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                            <p className="text-sm font-medium text-slate-800">Acces sub-account-uri (agency)</p>
+                            <p className="mt-1 text-xs text-slate-600">Niciun sub-account selectat = acces la toate conturile.</p>
+                            <div className="mt-2 max-h-36 space-y-1 overflow-auto pr-1">
+                              {subaccountOptions.map((item) => (
+                                <label key={item.id} className="flex items-center gap-2 text-sm text-slate-700">
+                                  <input
+                                    type="checkbox"
+                                    checked={allowedSubaccountIds.includes(item.id)}
+                                    onChange={() => toggleAllowedSubaccount(item.id)}
+                                    disabled={editLockedInherited}
+                                  />
+                                  {item.label || item.name}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : shouldShowModulePermissions ? (
+                      <PermissionsEditor
+                        scope={activeScope}
+                        items={permissionEditorItems}
+                        selectedKeys={selectedModuleKeys}
+                        onToggle={toggleModule}
+                        loading={moduleCatalogLoading}
+                        loadError={moduleCatalogError ? `Nu am putut încărca modulele: ${moduleCatalogError}` : null}
+                        fieldError={moduleFieldError}
+                        readOnly={editLockedInherited}
+                        summaryHint="Rolul selectat rămâne baza de acces. Toggle-urile restrâng ce vede utilizatorul în navigație."
+                        getItemDisabled={(item) =>
+                          editLockedInherited ||
+                          (activeScope === "agency" && Boolean(item.parentKey) && item.parentKey === "settings" && !selectedModuleKeys.includes("settings"))
+                        }
+                      />
+                    ) : null}
+
+                    {mode === "edit" && editingMembershipId !== null ? (
+                      <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                        Status membership curent: <span className="font-semibold">{members.find((item) => getMembershipId(item) === editingMembershipId)?.membership_status === "inactive" ? "Inactiv" : "Activ"}</span>
+                      </p>
+                    ) : null}
+
+                    {activeFormTab === "identity"
+                      ? mode !== "edit" ? (
+                          <>
+                            <div>
+                              <button type="button" className="text-sm font-medium text-indigo-600 hover:text-indigo-700" onClick={() => setAdvancedOpen((prev) => !prev)}>
+                                Setări Avansate
+                              </button>
+                              {advancedOpen ? (
+                                <label className="mt-2 block text-sm text-slate-700">
+                                  Parolă
+                                  <input className="wm-input mt-1" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                                </label>
+                              ) : null}
+                            </div>
+
+                            <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                                checked={autoInviteAfterCreate}
+                                onChange={(e) => setAutoInviteAfterCreate(e.target.checked)}
+                              />
+                              Trimite invitație imediat după creare
+                            </label>
+                          </>
+                        ) : (
+                          <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                            Editarea identității globale (nume/email/telefon) va fi disponibilă într-un task ulterior.
+                          </p>
+                        )
+                      : null}
+
+                    <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
+                      <button type="button" className="wm-btn-secondary" onClick={() => { resetCreateForm(); setMode("list"); }}>
+                        Anulează
+                      </button>
+                      <button type="submit" className="wm-btn-primary" disabled={mode === "edit" ? isEditSaveDisabled : saving}>
+                        {saving ? <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Se salvează...</span> : mode === "edit" ? "Salvează" : "Creează utilizator"}
+                      </button>
+                    </div>
+                  </form>
+                )}
               </div>
             </section>
           )}

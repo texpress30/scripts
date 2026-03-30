@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+import { useQuery } from "@tanstack/react-query";
 
 import { format, startOfMonth, subDays } from "date-fns";
-import { DayPicker, type DateRange } from "react-day-picker";
-import "react-day-picker/dist/style.css";
+import type { DateRange } from "react-day-picker";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
@@ -12,11 +13,23 @@ import { apiRequest } from "@/lib/api";
 
 type IntegrationStatus = {
   platform: string;
+  label: string;
   status: string;
-  accounts_found?: number;
-  rows_in_db_last_30_days?: number;
+  details?: string | null;
   last_sync_at?: string | null;
   last_error?: string | null;
+};
+
+type MetaIntegrationStatus = {
+  provider?: string;
+  status?: string;
+  message?: string;
+  token_source?: string;
+  token_updated_at?: string | null;
+  token_expires_at?: string | null;
+  oauth_configured?: boolean;
+  has_usable_token?: boolean;
+  [key: string]: unknown;
 };
 
 type AgencySummaryResponse = {
@@ -32,6 +45,7 @@ type AgencySummaryResponse = {
   };
   top_clients: Array<{ client_id: number; name: string; spend: number; currency?: string; spend_ron?: number }>;
   currency?: string;
+  integration_health?: IntegrationStatus[];
 };
 
 type DatePresetKey = "today" | "yesterday" | "last7" | "last30" | "month" | "custom";
@@ -44,6 +58,10 @@ const PRESET_ITEMS: Array<{ key: DatePresetKey; label: string }> = [
   { key: "month", label: "This month" },
   { key: "custom", label: "Custom" },
 ];
+
+const DayRangePicker = dynamic(() => import("@/components/DayRangePicker").then((m) => m.DayRangePicker), {
+  ssr: false,
+});
 
 function toIso(value: Date): string {
   return format(value, "yyyy-MM-dd");
@@ -104,55 +122,35 @@ export default function AgencyDashboardPage() {
   const [draftPreset, setDraftPreset] = useState<DatePresetKey>("last30");
   const [draftRange, setDraftRange] = useState<DateRange>(initialRange);
 
-  const [googleStatus, setGoogleStatus] = useState<IntegrationStatus | null>(null);
-  const [summary, setSummary] = useState<AgencySummaryResponse | null>(null);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
-
   const appliedFrom = appliedRange.from ?? subDays(new Date(), 29);
   const appliedTo = appliedRange.to ?? appliedFrom;
 
-  useEffect(() => {
-    async function loadDashboard() {
-      setLoading(true);
-      setError("");
-      try {
-        const [google, agencySummary] = await Promise.all([
-          apiRequest<IntegrationStatus>("/integrations/google-ads/status"),
-          apiRequest<AgencySummaryResponse>(
-            `/dashboard/agency/summary?start_date=${toIso(appliedFrom)}&end_date=${toIso(appliedTo)}`
-          ),
-        ]);
+  const fromIso = toIso(appliedFrom);
+  const toIso_ = toIso(appliedTo);
 
-        setGoogleStatus(google);
-        setSummary(agencySummary);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Nu am putut încărca dashboard-ul agency");
-      } finally {
-        setLoading(false);
-      }
-    }
+  const { data: summary, error: queryError, isLoading: loading } = useQuery<AgencySummaryResponse>({
+    queryKey: ["agency-summary", fromIso, toIso_],
+    queryFn: () =>
+      apiRequest<AgencySummaryResponse>(
+        `/dashboard/agency/summary?start_date=${fromIso}&end_date=${toIso_}`,
+      ),
+  });
 
-    void loadDashboard();
-  }, [appliedFrom, appliedTo]);
+  const error = queryError instanceof Error ? queryError.message : queryError ? "Nu am putut încărca dashboard-ul agency" : "";
 
   const currencyCode = normalizeCurrencyCode(summary?.currency);
 
   const integrationSummary = useMemo(
     () => [
-      {
-        label: "Google Ads",
-        status: googleStatus?.status ?? "error",
-        details: `accounts=${googleStatus?.accounts_found ?? 0} · rows30=${googleStatus?.rows_in_db_last_30_days ?? 0}`,
-        lastSyncAt: googleStatus?.last_sync_at ?? null,
-        lastError: googleStatus?.last_error ?? null,
-      },
-      { label: "Meta Ads", status: "disabled", details: null, lastSyncAt: null, lastError: null },
-      { label: "TikTok Ads", status: "disabled", details: null, lastSyncAt: null, lastError: null },
-      { label: "Pinterest Ads", status: "disabled", details: null, lastSyncAt: null, lastError: null },
-      { label: "Snapchat Ads", status: "disabled", details: null, lastSyncAt: null, lastError: null },
+      ...(summary?.integration_health ?? []).map((item) => ({
+        label: item.label,
+        status: item.status,
+        details: item.details ?? null,
+        lastSyncAt: item.last_sync_at ?? null,
+        lastError: item.last_error ?? null,
+      })),
     ],
-    [googleStatus?.status, googleStatus?.accounts_found, googleStatus?.rows_in_db_last_30_days, googleStatus?.last_sync_at, googleStatus?.last_error]
+    [summary?.integration_health]
   );
 
   function handlePresetClick(nextPreset: DatePresetKey) {
@@ -209,9 +207,7 @@ export default function AgencyDashboardPage() {
               </div>
 
               <div className="flex-1">
-                <DayPicker
-                  mode="range"
-                  numberOfMonths={2}
+                <DayRangePicker
                   selected={draftRange}
                   onSelect={(range) => {
                     setDraftPreset("custom");
@@ -251,6 +247,7 @@ export default function AgencyDashboardPage() {
           <article className="wm-card p-4">
             <h3 className="text-sm font-semibold text-slate-900">Integration health</h3>
             <ul className="mt-3 space-y-2 text-sm text-slate-600">
+              {!loading && integrationSummary.length === 0 ? <li>Date indisponibile pentru integration health.</li> : null}
               {integrationSummary.map((item) => (
                 <li key={item.label} className="flex items-start justify-between gap-3">
                   <div>

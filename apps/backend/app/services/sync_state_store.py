@@ -18,13 +18,16 @@ class SyncStateStore:
         self._schema_initialized = False
 
     def _connect(self):
-        settings = load_settings()
-        if psycopg is None:
-            raise RuntimeError("psycopg is required for sync_state persistence")
-        return psycopg.connect(settings.database_url)
+        from app.db.pool import get_connection
+        return get_connection()
 
     def _ensure_schema(self) -> None:
         if self._schema_initialized:
+            return
+
+        settings = load_settings()
+        if settings.app_env == "production":
+            self._schema_initialized = True
             return
 
         with self._schema_lock:
@@ -33,6 +36,7 @@ class SyncStateStore:
 
             with self._connect() as conn:
                 with conn.cursor() as cur:
+                    cur.execute("SELECT pg_advisory_xact_lock(1, hashtext(%s))", ("ensure_schema_" + self.__class__.__name__,))
                     cur.execute("SELECT to_regclass('public.sync_state')")
                     row = cur.fetchone() or (None,)
                     if row[0] is None:

@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
+import logging
 from threading import Lock
 import os
 
 from app.core.config import load_settings
+from app.services.account_currency_resolver import resolve_client_reporting_currency, resolve_effective_attached_account_currency
+from app.services.platform_account_watermarks_store import list_platform_account_watermarks
 
 try:
     import psycopg
@@ -14,7 +17,123 @@ except Exception:  # noqa: BLE001
 
 
 _UNSET = object()
+_SUCCESS_RUN_STATUSES = {"done", "success", "completed"}
+logger = logging.getLogger(__name__)
 
+
+def _coalesce_date_max(*values: object | None) -> object | None:
+    present = [value for value in values if value is not None]
+    if not present:
+        return None
+    return max(present)
+
+
+def _coalesce_date_min(*values: object | None) -> object | None:
+    present = [value for value in values if value is not None]
+    if not present:
+        return None
+    return min(present)
+
+
+def _derive_effective_last_error(*, explicit_last_error: object | None, latest_run_error: object | None, latest_run_status: object | None) -> object | None:
+    normalized_status = str(latest_run_status or "").strip().lower()
+    if normalized_status in _SUCCESS_RUN_STATUSES:
+        return None
+    if explicit_last_error is not None:
+        return explicit_last_error
+    return latest_run_error
+
+
+def _safe_row_value(row: tuple[object, ...], index: int) -> object | None:
+    if index < 0 or index >= len(row):
+        return None
+    return row[index]
+
+
+
+
+def _coalesce_iso_date_max(existing: object | None, candidate: object | None) -> object | None:
+    if candidate is None:
+        return existing
+    if existing is None:
+        return candidate
+    try:
+        existing_date = date.fromisoformat(str(existing))
+        candidate_date = date.fromisoformat(str(candidate))
+        return str(max(existing_date, candidate_date))
+    except Exception:
+        return candidate
+
+
+def _coalesce_iso_datetime_max(existing: object | None, candidate: object | None) -> object | None:
+    if candidate is None:
+        return existing
+    if existing is None:
+        return candidate
+    try:
+        existing_dt = datetime.fromisoformat(str(existing))
+        candidate_dt = datetime.fromisoformat(str(candidate))
+        return candidate if candidate_dt >= existing_dt else existing
+    except Exception:
+        return candidate
+
+
+def _normalize_account_sync_metadata_payload(*, platform: str, account_id: str, display_name: str, attached_client_id: int | None, attached_client_name: str | None, timezone_value: str | None, currency_value: str | None, account_status: object | None, sync_start_date: object | None, backfill_completed_through: object | None, rolling_synced_through: object | None, last_success_at: object | None, last_error: object | None, last_run_status: object | None, last_run_type: object | None, last_run_started_at: object | None, last_run_finished_at: object | None, has_active_sync: bool) -> dict[str, object]:
+    return {
+        "id": str(account_id),
+        "name": str(display_name),
+        "platform": str(platform),
+        "account_id": str(account_id),
+        "display_name": str(display_name),
+        "attached_client_id": int(attached_client_id) if attached_client_id is not None else None,
+        "attached_client_name": str(attached_client_name) if attached_client_name is not None else None,
+        "timezone": str(timezone_value) if timezone_value is not None else None,
+        "currency": str(currency_value) if currency_value is not None else None,
+        "status": str(account_status) if account_status is not None else None,
+        "sync_start_date": str(sync_start_date) if sync_start_date is not None else None,
+        "backfill_completed_through": str(backfill_completed_through) if backfill_completed_through is not None else None,
+        "rolling_synced_through": str(rolling_synced_through) if rolling_synced_through is not None else None,
+        "last_success_at": str(last_success_at) if last_success_at is not None else None,
+        "last_error": str(last_error) if last_error is not None else None,
+        "last_run_status": str(last_run_status) if last_run_status is not None else None,
+        "last_run_type": str(last_run_type) if last_run_type is not None else None,
+        "last_run_started_at": str(last_run_started_at) if last_run_started_at is not None else None,
+        "last_run_finished_at": str(last_run_finished_at) if last_run_finished_at is not None else None,
+        "has_active_sync": bool(has_active_sync),
+        "entity_watermarks": _empty_entity_watermarks_payload(),
+    }
+
+
+def _empty_entity_watermarks_payload() -> dict[str, dict[str, object | None] | None]:
+    return {
+        "campaign_daily": None,
+        "ad_group_daily": None,
+        "ad_daily": None,
+        "keyword_daily": None,
+    }
+
+
+def _normalize_entity_watermark_payload(value: dict[str, object] | None) -> dict[str, object | None] | None:
+    if value is None:
+        return None
+    return {
+        "sync_start_date": value.get("sync_start_date"),
+        "historical_synced_through": value.get("historical_synced_through"),
+        "rolling_synced_through": value.get("rolling_synced_through"),
+        "last_success_at": value.get("last_success_at"),
+        "last_error": value.get("last_error"),
+        "last_job_id": value.get("last_job_id"),
+    }
+
+
+
+
+class PlatformAccountAlreadyAttachedError(Exception):
+    def __init__(self, *, platform: str, account_id: str, existing_client_id: int) -> None:
+        self.platform = str(platform)
+        self.account_id = str(account_id)
+        self.existing_client_id = int(existing_client_id)
+        super().__init__(f"Account {self.platform}:{self.account_id} is already attached to client {self.existing_client_id}")
 
 @dataclass
 class ClientRecord:
@@ -46,10 +165,8 @@ class ClientRegistryService:
         return load_settings().app_env == "test" and os.environ.get("PYTEST_CURRENT_TEST") is not None
 
     def _connect(self):
-        settings = load_settings()
-        if psycopg is None:
-            raise RuntimeError("psycopg is required for client registry Postgres persistence")
-        return psycopg.connect(settings.database_url)
+        from app.db.pool import get_connection
+        return get_connection()
 
     def _connect_or_raise(self):
         conn = self._connect()
@@ -125,11 +242,14 @@ class ClientRegistryService:
             self._sync_state_schema_initialized = True
 
     def _ensure_schema(self) -> None:
+        if getattr(self, "_schema_initialized", False):
+            return
         if self._is_test_mode():
             return
 
         with self._connect_or_raise() as conn:
             with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_xact_lock(1, hashtext(%s))", ("ensure_schema_" + self.__class__.__name__,))
                 cur.execute(
                     """
                     CREATE TABLE IF NOT EXISTS agency_clients (
@@ -229,9 +349,32 @@ class ClientRegistryService:
                     """
                 )
             conn.commit()
+        self._schema_initialized = True
+
+
+    def _backfill_blank_mapping_account_currency(self, *, conn) -> None:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE agency_account_client_mappings m
+                SET account_currency = apa.currency_code,
+                    updated_at = NOW()
+                FROM agency_platform_accounts apa
+                WHERE m.platform = apa.platform
+                  AND m.account_id = apa.account_id
+                  AND (m.account_currency IS NULL OR TRIM(m.account_currency) = '')
+                  AND apa.currency_code IS NOT NULL
+                  AND TRIM(apa.currency_code) <> ''
+                """
+            )
 
     def initialize_schema(self) -> None:
         self._ensure_schema()
+        if self._is_test_mode():
+            return
+        with self._connect_or_raise() as conn:
+            self._backfill_blank_mapping_account_currency(conn=conn)
+            conn.commit()
 
     def create_client(self, name: str, owner_email: str) -> dict[str, str | int | None]:
 
@@ -362,11 +505,27 @@ class ClientRegistryService:
                 if account_id not in platform_accounts:
                     return None
                 mappings = self._memory_account_client_mappings.setdefault(platform, {})
-                mappings.setdefault(account_id, set()).add(client_id)
+                existing_client_ids = mappings.get(account_id, set())
+                if len(existing_client_ids) > 0 and client_id not in existing_client_ids:
+                    existing_client_id = sorted(existing_client_ids)[0]
+                    raise PlatformAccountAlreadyAttachedError(platform=platform, account_id=account_id, existing_client_id=existing_client_id)
+                mappings[account_id] = {client_id}
                 client = next(c for c in self._clients if c.id == client_id)
                 per_platform = self._memory_account_profiles.setdefault(platform, {})
                 per_account = per_platform.setdefault(account_id, {})
-                per_account.setdefault(client_id, {"client_type": client.client_type, "account_manager": client.account_manager, "account_currency": client.currency})
+                existing_profile = per_account.get(client_id, {}) if isinstance(per_account.get(client_id), dict) else {}
+                resolved_currency, _ = resolve_effective_attached_account_currency(
+                    mapping_account_currency=existing_profile.get("account_currency"),
+                    platform_account_currency_code=(platform_accounts.get(account_id) or {}).get("currency_code"),
+                    client_currency=client.currency,
+                    fallback="USD",
+                )
+                if client_id not in per_account:
+                    per_account[client_id] = {"client_type": client.client_type, "account_manager": client.account_manager, "account_currency": resolved_currency}
+                else:
+                    current = str(existing_profile.get("account_currency") or "").strip()
+                    if current == "":
+                        per_account[client_id]["account_currency"] = resolved_currency
                 return {
                     "id": client.id,
                     "name": client.name,
@@ -391,19 +550,44 @@ class ClientRegistryService:
 
                 cur.execute(
                     """
-                    INSERT INTO agency_account_client_mappings (platform, account_id, client_id, client_type, account_manager, account_currency)
+                    SELECT client_id
+                    FROM agency_account_client_mappings
+                    WHERE platform = %s AND account_id = %s
+                    ORDER BY updated_at DESC, created_at DESC
+                    LIMIT 1
+                    """,
+                    (platform, account_id),
+                )
+                mapping_row = cur.fetchone()
+                if mapping_row is not None and int(mapping_row[0]) != int(client_id):
+                    raise PlatformAccountAlreadyAttachedError(platform=platform, account_id=account_id, existing_client_id=int(mapping_row[0]))
+
+                cur.execute(
+                    """
+                    INSERT INTO agency_account_client_mappings (platform, account_id, account_id_norm, client_id, client_type, account_manager, account_currency)
                     VALUES (
                         %s,
                         %s,
+                        regexp_replace(COALESCE(%s, ''), '[^0-9]', '', 'g'),
                         %s,
                         (SELECT client_type FROM agency_clients WHERE id = %s),
                         (SELECT account_manager FROM agency_clients WHERE id = %s),
-                        (SELECT currency FROM agency_clients WHERE id = %s)
+                        COALESCE(
+                            NULLIF(TRIM((SELECT currency_code FROM agency_platform_accounts WHERE platform = %s AND account_id = %s)), ''),
+                            (SELECT currency FROM agency_clients WHERE id = %s)
+                        )
                     )
                     ON CONFLICT(platform, account_id, client_id)
-                    DO UPDATE SET updated_at = NOW()
+                    DO UPDATE SET
+                        account_currency = CASE
+                            WHEN agency_account_client_mappings.account_currency IS NULL OR TRIM(agency_account_client_mappings.account_currency) = ''
+                                THEN EXCLUDED.account_currency
+                            ELSE agency_account_client_mappings.account_currency
+                        END,
+                        account_id_norm = EXCLUDED.account_id_norm,
+                        updated_at = NOW()
                     """,
-                    (platform, account_id, client_id, client_id, client_id, client_id),
+                    (platform, account_id, account_id, client_id, client_id, client_id, platform, account_id, client_id),
                 )
                 if platform == "google_ads":
                     # Keep legacy column in sync (best effort; not used as source-of-truth).
@@ -589,13 +773,14 @@ class ClientRegistryService:
                 for account in accounts:
                     cur.execute(
                         """
-                        INSERT INTO agency_platform_accounts (platform, account_id, account_name, imported_at)
-                        VALUES (%s, %s, %s, NOW())
+                        INSERT INTO agency_platform_accounts (platform, account_id, account_id_norm, account_name, imported_at)
+                        VALUES (%s, %s, regexp_replace(COALESCE(%s, ''), '[^0-9]', '', 'g'), %s, NOW())
                         ON CONFLICT(platform, account_id) DO UPDATE SET
                             account_name = EXCLUDED.account_name,
+                            account_id_norm = EXCLUDED.account_id_norm,
                             imported_at = NOW()
                         """,
-                        (platform, str(account["id"]), str(account["name"])),
+                        (platform, str(account["id"]), str(account["id"]), str(account["name"])),
                     )
                 cur.execute(
                     """
@@ -607,25 +792,49 @@ class ClientRegistryService:
                 )
             conn.commit()
 
-    def list_platform_accounts(self, *, platform: str) -> list[dict[str, str | int | None]]:
+    def list_platform_accounts(self, *, platform: str) -> list[dict[str, object]]:
         if self._is_test_mode():
             with self._lock:
                 items = self._memory_platform_accounts.get(platform, {})
                 mappings = self._memory_account_client_mappings.get(platform, {})
                 clients_by_id = {c.id: c for c in self._clients if c.source == "manual"}
-                result: list[dict[str, str | int | None]] = []
+                result: list[dict[str, object]] = []
                 for key in sorted(items.keys()):
                     item = dict(items[key])
                     mapped_client_ids = sorted(mappings.get(item["id"], set()))
                     mapped_client = clients_by_id.get(mapped_client_ids[0]) if mapped_client_ids else None
-                    item["attached_client_id"] = mapped_client.id if mapped_client else None
-                    item["attached_client_name"] = mapped_client.name if mapped_client else None
-                    item.setdefault("status", None)
-                    item.setdefault("account_timezone", None)
-                    item.setdefault("rolling_window_days", None)
-                    item.setdefault("rolling_synced_through", None)
-                    result.append(item)
+                    account_id = str(item["id"])
+                    display_name = str(item.get("name") or account_id)
+                    result.append(
+                        _normalize_account_sync_metadata_payload(
+                            platform=str(platform),
+                            account_id=account_id,
+                            display_name=display_name,
+                            attached_client_id=mapped_client.id if mapped_client else None,
+                            attached_client_name=mapped_client.name if mapped_client else None,
+                            timezone_value=item.get("account_timezone"),
+                            currency_value=item.get("currency_code"),
+                            account_status=item.get("status"),
+                            sync_start_date=item.get("sync_start_date"),
+                            backfill_completed_through=item.get("backfill_completed_through"),
+                            rolling_synced_through=item.get("rolling_synced_through"),
+                            last_success_at=item.get("last_success_at"),
+                            last_error=item.get("last_error"),
+                            last_run_status=item.get("last_run_status"),
+                            last_run_type=item.get("last_run_type"),
+                            last_run_started_at=item.get("last_run_started_at"),
+                            last_run_finished_at=item.get("last_run_finished_at"),
+                            has_active_sync=bool(item.get("has_active_sync") or False),
+                        )
+                    )
                 return result
+
+        try:
+            from app.services.sync_runs_store import sync_runs_store
+
+            sync_runs_store._ensure_schema()
+        except Exception:
+            pass
 
         with self._connect_or_raise() as conn:
             with conn.cursor() as cur:
@@ -636,10 +845,27 @@ class ClientRegistryService:
                         a.account_name,
                         m.client_id,
                         c.name,
-                        a.status,
                         a.account_timezone,
-                        a.rolling_window_days,
-                        a.rolling_synced_through
+                        a.currency_code,
+                        a.status,
+                        a.sync_start_date,
+                        a.backfill_completed_through,
+                        a.rolling_synced_through,
+                        a.last_success_at,
+                        a.last_error,
+                        latest.status,
+                        latest.job_type,
+                        latest.started_at,
+                        latest.finished_at,
+                        latest.error,
+                        COALESCE(active.has_active_sync, FALSE),
+                        hist.min_start_date,
+                        hist.max_end_date,
+                        roll.max_end_date,
+                        success.last_success_at,
+                        recovered_hist.min_start_date,
+                        recovered_hist.max_end_date,
+                        recovered_hist.last_success_at
                     FROM agency_platform_accounts a
                     LEFT JOIN LATERAL (
                       SELECT client_id
@@ -650,25 +876,191 @@ class ClientRegistryService:
                     ) m ON TRUE
                     LEFT JOIN agency_clients c
                       ON c.id = m.client_id
+                    LEFT JOIN LATERAL (
+                      SELECT
+                        sr.status,
+                        sr.job_type,
+                        sr.started_at,
+                        sr.finished_at,
+                        sr.error
+                      FROM sync_runs sr
+                      WHERE sr.platform = a.platform AND sr.account_id = a.account_id
+                      ORDER BY sr.created_at DESC
+                      LIMIT 1
+                    ) latest ON TRUE
+                    LEFT JOIN LATERAL (
+                      SELECT
+                        BOOL_OR(
+                          sr.status IN ('queued', 'running', 'pending')
+                          AND (
+                            COALESCE(sr.chunks_total, 0) <= 0
+                            OR EXISTS (
+                              SELECT 1
+                              FROM sync_run_chunks src
+                              WHERE src.job_id = sr.job_id
+                                AND src.status IN ('queued', 'running', 'pending')
+                            )
+                          )
+                        ) AS has_active_sync
+                      FROM sync_runs sr
+                      WHERE sr.platform = a.platform AND sr.account_id = a.account_id
+                    ) active ON TRUE
+                    LEFT JOIN LATERAL (
+                      SELECT
+                        MIN(sr.date_start) AS min_start_date,
+                        MAX(sr.date_end) AS max_end_date
+                      FROM sync_runs sr
+                      WHERE sr.platform = a.platform
+                        AND sr.account_id = a.account_id
+                        AND sr.job_type = 'historical_backfill'
+                        AND sr.status = 'done'
+                    ) hist ON TRUE
+                    LEFT JOIN LATERAL (
+                      SELECT MAX(sr.date_end) AS max_end_date
+                      FROM sync_runs sr
+                      WHERE sr.platform = a.platform
+                        AND sr.account_id = a.account_id
+                        AND sr.job_type = 'rolling_refresh'
+                        AND sr.status = 'done'
+                    ) roll ON TRUE
+                    LEFT JOIN LATERAL (
+                      SELECT MAX(sr.finished_at) AS last_success_at
+                      FROM sync_runs sr
+                      WHERE sr.platform = a.platform
+                        AND sr.account_id = a.account_id
+                        AND sr.status = 'done'
+                    ) success ON TRUE
+                    LEFT JOIN LATERAL (
+                      SELECT
+                        MIN(sr.date_start) AS min_start_date,
+                        MAX(sr.date_end) AS max_end_date,
+                        MAX(retry_success.last_success_at) AS last_success_at
+                      FROM sync_runs sr
+                      LEFT JOIN LATERAL (
+                        SELECT MAX(rr.finished_at) AS last_success_at
+                        FROM sync_runs rr
+                        WHERE rr.platform = sr.platform
+                          AND rr.account_id = sr.account_id
+                          AND rr.job_type = 'historical_backfill'
+                          AND rr.status = 'done'
+                          AND COALESCE(rr.metadata->>'retry_of_job_id', '') = sr.job_id
+                          AND COALESCE(rr.metadata->>'retry_reason', '') = 'failed_chunks'
+                      ) retry_success ON TRUE
+                      WHERE sr.platform = a.platform
+                        AND sr.account_id = a.account_id
+                        AND sr.job_type = 'historical_backfill'
+                        AND sr.status = 'error'
+                        AND EXISTS (
+                          SELECT 1
+                          FROM sync_run_chunks src
+                          WHERE src.job_id = sr.job_id
+                            AND src.status IN ('error', 'failed')
+                        )
+                        AND NOT EXISTS (
+                          SELECT 1
+                          FROM sync_run_chunks src
+                          WHERE src.job_id = sr.job_id
+                            AND src.status IN ('error', 'failed')
+                            AND NOT EXISTS (
+                              SELECT 1
+                              FROM sync_runs rr
+                              JOIN sync_run_chunks rc
+                                ON rc.job_id = rr.job_id
+                              WHERE rr.platform = sr.platform
+                                AND rr.account_id = sr.account_id
+                                AND rr.job_type = 'historical_backfill'
+                                AND rr.status = 'done'
+                                AND COALESCE(rr.metadata->>'retry_of_job_id', '') = sr.job_id
+                                AND COALESCE(rr.metadata->>'retry_reason', '') = 'failed_chunks'
+                                AND rc.status IN ('done', 'success', 'completed')
+                                AND COALESCE(rc.metadata->>'retry_of_job_id', '') = sr.job_id
+                                AND COALESCE(rc.metadata->>'retry_reason', '') = 'failed_chunks'
+                                AND rc.date_start = src.date_start
+                                AND rc.date_end = src.date_end
+                            )
+                        )
+                    ) recovered_hist ON TRUE
                     WHERE a.platform = %s
                     ORDER BY a.imported_at DESC
                     """,
                     (platform,),
                 )
                 rows = cur.fetchall()
-        return [
-            {
-                "id": str(row[0]),
-                "name": str(row[1]),
-                "attached_client_id": int(row[2]) if row[2] is not None else None,
-                "attached_client_name": str(row[3]) if row[3] else None,
-                "status": str(row[4]) if row[4] is not None else None,
-                "account_timezone": str(row[5]) if row[5] is not None else None,
-                "rolling_window_days": int(row[6]) if row[6] is not None else None,
-                "rolling_synced_through": str(row[7]) if row[7] is not None else None,
-            }
-            for row in rows
-        ]
+
+            result: list[dict[str, object]] = []
+            for row in rows:
+                account_id = str(row[0])
+                display_name = str(row[1]) if row[1] is not None else account_id
+                recovered_sync_start_date = _safe_row_value(row, 22)
+                recovered_backfill_completed_through = _safe_row_value(row, 23)
+                recovered_last_success_at = _safe_row_value(row, 24)
+
+                account_status = _safe_row_value(row, 6)
+                explicit_sync_start_date = _safe_row_value(row, 7)
+                explicit_backfill_completed_through = _safe_row_value(row, 8)
+                explicit_rolling_synced_through = _safe_row_value(row, 9)
+                explicit_last_success_at = _safe_row_value(row, 10)
+                explicit_last_error = _safe_row_value(row, 11)
+                latest_status = _safe_row_value(row, 12)
+                latest_error = _safe_row_value(row, 16)
+                hist_min_start = _safe_row_value(row, 18)
+                hist_max_end = _safe_row_value(row, 19)
+                roll_max_end = _safe_row_value(row, 20)
+                last_success_from_done = _safe_row_value(row, 21)
+
+                sync_start_date = _coalesce_date_min(explicit_sync_start_date, hist_min_start, recovered_sync_start_date)
+                backfill_completed_through = _coalesce_date_max(explicit_backfill_completed_through, hist_max_end, recovered_backfill_completed_through)
+                rolling_synced_through = explicit_rolling_synced_through if explicit_rolling_synced_through is not None else roll_max_end
+                last_success_at = _coalesce_date_max(explicit_last_success_at, last_success_from_done, recovered_last_success_at)
+                last_error = _derive_effective_last_error(explicit_last_error=explicit_last_error, latest_run_error=latest_error, latest_run_status=latest_status)
+                if recovered_sync_start_date is not None or recovered_backfill_completed_through is not None:
+                    logger.info(
+                        "client_registry.recovered_historical_backfill platform=%s account_id=%s sync_start_date=%s backfill_completed_through=%s",
+                        platform,
+                        account_id,
+                        sync_start_date,
+                        backfill_completed_through,
+                    )
+                result.append(
+                    _normalize_account_sync_metadata_payload(
+                        platform=str(platform),
+                        account_id=account_id,
+                        display_name=display_name,
+                        attached_client_id=int(row[2]) if row[2] is not None else None,
+                        attached_client_name=str(row[3]) if row[3] is not None else None,
+                        timezone_value=str(row[4]) if row[4] is not None else None,
+                        currency_value=str(row[5]) if row[5] is not None else None,
+                        account_status=account_status,
+                        sync_start_date=sync_start_date,
+                        backfill_completed_through=backfill_completed_through,
+                        rolling_synced_through=rolling_synced_through,
+                        last_success_at=last_success_at,
+                        last_error=last_error,
+                        last_run_status=_safe_row_value(row, 12),
+                        last_run_type=_safe_row_value(row, 13),
+                        last_run_started_at=_safe_row_value(row, 14),
+                        last_run_finished_at=_safe_row_value(row, 15),
+                        has_active_sync=bool(_safe_row_value(row, 17)),
+                    )
+                )
+
+            account_ids = [str(item.get("account_id") or "") for item in result if item.get("account_id")]
+            watermark_by_account = list_platform_account_watermarks(
+                conn,
+                platform=str(platform),
+                account_ids=account_ids,
+                grains=["campaign_daily", "ad_group_daily", "ad_daily", "keyword_daily"],
+            )
+            for item in result:
+                account_id = str(item.get("account_id") or "")
+                by_grain = watermark_by_account.get(account_id, {})
+                item["entity_watermarks"] = {
+                    "campaign_daily": _normalize_entity_watermark_payload(by_grain.get("campaign_daily")),
+                    "ad_group_daily": _normalize_entity_watermark_payload(by_grain.get("ad_group_daily")),
+                    "ad_daily": _normalize_entity_watermark_payload(by_grain.get("ad_daily")),
+                    "keyword_daily": _normalize_entity_watermark_payload(by_grain.get("keyword_daily")),
+                }
+            return result
 
     def update_platform_account_operational_metadata(
         self,
@@ -709,11 +1101,29 @@ class ClientRegistryService:
                 if rolling_window_days is not _UNSET:
                     existing["rolling_window_days"] = None if rolling_window_days is None else int(rolling_window_days)
                 if backfill_completed_through is not _UNSET:
-                    existing["backfill_completed_through"] = None if backfill_completed_through is None else str(backfill_completed_through)
+                    if backfill_completed_through is None:
+                        existing["backfill_completed_through"] = None
+                    else:
+                        existing["backfill_completed_through"] = _coalesce_iso_date_max(
+                            existing.get("backfill_completed_through"),
+                            str(backfill_completed_through),
+                        )
                 if rolling_synced_through is not _UNSET:
-                    existing["rolling_synced_through"] = None if rolling_synced_through is None else str(rolling_synced_through)
+                    if rolling_synced_through is None:
+                        existing["rolling_synced_through"] = None
+                    else:
+                        existing["rolling_synced_through"] = _coalesce_iso_date_max(
+                            existing.get("rolling_synced_through"),
+                            str(rolling_synced_through),
+                        )
                 if last_success_at is not _UNSET:
-                    existing["last_success_at"] = None if last_success_at is None else str(last_success_at)
+                    if last_success_at is None:
+                        existing["last_success_at"] = None
+                    else:
+                        existing["last_success_at"] = _coalesce_iso_datetime_max(
+                            existing.get("last_success_at"),
+                            str(last_success_at),
+                        )
                 if last_error is not _UNSET:
                     existing["last_error"] = None if last_error is None else str(last_error)
                 if last_run_id is not _UNSET:
@@ -863,7 +1273,7 @@ class ClientRegistryService:
             )
         return payload
 
-    def list_client_platform_accounts(self, *, platform: str, client_id: int) -> list[dict[str, str]]:
+    def list_client_platform_accounts(self, *, platform: str, client_id: int) -> list[dict[str, object]]:
         if self._is_test_mode():
             with self._lock:
                 mappings = self._memory_account_client_mappings.get(platform, {})
@@ -876,12 +1286,22 @@ class ClientRegistryService:
                     info = accounts.get(account_id)
                     if info:
                         profile = profiles.get(account_id, {}).get(client_id, {})
+                        effective_currency, currency_source = resolve_effective_attached_account_currency(
+                            mapping_account_currency=profile.get("account_currency"),
+                            platform_account_currency_code=info.get("currency_code") if isinstance(info, dict) else None,
+                            client_currency=next((c.currency for c in self._clients if c.id == client_id), "USD"),
+                            fallback="USD",
+                        )
                         result.append({
                             "id": info["id"],
                             "name": info["name"],
                             "client_type": str(profile.get("client_type", "lead")),
                             "account_manager": str(profile.get("account_manager", "")),
-                            "currency": str(profile.get("account_currency", "USD")),
+                            "currency": effective_currency,
+                            "effective_account_currency": effective_currency,
+                            "account_currency_source": currency_source,
+                            "mapping_account_currency": profile.get("account_currency"),
+                            "platform_account_currency": info.get("currency_code") if isinstance(info, dict) else None,
                         })
                 return sorted(result, key=lambda item: item["id"])
 
@@ -889,17 +1309,112 @@ class ClientRegistryService:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT a.account_id, a.account_name, m.client_type, m.account_manager, m.account_currency
+                    SELECT
+                        a.account_id,
+                        a.account_name,
+                        m.client_type,
+                        m.account_manager,
+                        m.account_currency,
+                        a.currency_code,
+                        c.currency,
+                        COALESCE(NULLIF(TRIM(m.account_currency), ''), NULLIF(TRIM(a.currency_code), ''), NULLIF(TRIM(c.currency), ''), 'USD') AS effective_account_currency,
+                        CASE
+                            WHEN NULLIF(TRIM(m.account_currency), '') IS NOT NULL THEN 'mapping_account_currency'
+                            WHEN NULLIF(TRIM(a.currency_code), '') IS NOT NULL THEN 'platform_account_currency'
+                            WHEN NULLIF(TRIM(c.currency), '') IS NOT NULL THEN 'client_currency'
+                            ELSE 'fallback'
+                        END AS account_currency_source
                     FROM agency_account_client_mappings m
                     JOIN agency_platform_accounts a
                       ON a.platform = m.platform AND a.account_id = m.account_id
+                    JOIN agency_clients c
+                      ON c.id = m.client_id
                     WHERE m.platform = %s AND m.client_id = %s
                     ORDER BY m.updated_at DESC, m.created_at DESC
                     """,
                     (platform, client_id),
                 )
                 rows = cur.fetchall()
-        return [{"id": str(row[0]), "name": str(row[1]), "client_type": str(row[2]) if row[2] else "lead", "account_manager": str(row[3]) if row[3] else "", "currency": str(row[4]) if row[4] else "USD"} for row in rows]
+        result = [
+            {
+                "id": str(row[0]),
+                "name": str(row[1]),
+                "client_type": str(row[2]) if row[2] else "lead",
+                "account_manager": str(row[3]) if row[3] else "",
+                "currency": str(row[7]) if row[7] else "USD",
+                "effective_account_currency": str(row[7]) if row[7] else "USD",
+                "account_currency_source": str(row[8]) if row[8] else "fallback",
+                "mapping_account_currency": str(row[4]) if row[4] else None,
+                "platform_account_currency": str(row[5]) if row[5] else None,
+                "client_currency": str(row[6]) if row[6] else None,
+            }
+            for row in rows
+        ]
+        account_ids = [str(item["id"]) for item in result if str(item.get("id") or "").strip() != ""]
+        if len(account_ids) > 0:
+            from app.services.sync_runs_store import sync_runs_store
+
+            health_map = sync_runs_store.list_sync_health_for_accounts(platform=str(platform), account_ids=account_ids)
+            for item in result:
+                h = health_map.get(str(item.get("id") or ""))
+                if isinstance(h, dict):
+                    item["sync_health_status"] = h.get("status")
+                    item["sync_health_last_sync_at"] = h.get("last_sync_at")
+                    item["sync_health_last_error"] = h.get("last_error")
+        return result
+
+    def list_client_accounts(self, *, client_id: int, platform: str | None = None) -> list[dict[str, object]]:
+        target_platforms = [str(platform)] if platform else ["google_ads", "meta_ads", "tiktok_ads", "pinterest_ads", "snapchat_ads", "reddit_ads"]
+        rows: list[dict[str, object]] = []
+        for platform_name in target_platforms:
+            accounts = self.list_client_platform_accounts(platform=platform_name, client_id=client_id)
+            for item in accounts:
+                account_id = str(item.get("id") or item.get("account_id") or "")
+                account_name = str(item.get("name") or item.get("account_name") or account_id)
+                rows.append({
+                    "platform": platform_name,
+                    "account_id": account_id,
+                    "account_name": account_name,
+                    "id": account_id,
+                    "name": account_name,
+                    "is_attached": True,
+                    "client_type": item.get("client_type"),
+                    "account_manager": item.get("account_manager"),
+                    "currency": item.get("currency"),
+                    "effective_account_currency": item.get("effective_account_currency") or item.get("currency"),
+                    "account_currency_source": item.get("account_currency_source"),
+                })
+        return rows
+
+    def list_platform_accounts_for_mapping(self, *, platform: str) -> list[dict[str, object]]:
+        items = self.list_platform_accounts(platform=platform)
+        rows: list[dict[str, object]] = []
+        for item in items:
+            account_id = str(item.get("account_id") or item.get("id") or "")
+            account_name = str(item.get("display_name") or item.get("name") or account_id)
+            attached_client_id = item.get("attached_client_id")
+            rows.append({
+                "platform": str(platform),
+                "account_id": account_id,
+                "account_name": account_name,
+                "client_id": int(attached_client_id) if attached_client_id is not None else None,
+                "client_name": item.get("attached_client_name"),
+                "is_attached": attached_client_id is not None,
+                "status": item.get("status"),
+                "currency": item.get("currency"),
+                "timezone": item.get("timezone"),
+                "sync_start_date": item.get("sync_start_date"),
+                "backfill_completed_through": item.get("backfill_completed_through"),
+                "rolling_synced_through": item.get("rolling_synced_through"),
+                "last_success_at": item.get("last_success_at"),
+                "last_error": item.get("last_error"),
+                "last_run_status": item.get("last_run_status"),
+                "last_run_type": item.get("last_run_type"),
+                "last_run_started_at": item.get("last_run_started_at"),
+                "last_run_finished_at": item.get("last_run_finished_at"),
+                "has_active_sync": item.get("has_active_sync"),
+            })
+        return rows
 
     def get_last_import_at(self, *, platform: str) -> str | None:
         if self._is_test_mode():
@@ -1109,13 +1624,51 @@ class ClientRegistryService:
         return self.get_client_details(client_id=client_id)
 
 
+    def get_client_reporting_currency_decision(
+        self,
+        *,
+        client_id: int,
+        platforms: tuple[str, ...] = ("google_ads", "meta_ads", "tiktok_ads"),
+        safe_fallback: str = "USD",
+    ) -> dict[str, object]:
+        platform_set = {str(item) for item in platforms}
+        attached_accounts = [
+            item
+            for item in self.list_client_accounts(client_id=client_id)
+            if str(item.get("platform") or "") in platform_set
+        ]
+        attached_effective_currencies = [
+            item.get("effective_account_currency") or item.get("currency")
+            for item in attached_accounts
+        ]
+
+        client_currency = None
+        for item in self.list_clients():
+            if int(item.get("id") or 0) == int(client_id):
+                client_currency = item.get("currency")
+                break
+
+        reporting_currency, source, mixed, summary = resolve_client_reporting_currency(
+            attached_effective_currencies=attached_effective_currencies,
+            client_currency=client_currency,
+            fallback=safe_fallback,
+        )
+
+        return {
+            "reporting_currency": reporting_currency,
+            "reporting_currency_source": source,
+            "client_display_currency": reporting_currency,
+            "display_currency_source": source,
+            "mixed_attached_account_currencies": mixed,
+            "attached_account_currency_summary": summary,
+            "attached_account_count": len(attached_accounts),
+            "client_default_currency": str(client_currency or "").strip().upper() or None,
+            "platforms_considered": sorted(platform_set),
+        }
+
     def get_preferred_currency_for_client(self, *, client_id: int) -> str:
-        accounts = self.list_client_platform_accounts(platform="google_ads", client_id=client_id)
-        for account in accounts:
-            currency = str(account.get("currency") or account.get("account_currency") or "").upper()
-            if len(currency) == 3 and currency.isalpha():
-                return currency
-        return "USD"
+        decision = self.get_client_reporting_currency_decision(client_id=client_id)
+        return str(decision.get("reporting_currency") or "USD")
 
 
     def list_media_storage_usage(

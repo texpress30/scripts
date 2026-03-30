@@ -19,17 +19,18 @@ class MetaSnapshotStore:
         return load_settings().app_env == "test"
 
     def _connect(self):
-        settings = load_settings()
-        if psycopg is None:
-            raise RuntimeError("psycopg is required for Meta Postgres persistence")
-        return psycopg.connect(settings.database_url)
+        from app.db.pool import get_connection
+        return get_connection()
 
     def _ensure_schema(self) -> None:
+        if getattr(self, "_schema_initialized", False):
+            return
         if self._is_test_mode():
             return
 
         with self._connect() as conn:
             with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_xact_lock(1, hashtext(%s))", ("ensure_schema_" + self.__class__.__name__,))
                 cur.execute(
                     """
                     CREATE TABLE IF NOT EXISTS meta_sync_snapshots (
@@ -44,6 +45,8 @@ class MetaSnapshotStore:
                     """
                 )
             conn.commit()
+        self._schema_initialized = True
+
 
     def upsert_snapshot(self, *, payload: dict[str, float | int | str]) -> None:
         self._ensure_schema()

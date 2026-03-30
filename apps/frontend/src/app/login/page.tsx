@@ -1,24 +1,27 @@
 "use client";
 
-import { Activity, Lock, Mail, Shield } from "lucide-react";
+import { Activity, Lock, Mail } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import React, { FormEvent, useEffect, useState } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { apiRequest } from "@/lib/api";
-
-type LoginResponse = {
-  access_token: string;
-  token_type: string;
-};
+import { loginWithPassword } from "@/lib/api";
+import { getSessionAccessContextFromToken } from "@/lib/session";
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("admin@example.com");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState("agency_admin");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const query = new URLSearchParams(window.location.search);
+    setResetSuccess(query.get("reset") === "success");
+  }, []);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -26,14 +29,21 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const data = await apiRequest<LoginResponse>("/auth/login", {
-        method: "POST",
-        body: JSON.stringify({ email, password, role }),
-      });
+      const data = await loginWithPassword({ email, password });
 
       localStorage.setItem("mcc_token", data.access_token);
       localStorage.setItem("mcc_user", email);
-      router.push("/agency/dashboard");
+
+      const context = getSessionAccessContextFromToken(data.access_token);
+      const shouldUseSubaccountRoute = context.access_scope === "subaccount";
+
+      if (shouldUseSubaccountRoute && context.allowed_subaccount_ids.length === 1) {
+        router.push(`/sub/${context.allowed_subaccount_ids[0]}/dashboard`);
+      } else if (shouldUseSubaccountRoute && context.primary_subaccount_id !== null) {
+        router.push(`/sub/${context.primary_subaccount_id}/dashboard`);
+      } else {
+        router.push("/agency/dashboard");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -48,7 +58,7 @@ export default function LoginPage() {
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/30">
             <Activity className="h-6 w-6" />
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">MCC Command Center</h1>
+          <h1 className="text-2xl font-bold text-slate-900">VOXEL MCC</h1>
           <p className="mt-1 text-sm text-slate-600">Intră în platformă</p>
         </div>
 
@@ -85,17 +95,13 @@ export default function LoginPage() {
                 </div>
               </label>
 
-              <label className="block">
-                <span className="mb-1 block text-sm font-medium text-slate-700">Rol</span>
-                <div className="flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3">
-                  <Shield className="h-4 w-4 text-slate-400" />
-                  <select value={role} onChange={(e) => setRole(e.target.value)} className="h-10 w-full bg-transparent text-sm outline-none">
-                    <option value="agency_admin">Agency Admin</option>
-                    <option value="account_manager">Account Manager</option>
-                    <option value="client_viewer">Client Viewer</option>
-                  </select>
-                </div>
-              </label>
+              <div className="flex justify-end">
+                <Link href="/forgot-password" className="text-sm text-indigo-600 hover:text-indigo-500">
+                  Ai uitat parola?
+                </Link>
+              </div>
+
+              {resetSuccess ? <p className="text-sm text-emerald-700">Parola a fost resetată. Te poți autentifica.</p> : null}
 
               {error ? <p className="text-sm text-red-600">{error}</p> : null}
 

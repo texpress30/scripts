@@ -1,17 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import React, { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
+import { useQuery } from "@tanstack/react-query";
 
 import { format, startOfMonth, subDays } from "date-fns";
-import { DayPicker, type DateRange } from "react-day-picker";
-import "react-day-picker/dist/style.css";
+import type { DateRange } from "react-day-picker";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { apiRequest } from "@/lib/api";
+import { apiRequest, getSubaccountMyAccess } from "@/lib/api";
+import { derivePlatformSyncStatus } from "@/lib/accountSyncStatus";
+import { SubReportingNav } from "@/app/sub/[id]/_components/SubReportingNav";
 
 type DashboardResponse = {
   client_id: number;
@@ -31,6 +34,21 @@ type DashboardResponse = {
     pinterest_ads?: PlatformMetrics;
     snapchat_ads?: PlatformMetrics;
   };
+  platform_sync_summary?: {
+    meta_ads?: { accounts?: Array<Record<string, unknown>> };
+    tiktok_ads?: { accounts?: Array<Record<string, unknown>> };
+  };
+  spend_by_day?: Array<{
+    date?: string;
+    spend?: number;
+    platform_spend?: {
+      google_ads?: number;
+      meta_ads?: number;
+      tiktok_ads?: number;
+      pinterest_ads?: number;
+      snapchat_ads?: number;
+    };
+  }>;
 };
 
 type PlatformMetrics = {
@@ -50,6 +68,17 @@ type NormalizedMetrics = {
   revenue: number;
   roas: number;
 };
+type SpendByDayPoint = {
+  date: string;
+  spend: number;
+  platform_spend: {
+    google_ads: number;
+    meta_ads: number;
+    tiktok_ads: number;
+    pinterest_ads: number;
+    snapchat_ads: number;
+  };
+};
 
 type DatePresetKey = "today" | "yesterday" | "last7" | "last14" | "last30" | "month" | "custom";
 
@@ -62,6 +91,13 @@ const PRESET_ITEMS: Array<{ key: DatePresetKey; label: string }> = [
   { key: "month", label: "This month" },
   { key: "custom", label: "Custom" },
 ];
+const SUBACCOUNT_MODULE_ORDER = ["dashboard", "campaigns", "rules", "creative", "recommendations"] as const;
+
+const DayRangePicker = dynamic(() => import("@/components/DayRangePicker").then((m) => m.DayRangePicker), { ssr: false });
+const SubDashboardCharts = dynamic(
+  () => import("@/app/sub/[id]/_components/SubDashboardCharts").then((m) => m.SubDashboardCharts),
+  { ssr: false },
+);
 
 function toIso(value: Date): string {
   return format(value, "yyyy-MM-dd");
@@ -89,10 +125,6 @@ function formatRangeLabel(preset: DatePresetKey, range: DateRange): string {
   return `${presetLabel}: ${format(from, "MMM d, yyyy")} - ${format(to, "MMM d, yyyy")}`;
 }
 
-function safeNumber(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-
 function normalizeCurrencyCode(value: string | undefined): string {
   const code = (value ?? "USD").toUpperCase();
   return code.length === 3 ? code : "USD";
@@ -100,6 +132,10 @@ function normalizeCurrencyCode(value: string | undefined): string {
 
 function formatCurrency(value: number, currencyCode: string): string {
   return new Intl.NumberFormat(undefined, { style: "currency", currency: currencyCode, maximumFractionDigits: 2 }).format(value);
+}
+
+function safeNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function normalizeMetrics(value?: PlatformMetrics): NormalizedMetrics {
@@ -115,12 +151,34 @@ function normalizeMetrics(value?: PlatformMetrics): NormalizedMetrics {
   };
 }
 
+function normalizeSpendByDay(value: DashboardResponse["spend_by_day"]): SpendByDayPoint[] {
+  return (value ?? [])
+    .map((item) => ({
+      date: typeof item?.date === "string" ? item.date : "",
+      spend: safeNumber(item?.spend),
+      platform_spend: {
+        google_ads: safeNumber(item?.platform_spend?.google_ads),
+        meta_ads: safeNumber(item?.platform_spend?.meta_ads),
+        tiktok_ads: safeNumber(item?.platform_spend?.tiktok_ads),
+        pinterest_ads: safeNumber(item?.platform_spend?.pinterest_ads),
+        snapchat_ads: safeNumber(item?.platform_spend?.snapchat_ads),
+      },
+    }))
+    .filter((item) => item.date !== "");
+}
+
+const STATUS_STYLES: Record<string, string> = {
+  healthy: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  warning: "bg-amber-50 text-amber-700 border-amber-200",
+  error: "bg-rose-50 text-rose-700 border-rose-200",
+  unknown: "bg-slate-100 text-slate-600 border-slate-200",
+};
+
 export default function SubDashboardPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const clientId = Number(params.id);
-  const [data, setData] = useState<DashboardResponse | null>(null);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [accessGuardReady, setAccessGuardReady] = useState(false);
 
   const initialRange = rangeForPreset("last30");
   const [openPicker, setOpenPicker] = useState(false);
@@ -128,30 +186,57 @@ export default function SubDashboardPage() {
   const [appliedRange, setAppliedRange] = useState<DateRange>(initialRange);
   const [draftPreset, setDraftPreset] = useState<DatePresetKey>("last30");
   const [draftRange, setDraftRange] = useState<DateRange>(initialRange);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const appliedFrom = appliedRange.from ?? subDays(new Date(), 29);
   const appliedTo = appliedRange.to ?? appliedFrom;
 
-  async function load() {
-    setLoading(true);
-    setError("");
-    try {
-      const rangeNonce = `${toIso(appliedFrom)}_${toIso(appliedTo)}_${Date.now()}`;
-      const result = await apiRequest<DashboardResponse>(
-        `/dashboard/${clientId}?start_date=${toIso(appliedFrom)}&end_date=${toIso(appliedTo)}&_=${encodeURIComponent(rangeNonce)}`
-      );
-      setData(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Nu pot încărca dashboard-ul clientului");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   useEffect(() => {
-    if (Number.isFinite(clientId)) void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clientId, appliedFrom, appliedTo]);
+    if (!Number.isFinite(clientId)) {
+      setAccessGuardReady(true);
+      return;
+    }
+
+    let ignore = false;
+    let redirected = false;
+    setAccessGuardReady(false);
+    async function validateDashboardAccess() {
+      try {
+        const access = await getSubaccountMyAccess(clientId);
+        const allowedModules = new Set((access.module_keys ?? []).map((item) => String(item || "").trim().toLowerCase()));
+        if (!allowedModules.has("dashboard")) {
+          const firstAllowed = SUBACCOUNT_MODULE_ORDER.find((moduleKey) => allowedModules.has(moduleKey));
+          const target = firstAllowed ? `/sub/${clientId}/${firstAllowed}` : "/agency/dashboard";
+          redirected = true;
+          router.replace(target);
+          return;
+        }
+      } catch {
+        // AppShell guard still handles API failures.
+      } finally {
+        if (!ignore && !redirected) setAccessGuardReady(true);
+      }
+    }
+    void validateDashboardAccess();
+
+    return () => {
+      ignore = true;
+    };
+  }, [clientId, router]);
+
+  const fromIso = toIso(appliedFrom);
+  const toIso_ = toIso(appliedTo);
+
+  const { data, error: queryError, isLoading: loading } = useQuery<DashboardResponse>({
+    queryKey: ["client-dashboard", clientId, fromIso, toIso_],
+    queryFn: () =>
+      apiRequest<DashboardResponse>(
+        `/dashboard/${clientId}?start_date=${fromIso}&end_date=${toIso_}`,
+      ),
+    enabled: accessGuardReady && Number.isFinite(clientId),
+  });
+
+  const error = queryError instanceof Error ? queryError.message : queryError ? "Nu pot încărca dashboard-ul clientului" : "";
 
   function handlePresetClick(nextPreset: DatePresetKey) {
     setDraftPreset(nextPreset);
@@ -189,15 +274,25 @@ export default function SubDashboardPage() {
   const pinterest = normalizeMetrics(data?.platforms.pinterest_ads);
   const snapchat = normalizeMetrics(data?.platforms.snapchat_ads);
 
+  const metaSync = derivePlatformSyncStatus("meta_ads", data?.platform_sync_summary?.meta_ads?.accounts ?? []);
+  const tiktokSync = derivePlatformSyncStatus("tiktok_ads", data?.platform_sync_summary?.tiktok_ads?.accounts ?? []);
+  const flaggedPlatforms = [metaSync, tiktokSync].filter((item) => item.uiStatus === "warning" || item.uiStatus === "error");
+  const flaggedPlatformCount = flaggedPlatforms.length;
+  const affectedAccountCount = flaggedPlatforms.reduce((sum, item) => sum + item.affectedAccountCount, 0);
+  const spendByDay = normalizeSpendByDay(data?.spend_by_day);
+  const hasSpendByDay = spendByDay.some((item) => item.spend > 0);
+  const spendByPlatformTimeline = spendByDay.map((item) => ({
+    date: item.date,
+    google_ads: item.platform_spend.google_ads,
+    meta_ads: item.platform_spend.meta_ads,
+    tiktok_ads: item.platform_spend.tiktok_ads,
+  }));
+  const hasPlatformTimeline = spendByPlatformTimeline.some((item) => item.google_ads > 0 || item.meta_ads > 0 || item.tiktok_ads > 0);
+
   return (
     <ProtectedPage>
-      <AppShell title={`Sub-account Dashboard #${clientId}`}>
-        <div className="mb-4 flex items-center gap-4 text-sm">
-          <Link href={`/sub/${clientId}/campaigns`} className="text-indigo-600 hover:underline">Campaigns</Link>
-          <Link href={`/sub/${clientId}/rules`} className="text-indigo-600 hover:underline">Rules</Link>
-          <Link href={`/sub/${clientId}/creative`} className="text-indigo-600 hover:underline">Creative</Link>
-          <Link href={`/sub/${clientId}/recommendations`} className="text-indigo-600 hover:underline">Recommendations</Link>
-        </div>
+      <AppShell title={null}>
+        <SubReportingNav clientId={clientId} />
 
         <section className="relative mb-4 flex justify-end">
           <button
@@ -227,9 +322,7 @@ export default function SubDashboardPage() {
               </div>
 
               <div className="flex-1">
-                <DayPicker
-                  mode="range"
-                  numberOfMonths={2}
+                <DayRangePicker
                   selected={draftRange}
                   onSelect={(range) => {
                     setDraftPreset("custom");
@@ -266,6 +359,78 @@ export default function SubDashboardPage() {
           <MetricCard title="ROAS" value={loading ? "..." : totals.roas.toFixed(2)} />
         </section>
 
+        <section className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Spend total pe zile</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <p className="text-sm text-slate-500">Se încarcă datele pentru grafic…</p>
+              ) : !hasSpendByDay ? (
+                <p className="text-sm text-slate-500">Nu există spend în perioada selectată.</p>
+              ) : (
+                <SubDashboardCharts mode="total" spendByDay={spendByDay} spendByPlatformTimeline={[]} currencyCode={currencyCode} />
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Spend pe platforme</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <p className="text-sm text-slate-500">Se încarcă datele pentru grafic…</p>
+              ) : !hasPlatformTimeline ? (
+                <p className="text-sm text-slate-500">Nu există spend pe platforme în perioada selectată.</p>
+              ) : (
+                <SubDashboardCharts mode="platform" spendByDay={[]} spendByPlatformTimeline={spendByPlatformTimeline} currencyCode={currencyCode} />
+              )}
+            </CardContent>
+          </Card>
+        </section>
+
+        {flaggedPlatformCount > 0 ? (
+          <section className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            <button type="button" className="flex w-full items-center justify-between gap-2 text-left" onClick={() => setDetailsOpen((current) => !current)}>
+              <span>Some platform totals may be incomplete due to sync issues.</span>
+              <span className="text-xs font-medium">{flaggedPlatformCount} platform {flaggedPlatformCount === 1 ? "warning" : "warnings"} • {affectedAccountCount} affected account{affectedAccountCount === 1 ? "" : "s"}</span>
+            </button>
+            {detailsOpen ? (
+              <div className="mt-2 space-y-2 border-t border-amber-200 pt-2 text-xs">
+                {[{ name: "Meta Ads", summary: metaSync }, { name: "TikTok Ads", summary: tiktokSync }]
+                  .filter((item) => item.summary.uiStatus === "warning" || item.summary.uiStatus === "error")
+                  .map((item) => (
+                    <div key={item.name}>
+                      <p className="font-semibold text-amber-900">{item.name}</p>
+                      <ul className="mt-1 space-y-1">
+                        {item.summary.accounts
+                          .filter((account) => account.ui.uiStatus === "warning" || account.ui.uiStatus === "error")
+                          .map((account) => (
+                            <li key={`${item.name}:${account.id}`} className="rounded border border-amber-200 bg-amber-100/60 px-2 py-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-medium text-amber-900">{account.name} ({account.id})</span>
+                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 font-medium ${STATUS_STYLES[account.ui.uiStatus]}`}>{account.ui.uiLabel}</span>
+                              </div>
+                              <p className="truncate text-amber-800">{account.ui.shortReason ?? account.ui.details.coverageStatus ?? "Sync issue"}</p>
+                              <p className="truncate text-amber-700">
+                                {account.ui.details.lastSyncAt ? `Last sync: ${account.ui.details.lastSyncAt}` : "Last sync: n/a"}
+                                {account.ui.details.requestedStartDate && account.ui.details.requestedEndDate ? ` · Requested: ${account.ui.details.requestedStartDate} → ${account.ui.details.requestedEndDate}` : ""}
+                                {account.ui.details.firstPersistedDate && account.ui.details.lastPersistedDate ? ` · Persisted: ${account.ui.details.firstPersistedDate} → ${account.ui.details.lastPersistedDate}` : ""}
+                                {account.ui.details.failedChunkCount !== undefined ? ` · Failed chunks: ${account.ui.details.failedChunkCount}` : ""}
+                                {account.ui.details.retryAttempted !== undefined ? ` · Retry: ${account.ui.details.retryAttempted ? "yes" : "no"}` : ""}
+                              </p>
+                            </li>
+                          ))}
+                      </ul>
+                    </div>
+                  ))}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
         <section className="mt-6 overflow-x-auto">
           <table className="min-w-full wm-card text-left text-sm">
             <thead className="text-slate-500">
@@ -281,15 +446,27 @@ export default function SubDashboardPage() {
             </thead>
             <tbody>
               {([
-                ["Google Ads", google],
-                ["Meta Ads", meta],
-                ["TikTok Ads", tiktok],
-                ["Pinterest Ads", pinterest],
-                ["Snapchat Ads", snapchat],
-              ] as Array<[string, NormalizedMetrics]>).map(([name, m]) => {
+                ["Google Ads", "google-ads", google],
+                ["Meta Ads", "meta-ads", meta],
+                ["TikTok Ads", "tiktok-ads", tiktok],
+                ["Pinterest Ads", "pinterest-ads", pinterest],
+                ["Snapchat Ads", "snapchat-ads", snapchat],
+              ] as Array<[string, string, NormalizedMetrics]>).map(([name, slug, m]) => {
+                const platformSummary = name === "Meta Ads" ? metaSync : name === "TikTok Ads" ? tiktokSync : null;
                 return (
                   <tr key={name} className="border-t border-slate-200 text-slate-900">
-                    <td className="px-4 py-3">{name}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <Link href={`/sub/${clientId}/${slug}`} className="text-slate-900 transition-colors hover:text-indigo-700 hover:underline">
+                          {name}
+                        </Link>
+                        {platformSummary ? (
+                          <button type="button" onClick={() => setDetailsOpen((current) => !current)} className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[platformSummary.uiStatus]}`}>
+                            {platformSummary.uiLabel}{platformSummary.affectedAccountCount > 0 ? ` (${platformSummary.affectedAccountCount})` : ""}
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
                     <td className="px-4 py-3">{loading ? "..." : formatCurrency(m.spend, currencyCode)}</td>
                     <td className="px-4 py-3">{loading ? "..." : m.impressions.toLocaleString()}</td>
                     <td className="px-4 py-3">{loading ? "..." : m.clicks.toLocaleString()}</td>
