@@ -125,6 +125,8 @@ def enqueue_backfill(
                 )
             )
         except Exception as exc:  # noqa: BLE001
+            if getattr(exc, "http_status", None) == 429:
+                raise
             chunk_results.append(
                 BackfillChunkResult(
                     start_date=chunk_start,

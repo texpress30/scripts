@@ -8,7 +8,7 @@ import { GlobalAgencyFavicon } from "@/components/GlobalAgencyFavicon";
 import { WebVitalsReporter } from "@/components/WebVitalsReporter";
 
 export const metadata: Metadata = {
-  title: "VOXEL MCC",
+  title: "OMAROSA MCC",
   description: "Marketing Agency Command Center - Management platform",
 };
 
