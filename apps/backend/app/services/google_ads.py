@@ -22,7 +22,7 @@ except Exception:  # noqa: BLE001
 from app.core.config import load_settings
 from app.services.client_registry import client_registry_service
 from app.services.google_store import google_snapshot_store
-from app.services.integration_secrets_store import integration_secrets_store
+from app.services.integration_secrets_store import integration_secrets_store, persist_oauth_state, check_oauth_state, delete_oauth_state
 from app.services.performance_reports import performance_reports_store
 from app.services.sync_engine import BackfillRunResult, DailyMetricRow, enqueue_backfill
 
@@ -696,10 +696,7 @@ class GoogleAdsService:
         settings = load_settings()
         state = base64.urlsafe_b64encode(secrets.token_bytes(24)).decode("utf-8").rstrip("=")
         self._oauth_state_cache.add(state)
-        try:
-            integration_secrets_store.upsert_secret(provider="google_ads", secret_key=f"oauth_state:{state}", value="1")
-        except Exception:  # noqa: BLE001
-            pass
+        persist_oauth_state("google_ads", state)
         params = {
             "client_id": settings.google_ads_client_id,
             "redirect_uri": settings.google_ads_redirect_uri,
@@ -718,18 +715,11 @@ class GoogleAdsService:
         self._require_production_credentials()
         state_valid = state in self._oauth_state_cache
         if not state_valid:
-            try:
-                db_state = integration_secrets_store.get_secret(provider="google_ads", secret_key=f"oauth_state:{state}")
-                state_valid = db_state is not None
-            except Exception:  # noqa: BLE001
-                pass
+            state_valid = check_oauth_state("google_ads", state)
         if not state_valid:
             raise GoogleAdsIntegrationError("Invalid OAuth state for Google connect callback")
         self._oauth_state_cache.discard(state)
-        try:
-            integration_secrets_store.delete_secret(provider="google_ads", secret_key=f"oauth_state:{state}")
-        except Exception:  # noqa: BLE001
-            pass
+        delete_oauth_state("google_ads", state)
 
         settings = load_settings()
         token_payload = self._http_json(
