@@ -316,4 +316,31 @@ describe("SubDataPage canonical-only UI", () => {
     await screen.findByText("Completează coerent slotul de vânzare: Preț vânzare și Preț actual sunt obligatorii.");
     expect(apiMock.apiRequest).not.toHaveBeenCalledWith("/clients/96/data/sale-entries", expect.anything());
   });
+
+  it("shows Import CSV button and opens modal on click", async () => {
+    render(<SubDataPage />);
+    await screen.findByRole("heading", { name: "Data - Active Life Therapy" });
+    const importBtn = screen.getByRole("button", { name: "Import CSV" });
+    expect(importBtn).toBeDefined();
+    fireEvent.click(importBtn);
+    expect(screen.getByRole("dialog", { name: "Import CSV" })).toBeDefined();
+    expect(screen.getByText("Trage CSV-ul aici sau click pentru selectare")).toBeDefined();
+  });
+
+  it("closes Import CSV modal on Escape key", async () => {
+    render(<SubDataPage />);
+    await screen.findByRole("heading", { name: "Data - Active Life Therapy" });
+    fireEvent.click(screen.getByRole("button", { name: "Import CSV" }));
+    expect(screen.getByRole("dialog", { name: "Import CSV" })).toBeDefined();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Import CSV" })).toBeNull();
+  });
+
+  it("disables Previzualizează button when no file selected", async () => {
+    render(<SubDataPage />);
+    await screen.findByRole("heading", { name: "Data - Active Life Therapy" });
+    fireEvent.click(screen.getByRole("button", { name: "Import CSV" }));
+    const previewBtn = screen.getByRole("button", { name: "Previzualizează" });
+    expect(previewBtn.hasAttribute("disabled")).toBe(true);
+  });
 });

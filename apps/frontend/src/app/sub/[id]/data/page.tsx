@@ -8,6 +8,7 @@ import { SubReportingNav } from "@/app/sub/[id]/_components/SubReportingNav";
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { apiRequest } from "@/lib/api";
+import { CsvImportModal, type CsvImportPreviewResponse } from "./_components/CsvImportModal";
 
 type ClientItem = { id: number; name: string };
 type SourceItem = { key: string; label: string };
@@ -264,6 +265,9 @@ export default function SubDataPage() {
   const [createFieldDraft, setCreateFieldDraft] = useState({ label: "", value_kind: "count", sort_order: "" });
   const [editingFieldId, setEditingFieldId] = useState<number | null>(null);
   const [editingFieldDraft, setEditingFieldDraft] = useState({ label: "", value_kind: "count", sort_order: "" });
+
+  const [csvImportOpen, setCsvImportOpen] = useState(false);
+  const [csvPreviewData, setCsvPreviewData] = useState<CsvImportPreviewResponse | null>(null);
 
   const currencyCode = String(config?.currency_code || config?.display_currency || "USD").toUpperCase();
   const fixedLabels = useMemo(() => normalizeFixedLabels(config), [config]);
@@ -568,7 +572,18 @@ export default function SubDataPage() {
             <button type="button" className="rounded-md border border-indigo-300 px-3 py-1.5 text-sm text-indigo-700" onClick={() => setManageFieldsOpen((v) => !v)}>
               Gestionează câmpuri custom
             </button>
+            <button type="button" className="rounded-md border border-indigo-300 px-3 py-1.5 text-sm text-indigo-700" onClick={() => { setCsvImportOpen(true); setCsvPreviewData(null); }}>
+              Import CSV
+            </button>
           </div>
+
+          <CsvImportModal
+            open={csvImportOpen}
+            onClose={() => setCsvImportOpen(false)}
+            clientId={clientId}
+            previewData={csvPreviewData}
+            onPreviewLoaded={setCsvPreviewData}
+          />
 
           {mutationError ? <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{mutationError}</p> : null}
           {mutationSuccess ? <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{mutationSuccess}</p> : null}
