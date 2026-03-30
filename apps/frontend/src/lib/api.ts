@@ -60,6 +60,7 @@ function resolveRequestCache(path: string, init: RequestInit): RequestCache | un
   if (normalizedPath.includes("/sync-runs/")) return "no-store";
   if (normalizedPath.startsWith("/clients")) return "no-store";
   if (normalizedPath.startsWith("/company/")) return "no-store";
+  if (normalizedPath.startsWith("/dashboard")) return "no-store";
   return "force-cache";
 }
 
