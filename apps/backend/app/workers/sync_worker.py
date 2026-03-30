@@ -10,7 +10,7 @@ from app.services.error_observability import sanitize_payload, sanitize_text
 from app.services.client_registry import client_registry_service
 from app.services.entity_performance_reports import upsert_ad_group_performance_reports, upsert_ad_unit_performance_reports, upsert_campaign_performance_reports, upsert_keyword_performance_reports
 from app.services.platform_entity_store import upsert_platform_ad_groups, upsert_platform_ads, upsert_platform_campaigns, upsert_platform_keywords
-from app.services.google_ads import google_ads_service
+from app.services.google_ads import GoogleAdsIntegrationError, google_ads_service
 from app.services.meta_ads import MetaAdsIntegrationError, meta_ads_service
 from app.services.storage_media_remote_ingest import storage_media_remote_ingest_service
 from app.services.tiktok_ads import TikTokAdsIntegrationError, tiktok_ads_service
@@ -784,6 +784,14 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
             advertiser_id = getattr(exc, "advertiser_id", None)
             if provider_error_message and chunk_error == "":
                 chunk_error = sanitize_text(provider_error_message, max_len=300)
+        elif isinstance(exc, GoogleAdsIntegrationError):
+            provider_error_code = exc.provider_error_code
+            provider_error_message = exc.provider_error_message
+            http_status = exc.http_status
+            endpoint = exc.endpoint
+            retryable = exc.retryable
+            if provider_error_message and chunk_error == "":
+                chunk_error = sanitize_text(provider_error_message, max_len=300)
         chunk_error_details = sanitize_payload(
             {
                 "platform": platform,
@@ -808,6 +816,8 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
             chunk_error_details["error_category"] = error_category
             chunk_error_details["token_source"] = token_source
             chunk_error_details["advertiser_id"] = advertiser_id
+            if isinstance(exc, GoogleAdsIntegrationError) and exc.retry_after_seconds is not None:
+                chunk_error_details["retry_after_seconds"] = exc.retry_after_seconds
 
     duration_ms = int((time.monotonic() - started) * 1000)
 
@@ -863,6 +873,25 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
             chunk_error,
             duration_ms,
         )
+
+        if http_status == 429 and platform == "google_ads":
+            abort_error = "skipped: Google Ads API quota exhausted (RESOURCE_EXHAUSTED)"
+            aborted_count = sync_run_chunks_store.fail_queued_chunks_for_job(
+                job_id=job_id,
+                error=abort_error,
+            )
+            if aborted_count > 0:
+                sync_runs_store.update_sync_run_progress(
+                    job_id=job_id,
+                    chunks_done_delta=aborted_count,
+                    rows_written_delta=0,
+                )
+                logger.warning(
+                    "sync_worker.quota_exhausted_abort job_id=%s aborted_chunks=%s retry_after_seconds=%s",
+                    job_id,
+                    aborted_count,
+                    chunk_error_details.get("retry_after_seconds") if chunk_error_details else None,
+                )
 
     _finalize_run_if_complete(run)
     return True
