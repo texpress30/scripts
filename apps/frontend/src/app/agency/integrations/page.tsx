@@ -293,15 +293,41 @@ export default function AgencyIntegrationsPage() {
           <MailgunIntegrationCard />
 
           <article className="wm-card p-4">
-            <h2 className="text-base font-semibold text-slate-900">Pinterest Ads</h2>
-            <p className="mt-2 text-sm text-slate-600">Integrarea Pinterest este activă pentru sync și monitorizare în Agency View.</p>
-            <p className="mt-3 text-xs text-slate-500">Status și sync disponibile. Datele apar în dashboard după prima sincronizare.</p>
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-slate-900">Pinterest Ads</h2>
+              <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-medium text-slate-700">În curând</span>
+            </div>
+            <p className="mt-2 text-sm text-slate-600">
+              Integrarea Pinterest este activă pentru sync și monitorizare în Agency View.
+            </p>
+            <p className="mt-2 text-xs text-slate-500">Conturi conectate: 0</p>
+            <p className="mt-1 text-xs text-slate-500">Ultimul import: -</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button disabled className="wm-btn-primary opacity-50">Connect Pinterest</button>
+              <button disabled className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 opacity-50">Import Accounts</button>
+            </div>
+            <p className="mt-3 text-xs text-slate-500">
+              După import, rulează sync pe fiecare sub-account pentru a popula dashboard-ul cu date reale.
+            </p>
           </article>
 
           <article className="wm-card p-4">
-            <h2 className="text-base font-semibold text-slate-900">Snapchat Ads</h2>
-            <p className="mt-2 text-sm text-slate-600">Integrarea Snapchat este activă pentru sync și monitorizare în Agency View.</p>
-            <p className="mt-3 text-xs text-slate-500">Status și sync disponibile. Datele apar în dashboard după prima sincronizare.</p>
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-slate-900">Snapchat Ads</h2>
+              <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-medium text-slate-700">În curând</span>
+            </div>
+            <p className="mt-2 text-sm text-slate-600">
+              Integrarea Snapchat este activă pentru sync și monitorizare în Agency View.
+            </p>
+            <p className="mt-2 text-xs text-slate-500">Conturi conectate: 0</p>
+            <p className="mt-1 text-xs text-slate-500">Ultimul import: -</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button disabled className="wm-btn-primary opacity-50">Connect Snapchat</button>
+              <button disabled className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 opacity-50">Import Accounts</button>
+            </div>
+            <p className="mt-3 text-xs text-slate-500">
+              După import, rulează sync pe fiecare sub-account pentru a popula dashboard-ul cu date reale.
+            </p>
           </article>
         </div>
 

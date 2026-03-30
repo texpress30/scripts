@@ -12,6 +12,8 @@ type TikTokStatusResponse = {
   token_expires_at?: string | null;
   oauth_configured?: boolean;
   has_usable_token?: boolean;
+  connected_accounts_count?: number;
+  last_import_at?: string | null;
 };
 
 type TikTokConnectResponse = {
@@ -168,25 +170,14 @@ export function TikTokIntegrationCard() {
         <span className={`rounded-full px-3 py-1 text-xs font-medium ${statusBadgeTone(normalizedStatus)}`}>{normalizedStatus}</span>
       </div>
 
-      <p className="mt-2 text-sm text-slate-600">{status?.message ?? "TikTok status indisponibil momentan."}</p>
-      <div className="mt-2 space-y-1 text-xs text-slate-500">
-        <p>Token source: {status?.token_source ?? "-"}</p>
-        <p>Token updated at: {formatDate(status?.token_updated_at)}</p>
-        <p>Token expires at: {formatDate(status?.token_expires_at)}</p>
-      </div>
+      <p className="mt-2 text-sm text-slate-600">
+        Conectează contul TikTok Business prin OAuth și importă automat conturile de advertiser în registry-ul local.
+      </p>
+      <p className="mt-2 text-xs text-slate-500">Conturi conectate: {status?.connected_accounts_count ?? 0}</p>
+      <p className="mt-1 text-xs text-slate-500">Ultimul import: {formatDate(status?.last_import_at)}</p>
 
       {error ? <p className="mt-3 text-xs text-red-600">{error}</p> : null}
       {message ? <p className="mt-3 text-xs text-emerald-600">{message}</p> : null}
-
-      {importSummary ? (
-        <div className="mt-3 rounded-md bg-slate-50 p-2 text-xs text-slate-700">
-          <p>Import summary</p>
-          <p>accounts_discovered: {importSummary.accounts_discovered ?? 0}</p>
-          <p>imported: {importSummary.imported ?? 0}</p>
-          <p>updated: {importSummary.updated ?? 0}</p>
-          <p>unchanged: {importSummary.unchanged ?? 0}</p>
-        </div>
-      ) : null}
 
       <div className="mt-4 flex flex-wrap gap-2">
         <button
@@ -213,9 +204,9 @@ export function TikTokIntegrationCard() {
           Diagnostics
         </button>
       </div>
-
-      {!isOAuthConfigured ? <p className="mt-2 text-xs text-amber-700">{connectDisabledReason}</p> : null}
-      {!hasUsableToken ? <p className="mt-1 text-xs text-slate-500">Finalizează connect OAuth înainte de import accounts.</p> : null}
+      <p className="mt-3 text-xs text-slate-500">
+        După import, rulează sync pe fiecare sub-account pentru a popula dashboard-ul cu date reale.
+      </p>
 
       {diagnosticsOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4" role="dialog" aria-modal="true">
