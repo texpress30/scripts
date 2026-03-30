@@ -28,7 +28,31 @@ logger = logging.getLogger(__name__)
 
 
 class GoogleAdsIntegrationError(RuntimeError):
-    pass
+    http_status: int | None
+    retryable: bool | None
+    provider_error_code: str | None
+    provider_error_message: str | None
+    endpoint: str | None
+    retry_after_seconds: int | None
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        http_status: int | None = None,
+        retryable: bool | None = None,
+        provider_error_code: str | None = None,
+        provider_error_message: str | None = None,
+        endpoint: str | None = None,
+        retry_after_seconds: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.http_status = http_status
+        self.retryable = retryable
+        self.provider_error_code = provider_error_code
+        self.provider_error_message = provider_error_message
+        self.endpoint = endpoint
+        self.retry_after_seconds = retry_after_seconds
 
 
 class GoogleAdsService:
@@ -231,11 +255,35 @@ class GoogleAdsService:
                     response_body[:2000],
                 )
 
+            is_quota_exhausted = exc.code == 429
+            retry_after_seconds: int | None = None
+            provider_error_code: str | None = str(exc.code) if exc.code else None
+            provider_error_message: str | None = None
+            if is_quota_exhausted:
+                provider_error_code = "RESOURCE_EXHAUSTED"
+                try:
+                    payload_obj = json.loads(response_body) if response_body else {}
+                    for detail in (payload_obj.get("error", {}).get("details") or []):
+                        for err in (detail.get("errors") or []):
+                            msg = err.get("message", "")
+                            provider_error_message = msg
+                            retry_match = re.search(r"Retry in (\d+) seconds", msg)
+                            if retry_match:
+                                retry_after_seconds = int(retry_match.group(1))
+                except Exception:  # noqa: BLE001
+                    pass
+
             raise GoogleAdsIntegrationError(
                 "Google Ads HTTP request failed: "
                 f"method={method} url={url} status={exc.code} reason={exc.reason} "
                 f"request_id={request_id} failure_details={failure_details} response_headers={response_headers_debug} "
-                f"response={response_body[:1200]}"
+                f"response={response_body[:1200]}",
+                http_status=exc.code,
+                retryable=False if is_quota_exhausted else None,
+                provider_error_code=provider_error_code,
+                provider_error_message=provider_error_message,
+                endpoint=url,
+                retry_after_seconds=retry_after_seconds,
             ) from exc
         except Exception as exc:  # noqa: BLE001
             raise GoogleAdsIntegrationError(f"Google Ads HTTP request failed: method={method} url={url} error={exc}") from exc

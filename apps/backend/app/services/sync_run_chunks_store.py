@@ -369,6 +369,26 @@ class SyncRunChunksStore:
             payload[str(row[0])] = {"remaining": int(row[1] or 0), "errors": int(row[2] or 0)}
         return payload
 
+    def fail_queued_chunks_for_job(self, *, job_id: str, error: str) -> int:
+        self._ensure_schema()
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE sync_run_chunks
+                    SET
+                        status = 'error',
+                        error = %s,
+                        finished_at = NOW(),
+                        updated_at = NOW()
+                    WHERE job_id = %s AND status = 'queued'
+                    """,
+                    (error, str(job_id)),
+                )
+                affected = cur.rowcount or 0
+            conn.commit()
+        return affected
+
     def claim_next_queued_chunk(self, *, job_id: str, max_attempts: int = 5) -> dict[str, object] | None:
         self._ensure_schema()
         with self._connect() as conn:
