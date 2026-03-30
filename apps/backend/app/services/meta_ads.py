@@ -108,8 +108,11 @@ class MetaAdsService:
             or self._is_placeholder(settings.meta_redirect_uri)
         )
 
-    def _http_json(self, *, method: str, url: str) -> dict[str, object]:
+    def _http_json(self, *, method: str, url: str, headers: dict[str, str] | None = None) -> dict[str, object]:
         req = request.Request(url=url, method=method.upper())
+        if headers:
+            for key, value in headers.items():
+                req.add_header(key, value)
         try:
             with request.urlopen(req, timeout=20) as response:  # noqa: S310
                 data = response.read().decode("utf-8")
@@ -677,6 +680,10 @@ class MetaAdsService:
 
         state = base64.urlsafe_b64encode(secrets.token_bytes(24)).decode("utf-8").rstrip("=")
         self._oauth_state_cache.add(state)
+        try:
+            integration_secrets_store.upsert_secret(provider="meta_ads", secret_key=f"oauth_state:{state}", value="1")
+        except Exception:  # noqa: BLE001
+            pass
         params = {
             "client_id": settings.meta_app_id,
             "redirect_uri": settings.meta_redirect_uri,
@@ -693,9 +700,20 @@ class MetaAdsService:
         settings = load_settings()
         if not self._oauth_configured():
             raise MetaAdsIntegrationError("Meta OAuth is not configured. Set META_APP_ID, META_APP_SECRET, and META_REDIRECT_URI.")
-        if state not in self._oauth_state_cache:
+        state_valid = state in self._oauth_state_cache
+        if not state_valid:
+            try:
+                db_state = integration_secrets_store.get_secret(provider="meta_ads", secret_key=f"oauth_state:{state}")
+                state_valid = db_state is not None
+            except Exception:  # noqa: BLE001
+                pass
+        if not state_valid:
             raise MetaAdsIntegrationError("Invalid OAuth state for Meta connect callback")
         self._oauth_state_cache.discard(state)
+        try:
+            integration_secrets_store.delete_secret(provider="meta_ads", secret_key=f"oauth_state:{state}")
+        except Exception:  # noqa: BLE001
+            pass
 
         query = parse.urlencode(
             {
@@ -767,20 +785,144 @@ class MetaAdsService:
             "business_count": 0,
         }
 
+    def _active_access_token(self) -> str:
+        token, _, _ = self._access_token_with_source()
+        return token
+
+    def list_accessible_ad_accounts(self) -> list[dict[str, object]]:
+        resolved_token = self._active_access_token()
+        if resolved_token == "":
+            raise MetaAdsIntegrationError("Meta account discovery requires a usable OAuth token.")
+
+        api_version = self.graph_api_version()
+        accounts: list[dict[str, object]] = []
+        fields = "id,account_id,name,account_status,currency,timezone_name"
+        url: str | None = f"https://graph.facebook.com/{api_version}/me/adaccounts?fields={parse.quote(fields)}&limit=200"
+
+        max_pages = 50
+        page = 0
+        while url and page < max_pages:
+            page += 1
+            raw = self._http_json(
+                method="GET",
+                url=url,
+                headers={"Authorization": f"Bearer {resolved_token}"},
+            )
+            data_list = raw.get("data")
+            if isinstance(data_list, list):
+                for item in data_list:
+                    if not isinstance(item, dict):
+                        continue
+                    raw_id = str(item.get("id") or "").strip()
+                    numeric_id = str(item.get("account_id") or "").strip()
+                    if not raw_id and not numeric_id:
+                        continue
+                    if raw_id.startswith("act_"):
+                        account_id = raw_id
+                    elif numeric_id:
+                        account_id = f"act_{numeric_id}"
+                    else:
+                        account_id = f"act_{raw_id}"
+                    accounts.append({
+                        "id": account_id,
+                        "name": str(item.get("name") or account_id),
+                        "account_status": item.get("account_status"),
+                        "currency_code": str(item.get("currency") or "").strip().upper() or None,
+                        "account_timezone": str(item.get("timezone_name") or "").strip() or None,
+                    })
+
+            paging = raw.get("paging")
+            if isinstance(paging, dict):
+                next_url = str(paging.get("next") or "").strip()
+                if next_url:
+                    url = next_url
+                else:
+                    cursors = paging.get("cursors")
+                    if isinstance(cursors, dict):
+                        after = str(cursors.get("after") or "").strip()
+                        if after:
+                            url = f"https://graph.facebook.com/{api_version}/me/adaccounts?fields={parse.quote(fields)}&limit=200&after={parse.quote(after)}"
+                        else:
+                            url = None
+                    else:
+                        url = None
+            else:
+                url = None
+
+        return accounts
+
     def import_accounts(self) -> dict[str, object]:
-        token, token_source, _ = self._access_token_with_source()
-        if token == "":
-            raise MetaAdsIntegrationError("Meta account import requires a usable OAuth token. Connect Meta first.")
+        _, token_source, _ = self._access_token_with_source()
+
+        discovered_accounts = self.list_accessible_ad_accounts()
+        existing_accounts = client_registry_service.list_platform_accounts(platform="meta_ads")
+        existing_by_id: dict[str, dict[str, object]] = {
+            str(item.get("account_id") or item.get("id") or "").strip(): item
+            for item in existing_accounts if isinstance(item, dict)
+        }
+
+        if len(discovered_accounts) > 0:
+            client_registry_service.upsert_platform_accounts(
+                platform="meta_ads",
+                accounts=[{"id": str(item["id"]), "name": str(item["name"])} for item in discovered_accounts],
+            )
+
+        imported = 0
+        updated = 0
+        unchanged = 0
+        for account in discovered_accounts:
+            account_id = str(account["id"])
+            account_name = str(account["name"])
+            status_raw = account.get("account_status")
+            status = str(status_raw) if status_raw is not None else None
+            currency_code = account.get("currency_code")
+            account_timezone = account.get("account_timezone")
+
+            existing = existing_by_id.get(account_id)
+            if existing is None:
+                imported += 1
+                client_registry_service.update_platform_account_operational_metadata(
+                    platform="meta_ads",
+                    account_id=account_id,
+                    status=status,
+                    currency_code=str(currency_code) if currency_code else None,
+                    account_timezone=str(account_timezone) if account_timezone else None,
+                )
+                continue
+
+            existing_name = str(existing.get("name") or "").strip()
+            existing_status = str(existing.get("status") or "").strip() or None
+            existing_currency = str(existing.get("currency") or "").strip().upper() or None
+            existing_timezone = str(existing.get("timezone") or "").strip() or None
+
+            changed = (
+                existing_name != account_name
+                or existing_status != status
+                or existing_currency != (str(currency_code) if currency_code else None)
+                or existing_timezone != (str(account_timezone) if account_timezone else None)
+            )
+            if changed:
+                updated += 1
+                client_registry_service.update_platform_account_operational_metadata(
+                    platform="meta_ads",
+                    account_id=account_id,
+                    status=status,
+                    currency_code=str(currency_code) if currency_code else None,
+                    account_timezone=str(account_timezone) if account_timezone else None,
+                )
+            else:
+                unchanged += 1
 
         return {
             "status": "ok",
             "provider": "meta_ads",
+            "platform": "meta_ads",
             "token_source": token_source,
-            "accounts_discovered": 0,
-            "imported": 0,
-            "updated": 0,
-            "unchanged": 0,
-            "message": "Meta account import is enabled and awaiting account discovery implementation.",
+            "accounts_discovered": len(discovered_accounts),
+            "imported": imported,
+            "updated": updated,
+            "unchanged": unchanged,
+            "message": f"Meta account import completed: discovered={len(discovered_accounts)}, imported={imported}, updated={updated}, unchanged={unchanged}.",
         }
 
     def sync_client(

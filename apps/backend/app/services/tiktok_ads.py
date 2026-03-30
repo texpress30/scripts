@@ -520,6 +520,10 @@ class TikTokAdsService:
 
         state = base64.urlsafe_b64encode(secrets.token_bytes(24)).decode("utf-8").rstrip("=")
         self._oauth_state_cache.add(state)
+        try:
+            integration_secrets_store.upsert_secret(provider="tiktok_ads", secret_key=f"oauth_state:{state}", value="1")
+        except Exception:  # noqa: BLE001
+            pass
         params = {
             "app_id": settings.tiktok_app_id,
             "redirect_uri": settings.tiktok_redirect_uri,
@@ -534,9 +538,20 @@ class TikTokAdsService:
         settings = load_settings()
         if not self._oauth_configured():
             raise TikTokAdsIntegrationError("TikTok OAuth is not configured. Set TIKTOK_APP_ID, TIKTOK_APP_SECRET, and TIKTOK_REDIRECT_URI.")
-        if state not in self._oauth_state_cache:
+        state_valid = state in self._oauth_state_cache
+        if not state_valid:
+            try:
+                db_state = integration_secrets_store.get_secret(provider="tiktok_ads", secret_key=f"oauth_state:{state}")
+                state_valid = db_state is not None
+            except Exception:  # noqa: BLE001
+                pass
+        if not state_valid:
             raise TikTokAdsIntegrationError("Invalid OAuth state for TikTok connect callback")
         self._oauth_state_cache.discard(state)
+        try:
+            integration_secrets_store.delete_secret(provider="tiktok_ads", secret_key=f"oauth_state:{state}")
+        except Exception:  # noqa: BLE001
+            pass
 
         token_payload = self._http_json(
             method="POST",
