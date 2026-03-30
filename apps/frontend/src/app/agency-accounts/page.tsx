@@ -10,6 +10,7 @@ import { apiRequest, postAccountSyncProgressBatch, type AccountSyncProgressBatch
 import { isTikTokIntegrationEnabled } from "@/lib/featureFlags";
 import { getEffectiveAccountStatus, getTikTokErrorPresentation, shouldSuppressStaleTikTokFeatureFlagError } from "./sync-runs";
 import { PollBackoff } from "@/lib/poll-backoff";
+import { useBatchProgress } from "@/components/BatchProgressContext";
 
 type TikTokAccount = {
   id?: string;
@@ -308,6 +309,7 @@ function buildHistoricalBatchPayload(platform: string, accountIds: string[]): Re
 }
 
 export default function AgencyAccountsPage() {
+  const { registerBatch } = useBatchProgress();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
 
@@ -987,6 +989,7 @@ export default function AgencyAccountsPage() {
       });
       if (!payload.batch_id) throw new Error("Batch-ul nu a putut fi creat.");
       setCurrentBatchId(payload.batch_id);
+      registerBatch(payload.batch_id, platform, "historical_backfill");
 
       if ((payload.invalid_account_ids ?? []).length > 0) {
         setSyncStatusMessage(`Unele conturi au fost ignorate: ${(payload.invalid_account_ids ?? []).join(", ")}`);
