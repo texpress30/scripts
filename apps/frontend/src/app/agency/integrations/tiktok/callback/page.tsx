@@ -82,6 +82,7 @@ function TikTokOAuthCallbackBody() {
           }, 800);
         }
       } catch (err) {
+        sessionStorage.removeItem("tiktok_oauth_state");
         if (!ignore) {
           setError(err instanceof Error ? err.message : "TikTok OAuth exchange failed");
           setLoading(false);
