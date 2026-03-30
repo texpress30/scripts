@@ -544,39 +544,55 @@ class TikTokAdsService:
         if not state_valid:
             raise TikTokAdsIntegrationError(f"Invalid OAuth state for TikTok connect callback: {state_reason}")
 
+        token_url = f"{settings.tiktok_api_base_url.rstrip('/')}/open_api/{settings.tiktok_api_version.strip('/')}/oauth2/access_token/"
+        token_request_payload = {
+            "app_id": settings.tiktok_app_id.strip(),
+            "secret": settings.tiktok_app_secret.strip(),
+            "auth_code": code,
+            "grant_type": "authorized_code",
+        }
+        logger.info("tiktok_ads.oauth.token_exchange url=%s app_id=%s code_len=%d", token_url, settings.tiktok_app_id.strip()[:8] + "...", len(code))
         token_payload = self._http_json(
             method="POST",
-            url=f"{settings.tiktok_api_base_url.rstrip('/')}/open_api/{settings.tiktok_api_version.strip('/')}/oauth2/access_token/",
-            payload={
-                "app_id": settings.tiktok_app_id,
-                "secret": settings.tiktok_app_secret,
-                "auth_code": code,
-                "grant_type": "authorized_code",
-            },
+            url=token_url,
+            payload=token_request_payload,
         )
+        logger.info("tiktok_ads.oauth.token_response keys=%s", list(token_payload.keys()) if isinstance(token_payload, dict) else type(token_payload).__name__)
 
         container = token_payload.get("data") if isinstance(token_payload.get("data"), dict) else token_payload
         if not isinstance(container, dict):
-            raise TikTokAdsIntegrationError("TikTok OAuth response is missing token container")
+            raise TikTokAdsIntegrationError(f"TikTok OAuth response is missing token container. Response keys: {list(token_payload.keys()) if isinstance(token_payload, dict) else repr(token_payload)[:100]}")
 
         access_token = str(container.get("access_token") or "").strip()
         if access_token == "":
-            raise TikTokAdsIntegrationError("TikTok OAuth callback did not return an access token")
+            raise TikTokAdsIntegrationError(f"TikTok OAuth callback did not return an access token. Response data keys: {list(container.keys())}")
 
-        integration_secrets_store.upsert_secret(provider="tiktok_ads", secret_key="access_token", value=access_token)
+        logger.info("tiktok_ads.oauth.token_received token_len=%d", len(access_token))
+        try:
+            integration_secrets_store.upsert_secret(provider="tiktok_ads", secret_key="access_token", value=access_token)
+        except Exception as db_exc:
+            logger.exception("tiktok_ads.oauth.db_store_failed key=access_token")
+            raise TikTokAdsIntegrationError(f"Failed to store TikTok access token: {db_exc}") from db_exc
 
         refresh_token = str(container.get("refresh_token") or "").strip()
         if refresh_token:
-            integration_secrets_store.upsert_secret(provider="tiktok_ads", secret_key="refresh_token", value=refresh_token)
+            try:
+                integration_secrets_store.upsert_secret(provider="tiktok_ads", secret_key="refresh_token", value=refresh_token)
+            except Exception:
+                logger.exception("tiktok_ads.oauth.db_store_failed key=refresh_token")
 
         expires_in_raw = container.get("expires_in")
         token_expires_at: str | None = None
         if isinstance(expires_in_raw, (int, float)):
             expires_at = datetime.now(timezone.utc).timestamp() + float(expires_in_raw)
             token_expires_at = datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat()
-            integration_secrets_store.upsert_secret(provider="tiktok_ads", secret_key="token_expires_at", value=token_expires_at)
+            try:
+                integration_secrets_store.upsert_secret(provider="tiktok_ads", secret_key="token_expires_at", value=token_expires_at)
+            except Exception:
+                logger.exception("tiktok_ads.oauth.db_store_failed key=token_expires_at")
 
         _, token_source, token_updated_at = self._access_token_with_source()
+        logger.info("tiktok_ads.oauth.exchange_success token_source=%s", token_source)
         return {
             "status": "connected",
             "provider": "tiktok_ads",
