@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
@@ -103,14 +102,13 @@ export default function AgencyAccountsPage() {
   const [selectedPlatform, setSelectedPlatform] = useState<string>("google_ads");
   const [googleAccounts, setGoogleAccounts] = useState<GoogleAccount[]>([]);
   const [attachStatus, setAttachStatus] = useState("");
-  const [syncStatus, setSyncStatus] = useState("");
   const [loadError, setLoadError] = useState("");
   const [refreshBusy, setRefreshBusy] = useState(false);
   const [scheduleBusy, setScheduleBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
   const [accountsPage, setAccountsPage] = useState(1);
   const [accountsPageSize, setAccountsPageSize] = useState(50);
-  const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
   const [currentBatchId, setCurrentBatchId] = useState<string | null>(null);
   const [currentJobType, setCurrentJobType] = useState<"rolling_refresh" | "historical_backfill" | null>(null);
   const [currentStartDateUsed, setCurrentStartDateUsed] = useState<string | null>(null);
@@ -137,7 +135,7 @@ export default function AgencyAccountsPage() {
   async function reloadAccountsData() {
     try {
       setLoadError("");
-      setLoadingAccounts(true);
+      setLoading(true);
       await Promise.all([loadClients(), loadAccountSummary(), loadGoogleAccounts()]);
       setSelectedAccountIds(new Set());
     } catch (err) {
@@ -146,7 +144,7 @@ export default function AgencyAccountsPage() {
       setSummary([]);
       setGoogleAccounts([]);
     } finally {
-      setLoadingAccounts(false);
+      setLoading(false);
     }
   }
 
@@ -201,47 +199,6 @@ export default function AgencyAccountsPage() {
       setAttachStatus(err instanceof Error ? err.message : "Nu am putut actualiza numele conturilor Google");
     } finally {
       setRefreshBusy(false);
-    }
-  }
-
-  async function startBatchSync(mode: "rolling" | "historical") {
-    const selected = googleAccounts.filter((account) => selectedAccountIds.has(account.id));
-    if (selected.length === 0) {
-      setSyncStatus("Selectează cel puțin un cont pentru sync.");
-      return;
-    }
-
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const endDate = toIsoDateLocal(yesterday);
-    const rollingStart = new Date(yesterday);
-    rollingStart.setDate(rollingStart.getDate() - 6);
-    const startDate = mode === "rolling" ? toIsoDateLocal(rollingStart) : "2024-01-09";
-
-    setSyncStatus("");
-    setScheduleBusy(true);
-    try {
-      await apiRequest("/agency/sync-runs/batch", {
-        method: "POST",
-        body: JSON.stringify({
-          platform: "google_ads",
-          account_ids: selected.map((account) => String(account.id).trim()),
-          job_type: mode === "rolling" ? "rolling_refresh" : "historical_backfill",
-          start_date: startDate,
-          end_date: endDate,
-          chunk_days: 7,
-          grain: "account_daily",
-        }),
-      });
-      setSyncStatus(
-        mode === "rolling"
-          ? `Sync last 7 days programat pentru ${selected.length} conturi (${formatRoDate(startDate)} - ${formatRoDate(endDate)}).`
-          : `Backfill istoric programat pentru ${selected.length} conturi, începând cu ${formatRoDate(startDate)}.`
-      );
-    } catch (err) {
-      setSyncStatus(err instanceof Error ? err.message : "Nu am putut programa sync-ul selectat.");
-    } finally {
-      setScheduleBusy(false);
     }
   }
 
@@ -365,7 +322,7 @@ export default function AgencyAccountsPage() {
           if (Number(payload.progress.error || 0) > 0) {
             setSyncStatusMessage(`Sync finalizat cu erori: ${payload.progress.error} conturi`);
           } else if (currentJobType === "historical_backfill") {
-            setSyncStatusMessage(`Date istorice descarcate începând cu ${formatRoDate(currentStartDateUsed)}`);
+            setSyncStatusMessage(`Date istorice descarcate începând cu ${formatRoDate(currentStartDateUsed ?? "")}`);
           } else {
             setSyncStatusMessage("Sync last 7 days finalizat cu succes.");
           }
@@ -441,7 +398,7 @@ export default function AgencyAccountsPage() {
                 {loadError ? <p className="mt-2 text-xs text-red-600">{loadError}</p> : null}
                 {syncError ? <p className="mt-2 text-xs text-red-600">{syncError}</p> : null}
                 {attachStatus ? <p className="mt-2 text-xs text-emerald-700">{attachStatus}</p> : null}
-                {syncStatus ? <p className="mt-2 text-xs text-indigo-700">{syncStatus}</p> : null}
+                {syncStatusMessage ? <p className="mt-2 text-xs text-indigo-700">{syncStatusMessage}</p> : null}
                 <div className="mt-3 space-y-2">
                   {pagedGoogleAccounts.map((account) => (
                     <div key={account.id} className="flex flex-wrap items-center justify-between rounded-md border border-slate-200 px-3 py-2">
@@ -474,7 +431,7 @@ export default function AgencyAccountsPage() {
                               void attachGoogleAccount(value, account.id);
                             }
                           }}
-                          disabled={scheduleBusy || loadingAccounts}
+                          disabled={scheduleBusy || loading}
                         >
                           <option value="">Atașează la client...</option>
                           {clients.map((client) => (
@@ -484,13 +441,13 @@ export default function AgencyAccountsPage() {
                           ))}
                         </select>
                         {account.attached_client_id ? (
-                          <button className="wm-btn" onClick={() => void detachGoogleAccount(account.attached_client_id ?? 0, account.id)} disabled={scheduleBusy || loadingAccounts}>
+                          <button className="wm-btn" onClick={() => void detachGoogleAccount(account.attached_client_id ?? 0, account.id)} disabled={scheduleBusy || loading}>
                             Detașează
                           </button>
                         ) : null}
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
                   {googleAccounts.length === 0 ? <p className="text-sm text-slate-500">Nu există conturi importate.</p> : null}
                 </div>
                 {googleAccounts.length > 0 ? (
