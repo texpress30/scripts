@@ -528,8 +528,9 @@ class TikTokAdsService:
         settings = load_settings()
         if not self._oauth_configured():
             raise TikTokAdsIntegrationError("TikTok OAuth is not configured. Set TIKTOK_APP_ID, TIKTOK_APP_SECRET, and TIKTOK_REDIRECT_URI.")
-        if not verify_oauth_state("tiktok_ads", state):
-            raise TikTokAdsIntegrationError("Invalid OAuth state for TikTok connect callback")
+        state_valid, state_reason = verify_oauth_state("tiktok_ads", state)
+        if not state_valid:
+            raise TikTokAdsIntegrationError(f"Invalid OAuth state for TikTok connect callback: {state_reason}")
 
         token_payload = self._http_json(
             method="POST",

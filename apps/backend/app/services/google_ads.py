@@ -707,8 +707,9 @@ class GoogleAdsService:
 
     def exchange_oauth_code(self, *, code: str, state: str) -> dict[str, object]:
         self._require_production_credentials()
-        if not verify_oauth_state("google_ads", state):
-            raise GoogleAdsIntegrationError("Invalid OAuth state for Google connect callback")
+        state_valid, state_reason = verify_oauth_state("google_ads", state)
+        if not state_valid:
+            raise GoogleAdsIntegrationError(f"Invalid OAuth state for Google connect callback: {state_reason}")
 
         settings = load_settings()
         token_payload = self._http_json(
