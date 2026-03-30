@@ -27,7 +27,9 @@ function TikTokOAuthCallbackBody() {
   const code = searchParams.get("auth_code") ?? searchParams.get("code") ?? "";
   const urlState = searchParams.get("state") ?? "";
   const savedState = typeof window !== "undefined" ? sessionStorage.getItem("tiktok_oauth_state") ?? "" : "";
-  const state = urlState || savedState;
+  // Prefer sessionStorage state (our HMAC token) over URL state — TikTok may
+  // return its own state value that doesn't match our HMAC format.
+  const state = savedState || urlState;
 
   useEffect(() => {
     let ignore = false;
