@@ -1157,6 +1157,10 @@ class UnifiedDashboardService:
                 account_id = str(run.get("account_id") or "")
                 if account_id == "" or account_id in latest_by_account:
                     continue
+                run_status = str(run.get("status") or "").strip().lower()
+                if run_status in ("done", "success", "completed"):
+                    run["last_error"] = None
+                    run["last_error_summary"] = None
                 latest_by_account[account_id] = run
 
             account_items: list[dict[str, object]] = []
