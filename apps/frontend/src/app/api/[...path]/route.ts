@@ -34,14 +34,23 @@ async function proxy(req: NextRequest, path: string[]) {
   const ttl = isRead ? resolveRevalidateSeconds(joined) : false;
   const useCache = isRead && ttl !== false;
 
-  const upstream = await fetch(targetUrl.toString(), {
-    method,
-    headers,
-    body,
-    redirect: "manual",
-    cache: useCache ? "force-cache" : "no-store",
-    ...(useCache ? { next: { revalidate: ttl } } : {}),
-  });
+  let upstream: Response;
+  try {
+    upstream = await fetch(targetUrl.toString(), {
+      method,
+      headers,
+      body,
+      redirect: "manual",
+      cache: useCache ? "force-cache" : "no-store",
+      ...(useCache ? { next: { revalidate: ttl } } : {}),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Backend unavailable";
+    return new Response(JSON.stringify({ detail: `Proxy error: ${message}` }), {
+      status: 502,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 
   const responseHeaders = new Headers(upstream.headers);
   responseHeaders.delete("content-encoding");

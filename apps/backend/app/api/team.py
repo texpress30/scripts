@@ -198,8 +198,11 @@ def list_team_members(
             page_size=page_size,
         )
         items = [item for raw in raw_items if isinstance(raw, dict) for item in [_normalize_member_item(raw)] if item is not None]
+        return TeamMemberListResponse(items=items, total=total, page=page, page_size=page_size)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
     except Exception as exc:  # noqa: BLE001
         logger.exception("team.list_members error")
         if _is_db_unavailable_error(exc):
@@ -208,7 +211,6 @@ def list_team_members(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Nu am putut încărca lista de utilizatori: {exc}",
         ) from exc
-    return TeamMemberListResponse(items=items, total=total, page=page, page_size=page_size)
 
 
 @router.post("/members", response_model=TeamMemberResponse)
@@ -232,12 +234,14 @@ def create_team_member(payload: CreateTeamMemberRequest, user: AuthUser = Depend
             allowed_subaccount_ids=payload.allowed_subaccount_ids,
             actor_user=user,
         )
+        return TeamMemberResponse(item=item)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
     except Exception as exc:  # noqa: BLE001
+        logger.exception("team.create_member error")
         raise HTTPException(status_code=400, detail=f"Nu am putut adăuga utilizatorul: {exc}") from exc
-
-    return TeamMemberResponse(item=item)
 
 
 
