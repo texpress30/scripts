@@ -540,8 +540,7 @@ class MediaBuyingStore:
         cv2 = int(manual_row.get("custom_value_2_count", 0)) if isinstance(manual_row, dict) else 0
         cv3_ron = float(manual_row.get("custom_value_3_amount_ron", 0.0)) if isinstance(manual_row, dict) else 0.0
         cv5_ron = float(manual_row.get("custom_value_5_amount_ron", 0.0)) if isinstance(manual_row, dict) else 0.0
-        cv4_from_row = float(manual_row.get("custom_value_4_amount_ron", 0.0)) if isinstance(manual_row, dict) else 0.0
-        cv4_ron = cv4_from_row if cv4_from_row != 0.0 else max(round(cv3_ron, 2) - round(cv5_ron, 2), 0.0)
+        cv4_ron = float(manual_row.get("custom_value_4_amount_ron", 0.0)) if isinstance(manual_row, dict) else 0.0
         sales_count = int(manual_row.get("sales_count", 0)) if isinstance(manual_row, dict) else 0
 
         cost_google = round(float(daily_costs.get("google_ads", 0.0)), 2)
