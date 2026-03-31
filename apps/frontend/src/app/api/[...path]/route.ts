@@ -18,19 +18,46 @@ function resolveRevalidateSeconds(joined: string): number | false {
   return 30;
 }
 
+const HOP_BY_HOP_HEADERS = new Set([
+  "connection",
+  "keep-alive",
+  "transfer-encoding",
+  "te",
+  "trailer",
+  "upgrade",
+  "proxy-authorization",
+  "proxy-authenticate",
+  "accept-encoding",
+]);
+
+function sanitizeRequestHeaders(incoming: Headers): Headers {
+  const clean = new Headers();
+  incoming.forEach((value, key) => {
+    const lower = key.toLowerCase();
+    if (HOP_BY_HOP_HEADERS.has(lower)) return;
+    if (lower === "host") return;
+    if (lower === "content-length") return;
+    clean.set(key, value);
+  });
+  return clean;
+}
+
 async function proxy(req: NextRequest, path: string[]) {
   const backendBaseUrl = getBackendBaseUrl();
   const joined = path.join("/");
   const targetUrl = new URL(`${backendBaseUrl}/${joined}`);
   targetUrl.search = req.nextUrl.search;
 
-  const headers = new Headers(req.headers);
-  headers.delete("host");
+  const headers = sanitizeRequestHeaders(req.headers);
 
   const method = req.method.toUpperCase();
-  const body = method === "GET" || method === "HEAD" ? undefined : await req.arrayBuffer();
-  const isRead = method === "GET" || method === "HEAD";
+  const hasBody = method !== "GET" && method !== "HEAD";
+  const body = hasBody ? await req.arrayBuffer() : undefined;
+  if (hasBody && body) {
+    headers.set("content-length", String(body.byteLength));
+  }
 
+  const isRead = !hasBody;
   const ttl = isRead ? resolveRevalidateSeconds(joined) : false;
   const useCache = isRead && ttl !== false;
 
