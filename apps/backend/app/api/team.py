@@ -379,6 +379,12 @@ def delete_team_user_hard(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("team.delete_user_hard error user_id=%s", user_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Nu am putut șterge utilizatorul: {str(exc)[:200]}",
+        ) from exc
 
     return TeamUserDeleteResponse(
         user_id=int(payload.get("user_id") or user_id),

@@ -1633,8 +1633,15 @@ class TeamMembersService:
                 deleted_memberships_count = int(count_row[0] or 0) if count_row is not None else 0
 
                 if email != "":
-                    cur.execute("DELETE FROM team_members WHERE LOWER(email) = %s", (email,))
+                    try:
+                        cur.execute("DELETE FROM team_members WHERE LOWER(email) = %s", (email,))
+                    except Exception:  # noqa: BLE001
+                        conn.rollback()
 
+                cur.execute("DELETE FROM auth_email_tokens WHERE user_id = %s", (target_user_id,))
+                cur.execute("DELETE FROM membership_module_permissions WHERE membership_id IN (SELECT id FROM user_memberships WHERE user_id = %s)", (target_user_id,))
+                cur.execute("DELETE FROM membership_subaccount_access_grants WHERE membership_id IN (SELECT id FROM user_memberships WHERE user_id = %s)", (target_user_id,))
+                cur.execute("DELETE FROM user_memberships WHERE user_id = %s", (target_user_id,))
                 cur.execute("DELETE FROM users WHERE id = %s", (target_user_id,))
                 if int(cur.rowcount or 0) != 1:
                     raise LookupError("Utilizator inexistent")
