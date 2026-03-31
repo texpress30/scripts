@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 
-from app.api.dependencies import enforce_action_scope, enforce_agency_navigation_access, get_current_user
+from app.api.dependencies import enforce_action_scope, enforce_agency_navigation_access, enforce_subaccount_action, get_current_user
 from app.core.config import load_settings
 from app.schemas.client import (
     AttachGoogleAccountRequest,
@@ -452,7 +452,7 @@ def _build_subaccount_business_profile_response(*, identifier: int, profile: dic
 
 @router.get("/{subaccount_id}/business-profile", response_model=SubaccountBusinessProfileResponse)
 def get_subaccount_business_profile_by_subaccount_id(subaccount_id: int, user: AuthUser = Depends(get_current_user)) -> SubaccountBusinessProfileResponse:
-    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_subaccount_action(user=user, action="dashboard:view", subaccount_id=subaccount_id)
     client_id, _, _ = _resolve_client_from_subaccount_identifier_or_404(identifier=subaccount_id)
     profile = subaccount_business_profile_store.get_profile(client_id=client_id)
     return _build_subaccount_business_profile_response(identifier=subaccount_id, profile=profile)
