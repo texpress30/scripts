@@ -838,6 +838,7 @@ export default function SettingsTeamPage() {
                   type="button"
                   onClick={() => {
                     resetCreateForm();
+                    setErrorMessage("");
                     setMode("create");
                     setActiveFormTab("identity");
                   }}
