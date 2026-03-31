@@ -560,6 +560,7 @@ class SyncRunsStore:
                         COALESCE(attempts, 0)::int AS attempts
                     FROM sync_run_chunks
                     WHERE job_id = %s
+                    FOR UPDATE
                     """,
                     (normalized_job_id,),
                 )

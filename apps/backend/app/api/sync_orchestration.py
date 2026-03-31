@@ -853,18 +853,11 @@ def repair_sync_run(job_id: str, user: AuthUser = Depends(get_current_user)) -> 
     enforce_action_scope(user=user, action="integrations:sync", scope="agency")
 
     stale_minutes = load_settings().sync_run_repair_stale_minutes
-    try:
-        result = sync_runs_store.repair_historical_sync_run(
-            job_id=str(job_id).strip(),
-            stale_after_minutes=int(stale_minutes),
-            repair_source="api.sync_orchestration",
-        )
-    except Exception as exc:
-        logger.exception("sync_runs.repair database_error job_id=%s", str(job_id).strip())
-        raise HTTPException(
-            status_code=503,
-            detail={"message": f"Repair failed, please retry: {exc}", "job_id": str(job_id).strip()},
-        ) from exc
+    result = sync_runs_store.repair_historical_sync_run(
+        job_id=str(job_id).strip(),
+        stale_after_minutes=int(stale_minutes),
+        repair_source="api.sync_orchestration",
+    )
 
     outcome = str(result.get("outcome") or "")
     logger.info(
