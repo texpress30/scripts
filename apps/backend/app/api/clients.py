@@ -10,6 +10,8 @@ from app.schemas.client import (
     BusinessInputsImportRequest,
     BusinessInputsImportResponse,
     ClientDataConfigResponse,
+    CustomValueLabelsUpdateRequest,
+    CustomValueLabelsResponse,
     ClientDataDailyInputUpsertRequest,
     ClientDataDailyInputPatchRequest,
     ClientDataDailyInputDeleteResponse,
@@ -699,6 +701,13 @@ def get_client_data_config(client_id: int, user: AuthUser = Depends(get_current_
             }
         )
     dynamic_custom_fields = [item for item in mapped_custom_fields if bool(item.get("is_active"))]
+    custom_value_labels = {
+        "custom_label_1": str(media_buying_config.get("custom_label_1") or "Custom Value 1"),
+        "custom_label_2": str(media_buying_config.get("custom_label_2") or "Custom Value 2"),
+        "custom_label_3": str(media_buying_config.get("custom_label_3") or "Custom Value 3"),
+        "custom_label_4": str(media_buying_config.get("custom_label_4") or "Custom Value 4"),
+        "custom_label_5": str(media_buying_config.get("custom_label_5") or "Custom Value 5"),
+    }
     return {
         "client_id": client_id,
         "currency_code": display_currency,
@@ -708,6 +717,48 @@ def get_client_data_config(client_id: int, user: AuthUser = Depends(get_current_
         "dynamic_custom_fields": dynamic_custom_fields,
         "custom_fields": mapped_custom_fields,
         "derived_fields": derived_fields,
+        "custom_value_labels": custom_value_labels,
+    }
+
+
+@router.get("/{client_id}/data/custom-value-labels", response_model=CustomValueLabelsResponse)
+def get_custom_value_labels(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+    config = media_buying_store.get_config(client_id=client_id)
+    return {
+        "custom_label_1": str(config.get("custom_label_1") or "Custom Value 1"),
+        "custom_label_2": str(config.get("custom_label_2") or "Custom Value 2"),
+        "custom_label_3": str(config.get("custom_label_3") or "Custom Value 3"),
+        "custom_label_4": str(config.get("custom_label_4") or "Custom Value 4"),
+        "custom_label_5": str(config.get("custom_label_5") or "Custom Value 5"),
+    }
+
+
+@router.patch("/{client_id}/data/custom-value-labels", response_model=CustomValueLabelsResponse)
+def update_custom_value_labels(
+    client_id: int,
+    payload: CustomValueLabelsUpdateRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    _ensure_client_exists_or_404(client_id=client_id)
+    updated = media_buying_store.upsert_config(
+        client_id=client_id,
+        custom_label_1=payload.custom_label_1,
+        custom_label_2=payload.custom_label_2,
+        custom_label_3=payload.custom_label_3,
+        custom_label_4=payload.custom_label_4,
+        custom_label_5=payload.custom_label_5,
+    )
+    return {
+        "custom_label_1": str(updated.get("custom_label_1") or "Custom Value 1"),
+        "custom_label_2": str(updated.get("custom_label_2") or "Custom Value 2"),
+        "custom_label_3": str(updated.get("custom_label_3") or "Custom Value 3"),
+        "custom_label_4": str(updated.get("custom_label_4") or "Custom Value 4"),
+        "custom_label_5": str(updated.get("custom_label_5") or "Custom Value 5"),
     }
 
 
