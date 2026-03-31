@@ -832,7 +832,7 @@ export default function SubDataPage() {
 
                     return (
                       <React.Fragment key={rowKey}>
-                        <tr className="align-top">
+                        <tr className="align-top hover:bg-slate-50">
                           <td className="border border-slate-200 px-3 py-2">{formatWeekLabel(row.metric_date)}</td>
                           <td className="border border-slate-200 px-3 py-2">{row.metric_date}</td>
                           <td className="border border-slate-200 px-3 py-2">{isEditing ? <input aria-label={`Editează leads ${rowKey}`} className="w-24 rounded border border-slate-300 px-2 py-1" value={draft.leads} onChange={(e) => setEditingRowDraft((p) => (p ? { ...p, leads: e.target.value } : p))} /> : formatCount(row.leads)}</td>

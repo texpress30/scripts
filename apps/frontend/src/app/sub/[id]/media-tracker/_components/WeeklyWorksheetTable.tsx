@@ -209,7 +209,7 @@ export function WeeklyWorksheetTable(
               {section.rows.map((row) => {
                 const manualFieldKey = getManualFieldKey(row);
                 return (
-                  <tr key={`${section.key}:${row.row_key}`} className="border-t border-slate-100">
+                  <tr key={`${section.key}:${row.row_key}`} className="border-t border-slate-100 hover:bg-slate-50">
                     <td className={`sticky left-0 z-10 bg-white ${rowLabelClass(row)} ${DASHED_COL}`}>{row.label}</td>
                     <td data-testid={`history-${section.key}-${row.row_key}`} className={`${rowCellClass(row)} ${MEDIA_BUYING_GREY_TEXT_CLASS} ${DASHED_COL}`}>{formatWorksheetValue(row.history_value, row.value_kind, row.currency_code, displayCurrency)}</td>
                     {row.weekly_values.map((cell) => {
