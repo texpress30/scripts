@@ -60,6 +60,8 @@ _HEADER_MAP: dict[str, str] = {
     "current_price": "actual_price_amount",
     "actual_price_amount": "actual_price_amount",
     "profit brut": "gross_profit_amount",
+    "p/l brut": "gross_profit_amount",
+    "pl brut": "gross_profit_amount",
     "gross_profit": "gross_profit_amount",
     "gross_profit_amount": "gross_profit_amount",
     "sursa": "source",
