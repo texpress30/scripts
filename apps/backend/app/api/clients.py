@@ -1412,6 +1412,12 @@ async def import_preview_client_data(
         result = parse_csv_for_preview(content)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        print(f"[IMPORT-PREVIEW] Unexpected error for sub_id={client_id}: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Eroare internă la parsarea CSV-ului: {exc}",
+        ) from exc
 
     print(
         f"[IMPORT-PREVIEW] sub_id={client_id}, rows={result['total']}, "
