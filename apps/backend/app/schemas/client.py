@@ -143,6 +143,8 @@ class CustomValueLabelsUpdateRequest(BaseModel):
     custom_label_3: str | None = None
     custom_label_4: str | None = None
     custom_label_5: str | None = None
+    custom_rate_label_1: str | None = None
+    custom_rate_label_2: str | None = None
 
 
 class CustomValueLabelsResponse(BaseModel):
@@ -151,6 +153,10 @@ class CustomValueLabelsResponse(BaseModel):
     custom_label_3: str
     custom_label_4: str
     custom_label_5: str
+    custom_rate_label_1: str
+    custom_rate_label_2: str
+    custom_cost_label_1: str
+    custom_cost_label_2: str
 
 
 class ClientDataConfigResponse(BaseModel):

@@ -701,13 +701,7 @@ def get_client_data_config(client_id: int, user: AuthUser = Depends(get_current_
             }
         )
     dynamic_custom_fields = [item for item in mapped_custom_fields if bool(item.get("is_active"))]
-    custom_value_labels = {
-        "custom_label_1": str(media_buying_config.get("custom_label_1") or "Custom Value 1"),
-        "custom_label_2": str(media_buying_config.get("custom_label_2") or "Custom Value 2"),
-        "custom_label_3": str(media_buying_config.get("custom_label_3") or "Custom Value 3"),
-        "custom_label_4": str(media_buying_config.get("custom_label_4") or "Custom Value 4"),
-        "custom_label_5": str(media_buying_config.get("custom_label_5") or "Custom Value 5"),
-    }
+    custom_value_labels = _build_custom_value_labels_response(media_buying_config)
     return {
         "client_id": client_id,
         "currency_code": display_currency,
@@ -727,13 +721,7 @@ def get_custom_value_labels(client_id: int, user: AuthUser = Depends(get_current
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     config = media_buying_store.get_config(client_id=client_id)
-    return {
-        "custom_label_1": str(config.get("custom_label_1") or "Custom Value 1"),
-        "custom_label_2": str(config.get("custom_label_2") or "Custom Value 2"),
-        "custom_label_3": str(config.get("custom_label_3") or "Custom Value 3"),
-        "custom_label_4": str(config.get("custom_label_4") or "Custom Value 4"),
-        "custom_label_5": str(config.get("custom_label_5") or "Custom Value 5"),
-    }
+    return _build_custom_value_labels_response(config)
 
 
 @router.patch("/{client_id}/data/custom-value-labels", response_model=CustomValueLabelsResponse)
@@ -745,6 +733,10 @@ def update_custom_value_labels(
     enforce_action_scope(user=user, action="clients:list", scope="agency")
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
+    label_1 = payload.custom_label_1
+    label_2 = payload.custom_label_2
+    cost_label_1 = f"Cost {label_1}" if label_1 and label_1 != "Custom Value 1" else None
+    cost_label_2 = f"Cost {label_2}" if label_2 and label_2 != "Custom Value 2" else None
     updated = media_buying_store.upsert_config(
         client_id=client_id,
         custom_label_1=payload.custom_label_1,
@@ -752,13 +744,27 @@ def update_custom_value_labels(
         custom_label_3=payload.custom_label_3,
         custom_label_4=payload.custom_label_4,
         custom_label_5=payload.custom_label_5,
+        custom_rate_label_1=payload.custom_rate_label_1,
+        custom_rate_label_2=payload.custom_rate_label_2,
+        custom_cost_label_1=cost_label_1,
+        custom_cost_label_2=cost_label_2,
     )
+    return _build_custom_value_labels_response(updated)
+
+
+def _build_custom_value_labels_response(config: dict) -> dict[str, object]:
+    label_1 = str(config.get("custom_label_1") or "Custom Value 1")
+    label_2 = str(config.get("custom_label_2") or "Custom Value 2")
     return {
-        "custom_label_1": str(updated.get("custom_label_1") or "Custom Value 1"),
-        "custom_label_2": str(updated.get("custom_label_2") or "Custom Value 2"),
-        "custom_label_3": str(updated.get("custom_label_3") or "Custom Value 3"),
-        "custom_label_4": str(updated.get("custom_label_4") or "Custom Value 4"),
-        "custom_label_5": str(updated.get("custom_label_5") or "Custom Value 5"),
+        "custom_label_1": label_1,
+        "custom_label_2": label_2,
+        "custom_label_3": str(config.get("custom_label_3") or "Custom Value 3"),
+        "custom_label_4": str(config.get("custom_label_4") or "Custom Value 4"),
+        "custom_label_5": str(config.get("custom_label_5") or "Custom Value 5"),
+        "custom_rate_label_1": str(config.get("custom_rate_label_1") or "Custom Value Rate 1"),
+        "custom_rate_label_2": str(config.get("custom_rate_label_2") or "Custom Value Rate 2"),
+        "custom_cost_label_1": str(config.get("custom_cost_label_1") or f"Cost {label_1}"),
+        "custom_cost_label_2": str(config.get("custom_cost_label_2") or f"Cost {label_2}"),
     }
 
 

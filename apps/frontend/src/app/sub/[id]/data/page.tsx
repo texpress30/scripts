@@ -23,6 +23,10 @@ type CustomValueLabels = {
   custom_label_3: string;
   custom_label_4: string;
   custom_label_5: string;
+  custom_rate_label_1: string;
+  custom_rate_label_2: string;
+  custom_cost_label_1: string;
+  custom_cost_label_2: string;
 };
 
 type DataConfigResponse = {
@@ -285,6 +289,10 @@ export default function SubDataPage() {
     custom_label_3: "Custom Value 3",
     custom_label_4: "Custom Value 4",
     custom_label_5: "Custom Value 5",
+    custom_rate_label_1: "Custom Value Rate 1",
+    custom_rate_label_2: "Custom Value Rate 2",
+    custom_cost_label_1: "Cost Custom Value 1",
+    custom_cost_label_2: "Cost Custom Value 2",
   });
   const [customLabelsLoading, setCustomLabelsLoading] = useState(false);
   const [customLabelsError, setCustomLabelsError] = useState("");
@@ -363,6 +371,10 @@ export default function SubDataPage() {
       custom_label_3: labels?.custom_label_3 || "Custom Value 3",
       custom_label_4: labels?.custom_label_4 || "Custom Value 4",
       custom_label_5: labels?.custom_label_5 || "Custom Value 5",
+      custom_rate_label_1: labels?.custom_rate_label_1 || "Custom Value Rate 1",
+      custom_rate_label_2: labels?.custom_rate_label_2 || "Custom Value Rate 2",
+      custom_cost_label_1: labels?.custom_cost_label_1 || "Cost Custom Value 1",
+      custom_cost_label_2: labels?.custom_cost_label_2 || "Cost Custom Value 2",
     });
     setCustomLabelsError("");
     setCustomLabelsSuccess("");
@@ -654,7 +666,7 @@ export default function SubDataPage() {
                 {([1, 2, 3, 4, 5] as const).map((n) => {
                   const key = `custom_label_${n}` as keyof CustomValueLabels;
                   return (
-                    <div key={n} className="grid grid-cols-[120px_1fr] items-center gap-2">
+                    <div key={n} className="grid grid-cols-[160px_1fr] items-center gap-2">
                       <label className="text-sm text-slate-700">Custom Value {n}</label>
                       <input
                         aria-label={`Custom Value ${n} label`}
@@ -665,6 +677,39 @@ export default function SubDataPage() {
                     </div>
                   );
                 })}
+              </div>
+              <div className="mt-4 border-t border-slate-200 pt-3">
+                <h3 className="text-sm font-semibold text-slate-900">Rate Labels</h3>
+                <div className="mt-2 space-y-2">
+                  {([1, 2] as const).map((n) => {
+                    const key = `custom_rate_label_${n}` as keyof CustomValueLabels;
+                    return (
+                      <div key={`rate-${n}`} className="grid grid-cols-[160px_1fr] items-center gap-2">
+                        <label className="text-sm text-slate-700">Custom Value Rate {n}</label>
+                        <input
+                          aria-label={`Custom Value Rate ${n} label`}
+                          className="rounded border border-slate-300 px-2 py-1 text-sm"
+                          value={customLabelsDraft[key]}
+                          onChange={(e) => setCustomLabelsDraft((prev) => ({ ...prev, [key]: e.target.value }))}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="mt-4 border-t border-slate-200 pt-3">
+                <h3 className="text-sm font-semibold text-slate-900">Cost Labels</h3>
+                <p className="text-xs text-slate-500">Generate automat din Custom Value 1 și 2.</p>
+                <div className="mt-2 space-y-2">
+                  <div className="grid grid-cols-[160px_1fr] items-center gap-2">
+                    <label className="text-sm text-slate-500">Cost Custom Value 1</label>
+                    <span className="px-2 py-1 text-sm text-slate-600">{`Cost ${customLabelsDraft.custom_label_1}`}</span>
+                  </div>
+                  <div className="grid grid-cols-[160px_1fr] items-center gap-2">
+                    <label className="text-sm text-slate-500">Cost Custom Value 2</label>
+                    <span className="px-2 py-1 text-sm text-slate-600">{`Cost ${customLabelsDraft.custom_label_2}`}</span>
+                  </div>
+                </div>
               </div>
               {customLabelsError ? <p className="mt-2 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-sm text-rose-700">{customLabelsError}</p> : null}
               {customLabelsSuccess ? <p className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-sm text-emerald-700">{customLabelsSuccess}</p> : null}
