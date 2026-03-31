@@ -137,6 +137,22 @@ class ClientDataCustomFieldItem(BaseModel):
     is_active: bool
 
 
+class CustomValueLabelsUpdateRequest(BaseModel):
+    custom_label_1: str | None = None
+    custom_label_2: str | None = None
+    custom_label_3: str | None = None
+    custom_label_4: str | None = None
+    custom_label_5: str | None = None
+
+
+class CustomValueLabelsResponse(BaseModel):
+    custom_label_1: str
+    custom_label_2: str
+    custom_label_3: str
+    custom_label_4: str
+    custom_label_5: str
+
+
 class ClientDataConfigResponse(BaseModel):
     client_id: int
     currency_code: str | None = None
@@ -146,6 +162,7 @@ class ClientDataConfigResponse(BaseModel):
     dynamic_custom_fields: list[ClientDataCustomFieldItem] = Field(default_factory=list)
     custom_fields: list[ClientDataCustomFieldItem]
     derived_fields: list[ClientDataDerivedField]
+    custom_value_labels: CustomValueLabelsResponse | None = None
 
 
 class ClientDataRowCustomValue(BaseModel):

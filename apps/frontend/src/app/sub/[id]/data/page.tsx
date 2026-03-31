@@ -17,6 +17,14 @@ type FixedFieldConfig = { key: string; label: string };
 type DerivedFieldConfig = { key: string; label: string; value_kind?: "count" | "amount" };
 type DynamicCustomFieldConfig = { id: number; field_key: string; label: string; value_kind?: "count" | "amount"; sort_order?: number; is_active?: boolean };
 
+type CustomValueLabels = {
+  custom_label_1: string;
+  custom_label_2: string;
+  custom_label_3: string;
+  custom_label_4: string;
+  custom_label_5: string;
+};
+
 type DataConfigResponse = {
   currency_code?: string;
   display_currency?: string;
@@ -25,6 +33,7 @@ type DataConfigResponse = {
   derived_fields?: DerivedFieldConfig[];
   dynamic_custom_fields?: DynamicCustomFieldConfig[];
   custom_fields?: DynamicCustomFieldConfig[];
+  custom_value_labels?: CustomValueLabels;
 };
 
 type DynamicCustomValueRow = {
@@ -269,6 +278,18 @@ export default function SubDataPage() {
   const [csvImportOpen, setCsvImportOpen] = useState(false);
   const [csvPreviewData, setCsvPreviewData] = useState<CsvImportPreviewResponse | null>(null);
 
+  const [customLabelsOpen, setCustomLabelsOpen] = useState(false);
+  const [customLabelsDraft, setCustomLabelsDraft] = useState<CustomValueLabels>({
+    custom_label_1: "Custom Value 1",
+    custom_label_2: "Custom Value 2",
+    custom_label_3: "Custom Value 3",
+    custom_label_4: "Custom Value 4",
+    custom_label_5: "Custom Value 5",
+  });
+  const [customLabelsLoading, setCustomLabelsLoading] = useState(false);
+  const [customLabelsError, setCustomLabelsError] = useState("");
+  const [customLabelsSuccess, setCustomLabelsSuccess] = useState("");
+
   const currencyCode = String(config?.currency_code || config?.display_currency || "USD").toUpperCase();
   const fixedLabels = useMemo(() => normalizeFixedLabels(config), [config]);
   const derivedLabels = useMemo(() => normalizeDerivedLabels(config), [config]);
@@ -331,6 +352,38 @@ export default function SubDataPage() {
       setManageFieldsError(err instanceof Error ? err.message : "Nu am putut încărca câmpurile custom.");
     } finally {
       setManageFieldsLoading(false);
+    }
+  }
+
+  function openCustomLabelsModal() {
+    const labels = config?.custom_value_labels;
+    setCustomLabelsDraft({
+      custom_label_1: labels?.custom_label_1 || "Custom Value 1",
+      custom_label_2: labels?.custom_label_2 || "Custom Value 2",
+      custom_label_3: labels?.custom_label_3 || "Custom Value 3",
+      custom_label_4: labels?.custom_label_4 || "Custom Value 4",
+      custom_label_5: labels?.custom_label_5 || "Custom Value 5",
+    });
+    setCustomLabelsError("");
+    setCustomLabelsSuccess("");
+    setCustomLabelsOpen(true);
+  }
+
+  async function saveCustomLabels() {
+    setCustomLabelsLoading(true);
+    setCustomLabelsError("");
+    setCustomLabelsSuccess("");
+    try {
+      await apiRequest<CustomValueLabels>(`/clients/${clientId}/data/custom-value-labels`, {
+        method: "PATCH",
+        body: JSON.stringify(customLabelsDraft),
+      });
+      await loadConfig();
+      setCustomLabelsSuccess("Label-urile au fost salvate cu succes.");
+    } catch (err) {
+      setCustomLabelsError(err instanceof Error ? err.message : "Nu am putut salva label-urile.");
+    } finally {
+      setCustomLabelsLoading(false);
     }
   }
 
@@ -575,6 +628,9 @@ export default function SubDataPage() {
             <button type="button" className="rounded-md border border-indigo-300 px-3 py-1.5 text-sm text-indigo-700" onClick={() => { setCsvImportOpen(true); setCsvPreviewData(null); }}>
               Import CSV
             </button>
+            <button type="button" className="rounded-md border border-indigo-300 px-3 py-1.5 text-sm text-indigo-700" onClick={openCustomLabelsModal}>
+              Custom Values
+            </button>
           </div>
 
           <CsvImportModal
@@ -586,6 +642,47 @@ export default function SubDataPage() {
             onPreviewReset={() => setCsvPreviewData(null)}
             onImportSuccess={() => { void refreshTable(); }}
           />
+
+          {customLabelsOpen ? (
+            <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-slate-900">Custom Value Labels</h2>
+                <button type="button" className="text-sm text-slate-500 hover:text-slate-700" onClick={() => setCustomLabelsOpen(false)}>✕</button>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">Setează denumirile pentru Custom Value 1–5. Label-urile se aplică în Data, Media Buying și Media Tracker.</p>
+              <div className="mt-3 space-y-2">
+                {([1, 2, 3, 4, 5] as const).map((n) => {
+                  const key = `custom_label_${n}` as keyof CustomValueLabels;
+                  return (
+                    <div key={n} className="grid grid-cols-[120px_1fr] items-center gap-2">
+                      <label className="text-sm text-slate-700">Custom Value {n}</label>
+                      <input
+                        aria-label={`Custom Value ${n} label`}
+                        className="rounded border border-slate-300 px-2 py-1 text-sm"
+                        value={customLabelsDraft[key]}
+                        onChange={(e) => setCustomLabelsDraft((prev) => ({ ...prev, [key]: e.target.value }))}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+              {customLabelsError ? <p className="mt-2 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-sm text-rose-700">{customLabelsError}</p> : null}
+              {customLabelsSuccess ? <p className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-sm text-emerald-700">{customLabelsSuccess}</p> : null}
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  className="rounded border border-indigo-400 px-3 py-1.5 text-sm text-indigo-700 disabled:opacity-60"
+                  onClick={() => void saveCustomLabels()}
+                  disabled={customLabelsLoading}
+                >
+                  {customLabelsLoading ? "Se salvează..." : "Salvează"}
+                </button>
+                <button type="button" className="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-700" onClick={() => setCustomLabelsOpen(false)}>
+                  Anulează
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           {mutationError ? <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{mutationError}</p> : null}
           {mutationSuccess ? <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{mutationSuccess}</p> : null}
