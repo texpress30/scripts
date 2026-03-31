@@ -241,6 +241,8 @@ class SyncRunChunksStore:
         return next((item for item in chunks if int(item.get("chunk_index", -1)) == int(chunk_index)), None)
 
 
+    _GOOGLE_ADS_MAX_CONCURRENT_CHUNKS_PER_JOB = 3
+
     def claim_next_queued_chunk_any(self, *, platform: str | None = None, max_attempts: int = 5) -> dict[str, object] | None:
         self._ensure_schema()
         normalized_platform = str(platform).strip() if platform is not None else None
@@ -255,11 +257,16 @@ class SyncRunChunksStore:
                         WHERE c.status = 'queued'
                           AND c.attempts < %s
                           AND r.status IN ('queued', 'running')
+                          AND (
+                            r.platform != 'google_ads'
+                            OR (SELECT COUNT(*) FROM sync_run_chunks rc
+                                WHERE rc.job_id = c.job_id AND rc.status = 'running') < %s
+                          )
                         ORDER BY r.created_at ASC, c.chunk_index ASC
                         FOR UPDATE SKIP LOCKED
                         LIMIT 1
                         """,
-                        (max(1, int(max_attempts)),),
+                        (max(1, int(max_attempts)), self._GOOGLE_ADS_MAX_CONCURRENT_CHUNKS_PER_JOB),
                     )
                 else:
                     cur.execute(
@@ -271,11 +278,16 @@ class SyncRunChunksStore:
                           AND c.attempts < %s
                           AND r.status IN ('queued', 'running')
                           AND r.platform = %s
+                          AND (
+                            r.platform != 'google_ads'
+                            OR (SELECT COUNT(*) FROM sync_run_chunks rc
+                                WHERE rc.job_id = c.job_id AND rc.status = 'running') < %s
+                          )
                         ORDER BY r.created_at ASC, c.chunk_index ASC
                         FOR UPDATE SKIP LOCKED
                         LIMIT 1
                         """,
-                        (max(1, int(max_attempts)), normalized_platform),
+                        (max(1, int(max_attempts)), normalized_platform, self._GOOGLE_ADS_MAX_CONCURRENT_CHUNKS_PER_JOB),
                     )
                 selected = cur.fetchone()
                 if selected is None:

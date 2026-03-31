@@ -1929,4 +1929,84 @@ class SyncRunsStore:
         }
 
 
+    def cleanup_rate_limit_errors(self, *, hours_back: int = 24) -> dict[str, object]:
+        self._ensure_schema()
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cutoff = f"NOW() - INTERVAL '{max(1, int(hours_back))} hours'"
+
+                cur.execute(
+                    f"""
+                    SELECT job_id, account_id, platform
+                    FROM sync_runs
+                    WHERE status IN ('error', 'failed')
+                      AND created_at >= {cutoff}
+                      AND (
+                          error ILIKE '%%RESOURCE_EXHAUSTED%%'
+                          OR error ILIKE '%%Too Many Requests%%'
+                          OR error ILIKE '%%429%%'
+                      )
+                    """
+                )
+                affected_runs = cur.fetchall() or []
+                affected_job_ids = [str(row[0]) for row in affected_runs]
+                affected_accounts: dict[str, str] = {}
+                for row in affected_runs:
+                    account_id = str(row[1] or "").strip()
+                    platform = str(row[2] or "").strip()
+                    if account_id != "" and platform != "":
+                        affected_accounts[f"{platform}:{account_id}"] = platform
+
+                deleted_chunks = 0
+                deleted_runs = 0
+                if len(affected_job_ids) > 0:
+                    cur.execute(
+                        "DELETE FROM sync_run_chunks WHERE job_id = ANY(%s::text[])",
+                        (affected_job_ids,),
+                    )
+                    deleted_chunks = cur.rowcount or 0
+
+                    cur.execute(
+                        "DELETE FROM sync_runs WHERE job_id = ANY(%s::text[])",
+                        (affected_job_ids,),
+                    )
+                    deleted_runs = cur.rowcount or 0
+
+                reset_accounts = 0
+                for key, platform in affected_accounts.items():
+                    account_id = key.split(":", 1)[1] if ":" in key else key
+                    cur.execute(
+                        f"""
+                        SELECT COUNT(*)
+                        FROM sync_runs
+                        WHERE account_id = %s
+                          AND platform = %s
+                          AND status IN ('error', 'failed')
+                          AND created_at >= {cutoff}
+                        """,
+                        (account_id, platform),
+                    )
+                    remaining = int((cur.fetchone() or (0,))[0])
+                    if remaining == 0:
+                        try:
+                            from app.services.client_registry import client_registry_service
+                            client_registry_service.update_platform_account_operational_metadata(
+                                platform=platform,
+                                account_id=account_id,
+                                last_error=None,
+                            )
+                            reset_accounts += 1
+                        except Exception:
+                            pass
+
+            conn.commit()
+
+        return {
+            "deleted_runs": deleted_runs,
+            "deleted_chunks": deleted_chunks,
+            "affected_job_ids": affected_job_ids,
+            "reset_accounts": reset_accounts,
+        }
+
+
 sync_runs_store = SyncRunsStore()

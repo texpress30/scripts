@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 import re
 import os
+import time
 from datetime import date, datetime, timezone, timedelta
 from urllib import error, parse, request
 
@@ -200,6 +202,9 @@ class GoogleAdsService:
                 discovered.append(value)
         return discovered
 
+    _RETRY_MAX_ATTEMPTS = 5
+    _RETRY_MAX_WAIT_SECONDS = 60
+
     def _http_json(
         self,
         *,
@@ -214,79 +219,129 @@ class GoogleAdsService:
             request_headers.update(headers)
         if payload is not None:
             body = json.dumps(payload).encode("utf-8")
-        req = request.Request(url, data=body, headers=request_headers, method=method)
 
-        logger.info("Google Ads request: method=%s url=%s", method, url)
-
+        customer_id_for_log = ""
         try:
-            with request.urlopen(req, timeout=20) as response:
-                raw = response.read().decode("utf-8")
-                if raw.strip() == "":
-                    return {}
-                return json.loads(raw)
-        except error.HTTPError as exc:
+            match = re.search(r"/customers/(\d+)/", url)
+            if match:
+                customer_id_for_log = match.group(1)
+        except Exception:  # noqa: BLE001
+            pass
+
+        last_exc: GoogleAdsIntegrationError | None = None
+        for attempt in range(self._RETRY_MAX_ATTEMPTS + 1):
+            req = request.Request(url, data=body, headers=request_headers, method=method)
+            logger.info("Google Ads request: method=%s url=%s attempt=%d", method, url, attempt)
+
             try:
-                response_body = exc.read().decode("utf-8")
+                with request.urlopen(req, timeout=20) as response:
+                    raw = response.read().decode("utf-8")
+                    if raw.strip() == "":
+                        return {}
+                    return json.loads(raw)
+            except error.HTTPError as exc:
+                parsed = self._parse_http_error(exc, method=method, url=url)
+                if not parsed["is_rate_limit"] or attempt >= self._RETRY_MAX_ATTEMPTS:
+                    raise GoogleAdsIntegrationError(
+                        parsed["message"],
+                        http_status=exc.code,
+                        retryable=parsed["is_rate_limit"],
+                        provider_error_code=parsed["provider_error_code"],
+                        provider_error_message=parsed["provider_error_message"],
+                        endpoint=url,
+                        retry_after_seconds=parsed["retry_after_seconds"],
+                    ) from exc
+
+                wait = self._retry_wait_seconds(attempt, parsed["retry_after_seconds"])
+                logger.warning(
+                    "[GOOGLE-ADS-RETRY] attempt=%d, wait=%.1fs, error=RESOURCE_EXHAUSTED, customer_id=%s",
+                    attempt + 1,
+                    wait,
+                    customer_id_for_log,
+                )
+                time.sleep(wait)
+                continue
+            except Exception as exc:  # noqa: BLE001
+                raise GoogleAdsIntegrationError(f"Google Ads HTTP request failed: method={method} url={url} error={exc}") from exc
+
+        raise last_exc or GoogleAdsIntegrationError(f"Google Ads HTTP request failed after retries: method={method} url={url}")
+
+    def _retry_wait_seconds(self, attempt: int, retry_after: int | None = None) -> float:
+        base = (2 ** attempt) * 1.0
+        jitter = random.uniform(0, 1.0)
+        wait = base + jitter
+        if retry_after is not None and retry_after > 0:
+            wait = max(wait, float(retry_after))
+        return min(wait, self._RETRY_MAX_WAIT_SECONDS)
+
+    def _parse_http_error(self, exc: error.HTTPError, *, method: str, url: str) -> dict[str, object]:
+        try:
+            response_body = exc.read().decode("utf-8")
+        except Exception:  # noqa: BLE001
+            response_body = "<unreadable body>"
+
+        request_id: str | None = None
+        failure_details: list[object] = []
+        response_headers = getattr(exc, "headers", None)
+        response_headers_debug: dict[str, str] = {}
+        if hasattr(response_headers, "items"):
+            try:
+                response_headers_debug = {str(k): str(v) for k, v in response_headers.items()}
             except Exception:  # noqa: BLE001
-                response_body = "<unreadable body>"
+                response_headers_debug = {}
+        if "googleads.googleapis.com" in url:
+            request_id, failure_details = self._extract_google_ads_error_details(
+                response_body=response_body,
+                response_headers=response_headers,
+            )
+            logger.error(
+                "Google Ads error payload: method=%s url=%s status=%s request_id=%s failure_details=%s response_headers=%s response=%s",
+                method,
+                url,
+                exc.code,
+                request_id,
+                failure_details,
+                response_headers_debug,
+                response_body[:2000],
+            )
 
-            request_id: str | None = None
-            failure_details: list[object] = []
-            response_headers = getattr(exc, "headers", None)
-            response_headers_debug: dict[str, str] = {}
-            if hasattr(response_headers, "items"):
-                try:
-                    response_headers_debug = {str(k): str(v) for k, v in response_headers.items()}
-                except Exception:  # noqa: BLE001
-                    response_headers_debug = {}
-            if "googleads.googleapis.com" in url:
-                request_id, failure_details = self._extract_google_ads_error_details(
-                    response_body=response_body,
-                    response_headers=response_headers,
-                )
-                logger.error(
-                    "Google Ads error payload: method=%s url=%s status=%s request_id=%s failure_details=%s response_headers=%s response=%s",
-                    method,
-                    url,
-                    exc.code,
-                    request_id,
-                    failure_details,
-                    response_headers_debug,
-                    response_body[:2000],
-                )
+        is_rate_limit = exc.code == 429
+        retry_after_seconds: int | None = None
+        provider_error_code: str | None = str(exc.code) if exc.code else None
+        provider_error_message: str | None = None
 
-            is_quota_exhausted = exc.code == 429
-            retry_after_seconds: int | None = None
-            provider_error_code: str | None = str(exc.code) if exc.code else None
-            provider_error_message: str | None = None
-            if is_quota_exhausted:
-                provider_error_code = "RESOURCE_EXHAUSTED"
-                try:
-                    payload_obj = json.loads(response_body) if response_body else {}
-                    for detail in (payload_obj.get("error", {}).get("details") or []):
-                        for err in (detail.get("errors") or []):
-                            msg = err.get("message", "")
-                            provider_error_message = msg
-                            retry_match = re.search(r"Retry in (\d+) seconds", msg)
-                            if retry_match:
-                                retry_after_seconds = int(retry_match.group(1))
-                except Exception:  # noqa: BLE001
-                    pass
+        if is_rate_limit:
+            provider_error_code = "RESOURCE_EXHAUSTED"
+            try:
+                payload_obj = json.loads(response_body) if response_body else {}
+                for detail in (payload_obj.get("error", {}).get("details") or []):
+                    for err in (detail.get("errors") or []):
+                        msg = err.get("message", "")
+                        provider_error_message = msg
+                        retry_match = re.search(r"Retry in (\d+) seconds", msg)
+                        if retry_match:
+                            retry_after_seconds = int(retry_match.group(1))
+            except Exception:  # noqa: BLE001
+                pass
 
-            raise GoogleAdsIntegrationError(
-                "Google Ads HTTP request failed: "
-                f"method={method} url={url} status={exc.code} reason={exc.reason} "
-                f"request_id={request_id} failure_details={failure_details} response_headers={response_headers_debug} "
-                f"response={response_body[:1200]}",
-                http_status=exc.code,
-                retryable=False if is_quota_exhausted else None,
-                provider_error_code=provider_error_code,
-                provider_error_message=provider_error_message,
-                endpoint=url,
-                retry_after_seconds=retry_after_seconds,
-            ) from exc
-        except Exception as exc:  # noqa: BLE001
-            raise GoogleAdsIntegrationError(f"Google Ads HTTP request failed: method={method} url={url} error={exc}") from exc
+        if not is_rate_limit and "RESOURCE_EXHAUSTED" in response_body:
+            is_rate_limit = True
+            provider_error_code = "RESOURCE_EXHAUSTED"
+
+        message = (
+            "Google Ads HTTP request failed: "
+            f"method={method} url={url} status={exc.code} reason={exc.reason} "
+            f"request_id={request_id} failure_details={failure_details} response_headers={response_headers_debug} "
+            f"response={response_body[:1200]}"
+        )
+
+        return {
+            "message": message,
+            "is_rate_limit": is_rate_limit,
+            "provider_error_code": provider_error_code,
+            "provider_error_message": provider_error_message,
+            "retry_after_seconds": retry_after_seconds,
+        }
 
     def _require_production_credentials(self) -> None:
         settings = load_settings()
