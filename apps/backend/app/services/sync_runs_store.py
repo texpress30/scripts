@@ -1945,6 +1945,7 @@ class SyncRunsStore:
                           error ILIKE '%%RESOURCE_EXHAUSTED%%'
                           OR error ILIKE '%%Too Many Requests%%'
                           OR error ILIKE '%%429%%'
+                          OR error ILIKE '%%stale_chunk_timeout%%'
                       )
                     """
                 )
