@@ -905,7 +905,11 @@ def repair_sync_run(job_id: str, user: AuthUser = Depends(get_current_user)) -> 
 
     run_payload = result.get("run")
     if isinstance(run_payload, dict):
-        response["run"] = _serialize_run(_reconcile_run_payload(run_payload))
+        try:
+            response["run"] = _serialize_run(_reconcile_run_payload(run_payload))
+        except Exception:
+            logger.exception("sync_runs.repair serialize error job_id=%s", str(job_id).strip())
+            response["run"] = run_payload
 
     return response
 
@@ -957,7 +961,11 @@ def retry_failed_sync_run(job_id: str, user: AuthUser = Depends(get_current_user
 
     run_payload = result.get("run")
     if isinstance(run_payload, dict):
-        response["run"] = _serialize_run(_reconcile_run_payload(run_payload))
+        try:
+            response["run"] = _serialize_run(_reconcile_run_payload(run_payload))
+        except Exception:
+            logger.exception("sync_runs.retry_failed serialize error source_job_id=%s", normalized_job_id)
+            response["run"] = run_payload
 
     return response
 

@@ -207,10 +207,6 @@ export default function AgencyAccountDetailPage() {
   }, [runs]);
 
   const hasActiveRun = useMemo(() => runsSorted.some((run) => isRunActive(run.status)), [runsSorted]);
-  const hasActiveHistoricalRun = useMemo(
-    () => runsSorted.some((run) => normalizeJobType(run.job_type) === "historical_backfill" && isRunActive(run.status)),
-    [runsSorted],
-  );
   const repairableRun = useMemo(
     () => runsSorted.find((run) => isRunActive(run.status) && normalizeJobType(run.job_type) === "historical_backfill") ?? null,
     [runsSorted],
@@ -276,9 +272,8 @@ export default function AgencyAccountDetailPage() {
     [supersededRunIds, visibleRuns],
   );
   const retryActionRun = useMemo(() => {
-    if (hasActiveHistoricalRun) return null;
     return retryableFailedRun;
-  }, [hasActiveHistoricalRun, retryableFailedRun]);
+  }, [retryableFailedRun]);
   const latestRun = runsSorted[0] ?? null;
   const effectiveSyncHeader = useMemo<EffectiveSyncHeader>(() => {
     const baseStatus = getEffectiveAccountStatus({
