@@ -25,6 +25,9 @@ _GRAIN_NOT_SUPPORTED_ERROR = "grain_not_supported"
 _STORAGE_MEDIA_SYNC_WORKER_REMOTE_INGEST_SOURCE = "platform_sync"
 _ALLOWED_STORAGE_MEDIA_KINDS = {"image", "video", "document"}
 
+_GOOGLE_ADS_INTER_CHUNK_DELAY_SECONDS = 0.5
+_GOOGLE_ADS_MAX_CONCURRENT_CHUNKS_PER_JOB = 3
+
 
 def _as_date(value: object) -> date:
     if isinstance(value, date):
@@ -907,6 +910,18 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
             )
 
     _finalize_run_if_complete(run)
+
+    chunks_total = int(run.get("chunks_total") or 0)
+    if platform == "google_ads":
+        logger.info(
+            "[GOOGLE-ADS-RATE] job_id=%s, chunks_total=%s, delay_ms=%s, max_workers=%s",
+            job_id,
+            chunks_total,
+            int(_GOOGLE_ADS_INTER_CHUNK_DELAY_SECONDS * 1000),
+            _GOOGLE_ADS_MAX_CONCURRENT_CHUNKS_PER_JOB,
+        )
+        time.sleep(_GOOGLE_ADS_INTER_CHUNK_DELAY_SECONDS)
+
     return True
 
 

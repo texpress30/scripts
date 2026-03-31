@@ -45,51 +45,11 @@ class CreateBatchSyncRunsRequest(BaseModel):
 
 _MAX_PROGRESS_BATCH_ACCOUNT_IDS = 200
 
-class BatchAccountProgressRequest(BaseModel):
-    account_ids: list[str]
-    limit_active_only: bool = True
-
-
-_MAX_PROGRESS_BATCH_ACCOUNT_IDS = 200
 
 class BatchAccountProgressRequest(BaseModel):
     account_ids: list[str]
     limit_active_only: bool = True
 
-
-_MAX_PROGRESS_BATCH_ACCOUNT_IDS = 200
-
-
-class BatchAccountProgressRequest(BaseModel):
-    account_ids: list[str]
-    limit_active_only: bool = True
-
-
-_MAX_PROGRESS_BATCH_ACCOUNT_IDS = 200
-
-
-class BatchAccountProgressRequest(BaseModel):
-    account_ids: list[str]
-    limit_active_only: bool = True
-
-
-_MAX_PROGRESS_BATCH_ACCOUNT_IDS = 200
-
-
-class BatchAccountProgressRequest(BaseModel):
-    account_ids: list[str]
-    limit_active_only: bool = True
-
-
-_MAX_PROGRESS_BATCH_ACCOUNT_IDS = 200
-
-
-class BatchAccountProgressRequest(BaseModel):
-    account_ids: list[str]
-    limit_active_only: bool = True
-
-
-_MAX_PROGRESS_BATCH_ACCOUNT_IDS = 200
 
 class RollingEnqueueRequest(BaseModel):
     platform: Literal["google_ads"] = "google_ads"
@@ -547,7 +507,12 @@ def create_batch_sync_runs(payload: CreateBatchSyncRunsRequest, user: AuthUser =
     start_date, end_date = _resolve_date_range(payload)
     grains = _resolve_grains(payload)
 
-    platform_accounts = client_registry_service.list_platform_accounts(platform=payload.platform)
+    try:
+        platform_accounts = client_registry_service.list_platform_accounts(platform=payload.platform)
+    except Exception as exc:
+        logger.exception("sync_runs.batch.list_platform_accounts_failed platform=%s", payload.platform)
+        raise HTTPException(status_code=503, detail=f"Failed to load platform accounts: {exc}") from exc
+
     accounts_map: dict[str, int | None] = {}
     canonical_to_stored_account_id: dict[str, str] = {}
     canonical_to_sync_start_date: dict[str, date | None] = {}
@@ -575,6 +540,7 @@ def create_batch_sync_runs(payload: CreateBatchSyncRunsRequest, user: AuthUser =
     for account_id in valid_account_ids:
         stored_account_id = canonical_to_stored_account_id.get(account_id, account_id)
         for grain in grains:
+          try:
             job_id = uuid4().hex
             account_sync_start_date = canonical_to_sync_start_date.get(account_id)
             effective_start_date, effective_end_date = _effective_historical_window_for_account(
@@ -726,6 +692,28 @@ def create_batch_sync_runs(payload: CreateBatchSyncRunsRequest, user: AuthUser =
                     "status": "queued",
                     "date_start": str(effective_start_date),
                     "date_end": str(effective_end_date),
+                }
+            )
+          except HTTPException:
+            raise
+          except Exception:
+            logger.exception(
+                "sync_runs.batch.create_run_failed platform=%s account_id=%s grain=%s",
+                payload.platform,
+                stored_account_id,
+                grain,
+            )
+            account_results.append(
+                {
+                    "platform": payload.platform,
+                    "account_id": stored_account_id,
+                    "grain": grain,
+                    "client_id": accounts_map.get(account_id),
+                    "result": "error",
+                    "job_id": None,
+                    "status": "error",
+                    "date_start": None,
+                    "date_end": None,
                 }
             )
 
@@ -968,6 +956,22 @@ def retry_failed_sync_run(job_id: str, user: AuthUser = Depends(get_current_user
             response["run"] = run_payload
 
     return response
+
+
+@router.post("/cleanup-rate-limit-errors")
+def cleanup_rate_limit_errors(
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, object]:
+    enforce_action_scope(user=user, action="integrations:sync", scope="agency")
+
+    result = sync_runs_store.cleanup_rate_limit_errors(hours_back=24)
+    logger.info(
+        "sync_runs.cleanup_rate_limit_errors deleted_runs=%s deleted_chunks=%s reset_accounts=%s",
+        result.get("deleted_runs"),
+        result.get("deleted_chunks"),
+        result.get("reset_accounts"),
+    )
+    return result
 
 
 @router.post("/tiktok/cleanup-superseded-failed-historical")
