@@ -886,12 +886,25 @@ def process_next_chunk(*, platform_filter: str | None = None, max_attempts: int 
                     chunks_done_delta=aborted_count,
                     rows_written_delta=0,
                 )
-                logger.warning(
-                    "sync_worker.quota_exhausted_abort job_id=%s aborted_chunks=%s retry_after_seconds=%s",
-                    job_id,
-                    aborted_count,
-                    chunk_error_details.get("retry_after_seconds") if chunk_error_details else None,
+            cross_grain_abort_error = "skipped: Google Ads API quota exhausted for account (RESOURCE_EXHAUSTED)"
+            try:
+                cross_result = sync_run_chunks_store.fail_queued_chunks_for_account(
+                    platform=platform,
+                    account_id=account_id,
+                    error=cross_grain_abort_error,
+                    exclude_job_id=job_id,
                 )
+                cross_aborted = int(cross_result.get("affected") or 0)
+            except Exception:
+                logger.exception("sync_worker.cross_grain_abort_failed job_id=%s account_id=%s", job_id, account_id)
+                cross_aborted = 0
+            logger.warning(
+                "sync_worker.quota_exhausted_abort job_id=%s aborted_chunks=%s cross_grain_aborted=%s retry_after_seconds=%s",
+                job_id,
+                aborted_count,
+                cross_aborted,
+                chunk_error_details.get("retry_after_seconds") if chunk_error_details else None,
+            )
 
     _finalize_run_if_complete(run)
     return True

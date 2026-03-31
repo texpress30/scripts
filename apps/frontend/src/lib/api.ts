@@ -3,7 +3,7 @@ export const API_BASE_URL = "/api";
 
 type RepairRunApiResponse = {
   job_id: string;
-  outcome: "repaired" | "noop_not_active" | "noop_active_fresh" | "not_found";
+  outcome: "repaired" | "requeued" | "noop_not_active" | "noop_active_fresh" | "not_found";
   reason?: string;
   stale_after_minutes?: number;
   active_chunks?: number;
