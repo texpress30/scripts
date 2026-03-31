@@ -372,15 +372,18 @@ class MediaBuyingStore:
                     f"""
                     SELECT
                         di.metric_date,
-                        di.source,
-                        SUM(COALESCE(di.leads, 0))::bigint AS leads,
-                        SUM(COALESCE(di.phones, 0))::bigint AS phones,
-                        SUM(COALESCE(di.custom_value_1_count, 0))::bigint AS custom_value_1_count,
-                        SUM(COALESCE(di.custom_value_2_count, 0))::bigint AS custom_value_2_count,
-                        SUM(COALESCE(di.custom_value_3_amount, 0))::numeric(18, 4) AS custom_value_3_amount,
-                        SUM(COALESCE(di.custom_value_4_amount, 0))::numeric(18, 4) AS custom_value_4_amount,
-                        SUM(COALESCE(di.custom_value_5_amount, 0))::numeric(18, 4) AS custom_value_5_amount,
-                        SUM(COALESCE(di.sales_count, 0))::bigint AS sales_count,
+                        COALESCE(
+                            MAX(CASE WHEN di.source IS NOT NULL AND di.source != 'unknown' THEN di.source END),
+                            'unknown'
+                        ) AS source,
+                        MAX(COALESCE(di.leads, 0))::bigint AS leads,
+                        MAX(COALESCE(di.phones, 0))::bigint AS phones,
+                        MAX(COALESCE(di.custom_value_1_count, 0))::bigint AS custom_value_1_count,
+                        MAX(COALESCE(di.custom_value_2_count, 0))::bigint AS custom_value_2_count,
+                        MAX(COALESCE(di.custom_value_3_amount, 0))::numeric(18, 4) AS custom_value_3_amount,
+                        MAX(COALESCE(di.custom_value_4_amount, 0))::numeric(18, 4) AS custom_value_4_amount,
+                        MAX(COALESCE(di.custom_value_5_amount, 0))::numeric(18, 4) AS custom_value_5_amount,
+                        MAX(COALESCE(di.sales_count, 0))::bigint AS sales_count,
                         SUM(COALESCE(se.cogs_amount, 0))::numeric(18, 4) AS cogs_amount
                     FROM client_data_daily_inputs di
                     LEFT JOIN (
@@ -389,8 +392,8 @@ class MediaBuyingStore:
                         GROUP BY daily_input_id
                     ) se ON se.daily_input_id = di.id
                     WHERE {where_sql}
-                    GROUP BY di.metric_date, di.source
-                    ORDER BY di.metric_date ASC, di.source ASC
+                    GROUP BY di.metric_date
+                    ORDER BY di.metric_date ASC
                     """,
                     tuple(params),
                 )
