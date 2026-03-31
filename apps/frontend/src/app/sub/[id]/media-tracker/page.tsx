@@ -100,8 +100,11 @@ function buildWorksheetPath(clientId: number, granularity: WorksheetGranularity,
   return `/clients/${clientId}/media-tracker/worksheet-foundation?${query}`;
 }
 
-function buildOverviewPath(clientId: number, granularity: WorksheetGranularity, anchorDate: string): string {
-  const query = new URLSearchParams({ granularity, anchor_date: anchorDate }).toString();
+function buildOverviewPath(clientId: number, granularity: WorksheetGranularity, anchorDate: string, dateFrom?: string, dateTo?: string): string {
+  const params: Record<string, string> = { granularity, anchor_date: anchorDate };
+  if (dateFrom) params.date_from = dateFrom;
+  if (dateTo) params.date_to = dateTo;
+  const query = new URLSearchParams(params).toString();
   return `/clients/${clientId}/media-tracker/overview-charts?${query}`;
 }
 
@@ -213,8 +216,12 @@ export default function SubMediaTrackerPage() {
     setOverviewLoading(true);
     setOverviewError("");
     try {
-      const anchorDate = toIsoLocalDate(appliedRange.to ?? new Date());
-      const payload = await apiRequest<OverviewChartsPayload>(buildOverviewPath(clientId, "year", anchorDate));
+      const rangeFrom = appliedRange.from ?? subDays(new Date(), 29);
+      const rangeTo = appliedRange.to ?? new Date();
+      const anchorDate = toIsoLocalDate(rangeTo);
+      const dateFrom = toIsoLocalDate(rangeFrom);
+      const dateTo = toIsoLocalDate(rangeTo);
+      const payload = await apiRequest<OverviewChartsPayload>(buildOverviewPath(clientId, "year", anchorDate, dateFrom, dateTo));
       setOverviewData(filterOverviewPayloadByRange(payload, appliedRange));
     } catch (err) {
       setOverviewData(null);

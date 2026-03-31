@@ -798,9 +798,20 @@ class MediaTrackerWorksheetService:
             client_id=client_id,
         )
 
-    def build_weekly_worksheet_foundation(self, *, granularity: WorksheetGranularity, anchor_date: date, client_id: int) -> dict[str, object]:
+    def build_weekly_worksheet_foundation(
+        self,
+        *,
+        granularity: WorksheetGranularity,
+        anchor_date: date,
+        client_id: int,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> dict[str, object]:
         normalized_granularity = self._validate_granularity(granularity=granularity)
-        period_start, period_end = self._resolve_calendar_period(granularity=normalized_granularity, anchor_date=anchor_date)
+        if date_from and date_to:
+            period_start, period_end = date_from, date_to
+        else:
+            period_start, period_end = self._resolve_calendar_period(granularity=normalized_granularity, anchor_date=anchor_date)
         weeks = self._build_visible_weeks(period_start=period_start, period_end=period_end)
 
         first_week_start = date.fromisoformat(str(weeks[0]["week_start"])) if len(weeks) > 0 else period_start
@@ -996,12 +1007,29 @@ class MediaTrackerWorksheetService:
             ),
         }
 
-    def build_overview_charts_payload(self, *, granularity: WorksheetGranularity, anchor_date: date, client_id: int) -> dict[str, object]:
-        foundation = self.build_weekly_worksheet_foundation(
-            granularity=granularity,
-            anchor_date=anchor_date,
-            client_id=client_id,
-        )
+    def build_overview_charts_payload(
+        self,
+        *,
+        granularity: WorksheetGranularity,
+        anchor_date: date,
+        client_id: int,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> dict[str, object]:
+        if date_from and date_to:
+            foundation = self.build_weekly_worksheet_foundation(
+                granularity="year",
+                anchor_date=anchor_date,
+                client_id=client_id,
+                date_from=date_from,
+                date_to=date_to,
+            )
+        else:
+            foundation = self.build_weekly_worksheet_foundation(
+                granularity=granularity,
+                anchor_date=anchor_date,
+                client_id=client_id,
+            )
 
         weeks = foundation.get("weeks") if isinstance(foundation.get("weeks"), list) else []
         sections = foundation.get("sections") if isinstance(foundation.get("sections"), list) else []
