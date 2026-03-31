@@ -292,7 +292,7 @@ _RETURNING_COLS = (
 def import_csv_rows(*, client_id: int, rows: list[dict]) -> dict:
     """Import validated CSV rows into DB using a single atomic transaction.
 
-    Each row is identified by (client_id, metric_date, source).
+    Each row is matched by (client_id, metric_date).
     Existing rows are updated (only non-null CSV fields overwrite);
     missing rows are inserted with CSV values (others default to 0).
     Sale entries (sale_price, actual_price) are created as new entries
@@ -324,12 +324,15 @@ def import_csv_rows(*, client_id: int, rows: list[dict]) -> dict:
                         errors.append({"row_index": row_index, "error_message": "Lipsește metric_date"})
                         continue
 
-                    # Check if row exists
+                    # Check if row exists — match by date only so re-imports
+                    # update existing rows rather than creating duplicates
                     cur.execute(
                         "SELECT id, leads, phones, custom_value_1_count, custom_value_2_count, "
                         "custom_value_3_amount, custom_value_4_amount, custom_value_5_amount, sales_count "
                         "FROM client_data_daily_inputs "
-                        "WHERE client_id = %s AND metric_date = %s AND source = %s LIMIT 1",
+                        "WHERE client_id = %s AND metric_date = %s "
+                        "ORDER BY CASE WHEN source = %s THEN 0 ELSE 1 END, id ASC "
+                        "LIMIT 1",
                         (int(client_id), str(metric_date), source),
                     )
                     existing = cur.fetchone()
@@ -356,8 +359,10 @@ def import_csv_rows(*, client_id: int, rows: list[dict]) -> dict:
                     field_updates["custom_value_5_amount"] = effective_cv4 - effective_cv3
 
                     if existing:
-                        # UPDATE existing row
+                        # UPDATE existing row (including source if CSV provides one)
                         daily_input_id = int(existing[0])
+                        if source and source != "unknown":
+                            field_updates["source"] = source
                         if field_updates:
                             set_clauses = [f"{col} = %s" for col in field_updates]
                             set_clauses.append("updated_at = NOW()")
