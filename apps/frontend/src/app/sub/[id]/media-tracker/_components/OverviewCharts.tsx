@@ -57,9 +57,9 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
 }
 
 function colorForChannel(channel: string): string {
-  if (channel === "google") return "#2563eb";
-  if (channel === "meta") return "#7c3aed";
-  if (channel === "tiktok") return "#0f766e";
+  if (channel === "google") return "#16a34a";
+  if (channel === "meta") return "#2563eb";
+  if (channel === "tiktok") return "#171717";
   return "#64748b";
 }
 
