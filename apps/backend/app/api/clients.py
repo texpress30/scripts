@@ -1325,6 +1325,8 @@ def get_media_tracker_overview_charts(
     client_id: int,
     granularity: str = Query(...),
     anchor_date: date = Query(...),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
     enforce_action_scope(user=user, action="clients:list", scope="agency")
@@ -1335,6 +1337,8 @@ def get_media_tracker_overview_charts(
             granularity=str(granularity).strip().lower(),
             anchor_date=anchor_date,
             client_id=client_id,
+            date_from=date_from,
+            date_to=date_to,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
