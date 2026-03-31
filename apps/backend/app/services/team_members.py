@@ -95,6 +95,13 @@ SUBACCOUNT_NAVIGATION_CATALOG: tuple[ModuleCatalogItem, ...] = (
     ModuleCatalogItem(key="creative", label="Creative", order=4, scope="subaccount", group_key="main_nav", group_label="Main Navigation"),
     ModuleCatalogItem(key="recommendations", label="Recommendations", order=5, scope="subaccount", group_key="main_nav", group_label="Main Navigation"),
     ModuleCatalogItem(key="settings", label="Settings", order=100, scope="subaccount", group_key="settings", group_label="Settings", is_container=True),
+    ModuleCatalogItem(key="settings_profile", label="Profil Business", order=110, scope="subaccount", group_key="settings", group_label="Settings", parent_key="settings"),
+    ModuleCatalogItem(key="settings_team", label="Echipa Mea", order=120, scope="subaccount", group_key="settings", group_label="Settings", parent_key="settings"),
+    ModuleCatalogItem(key="settings_integrations", label="Integrări", order=130, scope="subaccount", group_key="settings", group_label="Settings", parent_key="settings"),
+    ModuleCatalogItem(key="settings_accounts", label="Conturi", order=140, scope="subaccount", group_key="settings", group_label="Settings", parent_key="settings"),
+    ModuleCatalogItem(key="settings_tags", label="Tag-uri", order=150, scope="subaccount", group_key="settings", group_label="Settings", parent_key="settings"),
+    ModuleCatalogItem(key="settings_audit_logs", label="Audit Logs", order=160, scope="subaccount", group_key="settings", group_label="Settings", parent_key="settings"),
+    ModuleCatalogItem(key="settings_ai_agents", label="Agenți AI", order=170, scope="subaccount", group_key="settings", group_label="Settings", parent_key="settings"),
 )
 
 NAVIGATION_CATALOG_BY_SCOPE: dict[str, tuple[ModuleCatalogItem, ...]] = {
