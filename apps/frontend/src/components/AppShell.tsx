@@ -70,7 +70,7 @@ type AgencyNavItem = {
 type SettingsNavItem = {
   href: string;
   label: string;
-  moduleKey?: AgencySettingsModuleKey;
+  moduleKey?: AgencySettingsModuleKey | string;
 };
 
 export const AGENCY_SETTINGS_ITEMS: readonly SettingsNavItem[] = [
@@ -475,21 +475,28 @@ export function AppShell({
   const settingsHeaderLabel = isSubSettingsMode ? "SUB-ACCOUNT SETTINGS" : "AGENCY SETTINGS";
   const goBackHref = isSubSettingsMode && subSettingsId ? `/sub/${subSettingsId}/dashboard` : "/agency/dashboard";
 
-  const subSettingsItems = useMemo(
+  const rawSubSettingsItems: SettingsNavItem[] = useMemo(
     () =>
       subSettingsId
         ? [
-            { href: `/subaccount/${subSettingsId}/settings/profile`, label: "Profil Business" },
-            { href: `/subaccount/${subSettingsId}/settings/team`, label: "Echipa Mea" },
-            { href: `/subaccount/${subSettingsId}/settings/integrations`, label: "Integrări" },
-            { href: `/subaccount/${subSettingsId}/settings/accounts`, label: "Conturi" },
-            { href: `/subaccount/${subSettingsId}/settings/tags`, label: "Tag-uri" },
-            { href: `/subaccount/${subSettingsId}/settings/audit-logs`, label: "Audit Logs" },
-            { href: `/subaccount/${subSettingsId}/settings/ai-agents`, label: "Agenți AI" },
+            { href: `/subaccount/${subSettingsId}/settings/profile`, label: "Profil Business", moduleKey: "settings_profile" },
+            { href: `/subaccount/${subSettingsId}/settings/team`, label: "Echipa Mea", moduleKey: "settings_team" },
+            { href: `/subaccount/${subSettingsId}/settings/integrations`, label: "Integrări", moduleKey: "settings_integrations" },
+            { href: `/subaccount/${subSettingsId}/settings/accounts`, label: "Conturi", moduleKey: "settings_accounts" },
+            { href: `/subaccount/${subSettingsId}/settings/tags`, label: "Tag-uri", moduleKey: "settings_tags" },
+            { href: `/subaccount/${subSettingsId}/settings/audit-logs`, label: "Audit Logs", moduleKey: "settings_audit_logs" },
+            { href: `/subaccount/${subSettingsId}/settings/ai-agents`, label: "Agenți AI", moduleKey: "settings_ai_agents" },
           ]
         : [],
     [subSettingsId]
   );
+  const subSettingsItems = useMemo(() => {
+    const keys = subaccountMyAccess?.module_keys;
+    if (!keys || subaccountMyAccessLoading) return rawSubSettingsItems;
+    const allowed = new Set(keys.map((k) => k.toLowerCase()));
+    if (!allowed.has("settings")) return [];
+    return rawSubSettingsItems.filter((item) => !item.moduleKey || allowed.has(item.moduleKey));
+  }, [rawSubSettingsItems, subaccountMyAccess, subaccountMyAccessLoading]);
 
   useEffect(() => {
     setMounted(true);
