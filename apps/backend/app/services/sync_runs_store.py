@@ -130,7 +130,7 @@ class SyncRunsStore:
                           ) THEN
                             ALTER TABLE sync_runs
                               ADD CONSTRAINT sync_runs_grain_check
-                              CHECK (grain IN ('account_daily', 'campaign_daily', 'ad_group_daily', 'ad_daily'));
+                              CHECK (grain IN ('account_daily', 'campaign_daily', 'ad_group_daily', 'ad_daily', 'keyword_daily'));
                           END IF;
                         END
                         $$;
@@ -556,7 +556,8 @@ class SyncRunsStore:
                     SELECT
                         id,
                         status,
-                        COALESCE(updated_at, started_at, created_at) AS freshness_ts
+                        COALESCE(updated_at, started_at, created_at) AS freshness_ts,
+                        COALESCE(attempts, 0)::int AS attempts
                     FROM sync_run_chunks
                     WHERE job_id = %s
                     FOR UPDATE
@@ -566,6 +567,9 @@ class SyncRunsStore:
                 chunk_rows = cur.fetchall() or []
                 active_chunk_ids: list[int] = []
                 stale_active_chunk_ids: list[int] = []
+                stale_retryable_chunk_ids: list[int] = []
+                stale_exhausted_chunk_ids: list[int] = []
+                _REPAIR_MAX_ATTEMPTS = 5
 
                 cur.execute("SELECT NOW()")
                 now_row = cur.fetchone()
@@ -575,10 +579,15 @@ class SyncRunsStore:
                     chunk_id = int(row[0])
                     chunk_status = str(row[1] or "").strip().lower()
                     freshness_ts = row[2]
+                    chunk_attempts = int(row[3] or 0)
                     if chunk_status in _ACTIVE_CHUNK_STATUSES:
                         active_chunk_ids.append(chunk_id)
                         if now_ts is not None and freshness_ts is not None and (now_ts - freshness_ts).total_seconds() >= stale_minutes * 60:
                             stale_active_chunk_ids.append(chunk_id)
+                            if chunk_attempts < _REPAIR_MAX_ATTEMPTS:
+                                stale_retryable_chunk_ids.append(chunk_id)
+                            else:
+                                stale_exhausted_chunk_ids.append(chunk_id)
 
                 if len(active_chunk_ids) > 0 and len(stale_active_chunk_ids) != len(active_chunk_ids):
                     conn.commit()
@@ -592,34 +601,61 @@ class SyncRunsStore:
                     }
 
                 stale_chunks_closed = 0
+                stale_chunks_requeued = 0
                 repair_reason = "all_chunks_terminal_reconcile"
 
                 if len(stale_active_chunk_ids) > 0:
                     repair_reason = "stale_chunk_timeout"
-                    stale_chunks_closed = len(stale_active_chunk_ids)
-                    cur.execute(
-                        """
-                        UPDATE sync_run_chunks
-                        SET
-                            status = 'error',
-                            error = %s,
-                            finished_at = COALESCE(finished_at, NOW()),
-                            updated_at = NOW(),
-                            metadata = COALESCE(metadata, '{}'::jsonb) || %s::jsonb
-                        WHERE id = ANY(%s)
-                        """,
-                        (
-                            "stale_timeout",
-                            json.dumps(
-                                {
-                                    "repair_reason": "stale_timeout",
-                                    "repair_source": str(repair_source),
-                                    "repaired_at": "now",
-                                }
+
+                    if len(stale_retryable_chunk_ids) > 0:
+                        stale_chunks_requeued = len(stale_retryable_chunk_ids)
+                        cur.execute(
+                            """
+                            UPDATE sync_run_chunks
+                            SET
+                                status = 'queued',
+                                error = NULL,
+                                updated_at = NOW(),
+                                metadata = COALESCE(metadata, '{}'::jsonb) || %s::jsonb
+                            WHERE id = ANY(%s)
+                            """,
+                            (
+                                json.dumps(
+                                    {
+                                        "repair_reason": "stale_timeout_requeued",
+                                        "repair_source": str(repair_source),
+                                        "repaired_at": "now",
+                                    }
+                                ),
+                                stale_retryable_chunk_ids,
                             ),
-                            stale_active_chunk_ids,
-                        ),
-                    )
+                        )
+
+                    if len(stale_exhausted_chunk_ids) > 0:
+                        stale_chunks_closed = len(stale_exhausted_chunk_ids)
+                        cur.execute(
+                            """
+                            UPDATE sync_run_chunks
+                            SET
+                                status = 'error',
+                                error = %s,
+                                finished_at = COALESCE(finished_at, NOW()),
+                                updated_at = NOW(),
+                                metadata = COALESCE(metadata, '{}'::jsonb) || %s::jsonb
+                            WHERE id = ANY(%s)
+                            """,
+                            (
+                                "stale_timeout",
+                                json.dumps(
+                                    {
+                                        "repair_reason": "stale_timeout",
+                                        "repair_source": str(repair_source),
+                                        "repaired_at": "now",
+                                    }
+                                ),
+                                stale_exhausted_chunk_ids,
+                            ),
+                        )
 
                 cur.execute(
                     """
@@ -643,6 +679,18 @@ class SyncRunsStore:
                 rows_written = int(summary_row[4] or 0)
 
                 if active_chunks_remaining > 0:
+                    if stale_chunks_requeued > 0:
+                        conn.commit()
+                        return {
+                            "outcome": "requeued",
+                            "reason": "stale_chunk_requeued",
+                            "job_id": normalized_job_id,
+                            "job_type": run_payload.get("job_type"),
+                            "active_chunks": active_chunks_remaining,
+                            "stale_chunks_requeued": stale_chunks_requeued,
+                            "stale_chunks_closed": stale_chunks_closed,
+                            "run": run_payload,
+                        }
                     conn.commit()
                     return {
                         "outcome": "noop_active_fresh",
@@ -662,6 +710,7 @@ class SyncRunsStore:
                             "source": str(repair_source),
                             "stale_after_minutes": stale_minutes,
                             "stale_chunks_closed": stale_chunks_closed,
+                            "stale_chunks_requeued": stale_chunks_requeued,
                             "final_status": final_status,
                         }
                     }
@@ -701,6 +750,7 @@ class SyncRunsStore:
             "job_id": normalized_job_id,
             "job_type": run_payload.get("job_type"),
             "stale_chunks_closed": stale_chunks_closed,
+            "stale_chunks_requeued": stale_chunks_requeued,
             "final_status": final_status,
             "run": self._row_to_payload(repaired_row),
         }

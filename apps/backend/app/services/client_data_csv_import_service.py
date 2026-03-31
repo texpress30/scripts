@@ -60,6 +60,8 @@ _HEADER_MAP: dict[str, str] = {
     "current_price": "actual_price_amount",
     "actual_price_amount": "actual_price_amount",
     "profit brut": "gross_profit_amount",
+    "p/l brut": "gross_profit_amount",
+    "pl brut": "gross_profit_amount",
     "gross_profit": "gross_profit_amount",
     "gross_profit_amount": "gross_profit_amount",
     "sursa": "source",
@@ -211,7 +213,7 @@ def parse_csv_for_preview(file_content: bytes) -> dict:
                 else:
                     row_data[db_col] = parsed
             elif db_col == "source":
-                row_data[db_col] = cell_value.strip().lower()
+                row_data[db_col] = _normalize_source_for_import(cell_value)
             else:
                 row_data[db_col] = cell_value
 
@@ -259,6 +261,27 @@ _DAILY_INPUT_ALL_FIELDS = _DAILY_INPUT_INT_FIELDS | _DAILY_INPUT_DECIMAL_FIELDS
 # ── Fields that map to sale_entries ──
 _SALE_ENTRY_FIELDS = {"sale_price_amount", "actual_price_amount"}
 
+# ── Source alias map: friendly CSV names → canonical DB source keys ──
+_SOURCE_ALIAS_MAP: dict[str, str] = {
+    "meta": "meta_ads",
+    "google": "google_ads",
+    "tiktok": "tiktok_ads",
+    "linkedin": "linkedin_ads",
+    "pinterest": "pinterest_ads",
+    "snapchat": "snapchat_ads",
+    "reddit": "reddit_ads",
+    "quora": "quora_ads",
+    "taboola": "taboola_ads",
+}
+
+
+def _normalize_source_for_import(raw_source: str) -> str:
+    """Normalize a CSV source value to a canonical DB source key."""
+    cleaned = raw_source.strip().lower()
+    if not cleaned:
+        return "unknown"
+    return _SOURCE_ALIAS_MAP.get(cleaned, cleaned)
+
 _RETURNING_COLS = (
     "id, client_id, metric_date, source, leads, phones, "
     "custom_value_1_count, custom_value_2_count, custom_value_3_amount, "
@@ -269,7 +292,7 @@ _RETURNING_COLS = (
 def import_csv_rows(*, client_id: int, rows: list[dict]) -> dict:
     """Import validated CSV rows into DB using a single atomic transaction.
 
-    Each row is identified by (client_id, metric_date, source).
+    Each row is matched by (client_id, metric_date).
     Existing rows are updated (only non-null CSV fields overwrite);
     missing rows are inserted with CSV values (others default to 0).
     Sale entries (sale_price, actual_price) are created as new entries
@@ -295,18 +318,21 @@ def import_csv_rows(*, client_id: int, rows: list[dict]) -> dict:
                     row_index = row.get("row_index", 0)
 
                     metric_date = row_data.get("metric_date")
-                    source = str(row_data.get("source", "unknown")).strip().lower() or "unknown"
+                    source = _normalize_source_for_import(str(row_data.get("source", "") or ""))
 
                     if not metric_date:
                         errors.append({"row_index": row_index, "error_message": "Lipsește metric_date"})
                         continue
 
-                    # Check if row exists
+                    # Check if row exists — match by date only so re-imports
+                    # update existing rows rather than creating duplicates
                     cur.execute(
                         "SELECT id, leads, phones, custom_value_1_count, custom_value_2_count, "
                         "custom_value_3_amount, custom_value_4_amount, custom_value_5_amount, sales_count "
                         "FROM client_data_daily_inputs "
-                        "WHERE client_id = %s AND metric_date = %s AND source = %s LIMIT 1",
+                        "WHERE client_id = %s AND metric_date = %s "
+                        "ORDER BY CASE WHEN source = %s THEN 0 ELSE 1 END, id ASC "
+                        "LIMIT 1",
                         (int(client_id), str(metric_date), source),
                     )
                     existing = cur.fetchone()
@@ -333,8 +359,10 @@ def import_csv_rows(*, client_id: int, rows: list[dict]) -> dict:
                     field_updates["custom_value_5_amount"] = effective_cv4 - effective_cv3
 
                     if existing:
-                        # UPDATE existing row
+                        # UPDATE existing row (including source if CSV provides one)
                         daily_input_id = int(existing[0])
+                        if source and source != "unknown":
+                            field_updates["source"] = source
                         if field_updates:
                             set_clauses = [f"{col} = %s" for col in field_updates]
                             set_clauses.append("updated_at = NOW()")
@@ -374,12 +402,17 @@ def import_csv_rows(*, client_id: int, rows: list[dict]) -> dict:
                         daily_input_id = int(new_row[0])
                         inserted += 1
 
-                    # Create sale entry if sale price fields are present
+                    # Create/replace sale entry if sale price fields are present
                     sale_price = row_data.get("sale_price_amount")
                     actual_price = row_data.get("actual_price_amount")
                     if sale_price is not None or actual_price is not None:
                         sp = Decimal(str(sale_price)) if sale_price is not None else Decimal("0")
                         ap = Decimal(str(actual_price)) if actual_price is not None else Decimal("0")
+                        # Remove existing sale entries for this daily input before inserting
+                        cur.execute(
+                            "DELETE FROM client_data_sale_entries WHERE daily_input_id = %s",
+                            (daily_input_id,),
+                        )
                         cur.execute(
                             """
                             INSERT INTO client_data_sale_entries (

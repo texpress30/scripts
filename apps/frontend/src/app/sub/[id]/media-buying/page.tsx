@@ -494,7 +494,7 @@ export default function SubMediaBuyingPage() {
                     const hasDaysHint = month.has_days ?? ((typeof month.day_count === "number" ? month.day_count : monthDays.length) > 0);
                     return (
                       <React.Fragment key={month.month}>
-                        <tr className="border-t border-slate-300 bg-slate-100 font-semibold text-slate-900">
+                        <tr className="border-t border-slate-300 bg-slate-100 font-semibold text-slate-900 hover:bg-slate-200">
                           <td {...visibilityProps("date")} className={`${classFor("date")} ${stickyDateCellClass("month")}`}>
                             <button
                               type="button"
@@ -562,7 +562,7 @@ export default function SubMediaBuyingPage() {
                         {open
                           ? monthDays.map((day) => {
                               return (
-                                <tr key={day.date} className="border-t border-slate-200 bg-white text-slate-800">
+                                <tr key={day.date} className="border-t border-slate-200 bg-white text-slate-800 hover:bg-slate-50">
                                   <td {...visibilityProps("date")} className={`${classFor("date")} ${stickyDateCellClass("day")} pl-8 align-top`}>
                                     <div>{shortDayLabel(day.date)}</div>
                                   </td>
