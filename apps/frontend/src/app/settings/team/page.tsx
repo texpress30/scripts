@@ -494,7 +494,7 @@ export default function SettingsTeamPage() {
       const filteredKeys = normalizeSelectedKeys(
         normalizedKeys.filter((key) => catalogForScope.length === 0 || catalogForScope.some((item) => item.key === key)),
       );
-      const coherentKeys = scopeFromDetail === "agency" ? applyAgencySettingsConsistency(filteredKeys) : filteredKeys;
+      const coherentKeys = applySettingsConsistency(filteredKeys);
       setSelectedModuleKeys(coherentKeys);
       const initialAllowedSubaccountIds = (detail.allowed_subaccount_ids ?? [])
         .map((item) => Number(item))
@@ -771,8 +771,7 @@ export default function SettingsTeamPage() {
     return sameRole && sameModules && sameAllowedSubaccounts;
   }, [mode, saving, loadingEditDetail, editLockedInherited, editingMembershipId, editOriginal, selectedModuleKeys, userRole, allowedSubaccountIds]);
 
-  function applyAgencySettingsConsistency(keys: string[]): string[] {
-    if (activeScope !== "agency") return normalizeSelectedKeys(keys);
+  function applySettingsConsistency(keys: string[]): string[] {
     const normalized = new Set(normalizeSelectedKeys(keys));
     const settingsParent = activeCatalog.find((item) => item.key === "settings");
     const settingsChildren = activeCatalog.filter((item) => item.parent_key === "settings").map((item) => item.key);
@@ -795,8 +794,8 @@ export default function SettingsTeamPage() {
     setSelectedModuleKeys((prev) => {
       const nextSet = new Set(normalizeSelectedKeys(prev));
       const isEnabled = nextSet.has(moduleKey);
-      const isSettingsParent = activeScope === "agency" && moduleKey === "settings";
-      const isSettingsChild = activeScope === "agency" && activeCatalog.some((item) => item.parent_key === "settings" && item.key === moduleKey);
+      const isSettingsParent = moduleKey === "settings";
+      const isSettingsChild = activeCatalog.some((item) => item.parent_key === "settings" && item.key === moduleKey);
       const settingsChildren = activeCatalog.filter((item) => item.parent_key === "settings").map((item) => item.key);
 
       if (isSettingsParent) {
@@ -818,7 +817,7 @@ export default function SettingsTeamPage() {
       } else {
         nextSet.add(moduleKey);
       }
-      return applyAgencySettingsConsistency(Array.from(nextSet));
+      return applySettingsConsistency(Array.from(nextSet));
     });
     setModuleFieldError("");
   }
