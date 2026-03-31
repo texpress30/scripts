@@ -200,6 +200,7 @@ class TeamMembersService:
                     ON user_memberships (user_id, role_key, scope_type, COALESCE(subaccount_id, -1))
                     """
                 )
+                cur.execute("ALTER TABLE user_memberships ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_user_memberships_scope_type ON user_memberships(scope_type)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_user_memberships_subaccount_id ON user_memberships(subaccount_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_user_memberships_role_key ON user_memberships(role_key)")

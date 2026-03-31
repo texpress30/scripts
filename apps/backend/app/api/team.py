@@ -1,4 +1,8 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+logger = logging.getLogger(__name__)
 
 from app.api.dependencies import (
     enforce_action_scope,
@@ -197,9 +201,13 @@ def list_team_members(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
+        logger.exception("team.list_members error")
         if _is_db_unavailable_error(exc):
             return TeamMemberListResponse(items=[], total=0, page=page, page_size=page_size)
-        raise
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Nu am putut încărca lista de utilizatori: {exc}",
+        ) from exc
     return TeamMemberListResponse(items=items, total=total, page=page, page_size=page_size)
 
 
