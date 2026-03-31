@@ -450,6 +450,11 @@ def invite_team_member(membership_id: int, user: AuthUser = Depends(get_current_
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Invitația nu este disponibilă momentan")
 
     should_send_reset_link = bool(membership.get("must_reset_password", True))
+    logger.info(
+        "team.invite membership_id=%s email=%s must_reset_password=%s template=%s",
+        membership_id, email, should_send_reset_link,
+        "team_invite_user" if should_send_reset_link else "team_account_ready",
+    )
     if should_send_reset_link:
         invite_ttl_minutes = max(1, int(getattr(settings, "auth_reset_token_ttl_minutes", 60)))
         raw_token, _ = auth_email_tokens_service.create_user_invite_token_for_existing_user(
@@ -500,15 +505,16 @@ def invite_team_member(membership_id: int, user: AuthUser = Depends(get_current_
             text=rendered_template.text_body,
             html=rendered_template.html_body,
         )
-    except (MailgunIntegrationError, ValueError):
+    except (MailgunIntegrationError, ValueError) as exc:
+        logger.exception("team.invite.send_failed membership_id=%s email=%s template=%s", membership_id, email, template_key)
         audit_log_service.log(
             actor_email=user.email,
             actor_role=user.role,
             action="team.invite.failed",
             resource=f"team:membership:{membership_id}",
-            details={"reason": "mail_send_failed"},
+            details={"reason": "mail_send_failed", "error": str(exc)[:300]},
         )
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Invitația nu este disponibilă momentan")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Invitația nu a putut fi trimisă: {str(exc)[:200]}") from exc
 
     audit_log_service.log(
         actor_email=user.email,
