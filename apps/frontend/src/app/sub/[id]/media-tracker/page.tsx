@@ -3,9 +3,9 @@
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { format, subDays } from "date-fns";
-import { DayPicker, type DateRange } from "react-day-picker";
-import "react-day-picker/dist/style.css";
+import dynamic from "next/dynamic";
+import { format, startOfMonth, subDays } from "date-fns";
+import type { DateRange } from "react-day-picker";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
@@ -15,6 +15,34 @@ import { SubReportingNav } from "@/app/sub/[id]/_components/SubReportingNav";
 
 import { WeeklyWorksheetTable, type WorksheetSection, type WorksheetWeek } from "./_components/WeeklyWorksheetTable";
 import { FinancialCharts, SalesCharts, type OverviewChartsPayload } from "./_components/OverviewCharts";
+
+const DayRangePicker = dynamic(() => import("@/components/DayRangePicker").then((m) => m.DayRangePicker), { ssr: false });
+
+type DatePresetKey = "today" | "yesterday" | "last7" | "last14" | "last30" | "month" | "custom";
+const PRESET_ITEMS: { key: DatePresetKey; label: string }[] = [
+  { key: "today", label: "Today" },
+  { key: "yesterday", label: "Yesterday" },
+  { key: "last7", label: "Last 7 days" },
+  { key: "last14", label: "Last 14 days" },
+  { key: "last30", label: "Last 30 days" },
+  { key: "month", label: "This month" },
+  { key: "custom", label: "Custom" },
+];
+
+function rangeForPreset(preset: DatePresetKey): DateRange {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (preset === "today") return { from: today, to: today };
+  if (preset === "yesterday") {
+    const y = subDays(today, 1);
+    return { from: y, to: y };
+  }
+  if (preset === "last7") return { from: subDays(today, 6), to: today };
+  if (preset === "last14") return { from: subDays(today, 13), to: today };
+  if (preset === "last30") return { from: subDays(today, 29), to: today };
+  if (preset === "month") return { from: startOfMonth(today), to: today };
+  return { from: subDays(today, 29), to: today };
+}
 
 type ClientItem = { id: number; name: string };
 type WorksheetGranularity = "month" | "quarter" | "year";
@@ -77,10 +105,11 @@ function buildOverviewPath(clientId: number, granularity: WorksheetGranularity, 
   return `/clients/${clientId}/media-tracker/overview-charts?${query}`;
 }
 
-function formatRangeLabel(range: DateRange): string {
+function formatRangeLabel(preset: DatePresetKey, range: DateRange): string {
   const from = range.from ?? subDays(new Date(), 29);
   const to = range.to ?? from;
-  return `Last 30 days: ${format(from, "MMM d, yyyy")} - ${format(to, "MMM d, yyyy")}`;
+  const presetLabel = PRESET_ITEMS.find((item) => item.key === preset)?.label ?? "Custom";
+  return `${presetLabel}: ${format(from, "MMM d, yyyy")} - ${format(to, "MMM d, yyyy")}`;
 }
 
 function filterOverviewPayloadByRange(payload: OverviewChartsPayload, range: DateRange): OverviewChartsPayload {
@@ -126,6 +155,8 @@ export default function SubMediaTrackerPage() {
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [overviewError, setOverviewError] = useState("");
   const [openCalendar, setOpenCalendar] = useState(false);
+  const [appliedPreset, setAppliedPreset] = useState<DatePresetKey>("last30");
+  const [draftPreset, setDraftPreset] = useState<DatePresetKey>("last30");
   const [appliedRange, setAppliedRange] = useState<DateRange>(() => {
     const to = new Date();
     return { from: subDays(to, 29), to };
@@ -213,7 +244,7 @@ export default function SubMediaTrackerPage() {
 
   const composedTitle = useMemo(() => `Media Tracker - ${clientName}`, [clientName]);
   const scopeLabel = useMemo(() => formatScopeLabel(worksheetAnchorDate, worksheetGranularity), [worksheetAnchorDate, worksheetGranularity]);
-  const calendarRangeLabel = useMemo(() => formatRangeLabel(appliedRange), [appliedRange]);
+  const calendarRangeLabel = useMemo(() => formatRangeLabel(appliedPreset, appliedRange), [appliedPreset, appliedRange]);
   const dataMonthKey = useMemo(() => worksheetAnchorDate.slice(0, 7), [worksheetAnchorDate]);
 
   const hasRows = !!worksheetData?.sections?.some((section) => section.rows.length > 0);
@@ -359,41 +390,73 @@ export default function SubMediaTrackerPage() {
                 <div className="relative">
                   <button
                     type="button"
-                    className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700"
-                    onClick={() => setOpenCalendar((prev) => !prev)}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                    onClick={() => {
+                      setDraftPreset(appliedPreset);
+                      setDraftRange(appliedRange);
+                      setOpenCalendar((prev) => !prev);
+                    }}
                   >
                     {calendarRangeLabel}
                   </button>
                   {openCalendar ? (
-                    <div className="absolute right-0 z-20 mt-2 rounded-md border border-slate-200 bg-white p-3 shadow-lg">
-                      <DayPicker
-                        mode="range"
-                        selected={draftRange}
-                        onSelect={(next) => setDraftRange(next ?? draftRange)}
-                        numberOfMonths={2}
-                        defaultMonth={draftRange.from}
-                      />
-                      <div className="mt-2 flex justify-end gap-2">
-                        <button
-                          type="button"
-                          className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700"
-                          onClick={() => {
-                            setDraftRange(appliedRange);
-                            setOpenCalendar(false);
+                    <div className="absolute right-0 z-50 mt-2 flex w-[820px] gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-xl">
+                      <div className="w-48 border-r border-slate-200 pr-3">
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Presets</p>
+                        <div className="space-y-1">
+                          {PRESET_ITEMS.map((item) => (
+                            <button
+                              key={item.key}
+                              type="button"
+                              onClick={() => {
+                                setDraftPreset(item.key);
+                                if (item.key !== "custom") setDraftRange(rangeForPreset(item.key));
+                              }}
+                              className={`w-full rounded-md px-2 py-2 text-left text-sm ${
+                                draftPreset === item.key ? "bg-indigo-50 font-medium text-indigo-700" : "text-slate-700 hover:bg-slate-100"
+                              }`}
+                            >
+                              {item.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <DayRangePicker
+                          selected={draftRange}
+                          onSelect={(range) => {
+                            setDraftPreset("custom");
+                            setDraftRange(range ?? { from: undefined, to: undefined });
                           }}
-                        >
-                          Anulează
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded-md border border-indigo-300 px-2 py-1 text-xs text-indigo-700"
-                          onClick={() => {
-                            if (draftRange.from && draftRange.to) setAppliedRange(draftRange);
-                            setOpenCalendar(false);
-                          }}
-                        >
-                          Aplică
-                        </button>
+                          defaultMonth={draftRange.from}
+                        />
+                        <div className="mt-3 flex justify-end gap-2 border-t border-slate-200 pt-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDraftRange(appliedRange);
+                              setDraftPreset(appliedPreset);
+                              setOpenCalendar(false);
+                            }}
+                            className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (draftRange.from && draftRange.to) {
+                                setAppliedRange(draftRange);
+                                setAppliedPreset(draftPreset);
+                              }
+                              setOpenCalendar(false);
+                            }}
+                            disabled={!draftRange.from || !draftRange.to}
+                            className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Update
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ) : null}
