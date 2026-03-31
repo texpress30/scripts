@@ -130,7 +130,7 @@ class SyncRunsStore:
                           ) THEN
                             ALTER TABLE sync_runs
                               ADD CONSTRAINT sync_runs_grain_check
-                              CHECK (grain IN ('account_daily', 'campaign_daily', 'ad_group_daily', 'ad_daily'));
+                              CHECK (grain IN ('account_daily', 'campaign_daily', 'ad_group_daily', 'ad_daily', 'keyword_daily'));
                           END IF;
                         END
                         $$;
