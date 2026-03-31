@@ -909,6 +909,8 @@ class TeamMembersService:
         mapped_user_type, mapped_user_role = self.map_canonical_to_payload_role(role_key=role_key)
         return {
             "id": membership_id,
+            "membership_id": membership_id,
+            "user_id": user_id,
             "first_name": normalized_first_name,
             "last_name": normalized_last_name,
             "email": normalized_email,

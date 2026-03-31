@@ -296,7 +296,7 @@ export default function SettingsTeamPage() {
     setModuleFieldError("");
     setSelectedModuleKeys(moduleCatalogByScope.agency.map((item) => item.key));
     setPassword("");
-    setAutoInviteAfterCreate(false);
+    setAutoInviteAfterCreate(true);
     setAdvancedOpen(false);
     setEditingMembershipId(null);
     setEditOriginal(null);
