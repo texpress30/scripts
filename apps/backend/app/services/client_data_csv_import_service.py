@@ -211,7 +211,7 @@ def parse_csv_for_preview(file_content: bytes) -> dict:
                 else:
                     row_data[db_col] = parsed
             elif db_col == "source":
-                row_data[db_col] = cell_value.strip().lower()
+                row_data[db_col] = _normalize_source_for_import(cell_value)
             else:
                 row_data[db_col] = cell_value
 
@@ -259,6 +259,27 @@ _DAILY_INPUT_ALL_FIELDS = _DAILY_INPUT_INT_FIELDS | _DAILY_INPUT_DECIMAL_FIELDS
 # ── Fields that map to sale_entries ──
 _SALE_ENTRY_FIELDS = {"sale_price_amount", "actual_price_amount"}
 
+# ── Source alias map: friendly CSV names → canonical DB source keys ──
+_SOURCE_ALIAS_MAP: dict[str, str] = {
+    "meta": "meta_ads",
+    "google": "google_ads",
+    "tiktok": "tiktok_ads",
+    "linkedin": "linkedin_ads",
+    "pinterest": "pinterest_ads",
+    "snapchat": "snapchat_ads",
+    "reddit": "reddit_ads",
+    "quora": "quora_ads",
+    "taboola": "taboola_ads",
+}
+
+
+def _normalize_source_for_import(raw_source: str) -> str:
+    """Normalize a CSV source value to a canonical DB source key."""
+    cleaned = raw_source.strip().lower()
+    if not cleaned:
+        return "unknown"
+    return _SOURCE_ALIAS_MAP.get(cleaned, cleaned)
+
 _RETURNING_COLS = (
     "id, client_id, metric_date, source, leads, phones, "
     "custom_value_1_count, custom_value_2_count, custom_value_3_amount, "
@@ -295,7 +316,7 @@ def import_csv_rows(*, client_id: int, rows: list[dict]) -> dict:
                     row_index = row.get("row_index", 0)
 
                     metric_date = row_data.get("metric_date")
-                    source = str(row_data.get("source", "unknown")).strip().lower() or "unknown"
+                    source = _normalize_source_for_import(str(row_data.get("source", "") or ""))
 
                     if not metric_date:
                         errors.append({"row_index": row_index, "error_message": "Lipsește metric_date"})
@@ -374,12 +395,17 @@ def import_csv_rows(*, client_id: int, rows: list[dict]) -> dict:
                         daily_input_id = int(new_row[0])
                         inserted += 1
 
-                    # Create sale entry if sale price fields are present
+                    # Create/replace sale entry if sale price fields are present
                     sale_price = row_data.get("sale_price_amount")
                     actual_price = row_data.get("actual_price_amount")
                     if sale_price is not None or actual_price is not None:
                         sp = Decimal(str(sale_price)) if sale_price is not None else Decimal("0")
                         ap = Decimal(str(actual_price)) if actual_price is not None else Decimal("0")
+                        # Remove existing sale entries for this daily input before inserting
+                        cur.execute(
+                            "DELETE FROM client_data_sale_entries WHERE daily_input_id = %s",
+                            (daily_input_id,),
+                        )
                         cur.execute(
                             """
                             INSERT INTO client_data_sale_entries (
