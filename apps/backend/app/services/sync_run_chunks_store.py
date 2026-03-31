@@ -389,6 +389,51 @@ class SyncRunChunksStore:
             conn.commit()
         return affected
 
+    def fail_queued_chunks_for_account(self, *, platform: str, account_id: str, error: str, exclude_job_id: str | None = None) -> dict[str, int]:
+        self._ensure_schema()
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                if exclude_job_id:
+                    cur.execute(
+                        """
+                        UPDATE sync_run_chunks c
+                        SET
+                            status = 'error',
+                            error = %s,
+                            finished_at = NOW(),
+                            updated_at = NOW()
+                        FROM sync_runs r
+                        WHERE c.job_id = r.job_id
+                          AND r.platform = %s
+                          AND r.account_id = %s
+                          AND r.status IN ('queued', 'running')
+                          AND c.status = 'queued'
+                          AND c.job_id != %s
+                        """,
+                        (error, str(platform), str(account_id), str(exclude_job_id)),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        UPDATE sync_run_chunks c
+                        SET
+                            status = 'error',
+                            error = %s,
+                            finished_at = NOW(),
+                            updated_at = NOW()
+                        FROM sync_runs r
+                        WHERE c.job_id = r.job_id
+                          AND r.platform = %s
+                          AND r.account_id = %s
+                          AND r.status IN ('queued', 'running')
+                          AND c.status = 'queued'
+                        """,
+                        (error, str(platform), str(account_id)),
+                    )
+                affected = cur.rowcount or 0
+            conn.commit()
+        return {"affected": affected}
+
     def claim_next_queued_chunk(self, *, job_id: str, max_attempts: int = 5) -> dict[str, object] | None:
         self._ensure_schema()
         with self._connect() as conn:

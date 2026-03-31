@@ -27,9 +27,9 @@ class _RepairFakeCursor:
             self._last_one = run
             return
 
-        if "SELECT id, status, COALESCE(updated_at, started_at, created_at) AS freshness_ts" in q:
+        if "SELECT" in q and "id" in q and "freshness_ts" in q and "FROM sync_run_chunks" in q:
             chunks = self.state.get("chunks", [])
-            self._last_all = [(c["id"], c["status"], c.get("freshness_ts")) for c in chunks]
+            self._last_all = [(c["id"], c["status"], c.get("freshness_ts"), c.get("attempts", 0)) for c in chunks]
             return
 
         if q.startswith("SELECT NOW()"):
@@ -37,11 +37,18 @@ class _RepairFakeCursor:
             return
 
         if q.startswith("UPDATE sync_run_chunks") and "WHERE id = ANY(%s)" in q:
-            ids = set(params[2] or [])
-            for chunk in self.state.get("chunks", []):
-                if chunk["id"] in ids:
-                    chunk["status"] = "error"
-                    chunk["error"] = "stale_timeout"
+            if "status = 'queued'" in q:
+                ids = set(params[1] or [])
+                for chunk in self.state.get("chunks", []):
+                    if chunk["id"] in ids:
+                        chunk["status"] = "queued"
+                        chunk["error"] = None
+            else:
+                ids = set(params[2] or [])
+                for chunk in self.state.get("chunks", []):
+                    if chunk["id"] in ids:
+                        chunk["status"] = "error"
+                        chunk["error"] = "stale_timeout"
             return
 
         if "SELECT COUNT(*)::int" in q and "FROM sync_run_chunks" in q:
@@ -165,15 +172,33 @@ class SyncRunsStoreRepairTests(unittest.TestCase):
         self.assertEqual(result["final_status"], "done")
         self.assertEqual(result["reason"], "all_chunks_terminal_reconcile")
 
-    def test_stale_active_chunks_are_closed_and_run_errors(self):
+    def test_stale_active_chunks_are_requeued_when_under_max_attempts(self):
         now = datetime.now(timezone.utc)
         state = {
             "job_id": "job-1",
             "run": self._base_run_row(status="running"),
             "now": now,
             "chunks": [
-                {"id": 1, "status": "running", "freshness_ts": now - timedelta(minutes=61), "rows_written": 2},
-                {"id": 2, "status": "queued", "freshness_ts": now - timedelta(minutes=62), "rows_written": 0},
+                {"id": 1, "status": "running", "freshness_ts": now - timedelta(minutes=61), "rows_written": 2, "attempts": 1},
+                {"id": 2, "status": "queued", "freshness_ts": now - timedelta(minutes=62), "rows_written": 0, "attempts": 0},
+            ],
+        }
+        store, _, _ = self._build_store(state)
+        result = store.repair_historical_sync_run(job_id="job-1", stale_after_minutes=30)
+        self.assertEqual(result["outcome"], "requeued")
+        self.assertEqual(result["reason"], "stale_chunk_requeued")
+        self.assertEqual(result.get("stale_chunks_requeued"), 2)
+        self.assertEqual(result.get("stale_chunks_closed"), 0)
+
+    def test_stale_active_chunks_are_closed_when_max_attempts_exhausted(self):
+        now = datetime.now(timezone.utc)
+        state = {
+            "job_id": "job-1",
+            "run": self._base_run_row(status="running"),
+            "now": now,
+            "chunks": [
+                {"id": 1, "status": "running", "freshness_ts": now - timedelta(minutes=61), "rows_written": 2, "attempts": 5},
+                {"id": 2, "status": "queued", "freshness_ts": now - timedelta(minutes=62), "rows_written": 0, "attempts": 5},
             ],
         }
         store, _, _ = self._build_store(state)

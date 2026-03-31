@@ -417,6 +417,9 @@ export default function AgencyAccountDetailPage() {
       } else if (outcome === "noop_not_active") {
         setRepairNotice({ tone: "info", text: "Run-ul nu mai este activ. Am reîncărcat statusul." });
         await refreshAll();
+      } else if (outcome === "requeued") {
+        setRepairNotice({ tone: "success", text: "Chunk-urile blocate au fost repuse în coadă pentru retry automat." });
+        await refreshAll();
       } else if (outcome === "noop_active_fresh") {
         setRepairNotice({ tone: "info", text: "Run-ul este încă activ și fresh. Repair-ul nu s-a aplicat încă." });
       } else if (outcome === "not_found") {
