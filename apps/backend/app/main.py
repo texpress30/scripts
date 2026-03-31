@@ -50,6 +50,7 @@ from app.services.email_templates import email_templates_service
 from app.services.email_notifications import email_notifications_service
 from app.services.team_members import team_members_service
 from app.services.performance_reports import performance_reports_store
+from app.services.sync_runs_store import sync_runs_store
 from app.services.user_profile import user_profile_service
 
 settings = load_settings()
@@ -175,6 +176,20 @@ def startup_event() -> None:
     email_templates_service.initialize_schema()
     email_notifications_service.initialize_schema()
     performance_reports_store.initialize_schema()
+
+    try:
+        result = sync_runs_store.cleanup_rate_limit_errors(hours_back=72)
+        deleted_runs = result.get("deleted_runs", 0)
+        deleted_chunks = result.get("deleted_chunks", 0)
+        reset_accounts = result.get("reset_accounts", 0)
+        logger.info(
+            "[STARTUP-CLEANUP] Deleted %d rate-limit error runs, %d chunks, reset %d accounts",
+            deleted_runs,
+            deleted_chunks,
+            reset_accounts,
+        )
+    except Exception:
+        logger.exception("[STARTUP-CLEANUP] Failed to run rate-limit error cleanup")
 
 
 @app.on_event("shutdown")
