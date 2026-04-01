@@ -831,48 +831,48 @@ export default function SettingsTeamPage() {
 
           {mode === "list" ? (
             <section className="space-y-4">
-              <header className="flex flex-wrap items-center justify-between gap-3">
+              <header>
                 <h1 className="text-2xl font-semibold text-slate-900">Echipă</h1>
-                <button
-                  className="wm-btn-primary"
-                  type="button"
-                  onClick={() => {
-                    resetCreateForm();
-                    setErrorMessage("");
-                    setMode("create");
-                    setActiveFormTab("identity");
-                  }}
-                >
-                  + Adaugă Utilizator
-                </button>
               </header>
 
               <div className="wm-card space-y-4 p-4">
                 {subaccountOptionsError ? <p className="text-xs text-amber-700">Sub-conturile nu au putut fi încărcate: {subaccountOptionsError}</p> : null}
 
-                <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
-                  <select className="wm-input" value={userTypeFilter} onChange={(e) => { setPage(1); setUserTypeFilter(e.target.value); }}>
+                <div className="flex flex-wrap items-center gap-3">
+                  <select className="wm-input max-w-[180px]" value={userTypeFilter} onChange={(e) => { setPage(1); setUserTypeFilter(e.target.value); }}>
                     <option value="">Tip Utilizator</option>
                     <option value="agency">Agency</option>
                     <option value="client">Client</option>
                   </select>
-                  <select className="wm-input" value={userRoleFilter} onChange={(e) => { setPage(1); setUserRoleFilter(e.target.value); }}>
+                  <select className="wm-input max-w-[180px]" value={userRoleFilter} onChange={(e) => { setPage(1); setUserRoleFilter(e.target.value); }}>
                     <option value="">Rol Utilizator</option>
                     <option value="owner">Owner</option>
                     <option value="admin">Admin</option>
                     <option value="member">Membru</option>
                     <option value="viewer">Viewer</option>
                   </select>
-                  <select className="wm-input" value={subaccountFilter} onChange={(e) => { setPage(1); setSubaccountFilter(e.target.value); }}>
+                  <select className="wm-input max-w-[180px]" value={subaccountFilter} onChange={(e) => { setPage(1); setSubaccountFilter(e.target.value); }}>
                     <option value="">Toate</option>
                     {subaccountOptions.map((item) => (
                       <option key={item.id} value={String(item.id)}>{item.label || item.name}</option>
                     ))}
                   </select>
-                  <label className="relative">
+                  <label className="relative min-w-[200px] flex-1">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <input className="wm-input pl-9" placeholder="Caută nume, email, telefon" value={search} onChange={(e) => { setPage(1); setSearch(e.target.value); }} />
+                    <input className="wm-input w-full pl-9" placeholder="Nume, email, telefon, id-uri" value={search} onChange={(e) => { setPage(1); setSearch(e.target.value); }} />
                   </label>
+                  <button
+                    className="wm-btn-primary ml-auto shrink-0 whitespace-nowrap"
+                    type="button"
+                    onClick={() => {
+                      resetCreateForm();
+                      setErrorMessage("");
+                      setMode("create");
+                      setActiveFormTab("identity");
+                    }}
+                  >
+                    + Adaugă Utilizator
+                  </button>
                 </div>
 
                 <div className="overflow-hidden rounded-lg border border-slate-200">
