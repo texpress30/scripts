@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Literal
+
+_logger = logging.getLogger(__name__)
 
 
 Scope = Literal["agency", "subaccount"]
@@ -197,8 +200,8 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
 
 ACTION_POLICIES: dict[str, ActionPolicy] = {
     # agency scope
-    "clients:list": ActionPolicy(permission="clients:read", scopes=("agency",)),
-    "clients:create": ActionPolicy(permission="clients:create", scopes=("agency",)),
+    "clients:list": ActionPolicy(permission="clients:read", scopes=("agency", "subaccount")),
+    "clients:create": ActionPolicy(permission="clients:create", scopes=("agency", "subaccount")),
     "audit:list": ActionPolicy(permission="audit:read", scopes=("agency",)),
     "integrations:status": ActionPolicy(permission="integrations:status", scopes=("agency",)),
     "integrations:tiktok:status": ActionPolicy(permission="integrations:tiktok:status", scopes=("agency",)),
@@ -256,3 +259,21 @@ def require_action(role: str, action: str, scope: Scope) -> None:
         raise AuthorizationError(f"Role '{normalized_role}' is not allowed in scope '{scope}'")
 
     require_permission(normalized_role, policy.permission)
+
+
+def log_auth_config() -> None:
+    """Log the complete ACTION_POLICIES → accepted roles mapping at startup."""
+    for action_name, policy in sorted(ACTION_POLICIES.items()):
+        accepted_roles = sorted(
+            role
+            for role, perms in ROLE_PERMISSIONS.items()
+            if policy.permission in perms
+            and any(s in ROLE_SCOPES.get(role, set()) for s in policy.scopes)
+        )
+        _logger.info(
+            "[AUTH-CONFIG] %s → scopes=%s, permission=%s, accepted_roles=%s",
+            action_name,
+            list(policy.scopes),
+            policy.permission,
+            accepted_roles,
+        )

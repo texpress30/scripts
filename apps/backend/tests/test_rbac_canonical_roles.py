@@ -31,11 +31,29 @@ class RbacCanonicalRolesTests(unittest.TestCase):
             require_action("agency_member", action="clients:create", scope="agency")
         with self.assertRaises(AuthorizationError):
             require_action("subaccount_user", action="integrations:sync", scope="subaccount")
+        # subaccount_admin cannot use agency scope (role not allowed in scope 'agency')
         with self.assertRaises(AuthorizationError):
             require_action("subaccount_admin", action="clients:list", scope="agency")
         require_action("agency_admin", action="integrations:mailgun:config", scope="agency")
         with self.assertRaises(AuthorizationError):
             require_action("agency_member", action="integrations:mailgun:config", scope="agency")
+
+    def test_subaccount_roles_can_use_clients_actions_in_subaccount_scope(self):
+        # subaccount_admin can read client data in subaccount scope
+        require_action("subaccount_admin", action="clients:list", scope="subaccount")
+        # agency roles can also use clients:list in subaccount scope
+        require_action("agency_owner", action="clients:list", scope="subaccount")
+        require_action("agency_admin", action="clients:create", scope="subaccount")
+        # subaccount_admin does NOT have clients:create permission
+        with self.assertRaises(AuthorizationError):
+            require_action("subaccount_admin", action="clients:create", scope="subaccount")
+        # subaccount_viewer can read but not create
+        require_action("subaccount_viewer", action="clients:list", scope="subaccount")
+        with self.assertRaises(AuthorizationError):
+            require_action("subaccount_viewer", action="clients:create", scope="subaccount")
+        # subaccount roles cannot use agency scope
+        with self.assertRaises(AuthorizationError):
+            require_action("subaccount_admin", action="clients:create", scope="agency")
 
     def test_legacy_aliases_work_in_permission_and_action_checks(self):
         require_action("account_manager", action="rules:create", scope="subaccount")
