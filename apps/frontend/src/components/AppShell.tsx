@@ -105,7 +105,7 @@ export function getNavItems(pathname: string): NavItem[] {
     { href: "/agency-accounts", label: "Agency Accounts", icon: Bell, moduleKey: "agency_accounts" },
     { href: "/agency/feed-management/sources", label: "Feed Management", icon: Rss, moduleKey: "feed_management" },
     { href: "/agency/audit", label: "Agency Audit", icon: Sparkles, moduleKey: "agency_audit" },
-    { href: "/creative", label: "Creativ", icon: Palette, moduleKey: "creative" },
+    { href: "/agency/creative-studio/templates", label: "Creative Studio", icon: Palette, moduleKey: "creative" },
   ];
 
   if (isTikTokIntegrationEnabled() || isPinterestIntegrationEnabled() || isSnapchatIntegrationEnabled()) {
@@ -385,6 +385,7 @@ export function resolveAgencyRouteRedirect(params: {
     ["/agency/integrations", "integrations"],
     ["/agency/feed-management", "feed_management"],
     ["/agency/audit", "agency_audit"],
+    ["/agency/creative-studio", "creative"],
     ["/creative", "creative"],
   ] as const;
 
@@ -397,7 +398,7 @@ export function resolveAgencyRouteRedirect(params: {
     if (fallbackMain === "integrations") return "/agency/integrations";
     if (fallbackMain === "feed_management") return "/agency/feed-management/sources";
     if (fallbackMain === "agency_audit") return "/agency/audit";
-    if (fallbackMain === "creative") return "/creative";
+    if (fallbackMain === "creative") return "/agency/creative-studio/templates";
     const firstSetting = settingsItems.find((item) => !item.moduleKey || allowed.has(item.moduleKey));
     if (allowed.has("settings") && firstSetting) return firstSetting.href;
     return "/agency/dashboard";
@@ -412,7 +413,7 @@ export function resolveAgencyRouteRedirect(params: {
     if (fallbackMain === "integrations") return "/agency/integrations";
     if (fallbackMain === "feed_management") return "/agency/feed-management/sources";
     if (fallbackMain === "agency_audit") return "/agency/audit";
-    if (fallbackMain === "creative") return "/creative";
+    if (fallbackMain === "creative") return "/agency/creative-studio/templates";
     return "/agency/dashboard";
   }
   const requestedSettings = settingsItems.find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`));
@@ -427,7 +428,7 @@ export function resolveAgencyRouteRedirect(params: {
     if (fallbackMain === "integrations") return "/agency/integrations";
     if (fallbackMain === "feed_management") return "/agency/feed-management/sources";
     if (fallbackMain === "agency_audit") return "/agency/audit";
-    if (fallbackMain === "creative") return "/creative";
+    if (fallbackMain === "creative") return "/agency/creative-studio/templates";
     return "/agency/dashboard";
   }
   return null;
