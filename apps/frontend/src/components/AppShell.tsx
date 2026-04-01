@@ -90,11 +90,11 @@ export function getNavItems(pathname: string): NavItem[] {
   if (subMatch) {
     const id = subMatch[1];
     return [
-      { href: `/sub/${id}/dashboard`, label: "Dashboard", icon: LayoutDashboard, moduleKey: "dashboard" },
-      { href: `/sub/${id}/campaigns`, label: "Campaigns", icon: Bell, moduleKey: "campaigns" },
-      { href: `/sub/${id}/rules`, label: "Rules", icon: Sparkles, moduleKey: "rules" },
-      { href: `/sub/${id}/creative`, label: "Creative", icon: Palette, moduleKey: "creative" },
-      { href: `/sub/${id}/recommendations`, label: "Recommendations", icon: Users, moduleKey: "recommendations" },
+      { href: `/sub/${id}/dashboard`, label: "Panou de control", icon: LayoutDashboard, moduleKey: "dashboard" },
+      { href: `/sub/${id}/campaigns`, label: "Campanii", icon: Bell, moduleKey: "campaigns" },
+      { href: `/sub/${id}/rules`, label: "Reguli", icon: Sparkles, moduleKey: "rules" },
+      { href: `/sub/${id}/creative`, label: "Creativ", icon: Palette, moduleKey: "creative" },
+      { href: `/sub/${id}/recommendations`, label: "Recomandări", icon: Users, moduleKey: "recommendations" },
     ];
   }
 
@@ -103,7 +103,7 @@ export function getNavItems(pathname: string): NavItem[] {
     { href: "/agency/clients", label: "Agency Clients", icon: Users, moduleKey: "agency_clients" },
     { href: "/agency-accounts", label: "Agency Accounts", icon: Bell, moduleKey: "agency_accounts" },
     { href: "/agency/audit", label: "Agency Audit", icon: Sparkles, moduleKey: "agency_audit" },
-    { href: "/creative", label: "Creative", icon: Palette, moduleKey: "creative" },
+    { href: "/creative", label: "Creativ", icon: Palette, moduleKey: "creative" },
   ];
 
   if (isTikTokIntegrationEnabled() || isPinterestIntegrationEnabled() || isSnapchatIntegrationEnabled()) {
@@ -634,7 +634,7 @@ export function AppShell({
   }, [teamUsers, userSearch]);
 
   const currentTitle = useMemo(() => {
-    if (isSettingsMode) return "Settings";
+    if (isSettingsMode) return "Setări";
     if (!currentSubId) return "Agency MCC";
     return scopedClients.find((c) => c.id === currentSubId)?.name ?? `Sub-account #${currentSubId}`;
   }, [scopedClients, currentSubId, isSettingsMode]);
@@ -1020,10 +1020,10 @@ export function AppShell({
             href={settingsEntryHref}
             onClick={() => setMobileOpen(false)}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-            title={collapsed ? "Settings" : undefined}
+            title={collapsed ? "Setări" : undefined}
           >
             <Settings className="h-4 w-4 shrink-0" />
-            {!collapsed && <span>Settings</span>}
+            {!collapsed && <span>Setări</span>}
           </Link>
         ) : null}
       </div>
