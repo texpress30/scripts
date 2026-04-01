@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from app.api.dependencies import enforce_subaccount_action, get_current_user
@@ -23,7 +23,10 @@ from app.services.feed_management.models import (
     FeedSourceResponse,
     FeedSourceType,
     FeedSourceUpdate,
+    ProductListResponse,
+    ProductStatsResponse,
 )
+from app.services.feed_management.products_repository import feed_products_repository
 from app.services.feed_management.repository import FeedImportRepository, FeedSourceRepository
 
 logger = logging.getLogger(__name__)
@@ -179,13 +182,17 @@ def delete_feed_source(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if existing.subaccount_id != subaccount_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feed source not found")
+    try:
+        deleted_products = feed_products_repository.delete_products_by_source(source_id)
+    except Exception:
+        deleted_products = 0
     _source_repo.delete(source_id)
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
         action="feed_source.deleted",
         resource=f"feed_source:{source_id}",
-        details={"subaccount_id": subaccount_id, "name": existing.name},
+        details={"subaccount_id": subaccount_id, "name": existing.name, "deleted_products": deleted_products},
     )
     return {"status": "ok", "id": str(source_id)}
 
@@ -246,3 +253,90 @@ def list_imports(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feed source not found")
     imports = _import_repo.get_by_source(source_id)
     return FeedImportListResponse(items=imports)
+
+
+# ---------------------------------------------------------------------------
+# Product endpoints
+# ---------------------------------------------------------------------------
+
+def _resolve_source_or_404(subaccount_id: int, source_id: str) -> FeedSourceResponse:
+    try:
+        source = _source_repo.get_by_id(source_id)
+    except FeedSourceNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    if source.subaccount_id != subaccount_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feed source not found")
+    return source
+
+
+@router.get("/{source_id}/products/categories")
+def list_product_categories(
+    subaccount_id: int,
+    source_id: str,
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    _enforce_feature_flag()
+    enforce_subaccount_action(user=user, action="dashboard:view", subaccount_id=subaccount_id)
+    _resolve_source_or_404(subaccount_id, source_id)
+    categories = feed_products_repository.get_distinct_categories(source_id)
+    return {"categories": categories}
+
+
+@router.get("/{source_id}/products/stats", response_model=ProductStatsResponse)
+def product_stats(
+    subaccount_id: int,
+    source_id: str,
+    user: AuthUser = Depends(get_current_user),
+) -> ProductStatsResponse:
+    _enforce_feature_flag()
+    enforce_subaccount_action(user=user, action="dashboard:view", subaccount_id=subaccount_id)
+    _resolve_source_or_404(subaccount_id, source_id)
+
+    total = feed_products_repository.count_products(source_id)
+    categories = feed_products_repository.get_distinct_categories(source_id)
+    by_category: dict[str, int] = {}
+    for cat in categories:
+        by_category[cat] = feed_products_repository.count_products(source_id, category=cat)
+
+    latest_import = _import_repo.get_latest_by_source(source_id)
+    last_sync = latest_import.completed_at if latest_import else None
+
+    return ProductStatsResponse(total=total, by_category=by_category, last_sync=last_sync)
+
+
+@router.get("/{source_id}/products", response_model=ProductListResponse)
+def list_products(
+    subaccount_id: int,
+    source_id: str,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+    search: str | None = Query(default=None),
+    category: str | None = Query(default=None),
+    user: AuthUser = Depends(get_current_user),
+) -> ProductListResponse:
+    _enforce_feature_flag()
+    enforce_subaccount_action(user=user, action="dashboard:view", subaccount_id=subaccount_id)
+    _resolve_source_or_404(subaccount_id, source_id)
+
+    items = feed_products_repository.list_products(source_id, skip=skip, limit=limit, search=search, category=category)
+    total = feed_products_repository.count_products(source_id, search=search, category=category)
+    # Return just the data field from each document
+    product_items = [doc.get("data", doc) for doc in items if doc]
+    return ProductListResponse(items=product_items, total=total, skip=skip, limit=limit)
+
+
+@router.get("/{source_id}/products/{product_id}")
+def get_product(
+    subaccount_id: int,
+    source_id: str,
+    product_id: str,
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    _enforce_feature_flag()
+    enforce_subaccount_action(user=user, action="dashboard:view", subaccount_id=subaccount_id)
+    _resolve_source_or_404(subaccount_id, source_id)
+
+    doc = feed_products_repository.get_product(source_id, product_id)
+    if doc is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Product not found: {product_id}")
+    return doc.get("data", doc)
