@@ -59,6 +59,8 @@ export function MailgunIntegrationCard() {
   const [configBusy, setConfigBusy] = useState(false);
   const [configMessage, setConfigMessage] = useState("");
 
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+
   const badge = useMemo(() => statusBadge(status), [status]);
   const isEnvManaged = status?.config_source === "env";
 
@@ -120,12 +122,28 @@ export function MailgunIntegrationCard() {
     }
   }
 
+  const diagnosticsRows: { label: string; value: string }[] = status
+    ? [
+        { label: "Config source", value: status.config_source || "-" },
+        { label: "Base URL", value: status.base_url || "-" },
+        { label: "Domain", value: status.domain || "-" },
+        { label: "From email", value: status.from_email || "-" },
+        { label: "From name", value: status.from_name || "-" },
+        { label: "Reply-To", value: status.reply_to || "-" },
+        { label: "API key", value: status.api_key_masked || "-" },
+      ]
+    : [];
+
   return (
     <article className="wm-card p-4" data-testid="mailgun-card">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold text-slate-900">Mailgun</h2>
         <span className={`rounded-full px-3 py-1 text-xs font-medium ${badge.toneClass}`}>{badge.label}</span>
       </div>
+
+      <p className="mt-2 text-sm text-slate-600">Serviciu de trimitere email configurat prin Railway env.</p>
+      <p className="mt-2 text-xs text-slate-500">Conturi conectate: -</p>
+      <p className="mt-1 text-xs text-slate-500">Ultimul import: -</p>
 
       {loading ? <p className="mt-2 text-sm text-slate-600">Se încarcă statusul Mailgun...</p> : null}
 
@@ -135,24 +153,6 @@ export function MailgunIntegrationCard() {
           <button className="mt-2 rounded border border-red-300 px-2 py-1 text-xs" onClick={() => void loadStatus()}>
             Reîncearcă
           </button>
-        </div>
-      ) : null}
-
-      {!loading && !statusError ? (
-        <div className="mt-3 space-y-1 text-xs text-slate-600">
-          <p>Configured: {String(Boolean(status?.configured))}</p>
-          <p>Enabled: {String(Boolean(status?.enabled))}</p>
-          <p>Config source: {status?.config_source || "none"}</p>
-          <p>Domain: {status?.domain || "-"}</p>
-          <p>Base URL: {status?.base_url || "-"}</p>
-          <p>From email: {status?.from_email || "-"}</p>
-          <p>From name: {status?.from_name || "-"}</p>
-          <p>Reply-To: {status?.reply_to || "-"}</p>
-          <p>API key: {status?.api_key_masked || "-"}</p>
-          {!status?.configured ? <p className="pt-1 text-amber-700">Mailgun nu este configurat. Completează formularul de mai jos.</p> : null}
-          {status?.configured && status?.config_source === "env" ? (
-            <p className="pt-1 text-amber-700">Managed by Railway env. Configurarea manuală din UI este read-only.</p>
-          ) : null}
         </div>
       ) : null}
 
@@ -169,7 +169,17 @@ export function MailgunIntegrationCard() {
         >
           {isEnvManaged ? "Configured in Railway" : configOpen ? "Închide configurare" : status?.configured ? "Editează configurare" : "Configurează Mailgun"}
         </button>
+        <button
+          onClick={() => setDiagnosticsOpen(true)}
+          disabled={loading}
+          className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+        >
+          Diagnostics
+        </button>
       </div>
+      <p className="mt-3 text-xs text-slate-500">
+        După import, rulează sync pe fiecare sub-account pentru a popula dashboard-ul cu date reale.
+      </p>
 
       {configOpen && !isEnvManaged ? (
         <div className="mt-4 space-y-3 rounded-md border border-slate-200 p-3">
@@ -221,7 +231,60 @@ export function MailgunIntegrationCard() {
           </button>
         </div>
       ) : null}
-      <p className="mt-4 text-xs text-slate-500">Test email is available from Email Templates.</p>
+
+      {diagnosticsOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4" role="dialog" aria-modal="true">
+          <div className="wm-card max-h-[90vh] w-full max-w-3xl overflow-y-auto p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-semibold text-slate-900">Mailgun &mdash; Diagnostics</h3>
+              <button className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700" onClick={() => setDiagnosticsOpen(false)}>
+                Close
+              </button>
+            </div>
+
+            {loading ? <p className="mt-3 text-sm text-slate-600">Loading diagnostics...</p> : null}
+
+            {!loading && status ? (
+              <div className="mt-3 space-y-3 text-sm text-slate-700">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200">
+                      <th className="py-2 pr-4 font-medium text-slate-900">Proprietate</th>
+                      <th className="py-2 font-medium text-slate-900">Valoare</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {diagnosticsRows.map((row) => (
+                      <tr key={row.label} className="border-b border-slate-100">
+                        <td className="py-2 pr-4 font-medium text-slate-600">{row.label}</td>
+                        <td className="py-2 text-slate-800">{row.value}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {isEnvManaged ? (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700">
+                    Managed by Railway env. Configurarea manuală din UI este read-only.
+                  </div>
+                ) : null}
+
+                <p className="text-xs text-slate-500">Test email is available from Email Templates.</p>
+
+                <div className="flex justify-end">
+                  <button className="rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50" onClick={() => setDiagnosticsOpen(false)}>
+                    Închide
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {!loading && !status ? (
+              <p className="mt-3 text-sm text-slate-600">Nu s-au putut încărca datele de configurare Mailgun.</p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </article>
   );
 }
