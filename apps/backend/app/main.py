@@ -28,6 +28,7 @@ from app.api.dashboard import router as dashboard_router
 from app.api.email_notifications import router as email_notifications_router
 from app.api.email_templates import router as email_templates_router
 from app.api.exports import router as exports_router
+from app.api.feed_sources import router as feed_sources_router
 from app.api.google_ads import router as google_ads_router
 from app.api.google_accounts import router as google_accounts_router
 from app.api.health import router as health_router
@@ -41,6 +42,9 @@ from app.api.team import router as team_router
 from app.api.tiktok_ads import router as tiktok_ads_router
 from app.api.user_profile import router as user_profile_router
 from app.api.rules import router as rules_router
+from app.api.creative_templates import router as creative_templates_router
+from app.api.treatments import router as treatments_router
+from app.api.output_feeds import router as output_feeds_router
 from app.core.config import load_settings
 from app.services.rbac import log_auth_config
 from app.services.client_registry import client_registry_service
@@ -129,6 +133,14 @@ app.include_router(user_profile_router)
 app.include_router(team_router)
 app.include_router(storage_router)
 app.include_router(sync_orchestration_router)
+
+# Feed Management
+app.include_router(feed_sources_router)
+
+# Enriched Catalog
+app.include_router(creative_templates_router)
+app.include_router(treatments_router)
+app.include_router(output_feeds_router)
 
 
 @app.get("/", tags=["root"])
