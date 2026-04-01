@@ -42,6 +42,7 @@ from app.api.tiktok_ads import router as tiktok_ads_router
 from app.api.user_profile import router as user_profile_router
 from app.api.rules import router as rules_router
 from app.core.config import load_settings
+from app.services.rbac import log_auth_config
 from app.services.client_registry import client_registry_service
 from app.services.company_settings import company_settings_service
 from app.services.subaccount_business_profile_store import subaccount_business_profile_store
@@ -190,6 +191,8 @@ def startup_event() -> None:
         )
     except Exception:
         logger.exception("[STARTUP-CLEANUP] Failed to run rate-limit error cleanup")
+
+    log_auth_config()
 
 
 @app.on_event("shutdown")

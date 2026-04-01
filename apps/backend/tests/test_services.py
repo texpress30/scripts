@@ -127,8 +127,8 @@ class ServiceTests(unittest.TestCase):
 
     def test_rbac_action_scope_validation(self):
         require_action("agency_admin", action="clients:list", scope="agency")
-        with self.assertRaises(AuthorizationError):
-            require_action("agency_admin", action="clients:list", scope="subaccount")
+        # clients:list now allows both agency and subaccount scopes
+        require_action("agency_admin", action="clients:list", scope="subaccount")
         with self.assertRaises(AuthorizationError):
             require_action("client_viewer", action="rules:create", scope="subaccount")
 

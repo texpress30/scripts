@@ -464,7 +464,7 @@ def upsert_subaccount_business_profile_by_subaccount_id(
     payload: SubaccountBusinessProfilePayload,
     user: AuthUser = Depends(get_current_user),
 ) -> SubaccountBusinessProfileResponse:
-    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=subaccount_id)
     client_id, _, _ = _resolve_client_from_subaccount_identifier_or_404(identifier=subaccount_id)
     profile = subaccount_business_profile_store.upsert_profile(
         client_id=client_id,
@@ -667,7 +667,7 @@ def _build_client_data_derived_fields(*, media_buying_config: dict[str, object])
 
 @router.get("/{client_id}/data/config", response_model=ClientDataConfigResponse)
 def get_client_data_config(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:list", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
@@ -717,7 +717,7 @@ def get_client_data_config(client_id: int, user: AuthUser = Depends(get_current_
 
 @router.get("/{client_id}/data/custom-value-labels", response_model=CustomValueLabelsResponse)
 def get_custom_value_labels(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:list", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     config = media_buying_store.get_config(client_id=client_id)
@@ -730,7 +730,7 @@ def update_custom_value_labels(
     payload: CustomValueLabelsUpdateRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:list", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     label_1 = payload.custom_label_1
@@ -775,7 +775,7 @@ def get_client_data_table(
     date_to: date = Query(...),
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:list", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     try:
@@ -858,7 +858,7 @@ def upsert_client_data_daily_input(
     payload: ClientDataDailyInputUpsertRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     _reject_legacy_daily_input_fields_or_422(payload)
@@ -927,7 +927,7 @@ def create_client_data_daily_input(
     payload: ClientDataDailyInputUpsertRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     _reject_legacy_daily_input_fields_or_422(payload)
@@ -971,7 +971,7 @@ def patch_client_data_daily_input(
     payload: ClientDataDailyInputPatchRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
@@ -1022,7 +1022,7 @@ def delete_client_data_daily_input(
     daily_input_id: int,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
@@ -1043,7 +1043,7 @@ def create_client_data_sale_entry(
     payload: ClientDataSaleEntryCreateRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
@@ -1073,7 +1073,7 @@ def update_client_data_sale_entry(
     payload: ClientDataSaleEntryUpdateRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
@@ -1103,7 +1103,7 @@ def delete_client_data_sale_entry(
     sale_entry_id: int,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
@@ -1124,7 +1124,7 @@ def create_client_data_custom_field(
     payload: ClientDataCustomFieldCreateRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
@@ -1150,7 +1150,7 @@ def list_client_data_custom_fields(
     include_inactive: bool = Query(False),
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:list", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     items = client_data_store.list_custom_fields(client_id=client_id, include_inactive=include_inactive)
@@ -1164,7 +1164,7 @@ def update_client_data_custom_field(
     payload: ClientDataCustomFieldUpdateRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
@@ -1194,7 +1194,7 @@ def archive_client_data_custom_field(
     custom_field_id: int,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
@@ -1229,7 +1229,7 @@ def upsert_client_data_daily_custom_value(
     payload: ClientDataDailyCustomValueUpsertRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
@@ -1264,7 +1264,7 @@ def delete_client_data_daily_custom_value(
     custom_field_id: int,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
@@ -1282,7 +1282,7 @@ def delete_client_data_daily_custom_value(
 
 @router.get("/{client_id}/media-buying/config")
 def get_media_buying_config(client_id: int, user: AuthUser = Depends(get_current_user)) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:list", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     return media_buying_store.get_config(client_id=client_id)
@@ -1304,7 +1304,7 @@ def list_media_buying_lead_daily_values(
     date_to: date = Query(...),
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:list", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     try:
@@ -1332,7 +1332,7 @@ def get_media_buying_lead_table(
     include_days: bool = Query(default=True),
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:list", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     try:
@@ -1348,7 +1348,7 @@ def get_media_buying_lead_month_days(
     month_start: date = Query(...),
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:list", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     try:
@@ -1364,7 +1364,7 @@ def get_media_tracker_weekly_worksheet_foundation(
     anchor_date: date = Query(...),
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:list", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     try:
@@ -1386,7 +1386,7 @@ def get_media_tracker_overview_charts(
     date_to: date | None = Query(default=None),
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:list", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:list", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     try:
@@ -1416,7 +1416,7 @@ def upsert_media_tracker_scope_eur_ron_rate(
     payload: MediaTrackerWorksheetEurRonRateUpsertRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     try:
@@ -1450,7 +1450,7 @@ async def import_preview_client_data(
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
     """Parse and validate a CSV file for data import preview. Does not write to DB."""
-    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
@@ -1495,7 +1495,7 @@ def confirm_import_client_data(
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
     """Import confirmed CSV rows into the database with transactional upsert."""
-    enforce_action_scope(user=user, action="clients:create", scope="agency")
+    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
