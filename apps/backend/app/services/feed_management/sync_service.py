@@ -54,6 +54,26 @@ def _get_connector(source: FeedSourceResponse) -> BaseConnector:
                 logger.exception("Failed to load Shopify credentials for source %s", source.id)
         return ShopifyConnector(config=config, credentials=credentials)
 
+    if source.source_type == FeedSourceType.woocommerce:
+        from app.services.feed_management.connectors.woocommerce_connector import WooCommerceConnector
+
+        woo_credentials: dict[str, str] = {}
+        if source.credentials_secret_id:
+            try:
+                from app.services.integration_secrets_store import integration_secrets_store
+
+                for key in ("consumer_key", "consumer_secret"):
+                    secret = integration_secrets_store.get_secret(
+                        provider="woocommerce",
+                        secret_key=key,
+                        scope=source.credentials_secret_id,
+                    )
+                    if secret:
+                        woo_credentials[key] = secret.value
+            except Exception:
+                logger.exception("Failed to load WooCommerce credentials for source %s", source.id)
+        return WooCommerceConnector(config=config, credentials=woo_credentials)
+
     raise ValueError(f"No connector available for source type: {source.source_type}")
 
 
