@@ -37,7 +37,7 @@ type TeamUser = {
   roleKey: string;
   sourceLabel: string;
   inherited: boolean;
-  membershipStatus: "active" | "inactive";
+  membershipStatus: "active" | "inactive" | "pending";
 };
 
 type TeamUserForm = {
@@ -102,7 +102,7 @@ function mapMemberToUser(item: SubaccountTeamMemberItem): TeamUser {
     roleKey: item.role_key,
     sourceLabel: item.source_label,
     inherited: item.is_inherited,
-    membershipStatus: String(item.membership_status || "").trim().toLowerCase() === "inactive" || item.is_active === false ? "inactive" : "active",
+    membershipStatus: (() => { const s = String(item.membership_status || "").trim().toLowerCase(); if (s === "inactive" || item.is_active === false) return "inactive"; if (s === "pending") return "pending"; return "active"; })(),
   };
 }
 
@@ -847,6 +847,8 @@ export default function SubAccountTeamPage() {
                               <td className="px-3 py-2">
                                 {user.membershipStatus === "active" ? (
                                   <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Activ</span>
+                                ) : user.membershipStatus === "pending" ? (
+                                  <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">În așteptare</span>
                                 ) : (
                                   <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Inactiv</span>
                                 )}
@@ -1008,7 +1010,7 @@ export default function SubAccountTeamPage() {
                             <h2 className="text-base font-semibold text-slate-900">Informații Utilizator</h2>
                             {viewMode === "edit" && editingMembershipId !== null ? (
                               <p className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                                Status membership curent: <span className="font-semibold">{users.find((item) => item.membershipId === editingMembershipId)?.membershipStatus === "inactive" ? "Inactiv" : "Activ"}</span>
+                                Status membership curent: <span className="font-semibold">{(() => { const s = users.find((item) => item.membershipId === editingMembershipId)?.membershipStatus; return s === "inactive" ? "Inactiv" : s === "pending" ? "În așteptare" : "Activ"; })()}</span>
                               </p>
                             ) : null}
                             <div className="mt-4 space-y-4">
