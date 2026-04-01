@@ -20,6 +20,7 @@ class ImpersonateRequest(BaseModel):
 class ImpersonateResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    redirect_url: str | None = None
 
 
 class ForgotPasswordRequest(BaseModel):

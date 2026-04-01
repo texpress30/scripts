@@ -838,17 +838,18 @@ export function AppShell({
       }
 
       const targetRole = roleForImpersonation(user.user_role);
-      const result = await apiRequest<{ access_token: string }>("/auth/impersonate", {
+      const result = await apiRequest<{ access_token: string; redirect_url?: string | null }>("/auth/impersonate", {
         method: "POST",
         body: JSON.stringify({ email: user.email, role: targetRole }),
       });
 
       localStorage.setItem("mcc_token", result.access_token);
       localStorage.setItem("mcc_impersonating", JSON.stringify({ email: user.email, role: targetRole }));
+      localStorage.setItem("mcc_impersonation_origin", pathname);
       setImpersonatingAs({ email: user.email, role: targetRole });
       setProfileOpen(false);
       setLoginAsOpen(false);
-      router.refresh();
+      router.push(result.redirect_url || "/dashboard");
     } catch {
       // noop for now
     }
@@ -859,10 +860,12 @@ export function AppShell({
     if (adminToken) {
       localStorage.setItem("mcc_token", adminToken);
     }
+    const originPath = localStorage.getItem("mcc_impersonation_origin") || "/settings/team";
     localStorage.removeItem("mcc_admin_token");
     localStorage.removeItem("mcc_impersonating");
+    localStorage.removeItem("mcc_impersonation_origin");
     setImpersonatingAs(null);
-    router.refresh();
+    router.push(originPath);
   }
 
   function signout() {
@@ -1176,7 +1179,7 @@ export function AppShell({
             <div className="flex items-center justify-between gap-2">
               <span>Impersonating: <strong>{impersonatingAs.email}</strong> ({impersonatingAs.role})</span>
               <button className="rounded-md border border-amber-300 bg-white px-2 py-1 text-xs font-medium hover:bg-amber-100" onClick={stopImpersonation}>
-                Switch back to Admin
+                Înapoi la Admin
               </button>
             </div>
           </div>
