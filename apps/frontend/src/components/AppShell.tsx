@@ -812,6 +812,13 @@ export function AppShell({
     });
   }, [navItems, sessionInfo.role, currentSubId, subaccountMyAccess, subaccountMyAccessLoading, agencyMyAccess, agencyMyAccessLoading]);
 
+  const isNavAccessPending = useMemo(() => {
+    if (isSubSettingsMode && subSettingsId !== null) return subaccountMyAccess === null;
+    if (currentSubId !== null) return subaccountMyAccess === null;
+    if (isAgencyRole) return agencyMyAccess === null;
+    return false;
+  }, [isSubSettingsMode, subSettingsId, currentSubId, isAgencyRole, subaccountMyAccess, agencyMyAccess]);
+
   const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
 
   async function toggleFullscreen() {
@@ -902,7 +909,7 @@ export function AppShell({
               onClick={() => setMobileOpen(false)}
               className="block rounded-md bg-indigo-50 px-2 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100"
             >
-              ← Go Back
+              ← Înapoi
             </Link>
           </div>
         ) : (
@@ -959,7 +966,13 @@ export function AppShell({
       </div>
 
       <nav className="flex-1 space-y-1 px-3 py-4">
-        {isSettingsMode
+        {isNavAccessPending ? (
+          <>
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-8 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
+            ))}
+          </>
+        ) : isSettingsMode
           ? settingsItems.map((item) => {
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
