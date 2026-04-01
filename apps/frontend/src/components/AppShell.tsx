@@ -924,7 +924,7 @@ export function AppShell({
                   className="wm-input mb-2 h-9"
                 />
 
-                {currentSubId ? (
+                {currentSubId && isAgencyRole ? (
                   <button
                     onClick={() => {
                       setSwitcherOpen(false);
@@ -947,7 +947,7 @@ export function AppShell({
                       className="block w-full rounded-md px-2 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
                     >
                       {client.name}
-                      <span className="ml-1 text-xs text-slate-400">#{client.id}</span>
+                      {isAgencyRole && <span className="ml-1 text-xs text-slate-400">#{client.id}</span>}
                     </button>
                   ))}
                   {filteredClients.length === 0 ? <p className="px-2 py-2 text-xs text-slate-500">No sub-accounts found.</p> : null}
