@@ -179,7 +179,7 @@ export default function SettingsTeamPage() {
   const [editingMembershipId, setEditingMembershipId] = useState<number | null>(null);
   const [loadingEditDetail, setLoadingEditDetail] = useState(false);
   const [editLockedInherited, setEditLockedInherited] = useState(false);
-  const [editOriginal, setEditOriginal] = useState<{ userRole: string; moduleKeys: string[]; allowedSubaccountIds: number[] } | null>(null);
+  const [editOriginal, setEditOriginal] = useState<{ userRole: string; moduleKeys: string[]; allowedSubaccountIds: number[]; firstName: string; lastName: string; email: string; phone: string; extension: string } | null>(null);
   const activeScope = activeScopeFromUserType(userType);
   const activeCatalog = moduleCatalogByScope[activeScope];
 
@@ -500,7 +500,7 @@ export default function SettingsTeamPage() {
         .map((item) => Number(item))
         .filter((item) => Number.isFinite(item));
       setAllowedSubaccountIds(initialAllowedSubaccountIds);
-      setEditOriginal({ userRole: roleValueFromKey(detail.role_key), moduleKeys: [...coherentKeys].sort(), allowedSubaccountIds: [...initialAllowedSubaccountIds].sort((a, b) => a - b) });
+      setEditOriginal({ userRole: roleValueFromKey(detail.role_key), moduleKeys: [...coherentKeys].sort(), allowedSubaccountIds: [...initialAllowedSubaccountIds].sort((a, b) => a - b), firstName: String(detail.first_name || ""), lastName: String(detail.last_name || ""), email: String(detail.email || "").trim().toLowerCase(), phone: String(detail.phone || ""), extension: String(detail.extension || "") });
       setEditLockedInherited(Boolean(detail.is_inherited));
       if (detail.is_inherited) {
         setErrorMessage("Acest access este moștenit și nu poate fi editat aici");
@@ -550,22 +550,45 @@ export default function SettingsTeamPage() {
       ? JSON.stringify(editOriginal.allowedSubaccountIds) === JSON.stringify(nextAllowedIds)
       : false;
 
-    if (editOriginal && noRoleChange && noModuleChange && noAllowedSubaccountChange) {
+    const noFirstNameChange = editOriginal ? editOriginal.firstName === firstName.trim() : true;
+    const noLastNameChange = editOriginal ? editOriginal.lastName === lastName.trim() : true;
+    const noEmailChange = editOriginal ? editOriginal.email === email.trim().toLowerCase() : true;
+    const noPhoneChange = editOriginal ? editOriginal.phone === phone.trim() : true;
+    const noExtensionChange = editOriginal ? editOriginal.extension === extension.trim() : true;
+    const noIdentityChange = noFirstNameChange && noLastNameChange && noEmailChange && noPhoneChange && noExtensionChange;
+
+    if (editOriginal && noRoleChange && noModuleChange && noAllowedSubaccountChange && noIdentityChange) {
       setSaving(false);
       return;
     }
 
-    const payload: { user_role?: string; module_keys?: string[]; allowed_subaccount_ids?: number[] } = {
+    if (firstName.trim() === "") {
+      setSaving(false);
+      setErrorMessage("Prenumele este obligatoriu.");
+      return;
+    }
+    if (lastName.trim() === "") {
+      setSaving(false);
+      setErrorMessage("Numele este obligatoriu.");
+      return;
+    }
+
+    const payload: { user_role?: string; module_keys?: string[]; allowed_subaccount_ids?: number[]; first_name?: string; last_name?: string; email?: string; phone?: string; extension?: string } = {
       user_role: roleKeyFromMode(userType, userRole),
     };
     payload.module_keys = nextModules;
     if (userType === "agency" && (userRole === "member" || userRole === "viewer")) {
       payload.allowed_subaccount_ids = nextAllowedIds;
     }
+    if (!noFirstNameChange) payload.first_name = firstName.trim();
+    if (!noLastNameChange) payload.last_name = lastName.trim();
+    if (!noEmailChange) payload.email = email.trim().toLowerCase();
+    if (!noPhoneChange) payload.phone = phone.trim();
+    if (!noExtensionChange) payload.extension = extension.trim();
 
     try {
       await updateTeamMembership(editingMembershipId, payload);
-      showToast("Permisiunile au fost actualizate");
+      showToast("Datele utilizatorului au fost actualizate.");
       resetCreateForm();
       setMode("list");
       setPage(1);
@@ -768,8 +791,9 @@ export default function SettingsTeamPage() {
     const normalizedAllowedNow = [...allowedSubaccountIds].sort((a, b) => a - b);
     const normalizedAllowedOriginal = [...editOriginal.allowedSubaccountIds].sort((a, b) => a - b);
     const sameAllowedSubaccounts = JSON.stringify(normalizedAllowedNow) === JSON.stringify(normalizedAllowedOriginal);
-    return sameRole && sameModules && sameAllowedSubaccounts;
-  }, [mode, saving, loadingEditDetail, editLockedInherited, editingMembershipId, editOriginal, selectedModuleKeys, userRole, allowedSubaccountIds]);
+    const sameIdentity = editOriginal.firstName === firstName.trim() && editOriginal.lastName === lastName.trim() && editOriginal.email === email.trim().toLowerCase() && editOriginal.phone === phone.trim() && editOriginal.extension === extension.trim();
+    return sameRole && sameModules && sameAllowedSubaccounts && sameIdentity;
+  }, [mode, saving, loadingEditDetail, editLockedInherited, editingMembershipId, editOriginal, selectedModuleKeys, userRole, allowedSubaccountIds, firstName, lastName, email, phone, extension]);
 
   function applySettingsConsistency(keys: string[]): string[] {
     const normalized = new Set(normalizeSelectedKeys(keys));
@@ -1191,23 +1215,23 @@ export default function SettingsTeamPage() {
                         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                           <label className="text-sm text-slate-700">
                             Prenume
-                            <input className="wm-input mt-1" value={firstName} onChange={(e) => setFirstName(e.target.value)} required disabled={mode === "edit"} />
+                            <input className="wm-input mt-1" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
                           </label>
                           <label className="text-sm text-slate-700">
                             Nume
-                            <input className="wm-input mt-1" value={lastName} onChange={(e) => setLastName(e.target.value)} required disabled={mode === "edit"} />
+                            <input className="wm-input mt-1" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
                           </label>
                           <label className="text-sm text-slate-700 md:col-span-2">
                             Email <span className="text-red-500">*</span>
-                            <input className="wm-input mt-1" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={mode === "edit"} />
+                            <input className="wm-input mt-1" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
                           </label>
                           <label className="text-sm text-slate-700">
                             Telefon
-                            <input className="wm-input mt-1" value={phone} onChange={(e) => setPhone(e.target.value)} disabled={mode === "edit"} />
+                            <input className="wm-input mt-1" value={phone} onChange={(e) => setPhone(e.target.value)} />
                           </label>
                           <label className="text-sm text-slate-700">
                             Extensie
-                            <input className="wm-input mt-1" value={extension} onChange={(e) => setExtension(e.target.value)} disabled={mode === "edit"} />
+                            <input className="wm-input mt-1" value={extension} onChange={(e) => setExtension(e.target.value)} />
                           </label>
                           <label className="text-sm text-slate-700">
                             Tip Utilizator
@@ -1314,9 +1338,11 @@ export default function SettingsTeamPage() {
                             </label>
                           </>
                         ) : (
-                          <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                            Editarea identității globale (nume/email/telefon) va fi disponibilă într-un task ulterior.
-                          </p>
+                          editOriginal && email.trim().toLowerCase() !== editOriginal.email ? (
+                            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                              Schimbarea emailului va afecta datele de autentificare ale utilizatorului.
+                            </p>
+                          ) : null
                         )
                       : null}
 
