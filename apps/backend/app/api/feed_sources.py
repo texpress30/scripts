@@ -165,12 +165,12 @@ def update_feed_source(
     return updated
 
 
-@router.delete("/{source_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{source_id}")
 def delete_feed_source(
     subaccount_id: int,
     source_id: str,
     user: AuthUser = Depends(get_current_user),
-) -> None:
+) -> dict:
     _enforce_feature_flag()
     enforce_subaccount_action(user=user, action="clients:create", subaccount_id=subaccount_id)
     try:
@@ -187,6 +187,7 @@ def delete_feed_source(
         resource=f"feed_source:{source_id}",
         details={"subaccount_id": subaccount_id, "name": existing.name},
     )
+    return {"status": "ok", "id": str(source_id)}
 
 
 @router.post("/{source_id}/sync", response_model=SyncTriggerResponse)
