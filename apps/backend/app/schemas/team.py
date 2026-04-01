@@ -195,3 +195,8 @@ class UpdateTeamMembershipRequest(BaseModel):
     user_role: str | None = None
     module_keys: list[str] | None = None
     allowed_subaccount_ids: list[int] | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    extension: str | None = None

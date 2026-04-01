@@ -1461,6 +1461,67 @@ class TeamMembersService:
             "extension": str(row[11] or ""),
         }
 
+    def update_user_identity(
+        self,
+        *,
+        membership_id: int,
+        actor_user: AuthUser,
+        first_name: str | None = None,
+        last_name: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
+        extension: str | None = None,
+    ) -> None:
+        current = self.get_membership_detail(membership_id=membership_id, actor_user=actor_user)
+        if current is None:
+            raise LookupError("Membership inexistent")
+        if bool(current.get("is_inherited")):
+            raise RuntimeError("Access moștenit: acest membership nu poate fi editat local")
+        user_id = int(current["user_id"])
+
+        sets: list[str] = []
+        values: list[object] = []
+        if first_name is not None:
+            stripped = first_name.strip()
+            if stripped == "":
+                raise ValueError("Prenumele este obligatoriu")
+            sets.append("first_name = %s")
+            values.append(stripped)
+        if last_name is not None:
+            stripped = last_name.strip()
+            if stripped == "":
+                raise ValueError("Numele este obligatoriu")
+            sets.append("last_name = %s")
+            values.append(stripped)
+        if email is not None:
+            stripped = email.strip().lower()
+            if stripped == "":
+                raise ValueError("Email-ul este obligatoriu")
+            if stripped != str(current.get("email") or "").strip().lower():
+                with self._connect() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT id FROM users WHERE LOWER(email) = %s AND id != %s LIMIT 1", (stripped, user_id))
+                        if cur.fetchone() is not None:
+                            raise ValueError("Email-ul este deja folosit de alt utilizator.")
+            sets.append("email = %s")
+            values.append(stripped)
+        if phone is not None:
+            sets.append("phone = %s")
+            values.append(phone.strip())
+        if extension is not None:
+            sets.append("extension = %s")
+            values.append(extension.strip())
+
+        if not sets:
+            return
+
+        sets.append("updated_at = NOW()")
+        values.append(user_id)
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(f"UPDATE users SET {', '.join(sets)} WHERE id = %s", values)
+            conn.commit()
+
     def update_membership(
         self,
         *,

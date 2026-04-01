@@ -270,17 +270,36 @@ def patch_team_membership(
     user: AuthUser = Depends(get_current_user),
 ) -> TeamMembershipDetailResponse:
     _enforce_membership_edit_actor_role(user)
-    if payload.user_role is None and payload.module_keys is None and payload.allowed_subaccount_ids is None:
+    has_role_or_module_fields = payload.user_role is not None or payload.module_keys is not None or payload.allowed_subaccount_ids is not None
+    has_identity_fields = payload.first_name is not None or payload.last_name is not None or payload.email is not None or payload.phone is not None or payload.extension is not None
+    if not has_role_or_module_fields and not has_identity_fields:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nu există câmpuri de actualizat")
 
     try:
-        item = team_members_service.update_membership(
+        if has_identity_fields:
+            team_members_service.update_user_identity(
+                membership_id=membership_id,
+                actor_user=user,
+                first_name=payload.first_name,
+                last_name=payload.last_name,
+                email=payload.email,
+                phone=payload.phone,
+                extension=payload.extension,
+            )
+        if has_role_or_module_fields:
+            team_members_service.update_membership(
+                membership_id=membership_id,
+                actor_user=user,
+                user_role=payload.user_role,
+                module_keys=payload.module_keys,
+                allowed_subaccount_ids=payload.allowed_subaccount_ids,
+            )
+        item = team_members_service.get_membership_detail(
             membership_id=membership_id,
             actor_user=user,
-            user_role=payload.user_role,
-            module_keys=payload.module_keys,
-            allowed_subaccount_ids=payload.allowed_subaccount_ids,
         )
+        if item is None:
+            raise LookupError("Membership inexistent")
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except PermissionError as exc:

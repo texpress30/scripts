@@ -707,6 +707,11 @@ export type UpdateTeamMembershipPayload = {
   user_role?: string;
   module_keys?: string[];
   allowed_subaccount_ids?: number[];
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  phone?: string;
+  extension?: string;
 };
 
 export async function getTeamMembershipDetail(membershipId: string | number): Promise<TeamMembershipDetailResponse> {
