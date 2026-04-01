@@ -20,6 +20,7 @@ from app.services.auth import (
     authenticate_user_from_db,
     create_access_token,
     find_active_user_by_email,
+    resolve_impersonation_access,
     set_user_password,
     validate_login_credentials,
     validate_new_password,
@@ -358,7 +359,26 @@ def impersonate(payload: ImpersonateRequest, user: AuthUser = Depends(get_curren
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported role: {payload.role}")
 
     target_email = payload.email.strip().lower()
-    access_token = create_access_token(email=target_email, role=target_role)
+    access_ctx = resolve_impersonation_access(target_email, target_role)
+    access_token = create_access_token(
+        email=target_email,
+        role=target_role,
+        user_id=access_ctx.get("user_id"),
+        access_scope=access_ctx.get("access_scope"),
+        allowed_subaccount_ids=access_ctx.get("allowed_subaccount_ids", ()),
+        allowed_subaccounts=access_ctx.get("allowed_subaccounts", ()),
+        primary_subaccount_id=access_ctx.get("primary_subaccount_id"),
+        membership_id=access_ctx.get("membership_id"),
+        membership_ids=access_ctx.get("membership_ids", ()),
+    )
+    redirect_url: str | None = None
+    primary_sub_id = access_ctx.get("primary_subaccount_id")
+    allowed_ids = access_ctx.get("allowed_subaccount_ids", ())
+    if primary_sub_id:
+        redirect_url = f"/sub/{primary_sub_id}/dashboard"
+    elif allowed_ids:
+        redirect_url = f"/sub/{allowed_ids[0]}/dashboard"
+
     audit_log_service.log(
         actor_email=user.email,
         actor_role=actor_role,
@@ -366,4 +386,4 @@ def impersonate(payload: ImpersonateRequest, user: AuthUser = Depends(get_curren
         resource="auth:impersonate",
         details={"target_email": target_email, "target_role": target_role},
     )
-    return ImpersonateResponse(access_token=access_token)
+    return ImpersonateResponse(access_token=access_token, redirect_url=redirect_url)

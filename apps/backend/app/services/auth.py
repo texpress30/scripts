@@ -108,6 +108,101 @@ def find_active_user_by_email(email: str) -> dict[str, object] | None:
     }
 
 
+def resolve_impersonation_access(email: str, target_role: str) -> dict[str, object]:
+    """Look up a user's memberships and resolve their subaccount access context for impersonation."""
+    normalized_email = str(email or "").strip().lower()
+    if normalized_email == "":
+        return {}
+
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM users WHERE LOWER(email) = %s AND is_active = TRUE LIMIT 1",
+                (normalized_email,),
+            )
+            user_row = cur.fetchone()
+            if user_row is None:
+                return {}
+            user_id = int(user_row[0])
+
+            cur.execute(
+                """
+                SELECT id, role_key, scope_type, subaccount_id, subaccount_name
+                FROM user_memberships
+                WHERE user_id = %s AND status = 'active'
+                ORDER BY id ASC
+                """,
+                (user_id,),
+            )
+            memberships = cur.fetchall()
+            if len(memberships) == 0:
+                return {}
+
+            normalized_memberships = [
+                (
+                    int(row[0]),
+                    normalize_role(str(row[1] or "")),
+                    str(row[2] or ""),
+                    _coerce_int(row[3]),
+                    str(row[4] or ""),
+                )
+                for row in memberships
+            ]
+
+            try:
+                resolved_role, selected_memberships = _resolve_role_from_memberships(
+                    normalized_memberships, target_role,
+                )
+            except AuthLoginError:
+                selected_memberships = normalized_memberships
+                resolved_role = target_role
+
+            allowed_subaccounts_map: dict[int, str] = {}
+            if resolved_role in {"agency_member", "agency_viewer"}:
+                selected_membership_ids = [int(row[0]) for row in selected_memberships]
+                if selected_membership_ids:
+                    cur.execute(
+                        """
+                        SELECT subaccount_id
+                        FROM membership_subaccount_access_grants
+                        WHERE membership_id = ANY(%s)
+                        ORDER BY subaccount_id ASC
+                        """,
+                        (selected_membership_ids,),
+                    )
+                    for grant_row in cur.fetchall():
+                        subaccount_id = _coerce_int(grant_row[0])
+                        if subaccount_id is not None and subaccount_id not in allowed_subaccounts_map:
+                            allowed_subaccounts_map[subaccount_id] = ""
+            else:
+                for row in selected_memberships:
+                    subaccount_id = _coerce_int(row[3])
+                    if subaccount_id is not None and subaccount_id not in allowed_subaccounts_map:
+                        allowed_subaccounts_map[subaccount_id] = str(row[4] or "")
+
+    allowed_subaccount_ids = tuple(sorted(allowed_subaccounts_map.keys()))
+    allowed_subaccounts = tuple(
+        {"id": sub_id, "name": allowed_subaccounts_map[sub_id]}
+        for sub_id in allowed_subaccount_ids
+    )
+    primary_subaccount_id = allowed_subaccount_ids[0] if len(allowed_subaccount_ids) >= 1 else None
+    role_is_subaccount = _is_subaccount_role(resolved_role)
+    access_scope = "subaccount" if role_is_subaccount else "agency"
+
+    membership_ids = tuple(int(row[0]) for row in selected_memberships)
+    membership_id = membership_ids[0] if len(membership_ids) == 1 else None
+
+    return {
+        "user_id": user_id,
+        "access_scope": access_scope,
+        "allowed_subaccount_ids": allowed_subaccount_ids,
+        "allowed_subaccounts": allowed_subaccounts,
+        "primary_subaccount_id": primary_subaccount_id,
+        "membership_id": membership_id,
+        "membership_ids": membership_ids,
+    }
+
+
 def is_active_user_id(user_id: int) -> bool:
     with _connect() as conn:
         with conn.cursor() as cur:
@@ -264,7 +359,7 @@ def authenticate_user_from_db(*, email: str, password: str, requested_role: str 
                 """
                 SELECT id, role_key, scope_type, subaccount_id, subaccount_name
                 FROM user_memberships
-                WHERE user_id = %s AND status = 'active'
+                WHERE user_id = %s AND status IN ('active', 'pending')
                 ORDER BY id ASC
                 """,
                 (user_id,),
@@ -344,6 +439,10 @@ def authenticate_user_from_db(*, email: str, password: str, requested_role: str 
                 resolved_subaccount_name = str(first_membership[4] or "")
 
             cur.execute("UPDATE users SET last_login_at = NOW(), updated_at = NOW() WHERE id = %s", (user_id,))
+            cur.execute(
+                "UPDATE user_memberships SET status = 'active', updated_at = NOW() WHERE user_id = %s AND status = 'pending'",
+                (user_id,),
+            )
         conn.commit()
 
     return AuthUser(
