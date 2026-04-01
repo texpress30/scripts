@@ -315,9 +315,11 @@ export default function SettingsTeamPage() {
         return membershipId !== null && String(member.email || "").trim() !== "";
   }
 
-  function normalizeMembershipStatus(member: TeamMember): "active" | "inactive" {
+  function normalizeMembershipStatus(member: TeamMember): "active" | "inactive" | "pending" {
     const status = String(member.membership_status || "active").trim().toLowerCase();
-    return status === "inactive" ? "inactive" : "active";
+    if (status === "inactive") return "inactive";
+    if (status === "pending") return "pending";
+    return "active";
   }
 
   function lifecycleErrorMessage(error: unknown): string {
@@ -938,6 +940,8 @@ export default function SettingsTeamPage() {
                             <td className="px-3 py-2">
                               {normalizeMembershipStatus(member) === "active" ? (
                                 <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Activ</span>
+                              ) : normalizeMembershipStatus(member) === "pending" ? (
+                                <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">În așteptare</span>
                               ) : (
                                 <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Inactiv</span>
                               )}
@@ -1308,7 +1312,7 @@ export default function SettingsTeamPage() {
 
                     {mode === "edit" && editingMembershipId !== null ? (
                       <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                        Status membership curent: <span className="font-semibold">{members.find((item) => getMembershipId(item) === editingMembershipId)?.membership_status === "inactive" ? "Inactiv" : "Activ"}</span>
+                        Status membership curent: <span className="font-semibold">{(() => { const s = String(members.find((item) => getMembershipId(item) === editingMembershipId)?.membership_status || "").trim().toLowerCase(); return s === "inactive" ? "Inactiv" : s === "pending" ? "În așteptare" : "Activ"; })()}</span>
                       </p>
                     ) : null}
 
