@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -38,6 +39,10 @@ def _enforce_feature_flag() -> None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feed management is not enabled")
 
 
+# ---------------------------------------------------------------------------
+# Request / Response schemas
+# ---------------------------------------------------------------------------
+
 class CreateFeedSourceRequest(BaseModel):
     source_type: FeedSourceType
     name: str = Field(min_length=1, max_length=255)
@@ -65,6 +70,10 @@ class SyncTriggerResponse(BaseModel):
     status: str
     message: str
 
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
 
 @router.get("", response_model=FeedSourceListResponse)
 def list_feed_sources(
@@ -156,12 +165,12 @@ def update_feed_source(
     return updated
 
 
-@router.delete("/{source_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{source_id}")
 def delete_feed_source(
     subaccount_id: int,
     source_id: str,
     user: AuthUser = Depends(get_current_user),
-) -> None:
+) -> dict:
     _enforce_feature_flag()
     enforce_subaccount_action(user=user, action="clients:create", subaccount_id=subaccount_id)
     try:
@@ -178,6 +187,7 @@ def delete_feed_source(
         resource=f"feed_source:{source_id}",
         details={"subaccount_id": subaccount_id, "name": existing.name},
     )
+    return {"status": "ok", "id": str(source_id)}
 
 
 @router.post("/{source_id}/sync", response_model=SyncTriggerResponse)
@@ -197,6 +207,7 @@ def trigger_sync(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feed source not found")
     if not source.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Feed source is not active")
+
     try:
         feed_import = _import_repo.create(FeedImportCreate(feed_source_id=source_id))
     except FeedImportInProgressError as exc:
@@ -212,7 +223,11 @@ def trigger_sync(
         resource=f"feed_source:{source_id}",
         details={"subaccount_id": subaccount_id, "import_id": feed_import.id},
     )
-    return SyncTriggerResponse(import_id=feed_import.id, status="pending", message="Sync has been queued and will start shortly")
+    return SyncTriggerResponse(
+        import_id=feed_import.id,
+        status="pending",
+        message="Sync has been queued and will start shortly",
+    )
 
 
 @router.get("/{source_id}/imports", response_model=FeedImportListResponse)
