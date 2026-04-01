@@ -24,6 +24,7 @@ import {
   removeTeamMember,
   updateTeamMembership,
 } from "@/lib/api";
+import { getSessionAccessContext, isSubaccountScopedContext } from "@/lib/session";
 
 type TeamUser = {
   id: string;
@@ -328,9 +329,13 @@ export default function SubAccountTeamPage() {
     () => moduleOptions.filter((item) => item.grantable).map((item) => item.key),
     [moduleOptions],
   );
+  const isActorSubaccountScoped = useMemo(() => isSubaccountScopedContext(getSessionAccessContext()), []);
   const permissionEditorItems = useMemo<PermissionEditorItem[]>(
-    () =>
-      moduleOptions.map((item) => {
+    () => {
+      const source = isActorSubaccountScoped
+        ? moduleOptions.filter((item) => item.grantable)
+        : moduleOptions;
+      return source.map((item) => {
         const isReadOnlyGapKey = editUnsafeGrantGap && selectedModuleKeys.includes(item.key) && !item.grantable;
         const disabledReason = !item.grantable
           ? isReadOnlyGapKey
@@ -347,8 +352,9 @@ export default function SubAccountTeamPage() {
           isContainer: item.isContainer,
           disabledReason,
         };
-      }),
-    [moduleOptions, editUnsafeGrantGap, selectedModuleKeys],
+      });
+    },
+    [moduleOptions, editUnsafeGrantGap, selectedModuleKeys, isActorSubaccountScoped],
   );
 
   const pages = Math.max(1, Math.ceil(total / PER_PAGE));
