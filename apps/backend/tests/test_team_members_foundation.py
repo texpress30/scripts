@@ -720,6 +720,7 @@ class TeamMembersFoundationTests(unittest.TestCase):
                 "agency_clients",
                 "agency_accounts",
                 "integrations",
+                "feed_management",
                 "agency_audit",
                 "creative",
                 "email_templates",
