@@ -776,36 +776,31 @@ export default function SubAccountTeamPage() {
           <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             {viewMode === "list" ? (
               <>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button type="button" className="wm-btn-primary inline-flex items-center gap-2" onClick={() => { void openCreateForm(); }} disabled={isInvalidSubaccount}>
-                      <Plus className="h-4 w-4" />
-                      Adaugă Utilizator
-                    </button>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <select
-                      className="wm-input max-w-[220px]"
-                      value={activeRole}
-                      onChange={(e) => setActiveRole(e.target.value)}
-                      aria-label="Filtru rol"
-                    >
-                      <option value="all">Toate rolurile</option>
-                      <option value="subaccount_admin">Subaccount Admin</option>
-                      <option value="subaccount_user">Subaccount User</option>
-                      <option value="subaccount_viewer">Subaccount Viewer</option>
-                    </select>
-                    <label className="relative block">
-                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                      <input
-                        className="wm-input pl-9"
-                        placeholder="Nume, email, telefon, id-uri"
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                      />
-                    </label>
-                  </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <select
+                    className="wm-input max-w-[220px]"
+                    value={activeRole}
+                    onChange={(e) => setActiveRole(e.target.value)}
+                    aria-label="Filtru rol"
+                  >
+                    <option value="all">Rol Utilizator</option>
+                    <option value="subaccount_admin">Subaccount Admin</option>
+                    <option value="subaccount_user">Subaccount User</option>
+                    <option value="subaccount_viewer">Subaccount Viewer</option>
+                  </select>
+                  <label className="relative block min-w-[200px] flex-1">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      className="wm-input w-full pl-9"
+                      placeholder="Nume, email, telefon, id-uri"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                    />
+                  </label>
+                  <button type="button" className="wm-btn-primary ml-auto inline-flex shrink-0 items-center gap-2 whitespace-nowrap" onClick={() => { void openCreateForm(); }} disabled={isInvalidSubaccount}>
+                    <Plus className="h-4 w-4" />
+                    Adaugă Utilizator
+                  </button>
                 </div>
 
                 {loadError ? <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{loadError}</p> : null}
