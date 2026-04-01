@@ -7,6 +7,7 @@ TODO: Implement full Shopify Admin API integration in a future task.
 - Rate limiting: 2 requests/second for REST, cost-based for GraphQL
 - Requires: shop URL, API key, API secret key (stored in integration_secrets)
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -21,7 +22,12 @@ from app.services.feed_management.connectors.base import (
 
 
 class ShopifyConnector(BaseConnector):
-    """Skeleton connector for Shopify stores via Admin API."""
+    """Connector for Shopify stores via Admin API.
+
+    This is a skeleton implementation. The actual API calls will be
+    implemented in a dedicated task once the base infrastructure is
+    validated end-to-end.
+    """
 
     async def validate_config(self) -> ValidationResult:
         errors: list[str] = []
@@ -34,7 +40,10 @@ class ShopifyConnector(BaseConnector):
         return ValidationResult(valid=len(errors) == 0, errors=errors)
 
     async def test_connection(self) -> ConnectionTestResult:
-        """Placeholder — TODO: GET /admin/api/{version}/shop.json"""
+        """Placeholder: returns success without actually connecting.
+
+        TODO: Implement real connection test via GET /admin/api/{version}/shop.json
+        """
         validation = await self.validate_config()
         if not validation.valid:
             return ConnectionTestResult(success=False, message="Invalid config", details={"errors": validation.errors})
@@ -45,13 +54,26 @@ class ShopifyConnector(BaseConnector):
         )
 
     async def fetch_products(self, since: datetime | None = None) -> AsyncIterator[ProductData]:
-        """TODO: Implement via Shopify Admin API products.json"""
+        """Not yet implemented.
+
+        TODO: Implement via Shopify Admin API
+        - GET /admin/api/{version}/products.json?updated_at_min={since}
+        - Handle pagination via Link headers
+        - Map Shopify product JSON to ProductData
+        """
         raise NotImplementedError(
             "Shopify product fetching is not yet implemented. "
             "This connector skeleton will be completed in the Shopify integration task."
         )
+        # Make this an async generator so the type signature is correct
         yield  # pragma: no cover
 
     async def get_product_count(self) -> int:
-        """TODO: Implement via products/count.json"""
-        raise NotImplementedError("Shopify product count is not yet implemented.")
+        """Not yet implemented.
+
+        TODO: Implement via GET /admin/api/{version}/products/count.json
+        """
+        raise NotImplementedError(
+            "Shopify product count is not yet implemented. "
+            "This connector skeleton will be completed in the Shopify integration task."
+        )
