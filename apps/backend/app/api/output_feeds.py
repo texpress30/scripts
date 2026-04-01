@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 
 from app.api.dependencies import enforce_subaccount_action, get_current_user
 from app.services.auth import AuthUser
@@ -23,7 +23,7 @@ class UpdateOutputFeedRequest(BaseModel):
 
 class StartRenderRequest(BaseModel):
     template_id: str
-    total_products: int = 0
+    products: list[dict] = Field(default_factory=list)
 
 
 @router.get("")
@@ -71,13 +71,28 @@ def delete_output_feed(output_feed_id: str, user: AuthUser = Depends(get_current
 
 
 @router.post("/{output_feed_id}/render", status_code=status.HTTP_202_ACCEPTED)
-def start_render(output_feed_id: str, payload: StartRenderRequest, user: AuthUser = Depends(get_current_user)) -> dict:
+def start_render(
+    output_feed_id: str,
+    payload: StartRenderRequest,
+    background_tasks: BackgroundTasks,
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
     try:
         existing = output_feed_service.get_output_feed(output_feed_id)
     except OutputFeedNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     enforce_subaccount_action(user=user, action="campaigns:write", subaccount_id=int(existing["subaccount_id"]))
-    return output_feed_service.start_render_job(output_feed_id=output_feed_id, template_id=payload.template_id, total_products=payload.total_products)
+
+    job = output_feed_service.start_render_job(
+        output_feed_id=output_feed_id,
+        template_id=payload.template_id,
+        total_products=len(payload.products),
+    )
+
+    from app.services.enriched_catalog.render_job_service import render_job_service
+    background_tasks.add_task(render_job_service.run_render_background, output_feed_id, payload.products)
+
+    return job
 
 
 @router.get("/{output_feed_id}/render-status")

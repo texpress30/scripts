@@ -214,12 +214,22 @@ class TestTreatmentsWithFilters:
         assert len(treatments_api.list_treatments(output_feed_id="feed-1", user=_admin_user())["items"]) == 1
 
 
+class _FakeBackgroundTasks:
+    def __init__(self):
+        self.tasks = []
+
+    def add_task(self, fn, *args, **kwargs):
+        self.tasks.append((fn, args, kwargs))
+
+
 class TestRenderJob:
     def test_start_render_and_check_status(self):
         output_feeds_api.create_output_feed(payload=output_feeds_api.CreateOutputFeedRequest(name="Feed"), subaccount_id=1, user=_admin_user())
-        job = output_feeds_api.start_render(output_feed_id="feed-1", payload=output_feeds_api.StartRenderRequest(template_id="tpl-1", total_products=100), user=_admin_user())
+        bg = _FakeBackgroundTasks()
+        job = output_feeds_api.start_render(output_feed_id="feed-1", payload=output_feeds_api.StartRenderRequest(template_id="tpl-1", products=[{"id": "p1"}] * 100), background_tasks=bg, user=_admin_user())
         assert job["id"] == "job-1"
         assert job["status"] == "pending"
         assert job["total_products"] == 100
+        assert len(bg.tasks) == 1
         status_result = output_feeds_api.get_render_status(output_feed_id="feed-1", user=_admin_user())
         assert status_result["id"] == "job-1"

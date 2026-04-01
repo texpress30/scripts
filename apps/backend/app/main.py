@@ -29,6 +29,7 @@ from app.api.email_notifications import router as email_notifications_router
 from app.api.email_templates import router as email_templates_router
 from app.api.exports import router as exports_router
 from app.api.feed_sources import router as feed_sources_router
+from app.api.integrations.shopify import router as shopify_integration_router
 from app.api.google_ads import router as google_ads_router
 from app.api.google_accounts import router as google_accounts_router
 from app.api.health import router as health_router
@@ -137,6 +138,7 @@ app.include_router(sync_orchestration_router)
 
 # Feed Management
 app.include_router(feed_sources_router)
+app.include_router(shopify_integration_router)
 
 # Integrations
 app.include_router(woocommerce_router)
