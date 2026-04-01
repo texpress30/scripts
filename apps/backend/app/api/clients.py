@@ -3,6 +3,7 @@ from decimal import Decimal, InvalidOperation
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 
 from app.api.dependencies import enforce_action_scope, enforce_agency_navigation_access, enforce_subaccount_action, get_current_user
+from app.services.rbac import normalize_role
 from app.core.config import load_settings
 from app.schemas.client import (
     AttachGoogleAccountRequest,
@@ -186,10 +187,29 @@ def _attach_platform_account(*, client_id: int, platform: str, account_id: str) 
 
 @router.get("")
 def list_clients(user: AuthUser = Depends(get_current_user)) -> dict[str, list[dict[str, str | int | None]]]:
-    enforce_action_scope(user=user, action="clients:list", scope="agency")
-    enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+    role = normalize_role(user.role)
+    if role.startswith("subaccount_"):
+        enforce_action_scope(user=user, action="clients:list", scope="subaccount")
+        all_records = client_registry_service.list_clients()
+        accessible_ids: set[int] = set()
+        if user.allowed_subaccount_ids:
+            accessible_ids = {int(v) for v in user.allowed_subaccount_ids}
+        else:
+            legacy_id = user.subaccount_id if user.subaccount_id is not None else user.primary_subaccount_id
+            if legacy_id is not None:
+                accessible_ids = {int(legacy_id)}
+        if accessible_ids:
+            records = [
+                r for r in all_records
+                if int(r.get("id", 0)) in accessible_ids or int(r.get("display_id", 0)) in accessible_ids
+            ]
+        else:
+            records = all_records
+    else:
+        enforce_action_scope(user=user, action="clients:list", scope="agency")
+        enforce_agency_navigation_access(user=user, permission_key="agency_clients")
+        records = client_registry_service.list_clients()
 
-    records = client_registry_service.list_clients()
     audit_log_service.log(
         actor_email=user.email,
         actor_role=user.role,
