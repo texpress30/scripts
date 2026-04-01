@@ -1,7 +1,7 @@
 "use client";
 
 import React, { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, Copy, Mail, Pencil, Plus, Power, RefreshCw, Search, Trash2 } from "lucide-react";
+import { ChevronDown, Copy, Pencil, Plus, Power, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useParams } from "next/navigation";
 
 import { AppShell } from "@/components/AppShell";
@@ -811,103 +811,78 @@ export default function SubAccountTeamPage() {
 
                 {!isLoading && !loadError ? (
                   <>
-                    <div className="mt-4 overflow-x-auto">
-                      <table className="min-w-full border-separate border-spacing-0">
-                        <thead>
-                          <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                            <th className="border-b border-slate-200 px-3 py-2">Nume</th>
-                            <th className="border-b border-slate-200 px-3 py-2">Email</th>
-                            <th className="border-b border-slate-200 px-3 py-2">Telefon</th>
-                            <th className="border-b border-slate-200 px-3 py-2">Tip Utilizator</th>
-                            <th className="border-b border-slate-200 px-3 py-2">Status</th>
-                            <th className="border-b border-slate-200 px-3 py-2">Acțiuni</th>
+                    <div className="mt-4 overflow-hidden rounded-lg border border-slate-200">
+                      <table className="w-full text-sm">
+                        <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                          <tr>
+                            <th className="px-3 py-2">Nume</th>
+                            <th className="px-3 py-2">Email</th>
+                            <th className="px-3 py-2">Telefon</th>
+                            <th className="px-3 py-2">Tip Utilizator</th>
+                            <th className="px-3 py-2">Status</th>
+                            <th className="px-3 py-2">Acces / Conturi</th>
+                            <th className="px-3 py-2 text-right">Acțiuni</th>
                           </tr>
                         </thead>
                         <tbody>
                           {users.map((user) => (
-                            <tr key={user.id} className="text-sm text-slate-700">
-                              <td className="border-b border-slate-100 px-3 py-3">
-                                <div className="flex items-center gap-3">
-                                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-700">{initialsFor(user)}</div>
+                            <tr key={user.id} className="border-t border-slate-100">
+                              <td className="px-3 py-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700">{initialsFor(user)}</span>
                                   <div>
-                                    <p className="font-medium text-slate-900">{user.prenume} {user.nume}</p>
-                                    <button type="button" className="mt-0.5 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700" onClick={() => { navigator.clipboard.writeText(user.id).catch(() => {}); showToast("ID Copiat"); }}>
+                                    <span>{user.prenume} {user.nume}</span>
+                                    <button type="button" className="mt-0.5 flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700" onClick={() => { navigator.clipboard.writeText(user.id).catch(() => {}); showToast("ID Copiat"); }}>
                                       <Copy className="h-3.5 w-3.5" />
                                       Copiere ID: {user.id}
                                     </button>
-                                    {user.inherited ? <p className="text-xs text-amber-700">Acces moștenit • {user.sourceLabel}</p> : <p className="text-xs text-slate-500">Acces direct • {user.sourceLabel}</p>}
                                   </div>
                                 </div>
                               </td>
-                              <td className="border-b border-slate-100 px-3 py-3">{user.email}</td>
-                              <td className="border-b border-slate-100 px-3 py-3">{user.telefon || "-"}</td>
-                              <td className="border-b border-slate-100 px-3 py-3">
-                                <span className={["inline-flex rounded-full px-2 py-1 text-xs font-semibold", roleBadgeClass(user.roleKey)].join(" ")}>{user.tip}</span>
+                              <td className="px-3 py-2">{user.email}</td>
+                              <td className="px-3 py-2">{user.telefon || "-"}</td>
+                              <td className="px-3 py-2">
+                                <span className={["inline-flex rounded-full px-2 py-0.5 text-xs font-medium", roleBadgeClass(user.roleKey)].join(" ")}>{user.tip}</span>
                               </td>
-                              <td className="border-b border-slate-100 px-3 py-3">
+                              <td className="px-3 py-2">
                                 {user.membershipStatus === "active" ? (
-                                  <span className="inline-flex rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">Activ</span>
+                                  <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Activ</span>
                                 ) : user.membershipStatus === "pending" ? (
-                                  <span className="inline-flex rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">În așteptare</span>
+                                  <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">În așteptare</span>
                                 ) : (
-                                  <span className="inline-flex rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">Inactiv</span>
+                                  <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Inactiv</span>
                                 )}
                               </td>
-                              <td className="border-b border-slate-100 px-3 py-3">
-                                <div className="flex items-center gap-2 text-slate-500">
-                                  <button
-                                    type="button"
-                                    className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-xs text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                    title={canInviteUser(user) ? "Trimite invitație" : "Invitația nu este disponibilă pentru acest rând"}
-                                    disabled={!canInviteUser(user) || invitingMembershipId === user.membershipId}
-                                    onClick={() => { void onInvite(user); }}
-                                  >
-                                    <Mail className="h-3.5 w-3.5" />
-                                    {invitingMembershipId === user.membershipId ? "Se trimite..." : "Trimite invitație"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="rounded p-1.5 text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                                    title={user.membershipId === null ? "Membership inexistent sau inaccesibil" : "Editează"}
-                                    aria-label="Editează"
-                                    disabled={user.membershipId === null}
-                                    onClick={() => { void openEditForm(user); }}
-                                  >
+                              <td className="px-3 py-2">
+                                {user.inherited ? <span className="text-xs text-amber-700">Acces moștenit • {user.sourceLabel}</span> : <span className="text-xs text-slate-500">Acces direct • {user.sourceLabel}</span>}
+                              </td>
+                              <td className="px-3 py-2">
+                                <div className="flex items-center justify-end gap-2 text-slate-500">
+                                  <button type="button" className="rounded p-1 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50" title={user.membershipId === null ? "Membership inexistent sau inaccesibil" : "Editează"} aria-label="Editează" disabled={user.membershipId === null} onClick={() => { void openEditForm(user); }}>
                                     <Pencil className="h-4 w-4" />
                                   </button>
                                   {(() => {
                                     const lifecycleLoading = user.membershipId !== null && Boolean(lifecycleLoadingByMembership[user.membershipId]);
                                     return (
-                                      <button
-                                        type="button"
-                                        className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-xs text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                        title={user.inherited ? "Acest access este moștenit și nu poate fi modificat aici" : user.membershipStatus === "active" ? "Dezactivează" : "Reactivează"}
-                                        aria-label={user.membershipStatus === "active" ? "Dezactivează" : "Reactivează"}
-                                        disabled={user.membershipId === null || lifecycleLoading || user.inherited}
-                                        onClick={() => { void onToggleLifecycle(user); }}
-                                      >
-                                        {lifecycleLoading ? (
-                                          "Se procesează..."
-                                        ) : user.membershipStatus === "active" ? (
-                                          <><Power className="h-3.5 w-3.5" /> Dezactivează</>
-                                        ) : (
-                                          <><RefreshCw className="h-3.5 w-3.5" /> Reactivează</>
-                                        )}
+                                      <button type="button" className="rounded p-1 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50" title={user.inherited ? "Acest access este moștenit și nu poate fi modificat aici" : user.membershipStatus === "active" ? "Dezactivează" : "Reactivează"} aria-label={user.membershipStatus === "active" ? "Dezactivează" : "Reactivează"} disabled={user.membershipId === null || lifecycleLoading || user.inherited} onClick={() => { void onToggleLifecycle(user); }}>
+                                        {lifecycleLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : user.membershipStatus === "active" ? <Power className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
                                       </button>
                                     );
                                   })()}
                                   {(() => {
                                     const removeLoading = user.membershipId !== null && Boolean(removeLoadingByMembership[user.membershipId]);
                                     return (
-                                      <button
-                                        type="button"
-                                        className="inline-flex items-center gap-1 rounded border border-rose-200 px-2 py-1 text-xs text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                        title={user.inherited ? "Acest access este moștenit și nu poate fi eliminat aici" : "Elimină accesul"}
-                                        aria-label="Elimină accesul"
-                                        disabled={user.membershipId === null || removeLoading || user.inherited}
-                                        onClick={() => { void onRemoveAccess(user); }}
-                                      >
-                                        {removeLoading ? "Se elimină..." : <><Trash2 className="h-3.5 w-3.5" /> Elimină accesul</>}
+                                      <button type="button" className="rounded border border-rose-200 px-2 py-1 text-xs text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50" title={user.inherited ? "Acest access este moștenit și nu poate fi eliminat aici" : "Elimină accesul"} aria-label="Elimină accesul" disabled={user.membershipId === null || removeLoading || user.inherited} onClick={() => { void onRemoveAccess(user); }}>
+                                        <span className="inline-flex items-center gap-1">{removeLoading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} Elimină accesul</span>
+                                      </button>
+                                    );
+                                  })()}
+                                  {(() => {
+                                    const eligible = canInviteUser(user);
+                                    const loadingInvite = invitingMembershipId === user.membershipId;
+                                    return (
+                                      <button type="button" className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" title="Trimite invitație" disabled={!eligible || loadingInvite} onClick={() => { void onInvite(user); }}>
+                                        {loadingInvite ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : "Trimite invitație"}
                                       </button>
                                     );
                                   })()}
@@ -923,11 +898,11 @@ export default function SubAccountTeamPage() {
                   </>
                 ) : null}
 
-                <footer className="mt-4 flex items-center justify-between border-t border-slate-200 pt-3 text-sm text-slate-600">
+                <footer className="flex items-center justify-between border-t border-slate-100 pt-3 text-sm text-slate-600">
                   <span>Pagina {page} din {pages}</span>
                   <div className="flex items-center gap-2">
-                    <button type="button" className="wm-btn-secondary" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1 || isLoading}>Anterior</button>
-                    <button type="button" className="wm-btn-secondary" onClick={() => setPage((p) => Math.min(pages, p + 1))} disabled={page === pages || isLoading}>Următor</button>
+                    <button type="button" className="wm-btn-secondary" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1 || isLoading}>Înapoi</button>
+                    <button type="button" className="wm-btn-secondary" onClick={() => setPage((p) => Math.min(pages, p + 1))} disabled={page === pages || isLoading}>Înainte</button>
                   </div>
                 </footer>
               </>
