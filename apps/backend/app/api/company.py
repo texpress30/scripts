@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.dependencies import enforce_action_scope, enforce_agency_navigation_access, get_current_user
+from app.services.rbac import normalize_role
 from app.schemas.company import CompanySettingsResponse, UpdateCompanySettingsRequest
 from app.services.auth import AuthUser
 from app.services.client_registry import client_registry_service
@@ -34,8 +35,12 @@ def _resolve_logo_storage_client_id(*, owner_email: str) -> int | None:
 
 @router.get("/settings", response_model=CompanySettingsResponse)
 def get_company_settings(user: AuthUser = Depends(get_current_user)) -> CompanySettingsResponse:
-    enforce_action_scope(user=user, action="clients:list", scope="agency")
-    enforce_agency_navigation_access(user=user, permission_key="settings_company")
+    role = normalize_role(user.role)
+    if role.startswith("subaccount_"):
+        enforce_action_scope(user=user, action="clients:list", scope="subaccount")
+    else:
+        enforce_action_scope(user=user, action="clients:list", scope="agency")
+        enforce_agency_navigation_access(user=user, permission_key="settings_company")
     logo_storage_client_id = _resolve_logo_storage_client_id(owner_email=user.email.strip().lower())
     payload = company_settings_service.get_settings(
         owner_email=user.email.strip().lower(),
