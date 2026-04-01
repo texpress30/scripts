@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from app.services.feed_management.connectors.base import BaseConnector
+from app.services.feed_management.connectors.base import BaseConnector, ProductData
 from app.services.feed_management.models import (
     FeedImportCreate,
     FeedImportResponse,
@@ -11,6 +11,7 @@ from app.services.feed_management.models import (
     FeedSourceResponse,
     FeedSourceType,
 )
+from app.services.feed_management.products_repository import feed_products_repository
 from app.services.feed_management.repository import FeedImportRepository, FeedSourceRepository
 
 logger = logging.getLogger(__name__)
@@ -60,20 +61,35 @@ class FeedSyncService:
         imported_count = 0
         total_count = 0
         errors: list[dict[str, Any]] = []
+        batch: list[ProductData] = []
 
         try:
             async for product in connector.fetch_products():
                 total_count += 1
-                try:
-                    imported_count += 1
-                except Exception as exc:
-                    errors.append({"product_id": product.id, "error": str(exc)})
+                batch.append(product)
 
-                if total_count % SYNC_BATCH_SIZE == 0:
+                if len(batch) >= SYNC_BATCH_SIZE:
+                    try:
+                        saved = feed_products_repository.upsert_products_batch(feed_source_id, batch)
+                        imported_count += saved
+                    except Exception as exc:
+                        logger.warning("Batch upsert failed for source %s: %s", feed_source_id, exc)
+                        errors.append({"batch_size": len(batch), "error": str(exc)})
+                    batch = []
+
                     feed_import = self._import_repo.update_status(
                         feed_import.id, status=FeedImportStatus.in_progress,
                         total_products=total_count, imported_products=imported_count, errors=errors,
                     )
+
+            # Flush remaining products
+            if batch:
+                try:
+                    saved = feed_products_repository.upsert_products_batch(feed_source_id, batch)
+                    imported_count += saved
+                except Exception as exc:
+                    logger.warning("Final batch upsert failed for source %s: %s", feed_source_id, exc)
+                    errors.append({"batch_size": len(batch), "error": str(exc)})
 
             feed_import = self._import_repo.update_status(
                 feed_import.id, status=FeedImportStatus.completed,
