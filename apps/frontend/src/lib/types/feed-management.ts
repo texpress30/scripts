@@ -46,3 +46,21 @@ export type FeedImportsResponse = {
   items: FeedImport[];
   total: number;
 };
+
+export type CreateFeedSourcePayload = {
+  name: string;
+  source_type: FeedSourceType;
+  url?: string;
+  config?: Record<string, string>;
+};
+
+export type TestConnectionPayload = {
+  source_type: FeedSourceType;
+  url: string;
+  config?: Record<string, string>;
+};
+
+export type TestConnectionResponse = {
+  success: boolean;
+  message: string;
+};
