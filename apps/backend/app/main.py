@@ -43,6 +43,9 @@ from app.api.team import router as team_router
 from app.api.tiktok_ads import router as tiktok_ads_router
 from app.api.user_profile import router as user_profile_router
 from app.api.rules import router as rules_router
+from app.api.creative_templates import router as creative_templates_router
+from app.api.treatments import router as treatments_router
+from app.api.output_feeds import router as output_feeds_router
 from app.core.config import load_settings
 from app.services.rbac import log_auth_config
 from app.services.client_registry import client_registry_service
@@ -135,6 +138,11 @@ app.include_router(sync_orchestration_router)
 # Feed Management
 app.include_router(feed_sources_router)
 app.include_router(shopify_integration_router)
+
+# Enriched Catalog
+app.include_router(creative_templates_router)
+app.include_router(treatments_router)
+app.include_router(output_feeds_router)
 
 
 @app.get("/", tags=["root"])

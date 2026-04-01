@@ -1,0 +1,47 @@
+import type { FeedSource } from "@/lib/types/feed-management";
+
+export const mockFeedSources: FeedSource[] = [
+  {
+    id: 1,
+    name: "Main Shopify Store",
+    source_type: "shopify",
+    status: "active",
+    last_sync: "2026-03-31T14:22:00Z",
+    product_count: 1248,
+    url: "https://my-store.myshopify.com",
+    created_at: "2026-01-15T10:00:00Z",
+    updated_at: "2026-03-31T14:22:00Z",
+  },
+  {
+    id: 2,
+    name: "Product Catalog CSV",
+    source_type: "csv",
+    status: "error",
+    last_sync: "2026-03-28T09:15:00Z",
+    product_count: 340,
+    url: "https://cdn.example.com/feeds/catalog.csv",
+    created_at: "2026-02-10T08:30:00Z",
+    updated_at: "2026-03-28T09:15:00Z",
+  },
+  {
+    id: 3,
+    name: "WooCommerce EU",
+    source_type: "woocommerce",
+    status: "syncing",
+    last_sync: "2026-04-01T06:00:00Z",
+    product_count: 562,
+    url: "https://eu-shop.example.com",
+    created_at: "2026-02-20T12:00:00Z",
+    updated_at: "2026-04-01T06:00:00Z",
+  },
+  {
+    id: 4,
+    name: "Google Sheets Inventory",
+    source_type: "google_sheets",
+    status: "inactive",
+    last_sync: null,
+    product_count: 0,
+    created_at: "2026-03-25T16:45:00Z",
+    updated_at: "2026-03-25T16:45:00Z",
+  },
+];
