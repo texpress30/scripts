@@ -32,7 +32,7 @@ import { cn } from "@/lib/utils";
 type ClientItem = { id: number; name: string; owner_email: string; client_logo_url?: string | null };
 type CompanySettings = { logo_url: string; city: string; country: string; company_name: string };
 type SubaccountBusinessProfileResponse = { address?: { city?: string; country?: string }; logo_url?: string; logo_media_id?: string | null };
-type TeamMemberItem = { id: number; first_name: string; last_name: string; email: string; user_role: string };
+type TeamMemberItem = { id: number; first_name: string; last_name: string; email: string; user_role: string; user_type?: string };
 type TeamMembersResponse = { items: TeamMemberItem[]; total: number };
 
 const SUBACCOUNT_MODULE_ORDER = ["dashboard", "campaigns", "rules", "creative", "recommendations"] as const;
