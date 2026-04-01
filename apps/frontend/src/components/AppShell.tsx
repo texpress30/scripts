@@ -26,7 +26,7 @@ import {
 
 import { apiRequest, getAgencyMyAccess, getSubaccountMyAccess, type TeamAgencyMyAccessResponse, type TeamSubaccountMyAccessResponse } from "@/lib/api";
 import { isPinterestIntegrationEnabled, isSnapchatIntegrationEnabled, isTikTokIntegrationEnabled } from "@/lib/featureFlags";
-import { AppRole, SessionAccessContext, getSessionAccessContext, isSubaccountScopedContext } from "@/lib/session";
+import { AppRole, SessionAccessContext, getSessionAccessContext, getSessionAccessContextFromToken, isSubaccountScopedContext } from "@/lib/session";
 import { cn } from "@/lib/utils";
 
 type ClientItem = { id: number; name: string; owner_email: string; client_logo_url?: string | null };
@@ -665,6 +665,17 @@ export function AppShell({
       .join(" ") || "Utilizator";
   }, [sessionInfo.email]);
 
+  const originalAdmin = useMemo(() => {
+    if (!impersonatingAs) return null;
+    if (typeof window === "undefined") return null;
+    const adminToken = localStorage.getItem("mcc_admin_token");
+    if (!adminToken) return null;
+    const ctx = getSessionAccessContextFromToken(adminToken);
+    const email = ctx.email || "admin@omarosa.ro";
+    const name = email.split("@")[0]?.split(/[._-]+/).map((p) => p ? `${p[0].toUpperCase()}${p.slice(1)}` : "").join(" ") || "Admin";
+    return { email, name };
+  }, [impersonatingAs]);
+
   useEffect(() => {
     const redirectTo = resolveSubaccountRouteGuardDecision({
       role: sessionInfo.role,
@@ -1122,12 +1133,31 @@ export function AppShell({
                   </div>
                 </div>
 
+                {originalAdmin ? (
+                  <div className="mt-2 rounded-lg border border-indigo-100 bg-indigo-50/50 p-2">
+                    <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">Autentificat ca</p>
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700">{initials(originalAdmin.name)}</div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-slate-800">{originalAdmin.name}</p>
+                        <p className="truncate text-xs text-slate-500">{originalAdmin.email}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => { setProfileOpen(false); stopImpersonation(); }}
+                      className="mt-2 text-sm font-medium text-indigo-600 hover:text-indigo-700"
+                    >
+                      Înapoi la contul meu
+                    </button>
+                  </div>
+                ) : null}
+
                 <div className="relative mt-2">
                   <button
                     onClick={() => setLoginAsOpen((prev) => !prev)}
                     className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
                   >
-                    <span>Login As</span>
+                    <span>Autentifică-te ca</span>
                     <ChevronLeft className="h-4 w-4" />
                   </button>
 
@@ -1137,7 +1167,7 @@ export function AppShell({
                         <Search className="h-4 w-4 text-slate-400" />
                         <input
                           className="w-full bg-transparent text-sm outline-none"
-                          placeholder="Search users"
+                          placeholder="Caută utilizatori"
                           value={userSearch}
                           onChange={(e) => setUserSearch(e.target.value)}
                         />
@@ -1167,7 +1197,7 @@ export function AppShell({
                   Profil
                 </Link>
                 <button className="mt-1 w-full rounded-md px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50" onClick={signout}>
-                  Signout
+                  Deconectare
                 </button>
               </div>
             ) : null}
