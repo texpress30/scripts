@@ -120,11 +120,13 @@ function initials(name: string): string {
   return `${words[0][0] || ""}${words[1][0] || ""}`.toUpperCase();
 }
 
-function roleForImpersonation(value: string): AppRole {
+function roleForImpersonation(value: string, userType?: string): AppRole {
   const role = value.trim().toLowerCase();
-  if (role === "admin") return "agency_admin";
-  if (role === "viewer") return "subaccount_viewer";
-  if (role === "member") return "subaccount_user";
+  const isClient = String(userType || "").trim().toLowerCase() === "client";
+  if (role === "admin") return isClient ? "subaccount_admin" : "agency_admin";
+  if (role === "owner") return "agency_owner";
+  if (role === "viewer") return isClient ? "subaccount_viewer" : "agency_viewer";
+  if (role === "member") return isClient ? "subaccount_user" : "agency_member";
   if (
     [
       "super_admin",
@@ -141,7 +143,7 @@ function roleForImpersonation(value: string): AppRole {
   ) {
     return role as AppRole;
   }
-  return "subaccount_user";
+  return isClient ? "subaccount_user" : "agency_member";
 }
 
 export function formatSubaccountBrandingLocation(city: string | null | undefined, country: string | null | undefined): string {
@@ -837,7 +839,7 @@ export function AppShell({
         localStorage.setItem("mcc_admin_token", currentToken);
       }
 
-      const targetRole = roleForImpersonation(user.user_role);
+      const targetRole = roleForImpersonation(user.user_role, user.user_type);
       const result = await apiRequest<{ access_token: string; redirect_url?: string | null }>("/auth/impersonate", {
         method: "POST",
         body: JSON.stringify({ email: user.email, role: targetRole }),
