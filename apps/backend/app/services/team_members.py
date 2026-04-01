@@ -113,7 +113,7 @@ NAVIGATION_KEY_SET_BY_SCOPE: dict[str, set[str]] = {
     for scope, items in NAVIGATION_CATALOG_BY_SCOPE.items()
 }
 ALL_NAVIGATION_KEYS: set[str] = {key for values in NAVIGATION_KEY_SET_BY_SCOPE.values() for key in values}
-ALLOWED_MEMBERSHIP_STATUSES: set[str] = {"active", "inactive"}
+ALLOWED_MEMBERSHIP_STATUSES: set[str] = {"active", "inactive", "pending"}
 
 
 class TeamMembersService:
@@ -818,7 +818,7 @@ class TeamMembersService:
                         INSERT INTO user_memberships (
                             user_id, role_key, scope_type, subaccount_id, subaccount_name, status
                         )
-                        VALUES (%s, %s, %s, %s, %s, 'active')
+                        VALUES (%s, %s, %s, %s, %s, 'pending')
                         RETURNING id
                         """,
                         (user_id, role_key, scope_type, subaccount_id, subaccount_name),
