@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, RefreshCw, Trash2, Loader2 } from "lucide-react";
+import { ArrowLeft, RefreshCw, Trash2, Loader2, ShoppingBag } from "lucide-react";
 import { SourceTypeIcon } from "@/components/feed-management/SourceTypeIcon";
 import { FeedSourceStatusBadge } from "@/components/feed-management/FeedSourceStatusBadge";
 import { ImportHistoryTable } from "@/components/feed-management/ImportHistoryTable";
@@ -73,6 +73,10 @@ export default function SourceDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Link href={`/agency/feed-management/sources/${sourceId}/products`} className="wm-btn-secondary gap-2">
+            <ShoppingBag className="h-4 w-4" />
+            View Products
+          </Link>
           <button type="button" onClick={() => void handleSync()} disabled={isSyncing} className="wm-btn-primary gap-2">
             {isSyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             Sync Now
@@ -90,7 +94,12 @@ export default function SourceDetailPage() {
           <DetailRow label="Source Type"><SourceTypeIcon type={source.source_type} showLabel /></DetailRow>
           <DetailRow label="Status"><FeedSourceStatusBadge status={source.status} /></DetailRow>
           {source.url ? (<DetailRow label="URL"><span className="break-all text-sm text-slate-700 dark:text-slate-300">{source.url}</span></DetailRow>) : null}
-          <DetailRow label="Products"><span className="text-sm text-slate-700 dark:text-slate-300">{source.product_count.toLocaleString()}</span></DetailRow>
+          <DetailRow label="Products">
+            <Link href={`/agency/feed-management/sources/${sourceId}/products`} className="inline-flex items-center gap-1.5 text-sm text-indigo-700 hover:underline dark:text-indigo-400">
+              <ShoppingBag className="h-3.5 w-3.5" />
+              {source.product_count.toLocaleString()} products
+            </Link>
+          </DetailRow>
           <DetailRow label="Last Sync"><span className="text-sm text-slate-700 dark:text-slate-300">{formatDate(source.last_sync)}</span></DetailRow>
           <DetailRow label="Created"><span className="text-sm text-slate-700 dark:text-slate-300">{formatDate(source.created_at)}</span></DetailRow>
         </dl>

@@ -64,3 +64,42 @@ export type TestConnectionResponse = {
   success: boolean;
   message: string;
 };
+
+// ── Products ──
+
+export type ProductVariant = {
+  sku: string;
+  title: string;
+  price: number;
+  compare_at_price: number | null;
+  inventory_quantity: number;
+};
+
+export type Product = {
+  id: string;
+  title: string;
+  description: string;
+  price: number;
+  compare_at_price: number | null;
+  currency: string;
+  images: string[];
+  variants: ProductVariant[];
+  category: string;
+  tags: string[];
+  inventory_quantity: number;
+  sku: string;
+  url: string;
+};
+
+export type ProductsListResponse = {
+  items: Product[];
+  total: number;
+  skip: number;
+  limit: number;
+};
+
+export type ProductStats = {
+  total: number;
+  by_category: Record<string, number>;
+  last_sync: string | null;
+};
