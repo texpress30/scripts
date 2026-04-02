@@ -62,9 +62,9 @@ export function ImportHistoryTable({ imports }: { imports: FeedImport[] }) {
                   </span>
                 </td>
                 <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
-                  <span title={`Imported: ${imp.products_imported}, Updated: ${imp.products_updated}, Failed: ${imp.products_failed}`}>
-                    {imp.products_imported + imp.products_updated}
-                    {imp.products_failed > 0 ? (<span className="ml-1 text-red-500">({imp.products_failed} failed)</span>) : null}
+                  <span title={`Imported: ${imp.products_imported ?? imp.imported_products ?? 0}, Updated: ${imp.products_updated ?? 0}, Failed: ${imp.products_failed ?? 0}`}>
+                    {(imp.products_imported ?? imp.imported_products ?? 0) + (imp.products_updated ?? 0)}
+                    {(imp.products_failed ?? 0) > 0 ? (<span className="ml-1 text-red-500">({imp.products_failed} failed)</span>) : null}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{formatDuration(imp.started_at, imp.completed_at)}</td>
