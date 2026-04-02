@@ -187,6 +187,83 @@ def preview_feed(
     return {"channel_id": channel_id, "preview": results, "count": len(results)}
 
 
+@router.get("/channels/{channel_id}/products")
+def get_channel_products(
+    channel_id: str,
+    page: int = 1,
+    per_page: int = 10,
+    search: str | None = None,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Return paginated transformed products for a channel."""
+    _enforce_feature_flag()
+    try:
+        channel = _repo.get_by_id(channel_id)
+    except ChannelNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
+
+    from app.services.feed_management.master_fields.repository import (
+        master_field_mapping_repository,
+    )
+    from app.services.feed_management.products_repository import (
+        feed_products_repository,
+    )
+
+    # Load mappings + overrides
+    master_mappings = master_field_mapping_repository.get_by_source(
+        channel.feed_source_id,
+    )
+    overrides = _repo.get_overrides(channel_id)
+    override_map = {o.target_field: o for o in overrides}
+
+    # Build columns list from master mappings
+    columns = [
+        {"key": m.target_field, "label": m.target_field.replace("_", " ").title(), "type": "string"}
+        for m in master_mappings
+    ]
+    # Mark image/url/price types
+    for col in columns:
+        key = col["key"]
+        if "image" in key:
+            col["type"] = "image"
+        elif key in ("link", "url"):
+            col["type"] = "url"
+        elif key == "price" or key == "sale_price":
+            col["type"] = "price"
+
+    # Count + fetch products
+    total = feed_products_repository.count_products(
+        channel.feed_source_id, search=search,
+    )
+    safe_page = max(1, page)
+    safe_per_page = min(max(1, per_page), 100)
+    skip = (safe_page - 1) * safe_per_page
+
+    raw_products = feed_products_repository.list_products(
+        channel.feed_source_id, skip=skip, limit=safe_per_page, search=search,
+    )
+
+    # Transform
+    transformed: list[dict[str, Any]] = []
+    for product in raw_products:
+        data = product.get("data", {})
+        if not isinstance(data, dict):
+            continue
+        row = feed_generator._transform_product(data, master_mappings, override_map)
+        transformed.append(row)
+
+    return {
+        "channel_id": channel_id,
+        "products": transformed,
+        "columns": columns,
+        "total": total,
+        "page": safe_page,
+        "per_page": safe_per_page,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Channel overrides
 # ---------------------------------------------------------------------------
