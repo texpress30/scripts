@@ -4,7 +4,6 @@ import logging
 from typing import Any
 
 from app.services.feed_management.connectors.base import BaseConnector, ProductData
-from app.services.feed_management.connectors.base import BaseConnector, ProductData
 from app.services.feed_management.exceptions import FeedSourceNotFoundError
 from app.services.feed_management.models import (
     FeedImportCreate,
