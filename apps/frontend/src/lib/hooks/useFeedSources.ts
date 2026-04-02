@@ -9,21 +9,14 @@ import type {
   TestConnectionPayload,
   TestConnectionResponse,
 } from "@/lib/types/feed-management";
-import { apiRequest, ApiRequestError } from "@/lib/api";
-import { getPrimarySubaccountId } from "@/lib/session";
+import { apiRequest } from "@/lib/api";
 
-const SOURCES_KEY = ["feed-sources"] as const;
-const SOURCE_KEY = (id: string) => ["feed-sources", id] as const;
-const IMPORTS_KEY = (sourceId: string) => ["feed-imports", sourceId] as const;
-
-function getSubaccountId(): number {
-  const id = getPrimarySubaccountId();
-  if (!id) throw new Error("No subaccount selected");
-  return id;
-}
+const SOURCES_KEY = (subId: number) => ["feed-sources", subId] as const;
+const SOURCE_KEY = (subId: number, id: string) => ["feed-sources", subId, id] as const;
+const IMPORTS_KEY = (subId: number, sourceId: string) => ["feed-imports", subId, sourceId] as const;
 
 // ---------------------------------------------------------------------------
-// API functions — real backend endpoints
+// Normalize backend response to frontend FeedSource
 // ---------------------------------------------------------------------------
 
 function normalizeSource(raw: Record<string, unknown>): FeedSource {
@@ -44,8 +37,11 @@ function normalizeSource(raw: Record<string, unknown>): FeedSource {
   };
 }
 
-async function fetchSources(): Promise<FeedSourcesResponse> {
-  const subId = getSubaccountId();
+// ---------------------------------------------------------------------------
+// API functions (all require subaccountId)
+// ---------------------------------------------------------------------------
+
+async function fetchSources(subId: number): Promise<FeedSourcesResponse> {
   const data = await apiRequest<{ items: Record<string, unknown>[] }>(
     `/subaccount/${subId}/feed-sources`,
     { cache: "no-store" },
@@ -54,8 +50,7 @@ async function fetchSources(): Promise<FeedSourcesResponse> {
   return { items, total: items.length };
 }
 
-async function fetchSource(id: string): Promise<FeedSource> {
-  const subId = getSubaccountId();
+async function fetchSource(subId: number, id: string): Promise<FeedSource> {
   const raw = await apiRequest<Record<string, unknown>>(
     `/subaccount/${subId}/feed-sources/${id}`,
     { cache: "no-store" },
@@ -63,8 +58,7 @@ async function fetchSource(id: string): Promise<FeedSource> {
   return normalizeSource(raw);
 }
 
-async function fetchImports(sourceId: string): Promise<FeedImportsResponse> {
-  const subId = getSubaccountId();
+async function fetchImports(subId: number, sourceId: string): Promise<FeedImportsResponse> {
   const data = await apiRequest<{ items: unknown[] }>(
     `/subaccount/${subId}/feed-sources/${sourceId}/imports`,
     { cache: "no-store" },
@@ -72,19 +66,14 @@ async function fetchImports(sourceId: string): Promise<FeedImportsResponse> {
   return { items: data.items ?? [], total: (data.items ?? []).length } as FeedImportsResponse;
 }
 
-async function createSourceApi(data: CreateFeedSourcePayload): Promise<FeedSource> {
-  const subId = getSubaccountId();
-
-  // Build the backend payload matching FeedSourceCreate schema
+async function createSourceApi(subId: number, data: CreateFeedSourcePayload): Promise<FeedSource> {
   const config: Record<string, unknown> = { ...(data.config ?? {}) };
   if (data.url) {
-    // Map the URL to the appropriate config field
     if (data.source_type === "shopify") {
       config.store_url = config.shop_url ?? config.store_url ?? data.url;
     } else if (data.source_type === "woocommerce" || data.source_type === "magento" || data.source_type === "bigcommerce") {
       config.store_url = config.store_url ?? data.url;
     } else {
-      // CSV, JSON, XML, Google Sheets
       config.file_url = config.file_url ?? data.url;
     }
   }
@@ -102,13 +91,11 @@ async function createSourceApi(data: CreateFeedSourcePayload): Promise<FeedSourc
   });
 }
 
-async function deleteSourceApi(id: string): Promise<void> {
-  const subId = getSubaccountId();
+async function deleteSourceApi(subId: number, id: string): Promise<void> {
   await apiRequest(`/subaccount/${subId}/feed-sources/${id}`, { method: "DELETE" });
 }
 
-async function syncSourceApi(id: string): Promise<void> {
-  const subId = getSubaccountId();
+async function syncSourceApi(subId: number, id: string): Promise<void> {
   await apiRequest(`/subaccount/${subId}/feed-sources/${id}/sync`, { method: "POST" });
 }
 
@@ -138,7 +125,6 @@ async function testConnectionApi(data: TestConnectionPayload): Promise<TestConne
     });
   }
 
-  // For file-based sources, just validate the URL is accessible
   return { success: true, message: "File URL provided — will be validated on sync." };
 }
 
@@ -146,78 +132,78 @@ async function testConnectionApi(data: TestConnectionPayload): Promise<TestConne
 // Hooks
 // ---------------------------------------------------------------------------
 
-export function useFeedSources() {
+export function useFeedSources(subaccountId: number | null) {
   const queryClient = useQueryClient();
+  const subId = subaccountId ?? 0;
 
   const { data, isLoading, error } = useQuery<FeedSourcesResponse>({
-    queryKey: SOURCES_KEY,
-    queryFn: fetchSources,
+    queryKey: SOURCES_KEY(subId),
+    queryFn: () => fetchSources(subId),
+    enabled: subId > 0,
     retry: 1,
   });
 
   const deleteMutation = useMutation({
-    mutationFn: deleteSourceApi,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: SOURCES_KEY });
-    },
+    mutationFn: (id: string) => deleteSourceApi(subId, id),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: SOURCES_KEY(subId) }); },
   });
 
   const syncMutation = useMutation({
-    mutationFn: syncSourceApi,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: SOURCES_KEY });
-    },
+    mutationFn: (id: string) => syncSourceApi(subId, id),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: SOURCES_KEY(subId) }); },
   });
 
   const createMutation = useMutation({
-    mutationFn: createSourceApi,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: SOURCES_KEY });
-    },
+    mutationFn: (payload: CreateFeedSourcePayload) => createSourceApi(subId, payload),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: SOURCES_KEY(subId) }); },
   });
 
   return {
     sources: data?.items ?? [],
     total: data?.total ?? 0,
-    isLoading,
+    isLoading: subId > 0 ? isLoading : false,
     error: error instanceof Error ? error.message : null,
     deleteSource: (id: string) => deleteMutation.mutateAsync(id),
     syncSource: (id: string) => syncMutation.mutateAsync(id),
-    createSource: (data: CreateFeedSourcePayload) => createMutation.mutateAsync(data),
-    testConnection: (data: TestConnectionPayload) => testConnectionApi(data),
+    createSource: (payload: CreateFeedSourcePayload) => createMutation.mutateAsync(payload),
+    testConnection: (payload: TestConnectionPayload) => testConnectionApi(payload),
     isDeleting: deleteMutation.isPending,
     isSyncing: syncMutation.isPending,
     isCreating: createMutation.isPending,
   };
 }
 
-export function useFeedSource(id: string) {
+export function useFeedSource(subaccountId: number | null, id: string) {
+  const subId = subaccountId ?? 0;
+
   const { data, isLoading, error } = useQuery<FeedSource>({
-    queryKey: SOURCE_KEY(id),
-    queryFn: () => fetchSource(id),
-    enabled: !!id,
+    queryKey: SOURCE_KEY(subId, id),
+    queryFn: () => fetchSource(subId, id),
+    enabled: subId > 0 && !!id,
     retry: 1,
   });
 
   return {
     source: data ?? null,
-    isLoading,
+    isLoading: subId > 0 ? isLoading : false,
     error: error instanceof Error ? error.message : null,
   };
 }
 
-export function useFeedImports(sourceId: string) {
+export function useFeedImports(subaccountId: number | null, sourceId: string) {
+  const subId = subaccountId ?? 0;
+
   const { data, isLoading, error } = useQuery<FeedImportsResponse>({
-    queryKey: IMPORTS_KEY(sourceId),
-    queryFn: () => fetchImports(sourceId),
-    enabled: !!sourceId,
+    queryKey: IMPORTS_KEY(subId, sourceId),
+    queryFn: () => fetchImports(subId, sourceId),
+    enabled: subId > 0 && !!sourceId,
     retry: 1,
   });
 
   return {
     imports: data?.items ?? [],
     total: data?.total ?? 0,
-    isLoading,
+    isLoading: subId > 0 ? isLoading : false,
     error: error instanceof Error ? error.message : null,
   };
 }
