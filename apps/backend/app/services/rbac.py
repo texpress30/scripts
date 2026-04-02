@@ -61,6 +61,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
     "super_admin": {
         "clients:create",
         "clients:read",
+        "data:write",
         "audit:read",
         "integrations:status",
         "integrations:sync",
@@ -84,6 +85,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
     "agency_owner": {
         "clients:create",
         "clients:read",
+        "data:write",
         "audit:read",
         "integrations:status",
         "integrations:sync",
@@ -108,6 +110,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
     "agency_admin": {
         "clients:create",
         "clients:read",
+        "data:write",
         "audit:read",
         "integrations:status",
         "integrations:sync",
@@ -130,6 +133,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
     },
     "agency_member": {
         "clients:read",
+        "data:write",
         "integrations:status",
         "integrations:tiktok:status",
         "integrations:pinterest:status",
@@ -160,6 +164,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
     # Canonical subaccount roles
     "subaccount_admin": {
         "clients:read",
+        "data:write",
         "integrations:sync",
         "integrations:tiktok:sync",
         "integrations:pinterest:sync",
@@ -177,6 +182,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
     },
     "subaccount_user": {
         "clients:read",
+        "data:write",
         "rules:read",
         "rules:write",
         "insights:read",
@@ -210,7 +216,8 @@ ACTION_POLICIES: dict[str, ActionPolicy] = {
     "integrations:mailgun:config": ActionPolicy(permission="clients:create", scopes=("agency",)),
     "integrations:mailgun:test": ActionPolicy(permission="clients:create", scopes=("agency",)),
     "exports:list": ActionPolicy(permission="exports:read", scopes=("agency",)),
-    # sub-account scope
+    # sub-account scope – data write (daily inputs, sale entries, custom fields, media tracker, imports)
+    "data:write": ActionPolicy(permission="data:write", scopes=("agency", "subaccount")),
     "dashboard:view": ActionPolicy(permission="clients:read", scopes=("agency", "subaccount")),
     "integrations:sync": ActionPolicy(permission="integrations:sync", scopes=("agency", "subaccount")),
     "integrations:tiktok:sync": ActionPolicy(permission="integrations:tiktok:sync", scopes=("subaccount",)),

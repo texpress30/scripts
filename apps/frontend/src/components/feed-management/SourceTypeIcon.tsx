@@ -30,7 +30,7 @@ export function SourceTypeIcon({
   showLabel?: boolean;
   className?: string;
 }) {
-  const config = SOURCE_TYPE_CONFIG[type];
+  const config = SOURCE_TYPE_CONFIG[type] ?? SOURCE_TYPE_CONFIG.csv;
   const Icon = config.icon;
 
   return (

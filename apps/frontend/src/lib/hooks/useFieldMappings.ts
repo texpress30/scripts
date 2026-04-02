@@ -38,11 +38,20 @@ async function fetchCatalogSchemas(): Promise<CatalogSchema[]> {
 // ---------------------------------------------------------------------------
 
 async function fetchFieldMappings(subId: number, sourceId: string): Promise<FieldMappingsResponse> {
-  const data = await apiRequest<{ items: FieldMapping[] }>(
+  const data = await apiRequest<{ items: Record<string, unknown>[] }>(
     `/subaccount/${subId}/feed-sources/${sourceId}/field-mappings`,
     { cache: "no-store" },
   );
-  return { items: data.items ?? [], total: (data.items ?? []).length };
+  const items = (data.items ?? []).map((raw): FieldMapping => ({
+    id: String(raw.id ?? ""),
+    source_id: String(raw.feed_source_id ?? sourceId),
+    source_name: String(raw.name ?? ""),
+    catalog_type: (String(raw.target_channel ?? "product").replace("_catalog", "") as FieldMapping["catalog_type"]),
+    rules: Array.isArray(raw.rules) ? raw.rules as FieldMapping["rules"] : [],
+    created_at: String(raw.created_at ?? ""),
+    updated_at: String(raw.updated_at ?? ""),
+  }));
+  return { items, total: items.length };
 }
 
 async function fetchFieldMapping(id: string | number): Promise<FieldMapping> {

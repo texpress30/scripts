@@ -114,7 +114,7 @@ def create_feed_source(
     user: AuthUser = Depends(get_current_user),
 ) -> FeedSourceResponse:
     _enforce_feature_flag()
-    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=subaccount_id)
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=subaccount_id)
     try:
         source = _source_repo.create(FeedSourceCreate(
             subaccount_id=subaccount_id,
@@ -144,7 +144,7 @@ def update_feed_source(
     user: AuthUser = Depends(get_current_user),
 ) -> FeedSourceResponse:
     _enforce_feature_flag()
-    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=subaccount_id)
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=subaccount_id)
     try:
         existing = _source_repo.get_by_id(source_id)
     except FeedSourceNotFoundError as exc:
@@ -177,7 +177,7 @@ def delete_feed_source(
     user: AuthUser = Depends(get_current_user),
 ) -> dict:
     _enforce_feature_flag()
-    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=subaccount_id)
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=subaccount_id)
     try:
         existing = _source_repo.get_by_id(source_id)
     except FeedSourceNotFoundError as exc:
@@ -214,7 +214,7 @@ def update_sync_schedule(
     from app.services.feed_management.models import SyncSchedule, SCHEDULE_INTERVALS
 
     _enforce_feature_flag()
-    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=subaccount_id)
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=subaccount_id)
     try:
         source = _source_repo.get_by_id(source_id)
     except FeedSourceNotFoundError as exc:
@@ -259,7 +259,7 @@ def trigger_sync(
     user: AuthUser = Depends(get_current_user),
 ) -> SyncTriggerResponse:
     _enforce_feature_flag()
-    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=subaccount_id)
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=subaccount_id)
     try:
         source = _source_repo.get_by_id(source_id)
     except FeedSourceNotFoundError as exc:

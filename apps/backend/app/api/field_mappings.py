@@ -156,7 +156,7 @@ def create_field_mapping(
     user: AuthUser = Depends(get_current_user),
 ) -> FieldMappingDetailResponse:
     _enforce_feature_flag()
-    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=subaccount_id)
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=subaccount_id)
     source = _resolve_source(subaccount_id, source_id)
 
     if payload.from_preset and not payload.rules:
