@@ -18,7 +18,7 @@ function formatDate(value: string | null): string {
 export default function SourceDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const sourceId = Number(params.id);
+  const sourceId = params.id;
   const { source, isLoading, error } = useFeedSource(sourceId);
   const { imports, isLoading: importsLoading } = useFeedImports(sourceId);
   const { syncSource, deleteSource, isSyncing, isDeleting } = useFeedSources();
@@ -90,7 +90,7 @@ export default function SourceDetailPage() {
           <DetailRow label="Source Type"><SourceTypeIcon type={source.source_type} showLabel /></DetailRow>
           <DetailRow label="Status"><FeedSourceStatusBadge status={source.status} /></DetailRow>
           {source.url ? (<DetailRow label="URL"><span className="break-all text-sm text-slate-700 dark:text-slate-300">{source.url}</span></DetailRow>) : null}
-          <DetailRow label="Products"><span className="text-sm text-slate-700 dark:text-slate-300">{source.product_count.toLocaleString()}</span></DetailRow>
+          <DetailRow label="Products"><span className="text-sm text-slate-700 dark:text-slate-300">{(source.product_count ?? 0).toLocaleString()}</span></DetailRow>
           <DetailRow label="Last Sync"><span className="text-sm text-slate-700 dark:text-slate-300">{formatDate(source.last_sync)}</span></DetailRow>
           <DetailRow label="Created"><span className="text-sm text-slate-700 dark:text-slate-300">{formatDate(source.created_at)}</span></DetailRow>
         </dl>

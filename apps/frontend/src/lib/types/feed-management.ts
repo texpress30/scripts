@@ -11,7 +11,7 @@ export type FeedSourceType =
 export type FeedSourceStatus = "active" | "syncing" | "error" | "inactive";
 
 export type FeedSource = {
-  id: number;
+  id: string;
   name: string;
   source_type: FeedSourceType;
   catalog_type: CatalogType;
@@ -19,6 +19,10 @@ export type FeedSource = {
   last_sync: string | null;
   product_count: number;
   url?: string;
+  config?: Record<string, unknown>;
+  credentials_secret_id?: string | null;
+  is_active?: boolean;
+  subaccount_id?: number;
   created_at: string;
   updated_at: string;
 };
@@ -31,16 +35,21 @@ export type FeedSourcesResponse = {
 export type FeedImportStatus = "pending" | "running" | "completed" | "failed";
 
 export type FeedImport = {
-  id: number;
-  source_id: number;
-  source_name: string;
+  id: string;
+  source_id?: string;
+  feed_source_id?: string;
+  source_name?: string;
   status: FeedImportStatus;
-  products_imported: number;
-  products_updated: number;
-  products_failed: number;
-  started_at: string;
+  total_products?: number;
+  imported_products?: number;
+  products_imported?: number;
+  products_updated?: number;
+  products_failed?: number;
+  errors?: unknown[];
+  started_at: string | null;
   completed_at: string | null;
-  error_message: string | null;
+  created_at?: string;
+  error_message?: string | null;
 };
 
 export type FeedImportsResponse = {

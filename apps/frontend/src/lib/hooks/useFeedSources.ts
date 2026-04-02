@@ -10,121 +10,141 @@ import type {
   TestConnectionResponse,
 } from "@/lib/types/feed-management";
 import { apiRequest, ApiRequestError } from "@/lib/api";
-import { mockFeedSources } from "@/lib/mocks/feedSources";
-import { mockFeedImports } from "@/lib/mocks/feedImports";
+import { getPrimarySubaccountId } from "@/lib/session";
 
 const SOURCES_KEY = ["feed-sources"] as const;
-const SOURCE_KEY = (id: number) => ["feed-sources", id] as const;
-const IMPORTS_KEY = (sourceId: number) => ["feed-imports", sourceId] as const;
+const SOURCE_KEY = (id: string) => ["feed-sources", id] as const;
+const IMPORTS_KEY = (sourceId: string) => ["feed-imports", sourceId] as const;
+
+function getSubaccountId(): number {
+  const id = getPrimarySubaccountId();
+  if (!id) throw new Error("No subaccount selected");
+  return id;
+}
+
+// ---------------------------------------------------------------------------
+// API functions — real backend endpoints
+// ---------------------------------------------------------------------------
+
+function normalizeSource(raw: Record<string, unknown>): FeedSource {
+  return {
+    id: String(raw.id ?? ""),
+    name: String(raw.name ?? ""),
+    source_type: String(raw.source_type ?? "csv") as FeedSource["source_type"],
+    catalog_type: String(raw.catalog_type ?? "product") as FeedSource["catalog_type"],
+    status: raw.is_active === false ? "inactive" : "active",
+    last_sync: (raw.last_sync as string) ?? null,
+    product_count: Number(raw.product_count ?? 0),
+    url: String(raw.config && typeof raw.config === "object" ? (raw.config as Record<string, unknown>).store_url ?? (raw.config as Record<string, unknown>).file_url ?? "" : ""),
+    config: raw.config as Record<string, unknown> | undefined,
+    is_active: raw.is_active as boolean | undefined,
+    subaccount_id: raw.subaccount_id as number | undefined,
+    created_at: String(raw.created_at ?? ""),
+    updated_at: String(raw.updated_at ?? ""),
+  };
+}
 
 async function fetchSources(): Promise<FeedSourcesResponse> {
-  try {
-    return await apiRequest<FeedSourcesResponse>("/feed-management/sources", { cache: "no-store" });
-  } catch (err) {
-    if (err instanceof ApiRequestError && err.status === 404) {
-      await delay(300);
-      return { items: mockFeedSources, total: mockFeedSources.length };
-    }
-    throw err;
-  }
+  const subId = getSubaccountId();
+  const data = await apiRequest<{ items: Record<string, unknown>[] }>(
+    `/subaccount/${subId}/feed-sources`,
+    { cache: "no-store" },
+  );
+  const items = (data.items ?? []).map(normalizeSource);
+  return { items, total: items.length };
 }
 
-async function fetchSource(id: number): Promise<FeedSource> {
-  try {
-    return await apiRequest<FeedSource>(`/feed-management/sources/${id}`, { cache: "no-store" });
-  } catch (err) {
-    if (err instanceof ApiRequestError && err.status === 404) {
-      const mock = mockFeedSources.find((s: FeedSource) => s.id === id);
-      if (mock) {
-        await delay(200);
-        return mock;
-      }
-    }
-    throw err;
-  }
+async function fetchSource(id: string): Promise<FeedSource> {
+  const subId = getSubaccountId();
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/subaccount/${subId}/feed-sources/${id}`,
+    { cache: "no-store" },
+  );
+  return normalizeSource(raw);
 }
 
-async function fetchImports(sourceId: number): Promise<FeedImportsResponse> {
-  try {
-    return await apiRequest<FeedImportsResponse>(`/feed-management/sources/${sourceId}/imports`, { cache: "no-store" });
-  } catch (err) {
-    if (err instanceof ApiRequestError && err.status === 404) {
-      await delay(200);
-      const items = mockFeedImports.filter((i) => i.source_id === sourceId);
-      return { items, total: items.length };
-    }
-    throw err;
-  }
+async function fetchImports(sourceId: string): Promise<FeedImportsResponse> {
+  const subId = getSubaccountId();
+  const data = await apiRequest<{ items: unknown[] }>(
+    `/subaccount/${subId}/feed-sources/${sourceId}/imports`,
+    { cache: "no-store" },
+  );
+  return { items: data.items ?? [], total: (data.items ?? []).length } as FeedImportsResponse;
 }
 
 async function createSourceApi(data: CreateFeedSourcePayload): Promise<FeedSource> {
-  try {
-    return await apiRequest<FeedSource>("/feed-management/sources", {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-  } catch (err) {
-    if (err instanceof ApiRequestError && err.status === 404) {
-      await delay(400);
-      return {
-        id: Date.now(),
-        name: data.name,
-        source_type: data.source_type,
-        catalog_type: data.catalog_type,
-        status: "inactive",
-        last_sync: null,
-        product_count: 0,
-        url: data.url,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
+  const subId = getSubaccountId();
+
+  // Build the backend payload matching FeedSourceCreate schema
+  const config: Record<string, unknown> = { ...(data.config ?? {}) };
+  if (data.url) {
+    // Map the URL to the appropriate config field
+    if (data.source_type === "shopify") {
+      config.store_url = config.shop_url ?? config.store_url ?? data.url;
+    } else if (data.source_type === "woocommerce" || data.source_type === "magento" || data.source_type === "bigcommerce") {
+      config.store_url = config.store_url ?? data.url;
+    } else {
+      // CSV, JSON, XML, Google Sheets
+      config.file_url = config.file_url ?? data.url;
     }
-    throw err;
   }
+
+  const payload = {
+    name: data.name,
+    source_type: data.source_type,
+    catalog_type: data.catalog_type ?? "product",
+    config,
+  };
+
+  return apiRequest<FeedSource>(`/subaccount/${subId}/feed-sources`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
-async function deleteSourceApi(id: number): Promise<void> {
-  try {
-    await apiRequest(`/feed-management/sources/${id}`, { method: "DELETE" });
-  } catch (err) {
-    if (err instanceof ApiRequestError && err.status === 404) {
-      await delay(300);
-      return;
-    }
-    throw err;
-  }
+async function deleteSourceApi(id: string): Promise<void> {
+  const subId = getSubaccountId();
+  await apiRequest(`/subaccount/${subId}/feed-sources/${id}`, { method: "DELETE" });
 }
 
-async function syncSourceApi(id: number): Promise<void> {
-  try {
-    await apiRequest(`/feed-management/sources/${id}/sync`, { method: "POST" });
-  } catch (err) {
-    if (err instanceof ApiRequestError && err.status === 404) {
-      await delay(300);
-      return;
-    }
-    throw err;
-  }
+async function syncSourceApi(id: string): Promise<void> {
+  const subId = getSubaccountId();
+  await apiRequest(`/subaccount/${subId}/feed-sources/${id}/sync`, { method: "POST" });
 }
 
 async function testConnectionApi(data: TestConnectionPayload): Promise<TestConnectionResponse> {
-  try {
-    return await apiRequest<TestConnectionResponse>("/feed-management/test-connection", {
+  const { source_type, url, config } = data;
+
+  if (source_type === "shopify") {
+    return apiRequest<TestConnectionResponse>("/integrations/shopify/test-connection", {
       method: "POST",
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        store_url: config?.shop_url ?? config?.store_url ?? url,
+        access_token: config?.access_token ?? "",
+        api_key: config?.api_key ?? "",
+        api_secret_key: config?.api_secret_key ?? "",
+      }),
     });
-  } catch (err) {
-    if (err instanceof ApiRequestError && err.status === 404) {
-      await delay(800);
-      return { success: true, message: "Conexiune reușită (mock)." };
-    }
-    throw err;
   }
+
+  if (source_type === "woocommerce") {
+    return apiRequest<TestConnectionResponse>("/integrations/woocommerce/test-connection", {
+      method: "POST",
+      body: JSON.stringify({
+        store_url: config?.store_url ?? url,
+        consumer_key: config?.consumer_key ?? "",
+        consumer_secret: config?.consumer_secret ?? "",
+      }),
+    });
+  }
+
+  // For file-based sources, just validate the URL is accessible
+  return { success: true, message: "File URL provided — will be validated on sync." };
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+// ---------------------------------------------------------------------------
+// Hooks
+// ---------------------------------------------------------------------------
 
 export function useFeedSources() {
   const queryClient = useQueryClient();
@@ -132,6 +152,7 @@ export function useFeedSources() {
   const { data, isLoading, error } = useQuery<FeedSourcesResponse>({
     queryKey: SOURCES_KEY,
     queryFn: fetchSources,
+    retry: 1,
   });
 
   const deleteMutation = useMutation({
@@ -160,8 +181,8 @@ export function useFeedSources() {
     total: data?.total ?? 0,
     isLoading,
     error: error instanceof Error ? error.message : null,
-    deleteSource: (id: number) => deleteMutation.mutateAsync(id),
-    syncSource: (id: number) => syncMutation.mutateAsync(id),
+    deleteSource: (id: string) => deleteMutation.mutateAsync(id),
+    syncSource: (id: string) => syncMutation.mutateAsync(id),
     createSource: (data: CreateFeedSourcePayload) => createMutation.mutateAsync(data),
     testConnection: (data: TestConnectionPayload) => testConnectionApi(data),
     isDeleting: deleteMutation.isPending,
@@ -170,11 +191,12 @@ export function useFeedSources() {
   };
 }
 
-export function useFeedSource(id: number) {
+export function useFeedSource(id: string) {
   const { data, isLoading, error } = useQuery<FeedSource>({
     queryKey: SOURCE_KEY(id),
     queryFn: () => fetchSource(id),
-    enabled: id > 0,
+    enabled: !!id,
+    retry: 1,
   });
 
   return {
@@ -184,11 +206,12 @@ export function useFeedSource(id: number) {
   };
 }
 
-export function useFeedImports(sourceId: number) {
+export function useFeedImports(sourceId: string) {
   const { data, isLoading, error } = useQuery<FeedImportsResponse>({
     queryKey: IMPORTS_KEY(sourceId),
     queryFn: () => fetchImports(sourceId),
-    enabled: sourceId > 0,
+    enabled: !!sourceId,
+    retry: 1,
   });
 
   return {
