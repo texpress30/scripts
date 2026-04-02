@@ -26,7 +26,7 @@ function normalizeSource(raw: Record<string, unknown>): FeedSource {
     source_type: String(raw.source_type ?? "csv") as FeedSource["source_type"],
     catalog_type: String(raw.catalog_type ?? "product") as FeedSource["catalog_type"],
     status: raw.is_active === false ? "inactive" : "active",
-    last_sync: (raw.last_sync as string) ?? null,
+    last_sync: (raw.last_sync_at as string) ?? (raw.last_sync as string) ?? null,
     product_count: Number(raw.product_count ?? 0),
     url: String(raw.config && typeof raw.config === "object" ? (raw.config as Record<string, unknown>).store_url ?? (raw.config as Record<string, unknown>).file_url ?? "" : ""),
     config: raw.config as Record<string, unknown> | undefined,
