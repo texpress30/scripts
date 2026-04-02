@@ -59,6 +59,7 @@ def _get_connector(source: FeedSourceResponse) -> BaseConnector:
     if source.source_type == FeedSourceType.woocommerce:
         from app.services.feed_management.connectors.woocommerce_connector import WooCommerceConnector
 
+        logger.info("Loading WooCommerce connector for source %s, config keys: %s", source.id, list(config.keys()))
         woo_credentials: dict[str, str] = {}
         if source.credentials_secret_id:
             try:
@@ -81,6 +82,12 @@ def _get_connector(source: FeedSourceResponse) -> BaseConnector:
                 val = config.get(config_key)
                 if val and isinstance(val, str) and not woo_credentials.get(cred_key):
                     woo_credentials[cred_key] = val
+        has_key = bool(woo_credentials.get("consumer_key"))
+        has_secret = bool(woo_credentials.get("consumer_secret"))
+        logger.info("WooCommerce credentials resolved for source %s: key=%s secret=%s", source.id, has_key, has_secret)
+        if not has_key or not has_secret:
+            logger.warning("WooCommerce source %s has no credentials — sync will likely fail with 401. "
+                           "Delete and re-create the source to fix.", source.id)
         return WooCommerceConnector(config=config, credentials=woo_credentials)
 
     raise ValueError(f"No connector available for source type: {source.source_type}")
