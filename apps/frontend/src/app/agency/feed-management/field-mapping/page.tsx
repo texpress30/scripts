@@ -142,7 +142,7 @@ export default function FieldMappingPage() {
       )}
 
       {/* Empty state when no source selected */}
-      {selectedSourceId === 0 && !sourcesLoading && (
+      {!selectedSourceId && !sourcesLoading && (
         <div className="rounded-xl border-2 border-dashed border-slate-200 py-16 text-center dark:border-slate-700">
           <GitBranch className="mx-auto mb-3 h-12 w-12 text-slate-300 dark:text-slate-600" />
           <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
