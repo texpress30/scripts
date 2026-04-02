@@ -29,6 +29,7 @@ from app.api.email_notifications import router as email_notifications_router
 from app.api.email_templates import router as email_templates_router
 from app.api.exports import router as exports_router
 from app.api.catalog_schemas import router as catalog_schemas_router
+from app.api.feed_channels import router as feed_channels_router
 from app.api.feed_sources import router as feed_sources_router
 from app.api.master_fields import router as master_fields_router
 from app.api.internal_cron import router as internal_cron_router
@@ -146,6 +147,7 @@ app.include_router(catalog_schemas_router)
 app.include_router(feed_sources_router)
 app.include_router(field_mappings_router)
 app.include_router(master_fields_router)
+app.include_router(feed_channels_router)
 app.include_router(shopify_integration_router)
 app.include_router(woocommerce_router)
 

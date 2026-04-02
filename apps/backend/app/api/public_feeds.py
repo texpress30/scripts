@@ -64,6 +64,30 @@ def _parse_token_and_ext(filename: str) -> tuple[str, str]:
     return token, ext
 
 
+def _lookup_feed_by_token(token: str) -> dict | None:
+    """Look up a feed by token — tries output feeds first, then channels."""
+    feed = output_feed_service.get_output_feed_by_token(token)
+    if feed is not None:
+        return {
+            "s3_key": feed.get("s3_key"),
+            "last_generated_at": feed.get("last_generated_at", ""),
+            "products_count": feed.get("products_count", 0),
+        }
+
+    # Fallback: try feed channels
+    from app.services.feed_management.channels.repository import feed_channel_repository
+
+    channel = feed_channel_repository.get_by_token(token)
+    if channel is not None:
+        return {
+            "s3_key": channel.s3_key,
+            "last_generated_at": str(channel.last_generated_at) if channel.last_generated_at else "",
+            "products_count": channel.included_products,
+        }
+
+    return None
+
+
 def _serve_feed(token: str, requested_ext: str) -> Response:
     """Core handler: look up feed by token, stream content from S3."""
     if not _check_rate_limit(token):
@@ -72,7 +96,7 @@ def _serve_feed(token: str, requested_ext: str) -> Response:
             detail="Rate limit exceeded. Max 100 requests per minute.",
         )
 
-    feed = output_feed_service.get_output_feed_by_token(token)
+    feed = _lookup_feed_by_token(token)
     if feed is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feed not found")
 
@@ -107,7 +131,6 @@ def _serve_feed(token: str, requested_ext: str) -> Response:
     }
     if last_generated:
         headers["Last-Modified"] = str(last_generated)
-        # Simple ETag from token + generation timestamp
         headers["ETag"] = f'"{token[:16]}-{last_generated}"'
 
     return Response(
