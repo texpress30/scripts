@@ -44,9 +44,24 @@ async def run_scheduled_syncs(request: Request) -> dict:
     triggered = 0
     errors = 0
 
+    # First log all scheduled sources for debugging
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, sync_schedule, next_scheduled_sync, is_active, last_sync_at
+                    FROM feed_sources
+                    WHERE sync_schedule != 'manual'
+                    """,
+                )
+                all_scheduled = cur.fetchall()
+                for r in all_scheduled:
+                    logger.info(
+                        "Scheduled source: id=%s schedule=%s next=%s active=%s last_sync=%s",
+                        r[0], r[1], r[2], r[3], r[4],
+                    )
+
                 cur.execute(
                     """
                     SELECT id, sync_schedule
@@ -65,16 +80,24 @@ async def run_scheduled_syncs(request: Request) -> dict:
         logger.exception("Failed to query scheduled syncs")
         raise HTTPException(status_code=500, detail="Database error")
 
-    logger.info("Scheduled sync cron: found %d sources due", len(rows))
+    logger.info("Scheduled sync cron: checked_at=%s, found %d sources due (of %d scheduled)", now.isoformat(), len(rows), len(all_scheduled))
 
     for row in rows:
         source_id = str(row[0])
         schedule_str = str(row[1])
 
         try:
+            logger.info("Starting scheduled sync for source %s (schedule=%s)", source_id, schedule_str)
             result = await feed_sync_service.run_sync(source_id)
             logger.info("Scheduled sync completed for %s: %s (%d products)", source_id, result.status, result.imported_products)
             triggered += 1
+
+            # Update last_sync_at, product_count, and next_scheduled_sync
+            try:
+                from app.services.feed_management.products_repository import feed_products_repository
+                product_count = feed_products_repository.count_products(source_id)
+            except Exception:
+                product_count = result.imported_products
 
             try:
                 schedule = SyncSchedule(schedule_str)
@@ -86,10 +109,16 @@ async def run_scheduled_syncs(request: Request) -> dict:
             with get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        "UPDATE feed_sources SET next_scheduled_sync = %s, updated_at = NOW() WHERE id = %s",
-                        (next_sync, source_id),
+                        """UPDATE feed_sources
+                           SET last_sync_at = NOW(),
+                               product_count = %s,
+                               next_scheduled_sync = %s,
+                               updated_at = NOW()
+                           WHERE id = %s""",
+                        (product_count, next_sync, source_id),
                     )
                 conn.commit()
+            logger.info("Updated source %s: product_count=%d, next_sync=%s", source_id, product_count, next_sync)
 
         except Exception:
             logger.exception("Scheduled sync failed for source %s", source_id)
