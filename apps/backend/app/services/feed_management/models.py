@@ -27,6 +27,8 @@ class FeedImportStatus(str, enum.Enum):
 
 class FeedSourceConfig(BaseModel):
     """Flexible config for different platform types stored as JSONB."""
+    model_config = {"extra": "allow"}
+
     store_url: str | None = None
     api_version: str | None = None
     sync_interval_minutes: int | None = None
