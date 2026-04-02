@@ -55,8 +55,8 @@ export default function FeedSourcesPage() {
           </Link>
         </div>
       ) : (
-        <section className="wm-card overflow-hidden">
-          <div className="overflow-x-auto">
+        <section className="wm-card">
+          <div className="overflow-x-auto overflow-y-visible">
             <table className="min-w-full text-sm">
               <thead className="bg-slate-100 text-left text-slate-600 dark:bg-slate-800 dark:text-slate-400">
                 <tr>
