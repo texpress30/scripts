@@ -42,6 +42,7 @@ class FeedSourceCreate(BaseModel):
     name: str
     config: FeedSourceConfig = Field(default_factory=FeedSourceConfig)
     credentials_secret_id: str | None = None
+    catalog_type: str = "product"
 
 
 class FeedSourceUpdate(BaseModel):
@@ -59,6 +60,7 @@ class FeedSourceResponse(BaseModel):
     config: dict[str, Any]
     credentials_secret_id: str | None
     is_active: bool
+    catalog_type: str = "product"
     created_at: datetime
     updated_at: datetime
 
