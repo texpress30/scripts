@@ -99,11 +99,13 @@ export default function ChannelDetailPage() {
   }
 
   async function handleTogglePause() {
+    if (!channel) return;
     const newStatus = channel.status === "paused" ? "active" : "paused";
     await updateChannel({ status: newStatus } as never);
   }
 
   async function handleDelete() {
+    if (!channel) return;
     if (!confirm("Are you sure you want to delete this channel?")) return;
     await deleteChannel();
     router.push(`/agency/feed-management/field-mapping/${channel.feed_source_id}/channels`);
