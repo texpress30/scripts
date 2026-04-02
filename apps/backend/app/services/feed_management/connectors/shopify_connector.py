@@ -112,6 +112,11 @@ class ShopifyConnector(BaseConnector):
     def __init__(self, config: dict[str, Any], credentials: dict[str, str] | None = None) -> None:
         super().__init__(config, credentials)
         self._shop_currency: str = "USD"
+    """Connector for Shopify stores via Admin REST API."""
+
+    def __init__(self, config: dict[str, Any], credentials: dict[str, str] | None = None) -> None:
+        super().__init__(config, credentials)
+        self._shop_currency: str = "USD"
 
     async def validate_config(self) -> ValidationResult:
         errors: list[str] = []
@@ -131,6 +136,7 @@ class ShopifyConnector(BaseConnector):
         return ValidationResult(valid=len(errors) == 0, errors=errors)
 
     async def test_connection(self) -> ConnectionTestResult:
+
         validation = await self.validate_config()
         if not validation.valid:
             return ConnectionTestResult(success=False, message="Invalid config", details={"errors": validation.errors})

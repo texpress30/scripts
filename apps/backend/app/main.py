@@ -46,6 +46,7 @@ from app.api.rules import router as rules_router
 from app.api.creative_templates import router as creative_templates_router
 from app.api.treatments import router as treatments_router
 from app.api.output_feeds import router as output_feeds_router
+from app.api.integrations.woocommerce import router as woocommerce_router
 from app.core.config import load_settings
 from app.services.rbac import log_auth_config
 from app.services.client_registry import client_registry_service
