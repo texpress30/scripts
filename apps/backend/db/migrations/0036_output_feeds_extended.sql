@@ -12,7 +12,10 @@ ALTER TABLE output_feeds ADD COLUMN IF NOT EXISTS field_mapping_id UUID REFERENC
 ALTER TABLE output_feeds ADD COLUMN IF NOT EXISTS s3_key VARCHAR(500);
 
 -- Generate token for existing feeds that lack one.
-UPDATE output_feeds SET public_token = encode(gen_random_bytes(32), 'hex')
+-- Use md5 concat instead of gen_random_bytes (requires pgcrypto extension).
+UPDATE output_feeds SET public_token =
+    md5(random()::text || clock_timestamp()::text || id::text) ||
+    md5(random()::text || clock_timestamp()::text)
 WHERE public_token IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_output_feeds_public_token
