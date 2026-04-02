@@ -3,12 +3,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-<<<<<<< feat/feed-management-products-storage
 from app.services.feed_management.connectors.base import BaseConnector, ProductData
-=======
-from app.services.feed_management.connectors.base import BaseConnector
+from app.services.feed_management.connectors.base import BaseConnector, ProductData
 from app.services.feed_management.exceptions import FeedSourceNotFoundError
->>>>>>> main
 from app.services.feed_management.models import (
     FeedImportCreate,
     FeedImportResponse,
@@ -111,7 +108,6 @@ class FeedSyncService:
         try:
             async for product in connector.fetch_products():
                 total_count += 1
-<<<<<<< feat/feed-management-products-storage
                 batch.append(product)
 
                 if len(batch) >= SYNC_BATCH_SIZE:
@@ -123,17 +119,6 @@ class FeedSyncService:
                         errors.append({"batch_size": len(batch), "error": str(exc)})
                     batch = []
 
-=======
-                try:
-                    # Product storage will be implemented in a later task.
-                    # For now we just count the products yielded by the connector.
-                    imported_count += 1
-                except Exception as exc:
-                    errors.append({"product_id": product.id, "error": str(exc)})
-
-                # Update progress periodically
-                if total_count % SYNC_BATCH_SIZE == 0:
->>>>>>> main
                     feed_import = self._import_repo.update_status(
                         feed_import.id,
                         status=FeedImportStatus.in_progress,

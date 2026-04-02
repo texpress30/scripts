@@ -107,20 +107,16 @@ def _parse_next_page_url(link_header: str | None) -> str | None:
 
 
 class ShopifyConnector(BaseConnector):
-<<<<<<< feat/feed-management-shopify-connector
     """Connector for Shopify stores via Admin REST API."""
 
     def __init__(self, config: dict[str, Any], credentials: dict[str, str] | None = None) -> None:
         super().__init__(config, credentials)
         self._shop_currency: str = "USD"
-=======
-    """Connector for Shopify stores via Admin API.
+    """Connector for Shopify stores via Admin REST API."""
 
-    This is a skeleton implementation. The actual API calls will be
-    implemented in a dedicated task once the base infrastructure is
-    validated end-to-end.
-    """
->>>>>>> main
+    def __init__(self, config: dict[str, Any], credentials: dict[str, str] | None = None) -> None:
+        super().__init__(config, credentials)
+        self._shop_currency: str = "USD"
 
     async def validate_config(self) -> ValidationResult:
         errors: list[str] = []
@@ -140,13 +136,7 @@ class ShopifyConnector(BaseConnector):
         return ValidationResult(valid=len(errors) == 0, errors=errors)
 
     async def test_connection(self) -> ConnectionTestResult:
-<<<<<<< feat/feed-management-shopify-connector
-=======
-        """Placeholder: returns success without actually connecting.
 
-        TODO: Implement real connection test via GET /admin/api/{version}/shop.json
-        """
->>>>>>> main
         validation = await self.validate_config()
         if not validation.valid:
             return ConnectionTestResult(success=False, message="Invalid config", details={"errors": validation.errors})
@@ -177,7 +167,6 @@ class ShopifyConnector(BaseConnector):
             return ConnectionTestResult(success=False, message=f"Connection failed: {type(exc).__name__}")
 
     async def fetch_products(self, since: datetime | None = None) -> AsyncIterator[ProductData]:
-<<<<<<< feat/feed-management-shopify-connector
         base_url = _build_base_url(self.config["store_url"])
 
         # Fetch shop currency if we haven't already
@@ -288,28 +277,3 @@ def _safe_float(value: Any) -> float | None:
         return float(value)
     except (ValueError, TypeError):
         return None
-=======
-        """Not yet implemented.
-
-        TODO: Implement via Shopify Admin API
-        - GET /admin/api/{version}/products.json?updated_at_min={since}
-        - Handle pagination via Link headers
-        - Map Shopify product JSON to ProductData
-        """
-        raise NotImplementedError(
-            "Shopify product fetching is not yet implemented. "
-            "This connector skeleton will be completed in the Shopify integration task."
-        )
-        # Make this an async generator so the type signature is correct
-        yield  # pragma: no cover
-
-    async def get_product_count(self) -> int:
-        """Not yet implemented.
-
-        TODO: Implement via GET /admin/api/{version}/products/count.json
-        """
-        raise NotImplementedError(
-            "Shopify product count is not yet implemented. "
-            "This connector skeleton will be completed in the Shopify integration task."
-        )
->>>>>>> main

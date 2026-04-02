@@ -140,9 +140,6 @@ app.include_router(sync_orchestration_router)
 app.include_router(feed_sources_router)
 app.include_router(shopify_integration_router)
 
-# Integrations
-app.include_router(woocommerce_router)
-
 # Enriched Catalog
 app.include_router(creative_templates_router)
 app.include_router(treatments_router)
