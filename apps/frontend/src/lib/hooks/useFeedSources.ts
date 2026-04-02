@@ -70,6 +70,7 @@ async function createSourceApi(data: CreateFeedSourcePayload): Promise<FeedSourc
         id: Date.now(),
         name: data.name,
         source_type: data.source_type,
+        catalog_type: data.catalog_type,
         status: "inactive",
         last_sync: null,
         product_count: 0,

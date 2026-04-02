@@ -101,9 +101,18 @@ class FakeOutputFeedRepository:
         self._counter = 0
         self._job_counter = 0
 
-    def create_output_feed(self, *, subaccount_id, name, feed_source_id=None):
+    def create_output_feed(self, *, subaccount_id, name, feed_source_id=None, feed_format="xml", field_mapping_id=None):
         self._counter += 1
-        doc = {"id": f"feed-{self._counter}", "subaccount_id": int(subaccount_id), "name": str(name), "feed_source_id": feed_source_id, "status": "draft", "enriched_feed_url": None, "last_render_at": None, "created_at": "2026-04-01T00:00:00+00:00", "updated_at": "2026-04-01T00:00:00+00:00"}
+        doc = {
+            "id": f"feed-{self._counter}", "subaccount_id": int(subaccount_id),
+            "name": str(name), "feed_source_id": feed_source_id,
+            "status": "draft", "enriched_feed_url": None, "last_render_at": None,
+            "created_at": "2026-04-01T00:00:00+00:00", "updated_at": "2026-04-01T00:00:00+00:00",
+            "feed_format": feed_format, "public_token": f"tok-{self._counter}",
+            "refresh_interval_hours": 24, "last_generated_at": None,
+            "products_count": 0, "file_size_bytes": 0,
+            "field_mapping_id": field_mapping_id, "s3_key": None,
+        }
         self.feeds.append(doc)
         return dict(doc)
 
