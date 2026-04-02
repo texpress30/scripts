@@ -170,6 +170,16 @@ export default function ChannelDetailPage() {
         </div>
       </div>
 
+      {/* Quick links */}
+      <div className="mb-4 flex gap-2">
+        <Link
+          href={`/agency/feed-management/channels/${channelId}/products`}
+          className="wm-btn-secondary inline-flex items-center gap-1.5 text-xs"
+        >
+          Channel Products
+        </Link>
+      </div>
+
       {generateMsg && (
         <div className="mb-4 rounded-lg bg-indigo-50 p-3 text-sm text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400">
           {generateMsg}
