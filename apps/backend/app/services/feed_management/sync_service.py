@@ -173,6 +173,8 @@ class FeedSyncService:
                 errors=errors,
             )
 
+        # Always update source metadata after sync
+        self._update_source_after_sync(feed_source_id, imported_count)
         return feed_import
 
     def _update_source_after_sync(self, feed_source_id: str, imported_count: int) -> None:
@@ -215,7 +217,6 @@ class FeedSyncService:
         """Wrapper for background task execution."""
         try:
             result = await self.run_sync(feed_source_id)
-            self._update_source_after_sync(feed_source_id, result.imported_products)
             logger.info(
                 "Background sync completed for source %s: status=%s imported=%d/%d",
                 feed_source_id,
