@@ -22,7 +22,7 @@ export default function FieldMappingPage() {
   const { selectedId } = useFeedSubaccount();
   const { sources, isLoading: sourcesLoading } = useFeedSources(selectedId);
   const [selectedSourceId, setSelectedSourceId] = useState<string>("");
-  const { mappings, isLoading: mappingsLoading, createMapping, isCreating } = useFieldMappings(selectedSourceId || undefined);
+  const { mappings, isLoading: mappingsLoading, createMapping, isCreating } = useFieldMappings(selectedId, selectedSourceId || undefined);
 
   const selectedSource = sources.find((s) => s.id === selectedSourceId) ?? null;
 

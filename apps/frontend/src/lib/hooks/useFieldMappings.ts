@@ -10,130 +10,92 @@ import type {
   UpdateMappingRulePayload,
   FieldMappingPreviewRow,
 } from "@/lib/types/feed-management";
-import { apiRequest, ApiRequestError } from "@/lib/api";
-import { mockCatalogSchemas } from "@/lib/mocks/catalogSchemas";
-import { mockFieldMappings } from "@/lib/mocks/fieldMappings";
+import { apiRequest } from "@/lib/api";
 
 const SCHEMAS_KEY = ["catalog-schemas"] as const;
 const SCHEMA_KEY = (type: CatalogType) => ["catalog-schemas", type] as const;
-const MAPPINGS_KEY = (sourceId?: string | number) => sourceId ? ["field-mappings", sourceId] as const : ["field-mappings"] as const;
+const MAPPINGS_KEY = (subId: number, sourceId: string) => ["field-mappings", subId, sourceId] as const;
 const MAPPING_KEY = (id: string | number) => ["field-mapping", id] as const;
 const PREVIEW_KEY = (id: string | number) => ["field-mapping-preview", id] as const;
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+// ---------------------------------------------------------------------------
+// Catalog schemas (no subaccount needed)
+// ---------------------------------------------------------------------------
 
 async function fetchCatalogSchemas(): Promise<CatalogSchema[]> {
-  try {
-    return await apiRequest<CatalogSchema[]>("/catalog-schemas", { cache: "no-store" });
-  } catch (err) {
-    if (err instanceof ApiRequestError && err.status === 404) {
-      await delay(200);
-      return mockCatalogSchemas;
-    }
-    throw err;
-  }
+  const data = await apiRequest<{ items: { catalog_type: string; required: unknown[]; optional: unknown[] }[] }>("/catalog-schemas", { cache: "no-store" });
+  // Backend returns { items: [...] } with CatalogTypeInfo shape — map to CatalogSchema
+  return (data.items ?? []).map((item) => ({
+    catalog_type: item.catalog_type as CatalogType,
+    label: item.catalog_type.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()),
+    description: "",
+    fields: [],
+  }));
 }
 
-async function fetchFieldMappings(sourceId?: string | number): Promise<FieldMappingsResponse> {
-  try {
-    const path = sourceId ? `/field-mappings?source_id=${sourceId}` : "/field-mappings";
-    return await apiRequest<FieldMappingsResponse>(path, { cache: "no-store" });
-  } catch (err) {
-    if (err instanceof ApiRequestError && err.status === 404) {
-      await delay(200);
-      const items = sourceId
-        ? mockFieldMappings.filter((m) => m.source_id === sourceId)
-        : mockFieldMappings;
-      return { items, total: items.length };
-    }
-    throw err;
-  }
+// ---------------------------------------------------------------------------
+// Field mappings (subaccount-scoped via feed source)
+// ---------------------------------------------------------------------------
+
+async function fetchFieldMappings(subId: number, sourceId: string): Promise<FieldMappingsResponse> {
+  const data = await apiRequest<{ items: FieldMapping[] }>(
+    `/subaccount/${subId}/feed-sources/${sourceId}/field-mappings`,
+    { cache: "no-store" },
+  );
+  return { items: data.items ?? [], total: (data.items ?? []).length };
 }
 
 async function fetchFieldMapping(id: string | number): Promise<FieldMapping> {
-  try {
-    return await apiRequest<FieldMapping>(`/field-mappings/${id}`, { cache: "no-store" });
-  } catch (err) {
-    if (err instanceof ApiRequestError && err.status === 404) {
-      const mock = mockFieldMappings.find((m) => m.id === id);
-      if (mock) {
-        await delay(200);
-        return mock;
-      }
-    }
-    throw err;
-  }
+  return apiRequest<FieldMapping>(`/field-mappings/${id}`, { cache: "no-store" });
 }
 
-async function createFieldMappingApi(data: CreateFieldMappingPayload): Promise<FieldMapping> {
-  try {
-    return await apiRequest<FieldMapping>("/field-mappings", {
+async function createFieldMappingApi(
+  subId: number,
+  sourceId: string,
+  data: CreateFieldMappingPayload,
+): Promise<FieldMapping> {
+  return apiRequest<FieldMapping>(
+    `/subaccount/${subId}/feed-sources/${sourceId}/field-mappings`,
+    {
       method: "POST",
-      body: JSON.stringify(data),
-    });
-  } catch (err) {
-    if (err instanceof ApiRequestError && err.status === 404) {
-      await delay(400);
-      return {
-        id: Date.now(),
-        source_id: data.source_id,
-        source_name: "New Mapping",
-        catalog_type: "product",
-        rules: [],
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-    }
-    throw err;
-  }
+      body: JSON.stringify({
+        name: `Mapping ${new Date().toLocaleDateString()}`,
+        target_channel: "google_shopping",
+        from_preset: true,
+        ...data,
+      }),
+    },
+  );
 }
 
 async function updateMappingRuleApi(mappingId: string | number, ruleData: UpdateMappingRulePayload): Promise<FieldMapping> {
-  try {
-    return await apiRequest<FieldMapping>(`/field-mappings/${mappingId}/rules`, {
-      method: "POST",
-      body: JSON.stringify(ruleData),
-    });
-  } catch (err) {
-    if (err instanceof ApiRequestError && err.status === 404) {
-      await delay(300);
-      const existing = mockFieldMappings.find((m) => m.id === mappingId);
-      if (existing) {
-        const newRule = {
-          id: Date.now(),
-          ...ruleData,
-        };
-        return { ...existing, rules: [...existing.rules, newRule], updated_at: new Date().toISOString() };
-      }
-    }
-    throw err;
-  }
+  return apiRequest<FieldMapping>(`/field-mappings/${mappingId}/rules`, {
+    method: "POST",
+    body: JSON.stringify(ruleData),
+  });
 }
 
 async function fetchMappingPreview(mappingId: string | number): Promise<FieldMappingPreviewRow[]> {
-  try {
-    return await apiRequest<FieldMappingPreviewRow[]>(`/field-mappings/${mappingId}/preview`, { cache: "no-store" });
-  } catch (err) {
-    if (err instanceof ApiRequestError && err.status === 404) {
-      await delay(500);
-      return [
-        { product_name: "Blue Widget", source_value: "Blue Widget Pro", transformed_value: "Blue Widget Pro" },
-        { product_name: "Red Gadget", source_value: "49.99", transformed_value: "$49.99" },
-        { product_name: "Green Tool", source_value: "15", transformed_value: "in_stock" },
-        { product_name: "Yellow Item", source_value: "", transformed_value: "", error: "Empty source value" },
-        { product_name: "Purple Device", source_value: "purple-device-handle", transformed_value: "https://my-store.myshopify.com/products/purple-device-handle" },
-      ];
-    }
-    throw err;
-  }
+  const data = await apiRequest<{ results: { original: unknown; transformed: unknown }[] }>(
+    `/field-mappings/${mappingId}/preview`,
+    { method: "POST", body: JSON.stringify({ limit: 5 }) },
+  );
+  return (data.results ?? []).map((r) => ({
+    product_name: String((r.original as Record<string, unknown>)?.product_id ?? ""),
+    source_value: JSON.stringify(r.original).slice(0, 100),
+    transformed_value: JSON.stringify(r.transformed).slice(0, 100),
+  }));
 }
+
+// ---------------------------------------------------------------------------
+// Hooks
+// ---------------------------------------------------------------------------
 
 export function useCatalogSchemas() {
   const { data, isLoading, error } = useQuery<CatalogSchema[]>({
     queryKey: SCHEMAS_KEY,
     queryFn: fetchCatalogSchemas,
+    retry: 1,
   });
 
   return {
@@ -148,6 +110,7 @@ export function useCatalogSchema(type: CatalogType | null) {
     queryKey: SCHEMA_KEY(type ?? "product"),
     queryFn: fetchCatalogSchemas,
     enabled: type !== null,
+    retry: 1,
   });
 
   const schema = data?.find((s) => s.catalog_type === type) ?? null;
@@ -158,25 +121,29 @@ export function useCatalogSchema(type: CatalogType | null) {
   };
 }
 
-export function useFieldMappings(sourceId?: string | number) {
+export function useFieldMappings(subaccountId: number | null, sourceId?: string) {
   const queryClient = useQueryClient();
+  const subId = subaccountId ?? 0;
+  const srcId = sourceId ?? "";
 
   const { data, isLoading, error } = useQuery<FieldMappingsResponse>({
-    queryKey: MAPPINGS_KEY(sourceId),
-    queryFn: () => fetchFieldMappings(sourceId),
+    queryKey: MAPPINGS_KEY(subId, srcId),
+    queryFn: () => fetchFieldMappings(subId, srcId),
+    enabled: subId > 0 && !!srcId,
+    retry: 1,
   });
 
   const createMutation = useMutation({
-    mutationFn: createFieldMappingApi,
+    mutationFn: (payload: CreateFieldMappingPayload) => createFieldMappingApi(subId, srcId, payload),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: MAPPINGS_KEY(sourceId) });
+      void queryClient.invalidateQueries({ queryKey: MAPPINGS_KEY(subId, srcId) });
     },
   });
 
   return {
     mappings: data?.items ?? [],
     total: data?.total ?? 0,
-    isLoading,
+    isLoading: subId > 0 && !!srcId ? isLoading : false,
     error: error instanceof Error ? error.message : null,
     createMapping: (payload: CreateFieldMappingPayload) => createMutation.mutateAsync(payload),
     isCreating: createMutation.isPending,
@@ -190,6 +157,7 @@ export function useFieldMapping(id: string | number) {
     queryKey: MAPPING_KEY(id),
     queryFn: () => fetchFieldMapping(id),
     enabled: !!id,
+    retry: 1,
   });
 
   const updateRuleMutation = useMutation({
@@ -213,6 +181,7 @@ export function useFieldMappingPreview(mappingId: string | number) {
     queryKey: PREVIEW_KEY(mappingId),
     queryFn: () => fetchMappingPreview(mappingId),
     enabled: !!mappingId,
+    retry: 1,
   });
 
   return {
