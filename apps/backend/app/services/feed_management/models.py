@@ -1,10 +1,28 @@
 from __future__ import annotations
 
 import enum
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+
+class SyncSchedule(str, enum.Enum):
+    manual = "manual"
+    hourly = "hourly"
+    every_6h = "every_6h"
+    every_12h = "every_12h"
+    daily = "daily"
+    weekly = "weekly"
+
+
+SCHEDULE_INTERVALS: dict[SyncSchedule, timedelta] = {
+    SyncSchedule.hourly: timedelta(hours=1),
+    SyncSchedule.every_6h: timedelta(hours=6),
+    SyncSchedule.every_12h: timedelta(hours=12),
+    SyncSchedule.daily: timedelta(days=1),
+    SyncSchedule.weekly: timedelta(weeks=1),
+}
 
 
 class FeedSourceType(str, enum.Enum):
@@ -63,6 +81,8 @@ class FeedSourceResponse(BaseModel):
     credentials_secret_id: str | None
     is_active: bool
     catalog_type: str = "product"
+    sync_schedule: str = "manual"
+    next_scheduled_sync: datetime | None = None
     created_at: datetime
     updated_at: datetime
 

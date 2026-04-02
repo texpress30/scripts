@@ -7,8 +7,10 @@ import { ArrowLeft, RefreshCw, Trash2, Loader2, Clock } from "lucide-react";
 import { SourceTypeIcon } from "@/components/feed-management/SourceTypeIcon";
 import { FeedSourceStatusBadge } from "@/components/feed-management/FeedSourceStatusBadge";
 import { ImportHistoryTable } from "@/components/feed-management/ImportHistoryTable";
+import { SyncScheduleSelector } from "@/components/feed-management/SyncScheduleSelector";
 import { useFeedSource, useFeedImports, useFeedSources } from "@/lib/hooks/useFeedSources";
 import { useFeedSubaccount } from "@/lib/hooks/useFeedSubaccount";
+import type { SyncSchedule } from "@/lib/types/feed-management";
 
 function formatDate(value: string | null): string {
   if (!value) return "-";
@@ -38,8 +40,9 @@ export default function SourceDetailPage() {
   const { selectedId } = useFeedSubaccount();
   const { source, isLoading, error, refetch: refetchSource } = useFeedSource(selectedId, sourceId);
   const { imports, isLoading: importsLoading, refetch: refetchImports, hasPendingSync } = useFeedImports(selectedId, sourceId);
-  const { syncSource, deleteSource, isSyncing, isDeleting } = useFeedSources(selectedId);
+  const { syncSource, deleteSource, updateSchedule, isSyncing, isDeleting } = useFeedSources(selectedId);
   const [syncTriggered, setSyncTriggered] = useState(false);
+  const [scheduleSaving, setScheduleSaving] = useState(false);
 
   const isActivelySyncing = syncTriggered || hasPendingSync;
 
@@ -63,12 +66,21 @@ export default function SourceDetailPage() {
 
   // Call on each render to check
   if (syncTriggered && !hasPendingSync && imports.length > 0) {
-    // Sync finished — schedule a final refresh
     setTimeout(() => {
       setSyncTriggered(false);
       void refetchSource();
       void refetchImports();
     }, 500);
+  }
+
+  async function handleScheduleChange(schedule: SyncSchedule) {
+    setScheduleSaving(true);
+    try {
+      await updateSchedule(sourceId, schedule);
+      void refetchSource();
+    } finally {
+      setScheduleSaving(false);
+    }
   }
 
   if (isLoading) {
@@ -161,6 +173,15 @@ export default function SourceDetailPage() {
           </DetailRow>
           <DetailRow label="Created"><span className="text-sm text-slate-700 dark:text-slate-300">{formatDate(source.created_at)}</span></DetailRow>
         </dl>
+
+        <div className="mt-4 border-t border-slate-100 pt-4 dark:border-slate-800">
+          <SyncScheduleSelector
+            currentSchedule={source.sync_schedule ?? "manual"}
+            nextSync={source.next_scheduled_sync}
+            onScheduleChange={(s) => void handleScheduleChange(s)}
+            isSaving={scheduleSaving}
+          />
+        </div>
       </section>
 
       <section className="wm-card overflow-hidden">

@@ -10,6 +10,8 @@ export type FeedSourceType =
 
 export type FeedSourceStatus = "active" | "syncing" | "error" | "inactive";
 
+export type SyncSchedule = "manual" | "hourly" | "every_6h" | "every_12h" | "daily" | "weekly";
+
 export type FeedSource = {
   id: string;
   name: string;
@@ -23,6 +25,8 @@ export type FeedSource = {
   credentials_secret_id?: string | null;
   is_active?: boolean;
   subaccount_id?: number;
+  sync_schedule?: SyncSchedule;
+  next_scheduled_sync?: string | null;
   created_at: string;
   updated_at: string;
 };

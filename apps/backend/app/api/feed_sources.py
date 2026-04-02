@@ -199,6 +199,58 @@ def delete_feed_source(
     return {"status": "ok", "id": str(source_id)}
 
 
+class UpdateSyncScheduleRequest(BaseModel):
+    schedule: str = Field(description="manual, hourly, every_6h, every_12h, daily, weekly")
+
+
+@router.put("/{source_id}/schedule")
+def update_sync_schedule(
+    subaccount_id: int,
+    source_id: str,
+    payload: UpdateSyncScheduleRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    from datetime import datetime, timezone
+    from app.services.feed_management.models import SyncSchedule, SCHEDULE_INTERVALS
+
+    _enforce_feature_flag()
+    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=subaccount_id)
+    try:
+        source = _source_repo.get_by_id(source_id)
+    except FeedSourceNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    if source.subaccount_id != subaccount_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feed source not found")
+
+    schedule_val = payload.schedule
+    valid = [s.value for s in SyncSchedule]
+    if schedule_val not in valid:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid schedule. Must be one of: {', '.join(valid)}")
+
+    schedule_enum = SyncSchedule(schedule_val)
+    next_sync = None
+    if schedule_enum != SyncSchedule.manual:
+        interval = SCHEDULE_INTERVALS.get(schedule_enum)
+        if interval:
+            next_sync = datetime.now(timezone.utc) + interval
+
+    from app.db.pool import get_connection
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE feed_sources SET sync_schedule = %s, next_scheduled_sync = %s, updated_at = NOW() WHERE id = %s",
+                (schedule_val, next_sync, source_id),
+            )
+        conn.commit()
+
+    return {
+        "status": "ok",
+        "source_id": source_id,
+        "sync_schedule": schedule_val,
+        "next_scheduled_sync": next_sync.isoformat() if next_sync else None,
+    }
+
+
 @router.post("/{source_id}/sync", response_model=SyncTriggerResponse)
 def trigger_sync(
     subaccount_id: int,
