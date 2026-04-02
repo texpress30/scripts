@@ -176,7 +176,7 @@ export function useFeedSources(subaccountId: number | null) {
 export function useFeedSource(subaccountId: number | null, id: string) {
   const subId = subaccountId ?? 0;
 
-  const { data, isLoading, error } = useQuery<FeedSource>({
+  const { data, isLoading, error, refetch } = useQuery<FeedSource>({
     queryKey: SOURCE_KEY(subId, id),
     queryFn: () => fetchSource(subId, id),
     enabled: subId > 0 && !!id,
@@ -187,23 +187,35 @@ export function useFeedSource(subaccountId: number | null, id: string) {
     source: data ?? null,
     isLoading: subId > 0 ? isLoading : false,
     error: error instanceof Error ? error.message : null,
+    refetch,
   };
 }
 
 export function useFeedImports(subaccountId: number | null, sourceId: string) {
   const subId = subaccountId ?? 0;
 
-  const { data, isLoading, error } = useQuery<FeedImportsResponse>({
+  const { data, isLoading, error, refetch } = useQuery<FeedImportsResponse>({
     queryKey: IMPORTS_KEY(subId, sourceId),
     queryFn: () => fetchImports(subId, sourceId),
     enabled: subId > 0 && !!sourceId,
     retry: 1,
+    // Poll every 3s when there's an active sync
+    refetchInterval: (query) => {
+      const items = query.state.data?.items ?? [];
+      const hasActive = items.some((i: Record<string, unknown>) => i.status === "pending" || i.status === "in_progress");
+      return hasActive ? 3000 : false;
+    },
   });
 
+  const items = data?.items ?? [];
+  const hasPendingSync = items.some((i) => i.status === "pending" || i.status === "in_progress");
+
   return {
-    imports: data?.items ?? [],
+    imports: items,
     total: data?.total ?? 0,
     isLoading: subId > 0 ? isLoading : false,
     error: error instanceof Error ? error.message : null,
+    refetch,
+    hasPendingSync,
   };
 }
