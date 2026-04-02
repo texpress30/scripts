@@ -32,6 +32,8 @@ function normalizeSource(raw: Record<string, unknown>): FeedSource {
     config: raw.config as Record<string, unknown> | undefined,
     is_active: raw.is_active as boolean | undefined,
     subaccount_id: raw.subaccount_id as number | undefined,
+    sync_schedule: (raw.sync_schedule as FeedSource["sync_schedule"]) ?? "manual",
+    next_scheduled_sync: (raw.next_scheduled_sync as string) ?? null,
     created_at: String(raw.created_at ?? ""),
     updated_at: String(raw.updated_at ?? ""),
   };
@@ -99,6 +101,13 @@ async function syncSourceApi(subId: number, id: string): Promise<void> {
   await apiRequest(`/subaccount/${subId}/feed-sources/${id}/sync`, { method: "POST" });
 }
 
+async function updateScheduleApi(subId: number, id: string, schedule: string): Promise<void> {
+  await apiRequest(`/subaccount/${subId}/feed-sources/${id}/schedule`, {
+    method: "PUT",
+    body: JSON.stringify({ schedule }),
+  });
+}
+
 async function testConnectionApi(data: TestConnectionPayload): Promise<TestConnectionResponse> {
   const { source_type, url, config } = data;
 
@@ -158,6 +167,13 @@ export function useFeedSources(subaccountId: number | null) {
     onSuccess: () => { void queryClient.invalidateQueries({ queryKey: SOURCES_KEY(subId) }); },
   });
 
+  const scheduleMutation = useMutation({
+    mutationFn: ({ id, schedule }: { id: string; schedule: string }) => updateScheduleApi(subId, id, schedule),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: SOURCES_KEY(subId) });
+    },
+  });
+
   return {
     sources: data?.items ?? [],
     total: data?.total ?? 0,
@@ -167,6 +183,7 @@ export function useFeedSources(subaccountId: number | null) {
     syncSource: (id: string) => syncMutation.mutateAsync(id),
     createSource: (payload: CreateFeedSourcePayload) => createMutation.mutateAsync(payload),
     testConnection: (payload: TestConnectionPayload) => testConnectionApi(payload),
+    updateSchedule: (id: string, schedule: string) => scheduleMutation.mutateAsync({ id, schedule }),
     isDeleting: deleteMutation.isPending,
     isSyncing: syncMutation.isPending,
     isCreating: createMutation.isPending,
