@@ -2,12 +2,14 @@
 
 import type { FeedImport, FeedImportStatus } from "@/lib/types/feed-management";
 
-const IMPORT_STATUS_STYLES: Record<FeedImportStatus, { label: string; className: string }> = {
+const IMPORT_STATUS_STYLES: Record<string, { label: string; className: string }> = {
   pending: { label: "Pending", className: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400" },
   running: { label: "Running", className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" },
+  in_progress: { label: "Running", className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" },
   completed: { label: "Completed", className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" },
   failed: { label: "Failed", className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" },
 };
+const DEFAULT_STATUS_STYLE = { label: "Unknown", className: "bg-slate-100 text-slate-600" };
 
 function formatDate(value: string | null): string {
   if (!value) return "-";
@@ -51,7 +53,7 @@ export function ImportHistoryTable({ imports }: { imports: FeedImport[] }) {
         </thead>
         <tbody>
           {imports.map((imp) => {
-            const statusConfig = IMPORT_STATUS_STYLES[imp.status];
+            const statusConfig = IMPORT_STATUS_STYLES[imp.status] ?? DEFAULT_STATUS_STYLE;
             return (
               <tr key={imp.id} className="border-t border-slate-100 dark:border-slate-800">
                 <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{formatDate(imp.started_at)}</td>
@@ -69,11 +71,7 @@ export function ImportHistoryTable({ imports }: { imports: FeedImport[] }) {
                 </td>
                 <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{formatDuration(imp.started_at, imp.completed_at)}</td>
                 <td className="px-4 py-3">
-                  {imp.error_message ? (
-                    <span className="text-xs text-red-600 dark:text-red-400" title={imp.error_message}>
-                      {imp.error_message.length > 60 ? `${imp.error_message.slice(0, 60)}...` : imp.error_message}
-                    </span>
-                  ) : (<span className="text-slate-400">-</span>)}
+                  <ErrorCell errorMessage={imp.error_message} errors={imp.errors} />
                 </td>
               </tr>
             );
@@ -81,5 +79,28 @@ export function ImportHistoryTable({ imports }: { imports: FeedImport[] }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+function ErrorCell({ errorMessage, errors }: { errorMessage?: string | null; errors?: unknown[] }) {
+  // Derive displayable text from either error_message or errors array
+  let text = errorMessage ?? "";
+  if (!text && errors && Array.isArray(errors) && errors.length > 0) {
+    const parts: string[] = [];
+    for (const e of errors) {
+      if (typeof e === "string") { parts.push(e); continue; }
+      if (e && typeof e === "object") {
+        const obj = e as Record<string, unknown>;
+        const msg = obj.error ?? obj.message ?? obj.detail ?? "";
+        if (msg) parts.push(String(msg));
+      }
+    }
+    text = parts.join("; ");
+  }
+  if (!text) return <span className="text-slate-400">-</span>;
+  return (
+    <span className="text-xs text-red-600 dark:text-red-400" title={text}>
+      {text.length > 80 ? `${text.slice(0, 80)}...` : text}
+    </span>
   );
 }
