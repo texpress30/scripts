@@ -77,3 +77,16 @@ class FeedImportResponse(BaseModel):
     started_at: datetime | None
     completed_at: datetime | None
     created_at: datetime
+
+
+class ProductListResponse(BaseModel):
+    items: list[dict[str, Any]]
+    total: int
+    skip: int
+    limit: int
+
+
+class ProductStatsResponse(BaseModel):
+    total: int
+    by_category: dict[str, int]
+    last_sync: datetime | None
