@@ -3,9 +3,30 @@
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { MoreVertical, Eye, Pencil, RefreshCw, Trash2 } from "lucide-react";
-import type { FeedSource } from "@/lib/types/feed-management";
+import type { FeedSource, CatalogType } from "@/lib/types/feed-management";
 import { SourceTypeIcon } from "./SourceTypeIcon";
 import { FeedSourceStatusBadge } from "./FeedSourceStatusBadge";
+import { Package, Car, Home, Building, Plane, Film } from "lucide-react";
+
+const CATALOG_CONFIG: Record<CatalogType, { label: string; icon: typeof Package; color: string }> = {
+  product: { label: "Product", icon: Package, color: "text-indigo-600 dark:text-indigo-400" },
+  vehicle: { label: "Vehicle", icon: Car, color: "text-blue-600 dark:text-blue-400" },
+  home_listing: { label: "Home Listing", icon: Home, color: "text-emerald-600 dark:text-emerald-400" },
+  hotel: { label: "Hotel", icon: Building, color: "text-amber-600 dark:text-amber-400" },
+  flight: { label: "Flight", icon: Plane, color: "text-sky-600 dark:text-sky-400" },
+  media: { label: "Media", icon: Film, color: "text-rose-600 dark:text-rose-400" },
+};
+
+function CatalogTypeBadge({ type }: { type: CatalogType }) {
+  const cfg = CATALOG_CONFIG[type] ?? CATALOG_CONFIG.product;
+  const Icon = cfg.icon;
+  return (
+    <span className="inline-flex items-center gap-1.5 text-sm">
+      <Icon className={`h-4 w-4 ${cfg.color}`} />
+      <span className="text-slate-700 dark:text-slate-300">{cfg.label}</span>
+    </span>
+  );
+}
 
 function formatDate(value: string | null): string {
   if (!value) return "-";
@@ -46,6 +67,9 @@ export function FeedSourceCard({
       </td>
       <td className="px-4 py-3">
         <SourceTypeIcon type={source.source_type} showLabel />
+      </td>
+      <td className="px-4 py-3">
+        <CatalogTypeBadge type={source.catalog_type} />
       </td>
       <td className="px-4 py-3">
         <FeedSourceStatusBadge status={source.status} />
