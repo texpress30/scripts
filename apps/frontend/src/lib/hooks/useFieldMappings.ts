@@ -16,9 +16,9 @@ import { mockFieldMappings } from "@/lib/mocks/fieldMappings";
 
 const SCHEMAS_KEY = ["catalog-schemas"] as const;
 const SCHEMA_KEY = (type: CatalogType) => ["catalog-schemas", type] as const;
-const MAPPINGS_KEY = (sourceId?: number) => sourceId ? ["field-mappings", sourceId] as const : ["field-mappings"] as const;
-const MAPPING_KEY = (id: number) => ["field-mapping", id] as const;
-const PREVIEW_KEY = (id: number) => ["field-mapping-preview", id] as const;
+const MAPPINGS_KEY = (sourceId?: string | number) => sourceId ? ["field-mappings", sourceId] as const : ["field-mappings"] as const;
+const MAPPING_KEY = (id: string | number) => ["field-mapping", id] as const;
+const PREVIEW_KEY = (id: string | number) => ["field-mapping-preview", id] as const;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -36,7 +36,7 @@ async function fetchCatalogSchemas(): Promise<CatalogSchema[]> {
   }
 }
 
-async function fetchFieldMappings(sourceId?: number): Promise<FieldMappingsResponse> {
+async function fetchFieldMappings(sourceId?: string | number): Promise<FieldMappingsResponse> {
   try {
     const path = sourceId ? `/field-mappings?source_id=${sourceId}` : "/field-mappings";
     return await apiRequest<FieldMappingsResponse>(path, { cache: "no-store" });
@@ -52,7 +52,7 @@ async function fetchFieldMappings(sourceId?: number): Promise<FieldMappingsRespo
   }
 }
 
-async function fetchFieldMapping(id: number): Promise<FieldMapping> {
+async function fetchFieldMapping(id: string | number): Promise<FieldMapping> {
   try {
     return await apiRequest<FieldMapping>(`/field-mappings/${id}`, { cache: "no-store" });
   } catch (err) {
@@ -90,7 +90,7 @@ async function createFieldMappingApi(data: CreateFieldMappingPayload): Promise<F
   }
 }
 
-async function updateMappingRuleApi(mappingId: number, ruleData: UpdateMappingRulePayload): Promise<FieldMapping> {
+async function updateMappingRuleApi(mappingId: string | number, ruleData: UpdateMappingRulePayload): Promise<FieldMapping> {
   try {
     return await apiRequest<FieldMapping>(`/field-mappings/${mappingId}/rules`, {
       method: "POST",
@@ -112,7 +112,7 @@ async function updateMappingRuleApi(mappingId: number, ruleData: UpdateMappingRu
   }
 }
 
-async function fetchMappingPreview(mappingId: number): Promise<FieldMappingPreviewRow[]> {
+async function fetchMappingPreview(mappingId: string | number): Promise<FieldMappingPreviewRow[]> {
   try {
     return await apiRequest<FieldMappingPreviewRow[]>(`/field-mappings/${mappingId}/preview`, { cache: "no-store" });
   } catch (err) {
@@ -158,7 +158,7 @@ export function useCatalogSchema(type: CatalogType | null) {
   };
 }
 
-export function useFieldMappings(sourceId?: number) {
+export function useFieldMappings(sourceId?: string | number) {
   const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery<FieldMappingsResponse>({
@@ -183,13 +183,13 @@ export function useFieldMappings(sourceId?: number) {
   };
 }
 
-export function useFieldMapping(id: number) {
+export function useFieldMapping(id: string | number) {
   const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery<FieldMapping>({
     queryKey: MAPPING_KEY(id),
     queryFn: () => fetchFieldMapping(id),
-    enabled: id > 0,
+    enabled: !!id,
   });
 
   const updateRuleMutation = useMutation({
@@ -208,11 +208,11 @@ export function useFieldMapping(id: number) {
   };
 }
 
-export function useFieldMappingPreview(mappingId: number) {
+export function useFieldMappingPreview(mappingId: string | number) {
   const { data, isLoading, error, refetch } = useQuery<FieldMappingPreviewRow[]>({
     queryKey: PREVIEW_KEY(mappingId),
     queryFn: () => fetchMappingPreview(mappingId),
-    enabled: mappingId > 0,
+    enabled: !!mappingId,
   });
 
   return {

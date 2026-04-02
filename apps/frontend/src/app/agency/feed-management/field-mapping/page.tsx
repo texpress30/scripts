@@ -19,7 +19,7 @@ const CATALOG_LABELS: Record<string, string> = {
 export default function FieldMappingPage() {
   const router = useRouter();
   const { sources, isLoading: sourcesLoading } = useFeedSources();
-  const [selectedSourceId, setSelectedSourceId] = useState<number>(0);
+  const [selectedSourceId, setSelectedSourceId] = useState<string>("");
   const { mappings, isLoading: mappingsLoading, createMapping, isCreating } = useFieldMappings(selectedSourceId || undefined);
 
   const selectedSource = sources.find((s) => s.id === selectedSourceId) ?? null;
@@ -57,10 +57,10 @@ export default function FieldMappingPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <select
               value={selectedSourceId}
-              onChange={(e) => setSelectedSourceId(Number(e.target.value))}
+              onChange={(e) => setSelectedSourceId(e.target.value)}
               className="wm-input max-w-md"
             >
-              <option value={0}>-- Selectează o sursă --</option>
+              <option value="">-- Selectează o sursă --</option>
               {sources.map((s) => (
                 <option key={s.id} value={s.id}>{s.name} ({CATALOG_LABELS[s.catalog_type] ?? s.catalog_type})</option>
               ))}
@@ -80,7 +80,7 @@ export default function FieldMappingPage() {
       </div>
 
       {/* Mappings list */}
-      {selectedSourceId > 0 && (
+      {selectedSourceId && (
         <div>
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">

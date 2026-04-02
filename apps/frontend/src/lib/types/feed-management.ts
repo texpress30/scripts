@@ -118,7 +118,7 @@ export type TransformationType =
   | "uppercase";
 
 export type FieldMappingRule = {
-  id: number;
+  id: string | number;
   target_field: string;
   source_field: string | null;
   transformation: TransformationType;
@@ -127,8 +127,8 @@ export type FieldMappingRule = {
 };
 
 export type FieldMapping = {
-  id: number;
-  source_id: number;
+  id: string | number;
+  source_id: string | number;
   source_name: string;
   catalog_type: CatalogType;
   rules: FieldMappingRule[];
@@ -142,7 +142,7 @@ export type FieldMappingsResponse = {
 };
 
 export type CreateFieldMappingPayload = {
-  source_id: number;
+  source_id: string | number;
 };
 
 export type UpdateMappingRulePayload = {
