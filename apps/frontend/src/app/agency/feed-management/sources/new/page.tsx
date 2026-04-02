@@ -10,7 +10,9 @@ import { CatalogTypeSelector } from "@/components/feed-management/CatalogTypeSel
 import { FileSourceForm } from "@/components/feed-management/forms/FileSourceForm";
 import { ShopifySourceForm } from "@/components/feed-management/forms/ShopifySourceForm";
 import { GenericEcommerceForm } from "@/components/feed-management/forms/GenericEcommerceForm";
+import { SubaccountSelector } from "@/components/feed-management/SubaccountSelector";
 import { useFeedSources } from "@/lib/hooks/useFeedSources";
+import { useFeedSubaccount } from "@/lib/hooks/useFeedSubaccount";
 
 const FILE_TYPES: FeedSourceType[] = ["csv", "json", "xml", "google_sheets"];
 const ECOMMERCE_TYPES: FeedSourceType[] = ["woocommerce", "magento", "bigcommerce"];
@@ -19,7 +21,8 @@ type Step = "source_type" | "catalog_type" | "configure";
 
 export default function NewSourcePage() {
   const router = useRouter();
-  const { createSource, testConnection } = useFeedSources();
+  const { clients, selectedId, selectedClient, select, isLoading: clientsLoading } = useFeedSubaccount();
+  const { createSource, testConnection } = useFeedSources(selectedId);
   const [step, setStep] = useState<Step>("source_type");
   const [selectedType, setSelectedType] = useState<FeedSourceType | null>(null);
   const [selectedCatalog, setSelectedCatalog] = useState<CatalogType>("product");
@@ -56,6 +59,10 @@ export default function NewSourcePage() {
 
   async function handleCreate(data: { name: string; source_type?: FeedSourceType; [key: string]: unknown }) {
     if (!selectedType) return;
+    if (!selectedId) {
+      setError("Selectează un client înainte de a crea sursa.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -120,53 +127,69 @@ export default function NewSourcePage() {
         </div>
       </div>
 
-      {error ? <p className="mb-4 text-sm text-red-600">{error}</p> : null}
+      {/* Client selector */}
+      <div className="mb-4">
+        <SubaccountSelector clients={clients} selectedId={selectedId} onSelect={select} isLoading={clientsLoading} />
+        {selectedClient && (
+          <p className="mt-1 text-xs text-slate-400">Sursa va fi creată pentru clientul <strong className="text-slate-600 dark:text-slate-300">{selectedClient.name}</strong>.</p>
+        )}
+      </div>
 
-      {step === "source_type" && (
-        <>
-          <SourceTypeSelector selectedType={selectedType} onSelect={handleSelectSourceType} />
-          <div className="mt-6">
-            <button type="button" onClick={handleBack} className="wm-btn-secondary">Anulează</button>
-          </div>
-        </>
-      )}
-
-      {step === "catalog_type" && (
-        <>
-          <CatalogTypeSelector selectedType={selectedCatalog} onSelect={handleSelectCatalogType} />
-          <div className="mt-6 flex gap-3">
-            <button type="button" onClick={handleBack} className="wm-btn-secondary">Înapoi</button>
-            <button type="button" onClick={handleCatalogContinue} className="wm-btn-primary">Continuă</button>
-          </div>
-        </>
-      )}
-
-      {step === "configure" && selectedType !== null && (
-        <div className="wm-card max-w-2xl p-6">
-          {selectedType === "shopify" ? (
-            <ShopifySourceForm
-              onSubmit={(data) => void handleCreate({ ...data, source_type: "shopify" })}
-              onTestConnection={handleTestConnection}
-              onCancel={handleBack}
-              busy={busy}
-            />
-          ) : ECOMMERCE_TYPES.includes(selectedType) ? (
-            <GenericEcommerceForm
-              sourceType={selectedType}
-              onSubmit={(data) => void handleCreate({ ...data, source_type: selectedType })}
-              onTestConnection={handleTestConnection}
-              onCancel={handleBack}
-              busy={busy}
-            />
-          ) : FILE_TYPES.includes(selectedType) ? (
-            <FileSourceForm
-              initialType={selectedType}
-              onSubmit={(data) => void handleCreate({ name: data.name, url: data.url, source_type: data.file_type })}
-              onCancel={handleBack}
-              busy={busy}
-            />
-          ) : null}
+      {!selectedId && !clientsLoading ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400">
+          Selectează un client din dropdown-ul de mai sus pentru a continua.
         </div>
+      ) : (
+        <>
+          {error ? <p className="mb-4 text-sm text-red-600">{error}</p> : null}
+
+          {step === "source_type" && (
+            <>
+              <SourceTypeSelector selectedType={selectedType} onSelect={handleSelectSourceType} />
+              <div className="mt-6">
+                <button type="button" onClick={handleBack} className="wm-btn-secondary">Anulează</button>
+              </div>
+            </>
+          )}
+
+          {step === "catalog_type" && (
+            <>
+              <CatalogTypeSelector selectedType={selectedCatalog} onSelect={handleSelectCatalogType} />
+              <div className="mt-6 flex gap-3">
+                <button type="button" onClick={handleBack} className="wm-btn-secondary">Înapoi</button>
+                <button type="button" onClick={handleCatalogContinue} className="wm-btn-primary">Continuă</button>
+              </div>
+            </>
+          )}
+
+          {step === "configure" && selectedType !== null && (
+            <div className="wm-card max-w-2xl p-6">
+              {selectedType === "shopify" ? (
+                <ShopifySourceForm
+                  onSubmit={(data) => void handleCreate({ ...data, source_type: "shopify" })}
+                  onTestConnection={handleTestConnection}
+                  onCancel={handleBack}
+                  busy={busy}
+                />
+              ) : ECOMMERCE_TYPES.includes(selectedType) ? (
+                <GenericEcommerceForm
+                  sourceType={selectedType}
+                  onSubmit={(data) => void handleCreate({ ...data, source_type: selectedType })}
+                  onTestConnection={handleTestConnection}
+                  onCancel={handleBack}
+                  busy={busy}
+                />
+              ) : FILE_TYPES.includes(selectedType) ? (
+                <FileSourceForm
+                  initialType={selectedType}
+                  onSubmit={(data) => void handleCreate({ name: data.name, url: data.url, source_type: data.file_type })}
+                  onCancel={handleBack}
+                  busy={busy}
+                />
+              ) : null}
+            </div>
+          )}
+        </>
       )}
     </>
   );

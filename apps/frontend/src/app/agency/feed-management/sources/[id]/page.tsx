@@ -7,6 +7,7 @@ import { SourceTypeIcon } from "@/components/feed-management/SourceTypeIcon";
 import { FeedSourceStatusBadge } from "@/components/feed-management/FeedSourceStatusBadge";
 import { ImportHistoryTable } from "@/components/feed-management/ImportHistoryTable";
 import { useFeedSource, useFeedImports, useFeedSources } from "@/lib/hooks/useFeedSources";
+import { useFeedSubaccount } from "@/lib/hooks/useFeedSubaccount";
 
 function formatDate(value: string | null): string {
   if (!value) return "-";
@@ -19,9 +20,10 @@ export default function SourceDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const sourceId = params.id;
-  const { source, isLoading, error } = useFeedSource(sourceId);
-  const { imports, isLoading: importsLoading } = useFeedImports(sourceId);
-  const { syncSource, deleteSource, isSyncing, isDeleting } = useFeedSources();
+  const { selectedId } = useFeedSubaccount();
+  const { source, isLoading, error } = useFeedSource(selectedId, sourceId);
+  const { imports, isLoading: importsLoading } = useFeedImports(selectedId, sourceId);
+  const { syncSource, deleteSource, isSyncing, isDeleting } = useFeedSources(selectedId);
 
   async function handleSync() {
     await syncSource(sourceId);
