@@ -90,7 +90,7 @@ export default function MasterFieldsPage() {
 
   async function handleSaveAndGoToChannels() {
     await handleSave();
-    router.push(`/agency/feed-management/field-mapping/${sourceId}/channels`);
+    router.push("/agency/feed-management/channels");
   }
 
   if (isLoading) {

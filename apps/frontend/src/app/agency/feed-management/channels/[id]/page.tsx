@@ -114,7 +114,7 @@ export default function ChannelDetailPage() {
   return (
     <>
       <Link
-        href={`/agency/feed-management/field-mapping/${channel.feed_source_id}/channels`}
+        href="/agency/feed-management/channels"
         className="mb-4 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300"
       >
         <ArrowLeft className="h-4 w-4" />
