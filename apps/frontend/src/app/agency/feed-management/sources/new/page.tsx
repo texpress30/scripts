@@ -82,8 +82,8 @@ export default function NewSourcePage() {
         url: data.shop_url ?? data.store_url ?? "",
         config: data,
       });
-    } catch {
-      return { success: false, message: "Eroare la testarea conexiunii." };
+    } catch (err) {
+      return { success: false, message: err instanceof Error ? err.message : "Eroare la testarea conexiunii." };
     }
   }
 

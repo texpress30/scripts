@@ -102,14 +102,25 @@ class WooCommerceConnector(BaseConnector):
                     },
                 )
         except httpx.HTTPStatusError as exc:
-            status = exc.response.status_code
-            if status == 401:
-                return ConnectionTestResult(success=False, message="Authentication failed: invalid consumer_key or consumer_secret")
-            return ConnectionTestResult(success=False, message=f"WooCommerce API returned HTTP {status}")
-        except httpx.ConnectError:
-            return ConnectionTestResult(success=False, message=f"Cannot connect to {self._store_url}")
+            status_code = exc.response.status_code
+            logger.warning("WooCommerce HTTP %s from %s: %s", status_code, self._store_url, exc.response.text[:500])
+            if status_code == 401:
+                return ConnectionTestResult(success=False, message="Autentificare eșuată — Consumer Key sau Consumer Secret invalid.")
+            if status_code == 403:
+                return ConnectionTestResult(success=False, message="Acces interzis — verifică permisiunile API Key (Read access necesar).")
+            if status_code == 404:
+                return ConnectionTestResult(success=False, message="WooCommerce REST API nu este accesibil. Verifică că URL-ul este corect și WooCommerce este activ.")
+            return ConnectionTestResult(success=False, message=f"WooCommerce API a returnat eroare HTTP {status_code}.")
+        except httpx.ConnectError as exc:
+            logger.warning("WooCommerce ConnectError for %s: %s", self._store_url, exc)
+            return ConnectionTestResult(success=False, message=f"Nu se poate conecta la {self._store_url}. Verifică URL-ul și că site-ul este online.")
+        except httpx.ConnectTimeout:
+            return ConnectionTestResult(success=False, message=f"Timeout la conectare — {self._store_url} nu răspunde. Încearcă din nou.")
+        except httpx.ReadTimeout:
+            return ConnectionTestResult(success=False, message="Site-ul a răspuns prea lent. Încearcă din nou mai târziu.")
         except Exception as exc:
-            return ConnectionTestResult(success=False, message=f"Connection test failed: {exc}")
+            logger.exception("WooCommerce test_connection unexpected error for %s", self._store_url)
+            return ConnectionTestResult(success=False, message=f"Eroare la testarea conexiunii: {type(exc).__name__}: {exc}")
 
     async def fetch_products(self, since: datetime | None = None) -> AsyncIterator[ProductData]:
         params: dict[str, Any] = {"per_page": _PER_PAGE, "status": "publish", "orderby": "id", "order": "asc"}

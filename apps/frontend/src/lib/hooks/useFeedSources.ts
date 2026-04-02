@@ -132,8 +132,8 @@ async function testConnectionApi(data: TestConnectionPayload): Promise<TestConne
       method: "POST",
       body: JSON.stringify({
         store_url: config?.store_url ?? url,
-        consumer_key: config?.consumer_key ?? "",
-        consumer_secret: config?.consumer_secret ?? "",
+        consumer_key: config?.consumer_key ?? config?.api_key ?? "",
+        consumer_secret: config?.consumer_secret ?? config?.api_secret ?? "",
       }),
     });
   }
