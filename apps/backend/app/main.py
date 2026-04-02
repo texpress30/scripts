@@ -29,6 +29,7 @@ from app.api.email_notifications import router as email_notifications_router
 from app.api.email_templates import router as email_templates_router
 from app.api.exports import router as exports_router
 from app.api.feed_sources import router as feed_sources_router
+from app.api.internal_cron import router as internal_cron_router
 from app.api.field_mappings import router as field_mappings_router
 from app.api.integrations.shopify import router as shopify_integration_router
 from app.api.google_ads import router as google_ads_router
@@ -151,6 +152,9 @@ app.include_router(output_feeds_router)
 
 # Public Feeds (no auth — for Google/Meta crawlers)
 app.include_router(public_feeds_router)
+
+# Internal (cron worker)
+app.include_router(internal_cron_router)
 
 
 @app.get("/", tags=["root"])
