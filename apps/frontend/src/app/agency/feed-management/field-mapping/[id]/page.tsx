@@ -19,7 +19,7 @@ const CATALOG_LABELS: Record<string, string> = {
 
 export default function FieldMappingDetailPage() {
   const params = useParams<{ id: string }>();
-  const mappingId = Number(params.id);
+  const mappingId = params.id;
   const { mapping, isLoading, error, updateRule, isUpdating } = useFieldMapping(mappingId);
   const { schema, isLoading: schemaLoading } = useCatalogSchema(mapping?.catalog_type ?? null);
   const { preview, isLoading: previewLoading, refresh } = useFieldMappingPreview(mappingId);

@@ -20,8 +20,8 @@ export function FeedSourceCard({
   onDelete,
 }: {
   source: FeedSource;
-  onSync: (id: number) => void;
-  onDelete: (id: number) => void;
+  onSync: (id: string) => void;
+  onDelete: (id: string) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -45,7 +45,7 @@ export function FeedSourceCard({
         {formatDate(source.last_sync)}
       </td>
       <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
-        {source.product_count.toLocaleString()}
+        {(source.product_count ?? 0).toLocaleString()}
       </td>
       <td className="px-4 py-3">
         <div className="relative">

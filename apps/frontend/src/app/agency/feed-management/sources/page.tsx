@@ -8,12 +8,12 @@ import { FeedSourceCard } from "@/components/feed-management/FeedSourceCard";
 export default function FeedSourcesPage() {
   const { sources, isLoading, error, deleteSource, syncSource } = useFeedSources();
 
-  function handleDelete(id: number) {
+  function handleDelete(id: string) {
     if (!window.confirm("Sigur vrei să ștergi această sursă?")) return;
     void deleteSource(id);
   }
 
-  function handleSync(id: number) {
+  function handleSync(id: string) {
     void syncSource(id);
   }
 
