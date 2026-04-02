@@ -10,9 +10,8 @@ import { CatalogTypeSelector } from "@/components/feed-management/CatalogTypeSel
 import { FileSourceForm } from "@/components/feed-management/forms/FileSourceForm";
 import { ShopifySourceForm } from "@/components/feed-management/forms/ShopifySourceForm";
 import { GenericEcommerceForm } from "@/components/feed-management/forms/GenericEcommerceForm";
-import { SubaccountSelector } from "@/components/feed-management/SubaccountSelector";
 import { useFeedSources } from "@/lib/hooks/useFeedSources";
-import { useFeedSubaccount } from "@/lib/hooks/useFeedSubaccount";
+import { useFeedManagement } from "@/lib/contexts/FeedManagementContext";
 
 const FILE_TYPES: FeedSourceType[] = ["csv", "json", "xml", "google_sheets"];
 const ECOMMERCE_TYPES: FeedSourceType[] = ["woocommerce", "magento", "bigcommerce"];
@@ -21,7 +20,7 @@ type Step = "source_type" | "catalog_type" | "configure";
 
 export default function NewSourcePage() {
   const router = useRouter();
-  const { clients, selectedId, selectedClient, select, isLoading: clientsLoading } = useFeedSubaccount();
+  const { selectedId, selectedClient, isLoading: clientsLoading } = useFeedManagement();
   const { createSource, testConnection } = useFeedSources(selectedId);
   const [step, setStep] = useState<Step>("source_type");
   const [selectedType, setSelectedType] = useState<FeedSourceType | null>(null);
@@ -127,17 +126,13 @@ export default function NewSourcePage() {
         </div>
       </div>
 
-      {/* Client selector */}
-      <div className="mb-4">
-        <SubaccountSelector clients={clients} selectedId={selectedId} onSelect={select} isLoading={clientsLoading} />
-        {selectedClient && (
-          <p className="mt-1 text-xs text-slate-400">Sursa va fi creată pentru clientul <strong className="text-slate-600 dark:text-slate-300">{selectedClient.name}</strong>.</p>
-        )}
-      </div>
+      {selectedClient && (
+        <p className="mb-4 text-xs text-slate-400">Sursa va fi creata pentru clientul <strong className="text-slate-600 dark:text-slate-300">{selectedClient.name}</strong>.</p>
+      )}
 
       {!selectedId && !clientsLoading ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400">
-          Selectează un client din dropdown-ul de mai sus pentru a continua.
+          Selecteaza un client din header-ul de mai sus pentru a continua.
         </div>
       ) : (
         <>
