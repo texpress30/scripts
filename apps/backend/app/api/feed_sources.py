@@ -51,6 +51,7 @@ class CreateFeedSourceRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     config: FeedSourceConfig = Field(default_factory=FeedSourceConfig)
     credentials_secret_id: str | None = None
+    catalog_type: str = "product"
 
 
 class UpdateFeedSourceRequest(BaseModel):
@@ -121,6 +122,7 @@ def create_feed_source(
             name=payload.name,
             config=payload.config,
             credentials_secret_id=payload.credentials_secret_id,
+            catalog_type=payload.catalog_type,
         ))
     except FeedSourceAlreadyExistsError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc

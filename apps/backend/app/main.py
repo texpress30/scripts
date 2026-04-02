@@ -29,6 +29,7 @@ from app.api.email_notifications import router as email_notifications_router
 from app.api.email_templates import router as email_templates_router
 from app.api.exports import router as exports_router
 from app.api.feed_sources import router as feed_sources_router
+from app.api.field_mappings import router as field_mappings_router
 from app.api.integrations.shopify import router as shopify_integration_router
 from app.api.google_ads import router as google_ads_router
 from app.api.google_accounts import router as google_accounts_router
@@ -46,6 +47,7 @@ from app.api.rules import router as rules_router
 from app.api.creative_templates import router as creative_templates_router
 from app.api.treatments import router as treatments_router
 from app.api.output_feeds import router as output_feeds_router
+from app.api.public_feeds import router as public_feeds_router
 from app.api.integrations.woocommerce import router as woocommerce_router
 from app.core.config import load_settings
 from app.services.rbac import log_auth_config
@@ -138,12 +140,16 @@ app.include_router(sync_orchestration_router)
 
 # Feed Management
 app.include_router(feed_sources_router)
+app.include_router(field_mappings_router)
 app.include_router(shopify_integration_router)
 
 # Enriched Catalog
 app.include_router(creative_templates_router)
 app.include_router(treatments_router)
 app.include_router(output_feeds_router)
+
+# Public Feeds (no auth — for Google/Meta crawlers)
+app.include_router(public_feeds_router)
 
 
 @app.get("/", tags=["root"])
