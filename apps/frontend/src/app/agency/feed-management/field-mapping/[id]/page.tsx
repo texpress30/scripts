@@ -64,7 +64,7 @@ export default function FieldMappingDetailPage() {
                 {CATALOG_LABELS[mapping.catalog_type] ?? mapping.catalog_type}
               </span>
               <span className="text-xs text-slate-400">
-                {mapping.rules.length} rules &middot; Updated {new Date(mapping.updated_at).toLocaleDateString()}
+                {(mapping.rules ?? []).length} rules &middot; Updated {new Date(mapping.updated_at).toLocaleDateString()}
               </span>
             </div>
           </div>
@@ -76,7 +76,7 @@ export default function FieldMappingDetailPage() {
         <FieldMappingEditor
           catalogFields={catalogFields}
           sourceFields={mockSourceFields}
-          rules={mapping.rules}
+          rules={mapping.rules ?? []}
           onSaveRule={(rule) => void updateRule(rule)}
           isUpdating={isUpdating}
         />

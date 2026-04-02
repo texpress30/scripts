@@ -127,7 +127,7 @@ export default function FieldMappingPage() {
                       Mapping #{mapping.id}
                     </p>
                     <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                      {mapping.rules.length} rules configured &middot; Updated {new Date(mapping.updated_at).toLocaleDateString()}
+                      {(mapping.rules ?? []).length} rules configured &middot; Updated {new Date(mapping.updated_at).toLocaleDateString()}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
