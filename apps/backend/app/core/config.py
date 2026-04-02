@@ -87,6 +87,7 @@ class Settings:
     creative_workflow_media_id_linking_enabled: bool
     ai_recommendations_mongo_source_enabled: bool
     ff_feed_management_enabled: bool
+    internal_cron_key: str
 
 
 def _get_env(name: str, default: str | None = None, required: bool = False) -> str:
@@ -232,4 +233,5 @@ def load_settings() -> Settings:
         creative_workflow_media_id_linking_enabled=_parse_bool_env("CREATIVE_WORKFLOW_MEDIA_ID_LINKING_ENABLED", default=False),
         ai_recommendations_mongo_source_enabled=_parse_bool_env("AI_RECOMMENDATIONS_MONGO_SOURCE_ENABLED", default=False),
         ff_feed_management_enabled=_parse_bool_env("FF_FEED_MANAGEMENT_ENABLED", default=False),
+        internal_cron_key=_get_env("INTERNAL_CRON_KEY", default=""),
     )
