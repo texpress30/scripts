@@ -3,12 +3,11 @@
 import Link from "next/link";
 import { Plus, Loader2 } from "lucide-react";
 import { useFeedSources } from "@/lib/hooks/useFeedSources";
-import { useFeedSubaccount } from "@/lib/hooks/useFeedSubaccount";
+import { useFeedManagement } from "@/lib/contexts/FeedManagementContext";
 import { FeedSourceCard } from "@/components/feed-management/FeedSourceCard";
-import { SubaccountSelector } from "@/components/feed-management/SubaccountSelector";
 
 export default function FeedSourcesPage() {
-  const { clients, selectedId, select, isLoading: clientsLoading } = useFeedSubaccount();
+  const { selectedId, isLoading: clientsLoading } = useFeedManagement();
   const { sources, isLoading, error, deleteSource, syncSource } = useFeedSources(selectedId);
 
   function handleDelete(id: string) {
@@ -33,10 +32,6 @@ export default function FeedSourcesPage() {
           <Plus className="h-4 w-4" />
           Add New Source
         </Link>
-      </div>
-
-      <div className="mb-4">
-        <SubaccountSelector clients={clients} selectedId={selectedId} onSelect={select} isLoading={clientsLoading} />
       </div>
 
       {!selectedId && !clientsLoading ? (

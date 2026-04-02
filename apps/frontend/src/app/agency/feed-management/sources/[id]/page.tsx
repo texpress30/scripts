@@ -9,7 +9,7 @@ import { FeedSourceStatusBadge } from "@/components/feed-management/FeedSourceSt
 import { ImportHistoryTable } from "@/components/feed-management/ImportHistoryTable";
 import { SyncScheduleSelector } from "@/components/feed-management/SyncScheduleSelector";
 import { useFeedSource, useFeedImports, useFeedSources } from "@/lib/hooks/useFeedSources";
-import { useFeedSubaccount } from "@/lib/hooks/useFeedSubaccount";
+import { useFeedManagement } from "@/lib/contexts/FeedManagementContext";
 import type { SyncSchedule } from "@/lib/types/feed-management";
 
 function formatDate(value: string | null): string {
@@ -37,7 +37,7 @@ export default function SourceDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const sourceId = params.id;
-  const { selectedId } = useFeedSubaccount();
+  const { selectedId } = useFeedManagement();
   const { source, isLoading, error, refetch: refetchSource } = useFeedSource(selectedId, sourceId);
   const { imports, isLoading: importsLoading, refetch: refetchImports, hasPendingSync } = useFeedImports(selectedId, sourceId);
   const { syncSource, deleteSource, updateSchedule, isSyncing, isDeleting } = useFeedSources(selectedId);
