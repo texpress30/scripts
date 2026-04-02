@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS feed_channels (
     channel_type VARCHAR(50) NOT NULL,  -- google_shopping, facebook_product_ads, etc.
     status VARCHAR(50) DEFAULT 'draft',
     feed_format VARCHAR(20) DEFAULT 'xml',
-    public_token VARCHAR(64) UNIQUE DEFAULT encode(gen_random_bytes(32), 'hex'),
+    public_token VARCHAR(64) UNIQUE DEFAULT replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''),
     feed_url VARCHAR(500),
     s3_key VARCHAR(500),
     included_products INTEGER DEFAULT 0,
