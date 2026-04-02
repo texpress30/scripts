@@ -1,10 +1,10 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { Plus, Loader2, ArrowRight, GitBranch, Package, Car, Home, Building, Plane, Film } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, GitBranch, Package, Car, Home, Building, Plane, Film, Rss } from "lucide-react";
 import type { FeedSource, CatalogType } from "@/lib/types/feed-management";
-import { useFieldMappings } from "@/lib/hooks/useFieldMappings";
 import { SourceTypeIcon } from "./SourceTypeIcon";
+import { useChannels } from "@/lib/hooks/useMasterFields";
 
 const CATALOG_CONFIG: Record<CatalogType, { label: string; icon: typeof Package; color: string }> = {
   product: { label: "Product", icon: Package, color: "text-indigo-600 dark:text-indigo-400" },
@@ -36,22 +36,13 @@ export function SourceMappingsCard({
   source: FeedSource;
   subaccountId: number;
 }) {
-  const router = useRouter();
-  const { mappings, isLoading, createMapping, isCreating } = useFieldMappings(subaccountId, source.id);
+  const { channels } = useChannels(source.id);
 
   const catalogCfg = CATALOG_CONFIG[source.catalog_type] ?? CATALOG_CONFIG.product;
   const CatalogIcon = catalogCfg.icon;
   const lastSync = source.last_sync ? `Last sync: ${timeAgo(source.last_sync)}` : "";
   const productInfo = `${source.product_count} products`;
-
-  async function handleCreate() {
-    try {
-      const mapping = await createMapping({ source_id: source.id });
-      router.push(`/agency/feed-management/field-mapping/${mapping.id}`);
-    } catch {
-      // error handled by hook
-    }
-  }
+  const activeChannels = channels.filter((ch) => ch.status === "active").length;
 
   return (
     <section className="wm-card overflow-hidden">
@@ -77,62 +68,51 @@ export function SourceMappingsCard({
             )}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => void handleCreate()}
-          disabled={isCreating}
-          className="wm-btn-primary gap-1.5 text-xs"
-        >
-          {isCreating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-          Create Mapping
-        </button>
       </div>
 
-      {/* Mappings body */}
+      {/* Actions body */}
       <div className="px-5 py-4">
-        {isLoading ? (
-          <div className="flex items-center justify-center py-6">
-            <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
-          </div>
-        ) : mappings.length === 0 ? (
-          <div className="py-6 text-center">
-            <GitBranch className="mx-auto mb-2 h-8 w-8 text-slate-300 dark:text-slate-600" />
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Nicio mapare configurata. Creaza prima mapare pentru a transforma datele.
-            </p>
-          </div>
-        ) : (
-          <>
-            <p className="mb-3 text-xs font-medium text-slate-500 dark:text-slate-400">
-              Mappings ({mappings.length})
-            </p>
-            <div className="space-y-2">
-              {mappings.map((mapping) => (
-                <button
-                  key={mapping.id}
-                  type="button"
-                  onClick={() => router.push(`/agency/feed-management/field-mapping/${mapping.id}`)}
-                  className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-indigo-300 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-indigo-700"
-                >
-                  <div>
-                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                      {mapping.source_name || `Mapping #${String(mapping.id).slice(0, 8)}`}
-                    </p>
-                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                      {(mapping.rules ?? []).length} rules configured &middot; Updated {new Date(mapping.updated_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="rounded bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-400">
-                      {mapping.catalog_type ?? "product"}
-                    </span>
-                    <ArrowRight className="h-4 w-4 text-slate-400" />
-                  </div>
-                </button>
-              ))}
+        <div className="space-y-2">
+          {/* Master Fields link */}
+          <Link
+            href={`/agency/feed-management/field-mapping/${source.id}`}
+            className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-indigo-300 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-indigo-700"
+          >
+            <div className="flex items-center gap-3">
+              <GitBranch className="h-5 w-5 text-indigo-500" />
+              <div>
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                  Map Master Fields
+                </p>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                  Configure universal field mappings for this source
+                </p>
+              </div>
             </div>
-          </>
-        )}
+            <ArrowRight className="h-4 w-4 text-slate-400" />
+          </Link>
+
+          {/* Channels link */}
+          <Link
+            href={`/agency/feed-management/field-mapping/${source.id}/channels`}
+            className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-indigo-300 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-indigo-700"
+          >
+            <div className="flex items-center gap-3">
+              <Rss className="h-5 w-5 text-emerald-500" />
+              <div>
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                  Channels
+                </p>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                  {channels.length > 0
+                    ? `${channels.length} channel${channels.length > 1 ? "s" : ""} configured${activeChannels > 0 ? ` · ${activeChannels} active` : ""}`
+                    : "Create channels to publish your feed"}
+                </p>
+              </div>
+            </div>
+            <ArrowRight className="h-4 w-4 text-slate-400" />
+          </Link>
+        </div>
       </div>
     </section>
   );
