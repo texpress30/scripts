@@ -55,6 +55,22 @@ class RbacCanonicalRolesTests(unittest.TestCase):
         with self.assertRaises(AuthorizationError):
             require_action("subaccount_admin", action="clients:create", scope="agency")
 
+    def test_subaccount_roles_can_write_data_in_subaccount_scope(self):
+        # subaccount_admin can write data (daily inputs, sale entries, etc.)
+        require_action("subaccount_admin", action="data:write", scope="subaccount")
+        # subaccount_user can also write data
+        require_action("subaccount_user", action="data:write", scope="subaccount")
+        # subaccount_viewer cannot write data
+        with self.assertRaises(AuthorizationError):
+            require_action("subaccount_viewer", action="data:write", scope="subaccount")
+        # agency roles can also write data
+        require_action("agency_owner", action="data:write", scope="subaccount")
+        require_action("agency_admin", action="data:write", scope="agency")
+        require_action("agency_member", action="data:write", scope="agency")
+        # agency_viewer cannot write data
+        with self.assertRaises(AuthorizationError):
+            require_action("agency_viewer", action="data:write", scope="agency")
+
     def test_legacy_aliases_work_in_permission_and_action_checks(self):
         require_action("account_manager", action="rules:create", scope="subaccount")
         require_action("client_viewer", action="rules:list", scope="subaccount")
