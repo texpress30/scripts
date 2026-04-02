@@ -175,10 +175,28 @@ class FeedSyncService:
 
         return feed_import
 
+    def _update_source_after_sync(self, feed_source_id: str, imported_count: int) -> None:
+        """Update the feed_source record with product count after sync."""
+        try:
+            from app.services.feed_management.products_repository import feed_products_repository
+            product_count = feed_products_repository.count_products(feed_source_id)
+            from app.db.pool import get_connection
+            with get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE feed_sources SET updated_at = NOW() WHERE id = %s",
+                        (feed_source_id,),
+                    )
+                conn.commit()
+            logger.info("Updated feed_source %s: product_count=%d", feed_source_id, product_count)
+        except Exception:
+            logger.exception("Failed to update feed_source after sync: %s", feed_source_id)
+
     async def run_sync_background(self, feed_source_id: str) -> None:
         """Wrapper for background task execution."""
         try:
             result = await self.run_sync(feed_source_id)
+            self._update_source_after_sync(feed_source_id, result.imported_products)
             logger.info(
                 "Background sync completed for source %s: status=%s imported=%d/%d",
                 feed_source_id,
