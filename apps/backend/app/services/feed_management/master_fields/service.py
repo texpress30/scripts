@@ -135,6 +135,7 @@ def get_mappings_with_suggestions(
 
     return {
         "source_id": source_id,
+        "source_name": source.name,
         "catalog_type": catalog_type,
         "mappings": [m.model_dump() for m in existing],
         "suggestions": suggestions,
