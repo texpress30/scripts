@@ -16,8 +16,8 @@ function formatDate(value: string | null): string {
   return date.toLocaleString();
 }
 
-function formatDuration(start: string, end: string | null): string {
-  if (!end) return "...";
+function formatDuration(start: string | null, end: string | null): string {
+  if (!start || !end) return "...";
   const ms = new Date(end).getTime() - new Date(start).getTime();
   if (Number.isNaN(ms) || ms < 0) return "-";
   if (ms < 1000) return `${ms}ms`;
