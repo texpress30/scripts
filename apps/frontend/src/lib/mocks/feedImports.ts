@@ -2,8 +2,8 @@ import type { FeedImport } from "@/lib/types/feed-management";
 
 export const mockFeedImports: FeedImport[] = [
   {
-    id: 101,
-    source_id: 1,
+    id: "101",
+    source_id: "1",
     source_name: "Main Shopify Store",
     status: "completed",
     products_imported: 1248,
@@ -14,8 +14,8 @@ export const mockFeedImports: FeedImport[] = [
     error_message: null,
   },
   {
-    id: 100,
-    source_id: 1,
+    id: "100",
+    source_id: "1",
     source_name: "Main Shopify Store",
     status: "completed",
     products_imported: 1230,
@@ -26,8 +26,8 @@ export const mockFeedImports: FeedImport[] = [
     error_message: null,
   },
   {
-    id: 102,
-    source_id: 2,
+    id: "102",
+    source_id: "2",
     source_name: "Product Catalog CSV",
     status: "failed",
     products_imported: 120,
@@ -38,8 +38,8 @@ export const mockFeedImports: FeedImport[] = [
     error_message: "CSV parse error at row 121: unexpected number of columns (expected 12, got 8).",
   },
   {
-    id: 103,
-    source_id: 3,
+    id: "103",
+    source_id: "3",
     source_name: "WooCommerce EU",
     status: "running",
     products_imported: 340,

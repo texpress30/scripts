@@ -2,7 +2,7 @@ import type { FeedSource } from "@/lib/types/feed-management";
 
 export const mockFeedSources: FeedSource[] = [
   {
-    id: 1,
+    id: "1",
     name: "Main Shopify Store",
     source_type: "shopify",
     catalog_type: "product",
@@ -14,7 +14,7 @@ export const mockFeedSources: FeedSource[] = [
     updated_at: "2026-03-31T14:22:00Z",
   },
   {
-    id: 2,
+    id: "2",
     name: "Product Catalog CSV",
     source_type: "csv",
     catalog_type: "product",
@@ -26,7 +26,7 @@ export const mockFeedSources: FeedSource[] = [
     updated_at: "2026-03-28T09:15:00Z",
   },
   {
-    id: 3,
+    id: "3",
     name: "WooCommerce EU",
     source_type: "woocommerce",
     catalog_type: "vehicle",
@@ -38,7 +38,7 @@ export const mockFeedSources: FeedSource[] = [
     updated_at: "2026-04-01T06:00:00Z",
   },
   {
-    id: 4,
+    id: "4",
     name: "Google Sheets Inventory",
     source_type: "google_sheets",
     catalog_type: "home_listing",
