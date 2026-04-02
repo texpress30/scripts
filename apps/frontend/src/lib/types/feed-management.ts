@@ -32,7 +32,7 @@ export type FeedSourcesResponse = {
   total: number;
 };
 
-export type FeedImportStatus = "pending" | "running" | "completed" | "failed";
+export type FeedImportStatus = "pending" | "running" | "in_progress" | "completed" | "failed";
 
 export type FeedImport = {
   id: string;
