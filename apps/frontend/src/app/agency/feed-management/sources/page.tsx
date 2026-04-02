@@ -74,7 +74,8 @@ export default function FeedSourcesPage() {
               <thead className="bg-slate-100 text-left text-slate-600 dark:bg-slate-800 dark:text-slate-400">
                 <tr>
                   <th className="px-4 py-3">Name</th>
-                  <th className="px-4 py-3">Type</th>
+                  <th className="px-4 py-3">Platform</th>
+                  <th className="px-4 py-3">Catalog</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Last Sync</th>
                   <th className="px-4 py-3">Products</th>
