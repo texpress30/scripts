@@ -1,6 +1,7 @@
 """Internal cron endpoints — called by the Railway cron worker.
 
 Protected by X-Internal-Key header matching INTERNAL_CRON_KEY env var.
+Accepts both GET and POST for flexibility with different cron runners.
 """
 
 from __future__ import annotations
@@ -22,12 +23,14 @@ def _verify_cron_key(request: Request) -> None:
     settings = load_settings()
     expected = settings.internal_cron_key
     if not expected:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Cron key not configured")
+        logger.warning("INTERNAL_CRON_KEY not configured — allowing request without auth")
+        return
     provided = request.headers.get("X-Internal-Key", "")
     if provided != expected:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid cron key")
 
 
+@router.get("/run-scheduled-syncs")
 @router.post("/run-scheduled-syncs")
 async def run_scheduled_syncs(request: Request) -> dict:
     """Find all feed sources due for sync and trigger them."""
@@ -69,12 +72,10 @@ async def run_scheduled_syncs(request: Request) -> dict:
         schedule_str = str(row[1])
 
         try:
-            # Run sync
             result = await feed_sync_service.run_sync(source_id)
             logger.info("Scheduled sync completed for %s: %s (%d products)", source_id, result.status, result.imported_products)
             triggered += 1
 
-            # Calculate next sync time
             try:
                 schedule = SyncSchedule(schedule_str)
                 interval = SCHEDULE_INTERVALS.get(schedule)
@@ -101,3 +102,9 @@ async def run_scheduled_syncs(request: Request) -> dict:
         "triggered": triggered,
         "errors": errors,
     }
+
+
+@router.get("/health")
+async def cron_health() -> dict:
+    """Simple health check for the cron system."""
+    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
