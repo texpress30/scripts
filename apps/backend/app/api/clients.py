@@ -484,7 +484,7 @@ def upsert_subaccount_business_profile_by_subaccount_id(
     payload: SubaccountBusinessProfilePayload,
     user: AuthUser = Depends(get_current_user),
 ) -> SubaccountBusinessProfileResponse:
-    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=subaccount_id)
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=subaccount_id)
     client_id, _, _ = _resolve_client_from_subaccount_identifier_or_404(identifier=subaccount_id)
     profile = subaccount_business_profile_store.upsert_profile(
         client_id=client_id,
@@ -878,7 +878,7 @@ def upsert_client_data_daily_input(
     payload: ClientDataDailyInputUpsertRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     _reject_legacy_daily_input_fields_or_422(payload)
@@ -947,7 +947,7 @@ def create_client_data_daily_input(
     payload: ClientDataDailyInputUpsertRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     _reject_legacy_daily_input_fields_or_422(payload)
@@ -991,7 +991,7 @@ def patch_client_data_daily_input(
     payload: ClientDataDailyInputPatchRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
@@ -1042,7 +1042,7 @@ def delete_client_data_daily_input(
     daily_input_id: int,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
@@ -1063,7 +1063,7 @@ def create_client_data_sale_entry(
     payload: ClientDataSaleEntryCreateRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
@@ -1093,7 +1093,7 @@ def update_client_data_sale_entry(
     payload: ClientDataSaleEntryUpdateRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
@@ -1123,7 +1123,7 @@ def delete_client_data_sale_entry(
     sale_entry_id: int,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
@@ -1144,7 +1144,7 @@ def create_client_data_custom_field(
     payload: ClientDataCustomFieldCreateRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
@@ -1184,7 +1184,7 @@ def update_client_data_custom_field(
     payload: ClientDataCustomFieldUpdateRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
@@ -1214,7 +1214,7 @@ def archive_client_data_custom_field(
     custom_field_id: int,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
@@ -1249,7 +1249,7 @@ def upsert_client_data_daily_custom_value(
     payload: ClientDataDailyCustomValueUpsertRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
@@ -1284,7 +1284,7 @@ def delete_client_data_daily_custom_value(
     custom_field_id: int,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
@@ -1436,7 +1436,7 @@ def upsert_media_tracker_scope_eur_ron_rate(
     payload: MediaTrackerWorksheetEurRonRateUpsertRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
-    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
     try:
@@ -1470,7 +1470,7 @@ async def import_preview_client_data(
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
     """Parse and validate a CSV file for data import preview. Does not write to DB."""
-    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
@@ -1515,7 +1515,7 @@ def confirm_import_client_data(
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, object]:
     """Import confirmed CSV rows into the database with transactional upsert."""
-    enforce_subaccount_action(user=user, action="clients:create", subaccount_id=client_id)
+    enforce_subaccount_action(user=user, action="data:write", subaccount_id=client_id)
     enforce_agency_navigation_access(user=user, permission_key="agency_clients")
     _ensure_client_exists_or_404(client_id=client_id)
 
