@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Loader2, ArrowRight, GitBranch } from "lucide-react";
 import { useFeedSources } from "@/lib/hooks/useFeedSources";
+import { useFeedSubaccount } from "@/lib/hooks/useFeedSubaccount";
 import { useFieldMappings } from "@/lib/hooks/useFieldMappings";
 import { SourceTypeIcon } from "@/components/feed-management/SourceTypeIcon";
 
@@ -18,7 +19,8 @@ const CATALOG_LABELS: Record<string, string> = {
 
 export default function FieldMappingPage() {
   const router = useRouter();
-  const { sources, isLoading: sourcesLoading } = useFeedSources();
+  const { selectedId } = useFeedSubaccount();
+  const { sources, isLoading: sourcesLoading } = useFeedSources(selectedId);
   const [selectedSourceId, setSelectedSourceId] = useState<string>("");
   const { mappings, isLoading: mappingsLoading, createMapping, isCreating } = useFieldMappings(selectedSourceId || undefined);
 
