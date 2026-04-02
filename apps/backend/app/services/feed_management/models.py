@@ -81,6 +81,8 @@ class FeedSourceResponse(BaseModel):
     credentials_secret_id: str | None
     is_active: bool
     catalog_type: str = "product"
+    last_sync_at: datetime | None = None
+    product_count: int = 0
     sync_schedule: str = "manual"
     next_scheduled_sync: datetime | None = None
     created_at: datetime

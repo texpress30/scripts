@@ -203,8 +203,8 @@ class FeedSyncService:
                         pass
 
                     cur.execute(
-                        "UPDATE feed_sources SET next_scheduled_sync = %s, updated_at = NOW() WHERE id = %s",
-                        (next_sync, feed_source_id),
+                        "UPDATE feed_sources SET last_sync_at = NOW(), product_count = %s, next_scheduled_sync = %s, updated_at = NOW() WHERE id = %s",
+                        (product_count, next_sync, feed_source_id),
                     )
                 conn.commit()
             logger.info("Updated feed_source %s: product_count=%d, next_sync=%s", feed_source_id, product_count, next_sync)

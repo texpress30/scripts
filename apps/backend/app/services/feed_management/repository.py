@@ -40,8 +40,10 @@ def _parse_source_row(row: tuple) -> FeedSourceResponse:
         catalog_type=str(row[7]) if row[7] else "product",
         sync_schedule=str(row[8]) if row[8] else "manual",
         next_scheduled_sync=row[9],
-        created_at=row[10],
-        updated_at=row[11],
+        last_sync_at=row[10],
+        product_count=int(row[11] or 0),
+        created_at=row[12],
+        updated_at=row[13],
     )
 
 
@@ -80,7 +82,7 @@ class FeedSourceRepository:
                     """
                     INSERT INTO feed_sources (id, subaccount_id, source_type, name, config, credentials_secret_id, catalog_type)
                     VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s)
-                    RETURNING id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, created_at, updated_at
+                    RETURNING id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at
                     """,
                     (source_id, payload.subaccount_id, payload.source_type.value, payload.name, config_json, payload.credentials_secret_id, payload.catalog_type),
                 )
@@ -94,7 +96,7 @@ class FeedSourceRepository:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, created_at, updated_at
+                    SELECT id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at
                     FROM feed_sources WHERE id = %s LIMIT 1
                     """,
                     (source_id,),
@@ -110,7 +112,7 @@ class FeedSourceRepository:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, created_at, updated_at
+                    SELECT id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at
                     FROM feed_sources WHERE subaccount_id = %s ORDER BY created_at DESC
                     """,
                     (subaccount_id,),
@@ -148,7 +150,7 @@ class FeedSourceRepository:
                     f"""
                     UPDATE feed_sources SET {', '.join(sets)}
                     WHERE id = %s
-                    RETURNING id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, created_at, updated_at
+                    RETURNING id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at
                     """,
                     tuple(params),
                 )
@@ -172,7 +174,7 @@ class FeedSourceRepository:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, created_at, updated_at
+                    SELECT id, subaccount_id, source_type, name, config, credentials_secret_id, is_active, catalog_type, sync_schedule, next_scheduled_sync, last_sync_at, product_count, created_at, updated_at
                     FROM feed_sources ORDER BY created_at DESC LIMIT %s OFFSET %s
                     """,
                     (limit, offset),
