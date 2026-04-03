@@ -27,6 +27,11 @@ export type ChannelBadge = {
   channel_field_name: string;
 };
 
+export type FieldAlias = {
+  alias_key: string;
+  platform_hint: string;
+};
+
 export type FieldSuggestion = {
   target_field: string;
   display_name: string;
@@ -40,6 +45,10 @@ export type FieldSuggestion = {
   facebook_attribute: string | null;
   channels?: ChannelBadge[];
   is_system?: boolean;
+  aliases_count?: number;
+  aliases?: FieldAlias[];
+  all_channels?: string[];
+  channels_count?: number;
 };
 
 export type SourceField = {
@@ -242,6 +251,64 @@ export function useChannel(channelId: string | null) {
     isDeleting: deleteMutation.isPending,
     generateFeed: generateMutation.mutateAsync,
     isGenerating: generateMutation.isPending,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Channel schema fields (with inheritance)
+// ---------------------------------------------------------------------------
+
+export type ChannelFieldMapping = {
+  type: string;
+  source_field: string | null;
+  static_value: string | null;
+  template_value: string | null;
+  inherited_from: "master_fields" | "channel_override";
+};
+
+export type ChannelSchemaField = {
+  canonical_key: string;
+  channel_field_name: string;
+  display_name: string;
+  data_type: string;
+  is_required: boolean;
+  sort_order: number;
+  source_description: string | null;
+  mapping: ChannelFieldMapping | null;
+};
+
+export type ChannelFieldsResponse = {
+  channel_id: string;
+  channel_type: string;
+  channel_name: string;
+  catalog_type: string;
+  source_id: string;
+  fields: ChannelSchemaField[];
+  total: number;
+  required_count: number;
+  optional_count: number;
+  mapped_count: number;
+};
+
+const CHANNEL_FIELDS_KEY = (channelId: string) => ["channel-fields", channelId] as const;
+
+export function useChannelFields(channelId: string | null) {
+  const queryClient = useQueryClient();
+
+  const { data, isLoading, error } = useQuery<ChannelFieldsResponse>({
+    queryKey: CHANNEL_FIELDS_KEY(channelId ?? ""),
+    queryFn: () => apiRequest<ChannelFieldsResponse>(`/channels/${channelId}/schema-fields`, { cache: "no-store" }),
+    enabled: !!channelId,
+    retry: 1,
+  });
+
+  return {
+    data: data ?? null,
+    isLoading: channelId ? isLoading : false,
+    error: error instanceof Error ? error.message : null,
+    refetch: () => {
+      if (channelId) void queryClient.invalidateQueries({ queryKey: CHANNEL_FIELDS_KEY(channelId) });
+    },
   };
 }
 

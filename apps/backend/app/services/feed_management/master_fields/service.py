@@ -26,8 +26,11 @@ _source_repo = FeedSourceRepository()
 # Target field resolution — DB-first, hardcoded fallback
 # ---------------------------------------------------------------------------
 
-def _get_target_fields(catalog_type: str) -> list[dict[str, Any]]:
+def _get_target_fields(catalog_type: str, canonical_only: bool = True) -> list[dict[str, Any]]:
     """Return target field definitions from the schema registry (DB).
+
+    When *canonical_only* is True (default), only canonical fields are
+    returned — duplicates/aliases are excluded so users map once per concept.
 
     Falls back to the hardcoded ``catalog_field_schemas.py`` when the
     registry has no rows for the given *catalog_type*.
@@ -36,7 +39,9 @@ def _get_target_fields(catalog_type: str) -> list[dict[str, Any]]:
         from app.services.feed_management.schema_registry.repository import (
             schema_registry_repository,
         )
-        db_fields = schema_registry_repository.list_fields(catalog_type)
+        db_fields = schema_registry_repository.list_fields(
+            catalog_type, canonical_only=canonical_only,
+        )
     except Exception:
         logger.debug("Schema registry query failed, using hardcoded fallback", exc_info=True)
         db_fields = []
@@ -178,6 +183,11 @@ def get_mappings_with_suggestions(
             "is_system": tf.get("is_system", False),
             "format_pattern": tf.get("format_pattern"),
             "example_value": tf.get("example_value"),
+            # Canonical aggregation fields
+            "aliases_count": tf.get("aliases_count", 0),
+            "aliases": tf.get("aliases", []),
+            "all_channels": tf.get("all_channels", []),
+            "channels_count": tf.get("channels_count", 0),
         })
 
     return {

@@ -144,13 +144,17 @@ class SchemaRegistryRepository:
                 rows = cur.fetchall()
         return {str(r[0]) for r in rows}
 
-    def count_total_fields(self, catalog_type: str) -> int:
+    def count_total_fields(self, catalog_type: str, canonical_only: bool = False) -> int:
+        if canonical_only:
+            sql = (
+                "SELECT count(*) FROM feed_schema_fields WHERE catalog_type = %s "
+                "AND (canonical_group = field_key OR canonical_group IS NULL)"
+            )
+        else:
+            sql = "SELECT count(*) FROM feed_schema_fields WHERE catalog_type = %s"
         with _connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT count(*) FROM feed_schema_fields WHERE catalog_type = %s",
-                    (catalog_type,),
-                )
+                cur.execute(sql, (catalog_type,))
                 row = cur.fetchone()
         return int(row[0]) if row else 0
 
@@ -204,6 +208,7 @@ class SchemaRegistryRepository:
         self,
         catalog_type: str,
         channel_slug: str | None = None,
+        canonical_only: bool = False,
     ) -> list[dict[str, Any]]:
         """Return schema fields with aggregated channel info in a single query.
 
@@ -211,9 +216,17 @@ class SchemaRegistryRepository:
         returned and ``is_required`` reflects that channel's setting.  Otherwise
         all fields for the catalog type are returned with ``is_required`` set to
         the MAX across all channels.
+
+        When *canonical_only* is True, only canonical fields are returned (where
+        canonical_group = field_key OR canonical_group IS NULL).  Alias counts
+        and all_channels (including channels via aliases) are aggregated.
         """
+        canonical_filter = ""
+        if canonical_only:
+            canonical_filter = " AND (f.canonical_group = f.field_key OR f.canonical_group IS NULL)"
+
         if channel_slug:
-            sql = """
+            sql = f"""
                 SELECT
                     f.id, f.field_key, f.display_name, f.description,
                     f.data_type, f.allowed_values, f.format_pattern,
@@ -231,12 +244,12 @@ class SchemaRegistryRepository:
                     ) AS channels
                 FROM feed_schema_fields f
                 JOIN feed_schema_channel_fields cf ON cf.schema_field_id = f.id
-                WHERE f.catalog_type = %s AND cf.channel_slug = %s
+                WHERE f.catalog_type = %s AND cf.channel_slug = %s{canonical_filter}
                 ORDER BY cf.is_required DESC, f.is_system DESC, cf.sort_order ASC
             """
             params: tuple[Any, ...] = (catalog_type, channel_slug)
         else:
-            sql = """
+            sql = f"""
                 SELECT
                     f.id, f.field_key, f.display_name, f.description,
                     f.data_type, f.allowed_values, f.format_pattern,
@@ -257,7 +270,7 @@ class SchemaRegistryRepository:
                     ) AS channels
                 FROM feed_schema_fields f
                 LEFT JOIN feed_schema_channel_fields cf ON cf.schema_field_id = f.id
-                WHERE f.catalog_type = %s
+                WHERE f.catalog_type = %s{canonical_filter}
                 GROUP BY f.id, f.field_key, f.display_name, f.description,
                          f.data_type, f.allowed_values, f.format_pattern,
                          f.example_value, f.is_system,
@@ -284,6 +297,210 @@ class SchemaRegistryRepository:
             if isinstance(d.get("channels"), str):
                 d["channels"] = json.loads(d["channels"])
             results.append(d)
+
+        # When canonical_only, enrich with alias counts and all_channels
+        if canonical_only and results:
+            alias_map = self.get_aliases_for_fields(catalog_type)
+            # Also get all channel links for alias fields
+            alias_channels = self._get_alias_channels(catalog_type)
+            for d in results:
+                fk = d["field_key"]
+                aliases = alias_map.get(fk, [])
+                d["aliases_count"] = len(aliases)
+                d["aliases"] = aliases
+                # Merge channels from direct + alias fields
+                direct_channels = [ch["channel_slug"] for ch in (d.get("channels") or [])]
+                alias_ch = alias_channels.get(fk, [])
+                all_ch = list(dict.fromkeys(direct_channels + alias_ch))  # dedupe, preserve order
+                d["all_channels"] = all_ch
+                d["channels_count"] = len(all_ch)
+
+        return results
+
+    def _get_alias_channels(self, catalog_type: str) -> dict[str, list[str]]:
+        """Return {canonical_key: [channel_slugs from alias fields]}."""
+        sql = """
+            SELECT a.canonical_key, cf.channel_slug
+            FROM feed_field_aliases a
+            JOIN feed_schema_fields f ON f.catalog_type = a.catalog_type AND f.field_key = a.alias_key
+            JOIN feed_schema_channel_fields cf ON cf.schema_field_id = f.id
+            WHERE a.catalog_type = %s
+            ORDER BY a.canonical_key, cf.channel_slug
+        """
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (catalog_type,))
+                rows = cur.fetchall()
+        result: dict[str, list[str]] = {}
+        for canonical_key, channel_slug in rows:
+            result.setdefault(str(canonical_key), []).append(str(channel_slug))
+        return result
+
+    def get_channel_fields_with_mappings(
+        self,
+        channel_slug: str,
+        catalog_type: str,
+        source_id: str,
+    ) -> list[dict[str, Any]]:
+        """Return channel-specific fields with inherited master mappings.
+
+        For each channel field, checks for a channel override first,
+        then falls back to the master field mapping on the canonical key.
+        """
+        sql = """
+            SELECT
+                f.id AS schema_field_id,
+                f.field_key AS canonical_key,
+                f.display_name,
+                f.data_type,
+                cf.channel_field_name,
+                cf.is_required,
+                cf.sort_order,
+                cf.source_description,
+                -- Master mapping (inherited)
+                mm.source_field AS master_source_field,
+                mm.mapping_type AS master_mapping_type,
+                mm.static_value AS master_static_value,
+                mm.template_value AS master_template_value,
+                -- Channel override
+                co.source_field AS override_source_field,
+                co.mapping_type AS override_mapping_type,
+                co.static_value AS override_static_value,
+                co.template_value AS override_template_value,
+                co.id AS override_id
+            FROM feed_schema_channel_fields cf
+            JOIN feed_schema_fields f ON f.id = cf.schema_field_id
+            LEFT JOIN master_field_mappings mm
+                ON mm.feed_source_id = %s AND mm.target_field = f.field_key
+            LEFT JOIN channel_field_overrides co
+                ON co.channel_id = (
+                    SELECT fc.id FROM feed_channels fc
+                    WHERE fc.feed_source_id = %s AND fc.channel_type = %s
+                    LIMIT 1
+                )
+                AND co.target_field = f.field_key
+            WHERE cf.channel_slug = %s AND f.catalog_type = %s
+            ORDER BY cf.is_required DESC, cf.sort_order ASC
+        """
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (source_id, source_id, channel_slug, channel_slug, catalog_type))
+                cols = [desc[0] for desc in cur.description]
+                rows = cur.fetchall()
+
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            d = dict(zip(cols, row))
+            d["schema_field_id"] = str(d["schema_field_id"])
+
+            # Determine effective mapping (override > master)
+            if d.get("override_id"):
+                mapping = {
+                    "type": d["override_mapping_type"] or "direct",
+                    "source_field": d["override_source_field"],
+                    "static_value": d["override_static_value"],
+                    "template_value": d["override_template_value"],
+                    "inherited_from": "channel_override",
+                }
+            elif d.get("master_source_field") or d.get("master_static_value") or d.get("master_template_value"):
+                mapping = {
+                    "type": d["master_mapping_type"] or "direct",
+                    "source_field": d["master_source_field"],
+                    "static_value": d["master_static_value"],
+                    "template_value": d["master_template_value"],
+                    "inherited_from": "master_fields",
+                }
+            else:
+                mapping = None
+
+            results.append({
+                "canonical_key": d["canonical_key"],
+                "channel_field_name": d["channel_field_name"] or d["canonical_key"],
+                "display_name": d["display_name"],
+                "data_type": d["data_type"],
+                "is_required": d["is_required"],
+                "sort_order": d["sort_order"],
+                "source_description": d["source_description"],
+                "mapping": mapping,
+            })
+        return results
+
+    def get_channel_fields_by_channel_id(
+        self,
+        channel_id: str,
+        source_id: str,
+        channel_type: str,
+        catalog_type: str,
+    ) -> list[dict[str, Any]]:
+        """Return channel-specific fields using channel_id for override lookups."""
+        sql = """
+            SELECT
+                f.id AS schema_field_id,
+                f.field_key AS canonical_key,
+                f.display_name,
+                f.data_type,
+                cf.channel_field_name,
+                cf.is_required,
+                cf.sort_order,
+                cf.source_description,
+                mm.source_field AS master_source_field,
+                mm.mapping_type AS master_mapping_type,
+                mm.static_value AS master_static_value,
+                mm.template_value AS master_template_value,
+                co.source_field AS override_source_field,
+                co.mapping_type AS override_mapping_type,
+                co.static_value AS override_static_value,
+                co.template_value AS override_template_value,
+                co.id AS override_id
+            FROM feed_schema_channel_fields cf
+            JOIN feed_schema_fields f ON f.id = cf.schema_field_id
+            LEFT JOIN master_field_mappings mm
+                ON mm.feed_source_id = %s AND mm.target_field = f.field_key
+            LEFT JOIN channel_field_overrides co
+                ON co.channel_id = %s AND co.target_field = f.field_key
+            WHERE cf.channel_slug = %s AND f.catalog_type = %s
+            ORDER BY cf.is_required DESC, cf.sort_order ASC
+        """
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (source_id, channel_id, channel_type, catalog_type))
+                cols = [desc[0] for desc in cur.description]
+                rows = cur.fetchall()
+
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            d = dict(zip(cols, row))
+            d["schema_field_id"] = str(d["schema_field_id"])
+
+            if d.get("override_id"):
+                mapping = {
+                    "type": d["override_mapping_type"] or "direct",
+                    "source_field": d["override_source_field"],
+                    "static_value": d["override_static_value"],
+                    "template_value": d["override_template_value"],
+                    "inherited_from": "channel_override",
+                }
+            elif d.get("master_source_field") or d.get("master_static_value") or d.get("master_template_value"):
+                mapping = {
+                    "type": d["master_mapping_type"] or "direct",
+                    "source_field": d["master_source_field"],
+                    "static_value": d["master_static_value"],
+                    "template_value": d["master_template_value"],
+                    "inherited_from": "master_fields",
+                }
+            else:
+                mapping = None
+
+            results.append({
+                "canonical_key": d["canonical_key"],
+                "channel_field_name": d["channel_field_name"] or d["canonical_key"],
+                "display_name": d["display_name"],
+                "data_type": d["data_type"],
+                "is_required": d["is_required"],
+                "sort_order": d["sort_order"],
+                "source_description": d["source_description"],
+                "mapping": mapping,
+            })
         return results
 
     def list_channels(self, catalog_type: str) -> list[dict[str, Any]]:
