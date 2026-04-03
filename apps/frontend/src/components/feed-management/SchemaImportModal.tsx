@@ -94,8 +94,7 @@ export function SchemaImportModal({
       formData.append("file", file);
 
       const token = typeof window !== "undefined" ? localStorage.getItem("mcc_token") : null;
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
-      const resp = await fetch(`${baseUrl}/feed-management/schemas/import`, {
+      const resp = await fetch("/api/feed-management/schemas/import", {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
