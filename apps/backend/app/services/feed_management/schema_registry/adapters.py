@@ -202,6 +202,14 @@ _SUPPORTED_VALUES_RE = re.compile(
     r"Supported values?:\s*(.+?)(?:\.|$)", re.IGNORECASE,
 )
 
+_ACCEPTED_VALUES_RE = re.compile(
+    r"Accepted values?:\s*(.+?)(?:\.\s|$)", re.IGNORECASE,
+)
+
+_RANGE_VALUES_RE = re.compile(
+    r"valid values? (?:are )?between (\d+) (?:to|and) (\d+)", re.IGNORECASE,
+)
+
 
 def _extract_supported_values(text: str) -> list[str] | None:
     """Extract allowed values from 'Supported values: A, B, or C' patterns."""
@@ -215,8 +223,103 @@ def _extract_supported_values(text: str) -> list[str] | None:
     return values if values else None
 
 
+def _extract_accepted_values(rules_text: str) -> list[str] | None:
+    """Extract allowed values from TikTok pipe-format Rules section.
+
+    Handles patterns like:
+    - "Rules: 1. Accepted values: in stock, out of stock"
+    - "Rules: 1. Accepted values: Motel, Hostel, Guest House, ..."
+    - "Rules: 1. The valid values are between 1 to 5"
+    """
+    if not rules_text:
+        return None
+
+    # Pattern 1: "Accepted values: ..."
+    m = _ACCEPTED_VALUES_RE.search(rules_text)
+    if m:
+        raw = m.group(1).strip().rstrip(".")
+        raw = re.sub(r",?\s+or\s+", ", ", raw)
+        values = [v.strip() for v in raw.split(",") if v.strip()]
+        if values:
+            return values
+
+    # Pattern 2: "valid values are between X to Y"
+    m = _RANGE_VALUES_RE.search(rules_text)
+    if m:
+        start, end = int(m.group(1)), int(m.group(2))
+        if end - start <= 100:  # sanity check
+            return [str(i) for i in range(start, end + 1)]
+
+    # Fallback: also try "Supported values:" in rules text
+    return _extract_supported_values(rules_text)
+
+
+def _parse_tiktok_description_cell(
+    desc_cell: str,
+) -> tuple[bool, str | None, list[str] | None]:
+    """Parse a TikTok description cell in either format.
+
+    Format A (Auto-Inventory, dot separator):
+      "Required.Description text here"
+      "Optional.Description text here"
+
+    Format B (Hotel/Flight/Destination, pipe separator):
+      "Required || Description text || Rules: 1. Character limit: 100"
+      "Optional || Description text || Rules: 1. Accepted values: in stock, out of stock"
+
+    Returns (is_required, description, allowed_values).
+    """
+    cell = desc_cell.strip()
+    if not cell:
+        return False, None, None
+
+    # ── Format B: double pipe separator ──
+    if "||" in cell:
+        parts = [p.strip() for p in cell.split("||")]
+        prefix = parts[0].lower()
+        is_required = prefix.startswith("required") and "not required" not in prefix
+        description = parts[1] if len(parts) > 1 and parts[1] else None
+        rules = parts[2] if len(parts) > 2 else ""
+        # Extract allowed_values from the Rules section
+        allowed_values = _extract_accepted_values(rules)
+        # Also try from description itself (sometimes values are mentioned there)
+        if not allowed_values and description:
+            allowed_values = _extract_accepted_values(description)
+        return is_required, description, allowed_values
+
+    # ── Format A: dot/prefix separator (existing) ──
+    cell_lower = cell.lower()
+
+    if cell_lower.startswith("required"):
+        is_required = True
+    elif cell_lower.startswith("optional"):
+        is_required = False
+    elif "not required" in cell_lower:
+        is_required = False
+    elif "required" in cell_lower:
+        is_required = True
+    else:
+        is_required = False
+
+    # Strip "Required." or "Optional." prefix
+    description = re.sub(
+        r"^(Required|Optional)\s*\.?\s*", "", cell, flags=re.IGNORECASE,
+    ).strip() or None
+
+    # Extract allowed values
+    allowed_values = _extract_supported_values(cell)
+    if not allowed_values:
+        allowed_values = _extract_accepted_values(cell)
+
+    return is_required, description, allowed_values
+
+
 def parse_tiktok_csv(content: bytes) -> tuple[list[FieldSpec], list[str]]:
-    """Parse TikTok Auto Inventory CSV template.
+    """Parse TikTok CSV template (Auto-Inventory, Hotel, Flight, Destination).
+
+    Supports two description formats:
+    - Format A (dot separator): "Required.Description text"
+    - Format B (pipe separator): "Required || Description || Rules: ..."
 
     Row 1 = field names, Row 2 = descriptions with Required/Optional, Row 3 = examples.
     Returns (fields, warnings).
@@ -244,35 +347,19 @@ def parse_tiktok_csv(content: bytes) -> tuple[list[FieldSpec], list[str]]:
     fields: list[FieldSpec] = []
     seen_keys: set[str] = set()
 
+    # Detect which format variant (for logging)
+    sample_cells = [c.strip() for c in desc_row[:5] if c.strip()]
+    has_pipes = any("||" in c for c in sample_cells)
+    if has_pipes:
+        warnings.append("TikTok pipe-separated format detected (Hotel/Flight/Destination).")
+
     for i, raw_name in enumerate(field_names_row):
         raw_name = raw_name.strip()
         if not raw_name:
             continue
 
-        # Parse description cell for required/optional
         desc_cell = desc_row[i].strip() if i < len(desc_row) else ""
-        desc_lower = desc_cell.lower()
-
-        # Determine required status
-        if desc_lower.startswith("required"):
-            is_required = True
-        elif desc_lower.startswith("optional"):
-            is_required = False
-        elif "not required" in desc_lower:
-            is_required = False
-        elif "required" in desc_lower:
-            is_required = True
-        else:
-            is_required = False
-
-        # Clean description: strip "Required." or "Optional." prefix
-        description: str | None = desc_cell
-        description = re.sub(r"^(Required|Optional)\s*\.?\s*", "", description, flags=re.IGNORECASE).strip()
-        if not description:
-            description = None
-
-        # Extract allowed values from "Supported values:" pattern
-        allowed_values = _extract_supported_values(desc_cell) if desc_cell else None
+        is_required, description, allowed_values = _parse_tiktok_description_cell(desc_cell)
 
         # Example value
         example = example_row[i].strip() if i < len(example_row) else None
