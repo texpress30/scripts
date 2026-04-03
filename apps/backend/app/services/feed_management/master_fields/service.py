@@ -26,25 +26,15 @@ _source_repo = FeedSourceRepository()
 # Source field extraction
 # ---------------------------------------------------------------------------
 
-def get_source_fields(source_id: str) -> list[dict[str, Any]]:
-    """Return the available fields from the first MongoDB product for a source."""
-    products = feed_products_repository.list_products(source_id, limit=1)
-    if not products:
-        return []
+def get_source_fields(source_id: str) -> tuple[list[dict[str, Any]], int]:
+    """Return all unique fields discovered across up to 100 MongoDB products.
 
-    data: dict[str, Any] = products[0].get("data", {})
-    if not isinstance(data, dict):
-        return []
-
-    fields: list[dict[str, Any]] = []
-    for key, value in data.items():
-        sample = str(value)[:120] if value is not None else None
-        fields.append({
-            "field": key,
-            "type": type(value).__name__ if value is not None else "unknown",
-            "sample": sample,
-        })
-    return sorted(fields, key=lambda f: f["field"])
+    Returns ``(fields, products_scanned)``.
+    """
+    fields, scanned = feed_products_repository.get_all_unique_fields(
+        source_id, sample_limit=100,
+    )
+    return fields, scanned
 
 
 # ---------------------------------------------------------------------------
@@ -111,7 +101,7 @@ def get_mappings_with_suggestions(
     catalog_fields = get_catalog_fields(catalog_type)
 
     # Source fields from MongoDB
-    source_fields = get_source_fields(source_id)
+    source_fields, _scanned = get_source_fields(source_id)
     source_field_names = [f["field"] for f in source_fields]
 
     # Build suggestions for unmapped required/optional fields
