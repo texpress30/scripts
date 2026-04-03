@@ -419,21 +419,37 @@ def analyze_fields(
         }
 
     all_fields = schema_registry_repository.list_fields(catalog_type)
+    aliases = schema_registry_repository.get_aliases_for_fields(catalog_type)
     resolved_model = _resolve_model(model or None)
 
     suggestions = suggest_canonical_groups(all_fields, catalog_type, model=resolved_model)
 
-    # Build groups summary
+    # Build groups summary from AI + existing aliases
     groups: dict[str, list[str]] = {}
     for s in suggestions:
         cg = s.get("canonical_group", s.get("field_key", ""))
         groups.setdefault(cg, []).append(s.get("field_key", ""))
+
+    # Build confirmed groups from existing aliases
+    confirmed_groups: list[dict] = []
+    for canonical_key, alias_list in aliases.items():
+        confirmed_groups.append({
+            "canonical_group": canonical_key,
+            "aliases": [a["alias_key"] for a in alias_list],
+            "status": "confirmed",
+        })
+
+    # Self-canonical count (fields with no aliases)
+    fields_with_aliases = set(aliases.keys())
+    self_canonical = sum(1 for f in all_fields if f["field_key"] not in fields_with_aliases)
 
     return {
         "catalog_type": catalog_type,
         "model_used": resolved_model,
         "total_fields": len(all_fields),
         "suggestions": suggestions,
+        "confirmed_groups": confirmed_groups,
+        "self_canonical_count": self_canonical,
         "groups_summary": [
             {"canonical_group": k, "members": v}
             for k, v in groups.items() if len(v) > 1
