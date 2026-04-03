@@ -27,11 +27,15 @@ class ChannelType(str, enum.Enum):
     facebook_marketplace = "facebook_marketplace"
     facebook_automotive = "facebook_automotive"
     facebook_hotel = "facebook_hotel"
+    facebook_streaming_ads = "facebook_streaming_ads"
+    facebook_destination_ads = "facebook_destination_ads"
+    facebook_professional_services = "facebook_professional_services"
     meta_catalog = "meta_catalog"
     # TikTok
     tiktok_automotive_inventory = "tiktok_automotive_inventory"
     tiktok = "tiktok"
     tiktok_catalog = "tiktok_catalog"
+    tiktok_destination = "tiktok_destination"
     # Bing
     bing = "bing"
     # Social & Ads

@@ -7675,10 +7675,10 @@ Valori expuse în UI: `product`, `vehicle`, `home_listing`, `hotel`, `flight`, `
 ### 2. Destination → catalog type complet lipsă
 - **Status:** `destination` NU există în:
   - [x] DB catalog_type ENUM (migration 0047 — ADD VALUE 'destination')
-  - [ ] Backend CatalogType Python enum (catalog_schemas.py)
+  - [x] Backend CatalogType Python enum (catalog_schemas.py)
   - [ ] Frontend CatalogType TS type (feed-management.ts)
   - [ ] CatalogTypeSelector.tsx (UI)
-  - [ ] CATALOG_SCHEMAS hardcoded (catalog_schemas.py)
+  - [x] CATALOG_SCHEMAS hardcoded (catalog_schemas.py)
   - [x] feed_catalog_subtypes (migration 0047 — destination_standard)
   - [x] Câmpuri seed-uite (migration 0047 — 16 fields)
   - [x] Canale seed-uite (migration 0047 — facebook_destination_ads, tiktok_destination)
@@ -7689,10 +7689,10 @@ Valori expuse în UI: `product`, `vehicle`, `home_listing`, `hotel`, `flight`, `
 ### 3. Service → catalog type complet lipsă
 - **Status:** `service` NU există în:
   - [x] DB catalog_type ENUM (migration 0047 — ADD VALUE 'service')
-  - [ ] Backend CatalogType Python enum (catalog_schemas.py)
+  - [x] Backend CatalogType Python enum (catalog_schemas.py)
   - [ ] Frontend CatalogType TS type (feed-management.ts)
   - [ ] CatalogTypeSelector.tsx (UI)
-  - [ ] CATALOG_SCHEMAS hardcoded (catalog_schemas.py)
+  - [x] CATALOG_SCHEMAS hardcoded (catalog_schemas.py)
   - [x] feed_catalog_subtypes (migration 0047 — professional_services)
   - [x] Câmpuri seed-uite (migration 0047 — 13 fields)
   - [x] Canal seed-uit (migration 0047 — facebook_professional_services)
@@ -7727,16 +7727,16 @@ Valori expuse în UI: `product`, `vehicle`, `home_listing`, `hotel`, `flight`, `
 - [x] INSERT feed_schema_fields: câmpuri service (13 fields: id, title, url, image_link, description, category, price, address, city, phone, rating, availability, area_served)
 - [x] INSERT feed_schema_channel_fields: linkare câmpuri → facebook_destination_ads, tiktok_destination, facebook_professional_services
 
-### FAZA 2 — Backend Python (catalog_schemas.py + channels/models.py)
-- [ ] Adaugă `destination` și `service` în CatalogType enum (catalog_schemas.py)
-- [ ] Adaugă CATALOG_SCHEMAS[CatalogType.destination] cu required + optional fields
-- [ ] Adaugă CATALOG_SCHEMAS[CatalogType.service] cu required + optional fields
-- [ ] Adaugă canale noi în ChannelType enum (channels/models.py):
+### FAZA 2 — Backend Python (catalog_schemas.py + channels/models.py) ✓
+- [x] Adaugă `destination` și `service` în CatalogType enum (catalog_schemas.py)
+- [x] Adaugă CATALOG_SCHEMAS[CatalogType.destination] cu required + optional fields
+- [x] Adaugă CATALOG_SCHEMAS[CatalogType.service] cu required + optional fields
+- [x] Adaugă canale noi în ChannelType enum (channels/models.py):
   - `facebook_streaming_ads`
   - `facebook_destination_ads`
   - `tiktok_destination`
   - `facebook_professional_services`
-- [ ] Actualizează catalog_field_schemas.py fallback cu destination + service fields
+- [x] Actualizează catalog_field_schemas.py fallback cu destination + service fields
 
 ### FAZA 3 — Backend API (schema_registry endpoints) ✓
 - [x] Verifică că endpoint-urile GET /schemas/fields, /schemas/channels, /schemas/subtypes funcționează corect cu noile catalog types — FIX: `_VALID_CATALOG_TYPES` frozenset din `service.py` era hardcoded fără destination/service; adăugat.
