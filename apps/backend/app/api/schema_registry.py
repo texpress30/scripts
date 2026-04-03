@@ -273,3 +273,85 @@ def list_schema_imports(
         limit=limit,
     )
     return {"imports": imports}
+
+
+# ---------------------------------------------------------------------------
+# Alias endpoints
+# ---------------------------------------------------------------------------
+
+class CreateAliasRequest(BaseModel):
+    catalog_type: str
+    canonical_key: str
+    alias_key: str
+    platform_hint: str | None = None
+
+
+@router.get("/feed-management/schemas/aliases")
+def list_aliases(
+    catalog_type: str = Query(...),
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    """Return field aliases for a catalog type."""
+    _enforce_feature_flag()
+
+    try:
+        validate_catalog_type(catalog_type)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc),
+        ) from exc
+
+    aliases = schema_registry_repository.list_aliases(catalog_type)
+    return {"catalog_type": catalog_type, "aliases": aliases}
+
+
+@router.post(
+    "/feed-management/schemas/aliases",
+    status_code=status.HTTP_201_CREATED,
+)
+def create_alias(
+    payload: CreateAliasRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict:
+    """Create a new field alias."""
+    _enforce_feature_flag()
+
+    try:
+        validate_catalog_type(payload.catalog_type)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc),
+        ) from exc
+
+    try:
+        alias = schema_registry_repository.create_alias(
+            catalog_type=payload.catalog_type,
+            canonical_key=payload.canonical_key,
+            alias_key=payload.alias_key,
+            platform_hint=payload.platform_hint,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc),
+        ) from exc
+
+    return alias
+
+
+@router.delete(
+    "/feed-management/schemas/aliases/{alias_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_alias(
+    alias_id: str,
+    user: AuthUser = Depends(get_current_user),
+) -> None:
+    """Delete a field alias."""
+    _enforce_feature_flag()
+
+    try:
+        schema_registry_repository.delete_alias(alias_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc),
+        ) from exc
