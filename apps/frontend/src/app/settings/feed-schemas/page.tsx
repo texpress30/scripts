@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Plus, Upload, Trash2, Link2 } from "lucide-react";
+import { Loader2, Plus, Upload, Trash2, Link2, Sparkles } from "lucide-react";
 
 import { AppShell } from "@/components/AppShell";
 import { ProtectedPage } from "@/components/ProtectedPage";
 import { SchemaImportModal } from "@/components/feed-management/SchemaImportModal";
+import { SchemaAnalyzeModal } from "@/components/feed-management/SchemaAnalyzeModal";
 import { apiRequest } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
@@ -133,6 +134,10 @@ export default function FeedSchemasPage() {
   const [newAliasKey, setNewAliasKey] = useState("");
   const [newAliasPlatform, setNewAliasPlatform] = useState("");
   const [addingAlias, setAddingAlias] = useState(false);
+  const [analyzeOpen, setAnalyzeOpen] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [aiModel, setAiModel] = useState("claude-sonnet-4-20250514");
+  const [aiModels, setAiModels] = useState<string[]>(["claude-sonnet-4-20250514"]);
 
   const handleOpenImport = useCallback((slug: string | null) => {
     setImportChannelSlug(slug);
@@ -194,6 +199,26 @@ export default function FeedSchemasPage() {
     void load();
     return () => { ignore = true; };
   }, [catalogType, refreshKey]);
+
+  // Fetch AI status
+  useEffect(() => {
+    let ignore = false;
+    async function load() {
+      try {
+        const res = await apiRequest<{ enabled: boolean; model: string; models_available: string[] }>(
+          "/feed-management/schemas/ai-status",
+        );
+        if (ignore) return;
+        setAiEnabled(res.enabled);
+        setAiModel(res.model);
+        setAiModels(res.models_available);
+      } catch {
+        if (ignore) return;
+      }
+    }
+    void load();
+    return () => { ignore = true; };
+  }, []);
 
   // Fetch aliases
   useEffect(() => {
@@ -292,6 +317,19 @@ export default function FeedSchemasPage() {
               <Plus className="h-4 w-4" />
               Import Canal Nou
             </button>
+            <button
+              type="button"
+              onClick={() => setAnalyzeOpen(true)}
+              disabled={!aiEnabled || totalFields === 0}
+              className="wm-btn-secondary inline-flex items-center gap-1.5 text-sm"
+              title={!aiEnabled ? "AI indisponibil — seteaza ANTHROPIC_API_KEY" : ""}
+            >
+              <Sparkles className="h-4 w-4" />
+              Analizeaza cu AI
+            </button>
+            <span className={`text-xs ${aiEnabled ? "text-emerald-500" : "text-slate-400"}`}>
+              {aiEnabled ? `AI activ` : "AI indisponibil"}
+            </span>
           </div>
 
           {error && (
@@ -580,6 +618,16 @@ export default function FeedSchemasPage() {
               </button>
             </div>
           </section>
+
+          {/* Analyze modal */}
+          <SchemaAnalyzeModal
+            open={analyzeOpen}
+            onClose={() => setAnalyzeOpen(false)}
+            catalogType={catalogType}
+            onSuccess={handleImportSuccess}
+            modelsAvailable={aiModels}
+            defaultModel={aiModel}
+          />
 
           {/* Import modal */}
           <SchemaImportModal

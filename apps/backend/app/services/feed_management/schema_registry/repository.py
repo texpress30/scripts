@@ -490,4 +490,84 @@ class SchemaRegistryRepository:
         return result
 
 
+    # ------------------------------------------------------------------
+    # Merge duplicates
+    # ------------------------------------------------------------------
+
+    def merge_field_into_canonical(
+        self,
+        *,
+        catalog_type: str,
+        canonical_key: str,
+        alias_key: str,
+        platform_hint: str | None = None,
+    ) -> bool:
+        """Merge a duplicate field into a canonical one.
+
+        Creates alias, moves channel links, deletes the duplicate field.
+        Returns True if merge happened, False if fields didn't exist.
+        """
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                # Find both field IDs
+                cur.execute(
+                    "SELECT id FROM feed_schema_fields WHERE catalog_type = %s AND field_key = %s",
+                    (catalog_type, canonical_key),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return False
+                canonical_id = row[0]
+
+                cur.execute(
+                    "SELECT id FROM feed_schema_fields WHERE catalog_type = %s AND field_key = %s",
+                    (catalog_type, alias_key),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return False
+                alias_id = row[0]
+
+                # Create alias
+                cur.execute(
+                    """
+                    INSERT INTO feed_field_aliases (catalog_type, canonical_key, alias_key, platform_hint)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (catalog_type, alias_key) DO NOTHING
+                    """,
+                    (catalog_type, canonical_key, alias_key, platform_hint),
+                )
+
+                # Move channel links: set channel_field_name to preserve original name
+                cur.execute(
+                    """
+                    UPDATE feed_schema_channel_fields
+                    SET schema_field_id = %s,
+                        channel_field_name = COALESCE(channel_field_name, %s)
+                    WHERE schema_field_id = %s
+                      AND NOT EXISTS (
+                          SELECT 1 FROM feed_schema_channel_fields cf2
+                          WHERE cf2.schema_field_id = %s
+                            AND cf2.channel_slug = feed_schema_channel_fields.channel_slug
+                      )
+                    """,
+                    (canonical_id, alias_key, alias_id, canonical_id),
+                )
+
+                # Delete orphaned channel links
+                cur.execute(
+                    "DELETE FROM feed_schema_channel_fields WHERE schema_field_id = %s",
+                    (alias_id,),
+                )
+
+                # Delete duplicate field
+                cur.execute(
+                    "DELETE FROM feed_schema_fields WHERE id = %s",
+                    (alias_id,),
+                )
+
+            conn.commit()
+        return True
+
+
 schema_registry_repository = SchemaRegistryRepository()
