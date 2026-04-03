@@ -83,6 +83,7 @@ class FeedGenerator:
                 if not isinstance(data, dict):
                     excluded += 1
                     continue
+                data = self._merge_raw_data(data)
 
                 row = self._transform_product(data, master_mappings, override_map)
                 if row:
@@ -199,6 +200,24 @@ class FeedGenerator:
         if not source_field:
             return None
         return self._resolve_source(data, source_field)
+
+    @staticmethod
+    def _merge_raw_data(data: dict[str, Any]) -> dict[str, Any]:
+        """Merge raw_data fields into the top-level data dict.
+
+        Raw fields are added only when they don't conflict with an existing
+        standardized key, so mappings can reference both standardized names
+        (``title``) and raw source names (``body_html``, ``vendor``, …).
+        """
+        raw = data.get("raw_data")
+        if not isinstance(raw, dict):
+            return data
+        merged = dict(data)
+        for key, value in raw.items():
+            if key not in merged:
+                merged[key] = value
+        merged.pop("raw_data", None)
+        return merged
 
     @staticmethod
     def _resolve_source(data: dict[str, Any], source_field: str) -> Any:
@@ -369,6 +388,7 @@ class FeedGenerator:
             data = product.get("data", {})
             if not isinstance(data, dict):
                 continue
+            data = self._merge_raw_data(data)
             transformed = self._transform_product(data, master_mappings, override_map)
             results.append({"original": data, "transformed": transformed})
         return results

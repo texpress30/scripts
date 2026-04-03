@@ -212,6 +212,7 @@ class WooCommerceConnector(BaseConnector):
                     inventory_quantity=int(var.get("stock_quantity") or 0),
                     sku=str(var.get("sku") or ""),
                     url=str(woo.get("permalink") or ""),
+                    raw_data=_flatten_raw(woo, var),
                 ))
             return results
 
@@ -234,7 +235,54 @@ class WooCommerceConnector(BaseConnector):
             inventory_quantity=int(woo.get("stock_quantity") or 0),
             sku=str(woo.get("sku") or ""),
             url=str(woo.get("permalink") or ""),
+            raw_data=_flatten_raw(woo),
         )]
+
+
+def _flatten_raw(woo: dict[str, Any], variation: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Extract a flat dict of presentable raw fields from a WooCommerce product."""
+    raw: dict[str, Any] = {}
+    # Scalar fields from the parent product
+    _SCALAR_KEYS = (
+        "id", "name", "slug", "permalink", "status", "featured", "description",
+        "short_description", "sku", "price", "regular_price", "sale_price",
+        "on_sale", "manage_stock", "stock_quantity", "stock_status", "weight",
+        "purchase_note", "menu_order", "type",
+    )
+    for key in _SCALAR_KEYS:
+        if key in woo:
+            raw[key] = woo[key]
+
+    # Useful nested data flattened
+    categories = woo.get("categories") or []
+    if categories:
+        raw["category"] = categories[0].get("name", "")
+    tags = woo.get("tags") or []
+    if tags:
+        raw["tags"] = ", ".join(t.get("name", "") for t in tags)
+    images = woo.get("images") or []
+    if images:
+        raw["image_src"] = images[0].get("src", "")
+        raw["image_alt"] = images[0].get("alt", "")
+        raw["images"] = [img.get("src", "") for img in images]
+    dims = woo.get("dimensions") or {}
+    for dim_key in ("length", "width", "height"):
+        if dims.get(dim_key):
+            raw[f"dimension_{dim_key}"] = dims[dim_key]
+    attrs = woo.get("attributes") or []
+    for attr in attrs:
+        attr_name = str(attr.get("name", "")).lower().replace(" ", "_")
+        options = attr.get("options") or []
+        if attr_name and options:
+            raw[f"attribute_{attr_name}"] = ", ".join(str(o) for o in options)
+
+    # Variation overrides
+    if variation:
+        for key in ("sku", "price", "regular_price", "sale_price", "stock_quantity", "weight"):
+            if key in variation and variation[key] is not None:
+                raw[f"variant_{key}"] = variation[key]
+
+    return raw
 
 
 def _safe_float(value: Any) -> float:
