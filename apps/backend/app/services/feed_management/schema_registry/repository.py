@@ -95,6 +95,7 @@ class SchemaRegistryRepository:
         channel_field_name: str | None,
         default_value: str | None,
         sort_order: int,
+        source_description: str | None = None,
     ) -> None:
         with _connect() as conn:
             with conn.cursor() as cur:
@@ -102,17 +103,24 @@ class SchemaRegistryRepository:
                     """
                     INSERT INTO feed_schema_channel_fields
                         (schema_field_id, channel_slug, is_required,
-                         channel_field_name, default_value, sort_order, imported_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                         channel_field_name, default_value, sort_order,
+                         source_description, imported_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
                     ON CONFLICT (schema_field_id, channel_slug) DO UPDATE SET
                         is_required        = EXCLUDED.is_required,
                         channel_field_name = EXCLUDED.channel_field_name,
                         default_value      = EXCLUDED.default_value,
                         sort_order         = EXCLUDED.sort_order,
+                        source_description = CASE
+                            WHEN EXCLUDED.source_description IS NOT NULL AND EXCLUDED.source_description != ''
+                            THEN EXCLUDED.source_description
+                            ELSE feed_schema_channel_fields.source_description
+                        END,
                         imported_at        = NOW()
                     """,
                     (schema_field_id, channel_slug, is_required,
-                     channel_field_name, default_value, sort_order),
+                     channel_field_name, default_value, sort_order,
+                     source_description),
                 )
             conn.commit()
 
@@ -210,13 +218,15 @@ class SchemaRegistryRepository:
                     f.id, f.field_key, f.display_name, f.description,
                     f.data_type, f.allowed_values, f.format_pattern,
                     f.example_value, f.is_system,
+                    f.canonical_group, f.canonical_status,
                     cf.is_required AS is_required,
                     cf.sort_order,
                     jsonb_build_array(
                         jsonb_build_object(
                             'channel_slug', cf.channel_slug,
                             'is_required', cf.is_required,
-                            'channel_field_name', COALESCE(cf.channel_field_name, f.field_key)
+                            'channel_field_name', COALESCE(cf.channel_field_name, f.field_key),
+                            'source_description', cf.source_description
                         )
                     ) AS channels
                 FROM feed_schema_fields f
@@ -231,6 +241,7 @@ class SchemaRegistryRepository:
                     f.id, f.field_key, f.display_name, f.description,
                     f.data_type, f.allowed_values, f.format_pattern,
                     f.example_value, f.is_system,
+                    f.canonical_group, f.canonical_status,
                     COALESCE(bool_or(cf.is_required), false) AS is_required,
                     COALESCE(MIN(cf.sort_order), 0) AS sort_order,
                     COALESCE(
@@ -238,7 +249,8 @@ class SchemaRegistryRepository:
                             jsonb_build_object(
                                 'channel_slug', cf.channel_slug,
                                 'is_required', cf.is_required,
-                                'channel_field_name', COALESCE(cf.channel_field_name, f.field_key)
+                                'channel_field_name', COALESCE(cf.channel_field_name, f.field_key),
+                                'source_description', cf.source_description
                             )
                         ) FILTER (WHERE cf.id IS NOT NULL),
                         '[]'::jsonb
@@ -248,7 +260,8 @@ class SchemaRegistryRepository:
                 WHERE f.catalog_type = %s
                 GROUP BY f.id, f.field_key, f.display_name, f.description,
                          f.data_type, f.allowed_values, f.format_pattern,
-                         f.example_value, f.is_system
+                         f.example_value, f.is_system,
+                         f.canonical_group, f.canonical_status
                 ORDER BY COALESCE(bool_or(cf.is_required), false) DESC,
                          f.is_system DESC,
                          COALESCE(MIN(cf.sort_order), 0) ASC
@@ -489,6 +502,32 @@ class SchemaRegistryRepository:
             })
         return result
 
+
+    # ------------------------------------------------------------------
+    # Canonical group updates
+    # ------------------------------------------------------------------
+
+    def set_canonical(self, field_id: str, canonical_group: str, status: str) -> None:
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE feed_schema_fields SET canonical_group = %s, canonical_status = %s WHERE id = %s",
+                    (canonical_group, status, field_id),
+                )
+            conn.commit()
+
+    def bulk_set_canonical(self, updates: list[dict[str, str]]) -> int:
+        count = 0
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                for u in updates:
+                    cur.execute(
+                        "UPDATE feed_schema_fields SET canonical_group = %s, canonical_status = %s WHERE id = %s",
+                        (u["canonical_group"], u.get("status", "confirmed"), u["field_id"]),
+                    )
+                    count += cur.rowcount
+            conn.commit()
+        return count
 
     # ------------------------------------------------------------------
     # Merge duplicates

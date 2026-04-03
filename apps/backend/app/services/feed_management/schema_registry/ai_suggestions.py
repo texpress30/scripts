@@ -246,3 +246,93 @@ If no duplicates: []""",
 
     logger.info("AI found %d duplicate groups (analyze) for %s", len(valid), catalog_type)
     return valid
+
+
+# ---------------------------------------------------------------------------
+# Per-field canonical group suggestions (using descriptions)
+# ---------------------------------------------------------------------------
+
+def suggest_canonical_groups(
+    fields: list[dict[str, Any]],
+    catalog_type: str,
+    model: str | None = None,
+) -> list[dict[str, Any]]:
+    """Suggest a canonical_group for EACH field using template descriptions."""
+    if not fields:
+        return []
+
+    # Build field summaries with channel descriptions
+    field_summaries = []
+    for f in fields:
+        channels_info = []
+        for c in (f.get("channels") or []):
+            if isinstance(c, dict):
+                channels_info.append({
+                    "channel_slug": c.get("channel_slug", ""),
+                    "channel_field_name": c.get("channel_field_name", ""),
+                    "source_description": c.get("source_description") or "",
+                })
+        field_summaries.append({
+            "field_id": str(f.get("id", "")),
+            "field_key": f["field_key"],
+            "display_name": f.get("display_name", ""),
+            "data_type": f.get("data_type", "string"),
+            "channels": channels_info,
+        })
+
+    # Existing confirmed canonicals
+    confirmed = [
+        {"field_key": f["field_key"], "canonical_group": f["canonical_group"]}
+        for f in fields
+        if f.get("canonical_status") == "confirmed" and f.get("canonical_group")
+    ]
+
+    fields_json = json.dumps(field_summaries, indent=2)
+    confirmed_json = json.dumps(confirmed, indent=2)
+
+    raw = _call_claude(
+        system=(
+            "You are a product feed field normalization expert. "
+            "Analyze fields from multiple advertising platforms and assign each a canonical group name. "
+            "Fields representing the same concept should share the same canonical_group."
+        ),
+        user_content=f"""Catalog type: {catalog_type}
+
+FIELDS TO ANALYZE (with platform descriptions):
+{fields_json}
+
+ALREADY CONFIRMED CANONICAL GROUPS (do not change these):
+{confirmed_json}
+
+For EACH field, suggest a canonical_group:
+1. Fields representing the SAME concept get the SAME canonical_group
+2. Use the shortest, most generic name as canonical_group
+3. USE source_description to understand what each field represents
+4. If no clear equivalent, canonical_group = own field_key
+5. Do NOT change already confirmed groups
+
+Respond ONLY with a JSON array:
+[{{"field_id": "...", "field_key": "...", "canonical_group": "...", "confidence": "high", "reason": "..."}}]""",
+        model=model,
+    )
+
+    suggestions = _parse_json_response(raw)
+    field_ids = {str(f.get("id", "")) for f in fields}
+
+    valid = []
+    for s in suggestions:
+        if not isinstance(s, dict):
+            continue
+        fid = str(s.get("field_id", ""))
+        if fid not in field_ids:
+            continue
+        valid.append({
+            "field_id": fid,
+            "field_key": str(s.get("field_key", "")),
+            "canonical_group": str(s.get("canonical_group", "")),
+            "confidence": s.get("confidence", "medium"),
+            "reason": str(s.get("reason", "")),
+        })
+
+    logger.info("AI suggested canonical groups for %d/%d fields in %s", len(valid), len(fields), catalog_type)
+    return valid

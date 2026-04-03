@@ -17,6 +17,7 @@ type ChannelFieldInfo = {
   channel_slug: string;
   is_required: boolean;
   channel_field_name: string;
+  source_description: string | null;
 };
 
 type SchemaField = {
@@ -30,6 +31,8 @@ type SchemaField = {
   example_value: string | null;
   is_system: boolean;
   is_required: boolean;
+  canonical_group: string | null;
+  canonical_status: string | null;
   channels: ChannelFieldInfo[];
 };
 
@@ -435,6 +438,7 @@ export default function FeedSchemasPage() {
                 <thead className="bg-slate-50 text-left text-slate-600 dark:bg-slate-800/50 dark:text-slate-400">
                   <tr>
                     <th className="px-4 py-2.5">Field Key</th>
+                    <th className="px-4 py-2.5">Canonic</th>
                     <th className="px-4 py-2.5">Nume</th>
                     <th className="px-4 py-2.5">Tip</th>
                     <th className="px-4 py-2.5 text-center">Status</th>
@@ -444,13 +448,13 @@ export default function FeedSchemasPage() {
                 <tbody>
                   {loadingFields ? (
                     <tr>
-                      <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
+                      <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
                         <Loader2 className="mx-auto h-5 w-5 animate-spin" />
                       </td>
                     </tr>
                   ) : fields.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-4 py-8 text-center text-slate-500 dark:text-slate-400">
+                      <td colSpan={6} className="px-4 py-8 text-center text-slate-500 dark:text-slate-400">
                         Nu exista campuri definite pentru {catalogLabel}.
                       </td>
                     </tr>
@@ -469,6 +473,17 @@ export default function FeedSchemasPage() {
                             >
                               <Link2 className="inline h-3 w-3" />
                             </span>
+                          )}
+                        </td>
+                        <td className={`px-4 py-2.5 ${f.canonical_status === "suggested" ? "bg-amber-50 dark:bg-amber-900/10" : ""}`}>
+                          {f.canonical_group && f.canonical_group !== f.field_key ? (
+                            <span className="text-xs text-indigo-600 dark:text-indigo-400">
+                              → <code className="font-mono">{f.canonical_group}</code>
+                            </span>
+                          ) : f.canonical_group ? (
+                            <code className="font-mono text-xs font-semibold text-slate-700 dark:text-slate-300">{f.canonical_group}</code>
+                          ) : (
+                            <span className="text-xs text-slate-400">—</span>
                           )}
                         </td>
                         <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300">{f.display_name}</td>
@@ -508,8 +523,8 @@ export default function FeedSchemasPage() {
               </table>
             </div>
           </section>
-          {/* Aliases section */}
-          <section className="wm-card shadow-sm">
+          {/* Aliases section removed — canonical grouping is now inline in the fields table */}
+          {false && <section className="wm-card shadow-sm">
             <header className="border-b border-slate-100 p-4 dark:border-slate-700">
               <div className="flex items-center gap-2">
                 <Link2 className="h-4 w-4 text-slate-400" />
@@ -617,7 +632,7 @@ export default function FeedSchemasPage() {
                 Adauga
               </button>
             </div>
-          </section>
+          </section>}
 
           {/* Analyze modal */}
           <SchemaAnalyzeModal
