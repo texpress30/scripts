@@ -117,6 +117,12 @@ export default function MasterFieldsPage() {
     );
   }
 
+  // Build a lookup for channels from suggestions (backend returns channels per field)
+  const channelsLookup = new Map<string, typeof data.suggestions[0]["channels"]>();
+  for (const s of data.suggestions) {
+    if (s.channels?.length) channelsLookup.set(s.target_field, s.channels);
+  }
+
   // Split into required and optional
   const allFields = [...data.mappings.map((m) => ({
     target_field: m.target_field,
@@ -126,6 +132,7 @@ export default function MasterFieldsPage() {
     required: m.is_required,
     category: "mapped",
     suggested_source_field: null as string | null,
+    channels: channelsLookup.get(m.target_field),
   })), ...data.suggestions];
 
   // Deduplicate by target_field
@@ -164,6 +171,12 @@ export default function MasterFieldsPage() {
         </div>
         <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
           This is a library of universal rules for your feed. You can use them later for every channel.
+        </p>
+        <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+          Campurile sunt populate dinamic din Feed Schema Registry.{" "}
+          <Link href="/settings/feed-schemas" className="text-indigo-500 hover:text-indigo-600 dark:text-indigo-400">
+            Setari → Feed Schemas
+          </Link>
         </p>
       </div>
 
@@ -226,7 +239,7 @@ export default function MasterFieldsPage() {
           <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
             {/* Table header */}
             <div className="flex items-center border-b border-slate-200 bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-400">
-              <div className="w-[220px] shrink-0 border-r border-slate-200 px-3 py-2 dark:border-slate-700">Target Field</div>
+              <div className="w-[280px] shrink-0 border-r border-slate-200 px-3 py-2 dark:border-slate-700">Target Field</div>
               <div className="w-[140px] shrink-0 border-r border-slate-200 px-2 py-2 text-center dark:border-slate-700">Type</div>
               <div className="min-w-0 flex-1 px-3 py-2">Source Value</div>
             </div>
@@ -242,6 +255,7 @@ export default function MasterFieldsPage() {
                   fieldType={field.field_type}
                   suggestedSourceField={field.suggested_source_field}
                   sourceFields={data.source_fields}
+                  channels={field.channels}
                   value={localMappings[field.target_field] ?? {
                     target_field: field.target_field,
                     source_field: null,
@@ -268,7 +282,7 @@ export default function MasterFieldsPage() {
           <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
             {/* Table header */}
             <div className="flex items-center border-b border-slate-200 bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-400">
-              <div className="w-[220px] shrink-0 border-r border-slate-200 px-3 py-2 dark:border-slate-700">Target Field</div>
+              <div className="w-[280px] shrink-0 border-r border-slate-200 px-3 py-2 dark:border-slate-700">Target Field</div>
               <div className="w-[140px] shrink-0 border-r border-slate-200 px-2 py-2 text-center dark:border-slate-700">Type</div>
               <div className="min-w-0 flex-1 px-3 py-2">Source Value</div>
             </div>
@@ -284,6 +298,7 @@ export default function MasterFieldsPage() {
                   fieldType={field.field_type}
                   suggestedSourceField={field.suggested_source_field}
                   sourceFields={data.source_fields}
+                  channels={field.channels}
                   value={localMappings[field.target_field] ?? {
                     target_field: field.target_field,
                     source_field: null,
