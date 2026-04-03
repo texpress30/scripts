@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, GitBranch, Plus, ArrowRight, Package, Car, Home, Building, Plane, Film } from "lucide-react";
+import { Loader2, GitBranch, Plus, ArrowRight, Package, Car, Home, Building, Plane, Film, MapPin, Briefcase } from "lucide-react";
 import Link from "next/link";
 import { useFeedSources } from "@/lib/hooks/useFeedSources";
 import { useFeedManagement } from "@/lib/contexts/FeedManagementContext";
@@ -15,6 +15,8 @@ const CATALOG_CONFIG: Record<CatalogType, { label: string; icon: typeof Package;
   hotel: { label: "Hotel", icon: Building, color: "text-amber-600 dark:text-amber-400" },
   flight: { label: "Flight", icon: Plane, color: "text-sky-600 dark:text-sky-400" },
   media: { label: "Media", icon: Film, color: "text-rose-600 dark:text-rose-400" },
+  destination: { label: "Destination", icon: MapPin, color: "text-teal-600 dark:text-teal-400" },
+  service: { label: "Service", icon: Briefcase, color: "text-violet-600 dark:text-violet-400" },
 };
 
 function SourceCard({ source }: { source: FeedSource }) {

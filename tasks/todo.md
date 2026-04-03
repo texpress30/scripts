@@ -7743,16 +7743,16 @@ Valori expuse în UI: `product`, `vehicle`, `home_listing`, `hotel`, `flight`, `
 - [x] Testează import template CSV/XML pentru destination și service catalog types — flow-ul `parse_and_import()` e complet generic, fără checks hardcoded per catalog type.
 - [x] Aliasuri (feed_field_aliases): NU sunt necesare încă — câmpurile destination/service folosesc deja naming canonic (id, name, url, etc.). Aliasurile vehicle (0043) rezolvă diferențe Meta/TikTok existente; pentru destination/service nu sunt importate template-uri reale cu naming diferit. Se vor adăuga automat la primul import de template real (via AI suggestions sau manual).
 
-### FAZA 4 — Frontend Types & Data
-- [ ] Adaugă `"destination"` și `"service"` în CatalogType (feed-management.ts:85-91)
-- [ ] Adaugă entries în CatalogTypeSelector.tsx pentru destination + service (icon, label, description)
-- [ ] Adaugă canale noi în channel-platforms.ts:
+### FAZA 4 — Frontend Types & Data ✓
+- [x] Adaugă `"destination"` și `"service"` în CatalogType (feed-management.ts:85-91)
+- [x] Adaugă entries în CatalogTypeSelector.tsx pentru destination + service (MapPin/Briefcase icons)
+- [x] Adaugă canale noi în channel-platforms.ts:
   - Meta: facebook_streaming_ads (compatibleSubtypes: ["media_multishow", "media_card"])
-  - Meta: facebook_destination_ads (compatibleSubtypes: ["fb_destinations"])
+  - Meta: facebook_destination_ads (compatibleSubtypes: ["destination_standard"])
   - Meta: facebook_professional_services (compatibleSubtypes: ["professional_services"])
-  - TikTok: tiktok_destination (compatibleSubtypes: ["tt_destinations"])
-- [ ] Adaugă mock schemas în catalogSchemas.ts pentru destination + service (fallback UI)
-- [ ] Adaugă badges/culori platformă dacă e nevoie (channel-platforms.ts)
+  - TikTok: tiktok_destination (compatibleSubtypes: ["destination_standard"])
+- [x] Adaugă mock schemas în catalogSchemas.ts pentru destination (16 fields) + service (13 fields)
+- [x] Actualizat CATALOG_CONFIG Record<CatalogType> în FeedSourceCard, SourceMappingsCard, field-mapping/page
 
 ### FAZA 5 — Frontend UI
 - [ ] Verifică CatalogTypeSelector afișează corect destination + service
