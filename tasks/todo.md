@@ -7754,16 +7754,16 @@ Valori expuse în UI: `product`, `vehicle`, `home_listing`, `hotel`, `flight`, `
 - [x] Adaugă mock schemas în catalogSchemas.ts pentru destination (16 fields) + service (13 fields)
 - [x] Actualizat CATALOG_CONFIG Record<CatalogType> în FeedSourceCard, SourceMappingsCard, field-mapping/page
 
-### FAZA 5 — Frontend UI
-- [ ] Verifică CatalogTypeSelector afișează corect destination + service
-- [ ] Verifică AddChannelModal afișează canalele noi
-- [ ] Verifică feed-schemas admin page permite import template-uri pentru noile types
-- [ ] Verifică field mapping editor funcționează cu noile catalog types
+### FAZA 5 — Frontend UI ✓
+- [x] Verifică CatalogTypeSelector afișează corect destination + service — 8 tipuri, MapPin + Briefcase icons, subtypes fetch din API
+- [x] Verifică AddChannelModal afișează canalele noi — generic pe CHANNEL_PLATFORMS, zero changes needed
+- [x] Verifică feed-schemas admin page — FIX: CATALOG_TYPES dropdown era hardcoded cu 6 valori, adăugat destination + service
+- [x] Verifică field mapping editor — funcționează generic, CATALOG_CONFIG deja updatat în FAZA 4
 
-### FAZA 6 — Product Subtypes Extinse
-- [x] Adaugă subtypes product_local, product_other în DB (migration 0047)
-- [ ] Adaugă compatibleSubtypes pe canalele existente unde e relevant
-- [ ] Verifică UI subtype selector include noile variante
+### FAZA 6 — Product Subtypes Extinse ✓
+- [x] Adaugă subtypes product_local, product_other în DB (migration 0048)
+- [x] Adaugă compatibleSubtypes product_local + product_other pe canalele generice product (google_shopping, google_local_inventory, google_product_reviews, google_regional_inventory, google_manufacturers, facebook_country/language/marketplace, tiktok catalog, bing, all social/RO marketplaces/affiliate)
+- [x] Verifică UI subtype selector — fetch din API, product_local + product_other apar automat din DB
 
 ### FAZA 7 — Teste
 - [ ] Test backend: migrația se aplică fără erori
