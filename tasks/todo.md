@@ -7738,10 +7738,10 @@ Valori expuse în UI: `product`, `vehicle`, `home_listing`, `hotel`, `flight`, `
   - `facebook_professional_services`
 - [ ] Actualizează catalog_field_schemas.py fallback cu destination + service fields
 
-### FAZA 3 — Backend API (schema_registry endpoints)
-- [ ] Verifică că endpoint-urile GET /schemas/fields, /schemas/channels, /schemas/subtypes funcționează corect cu noile catalog types (probabil zero changes — sunt generice pe enum)
-- [ ] Testează import template CSV/XML pentru destination și service catalog types
-- [ ] Adaugă aliasuri (feed_field_aliases) dacă e cazul pentru destination/service
+### FAZA 3 — Backend API (schema_registry endpoints) ✓
+- [x] Verifică că endpoint-urile GET /schemas/fields, /schemas/channels, /schemas/subtypes funcționează corect cu noile catalog types — FIX: `_VALID_CATALOG_TYPES` frozenset din `service.py` era hardcoded fără destination/service; adăugat.
+- [x] Testează import template CSV/XML pentru destination și service catalog types — flow-ul `parse_and_import()` e complet generic, fără checks hardcoded per catalog type.
+- [x] Aliasuri (feed_field_aliases): NU sunt necesare încă — câmpurile destination/service folosesc deja naming canonic (id, name, url, etc.). Aliasurile vehicle (0043) rezolvă diferențe Meta/TikTok existente; pentru destination/service nu sunt importate template-uri reale cu naming diferit. Se vor adăuga automat la primul import de template real (via AI suggestions sau manual).
 
 ### FAZA 4 — Frontend Types & Data
 - [ ] Adaugă `"destination"` și `"service"` în CatalogType (feed-management.ts:85-91)
