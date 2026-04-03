@@ -68,6 +68,11 @@ class FeedGenerator:
                 channel.feed_source_id,
             )
 
+            # 2b. Load schema registry field specs for this channel
+            field_specs = self._load_field_specs(
+                channel.channel_type.value, channel.feed_source_id,
+            )
+
             # 3. Fetch all products from MongoDB
             raw_products = feed_products_repository.list_products(
                 channel.feed_source_id, limit=200,
@@ -87,6 +92,7 @@ class FeedGenerator:
 
                 row = self._transform_product(data, master_mappings, override_map)
                 if row:
+                    row = self._apply_field_specs(row, field_specs, product.get("product_id"))
                     transformed.append(row)
                 else:
                     excluded += 1
@@ -143,6 +149,104 @@ class FeedGenerator:
                 status="error",
                 error_message=str(exc)[:500],
             )
+
+    # ------------------------------------------------------------------
+    # Schema registry integration
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _load_field_specs(
+        channel_slug: str,
+        feed_source_id: str,
+    ) -> list[dict[str, Any]] | None:
+        """Load field specs from schema registry.  Returns None on fallback."""
+        try:
+            from app.services.feed_management.schema_registry.repository import (
+                schema_registry_repository,
+            )
+            from app.services.feed_management.repository import FeedSourceRepository
+
+            source = FeedSourceRepository().get_by_id(feed_source_id)
+            catalog_type = source.catalog_type if hasattr(source, "catalog_type") else "product"
+
+            specs = schema_registry_repository.get_channel_field_specs(
+                channel_slug, catalog_type,
+            )
+            if not specs:
+                logger.warning(
+                    "No schema registry data for channel=%s, catalog_type=%s. "
+                    "Using hardcoded fields.",
+                    channel_slug, catalog_type,
+                )
+                return None
+            return specs
+        except Exception:
+            logger.debug("Schema registry lookup failed, using fallback", exc_info=True)
+            return None
+
+    @staticmethod
+    def _apply_field_specs(
+        row: dict[str, Any],
+        field_specs: list[dict[str, Any]] | None,
+        product_id: Any = None,
+    ) -> dict[str, Any]:
+        """Rename keys from field_key → channel_field_name, validate, and
+        filter to only channel-registered fields.
+
+        If *field_specs* is None (fallback mode) the row is returned unchanged.
+        """
+        if field_specs is None:
+            return row
+
+        spec_map = {s["field_key"]: s for s in field_specs}
+        result: dict[str, Any] = {}
+
+        for spec in field_specs:
+            fk = spec["field_key"]
+            out_name = spec["channel_field_name"]
+            value = row.get(fk)
+
+            # Default value for required fields with no value
+            if value is None and spec.get("is_required") and spec.get("default_value"):
+                value = spec["default_value"]
+
+            # Warn on missing required field
+            if value is None and spec.get("is_required"):
+                logger.warning(
+                    "Required field %s is empty for product %s", fk, product_id,
+                )
+
+            # Enum validation
+            allowed = spec.get("allowed_values")
+            if value is not None and allowed and isinstance(allowed, list):
+                if str(value) not in [str(a) for a in allowed]:
+                    logger.warning(
+                        "Field %s value '%s' not in allowed_values %s for product %s",
+                        fk, value, allowed, product_id,
+                    )
+
+            # Regex validation
+            pattern = spec.get("format_pattern")
+            if value is not None and pattern:
+                try:
+                    if not re.match(pattern, str(value)):
+                        logger.warning(
+                            "Field %s value '%s' does not match pattern '%s' for product %s",
+                            fk, value, pattern, product_id,
+                        )
+                except re.error:
+                    pass  # invalid regex — skip validation
+
+            if value is not None:
+                result[out_name] = value
+
+        # Also include any extra mapped fields not in spec (from master_mappings)
+        # so we don't lose data that the user explicitly mapped
+        for key, value in row.items():
+            if key not in spec_map and value is not None:
+                result[key] = value
+
+        return result
 
     # ------------------------------------------------------------------
     # Transform
@@ -378,6 +482,9 @@ class FeedGenerator:
         master_mappings = master_field_mapping_repository.get_by_source(
             channel.feed_source_id,
         )
+        field_specs = self._load_field_specs(
+            channel.channel_type.value, channel.feed_source_id,
+        )
         raw_products = feed_products_repository.list_products(
             channel.feed_source_id, limit=limit,
         )
@@ -390,6 +497,7 @@ class FeedGenerator:
                 continue
             data = self._merge_raw_data(data)
             transformed = self._transform_product(data, master_mappings, override_map)
+            transformed = self._apply_field_specs(transformed, field_specs, product.get("product_id"))
             results.append({"original": data, "transformed": transformed})
         return results
 

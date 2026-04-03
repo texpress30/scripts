@@ -147,6 +147,48 @@ class SchemaRegistryRepository:
         return int(row[0]) if row else 0
 
     # ------------------------------------------------------------------
+    # Feed generation queries
+    # ------------------------------------------------------------------
+
+    def get_channel_field_specs(
+        self,
+        channel_slug: str,
+        catalog_type: str,
+    ) -> list[dict[str, Any]]:
+        """Return field specs for feed generation: field_key, channel_field_name,
+        data_type, allowed_values, format_pattern, is_required, default_value.
+
+        Single query, ordered by sort_order.
+        """
+        sql = """
+            SELECT
+                f.field_key,
+                COALESCE(cf.channel_field_name, f.field_key) AS channel_field_name,
+                f.data_type,
+                f.allowed_values,
+                f.format_pattern,
+                cf.is_required,
+                cf.default_value
+            FROM feed_schema_channel_fields cf
+            JOIN feed_schema_fields f ON f.id = cf.schema_field_id
+            WHERE cf.channel_slug = %s AND f.catalog_type = %s
+            ORDER BY cf.sort_order
+        """
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (channel_slug, catalog_type))
+                cols = [desc[0] for desc in cur.description]
+                rows = cur.fetchall()
+
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            d = dict(zip(cols, row))
+            if isinstance(d.get("allowed_values"), str):
+                d["allowed_values"] = json.loads(d["allowed_values"])
+            results.append(d)
+        return results
+
+    # ------------------------------------------------------------------
     # Retrieval queries
     # ------------------------------------------------------------------
 
