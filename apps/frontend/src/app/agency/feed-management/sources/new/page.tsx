@@ -25,6 +25,7 @@ export default function NewSourcePage() {
   const [step, setStep] = useState<Step>("source_type");
   const [selectedType, setSelectedType] = useState<FeedSourceType | null>(null);
   const [selectedCatalog, setSelectedCatalog] = useState<CatalogType>("product");
+  const [selectedSubtype, setSelectedSubtype] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -149,7 +150,12 @@ export default function NewSourcePage() {
 
           {step === "catalog_type" && (
             <>
-              <CatalogTypeSelector selectedType={selectedCatalog} onSelect={handleSelectCatalogType} />
+              <CatalogTypeSelector
+                selectedType={selectedCatalog}
+                onSelect={handleSelectCatalogType}
+                selectedSubtype={selectedSubtype}
+                onSubtypeSelect={setSelectedSubtype}
+              />
               <div className="mt-6 flex gap-3">
                 <button type="button" onClick={handleBack} className="wm-btn-secondary">Înapoi</button>
                 <button type="button" onClick={handleCatalogContinue} className="wm-btn-primary">Continuă</button>
